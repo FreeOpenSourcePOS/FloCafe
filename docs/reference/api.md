@@ -425,7 +425,7 @@ Router: `main/routes/printers.ts`. Full path: `/api/printers`.
 | `POST` | `/:id/test` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `rasterProbe` | - |
 | `POST` | `/print-bill` | `ROLE_ACCESS.sales` | body: `billId`, `orderId`, `isReprint`, `preview`, `useUnicode`, `arabicShaping` | Body `billId` or `orderId`, plus `isReprint`, `preview`, `useUnicode`, `arabicShaping`. `preview` returns the rendered payload without sending it to the device. |
 | `POST` | `/print-kot` | `ROLE_ACCESS.sales` | body: `orderId`, `stationName`, `items`, `useUnicode`, `arabicShaping` | Body `orderId`, optional `stationName` and `items`, plus `useUnicode` and `arabicShaping`. |
-| `POST` | `/print-delivery-slip` | `ROLE_ACCESS.sales` | body: `orderId`, `useUnicode`, `arabicShaping` | Body `orderId` plus optional `useUnicode` and `arabicShaping`. Prints the courier slip for one order: the full customer number, the delivery address, and the items. No bill is required, so a slip can be handed over before the customer pays. Unlike `/print-bill`, it does not consult `bill_show_customer_phone`; see [product invariants](product-invariants.md). |
+| `POST` | `/print-delivery-slip` | `ROLE_ACCESS.sales` | body: `orderId`, `useUnicode`, `arabicShaping` | Body `orderId` plus optional `useUnicode` and `arabicShaping`. Prints the courier slip for one order: the full customer number, the delivery address, the order note, and the items. No bill is required, so a slip can be handed over before the customer pays. Unlike `/print-bill`, it does not consult `bill_show_customer_phone`; see [product invariants](product-invariants.md). |
 
 ### Merchant print templates
 

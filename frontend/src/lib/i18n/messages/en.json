@@ -143,7 +143,6 @@
     "somethingWrong": "Something went wrong",
     "subtotal": "Subtotal",
     "tableFallback": "Table",
-    "tax": "Tax",
     "timeHoursMinutes": "{h}h {m}m",
     "timeHoursMinutesAgo": "{h}h {m}m ago",
     "timeMinutes": "{m}m",
@@ -153,7 +152,8 @@
     "update": "Update",
     "windowControls": "Window controls",
     "yes": "Yes",
-    "back": "Back"
+    "back": "Back",
+    "tax": "Tax"
   },
   "countries": {
     "selectCountry": "Select country…"
@@ -450,12 +450,12 @@
     "staff": "Staff",
     "statusError": "Failed to get status",
     "support": "Support",
-    "tables": "Tables",
     "toggleSidebar": "Toggle sidebar",
     "uptimeLabel": "Up: ",
     "user": "User",
     "whatsapp": "WhatsApp",
-    "inventory": "Inventory"
+    "inventory": "Inventory",
+    "tables": "Tables"
   },
   "orders": {
     "active": "Active",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Different customer on this table",
     "customerMismatchWarning": "This table is currently occupied by {customer}. Do you want to proceed and add these items to their order?",
     "customerName": "Name",
+    "customerAddress": "Customer address",
     "customerRequiredBeforeOrder": "A customer is required before placing an order.",
     "customerUpdateFailed": "Failed to update customer",
     "customerUpdated": "Customer updated",
@@ -827,7 +828,6 @@
     "tagSpicy": "Spicy",
     "tagVeg": "Veg",
     "tagVegan": "Vegan",
-    "tax": "Tax",
     "taxLine": "{title} @{rate}%",
     "total": "Total",
     "totalDue": "Total Due",
@@ -840,7 +840,8 @@
     "exitFullscreen": "Exit full-screen POS",
     "fullscreenUnavailable": "Full-screen mode is unavailable",
     "backspaceAmount": "Backspace amount",
-    "numericKeypad": "Numeric keypad"
+    "numericKeypad": "Numeric keypad",
+    "tax": "Tax"
   },
   "printTest": {
     "amt": "Amt",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Cost Price",
     "fieldImage": "Product Image",
     "fieldInventoryProduct": "Inventory product",
+    "fieldInventoryProductHint": "Selling this product deducts the quantity below from the selected stock product.",
     "fieldInventoryProductNone": "None",
     "fieldInventoryDeductionQuantity": "Deduction per sale",
     "fieldLowStockThreshold": "Low Stock Threshold",
@@ -1244,8 +1246,8 @@
     "statusServed": "Served",
     "statusWaiting": "Waiting",
     "tableLabel": "Table {name}",
-    "tables": "Tables",
-    "title": "Server App"
+    "title": "Server App",
+    "tables": "Tables"
   },
   "settings": {
     "aboutDescription": "FloPOS is a free forever, open-source restaurant POS for cafes, restaurants, bakeries, food trucks, cloud kitchens, and bars. It includes ordering, tables, menus, kitchen display, receipt printing, staff access, and local data storage. Download it, run service, keep your data, and own your POS.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "If ON, prints currency symbols (₹, €, £, ¥…) as-is. If OFF, replaces them with ASCII (Rs, EUR, GBP, Yen…) — safer default for most thermal printers.",
     "printerUpdated": "Printer updated",
     "printers": "Printers",
-    "printing": "Printing",
     "printingSettingsSaved": "Printing settings saved",
     "privacy": "Privacy",
     "productImagesDisabled": "Product images disabled",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "Off by default. When off, recorded problems stay on this device and are never sent. Support requests you send yourself are unaffected.",
     "diagnosticsTicketUnaffected": "A support request you raise and send yourself always works, whether or not this is on.",
     "diagnosticsLocalOnlyHintTransmitting": "This screen shows recent problems on this device in plain language. Automatic transmission is on, so recorded problems may be sent to your FloCafe cloud account.",
-    "diagnosticsLocalOnlyHintPending": "This screen shows recent problems on this device in plain language."
+    "diagnosticsLocalOnlyHintPending": "This screen shows recent problems on this device in plain language.",
+    "printing": "Printing"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Orders and tables",
     "chefDescription": "Kitchen display",
     "areas": {
+      "tables": "Tables",
+      "cash": "Cash",
+      "inventory": "Stock and recipes",
+      "authorization": "Permissions",
+      "tax": "Tax",
+      "printing": "Printing",
+      "apps": "Apps",
       "orders": "Orders",
       "payments": "Payments",
       "customers": "Customers",
@@ -2208,6 +2217,16 @@
       "support": "Support"
     },
     "capabilities": {
+      "tablesView": "View tables",
+      "refunds": "Issue refunds",
+      "cashShiftsView": "View cash shifts",
+      "cashMovements": "Record and void cash movements",
+      "cashDayClose": "Close the trading day",
+      "inventoryView": "View stock and recipes",
+      "kitchenStatusUpdate": "Update order status on the kitchen display",
+      "reportsDailySalesExport": "Export the daily sales report",
+      "authorizationManage": "Change role permissions and staff access",
+      "mobileAccessManage": "Manage mobile device access",
       "pos": "Use the POS terminal",
       "dashboard": "View the owner dashboard",
       "ordersReadCreate": "View and create orders",
@@ -2601,7 +2620,6 @@
     "subtitle": "Enable the verified tax rules for your store country. FloCafe applies the standard product tax group automatically; exceptions can be changed per product.",
     "supportUnavailable": "Tax support for {country} is not available yet. We have requested the plugin from the FloCafe team and will build it soon. Taxes remain off until it is ready.",
     "target": "Target",
-    "tax": "Tax",
     "taxableBase": "Taxable base",
     "testCalculation": "Test calculation",
     "testCalculationHint": "Uses the active pack and the same tax engine as checkout. It does not save a transaction.",
@@ -2617,7 +2635,8 @@
     "updated": "Updated",
     "updatedTo": "Tax plugin updated to v{version}",
     "value": "Value",
-    "yourStore": "your store"
+    "yourStore": "your store",
+    "tax": "Tax"
   },
   "update": {
     "currentVersion": "Current version: {version}",

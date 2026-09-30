@@ -28,6 +28,26 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
+/**
+ * Mirrors MAX_DELIVERY_SLIP_NOTE_CHARS in main/printers/document-delivery-slip.ts so
+ * all three render paths print the same note, and states the cut the same way.
+ */
+const MAX_NOTE_CHARS = 200;
+
+function clampNote(note: string): { text: string; truncated: number } {
+  if (note.length <= MAX_NOTE_CHARS) return { text: note, truncated: 0 };
+  return { text: Array.from(note).slice(0, MAX_NOTE_CHARS).join(''), truncated: note.length - MAX_NOTE_CHARS };
+}
+
+function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {
+  const { text, truncated } = clampNote((raw ?? '').trim());
+  if (!text) return '';
+  const marker = truncated > 0
+    ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
+    : '';
+  return `<p style="margin:2px 0;">${escapeHtml(tr('print.note'))}: ${escapeHtml(text)}</p>${marker}`;
+}
+
 export function generateDeliverySlipHtml(
   order: DeliverySlipOrder,
   items: DeliverySlipItem[],
@@ -60,6 +80,7 @@ export function generateDeliverySlipHtml(
       ${contact.name ? `<p style="margin:2px 0;font-weight:bold;">${escapeHtml(contact.name)}</p>` : ''}
       ${contact.phone ? `<p style="margin:2px 0;">${escapeHtml(tr('print.numberShort'))}: ${escapeHtml(contact.phone)}</p>` : ''}
       ${contact.address ? `<p style="margin:2px 0;">${escapeHtml(tr('print.deliverySlip.address'))}: ${escapeHtml(contact.address)}</p>` : ''}
+      ${slipNoteHtml(order.special_instructions, tr)}
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${itemRows}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

@@ -143,7 +143,6 @@
     "somethingWrong": "May naganap na error",
     "subtotal": "Subtotal",
     "tableFallback": "Lamesa",
-    "tax": "Buwis",
     "timeHoursMinutes": "{h} oras {m} min",
     "timeHoursMinutesAgo": "{h} oras {m} min ang nakalipas",
     "timeMinutes": "{m} min",
@@ -153,7 +152,8 @@
     "update": "I-update",
     "windowControls": "Mga Kontrol sa Window",
     "yes": "Oo",
-    "back": "Bumalik"
+    "back": "Bumalik",
+    "tax": "Buwis"
   },
   "countries": {
     "selectCountry": "Pumili ng Bansa"
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Ibang customer sa lamesang ito",
     "customerMismatchWarning": "Kasalukuyang inookupahan ni {customer} ang lamesang ito. Nais mo bang magpatuloy at idagdag ang mga item na ito sa kanilang order?",
     "customerName": "Pangalan ng Customer",
+    "customerAddress": "Address ng Customer",
     "customerRequiredBeforeOrder": "Kailangan ng customer bago maglagay ng order.",
     "customerUpdateFailed": "Nabigong i-update ang customer",
     "customerUpdated": "Na-update ang customer",
@@ -827,7 +828,6 @@
     "tagSpicy": "Maanghang",
     "tagVeg": "Gulay",
     "tagVegan": "Vegan",
-    "tax": "Buwis",
     "taxLine": "{title} @{rate}%",
     "total": "Kabuuan",
     "totalDue": "Kabuuang Babayaran",
@@ -840,7 +840,8 @@
     "exitFullscreen": "Lumabas sa full-screen POS",
     "fullscreenUnavailable": "Hindi available ang full-screen mode",
     "backspaceAmount": "I-backspace ang halaga",
-    "numericKeypad": "Numeric keypad"
+    "numericKeypad": "Numeric keypad",
+    "tax": "Buwis"
   },
   "printTest": {
     "amt": "Halaga",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Presyo ng Puhunan",
     "fieldImage": "Larawan ng Produkto",
     "fieldInventoryProduct": "Inventory product na naka-link",
+    "fieldInventoryProductHint": "Kapag ang benta ng produktong ito ay babawasan ang dami sa ibaba mula sa napiling stock product.",
     "fieldInventoryProductNone": "Wala",
     "fieldInventoryDeductionQuantity": "Bawas kada benta",
     "fieldLowStockThreshold": "Babala sa Mababang Stock",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Mga order at lamesa",
     "chefDescription": "Kusina display",
     "areas": {
+      "tables": "Mesa",
+      "cash": "Cash",
+      "inventory": "Stock at mga recipe",
+      "authorization": "Mga pahintulot",
+      "tax": "Buwis",
+      "printing": "Pagbabayar",
+      "apps": "Mga app",
       "orders": "Mga Order",
       "payments": "Mga Pagbabayad",
       "customers": "Mga Customer",
@@ -2208,6 +2217,16 @@
       "support": "Suporta"
     },
     "capabilities": {
+      "tablesView": "Tingnan ang mga mesa",
+      "refunds": "Magbigay ng refund",
+      "cashShiftsView": "Tingnan ang mga cash shift",
+      "cashMovements": "Itala at bawiin ang mga transaksyon ng cash",
+      "cashDayClose": "Isara ang araw ng negosyo",
+      "inventoryView": "Tingnan ang stock at mga recipe",
+      "kitchenStatusUpdate": "I-update ang estado ng order sa kitchen display",
+      "reportsDailySalesExport": "I-export ang daily sales report",
+      "authorizationManage": "Baguhin ang mga pahintulot ng role at access ng staff",
+      "mobileAccessManage": "Pamahalaan ang access mula sa mobile device",
       "pos": "Gamitin ang POS terminal",
       "dashboard": "Tingnan ang dashboard ng may-ari",
       "ordersReadCreate": "Tingnan at gumawa ng mga order",
@@ -2601,7 +2620,6 @@
     "subtitle": "I-enable ang mga na-verify na panuntunan sa buwis para sa bansa ng iyong tindahan.",
     "supportUnavailable": "Hindi pa available ang suporta sa buwis para sa {country}. Mananatiling off ang buwis hanggang sa maging handa ito.",
     "target": "Target",
-    "tax": "Buwis",
     "taxableBase": "Mabubuwisang base",
     "testCalculation": "Subukan ang kalkulasyon",
     "testCalculationHint": "Gumagamit ng parehong tax engine sa checkout. Hindi ito nagse-save ng transaksyon.",
@@ -2617,7 +2635,8 @@
     "updated": "Na-update",
     "updatedTo": "Na-update ang plugin ng buwis sa v{version}",
     "value": "Halaga",
-    "yourStore": "iyong tindahan"
+    "yourStore": "iyong tindahan",
+    "tax": "Buwis"
   },
   "update": {
     "currentVersion": "Kasalukuyang bersyon: {version}",

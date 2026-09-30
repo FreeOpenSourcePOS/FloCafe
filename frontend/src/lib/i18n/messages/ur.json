@@ -143,7 +143,6 @@
     "somethingWrong": "کچھ غلط ہو گیا",
     "subtotal": "ذیلی رقم",
     "tableFallback": "میز",
-    "tax": "ٹیکس",
     "timeHoursMinutes": "{h} گھنٹے {m} منٹ",
     "timeHoursMinutesAgo": "{h} گھنٹے {m} منٹ پہلے",
     "timeMinutes": "{m} منٹ",
@@ -153,7 +152,8 @@
     "update": "اپ ڈیٹ",
     "windowControls": "ونڈو کے کنٹرولز",
     "yes": "ہاں",
-    "back": "واپس"
+    "back": "واپس",
+    "tax": "ٹیکس"
   },
   "countries": {
     "selectCountry": "ملک منتخب کریں…"
@@ -450,12 +450,12 @@
     "staff": "ملازمین",
     "statusError": "حالت حاصل نہیں کر سکے",
     "support": "معاونت",
-    "tables": "میزیں",
     "toggleSidebar": "سائیڈ بار تبدیل کریں",
     "uptimeLabel": "اپ ٹائم: ",
     "user": "صارف",
     "whatsapp": "WhatsApp",
-    "inventory": "اسٹاک"
+    "inventory": "اسٹاک",
+    "tables": "میزیں"
   },
   "orders": {
     "active": "فعال",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "اس میز پر مختلف گاہک",
     "customerMismatchWarning": "اس میز پر ابھی {customer} موجود ہیں۔ کیا آپ آگے بڑھ کر یہ آئٹمز ان کے آرڈر میں شامل کرنا چاہتے ہیں؟",
     "customerName": "نام",
+    "customerAddress": "گاہک کا پتہ",
     "customerRequiredBeforeOrder": "آرڈر دینے سے پہلے گاہک درکار ہے۔",
     "customerUpdateFailed": "گاہک اپ ڈیٹ نہیں ہو سکا",
     "customerUpdated": "گاہک اپ ڈیٹ ہو گیا",
@@ -827,7 +828,6 @@
     "tagSpicy": "مرچ والا",
     "tagVeg": "گوشتی",
     "tagVegan": "ویگن",
-    "tax": "ٹیکس",
     "taxLine": "{title} @{rate}%",
     "total": "کل رقم",
     "totalDue": "کل واجب الادا رقم",
@@ -840,7 +840,8 @@
     "exitFullscreen": "فل اسکرین POS سے باہر نکلیں",
     "fullscreenUnavailable": "فل اسکرین موڈ دستیاب نہیں",
     "backspaceAmount": "رقم میں بیک اسپیس",
-    "numericKeypad": "عددی کی پیڈ"
+    "numericKeypad": "عددی کی پیڈ",
+    "tax": "ٹیکس"
   },
   "printTest": {
     "amt": "رقم",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "لاگت قیمت",
     "fieldImage": "پروڈکٹ کی تصویر",
     "fieldInventoryProduct": "اسٹاک پروڈکٹ",
+    "fieldInventoryProductHint": "اس پروڈکٹ کی فروخت نیچے دی گئی مقدار منتخب اسٹاک پروڈکٹ سے منہا دیتی ہے۔",
     "fieldInventoryProductNone": "کوئی نہیں",
     "fieldInventoryDeductionQuantity": "فی فروخت کٹوتی",
     "fieldLowStockThreshold": "کم اسٹاک کی حد",
@@ -1244,8 +1246,8 @@
     "statusServed": "پیش شدہ",
     "statusWaiting": "منتظر",
     "tableLabel": "میز {name}",
-    "tables": "میزیں",
-    "title": "Server App"
+    "title": "Server App",
+    "tables": "میزیں"
   },
   "settings": {
     "aboutDescription": "FloPOS کافی، ریسٹورنٹ، بیکری، فوڈ ٹرک، کلاؤڈ کچن اور بار کے لیے ہمیشہ مفت، اوپن سورس ریسٹورنٹ POS ہے۔ اس میں آرڈرنگ، میزیں، مینو، کچن ڈسپلے، رسید پرنٹنگ، ملازم رسائی اور مقامی ڈیٹا اسٹوریج شامل ہے۔ ڈاؤن لوڈ کریں، سروس چلائیں، اپنا ڈیٹا رکھیں اور اپنا POS استعمال کریں۔",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "اگر آن ہو تو کرنسی علامات (₹، €، £، ¥…) جیسی ہی پرنٹ ہوتی ہیں۔ اگر آف ہو تو انہیں ASCII (Rs، EUR، GBP، Yen…) سے بدل دیا جاتا ہے — زیادہ تر تھرمل پرنٹرز کے لیے محفوظ ڈیفالٹ۔",
     "printerUpdated": "پرنٹر اپ ڈیٹ ہو گیا",
     "printers": "پرنٹرز",
-    "printing": "پرنٹنگ",
     "printingSettingsSaved": "پرنٹنگ کی ترتیبات محفوظ ہو گئیں",
     "privacy": "رازداری",
     "productImagesDisabled": "پروڈکٹ تصاویر بند",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "طے شدہ طور پر بند۔ بند ہونے پر ریکارڈ شدہ مسائل اسی ڈیوائس پر رہتے ہیں اور کبھی بھیجے نہیں جاتے۔ آپ کی اپنی بھیجی معاونت درخواستیں متاثر نہیں ہوتیں۔",
     "diagnosticsTicketUnaffected": "آپ کی اپنی بھیجی معاونت درخواست ہمیشہ کام کرتی ہے، چاہے یہ سیٹنگ فعال ہو یا غیر فعال۔",
     "diagnosticsLocalOnlyHintTransmitting": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔ خودکار بھیجنا چالو ہے، اس لیے ریکارڈ شدہ مسائل آپ کے FloCafe کلاؤڈ اکاؤنٹ میں بھیجے جا سکتے ہیں۔",
-    "diagnosticsLocalOnlyHintPending": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔"
+    "diagnosticsLocalOnlyHintPending": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔",
+    "printing": "پرنٹنگ"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "آرڈرز اور میزیں",
     "chefDescription": "کچن ڈسپلے",
     "areas": {
+      "tables": "میزیں",
+      "cash": "کیش",
+      "inventory": "اسٹاک اور ترکیبیں",
+      "authorization": "اجازتیں",
+      "tax": "ٹیکس",
+      "printing": "پرنٹنگ",
+      "apps": "ایپس",
       "orders": "آرڈرز",
       "payments": "ادائیگیاں",
       "customers": "گاہک",
@@ -2208,6 +2217,16 @@
       "support": "معاونت"
     },
     "capabilities": {
+      "tablesView": "میزیں دیکھیں",
+      "refunds": "رقمب کا اجرا",
+      "cashShiftsView": "کیش شفٹ دیکھیں",
+      "cashMovements": "کیش حرکتیں ریکارڈ اور منسوخ کریں",
+      "cashDayClose": "کاروباری دن بند کریں",
+      "inventoryView": "اسٹاک اور ترکیبیں دیکھیں",
+      "kitchenStatusUpdate": "کچن ڈسپلے پر آرڈر کی حیثیت اپ ڈیٹ کریں",
+      "reportsDailySalesExport": "روزانہ فروخت کی رپورٹ برآمد کریں",
+      "authorizationManage": "رول کی اجازتیں اور عملے تک رسائی بدلیں",
+      "mobileAccessManage": "موبائل ڈیوائس رسائی منظم کریں",
       "pos": "POS ٹرمینل استعمال کریں",
       "dashboard": "مالک کا ڈیش بورڈ دیکھیں",
       "ordersReadCreate": "آرڈرز دیکھیں اور بنائیں",
@@ -2601,7 +2620,6 @@
     "subtitle": "اپنے اسٹور ملک کے تصدیق شدہ ٹیکس قوانین فعال کریں۔ FloCafe معیاری پروڈکٹ ٹیکس گروپ خودکار لگاتا ہے؛ استثنیات فی پروڈکٹ بدلی جا سکتی ہیں۔",
     "supportUnavailable": "{country} کے لیے ٹیکس معاونت ابھی دستیاب نہیں۔ ہم نے FloCafe ٹیم سے پلگ ان طلب کیا ہے اور جلد بنایا جائے گا۔ تیار ہونے تک ٹیکس بند رہیں گے۔",
     "target": "ہدف",
-    "tax": "ٹیکس",
     "taxableBase": "ٹیکس کے قابل بنیاد",
     "testCalculation": "ٹیسٹ کا حساب",
     "testCalculationHint": "فعال پیک اور ادائیگی کے ایک ہی ٹیکس انجن استعمال کرتا ہے۔ کوئی ٹرانزیکشن محفوظ نہیں کرتا۔",
@@ -2617,7 +2635,8 @@
     "updated": "اپ ڈیٹ ہو گیا",
     "updatedTo": "ٹیکس پلگ ان v{version} پر اپ ڈیٹ ہو گیا",
     "value": "قدر",
-    "yourStore": "آپ کا اسٹور"
+    "yourStore": "آپ کا اسٹور",
+    "tax": "ٹیکس"
   },
   "update": {
     "currentVersion": "موجودہ ورژن: {version}",

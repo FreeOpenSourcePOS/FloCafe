@@ -464,6 +464,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'common.logoAlt', // brand
   'common.tableFallback', // same word in French
   'common.total', // same word in French
+  'permissionMatrix.areas.tables', // "tables" is the same word in French
   'customer.ptsSuffix', // standard abbreviation
   'customers.columnActions', // same word in French
   'customers.columnDate', // same word in French
@@ -628,6 +629,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.email',
   'auth.password',
   'auth.recoverPinLabel',
+  'permissionMatrix.areas.cash', // "cash" is a standard loanword in Filipino
   'common.appTitle',
   'common.brandName',
   'common.discount',
@@ -897,6 +899,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.namePlaceholder',
   'dashboard.title',
   'inventory.supplyName', // same word in German
+  'permissionMatrix.areas.apps', // "Apps" is a loanword in German
   'kds.connectionLive',
   'kds.emptyColumn',
   'kds.viewKanban',
@@ -1347,6 +1350,7 @@ const NL_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.timeHoursMinutes', 'common.timeMinutes', 'dashboard.minutesValue', 'dashboard.title',
   'dashboard.exportXlsx', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
   'inventory.product', 'kds.addonsLabel', 'kds.connectionLive', 'kds.emptyColumn', 'kds.viewKanban',
+  'permissionMatrix.areas.apps', // "apps" is a loanword in Dutch
   'nav.dashboard', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online', 'pos.addonPrice',
   'pos.loadingEllipsis', 'pos.orderTypeOnline', 'pos.percentage', 'pos.tagBestseller', 'pos.tagCount',
   'pos.taxLine', 'printTest.downloadBin', 'printTest.escpos', 'print.kot.type', 'print.hsn',

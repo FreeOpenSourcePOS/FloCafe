@@ -143,7 +143,6 @@
     "somethingWrong": "เกิดข้อผิดพลาดบางอย่าง",
     "subtotal": "ยอดรวมย่อย",
     "tableFallback": "โต๊ะ",
-    "tax": "ภาษี",
     "timeHoursMinutes": "{h} ชม. {m} นาที",
     "timeHoursMinutesAgo": "{h} ชม. {m} นาทีที่แล้ว",
     "timeMinutes": "{m} นาที",
@@ -153,7 +152,8 @@
     "update": "อัปเดต",
     "windowControls": "ปุ่มควบคุมหน้าต่าง",
     "yes": "ใช่",
-    "back": "ย้อนกลับ"
+    "back": "ย้อนกลับ",
+    "tax": "ภาษี"
   },
   "countries": {
     "selectCountry": "เลือกประเทศ…"
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "โต๊ะนี้มีลูกค้าคนอื่น",
     "customerMismatchWarning": "ขณะนี้โต๊ะนี้ใช้งานโดย {customer} ต้องการดำเนินการต่อและเพิ่มสินค้าเหล่านี้เข้าคำสั่งซื้อของพวกเขาหรือไม่?",
     "customerName": "ชื่อ",
+    "customerAddress": "ที่อยู่ของลูกค้า",
     "customerRequiredBeforeOrder": "ต้องมีลูกค้าก่อนการสั่งซื้อ",
     "customerUpdateFailed": "อัปเดตลูกค้าไม่สำเร็จ",
     "customerUpdated": "อัปเดตลูกค้าแล้ว",
@@ -827,7 +828,6 @@
     "tagSpicy": "เผ็ด",
     "tagVeg": "มังสวิรัติ",
     "tagVegan": "วีกาน",
-    "tax": "ภาษี",
     "taxLine": "{title} @{rate}%",
     "total": "ยอดรวม",
     "totalDue": "ยอดชำระ",
@@ -840,7 +840,8 @@
     "exitFullscreen": "ออกจากโหมด POS เต็มหน้าจอ",
     "fullscreenUnavailable": "ไม่สามารถใช้โหมดเต็มหน้าจอได้",
     "backspaceAmount": "ลบตัวเลขจำนวนเงิน",
-    "numericKeypad": "แป้นตัวเลข"
+    "numericKeypad": "แป้นตัวเลข",
+    "tax": "ภาษี"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "ราคาต้นทุน",
     "fieldImage": "รูปสินค้า",
     "fieldInventoryProduct": "สินค้าคงคลัง",
+    "fieldInventoryProductHint": "การขายสินค้านี้จะหักจำนวนด้านล่างออกจากสินค้าคงคลังที่เลือกไว้",
     "fieldInventoryProductNone": "ไม่มี",
     "fieldInventoryDeductionQuantity": "จำนวนที่หักต่อการขาย 1 ครั้ง",
     "fieldLowStockThreshold": "เกณฑ์สินค้าใกล้หมด",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "หากเปิด จะพิมพ์สัญลักษณ์สกุลเงิน (₹, €, £, ¥…) ตามเดิม หากปิด จะแทนด้วย ASCII (Rs, EUR, GBP, Yen…) - ค่าเริ่มต้นที่ปลอดภัยสำหรับเครื่องพิมพ์ความร้อนส่วนใหญ่",
     "printerUpdated": "อัปเดตเครื่องพิมพ์แล้ว",
     "printers": "เครื่องพิมพ์",
-    "printing": "การพิมพ์",
     "printingSettingsSaved": "บันทึกการตั้งค่าการพิมพ์แล้ว",
     "privacy": "ความเป็นส่วนตัว",
     "productImagesDisabled": "ปิดรูปสินค้าแล้ว",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "ปิดไว้เป็นค่าเริ่มต้น เมื่อปิด ปัญหาที่บันทึกไว้จะอยู่บนอุปกรณ์นี้และจะไม่ถูกส่งออกไป คำขอช่วยเหลือที่คุณส่งเองไม่ได้รับผลกระทบ",
     "diagnosticsTicketUnaffected": "คำขอช่วยเหลือที่คุณส่งเองจะใช้งานได้เสมอ ไม่ว่าการตั้งค่านี้จะเปิดหรือปิด",
     "diagnosticsLocalOnlyHintTransmitting": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย เปิดการส่งอัตโนมัติไว้ ปัญหาที่บันทึกไว้จึงอาจถูกส่งไปยังบัญชี FloCafe Cloud ของคุณ",
-    "diagnosticsLocalOnlyHintPending": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย"
+    "diagnosticsLocalOnlyHintPending": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย",
+    "printing": "การพิมพ์"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "คำสั่งซื้อและโต๊ะ",
     "chefDescription": "จอแสดงข้อมูลครัว",
     "areas": {
+      "tables": "ตาราง",
+      "cash": "เงินสด",
+      "inventory": "สต็อกและสูตร",
+      "authorization": "สิทธิ์",
+      "tax": "ภาษี",
+      "printing": "การพิมพ์",
+      "apps": "แอป",
       "orders": "คำสั่งซื้อ",
       "payments": "การชำระเงิน",
       "customers": "ลูกค้า",
@@ -2208,6 +2217,16 @@
       "support": "ฝ่ายช่วยเหลือ"
     },
     "capabilities": {
+      "tablesView": "ดูตาราง",
+      "refunds": "ออกเงินคืน",
+      "cashShiftsView": "ดูกะกลางเงินสด",
+      "cashMovements": "บันทึกและยกเลิกรายการเงินสด",
+      "cashDayClose": "ปิดวันทำการค้า",
+      "inventoryView": "ดูสต็อกและสูตร",
+      "kitchenStatusUpdate": "อัปเดตสถานะออเดอร์บนจอครัว",
+      "reportsDailySalesExport": "ส่งออกรายงานยอดขายรายวัน",
+      "authorizationManage": "เปลี่ยนสิทธิ์ของบทบาทและการเข้าถึงของพนักงาน",
+      "mobileAccessManage": "จัดการการเข้าถึงจากอุปกรณ์เคลื่อนที่",
       "pos": "ใช้เครื่อง POS",
       "dashboard": "ดูแดชบอร์ดเจ้าของ",
       "ordersReadCreate": "ดูและสร้างคำสั่งซื้อ",
@@ -2601,7 +2620,6 @@
     "subtitle": "เปิดใช้กฎภาษีที่ตรวจสอบแล้วสำหรับประเทศของร้าน FloCafe จะใช้กลุ่มภาษีมาตรฐานของสินค้าโดยอัตโนมัติ ข้อยกเว้นสามารถเปลี่ยนได้รายสินค้า",
     "supportUnavailable": "ยังไม่มีการรองรับภาษีสำหรับ {country} เราได้ขอปลั๊กอินจากทีม FloCafe และจะสร้างในเร็ววัน ภาษีจะยังคงปิดอยู่จนกว่าจะพร้อม",
     "target": "เป้าหมาย",
-    "tax": "ภาษี",
     "taxableBase": "ฐานภาษี",
     "testCalculation": "การคำนวณทดสอบ",
     "testCalculationHint": "ใช้แพ็กที่ใช้งานอยู่และกลไกคำนวณภาษีเดียวกับการชำระเงิน ไม่บันทึกธุรกรรม",
@@ -2617,7 +2635,8 @@
     "updated": "อัปเดตแล้ว",
     "updatedTo": "อัปเดตปลั๊กอินภาษีเป็น v{version} แล้ว",
     "value": "ค่า",
-    "yourStore": "ร้านของคุณ"
+    "yourStore": "ร้านของคุณ",
+    "tax": "ภาษี"
   },
   "update": {
     "currentVersion": "เวอร์ชันปัจจุบัน: {version}",

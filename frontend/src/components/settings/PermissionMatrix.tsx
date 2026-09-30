@@ -12,7 +12,13 @@ import { MasterPinPrompt } from './MasterPinPrompt';
 import toast from 'react-hot-toast';
 import type { PermissionArea, PermissionEffect, PermissionId, PermissionRisk } from '@shared/permissions';
 import { ROLE_KEYS, type Role } from '@shared/role-permissions';
-import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
+import {
+  PERMISSION_AREA_KEYS,
+  PERMISSION_LABEL_KEYS,
+  ROLE_LABEL_KEYS,
+  type PermissionAreaKey,
+  type PermissionCapabilityKey,
+} from '@/lib/i18n-enums';
 
 type PermissionDefinition = {
   id: PermissionId;
@@ -75,8 +81,21 @@ function refusalCode(error: unknown): { status?: number; code?: RefusalCode; req
   };
 }
 
-export function permissionLabel(permissionId: PermissionId): string {
+/**
+ * The capability label, translated. The id-splitting form stays as the fallback for
+ * an id the catalog gains without a map entry, so a bad response cannot crash a row.
+ */
+export function permissionLabel(permissionId: PermissionId, t: (key: PermissionCapabilityKey) => string): string {
+  const key = PERMISSION_LABEL_KEYS[permissionId];
+  if (key) return t(`capabilities.${key}` as PermissionCapabilityKey);
   return permissionId.split('.').map((part) => part.replace(/-/g, ' ')).join(' · ');
+}
+
+/** The area heading, translated, with the same id-splitting fallback. */
+export function permissionAreaLabel(area: PermissionArea, t: (key: PermissionAreaKey) => string): string {
+  const key = PERMISSION_AREA_KEYS[area];
+  if (key) return t(`areas.${key}` as PermissionAreaKey);
+  return area.replace(/-/g, ' ');
 }
 
 export function PermissionMatrix({ staff }: { staff: Staff[] }) {
@@ -272,7 +291,7 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
             <thead className="bg-muted"><tr><th className="px-4 py-3 text-start">{t('capabilityHeader')}</th><th className="w-40 px-3 py-3 text-start">{t('effectiveHeader')}</th><th className="w-48 px-3 py-3 text-start">{t('overrideHeader')}</th></tr></thead>
             <tbody>
               {areas.map((area) => <Fragment key={area}>
-                <tr><th colSpan={3} className="border-y border-border bg-muted px-4 py-2 text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground">{area.replace(/-/g, ' ')}</th></tr>
+                <tr><th colSpan={3} className="border-y border-border bg-muted px-4 py-2 text-start text-xs font-semibold uppercase tracking-wide text-muted-foreground">{permissionAreaLabel(area, t)}</th></tr>
                 {catalog.filter((permission) => permission.area === area).map((permission) => {
                   const selected = overrides[permission.id] || 'inherit';
                   const inherited = effectiveById.get(permission.id);
@@ -280,7 +299,7 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
                   const costsActorAccess = targetsActor && inherited?.allowed === true && !effective
                     && (ADMINISTRATIVE_PERMISSION_IDS as readonly PermissionId[]).includes(permission.id);
                   return <tr key={permission.id} className="border-b border-border last:border-b-0">
-                    <th className="px-4 py-3 text-start font-medium"><span className="block capitalize">{permissionLabel(permission.id)}</span><code className="text-xs font-normal text-muted-foreground">{permission.id}</code></th>
+                    <th className="px-4 py-3 text-start font-medium"><span className="block">{permissionLabel(permission.id, t)}</span><code className="text-xs font-normal text-muted-foreground">{permission.id}</code></th>
                     <td className="px-3 py-3"><span className={`inline-flex items-center gap-1 ${effective ? 'text-emerald-600' : 'text-muted-foreground'}`}>{effective ? <Check size={15} /> : <Minus size={15} />}{effective ? t('allowed') : t('notAllowed')}</span></td>
                     <td className="px-3 py-3">{permission.configurable ? (
                       <select value={selected} onChange={(event) => setOverrides((current) => {

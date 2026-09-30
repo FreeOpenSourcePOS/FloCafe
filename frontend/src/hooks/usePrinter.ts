@@ -607,6 +607,14 @@ export const usePrinterStore = create<PrinterState>()(
             })),
             special_instructions: item.special_instructions ?? null,
           }));
+          // The order-level note travels with the order, not the items, so it is
+          // read from the order row rather than the per-item instructions above.
+          const slipOrder = {
+            order_number: String(orderForPrint.order_number ?? ''),
+            created_at: String(orderForPrint.created_at ?? ''),
+            type: String((orderForPrint as { type?: string }).type ?? ''),
+            special_instructions: orderForPrint.special_instructions ?? null,
+          };
 
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
@@ -635,11 +643,7 @@ export const usePrinterStore = create<PrinterState>()(
             const encoderWarnings: PrintWarning[] = [];
             const columns = columnsForConfiguredPrinter(get().webusbPrinter?.paper_width, paperWidth);
             const bytes = buildDeliverySlipBytes(
-              {
-                order_number: String(orderForPrint.order_number ?? ''),
-                created_at: String(orderForPrint.created_at ?? ''),
-                type: String((orderForPrint as { type?: string }).type ?? ''),
-              },
+              slipOrder,
               slipItems,
               slipContact,
               {
@@ -667,11 +671,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const { generateDeliverySlipHtml } = await import('@/lib/printer/delivery-slip-web-print');
           const html = generateDeliverySlipHtml(
-            {
-              order_number: String(orderForPrint.order_number ?? ''),
-              created_at: String(orderForPrint.created_at ?? ''),
-              type: String((orderForPrint as { type?: string }).type ?? ''),
-            },
+            slipOrder,
             slipItems,
             slipContact,
             {

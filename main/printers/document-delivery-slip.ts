@@ -7,6 +7,7 @@ import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capa
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
+  escapeControlTokens,
   pushWrapped,
   truncate,
   truncateShapedLine,
@@ -29,12 +30,21 @@ import {
   type DeliverySlipDocumentBlock,
   type DeliverySlipHeaderBlock,
   type DeliverySlipItemsBlock,
+  type DeliverySlipNotesBlock,
   type DeliverySlipPrintData,
   type PrintContext,
   type SemanticLabel,
 } from '../../shared/print';
 
 export const MAX_DELIVERY_SLIP_ADDRESS_CHARS = 300;
+/**
+ * The order note is bounded on the way in by `max_order_notes_length` (a tenant
+ * setting, 200 by default), so a raised setting or a legacy row can carry more
+ * than a slip should spend. The address beside it clamps for the same reason: an
+ * unbounded field turns a courier sheet into a roll, and text that ends without
+ * saying so reads as the whole instruction.
+ */
+export const MAX_DELIVERY_SLIP_NOTE_CHARS = 200;
 
 function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: number }> {
   let candidates = value;
@@ -64,6 +74,8 @@ export interface DeliverySlipOrderRow {
   readonly type?: unknown;
   /** Address confirmed for this delivery; absent on every pre-column order. */
   readonly delivery_address?: unknown;
+  /** Order-level note. Item-level instructions arrive on DeliverySlipItemRow. */
+  readonly special_instructions?: unknown;
   readonly customer?: { readonly name?: unknown } | null;
 }
 
@@ -86,6 +98,10 @@ export function buildDeliverySlipPrintData(
   const addressSource: DeliverySlipAddressSource | null = address.length === 0
     ? null
     : (orderAddress.length > 0 ? 'order' : (contact?.addressSource ?? 'customer'));
+  const { text: note, truncatedChars: noteTruncatedChars } = clampToGraphemes(
+    String(order?.special_instructions ?? '').trim(),
+    MAX_DELIVERY_SLIP_NOTE_CHARS,
+  );
 
   const ticketItems = Array.isArray(items) ? items : [];
   return {
@@ -94,6 +110,10 @@ export function buildDeliverySlipPrintData(
       createdAt: String(order?.created_at ?? ''),
       orderType: String(order?.type ?? '').trim(),
     },
+    // Courier instruction for the whole delivery, printed once rather than per
+    // item. Stored on every order; printed on none before this.
+    note,
+    noteTruncatedChars,
     contact: {
       name: String(contact?.name ?? order?.customer?.name ?? '').trim(),
       // The delivery override, or the receipt setting when it is off: both
@@ -112,18 +132,22 @@ export function buildDeliverySlipPrintData(
   };
 }
 
-function clampAddress(address: string): { text: string; truncatedChars: number } {
-  if (address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS) return { text: address, truncatedChars: 0 };
+function clampToGraphemes(text: string, maxChars: number): { text: string; truncatedChars: number } {
+  if (text.length <= maxChars) return { text, truncatedChars: 0 };
   const kept: string[] = [];
   let units = 0;
-  for (const cluster of graphemeSegments(address)) {
+  for (const cluster of graphemeSegments(text)) {
     const size = cluster.length;
-    if (units + size > MAX_DELIVERY_SLIP_ADDRESS_CHARS) break;
+    if (units + size > maxChars) break;
     kept.push(cluster);
     units += size;
   }
-  const text = kept.join('');
-  return { text, truncatedChars: address.length - text.length };
+  const keptText = kept.join('');
+  return { text: keptText, truncatedChars: text.length - keptText.length };
+}
+
+function clampAddress(address: string): { text: string; truncatedChars: number } {
+  return clampToGraphemes(address, MAX_DELIVERY_SLIP_ADDRESS_CHARS);
 }
 
 export function buildDeliverySlipPrintContext(opts: {
@@ -277,18 +301,50 @@ function slipContactLines(
   return lines;
 }
 
+function slipNoteLines(
+  notes: DeliverySlipNotesBlock,
+  options: DeliverySlipDocumentRenderOptions,
+  sourceLines: string[],
+  sourceControlLines: string[],
+): string[] {
+  const lines: string[] = [];
+  if (!notes.note) return lines;
+  // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
+  // than one that runs long. pushWrapped is the same helper the address uses.
+  const labeled = thermalSafeText(
+    `${labelOf(notes.label)}: `,
+    'Note: ',
+    options.arabicShaping,
+    options.capabilities,
+  ) + notes.note.text;
+  const start = lines.length;
+  pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
+  sourceLines.push(labeled);
+  sourceControlLines.push(lines[start] ?? '');
+  // A courier instruction that ends without saying it was cut reads as the whole
+  // instruction, so the drop is stated on the paper rather than only in the data.
+  if (notes.noteTruncatedChars > 0) {
+    const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
+      .replace('{count}', String(notes.noteTruncatedChars));
+    pushWrapped(lines, marker, options.columns, options.language, options.capabilities);
+    sourceLines.push(marker);
+    sourceControlLines.push(lines.at(-1) ?? '');
+  }
+  return lines;
+}
+
 function slipItemLines(row: DeliverySlipItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities) + '{/BOLD}');
+  lines.push('{BOLD}' + itemPrefix + escapeControlTokens(truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities)) + '{/BOLD}');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
     const name = truncate(addon.text, Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)), language, capabilities);
-    lines.push('  + ' + name + quantitySuffix);
+    lines.push('  + ' + escapeControlTokens(name) + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
+    lines.push('  >> ' + escapeControlTokens(truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities)));
   }
   return lines;
 }
@@ -301,6 +357,7 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
 
   const header = slipBlock(document, 'delivery-slip-header');
   const contact = slipBlock(document, 'delivery-slip-contact');
+  const notes = slipBlock(document, 'delivery-slip-notes');
   const items = slipBlock(document, 'delivery-slip-items');
 
   lines.push('{INIT}');
@@ -334,6 +391,22 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
       sourceLines: contactSourceLines,
       sourceControlLines: contactControlLines,
     });
+  }
+
+  if (notes) {
+    const notesStart = lines.length;
+    const notesSourceLines: string[] = [];
+    const notesControlLines: string[] = [];
+    lines.push(...slipNoteLines(notes, options, notesSourceLines, notesControlLines));
+    if (lines.length > notesStart) {
+      options.rasterGroups?.push({
+        groupId: 'delivery-slip-notes',
+        lineIndex: notesStart,
+        lineCount: lines.length - notesStart,
+        sourceLines: notesSourceLines,
+        sourceControlLines: notesControlLines,
+      });
+    }
   }
 
   if (items) {

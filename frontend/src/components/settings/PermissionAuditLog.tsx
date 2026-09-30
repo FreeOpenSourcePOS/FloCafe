@@ -121,7 +121,7 @@ export function PermissionAuditLog({ staff }: { staff: Staff[] }) {
                   <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateTime(row.created_at)}</td>
                   <td className="px-4 py-3">{row.actor_name || tCommon('unknown')}</td>
                   <td className="px-4 py-3">{targetLabel(row)}</td>
-                  <td className="px-4 py-3"><code className="text-xs">{permissionLabel(row.permission_id)}</code></td>
+                  <td className="px-4 py-3"><span className="block">{permissionLabel(row.permission_id, tMatrix)}</span><code className="text-xs text-muted-foreground">{row.permission_id}</code></td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="text-muted-foreground">{effectLabel(row.previous_effect)}</span>
                     {' → '}

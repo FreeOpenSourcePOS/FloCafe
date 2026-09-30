@@ -143,7 +143,6 @@
     "somethingWrong": "Terjadi kesalahan",
     "subtotal": "Subtotal",
     "tableFallback": "Meja",
-    "tax": "Pajak",
     "timeHoursMinutes": "{h} jam {m} mnt",
     "timeHoursMinutesAgo": "{h} jam {m} mnt lalu",
     "timeMinutes": "{m} mnt",
@@ -153,7 +152,8 @@
     "update": "Perbarui",
     "windowControls": "Kontrol jendela",
     "yes": "Ya",
-    "back": "Kembali"
+    "back": "Kembali",
+    "tax": "Pajak"
   },
   "countries": {
     "selectCountry": "Pilih negara…"
@@ -450,12 +450,12 @@
     "staff": "Staf",
     "statusError": "Gagal mendapatkan status",
     "support": "Dukungan",
-    "tables": "Meja",
     "toggleSidebar": "alihkan bilah samping",
     "uptimeLabel": "Aktif: ",
     "user": "Pengguna",
     "whatsapp": "WhatsApp",
-    "inventory": "Persediaan"
+    "inventory": "Persediaan",
+    "tables": "Meja"
   },
   "orders": {
     "active": "Aktif",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Pelanggan berbeda di meja ini",
     "customerMismatchWarning": "Meja ini sedang dipesani {customer}. Lanjutkan dan tambahkan item ini ke pesanan pelanggan tersebut?",
     "customerName": "Nama",
+    "customerAddress": "Alamat pelanggan",
     "customerRequiredBeforeOrder": "Pelanggan harus dipilih sebelum membuat pesanan.",
     "customerUpdateFailed": "Gagal memperbarui pelanggan",
     "customerUpdated": "Pelanggan diperbarui",
@@ -827,7 +828,6 @@
     "tagSpicy": "Pedas",
     "tagVeg": "Vegetarian",
     "tagVegan": "Vegan",
-    "tax": "Pajak",
     "taxLine": "{title} @{rate}%",
     "total": "Total",
     "totalDue": "Total Tagihan",
@@ -840,7 +840,8 @@
     "exitFullscreen": "Keluar dari mode layar penuh POS",
     "fullscreenUnavailable": "Mode layar penuh tidak tersedia",
     "backspaceAmount": "Hapus digit terakhir",
-    "numericKeypad": "Papan angka"
+    "numericKeypad": "Papan angka",
+    "tax": "Pajak"
   },
   "printTest": {
     "amt": "Jml",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Harga Pokok",
     "fieldImage": "Gambar Produk",
     "fieldInventoryProduct": "Produk inventaris",
+    "fieldInventoryProductHint": "Menjual produk ini mengurangi jumlah di bawah dari produk stok yang dipilih.",
     "fieldInventoryProductNone": "Tidak ada",
     "fieldInventoryDeductionQuantity": "Jumlah pengurangan per penjualan",
     "fieldLowStockThreshold": "Batas Stok Menipis",
@@ -1244,8 +1246,8 @@
     "statusServed": "Disajikan",
     "statusWaiting": "Menunggu",
     "tableLabel": "Meja {name}",
-    "tables": "Meja",
-    "title": "Aplikasi Server"
+    "title": "Aplikasi Server",
+    "tables": "Meja"
   },
   "settings": {
     "aboutDescription": "FloPOS adalah POS restoran sumber terbuka gratis selamanya untuk kafe, restoran, toko roti, food truck, cloud kitchen, dan bar. Termasuk pemesanan, meja, menu, tampilan dapur, cetak struk, akses staf, dan penyimpanan data lokal. Unduh, jalankan layanan, simpan data Anda, dan miliki POS Anda sendiri.",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Pesanan dan meja",
     "chefDescription": "Layar dapur",
     "areas": {
+      "tables": "Meja",
+      "cash": "Kas",
+      "inventory": "Stok dan resep",
+      "authorization": "Izin",
+      "tax": "Pajak",
+      "printing": "Pencetakan",
+      "apps": "Aplikasi",
       "orders": "Pesanan",
       "payments": "Pembayaran",
       "customers": "Pelanggan",
@@ -2208,6 +2217,16 @@
       "support": "Dukungan"
     },
     "capabilities": {
+      "tablesView": "Lihat meja",
+      "refunds": "Terbitkan refund",
+      "cashShiftsView": "Lihat shift kas",
+      "cashMovements": "Catat dan batalkan pergerakan kas",
+      "cashDayClose": "Tutup hari operasional",
+      "inventoryView": "Lihat stok dan resep",
+      "kitchenStatusUpdate": "Perbarui status pesanan di display dapur",
+      "reportsDailySalesExport": "Ekspor laporan penjualan harian",
+      "authorizationManage": "Ubah izin peran dan akses staf",
+      "mobileAccessManage": "Kelola akses perangkat seluler",
       "pos": "Menggunakan terminal POS",
       "dashboard": "Melihat dasbor pemilik",
       "ordersReadCreate": "Melihat dan membuat pesanan",
@@ -2601,7 +2620,6 @@
     "subtitle": "Aktifkan aturan pajak terverifikasi untuk negara toko Anda. FloCafe menerapkan grup pajak produk standar secara otomatis; pengecualian dapat diubah per produk.",
     "supportUnavailable": "Dukungan pajak untuk {country} belum tersedia. Kami telah meminta plugin dari tim FloCafe dan akan segera membangunnya. Pajak tetap nonaktif sampai siap.",
     "target": "Target",
-    "tax": "Pajak",
     "taxableBase": "Dasar kena pajak",
     "testCalculation": "Perhitungan uji",
     "testCalculationHint": "Menggunakan paket aktif dan mesin pajak yang sama dengan checkout. Tidak menyimpan transaksi.",
@@ -2617,7 +2635,8 @@
     "updated": "Diperbarui",
     "updatedTo": "Plugin pajak diperbarui ke v{version}",
     "value": "Nilai",
-    "yourStore": "toko Anda"
+    "yourStore": "toko Anda",
+    "tax": "Pajak"
   },
   "update": {
     "currentVersion": "Versi saat ini: {version}",

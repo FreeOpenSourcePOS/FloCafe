@@ -450,12 +450,12 @@
     "staff": "Personnel",
     "statusError": "Impossible d’obtenir l’état",
     "support": "Assistance",
-    "tables": "Tables",
     "toggleSidebar": "Afficher ou masquer la barre latérale",
     "uptimeLabel": "Actif depuis : ",
     "user": "Utilisateur",
     "whatsapp": "WhatsApp",
-    "inventory": "Stock"
+    "inventory": "Stock",
+    "tables": "Tables"
   },
   "orders": {
     "active": "Actives",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Un autre client occupe cette table",
     "customerMismatchWarning": "Cette table est actuellement occupée par {customer}. Voulez-vous continuer et ajouter ces articles à sa commande ?",
     "customerName": "Nom",
+    "customerAddress": "Adresse du client",
     "customerRequiredBeforeOrder": "Un client est requis avant de passer une commande.",
     "customerUpdateFailed": "Impossible de mettre à jour le client",
     "customerUpdated": "Client mis à jour",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Prix de revient",
     "fieldImage": "Image du produit",
     "fieldInventoryProduct": "Produit d'inventaire",
+    "fieldInventoryProductHint": "La vente de ce produit déduit la quantité ci-dessous du produit de stock sélectionné.",
     "fieldInventoryProductNone": "Aucun",
     "fieldInventoryDeductionQuantity": "Déduction par vente",
     "fieldLowStockThreshold": "Seuil de stock faible",
@@ -1244,8 +1246,8 @@
     "statusServed": "Servi",
     "statusWaiting": "En attente",
     "tableLabel": "Table {name}",
-    "tables": "Tables",
-    "title": "Application serveur"
+    "title": "Application serveur",
+    "tables": "Tables"
   },
   "settings": {
     "aboutDescription": "FloPOS est une solution de caisse libre et gratuite à vie pour les cafés, restaurants, boulangeries, camions-restaurants, cuisines virtuelles et bars. Elle comprend la prise de commandes, la gestion des tables et des menus, l’affichage en cuisine, l’impression des reçus, l’accès du personnel et le stockage local des données. Téléchargez-la, lancez le service, conservez vos données et restez propriétaire de votre caisse.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "Si cette option est activée, les symboles monétaires (₹, €, £, ¥…) sont imprimés tels quels. Si elle est désactivée, ils sont remplacés par leurs équivalents ASCII (Rs, EUR, GBP, Yen…), un choix par défaut plus sûr pour la plupart des imprimantes thermiques.",
     "printerUpdated": "Imprimante mise à jour",
     "printers": "Imprimantes",
-    "printing": "Impression",
     "printingSettingsSaved": "Paramètres d’impression enregistrés",
     "privacy": "Confidentialité",
     "productImagesDisabled": "Images des produits désactivées",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "Désactivé par défaut. Désactivé, les problèmes enregistrés restent sur cet appareil et ne sont jamais envoyés. Les demandes d’assistance que vous envoyez vous-même ne sont pas affectées.",
     "diagnosticsTicketUnaffected": "Une demande d’assistance que vous envoyez vous-même fonctionne toujours, que ce réglage soit activé ou non.",
     "diagnosticsLocalOnlyHintTransmitting": "Cet écran affiche en langage clair les problèmes récents sur cet appareil. La transmission automatique est activée, les problèmes enregistrés peuvent donc être envoyés à votre compte FloCafe Cloud.",
-    "diagnosticsLocalOnlyHintPending": "Cet écran affiche en langage clair les problèmes récents sur cet appareil."
+    "diagnosticsLocalOnlyHintPending": "Cet écran affiche en langage clair les problèmes récents sur cet appareil.",
+    "printing": "Impression"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Commandes et tables",
     "chefDescription": "Affichage en cuisine",
     "areas": {
+      "tables": "Tables",
+      "cash": "Caisse",
+      "inventory": "Stocks et recettes",
+      "authorization": "Autorisations",
+      "tax": "Taxes",
+      "printing": "Impression",
+      "apps": "Applications",
       "orders": "Commandes",
       "payments": "Paiements",
       "customers": "Clients",
@@ -2208,6 +2217,16 @@
       "support": "Assistance"
     },
     "capabilities": {
+      "tablesView": "Consulter les tables",
+      "refunds": "Effectuer des remboursements",
+      "cashShiftsView": "Consulter les caisses",
+      "cashMovements": "Enregistrer et annuler des mouvements d'espèces",
+      "cashDayClose": "Clôturer la journée de caisse",
+      "inventoryView": "Consulter les stocks et les recettes",
+      "kitchenStatusUpdate": "Mettre à jour l'état des commandes sur l'écran cuisine",
+      "reportsDailySalesExport": "Exporter le rapport des ventes quotidiennes",
+      "authorizationManage": "Modifier les permissions des rôles et l'accès du personnel",
+      "mobileAccessManage": "Gérer l'accès depuis les appareils mobiles",
       "pos": "Utiliser le terminal de caisse",
       "dashboard": "Afficher le tableau de bord du propriétaire",
       "ordersReadCreate": "Afficher et créer des commandes",

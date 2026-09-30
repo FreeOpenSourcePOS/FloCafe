@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import axios from 'axios';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
@@ -24,6 +25,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
   const dialCode = dialCodeFor(country);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone || '');
+  const [address, setAddress] = useState(customer.address || '');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -44,12 +46,19 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
         name: name.trim(),
         phone: norm.e164 ?? '',
         country_code: norm.countryCode ?? '',
+        address: address.trim(),
       });
       onSaved(data.customer);
       toast.success(t('customerUpdated'));
       onClose();
-    } catch {
-      toast.error(t('customerUpdateFailed'));
+    } catch (err: unknown) {
+      // The address bound is a tenant setting, so the server owns the refusal and
+      // its message is the only one that says which bound was hit.
+      const serverMessage = axios.isAxiosError(err)
+        ? (err.response?.data as { message?: string; error?: string } | undefined)?.message
+          || (err.response?.data as { message?: string; error?: string } | undefined)?.error
+        : undefined;
+      toast.error(serverMessage || t('customerUpdateFailed'));
     } finally {
       setSaving(false);
     }
@@ -85,6 +94,16 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
               placeholder={dialCode}
               className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               dir="ltr"
+            />
+          </div>
+          <div>
+            <label htmlFor="customer-address" className="block text-xs font-medium text-muted-foreground mb-1">{t('customerAddress')}</label>
+            <input
+              id="customer-address"
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>
         </div>

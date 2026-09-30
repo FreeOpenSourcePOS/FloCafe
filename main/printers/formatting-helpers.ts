@@ -37,6 +37,19 @@ const CURRENCY_TOKEN_RE = new RegExp(
 );
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
+/**
+ * Free text (a customer address, an order note, an item instruction) reaches the
+ * same lines the renderer's own control tokens do, and a token in that text is
+ * dispatched as a real command: `{CUT}` in a note emitted a paper cut mid-slip.
+ *
+ * The brace is replaced with an ASCII lookalike rather than a fullwidth one: the
+ * fullwidth brace is not in a CP437 printer's code page, so substituting it would
+ * make the line unrepresentable and drop the whole field. ASCII always prints.
+ */
+const CONTROL_TOKEN_BRACE_RE = /[{}]/g;
+function escapeControlTokens(text: string): string {
+  return text.replace(CONTROL_TOKEN_BRACE_RE, (brace) => (brace === '{' ? '(' : ')'));
+}
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
@@ -197,7 +210,7 @@ export function wrapText(text: string, cols: number): string[] {
 }
 
 export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
-  const normalized = normalizeThermalText(text, capabilities);
+  const normalized = normalizeThermalText(escapeControlTokens(text), capabilities);
   if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
     lines.push(normalized);
     return;
@@ -205,8 +218,9 @@ export function pushWrapped(lines: string[], text: string, cols: number, _langua
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
+/** Centred counterpart of {@link pushWrapped}, escaping free text the same way. */
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
-  const normalized = normalizeThermalText(text, capabilities);
+  const normalized = normalizeThermalText(escapeControlTokens(text), capabilities);
   if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
     lines.push('{CENTER}' + normalized + '{/CENTER}');
     return;
@@ -263,6 +277,8 @@ export interface RasterLineUnit {
   readonly lineCount?: number;
   readonly unit: RasterSemanticUnit;
 }
+
+export { escapeControlTokens };
 
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer<ArrayBuffer> {
   const buf: number[] = [];

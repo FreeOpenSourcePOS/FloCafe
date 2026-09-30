@@ -143,7 +143,6 @@
     "somethingWrong": "問題が発生しました",
     "subtotal": "小計",
     "tableFallback": "テーブル",
-    "tax": "税",
     "timeHoursMinutes": "{h}時間{m}分",
     "timeHoursMinutesAgo": "{h}時間{m}分前",
     "timeMinutes": "{m}分",
@@ -153,7 +152,8 @@
     "update": "更新",
     "windowControls": "ウィンドウ操作",
     "yes": "はい",
-    "back": "戻る"
+    "back": "戻る",
+    "tax": "税"
   },
   "countries": {
     "selectCountry": "国を選択…"
@@ -450,12 +450,12 @@
     "staff": "スタッフ",
     "statusError": "ステータスの取得に失敗しました",
     "support": "サポート",
-    "tables": "テーブル",
     "toggleSidebar": "サイドバーを切り替え",
     "uptimeLabel": "稼働時間：",
     "user": "ユーザー",
     "whatsapp": "WhatsApp",
-    "inventory": "在庫"
+    "inventory": "在庫",
+    "tables": "テーブル"
   },
   "orders": {
     "active": "有効",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "このテーブルには別の顧客がいます",
     "customerMismatchWarning": "このテーブルは現在{customer}が利用しています。続行して商品をその注文に追加しますか？",
     "customerName": "名前",
+    "customerAddress": "お客様住所",
     "customerRequiredBeforeOrder": "注文する前に顧客を選択してください。",
     "customerUpdateFailed": "顧客の更新に失敗しました",
     "customerUpdated": "顧客を更新しました",
@@ -827,7 +828,6 @@
     "tagSpicy": "辛い",
     "tagVeg": "ベジタリアン",
     "tagVegan": "ヴィーガン",
-    "tax": "税",
     "taxLine": "{title} @{rate}%",
     "total": "合計",
     "totalDue": "支払合計",
@@ -840,7 +840,8 @@
     "exitFullscreen": "フルスクリーンPOSを終了",
     "fullscreenUnavailable": "フルスクリーンモードは利用できません",
     "backspaceAmount": "金額を1文字削除",
-    "numericKeypad": "数字キーパッド"
+    "numericKeypad": "数字キーパッド",
+    "tax": "税"
   },
   "printTest": {
     "amt": "金額",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "原価",
     "fieldImage": "商品画像",
     "fieldInventoryProduct": "在庫商品",
+    "fieldInventoryProductHint": "この商品を販売すると、下の数量が選択した在庫商品から差し引かれます。",
     "fieldInventoryProductNone": "なし",
     "fieldInventoryDeductionQuantity": "販売ごとの引当量",
     "fieldLowStockThreshold": "在庫僅少のしきい値",
@@ -1244,8 +1246,8 @@
     "statusServed": "提供済み",
     "statusWaiting": "待機中",
     "tableLabel": "テーブル {name}",
-    "tables": "テーブル",
-    "title": "サーバーアプリ"
+    "title": "サーバーアプリ",
+    "tables": "テーブル"
   },
   "settings": {
     "aboutDescription": "FloPOSは、カフェ、レストラン、ベーカリー、フードトラック、クラウドキッチン、バー向けの無料でオープンソースのレストランPOSです。注文、テーブル、メニュー、キッチンディスプレイ、レシート印刷、スタッフアクセス、ローカルデータ保存に対応しています。ダウンロードして営業を行い、データとPOSを自分で管理できます。",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "オンの場合、通貨記号（₹、€、£、¥…）をそのまま印刷します。オフの場合、ASCII（Rs、EUR、GBP、Yen…）に置き換えます。多くのサーマルプリンターではオフが安全です。",
     "printerUpdated": "プリンターを更新しました",
     "printers": "プリンター",
-    "printing": "印刷",
     "printingSettingsSaved": "印刷設定を保存しました",
     "privacy": "プライバシー",
     "productImagesDisabled": "商品画像は無効です",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "初期設定ではオフです。オフの間は、記録された問題はこの端末に留まり、送信されることはありません。自分で送るサポート依頼には影響しません。",
     "diagnosticsTicketUnaffected": "自分で送るサポート依頼は、この設定のオン・オフにかかわらず常に利用できます。",
     "diagnosticsLocalOnlyHintTransmitting": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。自動送信がオンになっているため、記録された問題がFloCafeクラウドアカウントに送信される場合があります。",
-    "diagnosticsLocalOnlyHintPending": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。"
+    "diagnosticsLocalOnlyHintPending": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。",
+    "printing": "印刷"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "注文とテーブル",
     "chefDescription": "キッチンディスプレイ",
     "areas": {
+      "tables": "テーブル",
+      "cash": "現金",
+      "inventory": "在庫とレシピ",
+      "authorization": "権限",
+      "tax": "税",
+      "printing": "印刷",
+      "apps": "アプリ",
       "orders": "注文",
       "payments": "支払い",
       "customers": "顧客",
@@ -2208,6 +2217,16 @@
       "support": "サポート"
     },
     "capabilities": {
+      "tablesView": "テーブルを表示",
+      "refunds": "返金を行う",
+      "cashShiftsView": "シフトを表示",
+      "cashMovements": "現金の入出金を記録・取消",
+      "cashDayClose": "営業日を終える",
+      "inventoryView": "在庫とレシピを表示",
+      "kitchenStatusUpdate": "厨房ディスプレイで注文ステータスを更新",
+      "reportsDailySalesExport": "日次売上レポートを書き出す",
+      "authorizationManage": "ロールの権限と職員のアクセスを変更",
+      "mobileAccessManage": "モバイルデバイスからのアクセスを管理",
       "pos": "POS端末を使用",
       "dashboard": "オーナーダッシュボードを表示",
       "ordersReadCreate": "注文を表示・作成",
@@ -2601,7 +2620,6 @@
     "subtitle": "店舗の国で検証済みの税ルールを有効にします。FloCafeは標準の商品税グループを自動適用し、例外は商品ごとに変更できます。",
     "supportUnavailable": "{country}の税サポートはまだ利用できません。FloCafeチームにプラグインを依頼しており、準備ができ次第提供します。準備が整うまで税は無効です。",
     "target": "対象",
-    "tax": "税",
     "taxableBase": "課税標準",
     "testCalculation": "テスト計算",
     "testCalculationHint": "有効なパックと会計と同じ税エンジンを使用します。取引は保存されません。",
@@ -2617,7 +2635,8 @@
     "updated": "更新済み",
     "updatedTo": "税プラグインをv{version}に更新しました",
     "value": "値",
-    "yourStore": "あなたの店舗"
+    "yourStore": "あなたの店舗",
+    "tax": "税"
   },
   "update": {
     "currentVersion": "現在のバージョン：{version}",

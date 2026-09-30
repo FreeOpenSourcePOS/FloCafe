@@ -30,6 +30,8 @@ export interface DeliverySlipOrder {
   order_number: string;
   created_at: string;
   type?: string;
+  /** Order-level courier instruction, printed once for the whole delivery. */
+  special_instructions?: string | null;
 }
 
 export interface DeliverySlipItem {
@@ -43,6 +45,18 @@ export interface DeliverySlipItem {
 // Paper-size fallback only; callers that know the configured printer pass
 // `columns`. The number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
+
+/**
+ * Mirrors MAX_DELIVERY_SLIP_NOTE_CHARS in main/printers/document-delivery-slip.ts.
+ * The three render paths have to spend the same paper on the same note, or a
+ * merchant gets a different courier sheet depending on which printer they own.
+ */
+const MAX_NOTE_CHARS = 200;
+
+function clampNote(note: string): { text: string; truncated: number } {
+  if (note.length <= MAX_NOTE_CHARS) return { text: note, truncated: 0 };
+  return { text: Array.from(note).slice(0, MAX_NOTE_CHARS).join(''), truncated: note.length - MAX_NOTE_CHARS };
+}
 
 export function buildDeliverySlipBytes(
   order: DeliverySlipOrder,
@@ -90,6 +104,22 @@ export function buildDeliverySlipBytes(
     const labeled = `${label('print.deliverySlip.address')}: ${contact.address}`;
     for (const row of wrapPrinterText(labeled, cols)) {
       safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
+  }
+  // The order note, once for the whole delivery, wrapped like the address: a
+  // courier instruction cut mid-sentence is worse than one that runs long. A note
+  // over the budget is bounded, and the cut is stated on the paper.
+  const { text: orderNote, truncated: noteTruncated } = clampNote((order.special_instructions ?? '').trim());
+  if (orderNote) {
+    const labeled = `${label('print.note')}: ${orderNote}`;
+    for (const row of wrapPrinterText(labeled, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
+    if (noteTruncated > 0) {
+      const marker = label('print.deliverySlip.addressTruncated').replace('{count}', String(noteTruncated));
+      for (const row of wrapPrinterText(marker, cols)) {
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      }
     }
   }
 

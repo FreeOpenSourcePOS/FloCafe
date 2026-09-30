@@ -29,6 +29,10 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
   const isPhoneLike = Boolean(initialSearch && /\d/.test(initialSearch) && !/\p{L}/u.test(initialSearch));
   const [name, setName] = useState(isPhoneLike ? '' : initialSearch.trim());
   const [phone, setPhone] = useState(isPhoneLike ? initialSearch.trim() : '');
+  // The standing address, bounded by the tenant's max_customer_address_length. The
+  // server owns that bound, so nothing is trimmed or capped here — a refusal has to
+  // reach the user as a message rather than a silently shortened address.
+  const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -49,6 +53,7 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
         name: name.trim(),
         phone: norm.e164 ?? '',
         country_code: norm.countryCode ?? '',
+        address: address.trim(),
       });
       onCreated(data.customer);
       toast.success(t('customerCreated'));
@@ -98,6 +103,16 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
               className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               dir="ltr"
               autoFocus={isPhoneLike}
+            />
+          </div>
+          <div>
+            <label htmlFor="customer-address" className="block text-xs font-medium text-muted-foreground mb-1">{t('customerAddress')}</label>
+            <input
+              id="customer-address"
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>
         </div>

@@ -9,7 +9,7 @@ import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
-import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
+import { computeDayAggregates, expectedCashFromAggregates, paymentMethodBreakdown } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { buildDailySalesExportDataset } from '../services/daily-sales-export';
 import {
@@ -17,6 +17,14 @@ import {
   serializeDailySalesExportCsv,
   serializeDailySalesExportXlsx,
 } from '../services/daily-sales-export-files';
+import {
+  serializeXReportCsv,
+  serializeXReportXlsx,
+  serializeZReportCsv,
+  serializeZReportXlsx,
+  type XReportExport,
+  type ZReportExport,
+} from '../services/cash-close-export';
 
 const router = Router();
 
@@ -765,6 +773,116 @@ router.get('/z-report', requirePermission('reports.view'), (req: Request, res: R
   } catch (error: any) {
     console.error('[API] Internal error:', error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+router.get('/x-report/export', requirePermission('reports.view'), async (req: Request, res: Response) => {
+  try {
+    const date = reportDate(req.query.date, reportToday());
+    const format = req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
+    if (!format) return res.status(400).json({ error: 'format must be xlsx or csv' });
+
+    const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+    const [periodStart, periodEnd] = reportDayBounds(date);
+    const aggregates = computeDayAggregates(db, date);
+    const report: XReportExport = {
+      businessDate: date,
+      periodStart,
+      periodEnd,
+      grossSales: aggregates.grossCollectedCents / minorFactor,
+      refunds: aggregates.refundedCents / minorFactor,
+      netCollections: aggregates.netCollectedCents / minorFactor,
+      billCount: aggregates.billCount,
+      expectedCash: expectedCashFromAggregates(aggregates) / minorFactor,
+      openingFloat: aggregates.openingFloatCents / minorFactor,
+      payIn: aggregates.payInCents / minorFactor,
+      payOut: aggregates.payOutCents / minorFactor,
+      safeDrops: aggregates.safeDropCents / minorFactor,
+      paymentMethods: aggregates.paymentMethods.map((row) => ({
+        method: row.method,
+        count: row.count,
+        total: row.total_cents / minorFactor,
+      })),
+      staffSales: aggregates.staffSales.map((row) => ({
+        name: row.name,
+        role: row.role,
+        orderCount: row.orderCount,
+        revenue: row.revenue_cents / minorFactor,
+      })),
+    };
+    const filename = `x-report-${date}.${format}`;
+    if (format === 'xlsx') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(await serializeXReportXlsx(report));
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(serializeXReportCsv(report));
+  } catch (error: unknown) {
+    console.error('[API] X report export error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/z-report/export', requirePermission('reports.view'), async (req: Request, res: Response) => {
+  try {
+    const date = reportDate(req.query.date, reportToday());
+    const format = req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
+    if (!format) return res.status(400).json({ error: 'format must be xlsx or csv' });
+
+    const db = getDatabase();
+    const row = db.prepare(
+      `SELECT * FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`
+    ).get(date) as any;
+    if (!row) return res.status(404).json({ error: 'Day not closed' });
+
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+    const userRow = db.prepare('SELECT name FROM users WHERE id = ?').get(row.closed_by) as { name: string } | undefined;
+    const report: ZReportExport = {
+      businessDate: row.business_date,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      grossSales: row.gross_collected_cents / minorFactor,
+      refunds: row.refunded_cents / minorFactor,
+      netCollections: row.net_collected_cents / minorFactor,
+      billCount: row.bill_count,
+      expectedCash: row.expected_cash_cents / minorFactor,
+      openingFloat: row.opening_float_cents / minorFactor,
+      payIn: row.pay_in_cents / minorFactor,
+      payOut: row.pay_out_cents / minorFactor,
+      safeDrops: row.safe_drop_cents / minorFactor,
+      paymentMethods: JSON.parse(row.payment_methods_json || '[]').map((payment: any) => ({
+        method: payment.method,
+        count: payment.count,
+        total: payment.total_cents / minorFactor,
+      })),
+      staffSales: JSON.parse(row.staff_sales_json || '[]').map((staff: any) => ({
+        name: staff.name,
+        role: staff.role,
+        orderCount: staff.orderCount,
+        revenue: staff.revenue_cents / minorFactor,
+      })),
+      zNumber: row.z_number,
+      closedAt: row.created_at,
+      closedBy: userRow?.name ?? row.closed_by,
+      notes: row.notes,
+      countedCash: row.counted_cash_cents / minorFactor,
+      cashVariance: row.variance_cents / minorFactor,
+    };
+    const filename = `z-report-Z${row.z_number}-${date}.${format}`;
+    if (format === 'xlsx') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(await serializeZReportXlsx(report));
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(serializeZReportCsv(report));
+  } catch (error: unknown) {
+    console.error('[API] Z report export error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

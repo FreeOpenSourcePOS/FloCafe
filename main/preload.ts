@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'new-order', 'quick-search', 'backup-database',
       'menu-restore-from-file',
       'view-orders', 'report-daily', 'report-sales', 'report-x', 'report-z',
+      'go-pos', 'go-dashboard', 'go-orders', 'go-kds', 'go-tables', 'go-products', 'go-inventory', 'go-customers', 'go-staff',
       'settings-business', 'settings-tax', 'settings-printer', 'settings-kitchen',
       'menu-db-health-check', 'menu-db-initialize', 'menu-master-pin',
     ];

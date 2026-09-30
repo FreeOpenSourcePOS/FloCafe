@@ -85,21 +85,59 @@ export default function MenuActionHandler() {
           break;
         case 'quick-search':
           router.push('/pos');
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('flo:quick-search'));
+          }, 150);
           break;
         case 'view-orders':
+        case 'go-orders':
           router.push('/orders');
           break;
         case 'report-daily':
         case 'report-sales':
+          router.push('/dashboard');
+          break;
         case 'report-x':
+          router.push('/dashboard?action=cash-close&view=x-report');
+          break;
         case 'report-z':
-          router.push('/reports');
+          router.push('/dashboard?action=cash-close&view=z-report');
           break;
         case 'settings-business':
+          router.push('/settings?tab=general');
+          break;
         case 'settings-tax':
+          router.push('/settings?tab=tax');
+          break;
         case 'settings-printer':
+          router.push('/settings?tab=printers');
+          break;
         case 'settings-kitchen':
-          router.push('/settings');
+          router.push('/settings?tab=kds');
+          break;
+        case 'go-pos':
+          router.push('/pos');
+          break;
+        case 'go-dashboard':
+          router.push('/dashboard');
+          break;
+        case 'go-kds':
+          router.push('/kds');
+          break;
+        case 'go-tables':
+          router.push('/tables');
+          break;
+        case 'go-products':
+          router.push('/products');
+          break;
+        case 'go-inventory':
+          router.push('/inventory');
+          break;
+        case 'go-customers':
+          router.push('/customers');
+          break;
+        case 'go-staff':
+          router.push('/staff');
           break;
         case 'backup-database':
           beginPinGatedAction('backup');

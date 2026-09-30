@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
@@ -26,6 +26,7 @@ import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
+import { downloadBlob } from '@/lib/download';
 
 
 interface PaymentMethodBreakdown {
@@ -200,6 +201,7 @@ const BUILT_IN_PAYMENT_KEYS = {
 } as const satisfies Record<'cash' | 'card', PosKey>;
 
 export default function DashboardPage() {
+  const searchParams = useSearchParams();
   const { currentTenant } = useAuthStore();
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
@@ -338,15 +340,12 @@ export default function DashboardPage() {
   // Day-close wizard lives in useCashClose + CashCloseModal; the page
   // only opens it and mounts it.
   const cashClose = useCashClose();
-
-  const downloadBlob = (data: Blob, filename: string) => {
-    const url = URL.createObjectURL(data);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const { openCloseModal } = cashClose;
+  const cashCloseAction = searchParams.get('action');
+  const cashCloseView = searchParams.get('view') === 'x-report' ? 'x-report' : 'z-report';
+  useEffect(() => {
+    if (cashCloseAction === 'cash-close') openCloseModal(cashCloseView);
+  }, [cashCloseAction, cashCloseView, openCloseModal]);
 
   const exportDailySales = async (format: 'xlsx' | 'csv') => {
     if (periodMode !== 'day' || isExporting) return;
@@ -621,7 +620,7 @@ export default function DashboardPage() {
 
           <Button
             type="button"
-            onClick={cashClose.openCloseModal}
+            onClick={() => cashClose.openCloseModal()}
             className="h-10 rounded-xl bg-brand px-4 text-white shadow-sm hover:bg-brand-hover"
           >
             <Lock size={14} />

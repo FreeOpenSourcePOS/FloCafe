@@ -25,6 +25,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { MIGRATIONS, getCurrentSchemaVersion } = require('../main/db');
+const { addonGroupRoutes } = require('../main/routes/addon-groups');
 const { categoryRoutes } = require('../main/routes/categories');
 const { productRoutes } = require('../main/routes/products');
 const { orderRoutes } = require('../main/routes/orders');
@@ -53,9 +54,11 @@ async function main() {
   seedAddonGroup(db, 'ag-shared', 'Shared', 0);
   seedAddonGroup(db, 'ag-other', 'Other', 0);
   seedAddonGroup(db, 'ag-inactive', 'Inactive', 0, 0);
+  seedAddonGroup(db, 'ag-retired', 'Retired', 0);
   seedAddon(db, 'addon-category-a', 'ag-category-a', 'Extra cheese');
 
   const app = createApp({
+    '/api/addon-groups': addonGroupRoutes,
     '/api/categories': categoryRoutes,
     '/api/products': productRoutes,
     '/api/orders': orderRoutes,
@@ -63,13 +66,13 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    assert.equal(MIGRATIONS[MIGRATIONS.length - 1].version, 96, 'migration 96 is registered');
-    assert.equal(getCurrentSchemaVersion(), 96, 'fresh database applies migration 96');
+    assert.equal(MIGRATIONS[MIGRATIONS.length - 1].version, 98, 'migration 98 is registered');
+    assert.equal(getCurrentSchemaVersion(), 98, 'fresh database applies migration 98');
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get());
     db.exec('DROP TABLE category_addon_groups');
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get(), undefined);
-    MIGRATIONS.find((migration: any) => migration.version === 96).up();
-    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get(), 'migration 96 creates the join table for upgraded databases');
+    MIGRATIONS.find((migration: any) => migration.version === 98).up();
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get(), 'migration 98 creates the join table for upgraded databases');
     assert.deepEqual(db.pragma('foreign_key_check'), [], 'category add-on group schema has no foreign-key violations');
 
     let res = await api(baseUrl, '/api/categories', {
@@ -104,6 +107,37 @@ async function main() {
     assert.equal(res.status, 201, 'valid category add-on groups are accepted');
     const categoryId = res.data.category.id;
     assert.deepEqual(new Set(res.data.category.addon_group_ids), new Set(['ag-category-a', 'ag-category-z', 'ag-shared']));
+
+    const retainedGroupCategory = await api(baseUrl, '/api/categories', {
+      method: 'POST', headers: authHeader,
+      body: { name: 'Retired Group Assignment', addon_group_ids: ['ag-category-a', 'ag-retired'] },
+    });
+    assert.equal(retainedGroupCategory.status, 201);
+    const retainedGroupCategoryId = retainedGroupCategory.data.category.id;
+    res = await api(baseUrl, '/api/addon-groups/ag-retired', { method: 'DELETE', headers: authHeader });
+    assert.equal(res.status, 200, 'assigned add-on groups can be deactivated');
+    const afterGroupDeactivation = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, { headers: authHeader });
+    assert.deepEqual(new Set(afterGroupDeactivation.data.category.addon_group_ids), new Set(['ag-category-a', 'ag-retired']), 'category retains its assigned group after the group is deactivated');
+    res = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, {
+      method: 'PUT', headers: authHeader,
+      body: { name: 'Retired Group Assignment Renamed', addon_group_ids: ['ag-category-a', 'ag-retired'] },
+    });
+    assert.equal(res.status, 200, 'category edits can retain an already-assigned inactive add-on group');
+    assert.deepEqual(new Set(res.data.category.addon_group_ids), new Set(['ag-category-a', 'ag-retired']));
+    assert.equal(res.data.category.name, 'Retired Group Assignment Renamed');
+    res = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, {
+      method: 'PUT', headers: authHeader,
+      body: { addon_group_ids: ['ag-category-a'] },
+    });
+    assert.equal(res.status, 200, 'category edits can remove an existing inactive add-on group');
+    assert.deepEqual(res.data.category.addon_group_ids, ['ag-category-a']);
+    res = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, {
+      method: 'PUT', headers: authHeader,
+      body: { addon_group_ids: ['ag-category-a', 'ag-retired'] },
+    });
+    assert.equal(res.status, 400, 'removed inactive add-on groups cannot be newly attached');
+    const afterInactiveReattach = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, { headers: authHeader });
+    assert.deepEqual(afterInactiveReattach.data.category.addon_group_ids, ['ag-category-a'], 'rejected inactive attachment preserves active links');
 
     res = await api(baseUrl, '/api/categories', {
       method: 'POST', headers: authHeader,

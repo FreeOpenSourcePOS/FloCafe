@@ -26,6 +26,7 @@ function normalizeCategoryName(value: unknown): string | null {
 function validateCategoryAddonGroupIds(
   db: ReturnType<typeof getDatabase>,
   rawIds: unknown,
+  categoryId?: string,
 ): { ids?: string[]; error?: string } {
   if (rawIds === undefined) return {};
   if (!Array.isArray(rawIds)) return { error: 'addon_group_ids must be an array' };
@@ -45,7 +46,13 @@ function validateCategoryAddonGroupIds(
   const activeIds = new Set((db.prepare(
     `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`,
   ).all(...uniqueIds) as { id: string }[]).map((row) => row.id));
-  const missingIds = uniqueIds.filter((id) => !activeIds.has(id));
+  const retainedIds = categoryId
+    ? new Set((db.prepare(
+      `SELECT addon_group_id FROM category_addon_groups
+       WHERE category_id = ? AND addon_group_id IN (${placeholders})`,
+    ).all(categoryId, ...uniqueIds) as { addon_group_id: string }[]).map((row) => row.addon_group_id))
+    : new Set<string>();
+  const missingIds = uniqueIds.filter((id) => !activeIds.has(id) && !retainedIds.has(id));
   if (missingIds.length > 0) {
     return { error: `Unknown or inactive addon_group_ids: ${missingIds.join(', ')}` };
   }
@@ -284,7 +291,7 @@ function updateCategory(req: Request, res: Response) {
     }
 
     const addonGroupValidation: { ids?: string[]; error?: string } = hasOwn(req.body, 'addon_group_ids')
-      ? validateCategoryAddonGroupIds(db, addon_group_ids)
+      ? validateCategoryAddonGroupIds(db, addon_group_ids, categoryId)
       : {};
     if (addonGroupValidation.error) {
       return res.status(400).json({ error: addonGroupValidation.error });

@@ -5416,7 +5416,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     },
   },
   {
-    version: 96,
+    version: 98,
     name: 'add_category_addon_groups',
     up: () => {
       db.exec(`

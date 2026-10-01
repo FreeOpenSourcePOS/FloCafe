@@ -294,6 +294,9 @@
     "closureNotes": "备注",
     "countedCash": "清点现金",
     "variance": "差额",
+    "varianceExact": "相符",
+    "varianceShort": "短缺",
+    "varianceOver": "溢收",
     "printZReport": "打印 Z 报表",
     "reprintZ": "重打 Z 报表",
     "reprintAddsMarker": "重打会添加 REIMPRESION 行",
@@ -337,7 +340,15 @@
     "kpiChangeVsSameDayLastWeek": "较上周同日 {percent}%",
     "kpiNewVsSameDayLastWeek": "较上周同日新增",
     "kpiNoChangeVsSameDayLastWeek": "较上周同日无变化",
-    "shiftLoadFailed": "无法加载班次状态。"
+    "shiftLoadFailed": "无法加载班次状态。",
+    "sendViaWhatsApp": "发送到 WhatsApp",
+    "sendWhatsAppTitle": "通过 WhatsApp 发送报表",
+    "recipientPhone": "收件人电话号码",
+    "reportSentSuccess": "报表已成功发送到 WhatsApp",
+    "reportOpeningWhatsAppWeb": "正在打开附带报表的 WhatsApp...",
+    "salesSummary": "销售摘要",
+    "paymentBreakdown": "付款",
+    "drawerReconciliation": "钱箱对账"
   },
   "inventory": {
     "tabSupplies": "库存",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "自动跟进",
       "bill_receipt": "账单收据",
-      "manual_reply": "手动回复"
+      "manual_reply": "手动回复",
+      "z_report": "Z 报表"
     },
     "lastError": {
       "cooldown": "发送已暂停。",

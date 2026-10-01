@@ -303,6 +303,9 @@
     "closureNotes": "نوٹس",
     "countedCash": "گنی گئی نقد",
     "variance": "فرق",
+    "varianceExact": "برابر",
+    "varianceShort": "کمی",
+    "varianceOver": "زیادہ",
     "printZReport": "Z پرنٹ کریں",
     "reprintZ": "Z دوبارہ پرنٹ کریں",
     "reprintAddsMarker": "دوبارہ پرنٹ میں «REIMPRESION» سطر شامل ہوتی ہے",
@@ -337,7 +340,15 @@
     "xReportSales": "آج کی فروخت",
     "refundsCount": "{count} رقم کی واپسیاں",
     "ticketNoPayments": "اس دن کوئی ادائیگی نہیں",
-    "shiftLoadFailed": "شفٹ کی حالت لوڈ نہیں ہو سکی۔"
+    "shiftLoadFailed": "شفٹ کی حالت لوڈ نہیں ہو سکی۔",
+    "sendViaWhatsApp": "WhatsApp پر بھیجیں",
+    "sendWhatsAppTitle": "رپورٹ WhatsApp پر بھیجیں",
+    "recipientPhone": "وصول کنندہ کا فون نمبر",
+    "reportSentSuccess": "رپورٹ کامیابی سے WhatsApp پر بھیج دی گئی",
+    "reportOpeningWhatsAppWeb": "رپورٹ کے ساتھ WhatsApp کھولا جا رہا ہے...",
+    "salesSummary": "فروخت کا خلاصہ",
+    "paymentBreakdown": "ادائیگیاں",
+    "drawerReconciliation": "کیش دراز کی مطابقت"
   },
   "inventory": {
     "tabSupplies": "سامان",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "خودکار فالو اپ",
       "bill_receipt": "بل کی رسید",
-      "manual_reply": "دستی جواب"
+      "manual_reply": "دستی جواب",
+      "z_report": "Z رپورٹ"
     },
     "lastError": {
       "cooldown": "بھیجنا عارضی طور پر روکا گیا ہے۔",

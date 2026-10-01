@@ -5,6 +5,9 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import { requirePermission } from '../services/authorization';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
+import * as whatsapp from '../services/whatsapp';
+import { parsePhoneE164 } from '../lib/phone';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
@@ -885,6 +888,55 @@ router.get('/z-report/export', requirePermission('reports.view'), async (req: Re
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+router.post(
+  '/cash-closes/:id/whatsapp',
+  requirePermission('reports.view'),
+  requirePermission('whatsapp.use'),
+  async (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      return res.status(400).json({ error: 'Invalid cash close id' });
+    }
+
+    const { phone_e164: phoneE164, body } = req.body ?? {};
+    if (typeof phoneE164 !== 'string' || !phoneE164) {
+      return res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
+    }
+    const parsedPhone = parsePhoneE164(phoneE164, getSettingValue('country') || '');
+    if (!parsedPhone) {
+      return res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
+    }
+    if (typeof body !== 'string' || !body.trim() || body.length > 4096) {
+      return res.status(400).json({ error: 'body must be a non-empty string of at most 4096 characters', reason: 'invalid_body' });
+    }
+
+    const db = getDatabase();
+    const close = db.prepare(
+      "SELECT id FROM cash_closures WHERE id = ? AND scope = 'day'"
+    ).get(id);
+    if (!close) return res.status(404).json({ error: 'Cash close not found' });
+
+    const userId = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
+    const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
+      phoneE164: parsedPhone.e164,
+      body,
+      billId: null,
+      customerId: null,
+      kind: 'z_report',
+      userId,
+      signal: getHttpRequestSignal(req),
+    }));
+    if (!result.ok) {
+      if (result.reason === 'not_connected') {
+        return res.json({ fallback: true, reason: 'not_connected' });
+      }
+      const status = result.reason === 'cooldown' || result.reason === 'rate_limited' ? 429 : 400;
+      return res.status(status).json({ error: result.error, reason: result.reason });
+    }
+    return res.json({ success: true, messageId: result.messageId });
+  },
+);
 
 // Owner-only daily sales export (xlsx workbook or summary/items CSV pair).
 // Accounting lives in buildDailySalesExportDataset; serializers only encode.

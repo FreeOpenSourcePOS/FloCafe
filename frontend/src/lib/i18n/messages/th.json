@@ -303,6 +303,9 @@
     "closureNotes": "หมายเหตุ",
     "countedCash": "เงินสดที่นับได้",
     "variance": "ผลต่าง",
+    "varianceExact": "ตรง",
+    "varianceShort": "ขาด",
+    "varianceOver": "เกิน",
     "printZReport": "พิมพ์รายงาน Z",
     "reprintZ": "พิมพ์รายงาน Z ซ้ำ",
     "reprintAddsMarker": "การพิมพ์ซ้ำจะเพิ่มบรรทัด REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "ยอดขายวันนี้",
     "refundsCount": "คืนเงิน {count} รายการ",
     "ticketNoPayments": "ไม่มีการชำระเงินในวันนี้",
-    "shiftLoadFailed": "ไม่สามารถโหลดสถานะกะได้"
+    "shiftLoadFailed": "ไม่สามารถโหลดสถานะกะได้",
+    "sendViaWhatsApp": "ส่งไปยัง WhatsApp",
+    "sendWhatsAppTitle": "ส่งรายงานไปยัง WhatsApp",
+    "recipientPhone": "หมายเลขโทรศัพท์ผู้รับ",
+    "reportSentSuccess": "ส่งรายงานไปยัง WhatsApp สำเร็จแล้ว",
+    "reportOpeningWhatsAppWeb": "กำลังเปิด WhatsApp พร้อมรายงาน...",
+    "salesSummary": "สรุปยอดขาย",
+    "paymentBreakdown": "การชำระเงิน",
+    "drawerReconciliation": "การกระทบยอดลิ้นชักเงินสด"
   },
   "inventory": {
     "tabSupplies": "วัสดุ",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "ติดตามอัตโนมัติ",
       "bill_receipt": "ใบเสร็จบิล",
-      "manual_reply": "ตอบกลับด้วยตนเอง"
+      "manual_reply": "ตอบกลับด้วยตนเอง",
+      "z_report": "รายงาน Z"
     },
     "lastError": {
       "cooldown": "การส่งถูกหยุดชั่วคราว",

@@ -303,6 +303,9 @@
     "closureNotes": "নোট",
     "countedCash": "নগদ গণনা",
     "variance": "পার্থক্য",
+    "varianceExact": "মিলে গেছে",
+    "varianceShort": "ঘাটতি",
+    "varianceOver": "বেশি",
     "printZReport": "প্রিন্ট Z",
     "reprintZ": "পুনর্মুদ্রণ Z",
     "reprintAddsMarker": "পুনর্মুদ্রণের সময় রসিদে একটি REPRINT ব্যানার যোগ হবে।",
@@ -337,7 +340,15 @@
     "xReportSales": "আজ বিক্রয়",
     "refundsCount": "{count} ফেরত",
     "ticketNoPayments": "এই দিনের জন্য কোন পেমেন্ট",
-    "shiftLoadFailed": "শিফট স্ট্যাটাস লোড করা যায়নি।"
+    "shiftLoadFailed": "শিফট স্ট্যাটাস লোড করা যায়নি।",
+    "sendViaWhatsApp": "WhatsApp-এ পাঠান",
+    "sendWhatsAppTitle": "WhatsApp-এ প্রতিবেদন পাঠান",
+    "recipientPhone": "প্রাপকের ফোন নম্বর",
+    "reportSentSuccess": "প্রতিবেদনটি WhatsApp-এ সফলভাবে পাঠানো হয়েছে",
+    "reportOpeningWhatsAppWeb": "প্রতিবেদনসহ WhatsApp খোলা হচ্ছে...",
+    "salesSummary": "বিক্রয় সারাংশ",
+    "paymentBreakdown": "পেমেন্ট",
+    "drawerReconciliation": "ক্যাশ ড্রয়ার মিল"
   },
   "inventory": {
     "tabSupplies": "সরবরাহ",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "অটো ফলো-আপ",
       "bill_receipt": "বিলের রসিদ",
-      "manual_reply": "ম্যানুয়াল উত্তর"
+      "manual_reply": "ম্যানুয়াল উত্তর",
+      "z_report": "Z প্রতিবেদন"
     },
     "lastError": {
       "cooldown": "পাঠানো সাময়িকভাবে থামানো হয়েছে.",

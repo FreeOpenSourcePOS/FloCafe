@@ -303,6 +303,9 @@
     "closureNotes": "Note",
     "countedCash": "Cassa contata",
     "variance": "Differenza",
+    "varianceExact": "Esatto",
+    "varianceShort": "Ammanco",
+    "varianceOver": "Eccedenza",
     "printZReport": "Stampa Z",
     "reprintZ": "Ristampa Z",
     "reprintAddsMarker": "La ristampa aggiunge una riga RISTAMPA",
@@ -337,7 +340,15 @@
     "xReportSales": "Vendite di oggi",
     "refundsCount": "{count} rimborsi",
     "ticketNoPayments": "Nessun pagamento per questa giornata",
-    "shiftLoadFailed": "Impossibile caricare lo stato del turno."
+    "shiftLoadFailed": "Impossibile caricare lo stato del turno.",
+    "sendViaWhatsApp": "Invia su WhatsApp",
+    "sendWhatsAppTitle": "Invia il report su WhatsApp",
+    "recipientPhone": "Numero di telefono del destinatario",
+    "reportSentSuccess": "Report inviato correttamente su WhatsApp",
+    "reportOpeningWhatsAppWeb": "Apertura di WhatsApp con il report...",
+    "salesSummary": "RIEPILOGO VENDITE",
+    "paymentBreakdown": "PAGAMENTI",
+    "drawerReconciliation": "RICONCILIAZIONE CASSA"
   },
   "inventory": {
     "tabSupplies": "Scorte",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "Follow-up automatico",
       "bill_receipt": "Ricevuta conto",
-      "manual_reply": "Risposta manuale"
+      "manual_reply": "Risposta manuale",
+      "z_report": "Report Z"
     },
     "lastError": {
       "cooldown": "L'invio è temporaneamente in pausa.",

@@ -303,6 +303,9 @@
     "closureNotes": "메모",
     "countedCash": "실사 현금",
     "variance": "차이",
+    "varianceExact": "일치",
+    "varianceShort": "부족",
+    "varianceOver": "초과",
     "printZReport": "Z 리포트 출력",
     "reprintZ": "Z 리포트 재출력",
     "reprintAddsMarker": "재출력에는 REIMPRESION 줄이 추가됩니다",
@@ -337,7 +340,15 @@
     "xReportSales": "오늘 매출",
     "refundsCount": "환불 {count}건",
     "ticketNoPayments": "이날은 결제가 없습니다",
-    "shiftLoadFailed": "근무 상태를 불러올 수 없습니다."
+    "shiftLoadFailed": "근무 상태를 불러올 수 없습니다.",
+    "sendViaWhatsApp": "WhatsApp으로 보내기",
+    "sendWhatsAppTitle": "WhatsApp으로 보고서 보내기",
+    "recipientPhone": "수신자 전화번호",
+    "reportSentSuccess": "보고서를 WhatsApp으로 보냈습니다",
+    "reportOpeningWhatsAppWeb": "보고서와 함께 WhatsApp을 여는 중...",
+    "salesSummary": "매출 요약",
+    "paymentBreakdown": "결제",
+    "drawerReconciliation": "현금 서랍 대사"
   },
   "inventory": {
     "tabSupplies": "재고",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "자동 후속 메시지",
       "bill_receipt": "청구서 영수증",
-      "manual_reply": "수동 응답"
+      "manual_reply": "수동 응답",
+      "z_report": "Z 보고서"
     },
     "lastError": {
       "cooldown": "발송이 일시 중단되었습니다.",

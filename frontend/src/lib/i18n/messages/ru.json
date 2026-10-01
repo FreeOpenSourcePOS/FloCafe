@@ -303,6 +303,9 @@
     "closureNotes": "Примечания",
     "countedCash": "Фактические наличные",
     "variance": "Расхождение",
+    "varianceExact": "Без расхождений",
+    "varianceShort": "Недостача",
+    "varianceOver": "Излишек",
     "printZReport": "Печать Z-отчёта",
     "reprintZ": "Печать Z-отчёта повторно",
     "reprintAddsMarker": "Повторная печать добавляет строку REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Продажи сегодня",
     "refundsCount": "Возвратов: {count}",
     "ticketNoPayments": "За этот день платежей нет",
-    "shiftLoadFailed": "Не удалось загрузить статус смены."
+    "shiftLoadFailed": "Не удалось загрузить статус смены.",
+    "sendViaWhatsApp": "Отправить в WhatsApp",
+    "sendWhatsAppTitle": "Отправить отчёт в WhatsApp",
+    "recipientPhone": "Номер телефона получателя",
+    "reportSentSuccess": "Отчёт успешно отправлен в WhatsApp",
+    "reportOpeningWhatsAppWeb": "Открываем WhatsApp с отчётом...",
+    "salesSummary": "СВОДКА ПРОДАЖ",
+    "paymentBreakdown": "ПЛАТЕЖИ",
+    "drawerReconciliation": "СВЕРКА ДЕНЕЖНОГО ЯЩИКА"
   },
   "inventory": {
     "tabSupplies": "Расходные материалы",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "Автоматическое отслеживание",
       "bill_receipt": "Чек",
-      "manual_reply": "Ответ вручную"
+      "manual_reply": "Ответ вручную",
+      "z_report": "Z-отчёт"
     },
     "lastError": {
       "cooldown": "Отправка временно приостановлена.",

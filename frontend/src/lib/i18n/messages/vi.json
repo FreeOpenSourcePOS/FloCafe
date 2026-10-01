@@ -302,6 +302,9 @@
     "closureNotes": "Ghi chú",
     "countedCash": "Tiền mặt đã kiểm đếm",
     "variance": "Chênh lệch",
+    "varianceExact": "Khớp",
+    "varianceShort": "Thiếu",
+    "varianceOver": "Thừa",
     "printZReport": "In báo cáo Z",
     "reprintZ": "In lại báo cáo Z",
     "reprintAddsMarker": "Bản in lại có thêm dòng ĐÃ IN LẠI",
@@ -337,7 +340,15 @@
     "refundsCount": "{count} lần hoàn tiền",
     "ticketNoPayments": "Không có thanh toán trong ngày này",
     "shiftLoadFailed": "Không thể tải trạng thái ca.",
-    "refunds": "Hoàn tiền"
+    "refunds": "Hoàn tiền",
+    "sendViaWhatsApp": "Gửi qua WhatsApp",
+    "sendWhatsAppTitle": "Gửi báo cáo qua WhatsApp",
+    "recipientPhone": "Số điện thoại người nhận",
+    "reportSentSuccess": "Đã gửi báo cáo qua WhatsApp thành công",
+    "reportOpeningWhatsAppWeb": "Đang mở WhatsApp cùng báo cáo...",
+    "salesSummary": "TÓM TẮT DOANH SỐ",
+    "paymentBreakdown": "THANH TOÁN",
+    "drawerReconciliation": "ĐỐI SOÁT NGĂN KÉO TIỀN"
   },
   "inventory": {
     "tabSupplies": "Vật tư",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "Tự động liên hệ lại",
       "bill_receipt": "Biên nhận hóa đơn",
-      "manual_reply": "Trả lời thủ công"
+      "manual_reply": "Trả lời thủ công",
+      "z_report": "Báo cáo Z"
     },
     "lastError": {
       "cooldown": "Đang tạm dừng gửi.",

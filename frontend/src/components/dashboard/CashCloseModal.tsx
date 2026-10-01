@@ -3,15 +3,16 @@ import { Ltr } from '@/components/layout/Ltr';
 import { CashCloseTicketPreview, type CashCloseTicketPreviewProps } from '@/components/dashboard/CashCloseTicketPreview';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Lock, Loader2, Printer, AlertTriangle, X, Check, ArrowLeft, ArrowRight, Download, ChevronDown, FileSpreadsheet, FileText } from 'lucide-react';
+import { Lock, Loader2, Printer, AlertTriangle, X, Check, ArrowLeft, ArrowRight, Download, ChevronDown, FileSpreadsheet, FileText, MessageCircle } from 'lucide-react';
 import type { CashCloseModel } from '@/hooks/useCashClose';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { SendWhatsAppReportModal } from '@/components/dashboard/SendWhatsAppReportModal';
 
 /** Day-close wizard modal (steps 1 Revisar / 2 Contar / 3 Cerrar).
  *  Pure view over useCashClose: every value and action arrives on
  *  `model`, so this file holds JSX only. */
 export function CashCloseModal({ model }: { model: CashCloseModel }) {
-  const { closeOpen, setCloseOpen, closeAnotherDay, businessDate, setBusinessDate, xReport, xLoading, xError, closeStep, setCloseStep, openingFloatInput, setOpeningFloatInput, countedInput, setCountedInput, submittingClose, submitError, alreadyClosedOverride, setAlreadyClosedOverride, amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ, exportingReport, exportReport, hasPrintedFresh, setHasPrintedFresh, hydratedZ, minorFactor, fmt, unitAdapter, t, tCommon, shiftDate, todayLocal, submitClose, printZ } = model;
+  const { closeOpen, setCloseOpen, closeAnotherDay, businessDate, setBusinessDate, xReport, xLoading, xError, closeStep, setCloseStep, openingFloatInput, setOpeningFloatInput, countedInput, setCountedInput, submittingClose, submitError, alreadyClosedOverride, setAlreadyClosedOverride, amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ, exportingReport, exportReport, hasPrintedFresh, setHasPrintedFresh, hydratedZ, minorFactor, fmt, unitAdapter, t, tCommon, shiftDate, todayLocal, submitClose, printZ, canSendWhatsApp, canViewSettings, openWhatsAppReport, whatsAppOpen, setWhatsAppOpen, sendWhatsAppReport, whatsappCountry } = model;
   const exportMenu = (report: 'x' | 'z') => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -30,6 +31,12 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
           <FileText size={14} />
           {t('exportCsv')}
         </DropdownMenuItem>
+        {canSendWhatsApp && (report === 'x' ? xReport : closedZ) && (
+          <DropdownMenuItem onSelect={() => openWhatsAppReport(report)}>
+            <MessageCircle size={14} className="text-emerald-500" />
+            {t('sendViaWhatsApp')}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -353,7 +360,22 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
     <DialogFooter>
       {closeStep === 3 ? (
         <>
-          {exportMenu('z')}
+          <div className="flex items-center gap-2">
+            {exportMenu('z')}
+            {canSendWhatsApp && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label={t('sendViaWhatsApp')}
+                title={t('sendViaWhatsApp')}
+                disabled={!closedZ}
+                onClick={() => openWhatsAppReport('z')}
+              >
+                <MessageCircle size={16} className="text-emerald-500" />
+              </Button>
+            )}
+          </div>
           <Button variant="outline" onClick={() => setCloseOpen(false)}>
             {tCommon('close')}
           </Button>
@@ -416,6 +438,13 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
     </DialogFooter>
   </DialogContent>
 </Dialog>
+<SendWhatsAppReportModal
+  open={whatsAppOpen}
+  country={whatsappCountry}
+  canViewSettings={canViewSettings}
+  onOpenChange={setWhatsAppOpen}
+  onSend={sendWhatsAppReport}
+/>
     </>
   );
 }

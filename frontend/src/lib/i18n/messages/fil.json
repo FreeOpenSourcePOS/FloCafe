@@ -303,6 +303,9 @@
     "closureNotes": "Mga Tala",
     "countedCash": "Bilang na cash",
     "variance": "Pagkakaiba",
+    "varianceExact": "Tama",
+    "varianceShort": "Kulang",
+    "varianceOver": "Sobra",
     "printZReport": "I-print ang Z",
     "reprintZ": "I-print muli ang Z",
     "reprintAddsMarker": "Ang I-print muli ay nagdadagdag ng linyang REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Mga benta ngayong araw",
     "refundsCount": "{count} refundo",
     "ticketNoPayments": "Walang bayad sa araw na ito",
-    "shiftLoadFailed": "Hindi ma-load ang status ng shift."
+    "shiftLoadFailed": "Hindi ma-load ang status ng shift.",
+    "sendViaWhatsApp": "Ipadala sa WhatsApp",
+    "sendWhatsAppTitle": "Ipadala ang ulat sa WhatsApp",
+    "recipientPhone": "Numero ng telepono ng tatanggap",
+    "reportSentSuccess": "Matagumpay na naipadala ang ulat sa WhatsApp",
+    "reportOpeningWhatsAppWeb": "Binubuksan ang WhatsApp kasama ang ulat...",
+    "salesSummary": "BUOD NG BENTA",
+    "paymentBreakdown": "MGA BAYAD",
+    "drawerReconciliation": "PAGTUTUGMA NG CASH DRAWER"
   },
   "inventory": {
     "tabSupplies": "Mga Supply",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "Awtomatikong follow-up",
       "bill_receipt": "Resibo ng bill",
-      "manual_reply": "Manual na tugon"
+      "manual_reply": "Manual na tugon",
+      "z_report": "Ulat Z"
     },
     "lastError": {
       "cooldown": "Pansamantalang naka-pause ang pagpapadala.",

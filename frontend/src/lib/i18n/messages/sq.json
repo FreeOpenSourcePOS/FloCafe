@@ -303,6 +303,9 @@
     "closureNotes": "Shënime",
     "countedCash": "Paratë e numëruara",
     "variance": "Ndryshimi",
+    "varianceExact": "Saktë",
+    "varianceShort": "Mungesë",
+    "varianceOver": "Tepricë",
     "printZReport": "Printo Z",
     "reprintZ": "Printo Z përsëri",
     "reprintAddsMarker": "Rishtypja shton një rresht RISHTYPJE",
@@ -337,7 +340,15 @@
     "xReportSales": "Shitjet e sotme",
     "refundsCount": "{count} rimbursimet",
     "ticketNoPayments": "Nuk ka pagesa për këtë ditë",
-    "shiftLoadFailed": "Statusi i ndërrimit nuk mund të ngarkohej."
+    "shiftLoadFailed": "Statusi i ndërrimit nuk mund të ngarkohej.",
+    "sendViaWhatsApp": "Dërgo në WhatsApp",
+    "sendWhatsAppTitle": "Dërgo raportin në WhatsApp",
+    "recipientPhone": "Numri i telefonit të marrësit",
+    "reportSentSuccess": "Raporti u dërgua me sukses në WhatsApp",
+    "reportOpeningWhatsAppWeb": "Po hapet WhatsApp me raportin...",
+    "salesSummary": "PËRMBLEDHJE E SHITJEVE",
+    "paymentBreakdown": "PAGESAT",
+    "drawerReconciliation": "RAKORDIMI I ARKËS"
   },
   "inventory": {
     "tabSupplies": "Materialet",
@@ -2774,7 +2785,8 @@
     "kind": {
       "auto_followup": "Ndjekja automatike",
       "bill_receipt": "Dëftesë",
-      "manual_reply": "Përgjigje manuale"
+      "manual_reply": "Përgjigje manuale",
+      "z_report": "Raporti Z"
     },
     "lastError": {
       "cooldown": "Dërgimi është ndërprerë përkohësisht.",

@@ -88,6 +88,8 @@ export function useCashClose() {
   const { currentTenant } = useAuthStore();
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
+  const tPrint = useTranslations('print');
+  const tSettings = useTranslations('settings');
   const locale = useLocale();
   const fmt = useFormatCurrency();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -400,6 +402,30 @@ export function useCashClose() {
         currentTenant,
         phoneE164,
         {
+          xReport: t('xReport'),
+          zReport: t('zReport'),
+          date: t('businessDateLabel'),
+          closedBy: t('ticketSectionOperator'),
+          grossSales: t('grossCollections'),
+          refunds: t('refunds'),
+          netCollections: t('netCollections'),
+          billCount: (count) => t('billsCount', { count }),
+          expectedCash: t('expectedCash'),
+          countedCash: t('countedCash'),
+          variance: t('variance'),
+          notes: t('closureNotes'),
+          none: tPrint('zReport.none'),
+          varianceExact: t('varianceExact'),
+          varianceShort: t('varianceShort'),
+          varianceOver: t('varianceOver'),
+          paymentMethod: (method) => {
+            switch (method.toLowerCase()) {
+              case 'cash': return tSettings('paymentMethodCash');
+              case 'card': return tSettings('paymentMethodCard');
+              case 'upi': return tSettings('paymentMethodUpi');
+              default: return method;
+            }
+          },
           salesSummary: t('salesSummary'),
           paymentBreakdown: t('paymentBreakdown'),
           drawerReconciliation: t('drawerReconciliation'),

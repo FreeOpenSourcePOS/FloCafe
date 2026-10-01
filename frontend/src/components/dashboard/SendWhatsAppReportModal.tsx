@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Loader2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
@@ -21,14 +21,19 @@ export function SendWhatsAppReportModal({ open, country, canViewSettings, onOpen
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const [phone, setPhone] = useState('');
+  const phoneEdited = useRef(false);
   const [phoneError, setPhoneError] = useState(false);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    if (!open || !canViewSettings) return;
+    if (!open) {
+      phoneEdited.current = false;
+      return;
+    }
+    if (!canViewSettings) return;
     let active = true;
     api.get('/settings').then(({ data }) => {
-      if (!active) return;
+      if (!active || phoneEdited.current) return;
       const savedPhone = data?.settings?.business_phone;
       if (typeof savedPhone !== 'string') return;
       const parsed = parsePhone(savedPhone, country);
@@ -42,6 +47,7 @@ export function SendWhatsAppReportModal({ open, country, canViewSettings, onOpen
   const changeOpen = (nextOpen: boolean) => {
     if (!nextOpen) {
       setPhone('');
+      phoneEdited.current = false;
       setPhoneError(false);
     }
     onOpenChange(nextOpen);
@@ -88,6 +94,7 @@ export function SendWhatsAppReportModal({ open, country, canViewSettings, onOpen
               dir="ltr"
               value={phone}
               onChange={(event) => {
+                phoneEdited.current = true;
                 setPhone(event.target.value);
                 setPhoneError(false);
               }}

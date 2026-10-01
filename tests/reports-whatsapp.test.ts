@@ -91,6 +91,44 @@ function zReport(cashVariance: number) {
   };
 }
 
+function getLocalizedLabels(localeFile: string): any {
+  const messages = JSON.parse(fs.readFileSync(
+    path.join(__dirname, '../frontend/src/lib/i18n/messages', localeFile),
+    'utf8',
+  ));
+  const dashboard = messages.dashboard;
+  const settings = messages.settings;
+  return {
+    xReport: dashboard.xReport,
+    zReport: dashboard.zReport,
+    date: dashboard.businessDateLabel,
+    closedBy: dashboard.ticketSectionOperator,
+    grossSales: dashboard.grossCollections,
+    refunds: dashboard.refunds,
+    netCollections: dashboard.netCollections,
+    billCount: (count: number) => dashboard.billsCount.replace('{count}', String(count)),
+    expectedCash: dashboard.expectedCash,
+    countedCash: dashboard.countedCash,
+    variance: dashboard.variance,
+    notes: dashboard.closureNotes,
+    none: messages.print.zReport.none,
+    varianceExact: dashboard.varianceExact,
+    varianceShort: dashboard.varianceShort,
+    varianceOver: dashboard.varianceOver,
+    salesSummary: dashboard.salesSummary,
+    paymentBreakdown: dashboard.paymentBreakdown,
+    drawerReconciliation: dashboard.drawerReconciliation,
+    paymentMethod: (method: string) => {
+      switch (method.toLowerCase()) {
+        case 'cash': return settings.paymentMethodCash;
+        case 'card': return settings.paymentMethodCard;
+        case 'upi': return settings.paymentMethodUpi;
+        default: return method;
+      }
+    },
+  };
+}
+
 function popupWindow() {
   const popup = {
     opener: {} as unknown,
@@ -125,6 +163,43 @@ async function main(): Promise<void> {
     const frenchMessage = formatCashCloseWhatsAppMessage(reportBase, { ...tenant, currency: 'CAD' }, 'fr-FR');
     const frenchAmount = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'CAD' }).format(1234.5);
     assert.ok(frenchMessage.includes(frenchAmount), 'formats tenant currency using the selected locale');
+
+    const messageDir = path.join(__dirname, '../frontend/src/lib/i18n/messages');
+    const localeFiles = fs.readdirSync(messageDir).filter((file) => file.endsWith('.json'));
+    assert.equal(localeFiles.length, 24, 'the full-report localization test covers all supported locales');
+    for (const localeFile of localeFiles) {
+      const labels = getLocalizedLabels(localeFile);
+      const localizedX = formatCashCloseWhatsAppMessage(reportBase, tenant, 'en-US', labels);
+      const localizedZ = formatCashCloseWhatsAppMessage(zReport(0), tenant, 'en-US', labels);
+      const noNotesZ = formatCashCloseWhatsAppMessage({ ...zReport(0), notes: null }, tenant, 'en-US', labels);
+      const shortZ = formatCashCloseWhatsAppMessage(zReport(-25), tenant, 'en-US', labels);
+      const overZ = formatCashCloseWhatsAppMessage(zReport(5), tenant, 'en-US', labels);
+
+      assert.ok(localizedX.includes(`📊 *${labels.xReport} - Cafe North*`), `${localeFile}: X report title is localized`);
+      assert.ok(localizedZ.includes(`📊 *${labels.zReport} #7 - Cafe North*`), `${localeFile}: Z report title is localized`);
+      assert.ok(localizedZ.includes(`📅 *${labels.date}:*`), `${localeFile}: business date label is localized`);
+      assert.ok(localizedZ.includes(`👤 *${labels.closedBy}:* Alex`), `${localeFile}: closed-by label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.grossSales}:`), `${localeFile}: gross sales label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.refunds}:`), `${localeFile}: refunds label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.netCollections}:`), `${localeFile}: net collections label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.billCount(reportBase.billCount)}`), `${localeFile}: bill count is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.expectedCash}:`), `${localeFile}: expected cash label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.countedCash}:`), `${localeFile}: counted cash label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.variance}:`), `${localeFile}: variance label is localized`);
+      assert.ok(localizedZ.includes(`📝 *${labels.notes}:* Drawer counted twice`), `${localeFile}: notes label is localized`);
+      assert.ok(noNotesZ.includes(`📝 *${labels.notes}:* ${labels.none}`), `${localeFile}: empty notes are localized`);
+      assert.ok(localizedZ.includes(`• ${labels.paymentMethod('Cash')}:`), `${localeFile}: cash method label is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.paymentMethod('Card')}:`), `${localeFile}: card method label is localized`);
+      assert.ok(localizedZ.includes(`✅ ${labels.varianceExact}`), `${localeFile}: exact variance is localized`);
+      assert.ok(shortZ.includes(`⚠️ ${labels.varianceShort}`), `${localeFile}: shortage is localized`);
+      assert.ok(overZ.includes(`⚠️ ${labels.varianceOver}`), `${localeFile}: overage is localized`);
+    }
+
+    const customPaymentMessage = formatCashCloseWhatsAppMessage({
+      ...reportBase,
+      paymentMethods: [{ method: 'Loyalty Wallet', count: 1, total: 100 }],
+    }, tenant, 'en-US', getLocalizedLabels('fr.json'));
+    assert.match(customPaymentMessage, /Loyalty Wallet:/, 'custom payment method names remain unchanged');
 
     const owner = testSetup.seedOwnerUser(testSetup.initTestDb());
     const db = testSetup.getDatabase();

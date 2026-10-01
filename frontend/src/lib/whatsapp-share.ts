@@ -43,6 +43,23 @@ export interface ZReportExport extends CashCloseReportBase {
 }
 
 export interface CashCloseWhatsAppLabels {
+  xReport?: string;
+  zReport?: string;
+  date?: string;
+  closedBy?: string;
+  grossSales?: string;
+  refunds?: string;
+  netCollections?: string;
+  billCount?: (count: number) => string;
+  expectedCash?: string;
+  countedCash?: string;
+  variance?: string;
+  notes?: string;
+  none?: string;
+  varianceExact?: string;
+  varianceShort?: string;
+  varianceOver?: string;
+  paymentMethod?: (method: string) => string;
   salesSummary?: string;
   paymentBreakdown?: string;
   drawerReconciliation?: string;
@@ -58,37 +75,37 @@ export function formatCashCloseWhatsAppMessage(
   const isZReport = 'zNumber' in report;
   const period = `${formatReportDateTime(report.periodStart, locale, tenant.timezone)} - ${formatReportDateTime(report.periodEnd, locale, tenant.timezone)}`;
   const lines = [
-    `📊 *${isZReport ? `Z-Report #${report.zNumber}` : 'X-Report'} - ${tenant.business_name}*`,
-    `📅 *Date:* ${formatBusinessDate(report.businessDate, locale)} (${period})`,
+    `📊 *${isZReport ? `${labels.zReport || 'Z-Report'} #${report.zNumber}` : labels.xReport || 'X-Report'} - ${tenant.business_name}*`,
+    `📅 *${labels.date || 'Date'}:* ${formatBusinessDate(report.businessDate, locale)} (${period})`,
   ];
 
-  if (isZReport) lines.push(`👤 *Closed by:* ${report.closedBy}`);
+  if (isZReport) lines.push(`👤 *${labels.closedBy || 'Closed by'}:* ${report.closedBy}`);
 
   lines.push(
     '',
     `💰 *${labels.salesSummary || 'SALES SUMMARY'}*`,
-    `• Gross Sales: ${formatAmount(report.grossSales, tenant.currency, locale)}`,
-    `• Refunds: ${formatAmount(report.refunds, tenant.currency, locale)}`,
-    `• Net Collections: ${formatAmount(report.netCollections, tenant.currency, locale)}`,
-    `• Total Bills: ${report.billCount}`,
+    `• ${labels.grossSales || 'Gross Sales'}: ${formatAmount(report.grossSales, tenant.currency, locale)}`,
+    `• ${labels.refunds || 'Refunds'}: ${formatAmount(report.refunds, tenant.currency, locale)}`,
+    `• ${labels.netCollections || 'Net Collections'}: ${formatAmount(report.netCollections, tenant.currency, locale)}`,
+    `• ${labels.billCount?.(report.billCount) || `Total Bills: ${report.billCount}`}`,
     '',
     `💳 *${labels.paymentBreakdown || 'PAYMENTS'}*`,
     ...report.paymentMethods.map((payment) =>
-      `• ${payment.method}: ${formatAmount(payment.total, tenant.currency, locale)} (${payment.count})`),
+      `• ${labels.paymentMethod?.(payment.method) || payment.method}: ${formatAmount(payment.total, tenant.currency, locale)} (${payment.count})`),
   );
 
   if (isZReport) {
     const varianceIndicator = report.cashVariance === 0
-      ? '✅ Exact'
-      : report.cashVariance < 0 ? '⚠️ Short' : '⚠️ Over';
+      ? `✅ ${labels.varianceExact || 'Exact'}`
+      : report.cashVariance < 0 ? `⚠️ ${labels.varianceShort || 'Short'}` : `⚠️ ${labels.varianceOver || 'Over'}`;
     lines.push(
       '',
       `💵 *${labels.drawerReconciliation || 'DRAWER RECONCILIATION'}*`,
-      `• Expected Cash: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
-      `• Counted Cash: ${formatAmount(report.countedCash, tenant.currency, locale)}`,
-      `• Variance: ${formatAmount(report.cashVariance, tenant.currency, locale)} (${varianceIndicator})`,
+      `• ${labels.expectedCash || 'Expected Cash'}: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
+      `• ${labels.countedCash || 'Counted Cash'}: ${formatAmount(report.countedCash, tenant.currency, locale)}`,
+      `• ${labels.variance || 'Variance'}: ${formatAmount(report.cashVariance, tenant.currency, locale)} (${varianceIndicator})`,
       '',
-      `📝 *Notes:* ${report.notes || 'None'}`,
+      `📝 *${labels.notes || 'Notes'}:* ${report.notes || labels.none || 'None'}`,
     );
   }
 

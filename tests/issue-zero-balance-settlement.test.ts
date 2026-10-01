@@ -62,6 +62,7 @@ async function main(): Promise<void> {
   seedCategory(db, 'cat-zb', 'ZB menu');
   seedProduct(db, 'prod-1000', 'cat-zb', 'Thousand', 1000);
   seedProduct(db, 'prod-400', 'cat-zb', 'Four hundred', 400);
+  seedProduct(db, 'prod-200', 'cat-zb', 'Two hundred', 200);
   seedTable(db, 'table-zb', 9);
 
   const app = createApp({
@@ -221,6 +222,62 @@ async function main(): Promise<void> {
       const ordFinal = orderRow(db, orderId);
       assertEqual(ordFinal.status, 'completed', 'zero-total-split-sibling: order completed after A paid');
       assert(tableRow(db, 'table-zb')?.status === 'available', 'zero-total-split-sibling: table freed');
+    }
+
+    // ── kitchen enforcement keeps zero-balance split checks open until delivery ──
+    console.log('\n─── kitchen-zero-split-settlement: pending zero-balance check waits for delivery ───');
+    {
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+      setSetting(db, 'kds_enabled', 'true');
+      setSetting(db, 'discount_mode', 'both');
+      setSetting(db, 'discount_max_amount', '0');
+      const create = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-zb',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+          { product_id: 'prod-200', quantity: 1 },
+        ],
+      });
+      assertEqual(create.status, 201, 'kitchen-zero-split-settlement: dine-in order created');
+      const orderId = create.data.order.id;
+      const items = create.data.order.items as any[];
+      const bill = await generateBill(orderId);
+      assertEqual(bill.status, 201, 'kitchen-zero-split-settlement: bill generated');
+      const discount = await applyOrderDiscount(orderId, { discount_type: 'amount', discount_value: 1600 });
+      assertEqual(discount.status, 200, 'kitchen-zero-split-settlement: full order discount applied');
+      const split = await api(baseUrl, `/api/bills/${bill.data.bill.id}/split-check`, {
+        method: 'POST',
+        body: { checks: [
+          { label: 'Pending A', items: [{ order_item_id: items[0].id, quantity: 1 }] },
+          { label: 'Pending B', items: [{ order_item_id: items[1].id, quantity: 1 }] },
+          { label: 'Cancelled C', items: [{ order_item_id: items[2].id, quantity: 1 }] },
+        ] },
+        headers: A,
+      });
+      assertEqual(split.status, 201, 'kitchen-zero-split-settlement: checks split');
+      const [checkA, checkB, checkC] = split.data.bills;
+      const cancelled = await cancelItem(orderId, items[2].id, { reason: 'zb kitchen-zero-split-settlement' });
+      assertEqual(cancelled.status, 200, 'kitchen-zero-split-settlement: sibling item cancelled');
+      assertEqual(billRow(db, checkA.id).payment_status, 'unpaid', 'kitchen-zero-split-settlement: pending zero-total check remains unpaid');
+      assertEqual(billRow(db, checkB.id).payment_status, 'unpaid', 'kitchen-zero-split-settlement: other pending zero-total check remains unpaid');
+      assertEqual(billRow(db, checkC.id).payment_status, 'paid', 'kitchen-zero-split-settlement: cancelled zero-total check can auto-close');
+
+      const blocked = await pay(checkA.id, { method: 'cash', amount: null });
+      assertEqual(blocked.status, 409, 'kitchen-zero-split-settlement: zero-balance check requires delivery or manager override');
+      const override = await pay(checkA.id, { method: 'cash', amount: null, override_pin: pin });
+      assertEqual(override.status, 200, 'kitchen-zero-split-settlement: manager can settle pending zero-balance check');
+      const overrideAudit = db.prepare("SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'").get(orderId) as any;
+      assertEqual(overrideAudit?.actor_user_id, ownerId, 'kitchen-zero-split-settlement: override audit records the authenticated actor');
+      assertEqual(JSON.parse(overrideAudit?.details_json || '{}').manager_user_id, approver, 'kitchen-zero-split-settlement: override audit identifies the manager');
+      assert(!JSON.stringify(override.data?.bill?.payment_details || []).includes(pin), 'kitchen-zero-split-settlement: manager PIN is not stored with payment details');
+
+      db.prepare("UPDATE order_items SET status = 'served' WHERE id = ?").run(items[1].id);
+      const servedZeroBill = await pay(checkB.id, { method: 'cash', amount: null });
+      assertEqual(servedZeroBill.status, 200, 'kitchen-zero-split-settlement: served zero-balance check settles without a PIN');
+      assertEqual(Number(billRow(db, checkB.id).paid_amount), 0, 'kitchen-zero-split-settlement: zero settlement records no payment amount');
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
     }
 
     // ── refunded sibling does not block completion ──

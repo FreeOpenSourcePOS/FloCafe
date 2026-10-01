@@ -76,6 +76,28 @@ async function main() {
   const paySingle = (bill: any, body: Record<string, unknown> = {}) => api(baseUrl, `/api/bills/${bill.id}/payment`, {
     method: 'POST', body: { method: 'card', amount: bill.total, ...body }, headers: owner.authHeader,
   });
+  const createSplitBills = async (suffix: string, items: any[], allocations: { itemIndex: number; quantity: number }[][]) => {
+    const created = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items }, headers: owner.authHeader,
+    });
+    assertEqualOrThrow(created.status, 201, `split order ${suffix} created`);
+    const generated = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: created.data.order.id }, headers: owner.authHeader,
+    });
+    assertEqualOrThrow(generated.status, 201, `split bill ${suffix} created`);
+    const checks = allocations.map((entries, index) => ({
+      label: `Check ${index + 1}`,
+      items: entries.map((entry) => ({
+        order_item_id: created.data.order.items[entry.itemIndex].id,
+        quantity: entry.quantity,
+      })),
+    }));
+    const split = await api(baseUrl, `/api/bills/${generated.data.bill.id}/split-check`, {
+      method: 'POST', body: { checks }, headers: owner.authHeader,
+    });
+    assertEqualOrThrow(split.status, 201, `split checks ${suffix} created`);
+    return { orderId: created.data.order.id, items: created.data.order.items, bills: split.data.bills };
+  };
 
   try {
     assertEqualOrThrow(
@@ -163,6 +185,49 @@ async function main() {
     });
     assertEqualOrThrow(blockedPin.status, 429, 'five failed manager PIN attempts block further attempts');
     resetPinRateLimitForTests();
+
+    setSetting('split_checks_enabled', 'true');
+    const independentChecks = await createSplitBills('independent-delivery', [
+      { product_id: 'kitchen-delivery-pending', quantity: 1 },
+      { product_id: 'kitchen-delivery-preparing', quantity: 1 },
+    ], [
+      [{ itemIndex: 0, quantity: 1 }],
+      [{ itemIndex: 1, quantity: 1 }],
+    ]);
+    db.prepare("UPDATE order_items SET status = 'served' WHERE id = ?").run(independentChecks.items[0].id);
+    const servedCheckPaid = await paySingle(independentChecks.bills[0]);
+    assertEqualOrThrow(servedCheckPaid.status, 200, 'served split check settles while its sibling item is pending');
+    const pendingCheckRejected = await paySingle(independentChecks.bills[1]);
+    assertEqualOrThrow(pendingCheckRejected.status, 409, 'pending split check remains blocked while its item is undelivered');
+
+    const sharedItemChecks = await createSplitBills('shared-item-quantity', [
+      { product_id: 'kitchen-delivery-pending', quantity: 2 },
+    ], [
+      [{ itemIndex: 0, quantity: 1 }],
+      [{ itemIndex: 0, quantity: 1 }],
+    ]);
+    const sharedFirstRejected = await paySingle(sharedItemChecks.bills[0]);
+    const sharedSecondRejected = await paySingle(sharedItemChecks.bills[1]);
+    assertEqualOrThrow(sharedFirstRejected.status, 409, 'a shared pending order item blocks the first check');
+    assertEqualOrThrow(sharedSecondRejected.status, 409, 'a shared pending order item blocks the second check');
+
+    const zeroQuantityMapping = await createSplitBills('zero-quantity-mapping', [
+      { product_id: 'kitchen-delivery-pending', quantity: 1 },
+      { product_id: 'kitchen-delivery-preparing', quantity: 1 },
+    ], [
+      [{ itemIndex: 0, quantity: 1 }],
+      [{ itemIndex: 1, quantity: 1 }],
+    ]);
+    db.exec('PRAGMA ignore_check_constraints = ON');
+    try {
+      db.prepare('UPDATE bill_items SET quantity = 0 WHERE bill_id = ?').run(zeroQuantityMapping.bills[0].id);
+    } finally {
+      db.exec('PRAGMA ignore_check_constraints = OFF');
+    }
+    const zeroQuantityPaid = await paySingle(zeroQuantityMapping.bills[0]);
+    assertEqualOrThrow(zeroQuantityPaid.status, 200, 'an allocation with zero quantity does not block its check');
+    const positiveSiblingRejected = await paySingle(zeroQuantityMapping.bills[1]);
+    assertEqualOrThrow(positiveSiblingRejected.status, 409, 'positive sibling allocation still enforces delivery');
 
     const deliveredBill = await createBill('delivered');
     db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(deliveredBill.orderId);

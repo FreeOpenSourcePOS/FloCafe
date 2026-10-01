@@ -2060,7 +2060,7 @@ function applyPaymentBatch(
   }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
-  requireOpenSessionForCashTender(db, payments);
+  requireOpenSessionForCashTender(db, prepared.map((line) => line.payment));
   const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);

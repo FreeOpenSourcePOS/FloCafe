@@ -1198,7 +1198,17 @@
     "update": "اپ ڈیٹ",
     "updateProduct": "پروڈکٹ اپ ڈیٹ",
     "updated": "پروڈکٹ اپ ڈیٹ ہو گیا",
-    "uploadCsv": "CSV اپ لوڈ کریں"
+    "uploadCsv": "CSV اپ لوڈ کریں",
+    "printMenu": "مینو پرنٹ کریں",
+    "printMenuDescription": "منتخب کریں کہ پرنٹ شدہ مینو میں کون سی مصنوعات شامل ہوں۔",
+    "includeInactiveItems": "غیر فعال مصنوعات شامل کریں",
+    "includeOutOfStockItems": "اسٹاک سے باہر مصنوعات شامل کریں",
+    "includeHiddenItems": "پوشیدہ مصنوعات شامل کریں",
+    "menuPrintedSuccess": "مینو کامیابی سے پرنٹ ہوگیا",
+    "noProductsToPrint": "منتخب معیار کے مطابق کوئی مصنوعات نہیں",
+    "printerDestination": "پرنٹر",
+    "systemBrowserPrint": "سسٹم / براؤزر پرنٹ",
+    "menuPrintFailed": "مینو پرنٹ نہیں ہوسکا"
   },
   "receipt": {
     "amount": "رقم",

@@ -1198,7 +1198,17 @@
     "update": "Mettre à jour",
     "updateProduct": "Mettre à jour le produit",
     "updated": "Produit mis à jour",
-    "uploadCsv": "Téléverser un fichier CSV"
+    "uploadCsv": "Téléverser un fichier CSV",
+    "printMenu": "Imprimer le menu",
+    "printMenuDescription": "Choisissez les articles à inclure dans le menu imprimé.",
+    "includeInactiveItems": "Inclure les articles inactifs",
+    "includeOutOfStockItems": "Inclure les articles en rupture de stock",
+    "includeHiddenItems": "Inclure les articles masqués",
+    "menuPrintedSuccess": "Menu imprimé avec succès",
+    "noProductsToPrint": "Aucun produit ne correspond aux critères sélectionnés",
+    "printerDestination": "Imprimante",
+    "systemBrowserPrint": "Système / impression du navigateur",
+    "menuPrintFailed": "Impossible d’imprimer le menu"
   },
   "receipt": {
     "amount": "Montant",

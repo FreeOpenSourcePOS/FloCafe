@@ -1198,7 +1198,17 @@
     "update": "تحديث",
     "updateProduct": "تحديث المنتج",
     "updated": "تم تحديث المنتج",
-    "uploadCsv": "تحميل ملف CSV"
+    "uploadCsv": "تحميل ملف CSV",
+    "printMenu": "طباعة القائمة",
+    "printMenuDescription": "إعداد العناصر التي تريد تضمينها في قائمة الطعام المطبوعة.",
+    "includeInactiveItems": "تضمين العناصر غير النشطة",
+    "includeOutOfStockItems": "تضمين العناصر غير المتوفرة",
+    "includeHiddenItems": "تضمين العناصر المخفية",
+    "menuPrintedSuccess": "تمت طباعة القائمة بنجاح",
+    "noProductsToPrint": "لا توجد منتجات تطابق الخيارات المحددة",
+    "printerDestination": "الطابعة",
+    "systemBrowserPrint": "النظام / الطباعة عبر المتصفح",
+    "menuPrintFailed": "تعذرت طباعة القائمة"
   },
   "receipt": {
     "amount": "المبلغ",

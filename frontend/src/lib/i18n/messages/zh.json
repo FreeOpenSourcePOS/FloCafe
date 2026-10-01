@@ -1198,7 +1198,17 @@
     "update": "更新",
     "updateProduct": "更新商品",
     "updated": "商品已更新",
-    "uploadCsv": "上传 CSV"
+    "uploadCsv": "上传 CSV",
+    "printMenu": "打印菜单",
+    "printMenuDescription": "选择要列入打印菜单的商品。",
+    "includeInactiveItems": "包含未启用的商品",
+    "includeOutOfStockItems": "包含缺货商品",
+    "includeHiddenItems": "包含隐藏商品",
+    "menuPrintedSuccess": "菜单打印成功",
+    "noProductsToPrint": "没有符合所选条件的商品",
+    "printerDestination": "打印机",
+    "systemBrowserPrint": "系统 / 浏览器打印",
+    "menuPrintFailed": "无法打印菜单"
   },
   "receipt": {
     "amount": "金额",

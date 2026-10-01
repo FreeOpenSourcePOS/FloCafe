@@ -1198,7 +1198,17 @@
     "update": "अपडेट गर्नुहोस्",
     "updateProduct": "उत्पादन अपडेट गर्नुहोस्",
     "updated": "उत्पादन अपडेट गरियो",
-    "uploadCsv": "CSV अपलोड गर्नुहोस्"
+    "uploadCsv": "CSV अपलोड गर्नुहोस्",
+    "printMenu": "मेनु प्रिन्ट गर्नुहोस्",
+    "printMenuDescription": "प्रिन्ट हुने मेनुमा कुन उत्पादन समावेश गर्ने छान्नुहोस्।",
+    "includeInactiveItems": "निष्क्रिय उत्पादन समावेश गर्नुहोस्",
+    "includeOutOfStockItems": "स्टकमा नभएका उत्पादन समावेश गर्नुहोस्",
+    "includeHiddenItems": "लुकेका उत्पादन समावेश गर्नुहोस्",
+    "menuPrintedSuccess": "मेनु सफलतापूर्वक प्रिन्ट भयो",
+    "noProductsToPrint": "चयन गरिएका मापदण्डसँग मिल्ने उत्पादन छैन",
+    "printerDestination": "प्रिन्टर",
+    "systemBrowserPrint": "सिस्टम / ब्राउजर प्रिन्ट",
+    "menuPrintFailed": "मेनु प्रिन्ट गर्न सकिएन"
   },
   "receipt": {
     "amount": "रकम",

@@ -1198,7 +1198,17 @@
     "update": "更新",
     "updateProduct": "更新商品",
     "updated": "商品已更新",
-    "uploadCsv": "上傳 CSV"
+    "uploadCsv": "上傳 CSV",
+    "printMenu": "列印菜單",
+    "printMenuDescription": "選擇要列入列印菜單的商品。",
+    "includeInactiveItems": "包含未啟用的商品",
+    "includeOutOfStockItems": "包含缺貨商品",
+    "includeHiddenItems": "包含隱藏商品",
+    "menuPrintedSuccess": "菜單列印成功",
+    "noProductsToPrint": "沒有符合所選條件的商品",
+    "printerDestination": "印表機",
+    "systemBrowserPrint": "系統 / 瀏覽器列印",
+    "menuPrintFailed": "無法列印菜單"
   },
   "receipt": {
     "amount": "金額",

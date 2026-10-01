@@ -1198,7 +1198,17 @@
     "update": "Güncelle",
     "updateProduct": "Ürünü Güncelle",
     "updated": "Ürün güncellendi",
-    "uploadCsv": "CSV Yükle"
+    "uploadCsv": "CSV Yükle",
+    "printMenu": "Menüyü Yazdır",
+    "printMenuDescription": "Yazdırılan menüye eklenecek ürünleri seçin.",
+    "includeInactiveItems": "Etkin olmayan ürünleri dahil et",
+    "includeOutOfStockItems": "Stokta olmayan ürünleri dahil et",
+    "includeHiddenItems": "Gizli ürünleri dahil et",
+    "menuPrintedSuccess": "Menü başarıyla yazdırıldı",
+    "noProductsToPrint": "Seçilen ölçütlere uygun ürün yok",
+    "printerDestination": "Yazıcı",
+    "systemBrowserPrint": "Sistem / Tarayıcı Yazdırma",
+    "menuPrintFailed": "Menü yazdırılamadı"
   },
   "receipt": {
     "amount": "Tutar",

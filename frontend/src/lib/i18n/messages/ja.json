@@ -1198,7 +1198,17 @@
     "update": "更新",
     "updateProduct": "商品を更新",
     "updated": "商品を更新しました",
-    "uploadCsv": "CSVをアップロード"
+    "uploadCsv": "CSVをアップロード",
+    "printMenu": "メニューを印刷",
+    "printMenuDescription": "印刷するメニューに含める商品を選択します。",
+    "includeInactiveItems": "非アクティブな商品を含める",
+    "includeOutOfStockItems": "在庫切れの商品を含める",
+    "includeHiddenItems": "非表示の商品を含める",
+    "menuPrintedSuccess": "メニューを印刷しました",
+    "noProductsToPrint": "選択した条件に一致する商品がありません",
+    "printerDestination": "プリンター",
+    "systemBrowserPrint": "システム / ブラウザー印刷",
+    "menuPrintFailed": "メニューを印刷できませんでした"
   },
   "receipt": {
     "amount": "金額",

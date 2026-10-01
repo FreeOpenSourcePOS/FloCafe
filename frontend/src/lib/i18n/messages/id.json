@@ -1198,7 +1198,17 @@
     "update": "Perbarui",
     "updateProduct": "Perbarui Produk",
     "updated": "Produk diperbarui",
-    "uploadCsv": "Unggah CSV"
+    "uploadCsv": "Unggah CSV",
+    "printMenu": "Cetak Menu",
+    "printMenuDescription": "Atur produk yang akan disertakan dalam menu cetak.",
+    "includeInactiveItems": "Sertakan produk nonaktif",
+    "includeOutOfStockItems": "Sertakan produk yang kehabisan stok",
+    "includeHiddenItems": "Sertakan produk tersembunyi",
+    "menuPrintedSuccess": "Menu berhasil dicetak",
+    "noProductsToPrint": "Tidak ada produk yang sesuai dengan kriteria yang dipilih",
+    "printerDestination": "Tujuan printer",
+    "systemBrowserPrint": "Sistem / Cetak Browser",
+    "menuPrintFailed": "Menu tidak dapat dicetak"
   },
   "receipt": {
     "amount": "Jumlah",

@@ -39,6 +39,7 @@ import {
   type DeliverySlipItemRow,
   type DeliverySlipOrderRow,
 } from './document-delivery-slip';
+import { renderMenuViaDocument, type MenuDocument } from './document-menu';
 import type { DeliverySlipAddressSource } from '../../shared/print';
 import {
   isThermalTextRepresentable,
@@ -1293,6 +1294,47 @@ function getPrinterConfig(): any {
      ORDER BY is_default DESC, name
      LIMIT 1`,
   ).get();
+}
+
+export async function printMenuDocument(
+  document: MenuDocument,
+  signal?: AbortSignal,
+  targetPrinter?: any,
+  language = 'en',
+): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
+  try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = targetPrinter || getPrinterConfig();
+    if (!printer) return { ok: false, detail: 'No printer configured' };
+
+    const { profile, columns, capabilities } = resolvePrinterContext(printer);
+    const rendered = renderMenuViaDocument(document, {
+      columns,
+      language,
+      arabicShaping: capabilities.shaping.arabic,
+      cutMode: profile.cutMode,
+      capabilities,
+    });
+    if (rendered.warnings.length > 0) {
+      return { ok: false, detail: 'Menu text is not supported by the selected printer', warnings: rendered.warnings };
+    }
+
+    if (printer.connection_type === 'webusb') {
+      return { ok: true, bytes: rendered.data, connection_type: 'webusb', ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}) };
+    }
+
+    const result = await dispatchPrint(printer, rendered.data, signal);
+    return {
+      ...result,
+      bytes: rendered.data,
+      connection_type: printer.connection_type,
+      ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}),
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('[Printer] Menu print failed:', detail);
+    return { ok: false, detail };
+  }
 }
 
 export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): {

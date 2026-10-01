@@ -1198,7 +1198,17 @@
     "update": "Actualizar",
     "updateProduct": "Actualizar producto",
     "updated": "Producto actualizado",
-    "uploadCsv": "Subir CSV"
+    "uploadCsv": "Subir CSV",
+    "printMenu": "Imprimir menú",
+    "printMenuDescription": "Configura qué productos incluir en el menú impreso.",
+    "includeInactiveItems": "Incluir productos inactivos",
+    "includeOutOfStockItems": "Incluir productos agotados",
+    "includeHiddenItems": "Incluir productos ocultos",
+    "menuPrintedSuccess": "Menú impreso correctamente",
+    "noProductsToPrint": "Ningún producto coincide con los criterios seleccionados",
+    "printerDestination": "Impresora",
+    "systemBrowserPrint": "Sistema / impresión del navegador",
+    "menuPrintFailed": "No se pudo imprimir el menú"
   },
   "receipt": {
     "amount": "Monto",

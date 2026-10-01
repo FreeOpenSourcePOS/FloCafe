@@ -841,7 +841,11 @@
     "exitFullscreen": "Volledig scherm POS verlaten",
     "fullscreenUnavailable": "De modus Volledig scherm is niet beschikbaar",
     "backspaceAmount": "Laatste cijfer wissen",
-    "numericKeypad": "Numeriek toetsenbord"
+    "numericKeypad": "Numeriek toetsenbord",
+    "kitchenItemsPendingWarning": "{count, plural, one {Er worden nog # items in de keuken bereid} other {Er worden nog # items in de keuken bereid}}",
+    "kitchenDeliveryOverridePrompt": "Keukenitems zijn nog niet bezorgd. Voer de manager-pincode in om afrekenen toe te staan.",
+    "kitchenDeliveryOverrideSuccess": "Managergoedkeuring voor niet-bezorgde items is geaccepteerd.",
+    "kitchenDeliveryOverrideInvalid": "Ongeldige manager-pincode. Probeer het opnieuw."
   },
   "printTest": {
     "amt": "Bedrag",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "Een supportaanvraag die je zelf stuurt werkt altijd, ongeacht of dit aanstaat.",
     "diagnosticsLocalOnlyHintTransmitting": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal. Automatische verzending staat aan, dus vastgelegde problemen kunnen naar je FloCafe-cloudaccount worden gestuurd.",
     "diagnosticsLocalOnlyHintPending": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal.",
-    "printing": "Afdrukken"
+    "printing": "Afdrukken",
+    "requireKitchenDeliveredToggle": "Keukenbezorging vereisen vóór afrekenen",
+    "requireKitchenDeliveredHint": "Voorkomt het afrekenen van rekeningen op rekening totdat alle items in de keuken als geserveerd zijn gemarkeerd. Wordt automatisch overgeslagen als KDS is uitgeschakeld."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

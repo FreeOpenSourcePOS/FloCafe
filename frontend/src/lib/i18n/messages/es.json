@@ -841,7 +841,11 @@
     "exitFullscreen": "Salir del POS en pantalla completa",
     "fullscreenUnavailable": "El modo de pantalla completa no está disponible",
     "backspaceAmount": "Borrar último dígito",
-    "numericKeypad": "Teclado numérico"
+    "numericKeypad": "Teclado numérico",
+    "kitchenItemsPendingWarning": "{count, plural, one {Hay # artículo(s) aún en preparación en la cocina} other {Hay # artículo(s) aún en preparación en la cocina}}",
+    "kitchenDeliveryOverridePrompt": "Los artículos de cocina aún no se han entregado. Introduce el PIN de gerente para autorizar el cobro.",
+    "kitchenDeliveryOverrideSuccess": "Se aceptó la autorización del gerente para los artículos sin entregar.",
+    "kitchenDeliveryOverrideInvalid": "El PIN de gerente no es válido. Inténtalo de nuevo."
   },
   "printTest": {
     "amt": "Total",
@@ -2044,7 +2048,9 @@
     "diagnosticsSendAutomaticallyHint": "Desactivado por defecto. Cuando está desactivado, los problemas registrados permanecen en este dispositivo y nunca se envían. Las solicitudes de soporte que envíes tú no se ven afectadas.",
     "diagnosticsTicketUnaffected": "Una solicitud de soporte que envías tú siempre funciona, esté esto activado o no.",
     "diagnosticsLocalOnlyHintTransmitting": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro. El envío automático está activado, por lo que los problemas registrados pueden enviarse a tu cuenta de FloCafe en la nube.",
-    "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro."
+    "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro.",
+    "requireKitchenDeliveredToggle": "Exigir la entrega de cocina antes de cobrar",
+    "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

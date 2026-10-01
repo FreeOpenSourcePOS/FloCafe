@@ -841,7 +841,11 @@
     "fullscreenUnavailable": "فل اسکرین موڈ دستیاب نہیں",
     "backspaceAmount": "رقم میں بیک اسپیس",
     "numericKeypad": "عددی کی پیڈ",
-    "tax": "ٹیکس"
+    "tax": "ٹیکس",
+    "kitchenItemsPendingWarning": "{count, plural, one {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں} other {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں}}",
+    "kitchenDeliveryOverridePrompt": "باورچی خانے کے آئٹمز ابھی پیش نہیں کیے گئے۔ بل کی اجازت دینے کے لیے مینیجر کا PIN درج کریں۔",
+    "kitchenDeliveryOverrideSuccess": "نہ پہنچائے گئے آئٹمز کے لیے مینیجر کی اجازت قبول کر لی گئی۔",
+    "kitchenDeliveryOverrideInvalid": "مینیجر کا PIN درست نہیں۔ دوبارہ کوشش کریں۔"
   },
   "printTest": {
     "amt": "رقم",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "آپ کی اپنی بھیجی معاونت درخواست ہمیشہ کام کرتی ہے، چاہے یہ سیٹنگ فعال ہو یا غیر فعال۔",
     "diagnosticsLocalOnlyHintTransmitting": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔ خودکار بھیجنا چالو ہے، اس لیے ریکارڈ شدہ مسائل آپ کے FloCafe کلاؤڈ اکاؤنٹ میں بھیجے جا سکتے ہیں۔",
     "diagnosticsLocalOnlyHintPending": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔",
-    "printing": "پرنٹنگ"
+    "printing": "پرنٹنگ",
+    "requireKitchenDeliveredToggle": "بل بنانے سے پہلے باورچی خانے سے ترسیل لازمی کریں",
+    "requireKitchenDeliveredHint": "جب تک باورچی خانے کے تمام آئٹمز کو پیش کیا گیا نشان زد نہ کیا جائے، ادھار بل کی ادائیگی روکے رکھیں۔ KDS بند ہونے پر یہ جانچ خود بخود چھوڑ دی جائے گی۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

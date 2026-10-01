@@ -33,6 +33,7 @@ import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 interface Props {
   bill: Bill;
   currency: string;
+  initialOverridePin?: string;
   onClose: () => void;
   onPaid: () => void;
   onBillUpdate?: (bill: Bill) => void;
@@ -57,7 +58,7 @@ const BUILT_IN_PAYMENT_KEYS = {
   card: 'methodCard',
 } as const satisfies Record<'cash' | 'card', PosKey>;
 
-export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Props) {
+export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid, onBillUpdate }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
@@ -110,6 +111,11 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
+  const [kitchenOverrideRequired, setKitchenOverrideRequired] = useState(Boolean(initialOverridePin));
+  const [kitchenOverridePin, setKitchenOverridePin] = useState(initialOverridePin || '');
+  const [kitchenUndeliveredCount, setKitchenUndeliveredCount] = useState(0);
+  const [kitchenUndeliveredItems, setKitchenUndeliveredItems] = useState<string[]>([]);
+  const [kitchenDeliveryError, setKitchenDeliveryError] = useState('');
 
   // Discount state
   const [showDiscount, setShowDiscount] = useState(false);
@@ -328,6 +334,10 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   };
 
   const handlePay = async () => {
+    if (kitchenOverrideRequired && !/^\d{4,6}$/.test(kitchenOverridePin)) {
+      setKitchenDeliveryError(t('kitchenDeliveryOverridePrompt'));
+      return;
+    }
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -380,7 +390,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       idempotencyKeyRef.current = idempotencyKey;
       const res = await api.post(
         `/bills/${bill.id}/payments`,
-        { payments: splitLines, customer_id: effectiveCustomerId },
+        { payments: splitLines, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined },
         { headers: { 'Idempotency-Key': idempotencyKey } },
       );
       const updatedBill = res.data?.bill as Bill | undefined;
@@ -396,14 +406,29 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);
-      if (earned > 0) {
+      if (res.data?.kitchenDeliveryOverridden) {
+        toast.success(t('kitchenDeliveryOverrideSuccess'));
+      } else if (earned > 0) {
         toast.success(t('paymentRecordedWithPoints', { points: earned }));
       } else {
         toast.success(t('paymentRecorded'));
       }
       setJustPaid(true);
-    } catch {
-      toast.error(t('paymentFailed'));
+    } catch (error: unknown) {
+      const response = (error as { response?: { data?: { code?: string; error?: string; undeliveredCount?: number; undeliveredItems?: unknown } } } | null)?.response?.data;
+      if (response?.code === 'KITCHEN_ITEMS_UNDELIVERED') {
+        setKitchenOverrideRequired(true);
+        setKitchenOverridePin('');
+        setKitchenUndeliveredCount(Number(response.undeliveredCount) || 0);
+        setKitchenUndeliveredItems(Array.isArray(response.undeliveredItems) ? response.undeliveredItems : []);
+        setKitchenDeliveryError('');
+      } else if (response?.error === 'Invalid manager PIN') {
+        setKitchenOverrideRequired(true);
+        setKitchenOverridePin('');
+        setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
+      } else {
+        toast.error(t('paymentFailed'));
+      }
     } finally {
       setProcessing(false);
     }
@@ -468,6 +493,26 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         </div>
 
         <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-2 lg:gap-5">
+
+          {kitchenOverrideRequired && (
+            <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-200 lg:col-span-2">
+              {kitchenUndeliveredCount > 0 && <p className="text-sm font-medium">{t('kitchenItemsPendingWarning', { count: kitchenUndeliveredCount })}</p>}
+              <p className="text-sm">{t('kitchenDeliveryOverridePrompt')}</p>
+              {kitchenUndeliveredItems.length > 0 && <p className="mt-1 break-words text-xs">{kitchenUndeliveredItems.join(', ')}</p>}
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={kitchenOverridePin}
+                onChange={(event) => { setKitchenOverridePin(event.target.value.replace(/\D/g, '').slice(0, 6)); setKitchenDeliveryError(''); }}
+                placeholder={t('managerPin')}
+                aria-label={t('managerPin')}
+                className="mt-3 min-h-11 w-full rounded-lg border border-amber-300 bg-card px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-amber-700"
+              />
+              {kitchenDeliveryError && <p className="mt-1 text-xs text-red-700 dark:text-red-300">{kitchenDeliveryError}</p>}
+            </div>
+          )}
 
           <div className="space-y-4">
 
@@ -787,7 +832,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               </Button>
             </>
           ) : (
-            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
+            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor || (kitchenOverrideRequired && !/^\d{4,6}$/.test(kitchenOverridePin))} className="w-full" size="lg">
               {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
             </Button>
           )}

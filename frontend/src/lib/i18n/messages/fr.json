@@ -841,7 +841,11 @@
     "exitFullscreen": "Quitter le POS en plein écran",
     "fullscreenUnavailable": "Le mode plein écran n'est pas disponible",
     "backspaceAmount": "Effacer le dernier chiffre",
-    "numericKeypad": "Pavé numérique"
+    "numericKeypad": "Pavé numérique",
+    "kitchenItemsPendingWarning": "{count, plural, one {# article(s) sont encore en préparation en cuisine} other {# article(s) sont encore en préparation en cuisine}}",
+    "kitchenDeliveryOverridePrompt": "Les articles de cuisine ne sont pas encore servis. Saisissez le code PIN du responsable pour autoriser le règlement.",
+    "kitchenDeliveryOverrideSuccess": "Dérogation du responsable acceptée pour les articles non servis.",
+    "kitchenDeliveryOverrideInvalid": "Code PIN du responsable incorrect. Réessayez."
   },
   "printTest": {
     "amt": "Montant",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "Une demande d’assistance que vous envoyez vous-même fonctionne toujours, que ce réglage soit activé ou non.",
     "diagnosticsLocalOnlyHintTransmitting": "Cet écran affiche en langage clair les problèmes récents sur cet appareil. La transmission automatique est activée, les problèmes enregistrés peuvent donc être envoyés à votre compte FloCafe Cloud.",
     "diagnosticsLocalOnlyHintPending": "Cet écran affiche en langage clair les problèmes récents sur cet appareil.",
-    "printing": "Impression"
+    "printing": "Impression",
+    "requireKitchenDeliveredToggle": "Exiger la livraison de la cuisine avant la facturation",
+    "requireKitchenDeliveredHint": "Empêche le règlement des additions après paiement tant que tous les articles ne sont pas marqués comme servis en cuisine. Vérification ignorée automatiquement si le KDS est désactivé."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

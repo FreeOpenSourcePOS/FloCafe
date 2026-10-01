@@ -841,7 +841,11 @@
     "fullscreenUnavailable": "حالت تمام‌صفحه در دسترس نیست",
     "backspaceAmount": "حذف رقم آخر",
     "numericKeypad": "صفحه‌کلید عددی",
-    "tax": "مالیات"
+    "tax": "مالیات",
+    "kitchenItemsPendingWarning": "{count, plural, one {# مورد هنوز در آشپزخانه در حال آماده‌سازی است} other {# مورد هنوز در آشپزخانه در حال آماده‌سازی است}}",
+    "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، رمز مدیر را وارد کنید.",
+    "kitchenDeliveryOverrideSuccess": "تأیید مدیر برای اقلام تحویل‌نشده پذیرفته شد.",
+    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید."
   },
   "printTest": {
     "amt": "مبلغ",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "درخواست پشتیبانی که خودتان می‌فرستید همیشه کار می‌کند، فارغ از اینکه این گزینه روشن باشد یا خاموش.",
     "diagnosticsLocalOnlyHintTransmitting": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد. ارسال خودکار روشن است، بنابراین ممکن است مشکلات ثبت‌شده به حساب ابری FloCafe شما ارسال شوند.",
     "diagnosticsLocalOnlyHintPending": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد.",
-    "printing": "چاپ"
+    "printing": "چاپ",
+    "requireKitchenDeliveredToggle": "تحویل آشپزخانه را پیش از تسویه الزامی کن",
+    "requireKitchenDeliveredHint": "تا زمانی که همه اقلام در آشپزخانه به‌عنوان تحویل‌شده علامت نخورده‌اند، تسویه پس‌پرداخت را متوقف می‌کند. با غیرفعال بودن KDS این بررسی خودکار نادیده گرفته می‌شود."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

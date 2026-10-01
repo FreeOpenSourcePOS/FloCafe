@@ -841,7 +841,11 @@
     "fullscreenUnavailable": "フルスクリーンモードは利用できません",
     "backspaceAmount": "金額を1文字削除",
     "numericKeypad": "数字キーパッド",
-    "tax": "税"
+    "tax": "税",
+    "kitchenItemsPendingWarning": "{count, plural, one {キッチンで準備中の商品が # 件あります} other {キッチンで準備中の商品が # 件あります}}",
+    "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはマネージャー PIN を入力してください。",
+    "kitchenDeliveryOverrideSuccess": "未提供の商品に対するマネージャーの承認を受け付けました。",
+    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。"
   },
   "printTest": {
     "amt": "金額",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "自分で送るサポート依頼は、この設定のオン・オフにかかわらず常に利用できます。",
     "diagnosticsLocalOnlyHintTransmitting": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。自動送信がオンになっているため、記録された問題がFloCafeクラウドアカウントに送信される場合があります。",
     "diagnosticsLocalOnlyHintPending": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。",
-    "printing": "印刷"
+    "printing": "印刷",
+    "requireKitchenDeliveredToggle": "会計前にキッチンからの提供を必須にする",
+    "requireKitchenDeliveredHint": "キッチンのすべての商品が提供済みになるまで後払いの会計を確定できません。KDS が無効の場合、この確認は自動的に省略されます。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

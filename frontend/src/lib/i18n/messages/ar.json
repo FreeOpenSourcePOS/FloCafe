@@ -841,7 +841,11 @@
     "fullscreenUnavailable": "وضع ملء الشاشة غير متاح",
     "backspaceAmount": "حذف آخر رقم",
     "numericKeypad": "لوحة الأرقام",
-    "tax": "الضرائب"
+    "tax": "الضرائب",
+    "kitchenItemsPendingWarning": "{count, plural, one {# صنفًا ما زال قيد التحضير في المطبخ} other {# صنفًا ما زال قيد التحضير في المطبخ}}",
+    "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل الرقم السري للمدير للسماح بالفوترة.",
+    "kitchenDeliveryOverrideSuccess": "تم قبول تجاوز المدير للأصناف غير المسلّمة.",
+    "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى."
   },
   "printTest": {
     "amt": "المبلغ",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "طلب الدعم الذي ترسله بنفسك يعمل دائمًا، سواء كان هذا الخيار مفعّلًا أو غير مفعّل.",
     "diagnosticsLocalOnlyHintTransmitting": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهودة. الإرسال التلقائي مُفعَّل، لذا قد تُرسَل المشكلات المسجلة إلى حساب FloCafe السحابي.",
     "diagnosticsLocalOnlyHintPending": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهومة.",
-    "printing": "الطباعة"
+    "printing": "الطباعة",
+    "requireKitchenDeliveredToggle": "اشترط تسليم المطبخ قبل الفوترة",
+    "requireKitchenDeliveredHint": "امنع تسوية الفواتير المؤجلة حتى يتم تحديد جميع الأصناف على أنها قُدّمت من المطبخ. يتم التجاوز تلقائيًا عند تعطيل KDS."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

@@ -841,7 +841,11 @@
     "exitFullscreen": "退出全屏 POS",
     "fullscreenUnavailable": "全屏模式不可用",
     "backspaceAmount": "退格金額",
-    "numericKeypad": "數字鍵盤"
+    "numericKeypad": "數字鍵盤",
+    "kitchenItemsPendingWarning": "{count, plural, one {廚房仍有 # 道餐點正在準備} other {廚房仍有 # 道餐點正在準備}}",
+    "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入經理 PIN 以授權結帳。",
+    "kitchenDeliveryOverrideSuccess": "已接受經理對未送達餐點的授權。",
+    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。"
   },
   "printTest": {
     "amt": "金額",
@@ -2044,7 +2048,9 @@
     "diagnosticsTicketUnaffected": "您自己送出的支援請求一律有效，不論此設定是否開啟。",
     "diagnosticsLocalOnlyHintTransmitting": "此畫面以淺白文字顯示本裝置最近的問題。已開啟自動傳送，因此記錄的問題可能會傳送到您的 FloCafe 雲端帳戶。",
     "diagnosticsLocalOnlyHintPending": "此畫面以淺白文字顯示本裝置最近的問題。",
-    "printing": "列印"
+    "printing": "列印",
+    "requireKitchenDeliveredToggle": "結帳前要求廚房出餐",
+    "requireKitchenDeliveredHint": "所有餐點在廚房標記為已送達前，禁止結清後付帳單。關閉 KDS 時會自動略過此檢查。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

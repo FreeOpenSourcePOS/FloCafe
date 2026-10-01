@@ -894,7 +894,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'telemetry_enabled',
   'diagnostics_consent',
   'diagnostics_transmission_enabled',
-  'kds_enabled', 'server_app_enabled', 'kot_printing_enabled', 'server_app_bill_printing_enabled',
+  'kds_enabled', 'require_kitchen_delivered_before_settlement', 'server_app_enabled', 'kot_printing_enabled', 'server_app_bill_printing_enabled',
   'split_checks_enabled',
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',

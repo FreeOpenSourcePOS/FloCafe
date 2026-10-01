@@ -841,7 +841,11 @@
     "exitFullscreen": "Dilni nga POS me ekran të plotë",
     "fullscreenUnavailable": "Modaliteti i ekranit të plotë nuk ofrohet",
     "backspaceAmount": "Shuma e hapësirës së pasme",
-    "numericKeypad": "Tastiera numerike"
+    "numericKeypad": "Tastiera numerike",
+    "kitchenItemsPendingWarning": "{count, plural, one {# artikuj po përgatiten ende në kuzhinë} other {# artikuj po përgatiten ende në kuzhinë}}",
+    "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-in e menaxherit për të autorizuar faturimin.",
+    "kitchenDeliveryOverrideSuccess": "U pranua miratimi i menaxherit për artikujt e padërguar.",
+    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish."
   },
   "printTest": {
     "amt": "Shuma",
@@ -2044,7 +2048,9 @@
     "diagnosticsSendAutomaticallyHint": "Fikur që në fillim. Kur është i fikur, problemet e regjistruara mbeten në këtë pajisje dhe nuk dërgohen kurrë. Kërkesat që i dërgoni vetë nuk preken.",
     "diagnosticsTicketUnaffected": "Një kërkesë mbështetëse që e dërgoni ju vetë funksionon gjithmonë, pavarësisht nëse kjo cilësim është i ndezur apo jo.",
     "diagnosticsLocalOnlyHintTransmitting": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë. Dërgimi automatik është i ndezur, prandaj problemet e regjistruara mund të dërgohen në llogarinë tuaj FloCafe cloud.",
-    "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë."
+    "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë.",
+    "requireKitchenDeliveredToggle": "Kërko dorëzimin nga kuzhina para faturimit",
+    "requireKitchenDeliveredHint": "Pengon shlyerjen e faturave me pagesë të mëvonshme derisa të gjitha artikujt të shënohen si të servirur nga kuzhina. Kontrolli anashkalohet automatikisht kur KDS është çaktivizuar."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

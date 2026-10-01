@@ -841,7 +841,11 @@
     "fullscreenUnavailable": "Hindi available ang full-screen mode",
     "backspaceAmount": "I-backspace ang halaga",
     "numericKeypad": "Numeric keypad",
-    "tax": "Buwis"
+    "tax": "Buwis",
+    "kitchenItemsPendingWarning": "{count, plural, one {# item pa ang inihahanda sa kusina} other {# item pa ang inihahanda sa kusina}}",
+    "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng manager para pahintulutan ang paniningil.",
+    "kitchenDeliveryOverrideSuccess": "Tinanggap ang pahintulot ng manager para sa mga hindi pa naihahatid na item.",
+    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli."
   },
   "printTest": {
     "amt": "Halaga",
@@ -2044,7 +2048,9 @@
     "diagnosticsSendAutomaticallyHint": "Naka-off sa pagiging default. Kapag naka-off, nananatili sa device na ito ang mga naitalang problema at hindi kailanman ipinapadala. Hindi apektado ang mga kahilingan ng suporta na ipinapadala mo mismo.",
     "diagnosticsTicketUnaffected": "Laging gumagana ang kahilingan ng suporta na ipinapadala mo mismo, may pagkaka-on o wala man ito.",
     "diagnosticsLocalOnlyHintTransmitting": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika. Naka-on ang awtomatikong pagpapadala, kaya ang mga naitalang problema ay maaaring ipadala sa iyong FloCafe cloud account.",
-    "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika."
+    "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika.",
+    "requireKitchenDeliveredToggle": "Kailangang maihatid muna ang mga pagkain bago maningil",
+    "requireKitchenDeliveredHint": "Pigilan ang pagbabayad ng postpaid na bill hangga’t hindi minamarkahang naihain sa kusina ang lahat ng item. Awtomatikong lalaktawan kapag naka-off ang KDS."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

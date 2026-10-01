@@ -127,6 +127,7 @@ export default function POSPage() {
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
+  const [checkoutOverridePin, setCheckoutOverridePin] = useState<string | undefined>();
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
@@ -1054,6 +1055,7 @@ export default function POSPage() {
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
+    setCheckoutOverridePin(undefined);
     setCheckoutTable(null);
     refreshTables();
 
@@ -1268,7 +1270,7 @@ export default function POSPage() {
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
           onAddItems={handleAddItemsToOrder}
-          onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
+          onPayment={(bill, overridePin) => { setCheckoutTable(null); setPaymentBill(bill); setCheckoutOverridePin(overridePin); }}
           onAddCartToOrder={handleAddCartToOrder}
         />
       )}
@@ -1277,7 +1279,8 @@ export default function POSPage() {
         <PaymentModal
           bill={paymentBill}
           currency={currency}
-          onClose={() => setPaymentBill(null)}
+          initialOverridePin={checkoutOverridePin}
+          onClose={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); }}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
         />

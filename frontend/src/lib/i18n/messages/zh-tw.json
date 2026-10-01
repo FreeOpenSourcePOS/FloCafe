@@ -930,6 +930,8 @@
       "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單",
       "paid": "已付款",
       "toCollect": "待收款",
+      "refunded": "已退款",
+      "partiallyRefunded": "部分退款",
       "cashOnDelivery": "貨到付款",
       "amountDue": "應付金額",
       "multiplePaymentMethods": "多種付款方式"

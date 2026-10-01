@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} caracteres supplementaires non affiches, verifiez la commande",
       "paid": "PAYÉ",
       "toCollect": "À ENCAISSER",
+      "refunded": "REMBOURSÉ",
+      "partiallyRefunded": "PARTIELLEMENT REMBOURSÉ",
       "cashOnDelivery": "Paiement à la livraison",
       "amountDue": "Montant dû",
       "multiplePaymentMethods": "Plusieurs moyens de paiement"

@@ -38,6 +38,8 @@ export const PRINT_CONCEPT_IDS = [
   'print.deliverySlip.addressTruncated',
   'print.deliverySlip.paid',
   'print.deliverySlip.toCollect',
+  'print.deliverySlip.refunded',
+  'print.deliverySlip.partiallyRefunded',
   'print.deliverySlip.cashOnDelivery',
   'print.deliverySlip.amountDue',
   'print.deliverySlip.multiplePaymentMethods',

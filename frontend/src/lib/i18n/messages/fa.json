@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} نویسه دیگر نمایش داده نشده، سفارش را بررسی کنید",
       "paid": "پرداخت‌شده",
       "toCollect": "قابل دریافت",
+      "refunded": "بازپرداخت شد",
+      "partiallyRefunded": "بازپرداخت جزئی",
       "cashOnDelivery": "پرداخت در محل",
       "amountDue": "مبلغ قابل پرداخت",
       "multiplePaymentMethods": "چند روش پرداخت"

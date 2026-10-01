@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요",
       "paid": "결제 완료",
       "toCollect": "수금 예정",
+      "refunded": "환불 완료",
+      "partiallyRefunded": "부분 환불",
       "cashOnDelivery": "착불",
       "amountDue": "미결제 금액",
       "multiplePaymentMethods": "여러 결제 수단"

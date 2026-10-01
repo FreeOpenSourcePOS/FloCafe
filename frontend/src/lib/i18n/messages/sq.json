@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë",
       "paid": "PAGUAR",
       "toCollect": "PËR T'U ARKËTUAR",
+      "refunded": "RIMBURSUA",
+      "partiallyRefunded": "PJESËRISHT I RIMBURSUA",
       "cashOnDelivery": "Pagesë në dorëzim",
       "amountDue": "Shuma për t'u paguar",
       "multiplePaymentMethods": "Disa mënyra pagese"

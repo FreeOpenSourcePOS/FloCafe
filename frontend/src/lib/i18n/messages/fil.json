@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} pang karagdagang karakter na ipinapakita, tingnan ang order",
       "paid": "BAYAD NA",
       "toCollect": "SINGILIN",
+      "refunded": "NA-REFUND",
+      "partiallyRefunded": "BAHAGYANG NA-REFUND",
       "cashOnDelivery": "Bayad sa paghahatid",
       "amountDue": "Halagang dapat bayaran",
       "multiplePaymentMethods": "Maramihang paraan ng pagbabayad"

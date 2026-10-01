@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} weitere Zeichen nicht angezeigt, Bestellung pruefen",
       "paid": "BEZAHLT",
       "toCollect": "EINZUZIEHEN",
+      "refunded": "ERSTATTET",
+      "partiallyRefunded": "TEILWEISE ERSTATTET",
       "cashOnDelivery": "Nachnahme",
       "amountDue": "Fälliger Betrag",
       "multiplePaymentMethods": "Mehrere Zahlungsmethoden"

@@ -930,6 +930,8 @@
       "addressTruncated": "... আরও {count} অক্ষর দেখানো হয়নি, অর্ডার দেখুন",
       "paid": "পরিশোধিত",
       "toCollect": "সংগ্রহ করতে হবে",
+      "refunded": "ফেরত দেওয়া হয়েছে",
+      "partiallyRefunded": "আংশিক ফেরত দেওয়া হয়েছে",
       "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
       "amountDue": "বকেয়া পরিমাণ",
       "multiplePaymentMethods": "একাধিক পেমেন্ট পদ্ধতি"

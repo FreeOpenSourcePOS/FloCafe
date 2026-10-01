@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} символов не показано, проверьте заказ",
       "paid": "ОПЛАЧЕНО",
       "toCollect": "К ОПЛАТЕ",
+      "refunded": "ВОЗВРАЩЕНО",
+      "partiallyRefunded": "ЧАСТИЧНО ВОЗВРАЩЕНО",
       "cashOnDelivery": "Оплата при получении",
       "amountDue": "Сумма к оплате",
       "multiplePaymentMethods": "Несколько способов оплаты"

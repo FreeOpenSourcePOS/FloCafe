@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} مزید حروف دکھائے نہیں گئے، آرڈر دیکھیں",
       "paid": "ادا شدہ",
       "toCollect": "وصول کرنا ہے",
+      "refunded": "رقم واپس کر دیا گیا",
+      "partiallyRefunded": "جزوی رقم واپس کی گئی",
       "cashOnDelivery": "وصولی پر ادائیگی",
       "amountDue": "واجب الادا رقم",
       "multiplePaymentMethods": "ادائیگی کے متعدد طریقے"

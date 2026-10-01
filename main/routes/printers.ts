@@ -4,6 +4,7 @@ import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
 import { buildDeliverySlipPrintData, type DeliverySlipOrderRow } from '../printers/document-delivery-slip';
+import type { DeliverySlipPaymentBill } from '../../shared/print';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
   resolveKotLanguage,
@@ -64,6 +65,14 @@ function ensureDefaultPrinter(db: any): void {
     const replacement = db.prepare('SELECT id FROM printers ORDER BY created_at, name LIMIT 1').get() as any;
     if (replacement) db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), replacement.id);
   }
+}
+
+function getDeliverySlipBills(db: ReturnType<typeof getDatabase>, orderId: number): DeliverySlipPaymentBill[] {
+  const latestBill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(orderId) as DeliverySlipPaymentBill | undefined;
+  if (!latestBill) return [];
+  return typeof latestBill.split_group_id === 'string' && latestBill.split_group_id.length > 0
+    ? db.prepare('SELECT * FROM bills WHERE order_id = ? AND split_group_id = ? ORDER BY id').all(orderId, latestBill.split_group_id) as DeliverySlipPaymentBill[]
+    : [latestBill];
 }
 
 function printerShape(printer: any) {
@@ -703,13 +712,13 @@ router.get('/delivery-slip-payment/:orderId', requirePermission('printing.execut
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id) as DeliverySlipOrderRow['bill'];
+    const bills = getDeliverySlipBills(db, order.id);
     const settings = Object.fromEntries(
       (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
         .map(({ key, value }) => [key, value]),
     );
     const regional = resolveRegionalSnapshot(settings);
-    const { payment } = buildDeliverySlipPrintData({ ...order, bill }, [], {}, {
+    const { payment } = buildDeliverySlipPrintData({ ...order, bills }, [], {}, {
       locale: regional.locale,
       currency: regional.currency,
       currencyDisplay: regional.preferences.currencyDisplay,
@@ -749,8 +758,8 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id);
-    const deliverySlipOrder = bill ? { ...order, bill } : order;
+    const bills = getDeliverySlipBills(db, order.id);
+    const deliverySlipOrder = { ...order, bills };
 
     const items = getEffectiveOrderItems(db, orderId);
 

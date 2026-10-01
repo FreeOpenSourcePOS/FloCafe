@@ -930,6 +930,8 @@
       "addressTruncated": "... แสดงอักขระอีก {count} ตัวไม่ได้แสดง กรุณาตรวจสอบคำสั่งซื้อ",
       "paid": "ชำระแล้ว",
       "toCollect": "เรียกเก็บเงิน",
+      "refunded": "คืนเงินแล้ว",
+      "partiallyRefunded": "คืนเงินบางส่วน",
       "cashOnDelivery": "เก็บเงินปลายทาง",
       "amountDue": "ยอดค้างชำระ",
       "multiplePaymentMethods": "หลายวิธีการชำระเงิน"

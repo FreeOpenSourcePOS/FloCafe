@@ -584,7 +584,16 @@ export const usePrinterStore = create<PrinterState>()(
 
       printDeliverySlip: async (order, contact, opts) => {
         set({ lastError: null });
+        const initialPrinter = get().hardwarePrinter;
+        const initialPrintMethod = get().printMethod;
+        const needsBrowserPopup = !(initialPrinter && initialPrintMethod === 'escpos')
+          && !(initialPrintMethod === 'escpos' && printerService.isConnected);
+        let reservedPopup: Window | null | undefined;
         try {
+          if (needsBrowserPopup) {
+            reservedPopup = printerService.reserveBrowserPrintWindow();
+            if (!reservedPopup) throw new Error('Please allow popups to print');
+          }
           const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways, billShowCustomerPhone } = usePosSettingsStore.getState();
           // A settings change can swap the receipt language without loading its
           // bundle, so load it first rather than printing an English slip silently.
@@ -615,7 +624,7 @@ export const usePrinterStore = create<PrinterState>()(
             type: String((orderForPrint as { type?: string }).type ?? ''),
             special_instructions: orderForPrint.special_instructions ?? null,
           };
-          const hw = get().hardwarePrinter;
+          const hw = initialPrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-delivery-slip', {
@@ -640,6 +649,7 @@ export const usePrinterStore = create<PrinterState>()(
           const paymentResponse = await api.get<{ payment?: DeliverySlipPayment }>(`/printers/delivery-slip-payment/${order.id}`);
           const slipPayment = paymentResponse.data.payment;
           if (get().printMethod === 'escpos' && printerService.isConnected) {
+            if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];
             const columns = columnsForConfiguredPrinter(get().webusbPrinter?.paper_width, paperWidth);
@@ -657,6 +667,11 @@ export const usePrinterStore = create<PrinterState>()(
               },
               encoderWarnings,
             );
+            if (hasFinancialPrintWarning(encoderWarnings)) {
+              const refusal = makeFinancialPrintRefusalMessage(encoderWarnings);
+              toast.error(refusal);
+              throw new Error(refusal);
+            }
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
             return [
@@ -683,7 +698,7 @@ export const usePrinterStore = create<PrinterState>()(
               ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
             },
           );
-          await printerService.printViaBrowser(html, paperWidth);
+          await printerService.printViaBrowser(html, paperWidth, reservedPopup);
           return failedSlipLanguages.map((language) => ({
             field: 'slip language',
             text: language,
@@ -691,6 +706,7 @@ export const usePrinterStore = create<PrinterState>()(
             kind: 'locale' as const,
           })) as PrintWarning[];
         } catch (err) {
+          if (reservedPopup && !reservedPopup.closed) reservedPopup.close();
           set({ lastError: (err as Error).message });
           throw err;
         }

@@ -130,24 +130,39 @@ export function buildDeliverySlipBytes(
 
   if (opts.payment) {
     const payment = opts.payment;
-    const method = payment.status === 'paid'
+    const isPaid = payment.status === 'paid';
+    const isCollectible = payment.status === 'unpaid' && payment.amount > 0;
+    const method = isPaid
       ? payment.methods && payment.methods.length > 1
         ? label('print.deliverySlip.multiplePaymentMethods')
         : paymentMethodLabel(sanitizeDeliverySlipPaymentMethod(payment.method), label)
       : '';
-    const status = label(payment.status === 'paid' ? 'print.deliverySlip.paid' : 'print.deliverySlip.toCollect');
-    const summary = payment.status === 'paid'
+    const statusKey = isPaid
+      ? 'print.deliverySlip.paid'
+      : payment.status === 'refunded'
+        ? 'print.deliverySlip.refunded'
+        : payment.status === 'partially_refunded'
+          ? 'print.deliverySlip.partiallyRefunded'
+          : isCollectible
+            ? 'print.deliverySlip.toCollect'
+            : 'print.deliverySlip.amountDue';
+    const status = label(statusKey);
+    const summary = isPaid
       ? `${status}: ${method ? `${method} ` : ''}(${label('pos.total')}: ${payment.formattedAmount})`
-      : `${status}: ${payment.formattedAmount} (${label('print.deliverySlip.cashOnDelivery')})`;
+      : isCollectible
+        ? `${status}: ${payment.formattedAmount} (${label('print.deliverySlip.cashOnDelivery')})`
+        : payment.status === 'unpaid'
+          ? `${status}: ${payment.formattedAmount}`
+          : status;
     enc.newline().bold(true);
     for (const row of wrapPrinterText(summary, cols)) {
-      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
     }
     enc.bold(false);
-    if (payment.status === 'paid' && payment.formattedAmountDue) {
+    if ((isPaid || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.formattedAmountDue) {
       const due = `${label('print.deliverySlip.amountDue')}: ${payment.formattedAmountDue}`;
       for (const row of wrapPrinterText(due, cols)) {
-        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
       }
     }
   }

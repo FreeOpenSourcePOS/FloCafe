@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} और वर्ण नहीं दिखाए गए, ऑर्डर जाँचें",
       "paid": "भुगतान हो गया",
       "toCollect": "वसूलना है",
+      "refunded": "धनवापसी",
+      "partiallyRefunded": "आंशिक धनवापसी",
       "cashOnDelivery": "डिलीवरी पर नकद",
       "amountDue": "देय राशि",
       "multiplePaymentMethods": "कई भुगतान विधियाँ"

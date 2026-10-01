@@ -66,7 +66,9 @@ export function generateDeliverySlipHtml(
   `).join('');
 
   const payment = opts.payment;
-  const method = payment?.status === 'paid'
+  const isPaid = payment?.status === 'paid';
+  const isCollectible = payment?.status === 'unpaid' && payment.amount > 0;
+  const method = isPaid
     ? payment.methods && payment.methods.length > 1
       ? tr('print.deliverySlip.multiplePaymentMethods')
       : sanitizeDeliverySlipPaymentMethod(payment.method)
@@ -78,11 +80,15 @@ export function generateDeliverySlipHtml(
       : ['wallet', 'loyalty', 'loyalty wallet'].includes(method.toLowerCase())
         ? tr('pos.methodWallet')
         : method;
-  const paymentHtml = payment
-    ? payment.status === 'paid'
+  const paymentHtml = !payment
+    ? ''
+    : isPaid
       ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr('print.deliverySlip.paid'))}: ${escapeHtml(paymentMethod)} (${escapeHtml(tr('pos.total'))}: ${escapeHtml(payment.formattedAmount)})</div>${payment.formattedAmountDue ? `<div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue)}</div>` : ''}</div>`
-      : `<div style="margin:${padding} 0;padding:${padding};border:2px solid #d97706;border-radius:4px;background:#fffbeb;color:#92400e;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(tr('print.deliverySlip.cashOnDelivery'))})</div>`
-    : '';
+      : isCollectible
+        ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #d97706;border-radius:4px;background:#fffbeb;color:#92400e;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(tr('print.deliverySlip.cashOnDelivery'))})</div>`
+        : payment.status === 'unpaid'
+          ? `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmount)}</div>`
+          : `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr(payment.status === 'refunded' ? 'print.deliverySlip.refunded' : 'print.deliverySlip.partiallyRefunded'))}</div><div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue ?? '')}</div></div>`;
 
   return `
     <div class="delivery-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">

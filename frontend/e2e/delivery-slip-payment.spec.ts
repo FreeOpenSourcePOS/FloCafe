@@ -35,10 +35,20 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   const partialBill = await generateBill(partialOrder.id);
 
   await page.addInitScript(() => {
-    const appWindow = window as Window & { __deliverySlipPrintHtml?: string; __deliverySlipPrintCount?: number };
+    const appWindow = window as Window & {
+      __deliverySlipPrintHtml?: string;
+      __deliverySlipPrintCount?: number;
+      __deliverySlipPrintOpenCount?: number;
+      __deliverySlipPrintCloseCount?: number;
+      __deliverySlipPrintBlocked?: boolean;
+    };
     appWindow.__deliverySlipPrintHtml = '';
     appWindow.__deliverySlipPrintCount = 0;
+    appWindow.__deliverySlipPrintOpenCount = 0;
+    appWindow.__deliverySlipPrintCloseCount = 0;
     window.open = (() => {
+      appWindow.__deliverySlipPrintOpenCount = (appWindow.__deliverySlipPrintOpenCount ?? 0) + 1;
+      if (appWindow.__deliverySlipPrintBlocked) return null;
       const printDocument = document.implementation.createHTMLDocument('Delivery slip');
       return {
         document: printDocument,
@@ -46,7 +56,9 @@ test('Orders page browser printing shows unpaid collection and settled payment d
           appWindow.__deliverySlipPrintHtml = printDocument.body.innerHTML;
           appWindow.__deliverySlipPrintCount = (appWindow.__deliverySlipPrintCount ?? 0) + 1;
         },
-        close: () => {},
+        close: () => {
+          appWindow.__deliverySlipPrintCloseCount = (appWindow.__deliverySlipPrintCloseCount ?? 0) + 1;
+        },
       } as unknown as Window;
     }) as typeof window.open;
   });
@@ -122,7 +134,24 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   expect(unpaid.html).toMatch(/TO COLLECT: [^<]+\(Cash on Delivery\)/);
   expect(unpaid.payment.status).toBe('unpaid');
 
-  const paid = await printOrder(paidOrder.id, paidOrder.order_number, 'Paid delivery note');
+  let releaseDelayedPayment!: () => void;
+  let signalDelayedPayment!: () => void;
+  const delayedPaymentReached = new Promise<void>((resolve) => { signalDelayedPayment = resolve; });
+  await page.route(`${BASE}/api/printers/delivery-slip-payment/${paidOrder.id}`, async (route) => {
+    signalDelayedPayment();
+    await new Promise<void>((resolve) => { releaseDelayedPayment = resolve; });
+    await route.continue();
+  }, { times: 1 });
+  const popupCountBeforePaidPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const paidPrint = printOrder(paidOrder.id, paidOrder.order_number, 'Paid delivery note');
+  await delayedPaymentReached;
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(popupCountBeforePaidPrint + 1);
+  releaseDelayedPayment();
+  const paid = await paidPrint;
   expect(paid.html).toContain('PAID: Card (Total:');
   expect(paid.html).toContain(`Amount Due: ${paid.payment.formattedAmountDue}`);
   expect(paid.html).not.toContain('TO COLLECT:');
@@ -167,6 +196,9 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   const printCountBeforeFailure = await page.evaluate(() => (
     (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
   ));
+  const closeCountBeforeFailure = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCloseCount?: number }).__deliverySlipPrintCloseCount ?? 0
+  ));
   await page.route(`${BASE}/api/printers/delivery-slip-payment/${blockedOrder.id}`, (route) => route.fulfill({
     status: 500,
     contentType: 'application/json',
@@ -180,4 +212,21 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   expect(await page.evaluate(() => (
     (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
   ))).toBe(printCountBeforeFailure);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCloseCount?: number }).__deliverySlipPrintCloseCount ?? 0
+  ))).toBe(closeCountBeforeFailure + 1);
+
+  let blockedPaymentRequests = 0;
+  const blockedRequestListener = (request: import('@playwright/test').Request) => {
+    if (new URL(request.url()).pathname === `/api/printers/delivery-slip-payment/${unpaidOrder.id}`) blockedPaymentRequests += 1;
+  };
+  page.on('request', blockedRequestListener);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = true;
+  });
+  const unpaidCard = page.locator('div.bg-card.rounded-xl').filter({ hasText: `#${unpaidOrder.order_number}` }).first();
+  await unpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await expect(page.getByText('Please allow popups to print')).toBeVisible();
+  expect(blockedPaymentRequests).toBe(0);
+  page.off('request', blockedRequestListener);
 });

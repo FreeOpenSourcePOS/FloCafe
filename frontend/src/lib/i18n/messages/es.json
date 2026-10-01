@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} caracteres mas no mostrados, revisa el pedido",
       "paid": "PAGADO",
       "toCollect": "POR COBRAR",
+      "refunded": "REEMBOLSADO",
+      "partiallyRefunded": "REEMBOLSO PARCIAL",
       "cashOnDelivery": "Pago contra entrega",
       "amountDue": "Importe pendiente",
       "multiplePaymentMethods": "Varios métodos de pago"

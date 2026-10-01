@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} karakter lain tidak ditampilkan, periksa pesanan",
       "paid": "LUNAS",
       "toCollect": "HARUS DITAGIH",
+      "refunded": "DIKEMBALIKAN",
+      "partiallyRefunded": "DIKEMBALIKAN SEBAGIAN",
       "cashOnDelivery": "Bayar di Tempat",
       "amountDue": "Jumlah Terutang",
       "multiplePaymentMethods": "Beberapa metode pembayaran"

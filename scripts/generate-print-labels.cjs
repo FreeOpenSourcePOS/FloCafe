@@ -108,6 +108,8 @@ const PRINT_NAMESPACE_KEYS = [
   'print.deliverySlip.addressTruncated',
   'print.deliverySlip.paid',
   'print.deliverySlip.toCollect',
+  'print.deliverySlip.refunded',
+  'print.deliverySlip.partiallyRefunded',
   'print.deliverySlip.cashOnDelivery',
   'print.deliverySlip.amountDue',
   'print.deliverySlip.multiplePaymentMethods',

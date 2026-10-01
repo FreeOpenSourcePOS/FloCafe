@@ -1360,6 +1360,126 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
   }
 });
 
+test('delivery slip: current split checks and refunds cannot turn a balance into false COD or paid status', () => {
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const paymentOptions = { locale: 'en-US', currency: 'USD' };
+  const splitBills = [
+    { id: 10, payment_status: 'paid', total: 12, balance: 0, payment_details: [{ method: 'card', amount: 12 }] },
+    { id: 11, payment_status: 'partial', total: 8, balance: 3.25, payment_details: [{ method: 'cash', amount: 4.75 }] },
+  ];
+  for (const bills of [splitBills, [...splitBills].reverse()]) {
+    const partial = buildDeliverySlipPrintData({ ...ORDER, total: 20, bills }, ORDER.items, CONTACT, paymentOptions).payment;
+    assert.deepEqual(partial, {
+      status: 'unpaid',
+      amount: 3.25,
+      formattedAmount: '$3.25',
+      formattedAmountDue: '$3.25',
+    }, 'only the active check balance is collectible, independent of bill ordering');
+  }
+
+  const kwdSplit = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 2.510,
+    bills: [
+      { payment_status: 'partial', total: 1.255, balance: 0.001 },
+      { payment_status: 'partial', total: 1.255, balance: 0.001 },
+    ],
+  }, ORDER.items, CONTACT, { locale: 'en-KW', currency: 'KWD' }).payment;
+  assert.equal(kwdSplit?.amount, 0.002, 'two KWD split balances sum at the currency’s three-decimal minor unit');
+  assert.ok(kwdSplit?.formattedAmount.includes('0.002'), 'KWD split balance formatting preserves all three decimal places');
+
+  const paidSplit = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 20,
+    bills: [
+      { payment_status: 'paid', total: 12, balance: 0, payment_details: [{ method: 'card', amount: 12 }] },
+      { payment_status: 'paid', total: 8, balance: 0, payment_details: [{ method: 'cash', amount: 8 }] },
+    ],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  assert.deepEqual(paidSplit, {
+    status: 'paid',
+    methods: ['card', 'cash'],
+    amount: 20,
+    formattedAmount: '$20.00',
+    formattedAmountDue: '$0.00',
+  }, 'all settled checks preserve their stored total and distinct tender methods');
+
+  const refunded = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 20,
+    bills: [{ payment_status: 'refunded', total: 20, balance: 0, payment_details: [{ method: 'card', amount: 20 }] }],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  const partialRefund = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 20,
+    bills: [
+      { payment_status: 'paid', total: 12, balance: 0, payment_details: [{ method: 'card', amount: 12 }] },
+      { payment_status: 'partially_refunded', total: 8, balance: 0, payment_details: [{ method: 'cash', amount: 8 }] },
+    ],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  const zeroUnpaid = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 0,
+    bills: [{ payment_status: 'unpaid', total: 0, balance: 0 }],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  assert.equal(refunded?.status, 'refunded');
+  assert.equal(refunded?.amount, 0, 'a refund never prints the original paid total as current collection');
+  assert.equal(partialRefund?.status, 'partially_refunded');
+  assert.equal(partialRefund?.amount, 0, 'refund output does not invent a net-paid amount');
+  assert.equal(zeroUnpaid?.status, 'unpaid', 'zero balance alone cannot claim payment');
+  assert.equal(zeroUnpaid?.amount, 0);
+
+  const backend = (order: any) => renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
+  const frontOrder = { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00' };
+  for (const [payment, expected] of [[refunded, 'REFUNDED'], [partialRefund, 'PARTIALLY REFUNDED']] as const) {
+    const order = { ...ORDER, total: 20, bills: payment === refunded
+      ? [{ payment_status: 'refunded', total: 20, balance: 0 }]
+      : [
+        { payment_status: 'paid', total: 12, balance: 0 },
+        { payment_status: 'partially_refunded', total: 8, balance: 0 },
+      ] };
+    const printData = buildDeliverySlipPrintData(order, ORDER.items, CONTACT, paymentOptions);
+    const backendResult = backend(order);
+    const webusb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+      frontOrder, [], CONTACT, { paperWidth: 80, columns: 42, language: 'en', payment: printData.payment }, [],
+    )));
+    const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, [], CONTACT, {
+      paperWidth: 80, language: 'en', payment: printData.payment,
+    });
+    for (const text of [escPosToText(backendResult.data), webusb, html]) {
+      assert.ok(text.includes(expected), `${expected} appears on every delivery slip path`);
+      assert.ok(text.includes('Amount Due: $0.00'), 'refund output states zero due without claiming net payment');
+      assert.ok(!text.includes('TO COLLECT'), 'a refund is never presented as cash on delivery');
+      assert.ok(!text.includes('PAID:'), 'a refund is never presented as paid');
+      assert.ok(!text.includes('Card') && !text.includes('Cash'), 'refund output does not imply payment remains collectible');
+    }
+  }
+
+  const zeroOrder = { ...ORDER, total: 0, bills: [{ payment_status: 'unpaid', total: 0, balance: 0 }] };
+  const zeroData = buildDeliverySlipPrintData(zeroOrder, ORDER.items, CONTACT, paymentOptions);
+  const zeroWebUsb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder, [], CONTACT, { paperWidth: 80, columns: 42, language: 'en', payment: zeroData.payment }, [],
+  )));
+  const zeroHtml = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, [], CONTACT, {
+    paperWidth: 80, language: 'en', payment: zeroData.payment,
+  });
+  for (const text of [escPosToText(backend(zeroOrder).data), zeroWebUsb, zeroHtml]) {
+    assert.ok(text.includes('Amount Due: $0.00'), 'unpaid zero-balance output is explicit without claiming paid');
+    assert.ok(!text.includes('TO COLLECT') && !text.includes('Cash on Delivery'), 'zero balance is not a COD collection');
+    assert.ok(!text.includes('PAID:'), 'zero balance alone cannot claim payment');
+  }
+});
+
 test('delivery slip: payment method text is bounded, wrapped, and cannot inject printer or HTML commands', () => {
   const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
   const method = `Custom {CUT}\n<img src=x>${'X'.repeat(70)}`;
@@ -1413,6 +1533,47 @@ test('delivery slip: payment method text is bounded, wrapped, and cannot inject 
   );
   assert.ok(!html.includes('<img'), 'payment method text cannot inject HTML');
   assert.ok(html.includes('&lt;img'), 'payment method markup is escaped');
+});
+
+test('delivery slip: unsupported payment text is classified as financial for native, raster, and WebUSB output', () => {
+  const profile = resolvePrinterProfile({ profile_id: 'generic-escpos-58' });
+  const capabilities = capabilitiesForPrinter(profile, 'cols-32', false);
+  const order = {
+    ...ORDER,
+    total: 25,
+    bill: {
+      payment_status: 'paid',
+      total: 25,
+      balance: 0,
+      payment_details: [{ method: 'پرداخت', amount: 25 }],
+    },
+  };
+  const backend = renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 32,
+    language: 'en',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities,
+  });
+  assert.ok(backend.warnings.some((warning) => warning.kind === 'financial'), 'native text fallback marks the payment row financial');
+  assert.equal(backend.rasterGroups.find((group) => group.groupId === 'delivery-slip-payment')?.financial, true,
+    'raster fallback retains the payment group financial marker');
+
+  const payment = buildDeliverySlipPrintData(order, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' }).payment;
+  assert.ok(payment);
+  const webusbWarnings: any[] = [];
+  fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    { order_number: ORDER.order_number, created_at: ORDER.created_at },
+    [],
+    CONTACT,
+    { paperWidth: 58, columns: 32, language: 'en', payment },
+    webusbWarnings,
+  );
+  assert.ok(webusbWarnings.some((warning) => warning.kind === 'financial'), 'WebUSB marks an unsupported payment row financial before dispatch');
 });
 
 test('delivery slip: an order with no contact still renders, and says nothing it does not know', () => {

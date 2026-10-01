@@ -1,6 +1,6 @@
 
 import { parseDbTimestamp } from '../db';
-import { formatMoney, type CurrencyDisplay, type DigitMode } from '../countries';
+import { formatMoney, getCurrencyMinorUnitFactor, type CurrencyDisplay, type DigitMode } from '../countries';
 import { printLabel } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
@@ -30,6 +30,7 @@ import {
   resolveDeliverySlipPaymentSummary,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
+  type DeliverySlipPaymentBill,
   type DeliverySlipDocument,
   type DeliverySlipDocumentBlock,
   type DeliverySlipHeaderBlock,
@@ -83,6 +84,7 @@ export interface DeliverySlipOrderRow {
     readonly payment_method?: unknown;
     readonly payment_details?: unknown;
   } | null;
+  readonly bills?: readonly DeliverySlipPaymentBill[];
   readonly customer?: { readonly name?: unknown } | null;
 }
 
@@ -116,7 +118,12 @@ export function buildDeliverySlipPrintData(
   );
 
   const ticketItems = Array.isArray(items) ? items : [];
-  const paymentSummary = resolveDeliverySlipPaymentSummary(order?.total, order?.bill);
+  const paymentBills = Array.isArray(order?.bills) ? order.bills : order?.bill;
+  const paymentSummary = resolveDeliverySlipPaymentSummary(
+    order?.total,
+    paymentBills,
+    getCurrencyMinorUnitFactor(String(options.currency ?? '')),
+  );
   const formatAmount = (amount: number) => formatMoney(amount, String(options.currency ?? ''), options.locale ?? 'en-US', {
     currencyDisplay: options.currencyDisplay,
     digits: options.digits,
@@ -195,6 +202,7 @@ export interface DeliverySlipDocumentRenderOptions {
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly rasterGroups?: RasterSemanticLineGroup[];
+  readonly financialLineRanges?: Array<{ lineIndex: number; lineCount: number }>;
 }
 
 function slipBlock<K extends DeliverySlipDocumentBlock['kind']>(
@@ -353,16 +361,27 @@ function slipPaymentLines(
   payment: DeliverySlipPaymentBlock,
   options: DeliverySlipDocumentRenderOptions,
 ): string[] {
-  const status = thermalSafeText(labelOf(payment.label), payment.status === 'paid' ? 'PAID' : 'TO COLLECT', options.arabicShaping, options.capabilities);
+  const fallbackStatus = payment.status === 'paid'
+    ? 'PAID'
+    : payment.status === 'refunded'
+      ? 'REFUNDED'
+      : payment.status === 'partially_refunded'
+        ? 'PARTIAL REFUND'
+        : !payment.detailsText
+          ? 'AMOUNT DUE'
+          : 'TO COLLECT';
+  const status = thermalSafeText(labelOf(payment.label), fallbackStatus, options.arabicShaping, options.capabilities);
   const method = payment.methodLabel?.primary ?? payment.methodName?.text ?? '';
   const totalLabel = thermalSafeText(printLabel(options.language, 'pos.total'), 'Total', options.arabicShaping, options.capabilities);
   const summary = payment.status === 'paid'
     ? `${status}: ${method ? `${method} ` : ''}(${totalLabel}: ${payment.amountText.text})`
-    : `${status}: ${payment.amountText.text}${payment.detailsText ? ` (${payment.detailsText.text})` : ''}`;
+    : payment.status === 'unpaid' && payment.detailsText
+      ? `${status}: ${payment.amountText.text} (${payment.detailsText.text})`
+      : `${status}${payment.amountText.text ? `: ${payment.amountText.text}` : ''}`;
   const lines: string[] = [];
   pushWrapped(lines, summary, options.columns, options.language, options.capabilities);
   if (lines.length > 0) lines[0] = `{BOLD}${lines[0]}{/BOLD}`;
-  if (payment.status === 'paid' && payment.detailsText) {
+  if ((payment.status === 'paid' || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.detailsText) {
     pushWrapped(lines, payment.detailsText.text, options.columns, options.language, options.capabilities);
   }
   return lines;
@@ -459,7 +478,9 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
         lineCount: paymentLines.length,
         sourceLines: paymentLines.map((line) => line.replace(/\{\/?BOLD\}/g, '')),
         sourceControlLines: paymentLines,
+        financial: true,
       });
+      options.financialLineRanges?.push({ lineIndex: paymentStart, lineCount: paymentLines.length });
       lines.push('-'.repeat(cols));
     }
   }
@@ -545,6 +566,7 @@ export function renderDeliverySlipViaDocument(
   const document = buildDeliverySlipDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
   const rasterGroups: RasterSemanticLineGroup[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const lines = renderDeliverySlipDocumentToLines(document, {
     columns: opts.columns,
     language: opts.language,
@@ -555,6 +577,7 @@ export function renderDeliverySlipViaDocument(
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
     rasterGroups,
+    financialLineRanges,
   });
   const data = buildEscPos(lines, opts.useUnicode, {
     cutMode: opts.cutMode,
@@ -562,6 +585,7 @@ export function renderDeliverySlipViaDocument(
     columns: opts.columns,
     language: opts.language,
     capabilities: opts.capabilities,
+    financialLineRanges,
   }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

@@ -971,7 +971,7 @@ export interface DeliverySlipNotesBlock {
 export interface DeliverySlipPaymentBlock {
   readonly kind: 'delivery-slip-payment';
   readonly direction: TextDirection;
-  readonly status: 'paid' | 'unpaid';
+  readonly status: DeliverySlipPaymentSummary['status'];
   readonly label: SemanticLabel;
   readonly methodLabel?: SemanticLabel;
   readonly methodName?: DirectionalText;
@@ -1031,55 +1031,109 @@ export function sanitizeDeliverySlipPaymentMethod(value: unknown): string {
 }
 
 export interface DeliverySlipPaymentSummary {
-  readonly status: 'paid' | 'unpaid';
+  readonly status: 'paid' | 'unpaid' | 'refunded' | 'partially_refunded';
   readonly method?: string;
   readonly methods?: readonly string[];
   readonly amount: number;
 }
 
+export interface DeliverySlipPaymentBill {
+  readonly split_group_id?: unknown;
+  readonly payment_status?: unknown;
+  readonly total?: unknown;
+  readonly balance?: unknown;
+  readonly payment_method?: unknown;
+  readonly payment_details?: unknown;
+}
+
 export function resolveDeliverySlipPaymentSummary(
   orderTotal: unknown,
-  bill?: {
-    readonly payment_status?: unknown;
-    readonly total?: unknown;
-    readonly balance?: unknown;
-    readonly payment_method?: unknown;
-    readonly payment_details?: unknown;
-  } | null,
+  billOrBills?: DeliverySlipPaymentBill | readonly DeliverySlipPaymentBill[] | null,
+  minorUnitFactor = 100,
 ): DeliverySlipPaymentSummary | undefined {
-  const isPaid = bill?.payment_status === 'paid';
-  const paymentAmount = optionalPaymentAmount(isPaid ? bill?.total : bill?.balance ?? orderTotal);
+  const bills = Array.isArray(billOrBills)
+    ? billOrBills
+    : billOrBills
+      ? [billOrBills]
+      : [];
+  const factor = Number.isSafeInteger(minorUnitFactor) && minorUnitFactor > 0 ? minorUnitFactor : 100;
+  const closedStatuses = new Set(['paid', 'refunded', 'partially_refunded']);
+  const openBills = bills.filter((bill) => !closedStatuses.has(String(bill.payment_status ?? '')));
+  const refundBills = bills.filter((bill) => bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded');
+  const allPaid = bills.length > 0 && bills.every((bill) => bill.payment_status === 'paid');
+  const allRefunded = bills.length > 0 && bills.every((bill) => bill.payment_status === 'refunded');
+
+  const toMinorUnits = (value: unknown): number | undefined => {
+    const amount = optionalPaymentAmount(value);
+    return amount === undefined || amount < 0 ? undefined : Math.round(amount * factor);
+  };
+  const sumAmounts = (values: unknown[]): number | undefined => {
+    const minors = values.map(toMinorUnits);
+    return minors.some((amount) => amount === undefined)
+      ? undefined
+      : (minors as number[]).reduce((sum, amount) => sum + amount, 0) / factor;
+  };
+
+  let status: DeliverySlipPaymentSummary['status'];
+  let paymentAmount: number | undefined;
+  if (openBills.length > 0) {
+    status = 'unpaid';
+    const balances = openBills.map((bill) => bill.balance ?? (bills.length === 1 ? orderTotal : undefined));
+    paymentAmount = sumAmounts(balances);
+  } else if (allRefunded) {
+    status = 'refunded';
+    paymentAmount = 0;
+  } else if (refundBills.length > 0) {
+    status = 'partially_refunded';
+    paymentAmount = 0;
+  } else if (allPaid) {
+    status = 'paid';
+    paymentAmount = sumAmounts(bills.map((bill) => bill.total ?? (bills.length === 1 ? orderTotal : undefined)));
+  } else {
+    status = 'unpaid';
+    paymentAmount = toMinorUnits(orderTotal);
+    if (paymentAmount !== undefined) paymentAmount /= factor;
+  }
+
   if (paymentAmount === undefined || paymentAmount < 0) return undefined;
 
-  let paymentDetails = bill?.payment_details;
-  if (typeof paymentDetails === 'string') {
-    try {
-      paymentDetails = JSON.parse(paymentDetails);
-    } catch {
-      paymentDetails = null;
-    }
-  }
-  const paymentLines = Array.isArray(paymentDetails)
-    ? paymentDetails
-    : paymentDetails && typeof paymentDetails === 'object'
-      ? [paymentDetails]
-      : [];
   const paymentMethods: string[] = [];
-  for (const line of paymentLines) {
-    if (!line || typeof line !== 'object') continue;
-    const method = sanitizeDeliverySlipPaymentMethod((line as { method?: unknown }).method);
-    if (method && !paymentMethods.some((existing) => existing.toLowerCase() === method.toLowerCase())) {
-      paymentMethods.push(method);
+  if (status === 'paid') {
+    for (const bill of bills) {
+      const existingMethodCount = paymentMethods.length;
+      let paymentDetails = bill.payment_details;
+      if (typeof paymentDetails === 'string') {
+        try {
+          paymentDetails = JSON.parse(paymentDetails);
+        } catch {
+          paymentDetails = null;
+        }
+      }
+      const paymentLines = Array.isArray(paymentDetails)
+        ? paymentDetails
+        : paymentDetails && typeof paymentDetails === 'object'
+          ? [paymentDetails]
+          : [];
+      for (const line of paymentLines) {
+        if (!line || typeof line !== 'object') continue;
+        const method = sanitizeDeliverySlipPaymentMethod((line as { method?: unknown }).method);
+        if (method && !paymentMethods.some((existing) => existing.toLowerCase() === method.toLowerCase())) {
+          paymentMethods.push(method);
+        }
+      }
+      const billMethod = sanitizeDeliverySlipPaymentMethod(bill.payment_method);
+      if (paymentMethods.length === existingMethodCount && billMethod
+        && !paymentMethods.some((existing) => existing.toLowerCase() === billMethod.toLowerCase())) {
+        paymentMethods.push(billMethod);
+      }
     }
   }
-  const billMethod = sanitizeDeliverySlipPaymentMethod(bill?.payment_method);
-  if (isPaid && paymentMethods.length === 0 && billMethod) paymentMethods.push(billMethod);
 
   return Object.freeze({
-    status: isPaid ? 'paid' : 'unpaid',
-    ...(isPaid && paymentMethods.length > 1
+    status,
+    ...(status === 'paid' && paymentMethods.length > 1
       ? { methods: Object.freeze(paymentMethods) }
-      : isPaid && paymentMethods.length === 1
+      : status === 'paid' && paymentMethods.length === 1
         ? { method: paymentMethods[0] }
         : {}),
     amount: paymentAmount,
@@ -1115,7 +1169,7 @@ export interface DeliverySlipPrintData {
     readonly addressTruncatedChars?: number;
   };
   readonly payment?: {
-    readonly status: 'paid' | 'unpaid';
+    readonly status: DeliverySlipPaymentSummary['status'];
     readonly method?: string;
     readonly methods?: readonly string[];
     readonly amount: number;
@@ -1419,7 +1473,8 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
       && isFiniteNumber(value.noteTruncatedChars);
   }
   if (value.kind === 'delivery-slip-payment') {
-    return (value.status === 'paid' || value.status === 'unpaid')
+    return (value.status === 'paid' || value.status === 'unpaid'
+      || value.status === 'refunded' || value.status === 'partially_refunded')
       && isSemanticLabel(value.label)
       && (value.methodLabel === undefined || isSemanticLabel(value.methodLabel))
       && (value.methodName === undefined || isDirectionalText(value.methodName))
@@ -1520,8 +1575,18 @@ export function buildDeliverySlipDocument(
     .filter(Boolean);
   const hasMultiplePaymentMethods = paymentMethods.length > 1;
   const paymentMethod = sanitizeDeliverySlipPaymentMethod(paymentData?.method ?? paymentMethods[0]);
+  const paymentStatusLabel = paymentData?.status === 'paid'
+    ? 'print.deliverySlip.paid'
+    : paymentData?.status === 'refunded'
+      ? 'print.deliverySlip.refunded'
+      : paymentData?.status === 'partially_refunded'
+        ? 'print.deliverySlip.partiallyRefunded'
+        : paymentData?.amount === 0
+          ? 'print.deliverySlip.amountDue'
+          : 'print.deliverySlip.toCollect';
   const paymentBlock: DeliverySlipPaymentBlock | null = paymentData
-    && (paymentData.status === 'paid' || paymentData.status === 'unpaid')
+    && (paymentData.status === 'paid' || paymentData.status === 'unpaid'
+      || paymentData.status === 'refunded' || paymentData.status === 'partially_refunded')
     && Number.isFinite(paymentData.amount)
     && paymentData.amount >= 0
     && typeof paymentData.formattedAmount === 'string'
@@ -1529,16 +1594,19 @@ export function buildDeliverySlipDocument(
       kind: 'delivery-slip-payment',
       direction: base,
       status: paymentData.status,
-      label: resolveSemanticLabel(labels, paymentData.status === 'paid'
-        ? 'print.deliverySlip.paid'
-        : 'print.deliverySlip.toCollect'),
+      label: resolveSemanticLabel(labels, paymentStatusLabel),
       ...(paymentData.status === 'paid' && hasMultiplePaymentMethods
         ? { methodLabel: resolveSemanticLabel(labels, 'print.deliverySlip.multiplePaymentMethods') }
         : paymentData.status === 'paid' && paymentMethod
           ? { methodLabel: paymentLabel(labels, paymentMethod) }
           : {}),
-      ...(paymentMethod ? { methodName: directionalText(paymentMethod, base) } : {}),
-      amountText: directionalText(paymentData.formattedAmount, base),
+      ...(paymentData.status === 'paid' && paymentMethod ? { methodName: directionalText(paymentMethod, base) } : {}),
+      amountText: directionalText(
+        paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
+          ? ''
+          : paymentData.formattedAmount,
+        base,
+      ),
       ...(paymentData.status === 'paid' && typeof paymentData.formattedAmountDue === 'string'
         ? {
           detailsText: directionalText(
@@ -1546,9 +1614,16 @@ export function buildDeliverySlipDocument(
             base,
           ),
         }
-        : paymentData.status === 'unpaid'
+        : paymentData.status === 'unpaid' && paymentData.amount > 0
           ? { detailsText: directionalText(resolveSemanticLabel(labels, 'print.deliverySlip.cashOnDelivery').primary, base) }
-          : {}),
+          : paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
+            ? {
+              detailsText: directionalText(
+                `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue ?? ''}`,
+                base,
+              ),
+            }
+            : {}),
     })
     : null;
 

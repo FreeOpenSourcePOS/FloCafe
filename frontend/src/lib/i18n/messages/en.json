@@ -930,6 +930,8 @@
       "addressTruncated": "... {count} more characters not shown, check the order",
       "paid": "PAID",
       "toCollect": "TO COLLECT",
+      "refunded": "REFUNDED",
+      "partiallyRefunded": "PARTIALLY REFUNDED",
       "cashOnDelivery": "Cash on Delivery",
       "amountDue": "Amount Due",
       "multiplePaymentMethods": "Multiple payment methods"

@@ -930,6 +930,8 @@
       "addressTruncated": "... لم يتم عرض {count} حرفا إضافيا، راجع الطلب",
       "paid": "مدفوع",
       "toCollect": "مطلوب التحصيل",
+      "refunded": "مُسْتَرَدّ",
+      "partiallyRefunded": "مُسْتَرَدّ جُزْئِيًا",
       "cashOnDelivery": "الدفع عند الاستلام",
       "amountDue": "المبلغ المستحق",
       "multiplePaymentMethods": "طرق دفع متعددة"

@@ -132,7 +132,7 @@ export function buildDeliverySlipPrintData(
     ? {
       ...paymentSummary,
       formattedAmount: formatAmount(paymentSummary.amount),
-      formattedAmountDue: formatAmount(paymentSummary.status === 'paid' ? 0 : paymentSummary.amount),
+      formattedAmountDue: formatAmount(paymentSummary.amountDue),
     }
     : undefined;
   return {

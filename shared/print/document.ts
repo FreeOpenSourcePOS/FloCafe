@@ -1035,6 +1035,7 @@ export interface DeliverySlipPaymentSummary {
   readonly method?: string;
   readonly methods?: readonly string[];
   readonly amount: number;
+  readonly amountDue: number;
 }
 
 export interface DeliverySlipPaymentBill {
@@ -1058,7 +1059,6 @@ export function resolveDeliverySlipPaymentSummary(
       : [];
   const factor = Number.isSafeInteger(minorUnitFactor) && minorUnitFactor > 0 ? minorUnitFactor : 100;
   const closedStatuses = new Set(['paid', 'refunded', 'partially_refunded']);
-  const openBills = bills.filter((bill) => !closedStatuses.has(String(bill.payment_status ?? '')));
   const refundBills = bills.filter((bill) => bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded');
   const allPaid = bills.length > 0 && bills.every((bill) => bill.payment_status === 'paid');
   const allRefunded = bills.length > 0 && bills.every((bill) => bill.payment_status === 'refunded');
@@ -1074,13 +1074,18 @@ export function resolveDeliverySlipPaymentSummary(
       : (minors as number[]).reduce((sum, amount) => sum + amount, 0) / factor;
   };
 
+  const balances = bills.map((bill) => {
+    const paymentStatus = String(bill.payment_status ?? '');
+    return bill.balance ?? (closedStatuses.has(paymentStatus) ? 0 : bills.length === 1 ? orderTotal : undefined);
+  });
+  const orderTotalMinorUnits = bills.length === 0 ? toMinorUnits(orderTotal) : undefined;
+  const amountDue = bills.length > 0
+    ? sumAmounts(balances)
+    : orderTotalMinorUnits === undefined ? undefined : orderTotalMinorUnits / factor;
+
   let status: DeliverySlipPaymentSummary['status'];
   let paymentAmount: number | undefined;
-  if (openBills.length > 0) {
-    status = 'unpaid';
-    const balances = openBills.map((bill) => bill.balance ?? (bills.length === 1 ? orderTotal : undefined));
-    paymentAmount = sumAmounts(balances);
-  } else if (allRefunded) {
+  if (allRefunded) {
     status = 'refunded';
     paymentAmount = 0;
   } else if (refundBills.length > 0) {
@@ -1091,11 +1096,10 @@ export function resolveDeliverySlipPaymentSummary(
     paymentAmount = sumAmounts(bills.map((bill) => bill.total ?? (bills.length === 1 ? orderTotal : undefined)));
   } else {
     status = 'unpaid';
-    paymentAmount = toMinorUnits(orderTotal);
-    if (paymentAmount !== undefined) paymentAmount /= factor;
+    paymentAmount = amountDue;
   }
 
-  if (paymentAmount === undefined || paymentAmount < 0) return undefined;
+  if (paymentAmount === undefined || paymentAmount < 0 || amountDue === undefined) return undefined;
 
   const paymentMethods: string[] = [];
   if (status === 'paid') {
@@ -1137,6 +1141,7 @@ export function resolveDeliverySlipPaymentSummary(
         ? { method: paymentMethods[0] }
         : {}),
     amount: paymentAmount,
+    amountDue,
   });
 }
 
@@ -1173,6 +1178,7 @@ export interface DeliverySlipPrintData {
     readonly method?: string;
     readonly methods?: readonly string[];
     readonly amount: number;
+    readonly amountDue: number;
     readonly formattedAmount: string;
     readonly formattedAmountDue?: string;
   };

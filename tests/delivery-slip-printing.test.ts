@@ -1208,18 +1208,21 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
     status: 'paid',
     method: 'card',
     amount: 25,
+    amountDue: 0,
     formattedAmount: '$25.00',
     formattedAmountDue: '$0.00',
   });
   assert.deepEqual(unpaidData.payment, {
     status: 'unpaid',
     amount: 25,
+    amountDue: 25,
     formattedAmount: '$25.00',
     formattedAmountDue: '$25.00',
   });
   assert.deepEqual(partialData.payment, {
     status: 'unpaid',
     amount: 10,
+    amountDue: 10,
     formattedAmount: '$10.00',
     formattedAmountDue: '$10.00',
   }, 'a partial bill uses its outstanding balance');
@@ -1227,6 +1230,7 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
     status: 'paid',
     methods: ['cash', 'card'],
     amount: 25,
+    amountDue: 0,
     formattedAmount: '$25.00',
     formattedAmountDue: '$0.00',
   }, 'a fully paid bill retains all distinct tender methods');
@@ -1372,6 +1376,7 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
     assert.deepEqual(partial, {
       status: 'unpaid',
       amount: 3.25,
+      amountDue: 3.25,
       formattedAmount: '$3.25',
       formattedAmountDue: '$3.25',
     }, 'only the active check balance is collectible, independent of bill ordering');
@@ -1386,6 +1391,7 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
     ],
   }, ORDER.items, CONTACT, { locale: 'en-KW', currency: 'KWD' }).payment;
   assert.equal(kwdSplit?.amount, 0.002, 'two KWD split balances sum at the currency’s three-decimal minor unit');
+  assert.equal(kwdSplit?.amountDue, 0.002, 'KWD outstanding due uses the same canonical minor-unit factor');
   assert.ok(kwdSplit?.formattedAmount.includes('0.002'), 'KWD split balance formatting preserves all three decimal places');
 
   const paidSplit = buildDeliverySlipPrintData({
@@ -1400,6 +1406,7 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
     status: 'paid',
     methods: ['card', 'cash'],
     amount: 20,
+    amountDue: 0,
     formattedAmount: '$20.00',
     formattedAmountDue: '$0.00',
   }, 'all settled checks preserve their stored total and distinct tender methods');
@@ -1417,6 +1424,24 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
       { payment_status: 'partially_refunded', total: 8, balance: 0, payment_details: [{ method: 'cash', amount: 8 }] },
     ],
   }, ORDER.items, CONTACT, paymentOptions).payment;
+  const partiallyRefundedWithBalance = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 20,
+    bills: [{ payment_status: 'partially_refunded', total: 20, balance: 7 }],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  const refundedWithBalance = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 20,
+    bills: [{ payment_status: 'refunded', total: 20, balance: 7 }],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
+  const mixedRefundSplit = buildDeliverySlipPrintData({
+    ...ORDER,
+    total: 10,
+    bills: [
+      { payment_status: 'refunded', total: 7, balance: 7 },
+      { payment_status: 'unpaid', total: 3, balance: 3 },
+    ],
+  }, ORDER.items, CONTACT, paymentOptions).payment;
   const zeroUnpaid = buildDeliverySlipPrintData({
     ...ORDER,
     total: 0,
@@ -1426,6 +1451,10 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
   assert.equal(refunded?.amount, 0, 'a refund never prints the original paid total as current collection');
   assert.equal(partialRefund?.status, 'partially_refunded');
   assert.equal(partialRefund?.amount, 0, 'refund output does not invent a net-paid amount');
+  assert.equal(partiallyRefundedWithBalance?.formattedAmountDue, '$7.00', 'a partially refunded bill preserves its stored outstanding balance');
+  assert.equal(refundedWithBalance?.formattedAmountDue, '$7.00', 'a refunded bill preserves its stored outstanding balance');
+  assert.equal(mixedRefundSplit?.status, 'partially_refunded', 'a refunded split sibling keeps the mixed order marked as refunded');
+  assert.equal(mixedRefundSplit?.formattedAmountDue, '$10.00', 'split due sums stored balances across refund and open checks');
   assert.equal(zeroUnpaid?.status, 'unpaid', 'zero balance alone cannot claim payment');
   assert.equal(zeroUnpaid?.amount, 0);
 
@@ -1462,6 +1491,47 @@ test('delivery slip: current split checks and refunds cannot turn a balance into
       assert.ok(!text.includes('TO COLLECT'), 'a refund is never presented as cash on delivery');
       assert.ok(!text.includes('PAID:'), 'a refund is never presented as paid');
       assert.ok(!text.includes('Card') && !text.includes('Cash'), 'refund output does not imply payment remains collectible');
+    }
+  }
+
+  const outstandingRefundOrders = [
+    {
+      order: { ...ORDER, total: 20, bill: { payment_status: 'refunded', total: 20, balance: 7 } },
+      status: 'REFUNDED',
+      due: '$7.00',
+    },
+    {
+      order: { ...ORDER, total: 20, bill: { payment_status: 'partially_refunded', total: 20, balance: 7 } },
+      status: 'PARTIALLY REFUNDED',
+      due: '$7.00',
+    },
+    {
+      order: {
+        ...ORDER,
+        total: 10,
+        bills: [
+          { payment_status: 'refunded', total: 7, balance: 7 },
+          { payment_status: 'unpaid', total: 3, balance: 3 },
+        ],
+      },
+      status: 'PARTIALLY REFUNDED',
+      due: '$10.00',
+    },
+  ] as const;
+  for (const { order, status, due } of outstandingRefundOrders) {
+    const printData = buildDeliverySlipPrintData(order, ORDER.items, CONTACT, paymentOptions);
+    const backendResult = backend(order);
+    const webusb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+      frontOrder, [], CONTACT, { paperWidth: 80, columns: 42, language: 'en', payment: printData.payment }, [],
+    )));
+    const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, [], CONTACT, {
+      paperWidth: 80, language: 'en', payment: printData.payment,
+    });
+    for (const text of [escPosToText(backendResult.data), webusb, html]) {
+      assert.ok(text.includes(status), `${status} remains visible with an outstanding refund balance`);
+      assert.ok(text.includes(`Amount Due: ${due}`), `stored refund balance ${due} is shown on each print path`);
+      assert.ok(!text.includes('TO COLLECT') && !text.includes('Cash on Delivery'), 'refund state is not relabeled as COD');
+      assert.ok(!text.includes('PAID:'), 'refund state is not mislabeled as paid');
     }
   }
 
@@ -1514,7 +1584,7 @@ test('delivery slip: payment method text is bounded, wrapped, and cannot inject 
   assert.ok(paymentLines.every((line) => displayCellWidth(line.replace(/\{\/?BOLD\}/g, '')) <= 42), 'backend payment lines wrap to the configured columns');
   assert.equal(backend.lines.filter((line) => line.trim() === '{CUT}').length, 1, 'custom method text cannot add a cut command');
 
-  const unsafePayment = { status: 'paid' as const, method, amount: 25, formattedAmount: '$25.00', formattedAmountDue: '$0.00' };
+  const unsafePayment = { status: 'paid' as const, method, amount: 25, amountDue: 0, formattedAmount: '$25.00', formattedAmountDue: '$0.00' };
   const webusb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
     { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00' },
     [],

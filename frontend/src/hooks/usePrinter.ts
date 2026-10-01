@@ -33,8 +33,7 @@ import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { columnsForConfiguredPrinter } from '@print/width';
-import { formatCurrencyForTenant, getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
-import { resolveDeliverySlipPaymentSummary } from '@print/document';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -616,28 +615,6 @@ export const usePrinterStore = create<PrinterState>()(
             type: String((orderForPrint as { type?: string }).type ?? ''),
             special_instructions: orderForPrint.special_instructions ?? null,
           };
-          const slipBill = orderForPrint.bills?.length
-            ? [...orderForPrint.bills].sort((left, right) => Number(right.id) - Number(left.id))[0]
-            : orderForPrint.bill;
-          const paymentSummary = resolveDeliverySlipPaymentSummary(orderForPrint.total, slipBill);
-          const currencyPrefs = {
-            currencyDisplay: tenant?.currency_display,
-            digits: tenant?.number_digits,
-          };
-          const formatSlipAmount = (amount: number) => formatCurrencyForTenant(
-            amount,
-            tenant?.country ?? '',
-            tenant?.currency ?? '',
-            currencyPrefs,
-          );
-          const slipPayment: DeliverySlipPayment | undefined = paymentSummary
-            ? {
-              ...paymentSummary,
-              formattedAmount: formatSlipAmount(paymentSummary.amount),
-              formattedAmountDue: formatSlipAmount(paymentSummary.status === 'paid' ? 0 : paymentSummary.amount),
-            }
-            : undefined;
-
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
@@ -660,6 +637,8 @@ export const usePrinterStore = create<PrinterState>()(
 
           await printerService.awaitPendingReconnect();
           const { paperWidth } = get();
+          const paymentResponse = await api.get<{ payment?: DeliverySlipPayment }>(`/printers/delivery-slip-payment/${order.id}`);
+          const slipPayment = paymentResponse.data.payment;
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];

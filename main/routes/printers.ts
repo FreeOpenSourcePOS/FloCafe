@@ -3,6 +3,7 @@ import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServer
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { buildDeliverySlipPrintData } from '../printers/document-delivery-slip';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
   resolveKotLanguage,
@@ -14,7 +15,7 @@ import {
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
 import { requirePermission } from '../services/authorization';
-import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
+import { getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -693,6 +694,33 @@ router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(as
     res.status(500).json({ error: "Internal server error" });
   }
 }));
+
+router.get('/delivery-slip-payment/:orderId', requirePermission('printing.execute'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id);
+    const settings = Object.fromEntries(
+      (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
+        .map(({ key, value }) => [key, value]),
+    );
+    const regional = resolveRegionalSnapshot(settings);
+    const { payment } = buildDeliverySlipPrintData({ ...order, bill }, [], {}, {
+      locale: regional.locale,
+      currency: regional.currency,
+      currencyDisplay: regional.preferences.currencyDisplay,
+      digits: regional.preferences.digits,
+    });
+    return res.json({ payment });
+  } catch (error: any) {
+    console.error('[Delivery Slip Payment] Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // POST /api/printers/print-delivery-slip. No bill is required, so a slip can be
 // handed over before the customer pays. See docs/reference/product-invariants.md.

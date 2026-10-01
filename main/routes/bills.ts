@@ -41,6 +41,7 @@ function checkKitchenDeliveryStatus(
   orderId: string | number,
   overridePin?: unknown,
   clientIp = 'unknown',
+  billId?: string | number,
 ): { allowed: boolean; count: number; items: string[]; overridden?: boolean; managerUserId?: string } {
   const setting = db.prepare("SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'").get() as { value: string } | undefined;
   const kdsEnabled = db.prepare("SELECT value FROM settings WHERE key = 'kds_enabled'").get() as { value: string } | undefined;
@@ -49,10 +50,19 @@ function checkKitchenDeliveryStatus(
     return { allowed: true, count: 0, items: [] };
   }
 
-  const undeliveredItems = db.prepare(`
-    SELECT product_name FROM order_items
-    WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
-  `).all(orderId) as { product_name: string }[];
+  const hasBillItems = billId !== undefined
+    && db.prepare('SELECT 1 FROM bill_items WHERE bill_id = ? LIMIT 1').get(billId);
+  const undeliveredItems = hasBillItems
+    ? db.prepare(`
+        SELECT oi.product_name FROM bill_items bi
+        JOIN order_items oi ON oi.id = bi.order_item_id
+        WHERE bi.bill_id = ? AND bi.quantity > 0 AND oi.order_id = ?
+          AND oi.status IN ('pending', 'preparing', 'ready')
+      `).all(billId, orderId) as { product_name: string }[]
+    : db.prepare(`
+        SELECT product_name FROM order_items
+        WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+      `).all(orderId) as { product_name: string }[];
   if (undeliveredItems.length === 0) return { allowed: true, count: 0, items: [] };
 
   const items = undeliveredItems.map((item) => item.product_name);
@@ -1546,7 +1556,7 @@ export function syncUnpaidBillsForOrder(
       allocations.roundOff[index], total, balance, now(), bill.id,
     );
     if (total <= 0 && balance <= 0) {
-      if (bill.payment_status !== 'paid') {
+      if (bill.payment_status !== 'paid' && checkKitchenDeliveryStatus(db, bill.order_id, undefined, 'unknown', bill.id).allowed) {
         db.prepare(`UPDATE bills SET payment_status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?`).run(now(), now(), bill.id);
       }
     } else if (zeroClosed) {
@@ -2031,7 +2041,7 @@ function applyPaymentBatch(
   if (idempotentReplay) {
     return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited: false, loyaltyPointsEarned: 0 };
   }
-  const kitchenStatus = checkKitchenDeliveryStatus(db, bill.order_id, overridePin, clientIp);
+  const kitchenStatus = checkKitchenDeliveryStatus(db, bill.order_id, overridePin, clientIp, bill.id);
   if (!kitchenStatus.allowed) {
     throw Object.assign(new Error('Kitchen items must be delivered before billing'), {
       statusCode: 409,

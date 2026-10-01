@@ -927,7 +927,12 @@
       "title": "डिलीवरी स्लिप",
       "banner": "डिलीवरी स्लिप",
       "address": "डिलीवरी का पता",
-      "addressTruncated": "... {count} और वर्ण नहीं दिखाए गए, ऑर्डर जाँचें"
+      "addressTruncated": "... {count} और वर्ण नहीं दिखाए गए, ऑर्डर जाँचें",
+      "paid": "भुगतान हो गया",
+      "toCollect": "वसूलना है",
+      "cashOnDelivery": "डिलीवरी पर नकद",
+      "amountDue": "देय राशि",
+      "multiplePaymentMethods": "कई भुगतान विधियाँ"
     },
     "hsn": "HSN",
     "zReport": {

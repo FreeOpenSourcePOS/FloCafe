@@ -721,6 +721,9 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id);
+    const deliverySlipOrder = bill ? { ...order, bill } : order;
+
     const items = getEffectiveOrderItems(db, orderId);
 
     // The slip prints the address in full, so it reads the column the receipt
@@ -742,7 +745,7 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
     )?.value !== 'false'
       || (db.prepare("SELECT value FROM settings WHERE key = 'bill_show_customer_phone'").get() as { value?: string } | undefined)?.value !== 'false';
     const result = await printDeliverySlipDetailed(
-      order,
+      deliverySlipOrder,
       items,
       {
         name: customer?.name || '',

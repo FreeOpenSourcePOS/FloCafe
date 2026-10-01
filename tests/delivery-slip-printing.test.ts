@@ -12,7 +12,7 @@ import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY
 import { clampDeliverySlipText } from '../shared/print/document';
 import { formatReceipt, escPosToText } from '../main/printers/thermal';
 import { capabilitiesForPrinter, getSupportedPrinterProfiles, resolvePrinterProfile } from '../main/printers/profiles';
-import { graphemeSegments } from '../shared/print/width';
+import { displayCellWidth, graphemeSegments } from '../shared/print/width';
 import { validateCustomerAddress } from '../main/routes/orders-validation';
 import { measureEscPos, loadFrontendPrintModules } from './helpers/receipt-column-measure';
 
@@ -1165,6 +1165,254 @@ test('delivery slip: all three render paths print the order note', () => {
   );
   assert.ok(!injected.includes('<img'), 'a note cannot inject markup into the print fragment');
   assert.ok(injected.includes('&lt;img'), 'the note is HTML-escaped instead');
+});
+
+test('delivery slip: paid, partial, unpaid, and multi-tender summaries match across all render paths', () => {
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const paymentOrder = { ...ORDER, total: 25, special_instructions: 'Call on arrival' };
+  const paidOrder = {
+    ...paymentOrder,
+    bill: {
+      payment_status: 'paid',
+      total: 25,
+      payment_details: JSON.stringify([{ method: 'card', amount: 25 }]),
+    },
+  };
+  const unpaidOrder = { ...paymentOrder };
+  const partialOrder = {
+    ...paymentOrder,
+    bill: {
+      payment_status: 'partial',
+      total: 25,
+      balance: 10,
+      payment_details: [{ method: 'cash', amount: 15 }],
+    },
+  };
+  const multiTenderOrder = {
+    ...paymentOrder,
+    bill: {
+      payment_status: 'paid',
+      total: 25,
+      payment_details: JSON.stringify([
+        { method: 'cash', amount: 10 },
+        { method: 'card', amount: 15 },
+      ]),
+    },
+  };
+  const paymentOptions = { locale: 'en-US', currency: 'USD' };
+  const paidData = buildDeliverySlipPrintData(paidOrder, ORDER.items, CONTACT, paymentOptions);
+  const unpaidData = buildDeliverySlipPrintData(unpaidOrder, ORDER.items, CONTACT, paymentOptions);
+  const partialData = buildDeliverySlipPrintData(partialOrder, ORDER.items, CONTACT, paymentOptions);
+  const multiTenderData = buildDeliverySlipPrintData(multiTenderOrder, ORDER.items, CONTACT, paymentOptions);
+  assert.deepEqual(paidData.payment, {
+    status: 'paid',
+    method: 'card',
+    amount: 25,
+    formattedAmount: '$25.00',
+    formattedAmountDue: '$0.00',
+  });
+  assert.deepEqual(unpaidData.payment, {
+    status: 'unpaid',
+    amount: 25,
+    formattedAmount: '$25.00',
+    formattedAmountDue: '$25.00',
+  });
+  assert.deepEqual(partialData.payment, {
+    status: 'unpaid',
+    amount: 10,
+    formattedAmount: '$10.00',
+    formattedAmountDue: '$10.00',
+  }, 'a partial bill uses its outstanding balance');
+  assert.deepEqual(multiTenderData.payment, {
+    status: 'paid',
+    methods: ['cash', 'card'],
+    amount: 25,
+    formattedAmount: '$25.00',
+    formattedAmountDue: '$0.00',
+  }, 'a fully paid bill retains all distinct tender methods');
+
+  const backend = (order: any) => renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
+  const frontOrder = {
+    order_number: 'ORD-DEL-001',
+    created_at: '2026-08-21 18:42:00',
+    type: 'delivery',
+    special_instructions: paymentOrder.special_instructions,
+  };
+  const frontItems = ORDER.items.map((item: any) => ({
+    product_name: item.product_name,
+    quantity: item.quantity,
+    special_instructions: item.special_instructions,
+  }));
+  const assertPaid = (text: string, path: string) => {
+    assert.ok(text.includes('PAID'), `${path} shows paid status`);
+    assert.ok(text.includes('Card'), `${path} shows the method`);
+    assert.ok(text.includes('Total: $25.00'), `${path} shows the paid total`);
+    assert.ok(text.includes('Amount Due: $0.00'), `${path} shows zero due`);
+    assert.ok(text.indexOf('PAID') > text.indexOf('Call on arrival'), `${path} places payment after the delivery note`);
+    assert.ok(text.indexOf('PAID') < text.indexOf('Espresso Doppio'), `${path} places payment before the items`);
+  };
+  const backendPaid = backend(paidOrder);
+  assertPaid(escPosToText(backendPaid.data), 'backend ESC/POS');
+  assert.deepEqual(backendPaid.document.blocks.map((block) => block.kind), [
+    'delivery-slip-header',
+    'delivery-slip-contact',
+    'delivery-slip-notes',
+    'delivery-slip-payment',
+    'delivery-slip-items',
+  ]);
+  assert.ok(isDeliverySlipDocument(backendPaid.document), 'the payment document passes its guard');
+
+  const webusbPaid = fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder,
+    frontItems,
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', payment: paidData.payment },
+    [],
+  );
+  assertPaid(escPosToText(Buffer.from(webusbPaid)), 'WebUSB');
+  const htmlPaid = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, frontItems, CONTACT, {
+    paperWidth: 80,
+    language: 'en',
+    payment: paidData.payment,
+  });
+  assertPaid(htmlPaid, 'web print');
+  assert.ok(htmlPaid.includes('#15803d'), 'paid web print uses the green status box');
+
+  const multiTenderBackend = escPosToText(backend(multiTenderOrder).data);
+  const multiTenderWebUsb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder,
+    frontItems,
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', payment: multiTenderData.payment },
+    [],
+  )));
+  const multiTenderHtml = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, frontItems, CONTACT, {
+    paperWidth: 80,
+    language: 'en',
+    payment: multiTenderData.payment,
+  });
+  for (const [text, path] of [
+    [multiTenderBackend, 'backend ESC/POS'],
+    [multiTenderWebUsb, 'WebUSB'],
+    [multiTenderHtml, 'web print'],
+  ]) {
+    assert.ok(text.includes('Multiple payment methods'), `${path} does not misstate a split tender`);
+    assert.ok(text.indexOf('Multiple payment methods') > text.indexOf('Call on arrival'), `${path} places payment after the delivery note`);
+    assert.ok(text.indexOf('Multiple payment methods') < text.indexOf('Espresso Doppio'), `${path} places payment before the items`);
+  }
+
+  const backendUnpaid = escPosToText(backend(unpaidOrder).data);
+  const webusbUnpaid = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder,
+    frontItems,
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', payment: unpaidData.payment },
+    [],
+  )));
+  const htmlUnpaid = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, frontItems, CONTACT, {
+    paperWidth: 80,
+    language: 'en',
+    payment: unpaidData.payment,
+  });
+  for (const [text, path] of [
+    [backendUnpaid, 'backend ESC/POS'],
+    [webusbUnpaid, 'WebUSB'],
+    [htmlUnpaid, 'web print'],
+  ]) {
+    assert.ok(text.includes('TO COLLECT'), `${path} shows collection status`);
+    assert.ok(text.includes('$25.00'), `${path} shows the amount to collect`);
+    assert.ok(text.includes('Cash on Delivery'), `${path} identifies cash on delivery`);
+    assert.ok(text.indexOf('TO COLLECT') < text.indexOf('Espresso Doppio'), `${path} places collection before the items`);
+  }
+  assert.ok(htmlUnpaid.includes('#d97706'), 'unpaid web print uses the amber status box');
+
+  const backendPartial = escPosToText(backend(partialOrder).data);
+  const webusbPartial = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder,
+    frontItems,
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', payment: partialData.payment },
+    [],
+  )));
+  const htmlPartial = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, frontItems, CONTACT, {
+    paperWidth: 80,
+    language: 'en',
+    payment: partialData.payment,
+  });
+  for (const [text, path] of [
+    [backendPartial, 'backend ESC/POS'],
+    [webusbPartial, 'WebUSB'],
+    [htmlPartial, 'web print'],
+  ]) {
+    assert.ok(text.includes('TO COLLECT'), `${path} shows collection status after partial payment`);
+    assert.ok(text.includes('$10.00'), `${path} shows the outstanding balance, not the original order total`);
+    assert.ok(text.indexOf('TO COLLECT') < text.indexOf('Espresso Doppio'), `${path} places collection before the items`);
+  }
+});
+
+test('delivery slip: payment method text is bounded, wrapped, and cannot inject printer or HTML commands', () => {
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const method = `Custom {CUT}\n<img src=x>${'X'.repeat(70)}`;
+  const order = {
+    ...ORDER,
+    total: 25,
+    bill: {
+      payment_status: 'paid',
+      total: 25,
+      payment_details: [{ method, amount: 25 }],
+    },
+  };
+  const backend = renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
+  const paymentBlock = backend.document.blocks.find((block) => block.kind === 'delivery-slip-payment');
+  assert.ok(paymentBlock && paymentBlock.kind === 'delivery-slip-payment', 'the payment block is present');
+  assert.ok(!paymentBlock.methodName?.text.includes('{'), 'printer control braces are removed');
+  assert.ok(!paymentBlock.methodName?.text.includes('\n'), 'line breaks are removed from the method');
+  assert.ok((paymentBlock.methodName?.text.length ?? 0) <= 60, 'custom method names are bounded');
+  const paymentStart = backend.lines.findIndex((line) => line.includes('PAID'));
+  const itemStart = backend.lines.findIndex((line) => line.includes('Espresso Doppio'));
+  const paymentLines = backend.lines.slice(paymentStart, itemStart).filter((line) => line.trim() && !line.startsWith('-'));
+  assert.ok(paymentLines.every((line) => displayCellWidth(line.replace(/\{\/?BOLD\}/g, '')) <= 42), 'backend payment lines wrap to the configured columns');
+  assert.equal(backend.lines.filter((line) => line.trim() === '{CUT}').length, 1, 'custom method text cannot add a cut command');
+
+  const unsafePayment = { status: 'paid' as const, method, amount: 25, formattedAmount: '$25.00', formattedAmountDue: '$0.00' };
+  const webusb = escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00' },
+    [],
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', payment: unsafePayment },
+    [],
+  )));
+  assert.ok(!webusb.includes('{CUT}'), 'WebUSB payment text cannot pass an ESC/POS token');
+  assert.ok(webusb.includes('X'.repeat(30)), 'WebUSB payment text is wrapped without being discarded');
+
+  const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00' },
+    [],
+    CONTACT,
+    { paperWidth: 80, language: 'en', payment: unsafePayment },
+  );
+  assert.ok(!html.includes('<img'), 'payment method text cannot inject HTML');
+  assert.ok(html.includes('&lt;img'), 'payment method markup is escaped');
 });
 
 test('delivery slip: an order with no contact still renders, and says nothing it does not know', () => {

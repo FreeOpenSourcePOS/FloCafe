@@ -19,7 +19,7 @@ import {
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
-import { buildDeliverySlipBytes, type DeliverySlipContact, type DeliverySlipWebUsbOptions } from '@/lib/printer/delivery-slip-encoder';
+import { buildDeliverySlipBytes, type DeliverySlipContact, type DeliverySlipPayment, type DeliverySlipWebUsbOptions } from '@/lib/printer/delivery-slip-encoder';
 import {
   hasFinancialPrintWarning,
   makeBillTemplateFallbackWarning,
@@ -33,7 +33,8 @@ import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { columnsForConfiguredPrinter } from '@print/width';
-import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+import { formatCurrencyForTenant, getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+import { resolveDeliverySlipPaymentSummary } from '@print/document';
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -615,6 +616,27 @@ export const usePrinterStore = create<PrinterState>()(
             type: String((orderForPrint as { type?: string }).type ?? ''),
             special_instructions: orderForPrint.special_instructions ?? null,
           };
+          const slipBill = orderForPrint.bills?.length
+            ? [...orderForPrint.bills].sort((left, right) => Number(right.id) - Number(left.id))[0]
+            : orderForPrint.bill;
+          const paymentSummary = resolveDeliverySlipPaymentSummary(orderForPrint.total, slipBill);
+          const currencyPrefs = {
+            currencyDisplay: tenant?.currency_display,
+            digits: tenant?.number_digits,
+          };
+          const formatSlipAmount = (amount: number) => formatCurrencyForTenant(
+            amount,
+            tenant?.country ?? '',
+            tenant?.currency ?? '',
+            currencyPrefs,
+          );
+          const slipPayment: DeliverySlipPayment | undefined = paymentSummary
+            ? {
+              ...paymentSummary,
+              formattedAmount: formatSlipAmount(paymentSummary.amount),
+              formattedAmountDue: formatSlipAmount(paymentSummary.status === 'paid' ? 0 : paymentSummary.amount),
+            }
+            : undefined;
 
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
@@ -651,6 +673,7 @@ export const usePrinterStore = create<PrinterState>()(
                 columns,
                 arabicShaping: printerArabicShaping,
                 language: slipLanguages[0] as Language,
+                ...(slipPayment ? { payment: slipPayment } : {}),
                 ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
               },
               encoderWarnings,
@@ -677,6 +700,7 @@ export const usePrinterStore = create<PrinterState>()(
             {
               paperWidth,
               language: resolveBillPrintLanguages()[0] as Language,
+              ...(slipPayment ? { payment: slipPayment } : {}),
               ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
             },
           );

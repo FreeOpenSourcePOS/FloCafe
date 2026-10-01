@@ -927,7 +927,12 @@
       "title": "НАКЛАДНАЯ ДОСТАВКИ",
       "banner": "НАКЛАДНАЯ ДОСТАВКИ",
       "address": "Адрес доставки",
-      "addressTruncated": "... {count} символов не показано, проверьте заказ"
+      "addressTruncated": "... {count} символов не показано, проверьте заказ",
+      "paid": "ОПЛАЧЕНО",
+      "toCollect": "К ОПЛАТЕ",
+      "cashOnDelivery": "Оплата при получении",
+      "amountDue": "Сумма к оплате",
+      "multiplePaymentMethods": "Несколько способов оплаты"
     },
     "hsn": "HSN",
     "zReport": {

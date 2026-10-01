@@ -967,6 +967,18 @@ export interface DeliverySlipNotesBlock {
   readonly noteTruncatedChars: number;
 }
 
+/** Payment or collection status for the courier. */
+export interface DeliverySlipPaymentBlock {
+  readonly kind: 'delivery-slip-payment';
+  readonly direction: TextDirection;
+  readonly status: 'paid' | 'unpaid';
+  readonly label: SemanticLabel;
+  readonly methodLabel?: SemanticLabel;
+  readonly methodName?: DirectionalText;
+  readonly amountText: DirectionalText;
+  readonly detailsText?: DirectionalText;
+}
+
 /**
  * The order note is bounded on the way in by `max_order_notes_length` (a tenant
  * setting, 200 by default), so a raised setting or a legacy row can carry more than
@@ -1008,12 +1020,79 @@ export function clampDeliverySlipText(
   return { text: keptText, truncatedChars: text.length - keptText.length };
 }
 
+/** Keep custom payment names bounded and safe for printer command parsers. */
+export function sanitizeDeliverySlipPaymentMethod(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/[\u0000-\u001f\u007f{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+export interface DeliverySlipPaymentSummary {
+  readonly status: 'paid' | 'unpaid';
+  readonly method?: string;
+  readonly methods?: readonly string[];
+  readonly amount: number;
+}
+
+export function resolveDeliverySlipPaymentSummary(
+  orderTotal: unknown,
+  bill?: {
+    readonly payment_status?: unknown;
+    readonly total?: unknown;
+    readonly balance?: unknown;
+    readonly payment_method?: unknown;
+    readonly payment_details?: unknown;
+  } | null,
+): DeliverySlipPaymentSummary | undefined {
+  const isPaid = bill?.payment_status === 'paid';
+  const paymentAmount = optionalPaymentAmount(isPaid ? bill?.total : bill?.balance ?? orderTotal);
+  if (paymentAmount === undefined || paymentAmount < 0) return undefined;
+
+  let paymentDetails = bill?.payment_details;
+  if (typeof paymentDetails === 'string') {
+    try {
+      paymentDetails = JSON.parse(paymentDetails);
+    } catch {
+      paymentDetails = null;
+    }
+  }
+  const paymentLines = Array.isArray(paymentDetails)
+    ? paymentDetails
+    : paymentDetails && typeof paymentDetails === 'object'
+      ? [paymentDetails]
+      : [];
+  const paymentMethods: string[] = [];
+  for (const line of paymentLines) {
+    if (!line || typeof line !== 'object') continue;
+    const method = sanitizeDeliverySlipPaymentMethod((line as { method?: unknown }).method);
+    if (method && !paymentMethods.some((existing) => existing.toLowerCase() === method.toLowerCase())) {
+      paymentMethods.push(method);
+    }
+  }
+  const billMethod = sanitizeDeliverySlipPaymentMethod(bill?.payment_method);
+  if (isPaid && paymentMethods.length === 0 && billMethod) paymentMethods.push(billMethod);
+
+  return Object.freeze({
+    status: isPaid ? 'paid' : 'unpaid',
+    ...(isPaid && paymentMethods.length > 1
+      ? { methods: Object.freeze(paymentMethods) }
+      : isPaid && paymentMethods.length === 1
+        ? { method: paymentMethods[0] }
+        : {}),
+    amount: paymentAmount,
+  });
+}
+
 export type DeliverySlipBlockKind = DeliverySlipDocumentBlock['kind'];
 
 export type DeliverySlipDocumentBlock =
   | DeliverySlipHeaderBlock
   | DeliverySlipContactBlock
   | DeliverySlipNotesBlock
+  | DeliverySlipPaymentBlock
   | DeliverySlipItemsBlock;
 
 export interface DeliverySlipPrintData {
@@ -1034,6 +1113,14 @@ export interface DeliverySlipPrintData {
     readonly addressSource: DeliverySlipAddressSource | null;
     /** Characters dropped from a legacy over-long address, 0 when it printed whole. */
     readonly addressTruncatedChars?: number;
+  };
+  readonly payment?: {
+    readonly status: 'paid' | 'unpaid';
+    readonly method?: string;
+    readonly methods?: readonly string[];
+    readonly amount: number;
+    readonly formattedAmount: string;
+    readonly formattedAmountDue?: string;
   };
   readonly items: readonly {
     readonly productName: string;
@@ -1331,6 +1418,14 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
       && isSemanticLabel(value.label)
       && isFiniteNumber(value.noteTruncatedChars);
   }
+  if (value.kind === 'delivery-slip-payment') {
+    return (value.status === 'paid' || value.status === 'unpaid')
+      && isSemanticLabel(value.label)
+      && (value.methodLabel === undefined || isSemanticLabel(value.methodLabel))
+      && (value.methodName === undefined || isDirectionalText(value.methodName))
+      && isDirectionalText(value.amountText)
+      && (value.detailsText === undefined || isDirectionalText(value.detailsText));
+  }
   if (value.kind !== 'delivery-slip-items' || !Array.isArray(value.rows)) return false;
   return value.rows.every((row) => isRecord(row)
     && isDirectionalText(row.name)
@@ -1350,9 +1445,7 @@ export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDoc
     || !Array.isArray(value.blocks)
     || !value.blocks.every(isDeliverySlipDocumentBlock)) return false;
 
-  // Header first, exactly one contact, at most one notes block, items last. The
-  // notes block is optional precisely so an order without a note produces the same
-  // three-block document it did before the block existed.
+  // Header first, exactly one contact, optional notes and payment, items last.
   const kinds = value.blocks.map((block) => (block as { kind: string }).kind);
   const count = (kind: DeliverySlipBlockKind): number => kinds.filter((entry) => entry === kind).length;
   const at = (kind: DeliverySlipBlockKind): number => kinds.indexOf(kind);
@@ -1360,10 +1453,14 @@ export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDoc
     return false;
   }
   if (count('delivery-slip-notes') > 1) return false;
+  if (count('delivery-slip-payment') > 1) return false;
   if (at('delivery-slip-header') !== 0 || at('delivery-slip-items') !== kinds.length - 1) return false;
   if (at('delivery-slip-contact') > at('delivery-slip-items')) return false;
-  if (at('delivery-slip-notes') === -1) return true;
-  return at('delivery-slip-contact') < at('delivery-slip-notes') && at('delivery-slip-notes') < at('delivery-slip-items');
+  const notesAt = at('delivery-slip-notes');
+  const paymentAt = at('delivery-slip-payment');
+  if (notesAt !== -1 && !(at('delivery-slip-contact') < notesAt && notesAt < at('delivery-slip-items'))) return false;
+  if (paymentAt !== -1 && !(at('delivery-slip-contact') < paymentAt && paymentAt < at('delivery-slip-items'))) return false;
+  return notesAt === -1 || paymentAt === -1 || notesAt < paymentAt;
 }
 
 export function buildDeliverySlipDocument(
@@ -1417,6 +1514,44 @@ export function buildDeliverySlipDocument(
     noteTruncatedChars: toTruncatedCount(printData.noteTruncatedChars),
   });
 
+  const paymentData = printData.payment;
+  const paymentMethods = (paymentData?.methods ?? [])
+    .map(sanitizeDeliverySlipPaymentMethod)
+    .filter(Boolean);
+  const hasMultiplePaymentMethods = paymentMethods.length > 1;
+  const paymentMethod = sanitizeDeliverySlipPaymentMethod(paymentData?.method ?? paymentMethods[0]);
+  const paymentBlock: DeliverySlipPaymentBlock | null = paymentData
+    && (paymentData.status === 'paid' || paymentData.status === 'unpaid')
+    && Number.isFinite(paymentData.amount)
+    && paymentData.amount >= 0
+    && typeof paymentData.formattedAmount === 'string'
+    ? Object.freeze({
+      kind: 'delivery-slip-payment',
+      direction: base,
+      status: paymentData.status,
+      label: resolveSemanticLabel(labels, paymentData.status === 'paid'
+        ? 'print.deliverySlip.paid'
+        : 'print.deliverySlip.toCollect'),
+      ...(paymentData.status === 'paid' && hasMultiplePaymentMethods
+        ? { methodLabel: resolveSemanticLabel(labels, 'print.deliverySlip.multiplePaymentMethods') }
+        : paymentData.status === 'paid' && paymentMethod
+          ? { methodLabel: paymentLabel(labels, paymentMethod) }
+          : {}),
+      ...(paymentMethod ? { methodName: directionalText(paymentMethod, base) } : {}),
+      amountText: directionalText(paymentData.formattedAmount, base),
+      ...(paymentData.status === 'paid' && typeof paymentData.formattedAmountDue === 'string'
+        ? {
+          detailsText: directionalText(
+            `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue}`,
+            base,
+          ),
+        }
+        : paymentData.status === 'unpaid'
+          ? { detailsText: directionalText(resolveSemanticLabel(labels, 'print.deliverySlip.cashOnDelivery').primary, base) }
+          : {}),
+    })
+    : null;
+
   const items: DeliverySlipItemsBlock = Object.freeze({
     kind: 'delivery-slip-items',
     direction: base,
@@ -1436,14 +1571,15 @@ export function buildDeliverySlipDocument(
     }))),
   });
 
+  const blocks: DeliverySlipDocumentBlock[] = [header, contact];
+  if (note.length > 0 || notes.noteTruncatedChars > 0) blocks.push(notes);
+  if (paymentBlock) blocks.push(paymentBlock);
+  blocks.push(items);
+
   return Object.freeze({
     version: 1 as const,
     direction: resolveDirectionSpec(base),
     languages: printContext.languages,
-    blocks: Object.freeze(
-      (note.length > 0 || notes.noteTruncatedChars > 0
-        ? [header, contact, notes, items]
-        : [header, contact, items]) as readonly DeliverySlipDocumentBlock[],
-    ),
+    blocks: Object.freeze(blocks),
   });
 }

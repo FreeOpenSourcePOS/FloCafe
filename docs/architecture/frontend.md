@@ -367,7 +367,8 @@ For a bill or a kitchen ticket, in the order the store tries them:
 ### The courier slip takes a shorter path
 
 `printDeliverySlip` is the fourth print action, and it has no raster path. A delivery slip carries
-the address, the full contact block, and the order lines, and it resolves through three routes:
+the address, the full contact block, payment/collection status, and order lines, and it resolves
+through three routes:
 
 1. `POST /api/printers/print-delivery-slip` when a hardware printer is configured.
 2. `buildDeliverySlipBytes` in
@@ -377,8 +378,9 @@ the address, the full contact block, and the order lines, and it resolves throug
    [`delivery-slip-web-print.ts`](../../frontend/src/lib/printer/delivery-slip-web-print.ts) for
    the system print dialog.
 
-Both renderer-side slip files build the slip from a small order projection rather than from the
-kernel's `DeliverySlipDocument`. That model and `buildDeliverySlipDocument` exist in
+Both renderer-side slip files build the slip from a small order projection and the order's latest
+bill summary rather than from the kernel's `DeliverySlipDocument`. That model and
+`buildDeliverySlipDocument` exist in
 `shared/print/document.ts` and are consumed by the backend renderer
 [`main/printers/document-delivery-slip.ts`](../../main/printers/document-delivery-slip.ts), so the
 rule that a renderer consumes a document does not hold for the WebUSB and browser slip paths.

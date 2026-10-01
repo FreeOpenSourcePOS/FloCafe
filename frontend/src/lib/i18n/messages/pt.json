@@ -927,7 +927,12 @@
       "title": "COMPROVANTE DE ENTREGA",
       "banner": "COMPROVANTE DE ENTREGA",
       "address": "Endereço de entrega",
-      "addressTruncated": "... {count} caracteres restantes nao exibidos, confira o pedido"
+      "addressTruncated": "... {count} caracteres restantes nao exibidos, confira o pedido",
+      "paid": "PAGO",
+      "toCollect": "A COBRAR",
+      "cashOnDelivery": "Pagamento na entrega",
+      "amountDue": "Valor em aberto",
+      "multiplePaymentMethods": "Vários métodos de pagamento"
     },
     "hsn": "HSN",
     "zReport": {

@@ -927,7 +927,12 @@
       "title": "PHIẾU GIAO HÀNG",
       "banner": "PHIẾU GIAO HÀNG",
       "address": "Địa chỉ giao hàng",
-      "addressTruncated": "... {count} ký tự nữa không hiển thị, hãy kiểm tra đơn hàng"
+      "addressTruncated": "... {count} ký tự nữa không hiển thị, hãy kiểm tra đơn hàng",
+      "paid": "ĐÃ THANH TOÁN",
+      "toCollect": "CẦN THU",
+      "cashOnDelivery": "Thanh toán khi nhận hàng",
+      "amountDue": "Số tiền còn phải thu",
+      "multiplePaymentMethods": "Nhiều phương thức thanh toán"
     },
     "hsn": "HSN",
     "zReport": {

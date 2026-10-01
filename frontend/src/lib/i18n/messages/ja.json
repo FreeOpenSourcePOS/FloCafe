@@ -927,7 +927,12 @@
       "title": "配達伝票",
       "banner": "配達伝票",
       "address": "配達先住所",
-      "addressTruncated": "... 他 {count} 文字は表示されていません。注文を確認してください"
+      "addressTruncated": "... 他 {count} 文字は表示されていません。注文を確認してください",
+      "paid": "支払済み",
+      "toCollect": "集金額",
+      "cashOnDelivery": "代金引換",
+      "amountDue": "未払い金額",
+      "multiplePaymentMethods": "複数の支払い方法"
     },
     "hsn": "HSN",
     "zReport": {

@@ -927,7 +927,12 @@
       "title": "배달전표",
       "banner": "배달전표",
       "address": "배달 주소",
-      "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요"
+      "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요",
+      "paid": "결제 완료",
+      "toCollect": "수금 예정",
+      "cashOnDelivery": "착불",
+      "amountDue": "미결제 금액",
+      "multiplePaymentMethods": "여러 결제 수단"
     },
     "hsn": "HSN",
     "zReport": {

@@ -927,7 +927,12 @@
       "title": "SLIP PENGANTARAN",
       "banner": "SLIP PENGANTARAN",
       "address": "Alamat pengantaran",
-      "addressTruncated": "... {count} karakter lain tidak ditampilkan, periksa pesanan"
+      "addressTruncated": "... {count} karakter lain tidak ditampilkan, periksa pesanan",
+      "paid": "LUNAS",
+      "toCollect": "HARUS DITAGIH",
+      "cashOnDelivery": "Bayar di Tempat",
+      "amountDue": "Jumlah Terutang",
+      "multiplePaymentMethods": "Beberapa metode pembayaran"
     },
     "hsn": "HSN",
     "zReport": {

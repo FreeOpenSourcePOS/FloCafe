@@ -927,7 +927,12 @@
       "title": "ডেলিভারি স্লিপ",
       "banner": "ডেলিভারি স্লিপ",
       "address": "ডেলিভারি ঠিকানা",
-      "addressTruncated": "... আরও {count} অক্ষর দেখানো হয়নি, অর্ডার দেখুন"
+      "addressTruncated": "... আরও {count} অক্ষর দেখানো হয়নি, অর্ডার দেখুন",
+      "paid": "পরিশোধিত",
+      "toCollect": "সংগ্রহ করতে হবে",
+      "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
+      "amountDue": "বকেয়া পরিমাণ",
+      "multiplePaymentMethods": "একাধিক পেমেন্ট পদ্ধতি"
     },
     "hsn": "HSN",
     "zReport": {

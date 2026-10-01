@@ -927,7 +927,12 @@
       "title": "SLIP NG DELIVERY",
       "banner": "SLIP NG DELIVERY",
       "address": "Address ng Delivery",
-      "addressTruncated": "... {count} pang karagdagang karakter na ipinapakita, tingnan ang order"
+      "addressTruncated": "... {count} pang karagdagang karakter na ipinapakita, tingnan ang order",
+      "paid": "BAYAD NA",
+      "toCollect": "SINGILIN",
+      "cashOnDelivery": "Bayad sa paghahatid",
+      "amountDue": "Halagang dapat bayaran",
+      "multiplePaymentMethods": "Maramihang paraan ng pagbabayad"
     },
     "hsn": "HSN/SAC",
     "zReport": {

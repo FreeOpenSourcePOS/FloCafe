@@ -927,7 +927,12 @@
       "title": "DELIVERY SLIP",
       "banner": "DELIVERY SLIP",
       "address": "Delivery address",
-      "addressTruncated": "... {count} more characters not shown, check the order"
+      "addressTruncated": "... {count} more characters not shown, check the order",
+      "paid": "PAID",
+      "toCollect": "TO COLLECT",
+      "cashOnDelivery": "Cash on Delivery",
+      "amountDue": "Amount Due",
+      "multiplePaymentMethods": "Multiple payment methods"
     },
     "hsn": "HSN",
     "zReport": {

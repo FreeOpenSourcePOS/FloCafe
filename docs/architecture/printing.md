@@ -59,7 +59,10 @@ vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax
 `KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary.
 
 `DeliverySlipDocument` v1 is a courier handout: `delivery-slip-header`,
-`delivery-slip-contact`, `delivery-slip-items`. It is a **separate kind, not a receipt
+`delivery-slip-contact`, optional `delivery-slip-notes` and
+`delivery-slip-payment`, then `delivery-slip-items`. The payment block shows the paid method(s) and
+total with zero due, or the outstanding bill balance (falling back to the order total when no bill
+exists) as cash to collect. It is a **separate kind, not a receipt
 template**, and that is load-bearing. It carries the full customer number and the delivery
 address, and it never passes through `buildBillDocument`, so it does not consult the receipt's
 `bill_show_customer_phone` setting and does not share the receipt's mask default. A merchant who

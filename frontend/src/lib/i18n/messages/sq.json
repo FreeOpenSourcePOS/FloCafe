@@ -927,7 +927,12 @@
       "title": "FLETË DËRGIMI",
       "banner": "FLETË DËRGIMI",
       "address": "Adresa e dorëzimit",
-      "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë"
+      "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë",
+      "paid": "PAGUAR",
+      "toCollect": "PËR T'U ARKËTUAR",
+      "cashOnDelivery": "Pagesë në dorëzim",
+      "amountDue": "Shuma për t'u paguar",
+      "multiplePaymentMethods": "Disa mënyra pagese"
     },
     "hsn": "HSN",
     "zReport": {

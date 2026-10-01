@@ -927,7 +927,12 @@
       "title": "ڈیلیوری سلپ",
       "banner": "ڈیلیوری سلپ",
       "address": "ڈیلیوری کا پتہ",
-      "addressTruncated": "... {count} مزید حروف دکھائے نہیں گئے، آرڈر دیکھیں"
+      "addressTruncated": "... {count} مزید حروف دکھائے نہیں گئے، آرڈر دیکھیں",
+      "paid": "ادا شدہ",
+      "toCollect": "وصول کرنا ہے",
+      "cashOnDelivery": "وصولی پر ادائیگی",
+      "amountDue": "واجب الادا رقم",
+      "multiplePaymentMethods": "ادائیگی کے متعدد طریقے"
     },
     "hsn": "HSN",
     "zReport": {

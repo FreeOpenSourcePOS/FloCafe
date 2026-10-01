@@ -927,7 +927,12 @@
       "title": "डेलिभरी स्लिप",
       "banner": "डेलिभरी स्लिप",
       "address": "डेलिभरी ठिकाना",
-      "addressTruncated": "... अरु {count} अक्षरहरु देखाइएन, अर्डर हेर्नुहोस्"
+      "addressTruncated": "... अरु {count} अक्षरहरु देखाइएन, अर्डर हेर्नुहोस्",
+      "paid": "भुक्तानी भयो",
+      "toCollect": "सङ्कलन गर्नुपर्ने",
+      "cashOnDelivery": "डेलिभरीमा नगद",
+      "amountDue": "तिर्न बाँकी रकम",
+      "multiplePaymentMethods": "धेरै भुक्तानी विधिहरू"
     },
     "hsn": "HSN",
     "zReport": {

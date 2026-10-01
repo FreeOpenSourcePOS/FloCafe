@@ -927,7 +927,12 @@
       "title": "LIEFERSCHEIN",
       "banner": "LIEFERSCHEIN",
       "address": "Lieferadresse",
-      "addressTruncated": "... {count} weitere Zeichen nicht angezeigt, Bestellung pruefen"
+      "addressTruncated": "... {count} weitere Zeichen nicht angezeigt, Bestellung pruefen",
+      "paid": "BEZAHLT",
+      "toCollect": "EINZUZIEHEN",
+      "cashOnDelivery": "Nachnahme",
+      "amountDue": "Fälliger Betrag",
+      "multiplePaymentMethods": "Mehrere Zahlungsmethoden"
     },
     "hsn": "HSN",
     "zReport": {

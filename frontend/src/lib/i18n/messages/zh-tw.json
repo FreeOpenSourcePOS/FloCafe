@@ -927,7 +927,12 @@
       "title": "外送單",
       "banner": "外送單",
       "address": "外送地址",
-      "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單"
+      "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單",
+      "paid": "已付款",
+      "toCollect": "待收款",
+      "cashOnDelivery": "貨到付款",
+      "amountDue": "應付金額",
+      "multiplePaymentMethods": "多種付款方式"
     },
     "hsn": "HSN",
     "zReport": {

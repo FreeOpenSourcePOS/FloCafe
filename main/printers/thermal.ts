@@ -14,7 +14,7 @@ import {
   dotsForPaperWidth,
   capabilitiesForPrinter,
 } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency, type CurrencyDisplay, type DigitMode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -1022,6 +1022,14 @@ export async function printDeliverySlip(
       currency: getSettingValue('currency') ?? undefined,
       timezone: getSettingValue('timezone') ?? undefined,
     }).timezone;
+    const currency = resolveTenantCurrency(getSettingValue('currency') ?? '', countryCode);
+    const currencyLocale = getCountryByCode(countryCode)?.locale ?? locale;
+    const currencyDisplayValue = getSettingValue('currency_display');
+    const currencyDisplay = ['rial', 'toman', 'toman_short'].includes(currencyDisplayValue ?? '')
+      ? currencyDisplayValue as CurrencyDisplay
+      : undefined;
+    const digits: DigitMode = getSettingValue('number_digits') === 'latin' ? 'latin' : 'locale';
+    const currencySymbol = getCurrencySymbol(currency, currencyLocale);
 
     const warnings: PrintWarning[] = [];
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
@@ -1029,6 +1037,10 @@ export async function printDeliverySlip(
       columns: cols,
       language: normalizePrintLanguage(language ?? storeLanguage),
       locale,
+      currency,
+      currencySymbol,
+      currencyDisplay,
+      digits,
       timezone,
       useUnicode,
       arabicShaping: caps.shaping.arabic,

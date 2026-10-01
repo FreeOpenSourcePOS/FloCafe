@@ -927,7 +927,12 @@
       "title": "BON DE LIVRAISON",
       "banner": "BON DE LIVRAISON",
       "address": "Adresse de livraison",
-      "addressTruncated": "... {count} caracteres supplementaires non affiches, verifiez la commande"
+      "addressTruncated": "... {count} caracteres supplementaires non affiches, verifiez la commande",
+      "paid": "PAYÉ",
+      "toCollect": "À ENCAISSER",
+      "cashOnDelivery": "Paiement à la livraison",
+      "amountDue": "Montant dû",
+      "multiplePaymentMethods": "Plusieurs moyens de paiement"
     },
     "hsn": "HSN",
     "zReport": {

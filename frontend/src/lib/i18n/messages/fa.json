@@ -927,7 +927,12 @@
       "title": "رسید تحویل",
       "banner": "رسید تحویل",
       "address": "نشانی تحویل",
-      "addressTruncated": "... {count} نویسه دیگر نمایش داده نشده، سفارش را بررسی کنید"
+      "addressTruncated": "... {count} نویسه دیگر نمایش داده نشده، سفارش را بررسی کنید",
+      "paid": "پرداخت‌شده",
+      "toCollect": "قابل دریافت",
+      "cashOnDelivery": "پرداخت در محل",
+      "amountDue": "مبلغ قابل پرداخت",
+      "multiplePaymentMethods": "چند روش پرداخت"
     },
     "hsn": "کد کالا",
     "zReport": {

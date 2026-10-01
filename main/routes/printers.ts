@@ -3,7 +3,7 @@ import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServer
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
-import { buildDeliverySlipPrintData } from '../printers/document-delivery-slip';
+import { buildDeliverySlipPrintData, type DeliverySlipOrderRow } from '../printers/document-delivery-slip';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
   resolveKotLanguage,
@@ -698,12 +698,12 @@ router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(as
 router.get('/delivery-slip-payment/:orderId', requirePermission('printing.execute'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId) as any;
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId) as (DeliverySlipOrderRow & { id: number }) | undefined;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id);
+    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(order.id) as DeliverySlipOrderRow['bill'];
     const settings = Object.fromEntries(
       (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
         .map(({ key, value }) => [key, value]),
@@ -716,7 +716,7 @@ router.get('/delivery-slip-payment/:orderId', requirePermission('printing.execut
       digits: regional.preferences.digits,
     });
     return res.json({ payment });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Delivery Slip Payment] Error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }

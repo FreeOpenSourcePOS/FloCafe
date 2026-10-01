@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Server App情報を読み込む",
     "loading": "読み込み中…",
     "localNetwork": "ローカルネットワーク",
-    "localNetworkHint": "すべてのデバイスが同じローカルWi-Fiルーターに接続されている場合に使用します",
+    "localNetworkHint": "すべてのデバイスが同じローカルネットワーク上でWi-FiまたはEthernetを通じて通信できる場合に使用します",
     "loyalty": "ロイヤルティ",
     "loyaltyHint": "カート内の各商品のロイヤルティ付与率に基づいて顧客にポイントを付与します",
     "loyaltyProgram": "ロイヤルティプログラム",

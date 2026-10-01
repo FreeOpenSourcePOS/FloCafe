@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Informationen der Bedienungs-App laden",
     "loading": "Wird geladen…",
     "localNetwork": "Lokales Netzwerk",
-    "localNetworkHint": "Verwenden Sie diese Option, wenn alle Geräte mit demselben lokalen WLAN-Router verbunden sind",
+    "localNetworkHint": "Verwenden Sie diese Option, wenn alle Geräte dasselbe lokale Netzwerk über WLAN oder Ethernet erreichen können",
     "loyalty": "Treueprogramm",
     "loyaltyHint": "Kunden sammeln Punkte anhand der Treuepunktquote jedes Artikels im Warenkorb.",
     "loyaltyProgram": "Treueprogramm",

@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Tải thông tin Server App",
     "loading": "Đang tải…",
     "localNetwork": "Mạng cục bộ",
-    "localNetworkHint": "Dùng khi tất cả thiết bị kết nối với cùng một bộ định tuyến Wi-Fi cục bộ",
+    "localNetworkHint": "Dùng khi tất cả thiết bị có thể liên lạc với nhau trên cùng mạng cục bộ, qua Wi-Fi hoặc Ethernet",
     "loyalty": "Tích điểm",
     "loyaltyHint": "Khách hàng nhận điểm theo tỷ lệ tích điểm của từng món trong giỏ",
     "loyaltyProgram": "Chương trình tích điểm",

@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "載入服務員應用程式資訊",
     "loading": "載入中…",
     "localNetwork": "本機網路",
-    "localNetworkHint": "當所有裝置都連線到同一台本機 Wi-Fi 路由器時使用",
+    "localNetworkHint": "當所有裝置都能透過 Wi-Fi 或 Ethernet 在同一個區域網路上互相連線時使用",
     "loyalty": "積分",
     "loyaltyHint": "顧客按購物車中每件商品的積分費率賺取積分",
     "loyaltyProgram": "積分計畫",

@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Carica info Server App",
     "loading": "Caricamento…",
     "localNetwork": "Rete locale",
-    "localNetworkHint": "Usa quando tutti i dispositivi sono connessi allo stesso router Wi-Fi locale",
+    "localNetworkHint": "Usa quando tutti i dispositivi possono comunicare sulla stessa rete locale, tramite Wi-Fi o Ethernet",
     "loyalty": "Fedeltà",
     "loyaltyHint": "I clienti guadagnano punti in base alla tariffa di guadagno fedeltà di ogni articolo nel carrello",
     "loyaltyProgram": "Programma fedeltà",

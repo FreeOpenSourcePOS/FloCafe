@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Server App 정보 불러오기",
     "loading": "불러오는 중…",
     "localNetwork": "로컬 네트워크",
-    "localNetworkHint": "모든 기기가 동일한 로컬 Wi-Fi 라우터에 연결되어 있을 때 사용하세요",
+    "localNetworkHint": "모든 기기가 Wi-Fi 또는 Ethernet으로 동일한 로컬 네트워크에서 서로 연결될 수 있을 때 사용하세요",
     "loyalty": "멤버십",
     "loyaltyHint": "장바구니 각 항목의 멤버십 적립 비율에 따라 고객이 포인트를 적립합니다",
     "loyaltyProgram": "멤버십 포인트 프로그램",

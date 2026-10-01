@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Laad server-app-info",
     "loading": "Laden…",
     "localNetwork": "Lokaal netwerk",
-    "localNetworkHint": "Gebruik dit wanneer alle apparaten met dezelfde lokale Wi-Fi-router zijn verbonden",
+    "localNetworkHint": "Gebruik dit wanneer alle apparaten elkaar op hetzelfde lokale netwerk kunnen bereiken, via wifi of ethernet",
     "loyalty": "Loyaliteit",
     "loyaltyHint": "Klanten verdienen punten op basis van het loyaliteitspercentage van elk artikel in de winkelwagen",
     "loyaltyProgram": "Loyaliteitsprogramma",

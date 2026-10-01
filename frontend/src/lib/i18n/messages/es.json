@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Cargar info de la App de mesero",
     "loading": "Cargando…",
     "localNetwork": "Red local",
-    "localNetworkHint": "Úsalo cuando todos los dispositivos estén conectados al mismo router Wi-Fi local",
+    "localNetworkHint": "Úsalo cuando todos los dispositivos puedan comunicarse en la misma red local, por Wi-Fi o Ethernet",
     "loyalty": "Fidelidad",
     "loyaltyHint": "Los clientes suman puntos según la tasa de ganancia de lealtad de cada ítem del carrito",
     "loyaltyProgram": "Programa de Lealtad",

@@ -970,7 +970,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
 
   await page.goto(BASE + '/settings?tab=pos');
   await page.getByRole('button', { name: 'Load POS Info', exact: true }).click();
-  const englishLocalHint = 'Use when all devices are connected to the same local Wi-Fi router';
+  const englishLocalHint = 'Use when all devices can reach each other on the same local network, over Wi-Fi or Ethernet';
   const englishVpnHint = 'Use when devices connect via a VPN or mesh network across different subnets or locations';
   await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
 
@@ -992,7 +992,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await selectLanguage('Store Details', 'es');
   await page.getByRole('button', { name: 'Flujo del POS', exact: true }).click();
   await expectPairingHints(
-    'Úsalo cuando todos los dispositivos estén conectados al mismo router Wi-Fi local',
+    'Úsalo cuando todos los dispositivos puedan comunicarse en la misma red local, por Wi-Fi o Ethernet',
     'Úsalo cuando los dispositivos se conecten mediante una VPN o una red mesh entre distintas subredes o ubicaciones',
     'VPN / Red mesh',
   );
@@ -1000,7 +1000,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await selectLanguage('Datos del Negocio', 'de');
   await page.getByRole('button', { name: 'KDS & Küche', exact: true }).click();
   await expectPairingHints(
-    'Verwenden Sie diese Option, wenn alle Geräte mit demselben lokalen WLAN-Router verbunden sind',
+    'Verwenden Sie diese Option, wenn alle Geräte dasselbe lokale Netzwerk über WLAN oder Ethernet erreichen können',
     'Verwenden Sie diese Option, wenn Geräte über ein VPN oder Mesh-Netzwerk über verschiedene Subnetze oder Standorte hinweg verbunden sind',
     'VPN / Mesh-Netzwerk',
   );
@@ -1009,7 +1009,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await page.getByRole('button', { name: 'الطلب من جانب الطاولة', exact: true }).click();
   await expectPairingHints(
-    'استخدم هذا الخيار عندما تكون جميع الأجهزة متصلة بموجّه Wi-Fi محلي واحد',
+    'استخدم هذا الخيار عندما تتمكن جميع الأجهزة من الوصول إلى بعضها عبر الشبكة المحلية نفسها، سواء عبر Wi-Fi أو Ethernet',
     'استخدم هذا الخيار عندما تتصل الأجهزة عبر VPN أو شبكة متداخلة بين شبكات فرعية أو مواقع مختلفة',
     'شبكة VPN / شبكة متشابكة',
   );

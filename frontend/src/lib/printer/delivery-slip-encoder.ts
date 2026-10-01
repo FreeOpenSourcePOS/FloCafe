@@ -5,6 +5,7 @@ import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
+import { clampDeliverySlipText } from '@print/document';
 
 export interface DeliverySlipWebUsbOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -30,6 +31,8 @@ export interface DeliverySlipOrder {
   order_number: string;
   created_at: string;
   type?: string;
+  /** Order-level courier instruction, printed once for the whole delivery. */
+  special_instructions?: string | null;
 }
 
 export interface DeliverySlipItem {
@@ -90,6 +93,24 @@ export function buildDeliverySlipBytes(
     const labeled = `${label('print.deliverySlip.address')}: ${contact.address}`;
     for (const row of wrapPrinterText(labeled, cols)) {
       safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
+  }
+  // The order note, once for the whole delivery, wrapped like the address: a
+  // courier instruction cut mid-sentence is worse than one that runs long. A note
+  // over the budget is bounded, and the cut is stated on the paper.
+  const { text: orderNote, truncatedChars: noteTruncated } = clampDeliverySlipText((order.special_instructions ?? '').trim());
+  if (orderNote || noteTruncated > 0) {
+    if (orderNote) {
+      const labeled = `${label('print.note')}: ${orderNote}`;
+      for (const row of wrapPrinterText(labeled, cols)) {
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      }
+    }
+    if (noteTruncated > 0) {
+      const marker = label('print.deliverySlip.addressTruncated').replace('{count}', String(noteTruncated));
+      for (const row of wrapPrinterText(marker, cols)) {
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      }
     }
   }
 

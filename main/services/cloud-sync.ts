@@ -656,6 +656,7 @@ export class CloudSyncService {
         contact_name: owner?.name || '',
         email: settings.email || '',
         phone: settings.business_phone || settings.phone || '',
+        instagram_handle: settings.instagram_handle || '',
         country: provenance.country,
         country_source: provenance.countrySource,
         os_country: provenance.osCountry,

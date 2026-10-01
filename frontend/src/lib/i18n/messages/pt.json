@@ -450,12 +450,12 @@
     "staff": "Equipe",
     "statusError": "Falha ao obter o status",
     "support": "Suporte",
-    "tables": "Mesas",
     "toggleSidebar": "Alternar barra lateral",
     "uptimeLabel": "Ativo: ",
     "user": "Usuário",
     "whatsapp": "WhatsApp",
-    "inventory": "Estoque"
+    "inventory": "Estoque",
+    "tables": "Mesas"
   },
   "orders": {
     "active": "Ativos",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Cliente diferente nesta mesa",
     "customerMismatchWarning": "Esta mesa está atualmente ocupada por {customer}. Deseja prosseguir e adicionar esses itens ao pedido deles?",
     "customerName": "Nome",
+    "customerAddress": "Endereço do cliente",
     "customerRequiredBeforeOrder": "Um cliente é obrigatório antes de fazer um pedido.",
     "customerUpdateFailed": "Falha ao atualizar o cliente",
     "customerUpdated": "Cliente atualizado",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Preço de Custo",
     "fieldImage": "Imagem do Produto",
     "fieldInventoryProduct": "Produto de estoque",
+    "fieldInventoryProductHint": "A venda deste produto desconta a quantidade indicada do produto de estoque selecionado.",
     "fieldInventoryProductNone": "Nenhum",
     "fieldInventoryDeductionQuantity": "Dedução por venda",
     "fieldLowStockThreshold": "Limite de Estoque Baixo",
@@ -1244,8 +1246,8 @@
     "statusServed": "Servido",
     "statusWaiting": "Aguardando",
     "tableLabel": "Mesa {name}",
-    "tables": "Mesas",
-    "title": "App do Garçom"
+    "title": "App do Garçom",
+    "tables": "Mesas"
   },
   "settings": {
     "aboutDescription": "O FloPOS é um PDV de restaurante gratuito para sempre e de código aberto para cafeterias, restaurantes, padarias, food trucks, dark kitchens e bares. Inclui pedidos, mesas, menus, display de cozinha, impressão de comprovantes, acesso da equipe e armazenamento local de dados. Baixe, execute o serviço, mantenha seus dados e seja dono do seu PDV.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "Se LIGADO, imprime os símbolos de moeda (₹, €, £, ¥…) como estão. Se DESLIGADO, substitui-os por ASCII (Rs, EUR, GBP, Yen…) — padrão mais seguro para a maioria das impressoras térmicas.",
     "printerUpdated": "Impressora atualizada",
     "printers": "Impressoras",
-    "printing": "Impressão",
     "printingSettingsSaved": "Configurações de impressão salvas",
     "privacy": "Privacidade",
     "productImagesDisabled": "Imagens dos produtos desativadas",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "Desativado por predefinição. Quando está desativado, os problemas registados permanecem neste dispositivo e nunca são enviados. Os pedidos de suporte que enviar não são afetados.",
     "diagnosticsTicketUnaffected": "Um pedido de suporte que envie você próprio funciona sempre, esteja esta opção ligada ou não.",
     "diagnosticsLocalOnlyHintTransmitting": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples. O envio automático está ativado, pelo que os problemas registados podem ser enviados para a sua conta FloCafe na nuvem.",
-    "diagnosticsLocalOnlyHintPending": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples."
+    "diagnosticsLocalOnlyHintPending": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples.",
+    "printing": "Impressão"
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Pedidos e mesas",
     "chefDescription": "Tela da cozinha",
     "areas": {
+      "tables": "Mesas",
+      "cash": "Caixa",
+      "inventory": "Estoque e receitas",
+      "authorization": "Permissões",
+      "tax": "Impostos",
+      "printing": "Impressão",
+      "apps": "Aplicações",
       "orders": "Pedidos",
       "payments": "Pagamentos",
       "customers": "Clientes",
@@ -2208,6 +2217,16 @@
       "support": "Suporte"
     },
     "capabilities": {
+      "tablesView": "Ver mesas",
+      "refunds": "Emitir reembolsos",
+      "cashShiftsView": "Ver turnos de caixa",
+      "cashMovements": "Registrar e anular movimentações de numerário",
+      "cashDayClose": "Fechar o dia de operação",
+      "inventoryView": "Ver estoque e receitas",
+      "kitchenStatusUpdate": "Atualizar o status do pedido no display da cozinha",
+      "reportsDailySalesExport": "Exportar o relatório de vendas diárias",
+      "authorizationManage": "Alterar permissões de funções e acesso da equipa",
+      "mobileAccessManage": "Gerir o acesso a partir de dispositivos móveis",
       "pos": "Usar o terminal POS",
       "dashboard": "Ver o painel do proprietário",
       "ordersReadCreate": "Ver e criar pedidos",

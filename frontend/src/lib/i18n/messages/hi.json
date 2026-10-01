@@ -143,7 +143,6 @@
     "somethingWrong": "कुछ ग़लत हो गया",
     "subtotal": "उप-योग",
     "tableFallback": "टेबल",
-    "tax": "कर",
     "timeHoursMinutes": "{h}घंटे {m}मिनट",
     "timeHoursMinutesAgo": "{h}घंटे {m}मिनट पहले",
     "timeMinutes": "{m}मिनट",
@@ -153,7 +152,8 @@
     "update": "अद्यतन करें",
     "windowControls": "विंडो नियंत्रण",
     "yes": "हाँ",
-    "back": "वापस"
+    "back": "वापस",
+    "tax": "कर"
   },
   "countries": {
     "selectCountry": "देश चुनें…"
@@ -450,12 +450,12 @@
     "staff": "कर्मचारी",
     "statusError": "स्थिति प्राप्त करने में विफल",
     "support": "समर्थन",
-    "tables": "टेबल",
     "toggleSidebar": "साइडबार दिखाएँ/छिपाएँ",
     "uptimeLabel": "चलने का समय:",
     "user": "उपयोगकर्ता",
     "whatsapp": "WhatsApp",
-    "inventory": "इन्वेंटरी"
+    "inventory": "इन्वेंटरी",
+    "tables": "टेबल"
   },
   "orders": {
     "active": "सक्रिय",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "इस टेबल पर अलग ग्राहक",
     "customerMismatchWarning": "इस टेबल पर अभी {customer} मौजूद हैं। क्या आप आगे बढ़कर इन आइटम को उनके ऑर्डर में जोड़ना चाहते हैं?",
     "customerName": "नाम",
+    "customerAddress": "ग्राहक का पता",
     "customerRequiredBeforeOrder": "ऑर्डर देने से पहले एक ग्राहक की आवश्यकता होती है।",
     "customerUpdateFailed": "ग्राहक को अद्यतन करने में विफल",
     "customerUpdated": "ग्राहक अपडेट किया गया",
@@ -827,7 +828,6 @@
     "tagSpicy": "मसालेदार",
     "tagVeg": "शाकाहारी",
     "tagVegan": "शाकाहारी",
-    "tax": "कर",
     "taxLine": "{title} @{rate}%",
     "total": "कुल",
     "totalDue": "कुल देय",
@@ -840,7 +840,8 @@
     "exitFullscreen": "फ़ुल-स्क्रीन पीओएस से बाहर निकलें",
     "fullscreenUnavailable": "फ़ुल-स्क्रीन मोड अनुपलब्ध है",
     "backspaceAmount": "बैकस्पेस राशि",
-    "numericKeypad": "संख्यात्मक कीपैड"
+    "numericKeypad": "संख्यात्मक कीपैड",
+    "tax": "कर"
   },
   "printTest": {
     "amt": "राशि",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "लागत मूल्य",
     "fieldImage": "उत्पाद छवि",
     "fieldInventoryProduct": "इन्वेंटरी उत्पाद",
+    "fieldInventoryProductHint": "इस उत्पाद की बिक्री पर नीचे दी गई मात्रा चुनी गई स्टॉक उत्पाद से कटौती करती है।",
     "fieldInventoryProductNone": "कोई नहीं",
     "fieldInventoryDeductionQuantity": "प्रति बिक्री कटौती",
     "fieldLowStockThreshold": "कम स्टॉक सीमा",
@@ -1244,8 +1246,8 @@
     "statusServed": "परोसा गया",
     "statusWaiting": "इंतज़ार कर रहा हूँ",
     "tableLabel": "टेबल {name}",
-    "tables": "टेबल",
-    "title": "सर्वर ऐप"
+    "title": "सर्वर ऐप",
+    "tables": "टेबल"
   },
   "settings": {
     "aboutDescription": "FloPOS कैफे, रेस्तरां, बेकरी, फूड ट्रक, क्लाउड किचन और बार के लिए हमेशा के लिए मुफ़्त, ओपन-सोर्स रेस्तरां POS है। इसमें ऑर्डरिंग, टेबल, मेनू, किचन डिस्प्ले, रसीद प्रिंटिंग, स्टाफ एक्सेस और स्थानीय डेटा स्टोरेज शामिल हैं। इसे डाउनलोड करें, सेवा चलाएं, अपना डेटा रखें और अपना पीओएस रखें।",
@@ -2195,6 +2197,13 @@
     "serverDescription": "आदेश और तालिकाएँ",
     "chefDescription": "रसोई प्रदर्शन",
     "areas": {
+      "tables": "टेबल",
+      "cash": "कैश",
+      "inventory": "स्टॉक और रेसिपी",
+      "authorization": "अनुमतियाँ",
+      "tax": "कर",
+      "printing": "प्रिंटिंग",
+      "apps": "ऐप्स",
       "orders": "आदेश",
       "payments": "भुगतान",
       "customers": "ग्राहक",
@@ -2208,6 +2217,16 @@
       "support": "समर्थन"
     },
     "capabilities": {
+      "tablesView": "टेबल देखें",
+      "refunds": "रिफ़ंड जारी करें",
+      "cashShiftsView": "कैश शिफ़्ट देखें",
+      "cashMovements": "नकद गतिविधियाँ दर्ज और रद्द करें",
+      "cashDayClose": "व्यापार दिन बंद करें",
+      "inventoryView": "स्टॉक और रेसिपी देखें",
+      "kitchenStatusUpdate": "रसोई डिस्प्ले पर ऑर्डर की स्थिति अपडेट करें",
+      "reportsDailySalesExport": "दैनिक बिक्री रिपोर्ट निर्यात करें",
+      "authorizationManage": "भूमिकाओं के अनुमति और स्टाफ पहुँच बदलें",
+      "mobileAccessManage": "मोबाइल डिवाइस पहुँच प्रबंधित करें",
       "pos": "पीओएस टर्मिनल का प्रयोग करें",
       "dashboard": "स्वामी डैशबोर्ड देखें",
       "ordersReadCreate": "ऑर्डर देखें और बनाएं",
@@ -2601,7 +2620,6 @@
     "subtitle": "अपने स्टोर देश के लिए सत्यापित कर नियम सक्षम करें। FloCafe मानक उत्पाद कर समूह को स्वचालित रूप से लागू करता है; अपवादों को प्रति उत्पाद बदला जा सकता है.",
     "supportUnavailable": "{country} के लिए कर सहायता अभी उपलब्ध नहीं है। हमने FloCafe टीम से प्लगइन का अनुरोध किया है और जल्द ही इसे बनाएंगे। जब तक यह तैयार नहीं हो जाता, तब तक कर बंद रहेगा।",
     "target": "लक्ष्य",
-    "tax": "कर",
     "taxableBase": "करयोग्य आधार",
     "testCalculation": "परीक्षण गणना",
     "testCalculationHint": "चेकआउट के रूप में सक्रिय पैक और समान टैक्स इंजन का उपयोग करता है। यह लेनदेन को सहेजता नहीं है.",
@@ -2617,7 +2635,8 @@
     "updated": "अपडेट किया गया",
     "updatedTo": "टैक्स प्लगइन को v{version} में अपडेट किया गया",
     "value": "मान",
-    "yourStore": "आपका स्टोर"
+    "yourStore": "आपका स्टोर",
+    "tax": "कर"
   },
   "update": {
     "currentVersion": "वर्तमान संस्करण: {version}",

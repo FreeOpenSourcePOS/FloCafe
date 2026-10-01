@@ -31,6 +31,8 @@ test('COP/0: es-CO prefix, dot group, comma decimal, zero fraction digits', () =
   // data, not a contract this resolver makes (the project floats on Node 22).
   const parts = new Intl.NumberFormat(snap.locale, {
     style: 'currency', currency: snap.currency, currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: snap.currencyFractionDigits,
+    maximumFractionDigits: snap.currencyFractionDigits,
   }).formatToParts(11000);
   const currencyIndex = parts.findIndex((p) => p.type === 'currency');
   const integerIndex = parts.findIndex((p) => p.type === 'integer');

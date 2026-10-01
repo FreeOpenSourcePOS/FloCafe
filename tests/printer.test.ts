@@ -309,6 +309,20 @@ console.log('\n✅ Test 1a: cash drawer pulse is opt-in');
   assert('appendCashDrawerPulse adds ESC p drawer-kick bytes', bytesContain(withPulse, [ESC, 0x70, 0x00, 0x19, 0xFA]));
 }
 
+console.log('\n✅ Test 1a2: ESC/POS commands match a whole trimmed line');
+{
+  const inline = buildEscPos(['Text {INIT}', 'Text {FEED}', 'Item {CUT} Special']);
+  const padded = buildEscPos([' {INIT} ', ' {FEED} ', ' {CUT} ']);
+
+  assert('inline INIT is not dispatched', !bytesContain(inline, [ESC, 0x40]));
+  assert('inline FEED is not dispatched', !bytesContain(inline, [ESC, 0x64, 0x05]));
+  assert('inline CUT is not dispatched', !bytesContain(inline, [GS, 0x56, 0x00]));
+  assert('inline CUT does not discard the surrounding item text', inline.toString('utf8').includes('Item  Special'));
+  assert('trimmed INIT is dispatched', bytesContain(padded, [ESC, 0x40]));
+  assert('trimmed FEED is dispatched', bytesContain(padded, [ESC, 0x64, 0x05]));
+  assert('trimmed CUT is dispatched', bytesContain(padded, [GS, 0x56, 0x00]));
+}
+
 console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning');
 {
   const warnings: Array<{ field: string; text: string; message: string }> = [];
@@ -448,7 +462,13 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const asciiControlLine = 'No onions\x07\nNo garlic\x7f';
   const asciiShaped = buildEscPos([asciiControlLine], true, { arabicShaping: true });
   const asciiUnshaped = buildEscPos([asciiControlLine], true, { arabicShaping: false });
-  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped) && bytesContain(asciiShaped, Array.from(Buffer.from(asciiControlLine))));
+  // Shaping must not change ASCII output. Control bytes are stripped from every
+  // line, not only the non-ASCII ones — an ASCII order note used to reach the
+  // printer with its ESC/GS bytes intact, because the strip sat inside the
+  // non-ASCII branch.
+  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped));
+  assert('ASCII control bytes are stripped like non-ASCII ones', !bytesContain(asciiShaped, [0x07]) && !bytesContain(asciiShaped, [0x7f]));
+  assert('the words around the stripped bytes still print', asciiShaped.toString('utf8').includes('No onions') && asciiShaped.toString('utf8').includes('No garlic'));
 
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.

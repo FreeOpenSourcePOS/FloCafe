@@ -46,7 +46,9 @@ test('Orders page creates a customer and links it to an active order', async ({ 
 
   const modal = page.locator('div.fixed.inset-0').filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
   await expect(modal).toBeVisible();
-  await modal.locator('input[type="text"]').fill(customerName);
+  // The name field is the first textbox; the customer-address field added for
+  // #920 makes `input[type="text"]` ambiguous.
+  await modal.getByRole('textbox').first().fill(customerName);
   await modal.locator('input[type="tel"]').fill(customerPhone);
 
   if (EVIDENCE_DIR) {

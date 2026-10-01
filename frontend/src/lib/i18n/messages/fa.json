@@ -143,7 +143,6 @@
     "somethingWrong": "چیزی نادرست پیش رفت",
     "subtotal": "جمع جزء",
     "tableFallback": "میز",
-    "tax": "مالیات",
     "timeHoursMinutes": "{h} ساعت و {m} دقیقه",
     "timeHoursMinutesAgo": "{h} ساعت و {m} دقیقه پیش",
     "timeMinutes": "{m} دقیقه",
@@ -153,7 +152,8 @@
     "update": "به‌روزرسانی",
     "windowControls": "دکمه‌های پنجره",
     "yes": "بله",
-    "back": "بازگشت"
+    "back": "بازگشت",
+    "tax": "مالیات"
   },
   "countries": {
     "selectCountry": "کشور را برگزینید…"
@@ -450,12 +450,12 @@
     "staff": "کارکنان",
     "statusError": "گرفتن وضعیت انجام نشد",
     "support": "پشتیبانی",
-    "tables": "میزها",
     "toggleSidebar": "باز/بسته کردن نوار کناری",
     "uptimeLabel": "زمان روشن بودن: ",
     "user": "کاربر",
     "whatsapp": "واتساپ",
-    "inventory": "موجودی"
+    "inventory": "موجودی",
+    "tables": "میزها"
   },
   "orders": {
     "active": "فعال",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "مشتری دیگری در این میز است",
     "customerMismatchWarning": "این میز اکنون در اختیار {customer} است. آیا می‌خواهید ادامه دهید و این کالاها را به سفارش او بیفزایید؟",
     "customerName": "نام",
+    "customerAddress": "آدرس مشتری",
     "customerRequiredBeforeOrder": "پیش از ثبت سفارش، باید یک مشتری برگزیده شود.",
     "customerUpdateFailed": "به‌روزرسانی مشتری انجام نشد",
     "customerUpdated": "مشتری به‌روزرسانی شد",
@@ -827,7 +828,6 @@
     "tagSpicy": "تند",
     "tagVeg": "گیاهی",
     "tagVegan": "وگان",
-    "tax": "مالیات",
     "taxLine": "{title} @{rate}%",
     "total": "جمع کل",
     "totalDue": "کل قابل پرداخت",
@@ -840,7 +840,8 @@
     "exitFullscreen": "خروج از صندوق تمام‌صفحه",
     "fullscreenUnavailable": "حالت تمام‌صفحه در دسترس نیست",
     "backspaceAmount": "حذف رقم آخر",
-    "numericKeypad": "صفحه‌کلید عددی"
+    "numericKeypad": "صفحه‌کلید عددی",
+    "tax": "مالیات"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "بهای خرید",
     "fieldImage": "نگاره کالا",
     "fieldInventoryProduct": "محصول موجودی",
+    "fieldInventoryProductHint": "فروش این محصول مقدار زیر را از محصول موجودی انتخاب‌شده کم می‌کند.",
     "fieldInventoryProductNone": "هیچ",
     "fieldInventoryDeductionQuantity": "کسر در هر فروش",
     "fieldLowStockThreshold": "آستانه کمبود موجودی",
@@ -1244,8 +1246,8 @@
     "statusServed": "تحویل‌شده",
     "statusWaiting": "در انتظار",
     "tableLabel": "میز {name}",
-    "tables": "میزها",
-    "title": "برنامه سرور"
+    "title": "برنامه سرور",
+    "tables": "میزها"
   },
   "settings": {
     "aboutDescription": "FloPOS یک POS رستوران متن‌باز و برای همیشه رایگان برای کافه‌ها، رستوران‌ها، نانوایی‌ها، فودتراک‌ها، آشپزخانه‌های ابری و بارهاست. شامل سفارش‌گیری، میزها، منوها، نمایشگر آشپزخانه، چاپ رسید، دسترسی کارکنان و ذخیره‌سازی محلی داده است. آن را دریافت کنید، سرویس دهید، داده‌های خود را نگه دارید و POS خود را در اختیار داشته باشید.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "اگر روشن باشد، نمادهای واحد پول (₹، €، £، ¥...) همان‌گونه چاپ می‌شوند. اگر خاموش باشد، با ASCII (Rs، EUR، GBP، Yen...) جایگزین می‌شوند — پیش‌گزیده امن‌تر برای بیشتر چاپگرهای حرارتی.",
     "printerUpdated": "چاپگر به‌روزرسانی شد",
     "printers": "چاپگرها",
-    "printing": "چاپ",
     "printingSettingsSaved": "تنظیمات چاپ ذخیره شد",
     "privacy": "حریم خصوصی",
     "productImagesDisabled": "تصویر کالاها غیرفعال شد",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "به‌طور پیش‌فرض خاموش است. در حالت خاموش، مشکلات ثبت‌شده روی همین دستگاه می‌مانند و هرگز ارسال نمی‌شوند. درخواست‌های پشتیبانی که خودتان می‌فرستید تحت تأثیر نیستند.",
     "diagnosticsTicketUnaffected": "درخواست پشتیبانی که خودتان می‌فرستید همیشه کار می‌کند، فارغ از اینکه این گزینه روشن باشد یا خاموش.",
     "diagnosticsLocalOnlyHintTransmitting": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد. ارسال خودکار روشن است، بنابراین ممکن است مشکلات ثبت‌شده به حساب ابری FloCafe شما ارسال شوند.",
-    "diagnosticsLocalOnlyHintPending": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد."
+    "diagnosticsLocalOnlyHintPending": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد.",
+    "printing": "چاپ"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "سفارش‌ها و میزها",
     "chefDescription": "نمایشگر آشپزخانه",
     "areas": {
+      "tables": "میزها",
+      "cash": "صندوق",
+      "inventory": "موجودی و دستورها",
+      "authorization": "مجوزها",
+      "tax": "مالیات",
+      "printing": "چاپ",
+      "apps": "برنامه‌ها",
       "orders": "سفارش‌ها",
       "payments": "پرداخت‌ها",
       "customers": "مشتریان",
@@ -2208,6 +2217,16 @@
       "support": "پشتیبانی"
     },
     "capabilities": {
+      "tablesView": "مشاهده میزها",
+      "refunds": "صدور بازپرداخت",
+      "cashShiftsView": "مشاهده شیفت‌های صندوق",
+      "cashMovements": "ثبت وابطال حرکات صندوق",
+      "cashDayClose": "بستن روز کاری",
+      "inventoryView": "مشاهده موجودی و دستورها",
+      "kitchenStatusUpdate": "به‌روزرسانی وضعیت سفارش روی نمایشگر آشپزخانه",
+      "reportsDailySalesExport": "برون‌ریزی گزارش فروش روزانه",
+      "authorizationManage": "تغییر مجوزهای نقش‌ها و دسترسی کارکنان",
+      "mobileAccessManage": "مدیریت دسترسی از دستگاه‌های موبایل",
       "pos": "استفاده از پایانه فروش",
       "dashboard": "مشاهده داشبورد مالک",
       "ordersReadCreate": "مشاهده و ایجاد سفارش‌ها",
@@ -2601,7 +2620,6 @@
     "subtitle": "قوانین مالیاتی تأییدشده را برای کشور فروشگاه فعال کنید. فلوکافه گروه مالیاتی استاندارد محصول را به‌صورت خودکار اعمال می‌کند؛ استثناها را می‌توان برای هر محصول تغییر داد.",
     "supportUnavailable": "پشتیبانی مالیاتی برای {country} هنوز در دسترس نیست. افزونه را از تیم فلوکافه درخواست کرده‌ایم و به‌زودی می‌سازیم. تا آماده شدن، مالیات‌ها خاموش می‌ماند.",
     "target": "هدف",
-    "tax": "مالیات",
     "taxableBase": "مبنای مشمول مالیات",
     "testCalculation": "محاسبه آزمایشی",
     "testCalculationHint": "از بسته فعال و همان موتور مالیاتی تسویه استفاده می‌کند. تراکنشی ذخیره نمی‌کند.",
@@ -2617,7 +2635,8 @@
     "updated": "به‌روزرسانی‌شده",
     "updatedTo": "افزونه مالیاتی به v{version} به‌روزرسانی شد",
     "value": "مقدار",
-    "yourStore": "فروشگاه شما"
+    "yourStore": "فروشگاه شما",
+    "tax": "مالیات"
   },
   "update": {
     "currentVersion": "نسخه کنونی: {version}",

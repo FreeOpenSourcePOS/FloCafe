@@ -340,11 +340,15 @@ export const formatMoney = (
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);
   try {
+    // Rial display is whole-unit text even though IRR arithmetic retains 2 digits.
+    const fractionDigits = currency === IRAN_CURRENCY ? 0 : getCurrencyFractionDigits(currency);
     const formatted = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
       currencyDisplay: 'narrowSymbol',
       numberingSystem,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
     }).format(amount);
     if (!formatted.includes('¤')) return formatted;
     return new Intl.NumberFormat(locale, {
@@ -352,6 +356,8 @@ export const formatMoney = (
       currency,
       currencyDisplay: 'code',
       numberingSystem,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
     }).format(amount);
   } catch {
     return `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
@@ -371,6 +377,8 @@ export interface CurrencyUnitAdapter {
 // Resolves ISO 4217 decimal fraction digits for a currency code, falling back to 2.
 export function getCurrencyFractionDigits(currency: string): number {
   if (!currency || typeof currency !== 'string') return 2;
+  // FloCafe treats COP as a whole-peso currency in tenant arithmetic and display.
+  if (currency === 'COP') return 0;
   if (currency === 'IRR') return 2;
   try {
     const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });

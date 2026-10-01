@@ -143,7 +143,6 @@
     "somethingWrong": "Bir şeyler ters gitti",
     "subtotal": "Ara Toplam",
     "tableFallback": "Masa",
-    "tax": "Vergi",
     "timeHoursMinutes": "{h} sa {m} dk",
     "timeHoursMinutesAgo": "{h} sa {m} dk önce",
     "timeMinutes": "{m} dk",
@@ -153,7 +152,8 @@
     "update": "Güncelle",
     "windowControls": "Pencere Kontrolleri",
     "yes": "Evet",
-    "back": "Geri"
+    "back": "Geri",
+    "tax": "Vergi"
   },
   "countries": {
     "selectCountry": "Ülke Seçin"
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Bu masada farklı bir müşteri var",
     "customerMismatchWarning": "Bu masa şu anda {customer} tarafından kullanılıyor. Devam edip ürünleri bu siparişe eklemek istiyor musunuz?",
     "customerName": "Müşteri Adı",
+    "customerAddress": "Müşteri Adresi",
     "customerRequiredBeforeOrder": "Sipariş vermeden önce müşteri seçilmelidir.",
     "customerUpdateFailed": "Müşteri güncellenemedi",
     "customerUpdated": "Müşteri güncellendi",
@@ -827,7 +828,6 @@
     "tagSpicy": "Acılı",
     "tagVeg": "Vejetaryen",
     "tagVegan": "Vegan",
-    "tax": "Vergi",
     "taxLine": "{title} @%{rate}",
     "total": "Toplam",
     "totalDue": "Toplam Ödenecek",
@@ -840,7 +840,8 @@
     "exitFullscreen": "Tam Ekrandan Çık",
     "fullscreenUnavailable": "Tam ekran desteklenmiyor",
     "backspaceAmount": "Sil",
-    "numericKeypad": "Sayısal Tuş Takımı"
+    "numericKeypad": "Sayısal Tuş Takımı",
+    "tax": "Vergi"
   },
   "printTest": {
     "amt": "Tutar",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Maliyet Fiyatı",
     "fieldImage": "Ürün Görseli",
     "fieldInventoryProduct": "Stok ürünü",
+    "fieldInventoryProductHint": "Bu ürünün satışı, aşağıdaki miktarı seçilen stok ürününden düşer.",
     "fieldInventoryProductNone": "Yok",
     "fieldInventoryDeductionQuantity": "Satış başına düşüm",
     "fieldLowStockThreshold": "Kritik Stok Uyarısı",
@@ -1244,8 +1246,8 @@
     "statusServed": "Servis Edildi",
     "statusWaiting": "Bekliyor",
     "tableLabel": "Masa {name}",
-    "tables": "Masalar",
-    "title": "Garson & Masa Terminali"
+    "title": "Garson & Masa Terminali",
+    "tables": "Masalar"
   },
   "settings": {
     "aboutDescription": "FloPOS; kafeler, restoranlar, pastaneler, yemek karavanları ve barlar için tamamen ücretsiz ve açık kaynaklı bir restoran satış noktasıdır. Sipariş, masa, menü, mutfak ekranı, fiş yazdırma, personel erişimi ve yerel veri depolama içerir.",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Siparişler ve masalar",
     "chefDescription": "Mutfak ekranı",
     "areas": {
+      "tables": "Masalar",
+      "cash": "Kasa",
+      "inventory": "Stok ve tarifler",
+      "authorization": "Yetkiler",
+      "tax": "Vergi",
+      "printing": "Yazdırma",
+      "apps": "Uygulamalar",
       "orders": "Siparişler",
       "payments": "Ödemeler",
       "customers": "Müşteriler",
@@ -2208,6 +2217,16 @@
       "support": "Destek"
     },
     "capabilities": {
+      "tablesView": "Masaları görüntüle",
+      "refunds": "İade işlemleri yap",
+      "cashShiftsView": "Kasa vardiyalarını görüntüle",
+      "cashMovements": "Kasa hareketlerini kaydet ve iptal et",
+      "cashDayClose": "Gün sonunu kapat",
+      "inventoryView": "Stok ve tarifleri görüntüle",
+      "kitchenStatusUpdate": "Mutfak ekranında sipariş durumunu güncelle",
+      "reportsDailySalesExport": "Günlük satış raporunu dışa aktar",
+      "authorizationManage": "Rol yetkilerini ve personel erişimini değiştir",
+      "mobileAccessManage": "Mobil cihaz erişimini yönet",
       "pos": "Satış noktasını (POS) kullanma ve sipariş girme",
       "dashboard": "Yönetici panosunu görüntüleme",
       "ordersReadCreate": "Siparişleri görüntüleme ve oluşturma",
@@ -2601,7 +2620,6 @@
     "subtitle": "Mağazanızın bulunduğu ülke için doğrulanmış vergi kurallarını etkinleştirin. FloCafe standart ürün vergi grubunu otomatik olarak uygular; istisnalar ürün bazında değiştirilebilir.",
     "supportUnavailable": "{country} için vergi desteği henüz mevcut değil. Eklentiyi FloCafe ekibinden talep ettik ve yakında geliştireceğiz. Hazır olana kadar vergiler kapalı kalacaktır.",
     "target": "Hedef",
-    "tax": "Vergi",
     "taxableBase": "Vergiye tabi matrah",
     "testCalculation": "Hesaplama testi",
     "testCalculationHint": "Aktif paketi ve ödeme ekranıyla aynı vergi motorunu kullanır. Bir işlem kaydetmez.",
@@ -2617,7 +2635,8 @@
     "updated": "Güncellendi",
     "updatedTo": "Vergi eklentisi v{version} sürümüne güncellendi",
     "value": "Değer",
-    "yourStore": "mağazanız"
+    "yourStore": "mağazanız",
+    "tax": "Vergi"
   },
   "update": {
     "currentVersion": "Mevcut Sürüm: {version}",

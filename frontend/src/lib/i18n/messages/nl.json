@@ -450,12 +450,12 @@
     "staff": "Personeel",
     "statusError": "Het is niet gelukt om de status op te halen",
     "support": "Ondersteuning",
-    "tables": "Tafels",
     "toggleSidebar": "Zijbalk in-/uitschakelen",
     "uptimeLabel": "Actief sinds: ",
     "user": "Gebruiker",
     "whatsapp": "WhatsApp",
-    "inventory": "Voorraad"
+    "inventory": "Voorraad",
+    "tables": "Tafels"
   },
   "orders": {
     "active": "Actief",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Andere klant op deze tafel",
     "customerMismatchWarning": "Deze tafel is momenteel bezet door {customer}. Wilt u doorgaan en deze artikelen aan hun bestelling toevoegen?",
     "customerName": "Naam",
+    "customerAddress": "Klantenadres",
     "customerRequiredBeforeOrder": "Er is een klant vereist voordat u een bestelling kunt plaatsen.",
     "customerUpdateFailed": "Kan klant niet updaten",
     "customerUpdated": "Klant bijgewerkt",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Kostprijs",
     "fieldImage": "Productafbeelding",
     "fieldInventoryProduct": "Voorraadproduct",
+    "fieldInventoryProductHint": "Bij verkoop van dit product wordt de hoeveelheid hieronder afgetrokken van het gekozen voorraadproduct.",
     "fieldInventoryProductNone": "Geen",
     "fieldInventoryDeductionQuantity": "Aftrek per verkoop",
     "fieldLowStockThreshold": "Lage voorraaddrempel",
@@ -1244,8 +1246,8 @@
     "statusServed": "Geserveerd",
     "statusWaiting": "Wachten",
     "tableLabel": "Tafel {name}",
-    "tables": "Tafels",
-    "title": "Server-app"
+    "title": "Server-app",
+    "tables": "Tafels"
   },
   "settings": {
     "aboutDescription": "FloPOS is een gratis, open source restaurant POS voor altijd voor cafés, restaurants, bakkerijen, foodtrucks, cloudkeukens en bars. Het omvat bestellen, tafels, menu's, keukendisplay, afdrukken van bonnen, toegang voor personeel en lokale gegevensopslag. Download het, voer de service uit, bewaar uw gegevens en bezit uw POS.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "Indien AAN worden valutasymbolen (₹, €, £, ¥…) ongewijzigd afgedrukt. Indien UIT, worden ze vervangen door ASCII (Rs, EUR, GBP, Yen…) — veiliger standaard voor de meeste thermische printers.",
     "printerUpdated": "Printer bijgewerkt",
     "printers": "Printers",
-    "printing": "Afdrukken",
     "printingSettingsSaved": "Afdrukinstellingen opgeslagen",
     "privacy": "Privacy",
     "productImagesDisabled": "Productafbeeldingen uitgeschakeld",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "Standaard uit. Staat dit uit, dan blijven vastgelegde problemen op dit apparaat en worden ze nooit verzonden. Supportvragen die je zelf stuurt blijven werken.",
     "diagnosticsTicketUnaffected": "Een supportaanvraag die je zelf stuurt werkt altijd, ongeacht of dit aanstaat.",
     "diagnosticsLocalOnlyHintTransmitting": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal. Automatische verzending staat aan, dus vastgelegde problemen kunnen naar je FloCafe-cloudaccount worden gestuurd.",
-    "diagnosticsLocalOnlyHintPending": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal."
+    "diagnosticsLocalOnlyHintPending": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal.",
+    "printing": "Afdrukken"
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Bestellingen en tafels",
     "chefDescription": "Keukenmonitor",
     "areas": {
+      "tables": "Tafels",
+      "cash": "Kas",
+      "inventory": "Voorraad en recepten",
+      "authorization": "Machtigingen",
+      "tax": "Belastingen",
+      "printing": "Afdrukken",
+      "apps": "Apps",
       "orders": "Bestellingen",
       "payments": "Betalingen",
       "customers": "Klanten",
@@ -2208,6 +2217,16 @@
       "support": "Ondersteuning"
     },
     "capabilities": {
+      "tablesView": "Tafels bekijken",
+      "refunds": "Terugbetalingen uitvoeren",
+      "cashShiftsView": "Kasseturnussen bekijken",
+      "cashMovements": "Contante stromen vastleggen en annuleren",
+      "cashDayClose": "De verkoopdag afsluiten",
+      "inventoryView": "Voorraad en recepten bekijken",
+      "kitchenStatusUpdate": "Bestelstatus op keukendisplay bijwerken",
+      "reportsDailySalesExport": "Dagelijkse verkooprapportage exporteren",
+      "authorizationManage": "Rollenrechten en personeelstoegang wijzigen",
+      "mobileAccessManage": "Toegang via mobiele apparaten beheren",
       "pos": "Gebruik de POS-terminal",
       "dashboard": "Bekijk het eigenarendashboard",
       "ordersReadCreate": "Bekijk en maak bestellingen",

@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "3.12.0",
+  "version": "3.12.22",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.12.0"
@@ -93,7 +93,7 @@
     "test:issue-718-whatsapp-order-status": "node tests/run-electron-node-test.cjs tests/issue-718-whatsapp-order-status.test.ts",
     "test:order-audit-log": "node tests/run-electron-node-test.cjs tests/order-audit-log.test.ts",
     "test:authz-phase3": "node tests/run-electron-node-test.cjs tests/authz-matrix-phase3.test.ts",
-    "test:authorization-permissions": "ts-node --transpile-only -P tests/tsconfig.json tests/permission-matrix-self-access.test.ts && node tests/run-electron-node-test.cjs tests/authorization-permissions.test.ts && node tests/run-electron-node-test.cjs tests/authorization-api.test.ts && node tests/run-electron-node-test.cjs tests/authorization-static-audit.test.ts && node tests/run-electron-node-test.cjs tests/static-audit-posix-paths.test.ts",
+    "test:authorization-permissions": "ts-node --transpile-only -P tests/tsconfig.json tests/permission-label-i18n.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/permission-matrix-self-access.test.ts && node tests/run-electron-node-test.cjs tests/authorization-permissions.test.ts && node tests/run-electron-node-test.cjs tests/authorization-api.test.ts && node tests/run-electron-node-test.cjs tests/authorization-static-audit.test.ts && node tests/run-electron-node-test.cjs tests/static-audit-posix-paths.test.ts",
     "test:customer-auth": "node tests/run-electron-node-test.cjs tests/customer-auth.test.ts",
     "test:backup": "ts-node --transpile-only -P tests/tsconfig.json tests/backup-restore.test.ts && node tests/run-electron-node-test.cjs tests/backup-restore-production.test.ts && node tests/run-electron-node-test.cjs tests/restore-managed-path.test.ts && node tests/run-electron-node-test.cjs tests/windows-backup-unlink-ebusy.test.ts && node tests/run-electron-node-test.cjs tests/restore-safety-copy.test.ts && node tests/run-electron-node-test.cjs tests/restore-from-file-api.test.ts",
     "test:issue-278-fail-closed-db": "node tests/run-electron-node-test.cjs tests/issue-278-fail-closed-missing-db.test.ts",
@@ -267,11 +267,15 @@
   "license": "MIT",
   "overrides": {
     "node-abi": "^4.33.0",
-    "brace-expansion": "^5.0.8",
+    "brace-expansion": "^5.0.12",
     "js-yaml@^4": "^4.3.2",
     "minimatch@3.1.5": {
-      "brace-expansion": "^1.1.17"
+      "brace-expansion": "^1.1.21"
     },
+    "undici@<7": "^6.28.1",
+    "undici@>=7": "^7.29.1",
+    "ip-address": "^10.7.1",
+    "fast-uri": "^3.1.8",
     "uuid": "^11.1.1"
   },
   "devDependencies": {
@@ -290,7 +294,7 @@
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.63.0",
     "cross-env": "10.1.0",
-    "electron": "^43.4.1",
+    "electron": "^43.5.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.11.0",
     "js-yaml": "^5.4.2",

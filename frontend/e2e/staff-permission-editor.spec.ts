@@ -188,7 +188,9 @@ test('owner can override a role permission and see it saved', async ({ page }) =
 
   await expect(page.getByRole('heading', { name: 'Role permissions', exact: true })).toBeVisible();
 
-  const voidRow = page.locator('tr', { hasText: 'orders · item · void' });
+  // Matched on the raw permission id, not the label. The row now shows a translated
+  // capability label with the id kept alongside it as the developer aid (#920).
+  const voidRow = page.locator('tr').filter({ hasText: 'orders.item.void' });
   await expect(voidRow).toBeVisible();
   await expect(voidRow.getByText('Allowed', { exact: true })).toBeVisible();
 
@@ -207,7 +209,7 @@ test('owner can override a role permission and see it saved', async ({ page }) =
   await expect(page.getByTestId('permission-self-access-warning')).toHaveCount(0);
 
   // Protected permissions never expose an override control.
-  const protectedRow = page.locator('tr', { hasText: 'staff · privileged · manage' });
+  const protectedRow = page.locator('tr').filter({ hasText: 'staff.privileged.manage' });
   await expect(protectedRow.getByText('Protected', { exact: true })).toBeVisible();
   await expect(protectedRow.locator('select')).toHaveCount(0);
 });
@@ -218,7 +220,7 @@ test('owner can grant a staff-specific permission exception', async ({ page }) =
   await page.getByRole('button', { name: 'Staff exception', exact: true }).click();
   await page.locator('select').filter({ hasText: 'Select a staff member' }).selectOption(STAFF_MEMBER.id);
 
-  const voidRow = page.locator('tr', { hasText: 'orders · item · void' });
+  const voidRow = page.locator('tr').filter({ hasText: 'orders.item.void' });
   await expect(voidRow).toBeVisible();
   await expect(voidRow.getByText('Not allowed', { exact: true })).toBeVisible();
 

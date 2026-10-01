@@ -32,6 +32,7 @@
 import type { BilingualLabel } from './bilingual';
 import type { DirectionSpec } from './direction';
 import { resolveDirectionSpec, resolveValueDirection } from './direction';
+import { graphemeSegments } from './width';
 import type {
   PrintLanguageCode,
   ResolvedPrintLanguages,
@@ -952,9 +953,67 @@ export interface DeliverySlipHeaderBlock {
   readonly timestamp: DirectionalText;
 }
 
+/**
+ * The order-level note, printed once for the whole delivery. Distinct from an
+ * item's `specialInstructions`: a courier instruction ("do not ring the
+ * doorbell") belongs to the order, and printing it per line would repeat it.
+ */
+export interface DeliverySlipNotesBlock {
+  readonly kind: 'delivery-slip-notes';
+  readonly direction: TextDirection;
+  readonly note: DirectionalText | null;
+  readonly label: SemanticLabel;
+  /** Characters dropped from an over-long note, 0 when it printed whole. */
+  readonly noteTruncatedChars: number;
+}
+
+/**
+ * The order note is bounded on the way in by `max_order_notes_length` (a tenant
+ * setting, 200 by default), so a raised setting or a legacy row can carry more than
+ * a slip should spend. The address clamps for the same reason: an unbounded field
+ * turns a courier sheet into a roll, and text that ends without saying so reads as
+ * the whole instruction.
+ *
+ * Declared here, not in a renderer, because the slip renders three ways — the
+ * backend ESC/POS pipeline, the browser WebUSB encoder, and the browser web-print
+ * fragment. All three import this number, so a merchant gets the same courier sheet
+ * whichever printer they own.
+ */
+export const MAX_DELIVERY_SLIP_NOTE_CHARS = 200;
+
+/**
+ * Clamp free text to a print budget, walking whole grapheme clusters so a cut never
+ * lands inside a surrogate pair or a combining sequence.
+ *
+ * This lives beside the budget rather than in a renderer because the slip has three
+ * of them. When each clamped for itself they disagreed: the backend counted UTF-16
+ * units, the browser paths counted code points, and any note containing an emoji
+ * printed twice as long on the browser while a truncation marker claimed otherwise.
+ * The number and the algorithm that applies it have to travel together.
+ */
+export function clampDeliverySlipText(
+  text: string,
+  maxChars: number = MAX_DELIVERY_SLIP_NOTE_CHARS,
+): { text: string; truncatedChars: number } {
+  if (text.length <= maxChars) return { text, truncatedChars: 0 };
+  const kept: string[] = [];
+  let units = 0;
+  for (const cluster of graphemeSegments(text)) {
+    const size = cluster.length;
+    if (units + size > maxChars) break;
+    kept.push(cluster);
+    units += size;
+  }
+  const keptText = kept.join('');
+  return { text: keptText, truncatedChars: text.length - keptText.length };
+}
+
+export type DeliverySlipBlockKind = DeliverySlipDocumentBlock['kind'];
+
 export type DeliverySlipDocumentBlock =
   | DeliverySlipHeaderBlock
   | DeliverySlipContactBlock
+  | DeliverySlipNotesBlock
   | DeliverySlipItemsBlock;
 
 export interface DeliverySlipPrintData {
@@ -963,6 +1022,10 @@ export interface DeliverySlipPrintData {
     readonly createdAt: string;
     readonly orderType: string;
   };
+  /** Order-level note. Absent or blank means the slip prints exactly as before. */
+  readonly note?: string;
+  /** Characters dropped from a legacy or over-long note, 0 when it printed whole. */
+  readonly noteTruncatedChars?: number;
   readonly contact: {
     readonly name: string;
     /** Full number, country code already prefixed by the caller. */
@@ -1263,6 +1326,11 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
       && isSemanticLabel(value.timeLabel)
       && isDirectionalText(value.timestamp);
   }
+  if (value.kind === 'delivery-slip-notes') {
+    return isOptionalDirectionalText(value.note)
+      && isSemanticLabel(value.label)
+      && isFiniteNumber(value.noteTruncatedChars);
+  }
   if (value.kind !== 'delivery-slip-items' || !Array.isArray(value.rows)) return false;
   return value.rows.every((row) => isRecord(row)
     && isDirectionalText(row.name)
@@ -1274,18 +1342,28 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
 }
 
 export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDocument {
-  return isRecord(value)
-    && value.version === 1
-    && isDirectionSpec(value.direction)
-    && isLanguages(value.languages)
-    && value.languages.length === 1
-    && Array.isArray(value.blocks)
-    && value.blocks.length === 3
-    && value.blocks[0].kind === 'delivery-slip-header'
-    && value.blocks[1].kind === 'delivery-slip-contact'
-    && value.blocks[2].kind === 'delivery-slip-items'
-    && value.blocks.filter((block) => isRecord(block) && block.kind === 'delivery-slip-contact').length === 1
-    && value.blocks.every(isDeliverySlipDocumentBlock);
+  if (!isRecord(value)
+    || value.version !== 1
+    || !isDirectionSpec(value.direction)
+    || !isLanguages(value.languages)
+    || value.languages.length !== 1
+    || !Array.isArray(value.blocks)
+    || !value.blocks.every(isDeliverySlipDocumentBlock)) return false;
+
+  // Header first, exactly one contact, at most one notes block, items last. The
+  // notes block is optional precisely so an order without a note produces the same
+  // three-block document it did before the block existed.
+  const kinds = value.blocks.map((block) => (block as { kind: string }).kind);
+  const count = (kind: DeliverySlipBlockKind): number => kinds.filter((entry) => entry === kind).length;
+  const at = (kind: DeliverySlipBlockKind): number => kinds.indexOf(kind);
+  if (count('delivery-slip-header') !== 1 || count('delivery-slip-contact') !== 1 || count('delivery-slip-items') !== 1) {
+    return false;
+  }
+  if (count('delivery-slip-notes') > 1) return false;
+  if (at('delivery-slip-header') !== 0 || at('delivery-slip-items') !== kinds.length - 1) return false;
+  if (at('delivery-slip-contact') > at('delivery-slip-items')) return false;
+  if (at('delivery-slip-notes') === -1) return true;
+  return at('delivery-slip-contact') < at('delivery-slip-notes') && at('delivery-slip-notes') < at('delivery-slip-items');
 }
 
 export function buildDeliverySlipDocument(
@@ -1330,6 +1408,15 @@ export function buildDeliverySlipDocument(
     addressLabel: resolveSemanticLabel(labels, 'print.deliverySlip.address'),
   });
 
+  const note = String(printData.note ?? '').trim();
+  const notes: DeliverySlipNotesBlock = Object.freeze({
+    kind: 'delivery-slip-notes',
+    direction: base,
+    note: optionalDirectional(note, base),
+    label: resolveSemanticLabel(labels, 'print.note'),
+    noteTruncatedChars: toTruncatedCount(printData.noteTruncatedChars),
+  });
+
   const items: DeliverySlipItemsBlock = Object.freeze({
     kind: 'delivery-slip-items',
     direction: base,
@@ -1353,6 +1440,10 @@ export function buildDeliverySlipDocument(
     version: 1 as const,
     direction: resolveDirectionSpec(base),
     languages: printContext.languages,
-    blocks: Object.freeze([header, contact, items] as readonly DeliverySlipDocumentBlock[]),
+    blocks: Object.freeze(
+      (note.length > 0 || notes.noteTruncatedChars > 0
+        ? [header, contact, notes, items]
+        : [header, contact, items]) as readonly DeliverySlipDocumentBlock[],
+    ),
   });
 }

@@ -94,14 +94,17 @@ export function formatCashCloseWhatsAppMessage(
       `• ${labels.paymentMethod?.(payment.method) || payment.method}: ${formatAmount(payment.total, tenant.currency, locale)} (${payment.count})`),
   );
 
+  lines.push(
+    '',
+    `💵 *${labels.drawerReconciliation || 'DRAWER RECONCILIATION'}*`,
+    `• ${labels.expectedCash || 'Expected Cash'}: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
+  );
+
   if (isZReport) {
     const varianceIndicator = report.cashVariance === 0
       ? `✅ ${labels.varianceExact || 'Exact'}`
       : report.cashVariance < 0 ? `⚠️ ${labels.varianceShort || 'Short'}` : `⚠️ ${labels.varianceOver || 'Over'}`;
     lines.push(
-      '',
-      `💵 *${labels.drawerReconciliation || 'DRAWER RECONCILIATION'}*`,
-      `• ${labels.expectedCash || 'Expected Cash'}: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
       `• ${labels.countedCash || 'Counted Cash'}: ${formatAmount(report.countedCash, tenant.currency, locale)}`,
       `• ${labels.variance || 'Variance'}: ${formatAmount(report.cashVariance, tenant.currency, locale)} (${varianceIndicator})`,
       '',
@@ -134,6 +137,8 @@ export async function shareCashCloseViaWhatsApp(
     popup.location.href = url;
     return 'opened';
   };
+
+  if (message.length > 4096) return openFallback();
 
   if ('zNumber' in report && cashCloseId !== undefined) {
     try {

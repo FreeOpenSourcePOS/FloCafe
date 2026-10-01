@@ -49,6 +49,7 @@ const jwt = require('jsonwebtoken');
 const testSetup = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { reportRoutes } = require('../main/routes/reports');
+const { isSafeWhatsAppShareUrl } = require('../main/security/url-allowlist');
 const {
   formatCashCloseWhatsAppMessage,
   shareCashCloseViaWhatsApp,
@@ -147,7 +148,8 @@ async function main(): Promise<void> {
     assert.match(xMessage, /\$1,234\.50/);
     assert.match(xMessage, /SALES SUMMARY/);
     assert.match(xMessage, /Cash: \$430\.00 \(10\)/);
-    assert.doesNotMatch(xMessage, /DRAWER RECONCILIATION/);
+    assert.match(xMessage, /Expected Cash: \$430\.00/);
+    assert.match(xMessage, /DRAWER RECONCILIATION/);
 
     const exactMessage = formatCashCloseWhatsAppMessage(zReport(0), tenant, 'en-US');
     assert.match(exactMessage, /Z-Report #7 - Cafe North/);
@@ -183,6 +185,7 @@ async function main(): Promise<void> {
       assert.ok(localizedZ.includes(`• ${labels.refunds}:`), `${localeFile}: refunds label is localized`);
       assert.ok(localizedZ.includes(`• ${labels.netCollections}:`), `${localeFile}: net collections label is localized`);
       assert.ok(localizedZ.includes(`• ${labels.billCount(reportBase.billCount)}`), `${localeFile}: bill count is localized`);
+      assert.ok(localizedX.includes(`• ${labels.expectedCash}:`), `${localeFile}: X report expected cash is localized`);
       assert.ok(localizedZ.includes(`• ${labels.expectedCash}:`), `${localeFile}: expected cash label is localized`);
       assert.ok(localizedZ.includes(`• ${labels.countedCash}:`), `${localeFile}: counted cash label is localized`);
       assert.ok(localizedZ.includes(`• ${labels.variance}:`), `${localeFile}: variance label is localized`);
@@ -262,10 +265,26 @@ async function main(): Promise<void> {
     assert.equal(await shareCashCloseViaWhatsApp(zReport(0), tenant, '+14165551234', {}, closeId, 'en-US'), 'opened');
     assert.match(fallbackPopup.location.href, /^https:\/\/wa\.me\/14165551234\?text=/);
 
+    const longPaymentMethods = Array.from({ length: 48 }, (_, index) => {
+      const prefix = `Tender ${String(index).padStart(2, '0')} `;
+      return { method: prefix + 'M'.repeat(60 - prefix.length), count: index + 1, total: index + 1 };
+    });
+    const oversizedReport = { ...zReport(0), notes: 'N'.repeat(500), paymentMethods: longPaymentMethods };
+    const oversizedMessage = formatCashCloseWhatsAppMessage(oversizedReport, tenant, 'en-US');
+    assert.ok(oversizedMessage.length > 4096, 'accepted notes and payment method names can produce a long report');
+    clientApiCalls.length = 0;
+    const oversizedPopup = popupWindow();
+    assert.equal(await shareCashCloseViaWhatsApp(oversizedReport, tenant, '+14165551234', {}, closeId, 'en-US'), 'opened');
+    assert.equal(clientApiCalls.length, 0, 'over-limit reports skip the route that rejects them');
+    assert.ok(oversizedPopup.location.href.length > 4096, 'the manual WhatsApp URL can carry the long report');
+    assert.equal(isSafeWhatsAppShareUrl(oversizedPopup.location.href), true, 'Electron accepts the generated manual-share URL');
+    assert.equal(new URL(oversizedPopup.location.href).searchParams.get('text'), oversizedMessage,
+      'the manual share preserves the complete report without truncating financial details');
+
     const xPopup = popupWindow();
     assert.equal(await shareCashCloseViaWhatsApp(reportBase, tenant, '+14165551234', {}, undefined, 'en-US'), 'opened');
     assert.match(xPopup.location.href, /wa\.me\/14165551234/);
-    assert.equal(clientApiCalls.length, 2, 'X reports use the direct share fallback without a cash-close ID');
+    assert.equal(clientApiCalls.length, 0, 'X reports use the direct share fallback without a cash-close ID');
     console.log('Cash-close WhatsApp formatting, fallback, dispatch, and permission tests passed.');
   } finally {
     testSetup.closeDatabase();

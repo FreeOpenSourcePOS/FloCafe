@@ -113,10 +113,8 @@ async function run(): Promise<void> {
     const zCsv = await http.get(`/api/reports/z-report/export?date=${businessDate}&format=csv`).set(auth);
     assert.equal(zCsv.status, 200, 'Z report CSV returns 200');
     assert.ok(zCsv.headers['content-disposition'].includes(`z-report-Z${close.body.zReport.z_number}-${businessDate}.csv`));
-    assert.ok(zCsv.text.includes('Expected Cash in Drawer,,,,'), 'Z report CSV includes stored expected cash');
-    assert.ok(zCsv.text.includes('Cash Variance'), 'Z report CSV includes cash variance');
-    assert.ok(zCsv.text.includes('600'), 'Z report CSV includes expected cash in display units');
-    assert.ok(zCsv.text.includes('50'), 'Z report CSV includes cash variance in display units');
+    assert.ok(zCsv.text.includes('summary,Expected Cash in Drawer,,,,600\n'), 'Z report CSV includes expected cash in display units');
+    assert.ok(zCsv.text.includes('summary,Cash Variance,,,,50\n'), 'Z report CSV includes cash variance in display units');
 
     const zXlsx = await http.get(`/api/reports/z-report/export?date=${businessDate}&format=xlsx`).set(auth).buffer(true).parse(parseBuffer);
     assert.equal(zXlsx.status, 200, 'Z report XLSX returns 200');

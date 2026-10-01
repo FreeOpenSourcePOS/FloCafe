@@ -12,6 +12,7 @@ import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import { subscribeToQuickSearch } from '@/lib/quick-search';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
   red: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800/40', activeBg: 'bg-red-500', activeText: 'text-white' },
@@ -64,8 +65,7 @@ export default function ProductGrid({
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     };
-    window.addEventListener('flo:quick-search', focusSearchInput);
-    return () => window.removeEventListener('flo:quick-search', focusSearchInput);
+    return subscribeToQuickSearch(focusSearchInput);
   }, []);
   const cartQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();

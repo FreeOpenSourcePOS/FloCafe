@@ -342,10 +342,15 @@ export default function DashboardPage() {
   const cashClose = useCashClose();
   const { openCloseModal } = cashClose;
   const cashCloseAction = searchParams.get('action');
-  const cashCloseView = searchParams.get('view') === 'x-report' ? 'x-report' : 'z-report';
+  const requestedCashCloseView = searchParams.get('view');
+  const cashCloseView = requestedCashCloseView === 'x-report' || requestedCashCloseView === 'z-report'
+    ? requestedCashCloseView
+    : null;
   useEffect(() => {
-    if (cashCloseAction === 'cash-close') openCloseModal(cashCloseView);
-  }, [cashCloseAction, cashCloseView, openCloseModal]);
+    if (cashCloseAction !== 'cash-close') return;
+    openCloseModal(cashCloseView);
+    router.replace('/dashboard', { scroll: false });
+  }, [cashCloseAction, cashCloseView, openCloseModal, router]);
 
   const exportDailySales = async (format: 'xlsx' | 'csv') => {
     if (periodMode !== 'day' || isExporting) return;

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
+import { dispatchQuickSearchRequest } from '@/lib/quick-search';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
@@ -85,9 +86,7 @@ export default function MenuActionHandler() {
           break;
         case 'quick-search':
           router.push('/pos');
-          setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('flo:quick-search'));
-          }, 150);
+          dispatchQuickSearchRequest();
           break;
         case 'view-orders':
         case 'go-orders':

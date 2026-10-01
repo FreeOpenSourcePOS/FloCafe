@@ -13,6 +13,7 @@ import {
   openApplicationMenuSubmenu,
   type ApplicationMenuItem,
 } from '../main/application-menu';
+import { dispatchQuickSearchRequest, subscribeToQuickSearch } from '../frontend/src/lib/quick-search';
 
 const submenuItem = (label: string): ApplicationMenuItem => ({
   label,
@@ -192,5 +193,23 @@ assert.equal(
   'a destroyed main window is refused',
 );
 assert.equal(popupCalls.length, 4, 'refused senders never pop anything');
+
+const previousWindow = (globalThis as any).window;
+(globalThis as any).window = new EventTarget();
+try {
+  let focusRequests = 0;
+  dispatchQuickSearchRequest();
+  const unsubscribeQuickSearch = subscribeToQuickSearch(() => { focusRequests += 1; });
+  assert.equal(focusRequests, 1, 'a quick-search request sent before POS subscribes is replayed once');
+
+  dispatchQuickSearchRequest();
+  assert.equal(focusRequests, 2, 'a quick-search request sent after POS subscribes is handled');
+  unsubscribeQuickSearch();
+  dispatchQuickSearchRequest();
+  assert.equal(focusRequests, 2, 'unsubscribed POS search listeners do not receive later requests');
+} finally {
+  if (previousWindow === undefined) delete (globalThis as any).window;
+  else (globalThis as any).window = previousWindow;
+}
 
 console.log('menu-surface: application menu surface contract OK');

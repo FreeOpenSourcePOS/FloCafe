@@ -113,6 +113,20 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   // one login keeps the suite within the shared server's login rate limit.
   await login(page, 'owner@flo.local');
 
+  await setLanguage(page, 'en');
+  await page.goto(`${BASE}/dashboard?action=cash-close&view=x-report`);
+  const closeDialog = page.getByRole('dialog');
+  await expect(closeDialog).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard\/?$/);
+  await page.reload();
+  await expect(closeDialog).toHaveCount(0);
+
+  await page.goto(`${BASE}/dashboard?action=cash-close`);
+  await expect(closeDialog).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard\/?$/);
+  await page.reload();
+  await expect(closeDialog).toHaveCount(0);
+
   // ── English (LTR) baseline on the POS screen ─────────────────────────────
   await setLanguage(page, 'en');
   await page.goto(`${BASE}/pos`);

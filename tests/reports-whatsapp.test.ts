@@ -6,6 +6,8 @@ import * as path from 'node:path';
 const Module = require('node:module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-reports-whatsapp-'));
+const whatsappSharePath = path.resolve(__dirname, '../frontend/src/lib/whatsapp-share.ts');
+const reportsRoutePath = path.resolve(__dirname, '../main/routes/reports.ts');
 const clientApiCalls: Array<{ path: string; body: any }> = [];
 let clientApiResponse: any = { success: true, messageId: 44 };
 let sendResult: any = { ok: true, messageId: 71 };
@@ -27,10 +29,10 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   }
-  if (request === '../services/whatsapp' && parent?.filename?.endsWith('/main/routes/reports.ts')) {
+  if (request === '../services/whatsapp' && parent?.filename && path.resolve(parent.filename) === reportsRoutePath) {
     return fakeWhatsApp;
   }
-  if (parent?.filename?.endsWith('/frontend/src/lib/whatsapp-share.ts')) {
+  if (parent?.filename && path.resolve(parent.filename) === whatsappSharePath) {
     if (request === '@/lib/countries') {
       return {
         getCountryByCode: () => ({ locale: 'en-US' }),

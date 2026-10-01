@@ -143,7 +143,6 @@
     "somethingWrong": "문제가 발생했습니다",
     "subtotal": "소계",
     "tableFallback": "테이블",
-    "tax": "세금",
     "timeHoursMinutes": "{h}시간 {m}분",
     "timeHoursMinutesAgo": "{h}시간 {m}분 전",
     "timeMinutes": "{m}분",
@@ -153,7 +152,8 @@
     "update": "업데이트",
     "windowControls": "창 컨트롤",
     "yes": "네",
-    "back": "뒤로"
+    "back": "뒤로",
+    "tax": "세금"
   },
   "countries": {
     "selectCountry": "국가 선택…"
@@ -450,12 +450,12 @@
     "staff": "직원",
     "statusError": "상태를 가져오지 못했습니다",
     "support": "지원",
-    "tables": "테이블",
     "toggleSidebar": "사이드바 전환",
     "uptimeLabel": "가동: ",
     "user": "사용자",
     "whatsapp": "WhatsApp",
-    "inventory": "재고"
+    "inventory": "재고",
+    "tables": "테이블"
   },
   "orders": {
     "active": "진행 중",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "이 테이블에 다른 고객이 있습니다",
     "customerMismatchWarning": "이 테이블은 현재 {customer}님이 사용 중입니다. 계속하여 해당 고객의 주문에 항목을 추가하시겠습니까?",
     "customerName": "이름",
+    "customerAddress": "고객 주소",
     "customerRequiredBeforeOrder": "주문을 위해 고객 정보가 필요합니다.",
     "customerUpdateFailed": "고객 정보 업데이트에 실패했습니다",
     "customerUpdated": "고객 정보가 업데이트되었습니다",
@@ -827,7 +828,6 @@
     "tagSpicy": "매운맛",
     "tagVeg": "채식",
     "tagVegan": "비건",
-    "tax": "세금",
     "taxLine": "{title} @{rate}%",
     "total": "합계",
     "totalDue": "미결제 합계",
@@ -840,7 +840,8 @@
     "exitFullscreen": "전체 화면 POS 나가기",
     "fullscreenUnavailable": "전체 화면 모드를 사용할 수 없습니다",
     "backspaceAmount": "한 자리 지우기",
-    "numericKeypad": "숫자 키패드"
+    "numericKeypad": "숫자 키패드",
+    "tax": "세금"
   },
   "printTest": {
     "amt": "금액",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "원가",
     "fieldImage": "상품 이미지",
     "fieldInventoryProduct": "재고 상품",
+    "fieldInventoryProductHint": "이 상품을 판매하면 아래 수량이 선택한 재고 상품에서 차감됩니다.",
     "fieldInventoryProductNone": "없음",
     "fieldInventoryDeductionQuantity": "판매당 차감량",
     "fieldLowStockThreshold": "재고 부족 기준",
@@ -1244,8 +1246,8 @@
     "statusServed": "서빙 완료",
     "statusWaiting": "대기",
     "tableLabel": "테이블 {name}",
-    "tables": "테이블",
-    "title": "서버 앱"
+    "title": "서버 앱",
+    "tables": "테이블"
   },
   "settings": {
     "aboutDescription": "FloPOS는 카페, 레스토랑, 베이커리, 푸드트럭, 클라우드 키친, 바를 위한 무료 오픈소스 레스토랑 POS입니다. 주문, 테이블, 메뉴, 주방 디스플레이, 영수증 인쇄, 직원 접근, 로컬 데이터 저장을 포함합니다. 다운로드하여 실행하고, 데이터를 보유하고, 당신의 POS를 소유하세요.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "켜짐이면 통화 기호(₹, €, £, ¥…)를 그대로 인쇄합니다. 꺼짐이면 ASCII(Rs, EUR, GBP, Yen…)로 대체합니다. 대부분의 열형 프린터에 더 안전한 기본값입니다.",
     "printerUpdated": "프린터 업데이트됨",
     "printers": "프린터",
-    "printing": "인쇄",
     "printingSettingsSaved": "인쇄 설정 저장됨",
     "privacy": "개인정보 보호",
     "productImagesDisabled": "상품 이미지 비활성화됨",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "기본값은 꺼짐입니다. 꺼져 있으면 기록된 문제는 이 기기에 남고 전송되지 않습니다. 직접 보내는 지원 요청에는 영향이 없습니다.",
     "diagnosticsTicketUnaffected": "직접 보내는 지원 요청은 이 설정의 켜짐 여부와 관계없이 항상 작동합니다.",
     "diagnosticsLocalOnlyHintTransmitting": "이 화면은 이 기기에서 발생한 최근 문제를 쉬운 말로 보여줍니다. 자동 전송이 켜져 있어 기록된 문제가 FloCafe 클라우드 계정으로 전송될 수 있습니다.",
-    "diagnosticsLocalOnlyHintPending": "이 화면은 이 기기에서 발생한 최근 문제를 쉬운 말로 보여줍니다."
+    "diagnosticsLocalOnlyHintPending": "이 화면은 이 기기에서 발생한 최근 문제를 쉬운 말로 보여줍니다.",
+    "printing": "인쇄"
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "주문 및 테이블",
     "chefDescription": "주방 디스플레이",
     "areas": {
+      "tables": "테이블",
+      "cash": "현금",
+      "inventory": "재고 및 레시피",
+      "authorization": "권한",
+      "tax": "세금",
+      "printing": "인쇄",
+      "apps": "앱",
       "orders": "주문",
       "payments": "결제",
       "customers": "고객",
@@ -2208,6 +2217,16 @@
       "support": "지원"
     },
     "capabilities": {
+      "tablesView": "테이블 보기",
+      "refunds": "환불 처리",
+      "cashShiftsView": "현금 교대 보기",
+      "cashMovements": "현금 거래 기록 및 취소",
+      "cashDayClose": "영업일 마감",
+      "inventoryView": "재고 및 레시피 보기",
+      "kitchenStatusUpdate": "주방 디스플레이에서 주문 상태 업데이트",
+      "reportsDailySalesExport": "일일 매출 보고서 내보내기",
+      "authorizationManage": "역할 권한과 직원 접근 변경",
+      "mobileAccessManage": "모바일 기기 액세스 관리",
       "pos": "POS 단말 사용",
       "dashboard": "사장님 대시보드 보기",
       "ordersReadCreate": "주문 보기 및 생성",
@@ -2601,7 +2620,6 @@
     "subtitle": "매장 국가의 검증된 세금 규칙을 활성화하세요. FloCafe가 표준 상품 세금 그룹을 자동으로 적용하며, 예외는 상품별로 변경할 수 있습니다.",
     "supportUnavailable": "{country}에 대한 세금 지원은 아직 없습니다. FloCafe 팀에 플러그인을 요청했으며 곧 구축할 예정입니다. 준비될 때까지 세금은 꺼져 있습니다.",
     "target": "대상",
-    "tax": "세금",
     "taxableBase": "과세 기준액",
     "testCalculation": "테스트 계산",
     "testCalculationHint": "활성 팩과 결제와 동일한 세금 엔진을 사용합니다. 거래는 저장되지 않습니다.",
@@ -2617,7 +2635,8 @@
     "updated": "업데이트됨",
     "updatedTo": "세금 플러그인이 v{version}(으)로 업데이트되었습니다",
     "value": "값",
-    "yourStore": "귀하의 매장"
+    "yourStore": "귀하의 매장",
+    "tax": "세금"
   },
   "update": {
     "currentVersion": "현재 버전: {version}",

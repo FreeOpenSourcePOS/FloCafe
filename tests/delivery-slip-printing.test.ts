@@ -8,7 +8,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildDeliverySlipDocument, isDeliverySlipDocument, shouldShowCustomerNumber } from '../shared/print/document';
-import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS } from '../main/printers/document-delivery-slip';
+import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS, MAX_DELIVERY_SLIP_NOTE_CHARS } from '../main/printers/document-delivery-slip';
+import { clampDeliverySlipText } from '../shared/print/document';
 import { formatReceipt, escPosToText } from '../main/printers/thermal';
 import { capabilitiesForPrinter, getSupportedPrinterProfiles, resolvePrinterProfile } from '../main/printers/profiles';
 import { graphemeSegments } from '../shared/print/width';
@@ -659,6 +660,511 @@ test('delivery slip: the order-recorded address wins over the standing customer 
   );
   assert.equal(printData.contact.address, 'Flat 9, Per Order Street');
   assert.equal(printData.contact.addressSource, 'order');
+});
+
+test('delivery slip: the order note is printed once, and an order without one is unchanged', () => {
+  const NOTE = 'Do not ring the doorbell, the dog barks.';
+  const withNote = { ...ORDER, special_instructions: NOTE };
+  const result = renderDeliverySlipViaDocument(withNote, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: resolvePrinterProfile({ paper_width: 'cols-42' }).cutMode,
+    capabilities: capabilitiesForPrinter(resolvePrinterProfile({ paper_width: 'cols-42' }), 'cols-42', false),
+  });
+
+  // The renderer wraps at the paper width, so a note longer than 42 columns does
+  // not appear as one contiguous substring. Compare on whitespace, the way the
+  // address tests do, and separately prove the note is not repeated per item.
+  const printed = escPosToText(result.data).replace(/\s+/g, ' ');
+  assert.ok(printed.includes(NOTE), `the courier instruction reaches the paper, got:\n${escPosToText(result.data)}`);
+  assert.equal(
+    printed.split('doorbell').length - 1, 1,
+    'an order-level note prints once, not once per item line',
+  );
+
+  // The optional block is the whole mechanism: with no note the document has to be
+  // the same three blocks it was before the notes block existed, and the printed
+  // bytes have to be identical.
+  const withoutNote = renderDeliverySlipViaDocument(ORDER, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: resolvePrinterProfile({ paper_width: 'cols-42' }).cutMode,
+    capabilities: capabilitiesForPrinter(resolvePrinterProfile({ paper_width: 'cols-42' }), 'cols-42', false),
+  });
+  assert.equal(withoutNote.document.blocks.length, 3, 'an order with no note keeps the original three blocks');
+  assert.equal(
+    withoutNote.document.blocks.some((block) => block.kind === 'delivery-slip-notes'),
+    false,
+    'no notes block is emitted for a blank note',
+  );
+  assert.ok(escPosToText(withoutNote.data).includes('Espresso Doppio'), 'the unmodified slip still renders its items');
+
+  // A blank or whitespace-only note is the same as none.
+  for (const blank of ['', '   ', null, undefined]) {
+    const blanked = buildDeliverySlipPrintData(
+      { ...ORDER, special_instructions: blank },
+      ORDER.items,
+      CONTACT,
+    );
+    assert.equal(blanked.note, '', `a ${JSON.stringify(blank)} note carries nothing to print`);
+  }
+});
+
+test('delivery slip: a note longer than the paper wraps instead of being cut', () => {
+  const LONG_NOTE = 'Leave the parcel with the neighbour at number 42 and pay the courier in cash, not by card.';
+  for (const columns of COLUMN_RUNGS) {
+    const profile = resolvePrinterProfile({ paper_width: `cols-${columns}` });
+    const result = renderDeliverySlipViaDocument(
+      { ...ORDER, special_instructions: LONG_NOTE },
+      ORDER.items,
+      CONTACT,
+      {
+        columns,
+        language: 'en',
+        locale: 'en-IN',
+        timezone: 'Asia/Kolkata',
+        useUnicode: false,
+        arabicShaping: false,
+        cutMode: profile.cutMode,
+        capabilities: capabilitiesForPrinter(profile, `cols-${columns}`, false),
+      },
+    );
+    const printed = escPosToText(result.data).replace(/\s+/g, ' ');
+    assert.ok(
+      printed.includes(LONG_NOTE),
+      `slip at ${columns} columns must print the whole note, got:\n${escPosToText(result.data)}`,
+    );
+  }
+});
+
+test('delivery slip: all three render paths apply the same note clamp, not just the same number', () => {
+  // The slip renders three ways: the backend ESC/POS pipeline, the browser WebUSB
+  // encoder, and the browser web-print fragment. A merchant must get the same
+  // courier sheet whichever printer they own. Sharing only the *number* was not
+  // enough: the backend clamped by UTF-16 units over grapheme clusters while both
+  // browser paths clamped by code point, so any note containing an emoji printed
+  // twice as much on the browser, with a truncation marker claiming otherwise.
+  //
+  // The assertion is equality against the shared clamp, not a regex on the source
+  // and not a whole-tail substring: each path rendering an over-long note must be
+  // byte-for-byte what it renders for the already-clamped note. That fails on any
+  // divergence, including one a 4.7x looser budget would survive.
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const renderBackend = (note: string) => renderDeliverySlipViaDocument(
+    { ...ORDER, special_instructions: note },
+    ORDER.items,
+    CONTACT,
+    {
+      columns: 42,
+      language: 'en',
+      locale: 'en-IN',
+      timezone: 'Asia/Kolkata',
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: profile.cutMode,
+      capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+    },
+  );
+  const webusb = (note: string) => fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: note },
+    [],
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en' },
+    [],
+  );
+  const webprint = (note: string) => fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: note },
+    [],
+    CONTACT,
+    { paperWidth: 80, language: 'en' },
+  );
+
+  // Emoji, so a UTF-16 clamp and a code-point clamp disagree. A combining-mark run
+  // is the other case: only a grapheme-aware clamp keeps any of it.
+  const overLong = [
+    '\u{1F4E6}'.repeat(150),
+    'e' + '\u{0301}'.repeat(300),
+    'leave the parcel with the neighbour at number 42 '.repeat(20),
+    'a' + '\u{0301}'.repeat(MAX_DELIVERY_SLIP_NOTE_CHARS),
+  ];
+
+  for (const note of overLong) {
+    // Production trims before it clamps, so the expectation has to as well.
+    const clamped = clampDeliverySlipText(note.trim(), MAX_DELIVERY_SLIP_NOTE_CHARS);
+    assert.ok(clamped.truncatedChars > 0, "the fixture exceeds the budget, so the clamp is exercised");
+    assert.ok(note.trim().length > clamped.text.length, "the fixture is genuinely over budget after trimming");
+
+    // Backend: the data it prints from is exactly the shared clamp's output, and
+    // the count it reports is what it actually withheld.
+    const backend = buildDeliverySlipPrintData({ ...ORDER, special_instructions: note }, ORDER.items, CONTACT);
+    assert.equal(backend.note, clamped.text, 'the backend retains the shared clamp\'s text');
+    assert.equal(backend.noteTruncatedChars, clamped.truncatedChars, 'the backend reports the honest count');
+    const backendText = escPosToText(renderBackend(note).data).replace(/\s+/g, ' ');
+    assert.ok(backendText.includes('more characters not shown'), 'the backend marks an over-long note as cut');
+    assert.ok(
+      backendText.includes(` ${clamped.truncatedChars} more characters`),
+      `the backend states the honest count (${clamped.truncatedChars})`,
+    );
+
+    // Web print: the fragment must carry the clamped text and nothing past it, and
+    // the marker must state the count actually withheld. This is the assertion that
+    // failed when the browser clamped by code point while the backend clamped by
+    // UTF-16 unit: the fragment printed 150 emoji and still claimed 100 were cut.
+    const html = webprint(note);
+    const retained = clamped.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    assert.ok(html.includes(retained), 'the web-print fragment carries the shared clamp\'s text');
+
+    const claimed = html.match(/(\d+) more characters not shown/);
+    assert.ok(claimed, 'an over-long note is marked as cut on the paper');
+    assert.equal(Number(claimed![1]), clamped.truncatedChars, 'the printed count is what was withheld');
+
+    // WebUSB: the encoder marks the cut too, and states the same honest count.
+    const asText = Buffer.from(webusb(note)).toString('latin1');
+    assert.ok(
+      asText.includes('more characters not shown'),
+      'the WebUSB encoder marks an over-long note as cut',
+    );
+    assert.ok(
+      asText.includes(` ${clamped.truncatedChars} more characters`),
+      `the WebUSB encoder states the honest count (${clamped.truncatedChars})`,
+    );
+  }
+});
+
+test('delivery slip: the note budget is declared once, in the shared contract', () => {
+  // The constant and the algorithm that applies it must travel together, or a
+  // change to the bound lands on one path and not the others.
+  const shared = fs.readFileSync(path.join(__dirname, '../shared/print/document.ts'), 'utf8');
+  assert.ok(
+    /export const MAX_DELIVERY_SLIP_NOTE_CHARS = \d+;/.test(shared),
+    'the note budget is declared and exported by the shared document contract',
+  );
+  for (const file of [
+    '../frontend/src/lib/printer/delivery-slip-encoder.ts',
+    '../frontend/src/lib/printer/delivery-slip-web-print.ts',
+    '../main/printers/document-delivery-slip.ts',
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    assert.ok(
+      !/const MAX_NOTE_CHARS\s*=/.test(source) && !/function clampNote\s*\(/.test(source),
+      `${file} declares no local copy of the budget or its clamp`,
+    );
+  }
+});
+
+test('delivery slip: a raw control byte in free text never reaches the printer', () => {
+  // A printer command is a byte sequence, not a spelling. The brace escape denies
+  // the {TOKEN} form; this denies the byte form, which would otherwise reach the
+  // wire from any field on any document. ESC d 5 is "print and feed five lines".
+  // Probes chosen because a clean slip never emits them: the renderer does emit
+  // ESC d 5 itself, as a feed before its own cut, so that one is not a probe.
+  const PROBES = [
+    ['cash drawer pulse', Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa])],
+    ['bit-image', Buffer.from([0x1b, 0x2a])],
+    ['select print area', Buffer.from([0x1b, 0x26])],
+    ['vertical tab', Buffer.from([0x1d, 0x76])],
+  ] as const;
+
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const capabilities = capabilitiesForPrinter(profile, 'cols-42', false);
+  const render = (order: any, contact: any = CONTACT) => renderDeliverySlipViaDocument(order, ORDER.items, contact, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities,
+  });
+
+  for (const [label, probe] of PROBES) {
+    const payload = 'hi' + probe.toString('latin1') + 'bye';
+    for (const [field, result] of [
+      ['note', render({ ...ORDER, special_instructions: payload })],
+      ['name', render({ ...ORDER }, { ...CONTACT, name: payload })],
+      ['address', render({ ...ORDER }, { ...CONTACT, address: payload })],
+    ] as const) {
+      assert.ok(
+        !result.data.includes(probe),
+        `an ESC ${label} sequence in the ${field} must not reach the wire`,
+      );
+    }
+  }
+
+  // A line that cannot be represented is dropped whole, and the drop is warned
+  // rather than silent — the merchant is told the note did not print.
+  const hostile = render({ ...ORDER, special_instructions: 'hi' + PROBES[0][1].toString('latin1') + 'bye' });
+  assert.ok(
+    hostile.warnings.length > 0,
+    'a note that cannot be represented is reported, not silently dropped',
+  );
+  assert.ok(!escPosToText(hostile.data).includes('undefined'), 'no placeholder is printed in its place');
+
+  // An ordinary note is untouched by the strip.
+  const plain = render({ ...ORDER, special_instructions: 'hi bye' });
+  assert.ok(escPosToText(plain.data).includes('hi bye'), 'an ordinary note prints unchanged');
+  assert.deepEqual(plain.warnings, [], 'an ordinary note produces no warning');
+
+  // The renderer's own control sequences must survive the strip, or the slip
+  // would print as one undifferentiated block of monospace.
+  assert.ok(plain.data.includes(Buffer.from([0x1b, 0x45, 0x01])), 'the renderer still emits its own bold');
+  assert.equal([...plain.data].filter((byte) => byte === 0x1d).length, 1, 'one intentional cut');
+});
+
+test('delivery slip: an over-long order note is bounded and visibly marked, never silently cut', () => {
+  // max_order_notes_length is a tenant setting, so a raised limit or a legacy row
+  // can carry more than a courier sheet should spend. A note that ends without
+  // saying it was cut reads as the whole instruction.
+  const overLong = 'Leave the parcel with the neighbour at number 42 '.repeat(40);
+  const printData = buildDeliverySlipPrintData(
+    { ...ORDER, special_instructions: overLong },
+    ORDER.items,
+    CONTACT,
+  );
+  assert.ok(
+    printData.note.length <= MAX_DELIVERY_SLIP_NOTE_CHARS,
+    `the note is bounded to ${MAX_DELIVERY_SLIP_NOTE_CHARS} chars, got ${printData.note.length}`,
+  );
+  assert.equal(printData.noteTruncatedChars, overLong.trim().length - printData.note.length);
+
+  const result = renderDeliverySlipViaDocument({ ...ORDER, special_instructions: overLong }, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: resolvePrinterProfile({ paper_width: 'cols-42' }).cutMode,
+    capabilities: capabilitiesForPrinter(resolvePrinterProfile({ paper_width: 'cols-42' }), 'cols-42', false),
+  });
+  const text = escPosToText(result.data);
+  assert.ok(/more characters not shown/.test(text), 'the truncation is stated on the paper, not only in the data');
+  assert.ok(text.includes('Espresso Doppio'), 'the items still print after a bounded note');
+
+  // The budget counts UTF-16 units, the same way the address budget does, so a
+  // note of exactly the budget prints whole.
+  const atBudget = 'x'.repeat(MAX_DELIVERY_SLIP_NOTE_CHARS);
+  const clamped = buildDeliverySlipPrintData(
+    { ...ORDER, special_instructions: atBudget },
+    ORDER.items,
+    CONTACT,
+  );
+  assert.equal(clamped.note, atBudget, 'a note of exactly the budget prints whole');
+  assert.equal(clamped.noteTruncatedChars, 0);
+
+  // Supplementary-plane text is walked by grapheme, so the budget never cuts a
+  // surrogate pair in half.
+  const emoji = '\u{1F4E6}';
+  const overBudget = buildDeliverySlipPrintData(
+    { ...ORDER, special_instructions: emoji.repeat(MAX_DELIVERY_SLIP_NOTE_CHARS) },
+    ORDER.items,
+    CONTACT,
+  );
+  assert.equal([...overBudget.note].every((cluster) => cluster === emoji), true, 'every kept cluster is a whole emoji');
+  assert.ok(overBudget.noteTruncatedChars > 0, 'an over-budget emoji note reports what it dropped');
+  assert.equal(overBudget.note.length % 2, 0, 'the budget never leaves half a surrogate pair');
+});
+
+test('delivery slip: a control token in free text prints as text, never as a command', () => {
+  // Printer commands occupy a whole trimmed line. A command spelling embedded in
+  // free text must not run, and unrelated curly braces must survive unchanged.
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const capabilities = capabilitiesForPrinter(profile, 'cols-42', false);
+  const hostile = '{CUT} ring {tag} twice {BOLD} loudly {INIT}';
+
+  for (const [field, apply] of [
+    ['note', (o: any, c: any) => [{ ...o, special_instructions: hostile }, c]],
+    ['address', (o: any, c: any) => [o, { ...c, address: hostile }]],
+    ['name', (o: any, c: any) => [o, { ...c, name: hostile }]],
+    ['phone', (o: any, c: any) => [o, { ...c, phone: hostile }]],
+    ['order number', (o: any, c: any) => [{ ...o, order_number: hostile }, c]],
+    ['item name', (o: any, c: any) => [o, { ...c, __items: [{ product_name: hostile, quantity: 1, special_instructions: '' }] }]],
+    ['item instruction', (o: any, c: any) => [o, { ...c, __items: [{ product_name: 'X', quantity: 1, special_instructions: hostile }] }]],
+    ['addon name', (o: any, c: any) => [o, { ...c, __items: [{ product_name: 'X', quantity: 1, special_instructions: '', addons: [{ name: hostile }] }] }]],
+  ] as const) {
+    const [order, contact] = apply({ ...ORDER, special_instructions: '' }, { ...CONTACT });
+    const items = (contact as any).__items || ORDER.items;
+    const { __items: _omit, ...cleanContact } = contact as any;
+    const result = renderDeliverySlipViaDocument(order as any, items, cleanContact, {
+      columns: 42,
+      language: 'en',
+      locale: 'en-IN',
+      timezone: 'Asia/Kolkata',
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: profile.cutMode,
+      capabilities,
+    });
+    // GS is the paper-cut lead byte. Only the trailing standalone {CUT} cuts.
+    const cuts = [...result.data].filter((byte) => byte === 0x1d).length;
+    assert.equal(cuts, 1, `a {CUT} in the ${field} must not cut the paper (found ${cuts} cuts)`);
+    const printedText = escPosToText(result.data);
+    assert.ok(printedText.includes('ring'), `the ${field} still prints its text`);
+    assert.ok(printedText.includes('{tag}'), `the ${field} keeps user curly braces`);
+  }
+
+  // The renderer keeps writing its own tokens: a real bold item line still bolds.
+  const bolded = renderDeliverySlipViaDocument(ORDER, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities,
+  });
+  assert.ok(bolded.lines.some((line) => line.startsWith('{BOLD}')), 'the renderer still emits its own control tokens');
+});
+
+test('delivery slip: the validator accepts both block shapes and rejects a broken one', () => {
+  const base = buildDeliverySlipDocument(
+    buildDeliverySlipPrintData(ORDER, ORDER.items, CONTACT),
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'INR',
+      currencySymbol: 'Rs',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
+  assert.equal(base.blocks.length, 3);
+  assert.ok(isDeliverySlipDocument(base), 'the three-block document is valid');
+
+  const noted = buildDeliverySlipDocument(
+    buildDeliverySlipPrintData({ ...ORDER, special_instructions: 'Ring twice' }, ORDER.items, CONTACT),
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'INR',
+      currencySymbol: 'Rs',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
+  assert.equal(noted.blocks.length, 4, 'a note adds exactly one block');
+  assert.equal(noted.blocks[2].kind, 'delivery-slip-notes', 'the note sits between contact and items');
+  assert.ok(isDeliverySlipDocument(noted), 'the four-block document is valid');
+
+  const kinds = (document: any) => document.blocks.map((block: any) => block.kind);
+  const mutate = (blocks: any[]) => ({ ...noted, blocks });
+
+  assert.equal(
+    isDeliverySlipDocument(mutate(kinds(noted).filter((kind: string) => kind !== 'delivery-slip-items'))),
+    false,
+    'a document with no items block is rejected',
+  );
+  assert.equal(
+    isDeliverySlipDocument(mutate([
+      ...kinds(noted).filter((kind: string) => kind !== 'delivery-slip-contact'),
+      'delivery-slip-contact',
+    ].map((kind) => noted.blocks.find((block: any) => block.kind === kind)))),
+    false,
+    'a second contact block is rejected',
+  );
+  assert.equal(
+    isDeliverySlipDocument(mutate([...kinds(noted), 'delivery-slip-notes'].map((kind) => noted.blocks.find((block: any) => block.kind === kind)))),
+    false,
+    'a second notes block is rejected',
+  );
+  // A duplicate header is only a *duplicate* if it is not the one in first
+  // position, so prepend a copy rather than reordering the original.
+  assert.equal(
+    isDeliverySlipDocument(mutate([
+      noted.blocks[0],
+      ...noted.blocks,
+    ])),
+    false,
+    'a second header block is rejected',
+  );
+  assert.equal(
+    isDeliverySlipDocument(mutate([
+      ...noted.blocks.slice(1),
+      noted.blocks[0],
+    ])),
+    false,
+    'a document whose first block is not the header is rejected',
+  );
+  assert.equal(
+    isDeliverySlipDocument(mutate([
+      noted.blocks[0],
+      ...noted.blocks.filter((block: any) => block.kind !== 'delivery-slip-items'),
+    ])),
+    false,
+    'a document that does not end with the items block is rejected',
+  );
+});
+
+test('delivery slip: all three render paths print the order note', () => {
+  const NOTE = 'Do not ring the doorbell';
+  const order = { ...ORDER, special_instructions: NOTE };
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+
+  // 1. Backend ESC/POS document pipeline.
+  const backend = renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
+  assert.ok(escPosToText(backend.data).includes(NOTE), 'the backend ESC/POS path prints the note');
+
+  // 2. Browser WebUSB encoder and 3. browser web print. Both are frontend modules,
+  // so the two paths have to agree with the backend or the courier sees the note
+  // only on the printer this merchant happens to own.
+  const webusb = fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: NOTE },
+    ORDER.items.map((item: any) => ({ product_name: item.product_name, quantity: item.quantity, special_instructions: item.special_instructions })),
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en' },
+    [],
+  );
+  assert.ok(
+    new TextDecoder().decode(webusb).includes('doorbell'),
+    'the WebUSB encoder prints the note',
+  );
+
+  const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: NOTE },
+    ORDER.items.map((item: any) => ({ product_name: item.product_name, quantity: item.quantity, special_instructions: item.special_instructions })),
+    CONTACT,
+    { paperWidth: 80, language: 'en' },
+  );
+  assert.ok(html.includes('doorbell'), 'the web-print path prints the note');
+
+  // The note is operator-typed free text that reaches an HTML fragment, so it has
+  // to be escaped rather than interpolated. `<` must not survive as markup.
+  const injected = fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    {
+      order_number: 'ORD-DEL-001',
+      created_at: '2026-08-21 18:42:00',
+      type: 'delivery',
+      special_instructions: '<img src=x onerror=alert(1)>',
+    },
+    [],
+    CONTACT,
+    { paperWidth: 80, language: 'en' },
+  );
+  assert.ok(!injected.includes('<img'), 'a note cannot inject markup into the print fragment');
+  assert.ok(injected.includes('&lt;img'), 'the note is HTML-escaped instead');
 });
 
 test('delivery slip: an order with no contact still renders, and says nothing it does not know', () => {

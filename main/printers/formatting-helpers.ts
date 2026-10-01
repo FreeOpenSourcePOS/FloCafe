@@ -79,7 +79,7 @@ export function itemAmountWidth(
 
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
-  const productName = normalizeThermalText(item.product_name, capabilities);
+  const productName = normalizeThermalText(String(item.product_name ?? ''), capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const qty = padToDisplayCells(String(item.quantity), qtyW);
   const maxLine1Name = Math.max(1, nameLen - 1);
@@ -102,7 +102,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
-  const addonName = normalizeThermalText(addon.name, capabilities);
+  const addonName = normalizeThermalText(String(addon.name ?? ''), capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const fullName = '  + ' + addonName + quantity;
 
@@ -205,6 +205,7 @@ export function pushWrapped(lines: string[], text: string, cols: number, _langua
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
+/** Centred counterpart of {@link pushWrapped}. */
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
   if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
@@ -346,7 +347,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
     if (rasterRanges.some((range) => range.start < lineIndex && lineIndex < range.end)) continue;
-    if (line.includes('{INIT}')) {
+    if (line.trim() === '{INIT}') {
       buf.push(0x1B, 0x40);
       resetAllStyles();
       if (!useLegacyUnicode && activeCodePage !== 'ascii') {
@@ -355,12 +356,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
-    if (line.includes('{FEED}')) {
+    if (line.trim() === '{FEED}') {
       buf.push(0x1B, 0x64, 0x05);
       continue;
     }
 
-    if (line.includes('{CUT}')) {
+    if (line.trim() === '{CUT}') {
       buf.push(0x1B, 0x64, 0x05);
       if (options.cutMode === 'partial') {
         buf.push(0x1D, 0x56, 0x42, 0x00);
@@ -378,6 +379,13 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       && Number.isSafeInteger(range.lineCount)
       && range.lineIndex <= lineIndex
       && lineIndex < range.lineIndex + range.lineCount);
+    // A printer command is a byte sequence, so the C0 range is stripped from every
+    // line before anything else looks at it. It used to sit inside the non-ASCII
+    // branch below, which meant a pure-ASCII line — an English order note, say —
+    // never reached it and its ESC/GS bytes went to the wire. The renderer's own
+    // sequences are unaffected: they are pushed straight to `buf`, never carried
+    // in a line.
+    line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
@@ -418,7 +426,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         }
         continue;
       }
-      line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
       printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);

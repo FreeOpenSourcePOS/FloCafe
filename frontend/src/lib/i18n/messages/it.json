@@ -450,12 +450,12 @@
     "staff": "Personale",
     "statusError": "Impossibile ottenere lo stato",
     "support": "Assistenza",
-    "tables": "Tavoli",
     "toggleSidebar": "Attiva/disattiva barra laterale",
     "uptimeLabel": "Attivo da: ",
     "user": "Utente",
     "whatsapp": "WhatsApp",
-    "inventory": "Scorte"
+    "inventory": "Scorte",
+    "tables": "Tavoli"
   },
   "orders": {
     "active": "Attivo",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Cliente diverso su questo tavolo",
     "customerMismatchWarning": "Questo tavolo è attualmente occupato da {customer}. Vuoi procedere e aggiungere questi articoli al suo ordine?",
     "customerName": "Nome",
+    "customerAddress": "Indirizzo del cliente",
     "customerRequiredBeforeOrder": "Un cliente è richiesto prima di effettuare un ordine.",
     "customerUpdateFailed": "Aggiornamento del cliente non riuscito",
     "customerUpdated": "Cliente aggiornato",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Prezzo di costo",
     "fieldImage": "Immagine prodotto",
     "fieldInventoryProduct": "Prodotto di inventario",
+    "fieldInventoryProductHint": "La vendita di questo prodotto scala la quantità indicata dal prodotto di magazzino selezionato.",
     "fieldInventoryProductNone": "Nessuno",
     "fieldInventoryDeductionQuantity": "Deduzione per vendita",
     "fieldLowStockThreshold": "Soglia scorte basse",
@@ -1244,8 +1246,8 @@
     "statusServed": "Servito",
     "statusWaiting": "In attesa",
     "tableLabel": "Tavolo {name}",
-    "tables": "Tavoli",
-    "title": "App cameriere"
+    "title": "App cameriere",
+    "tables": "Tavoli"
   },
   "settings": {
     "aboutDescription": "FloPOS è un POS open-source gratuito per sempre per ristoranti, bar, panetterie, food truck, cloud kitchen e locali. Include ordinazione, tavoli, menu, display di cucina, stampa ricevute, accesso del personale e archiviazione locale dei dati. Scaricalo, avvia il servizio, conserva i tuoi dati e possiedi il tuo POS.",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "Se ON, stampa i simboli di valuta (₹, €, £, ¥…) così come sono. Se OFF, li sostituisce con ASCII (Rs, EUR, GBP, Yen…): opzione predefinita più sicura per la maggior parte delle stampanti termiche.",
     "printerUpdated": "Stampante aggiornata",
     "printers": "Stampanti",
-    "printing": "Stampa",
     "printingSettingsSaved": "Impostazioni di stampa salvate",
     "privacy": "Privacy",
     "productImagesDisabled": "Immagini prodotto disabilitate",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "Disattivato per impostazione predefinita. Quando è disattivato, i problemi registrati restano su questo dispositivo e non vengono mai inviati. Le richieste di assistenza che invii tu non sono interessate.",
     "diagnosticsTicketUnaffected": "Una richiesta di assistenza che invii tu funziona sempre, che questa opzione sia attiva o no.",
     "diagnosticsLocalOnlyHintTransmitting": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo. La trasmissione automatica è attiva, quindi i problemi registrati possono essere inviati al tuo account FloCafe cloud.",
-    "diagnosticsLocalOnlyHintPending": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo."
+    "diagnosticsLocalOnlyHintPending": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo.",
+    "printing": "Stampa"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Ordini e tavoli",
     "chefDescription": "Display di cucina",
     "areas": {
+      "tables": "Tavoli",
+      "cash": "Cassa",
+      "inventory": "Scorte e ricette",
+      "authorization": "Autorizzazioni",
+      "tax": "Imposte",
+      "printing": "Stampa",
+      "apps": "App",
       "orders": "Ordini",
       "payments": "Pagamenti",
       "customers": "Clienti",
@@ -2208,6 +2217,16 @@
       "support": "Assistenza"
     },
     "capabilities": {
+      "tablesView": "Visualizza i tavoli",
+      "refunds": "Esegui rimborsi",
+      "cashShiftsView": "Visualizza i turni di cassa",
+      "cashMovements": "Registra e annulla i movimenti di contanti",
+      "cashDayClose": "Chiudi la giornata di cassa",
+      "inventoryView": "Visualizza scorte e ricette",
+      "kitchenStatusUpdate": "Aggiorna lo stato dell’ordine sul display cucina",
+      "reportsDailySalesExport": "Esporta il report delle vendite giornaliere",
+      "authorizationManage": "Modifica i permessi dei ruoli e accesso del personale",
+      "mobileAccessManage": "Gestisci l'accesso dai dispositivi mobili",
       "pos": "Usa il terminale POS",
       "dashboard": "Visualizza la dashboard proprietario",
       "ordersReadCreate": "Visualizza e crea ordini",

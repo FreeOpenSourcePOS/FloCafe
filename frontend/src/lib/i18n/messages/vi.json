@@ -143,7 +143,6 @@
     "somethingWrong": "Đã xảy ra lỗi",
     "subtotal": "Tạm tính",
     "tableFallback": "Bàn",
-    "tax": "Thuế",
     "timeHoursMinutes": "{h} giờ {m} phút",
     "timeHoursMinutesAgo": "{h} giờ {m} phút trước",
     "timeMinutes": "{m} phút",
@@ -153,7 +152,8 @@
     "update": "Cập nhật",
     "windowControls": "Điều khiển cửa sổ",
     "yes": "Có",
-    "back": "Quay lại"
+    "back": "Quay lại",
+    "tax": "Thuế"
   },
   "countries": {
     "selectCountry": "Chọn quốc gia…"
@@ -245,7 +245,6 @@
     "refundCount": "Số lần hoàn tiền",
     "refundReference": "Hóa đơn {bill} · Đơn hàng {order}",
     "refundedAt": "Đã hoàn tiền vào {date}",
-    "refunds": "Hoàn tiền",
     "runningOrders": "Đơn hàng đang thực hiện",
     "sales": "Doanh thu",
     "selectDate": "Chọn ngày",
@@ -337,7 +336,8 @@
     "xReportSales": "Doanh thu hôm nay",
     "refundsCount": "{count} lần hoàn tiền",
     "ticketNoPayments": "Không có thanh toán trong ngày này",
-    "shiftLoadFailed": "Không thể tải trạng thái ca."
+    "shiftLoadFailed": "Không thể tải trạng thái ca.",
+    "refunds": "Hoàn tiền"
   },
   "inventory": {
     "tabSupplies": "Vật tư",
@@ -450,12 +450,12 @@
     "staff": "Nhân viên",
     "statusError": "Không thể lấy trạng thái",
     "support": "Hỗ trợ",
-    "tables": "Bàn",
     "toggleSidebar": "Bật/tắt thanh điều hướng",
     "uptimeLabel": "Thời gian hoạt động: ",
     "user": "Người dùng",
     "whatsapp": "WhatsApp",
-    "inventory": "Kho"
+    "inventory": "Kho",
+    "tables": "Bàn"
   },
   "orders": {
     "active": "Đang hoạt động",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Khách hàng khác trên bàn này",
     "customerMismatchWarning": "Bàn này hiện có {customer}. Bạn có muốn tiếp tục và thêm các món này vào đơn hàng của họ?",
     "customerName": "Tên",
+    "customerAddress": "Địa chỉ khách hàng",
     "customerRequiredBeforeOrder": "Cần có khách hàng trước khi đặt đơn.",
     "customerUpdateFailed": "Không thể cập nhật khách hàng",
     "customerUpdated": "Đã cập nhật khách hàng",
@@ -827,7 +828,6 @@
     "tagSpicy": "Cay",
     "tagVeg": "Ăn chay",
     "tagVegan": "Thuần chay",
-    "tax": "Thuế",
     "taxLine": "{title} @{rate}%",
     "total": "Tổng cộng",
     "totalDue": "Tổng cần trả",
@@ -840,7 +840,8 @@
     "exitFullscreen": "Thoát POS toàn màn hình",
     "fullscreenUnavailable": "Không có chế độ toàn màn hình",
     "backspaceAmount": "Xóa lùi số tiền",
-    "numericKeypad": "Bàn phím số"
+    "numericKeypad": "Bàn phím số",
+    "tax": "Thuế"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -940,7 +941,6 @@
       "payOut": "Chi tiền",
       "safeDrop": "Gửi tiền vào két an toàn",
       "payments": "Doanh thu theo phương thức thanh toán",
-      "refunds": "Hoàn tiền",
       "tax": "Chi tiết thuế",
       "staff": "Doanh thu theo nhân viên",
       "expectedCash": "Tiền mặt dự kiến",
@@ -952,7 +952,8 @@
       "none": "(không có)",
       "paymentCount": "x{count}",
       "count": "Số lượng:",
-      "amount": "Tổng:"
+      "amount": "Tổng:",
+      "refunds": "Hoàn tiền"
     },
     "test": {
       "title": "Kiểm tra máy in Flo",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Giá vốn",
     "fieldImage": "Ảnh sản phẩm",
     "fieldInventoryProduct": "Sản phẩm trong kho",
+    "fieldInventoryProductHint": "Bán sản phẩm này sẽ trừ số lượng bên dưới khỏi sản phẩm tồn kho đã chọn.",
     "fieldInventoryProductNone": "Không có",
     "fieldInventoryDeductionQuantity": "Số lượng trừ mỗi lần bán",
     "fieldLowStockThreshold": "Ngưỡng tồn kho thấp",
@@ -1244,8 +1246,8 @@
     "statusServed": "Đã phục vụ",
     "statusWaiting": "Đang chờ",
     "tableLabel": "Bàn {name}",
-    "tables": "Bàn",
-    "title": "Server App"
+    "title": "Server App",
+    "tables": "Bàn"
   },
   "settings": {
     "aboutDescription": "FloPOS là hệ thống POS nhà hàng mã nguồn mở, miễn phí vĩnh viễn dành cho quán cà phê, nhà hàng, tiệm bánh, xe bán lưu động, bếp đám mây và quán bar. Ứng dụng gồm đặt món, quản lý bàn, thực đơn, màn hình bếp, in biên nhận, phân quyền nhân viên và lưu dữ liệu cục bộ. Hãy tải xuống, sử dụng, giữ dữ liệu và làm chủ hệ thống POS của bạn.",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Đơn hàng và bàn",
     "chefDescription": "Màn hình bếp",
     "areas": {
+      "tables": "Bàn",
+      "cash": "Tiền mặt",
+      "inventory": "Tồn kho và công thức",
+      "authorization": "Quyền",
+      "tax": "Thuế",
+      "printing": "In ấn",
+      "apps": "Ứng dụng",
       "orders": "Đơn hàng",
       "payments": "Thanh toán",
       "customers": "Khách hàng",
@@ -2208,6 +2217,16 @@
       "support": "Hỗ trợ"
     },
     "capabilities": {
+      "tablesView": "Xem bàn",
+      "refunds": "Hoàn tiền",
+      "cashShiftsView": "Xem ca tiền mặt",
+      "cashMovements": "Ghi và hủy giao dịch tiền mặt",
+      "cashDayClose": "Chốt ngày giao dịch",
+      "inventoryView": "Xem tồn kho và công thức",
+      "kitchenStatusUpdate": "Cập nhật trạng thái đơn trên màn hình bếp",
+      "reportsDailySalesExport": "Xuất báo cáo doanh thu ngày",
+      "authorizationManage": "Đổi quyền của vai trò và quyền truy cập của nhân viên",
+      "mobileAccessManage": "Quản lý truy cập thiết bị di động",
       "pos": "Sử dụng thiết bị POS",
       "dashboard": "Xem bảng điều khiển dành cho chủ cửa hàng",
       "ordersReadCreate": "Xem và tạo đơn hàng",
@@ -2601,7 +2620,6 @@
     "subtitle": "Bật quy tắc thuế đã xác minh cho quốc gia cửa hàng. FloCafe tự động áp dụng nhóm thuế sản phẩm tiêu chuẩn; có thể thay đổi ngoại lệ cho từng sản phẩm.",
     "supportUnavailable": "Chưa hỗ trợ thuế cho {country}. Chúng tôi đã yêu cầu plugin từ nhóm FloCafe và sẽ xây dựng sớm. Thuế vẫn tắt cho đến khi sẵn sàng.",
     "target": "Mục tiêu",
-    "tax": "Thuế",
     "taxableBase": "Bơ sắp thuế",
     "testCalculation": "Phép tính kiểm tra",
     "testCalculationHint": "Dùng gói đang hoạt động và cùng công cụ tính thuế như thanh toán. Không lưu giao dịch.",
@@ -2617,7 +2635,8 @@
     "updated": "Đã cập nhật",
     "updatedTo": "Đã cập nhật plugin thuế lên v{version}",
     "value": "Giá trị",
-    "yourStore": "cửa hàng của bạn"
+    "yourStore": "cửa hàng của bạn",
+    "tax": "Thuế"
   },
   "update": {
     "currentVersion": "Phiên bản hiện tại: {version}",

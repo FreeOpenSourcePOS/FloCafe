@@ -143,7 +143,6 @@
     "somethingWrong": "Algo salió mal",
     "subtotal": "Subtotal",
     "tableFallback": "Mesa",
-    "tax": "Impuestos",
     "timeHoursMinutes": "{h} h {m} min",
     "timeHoursMinutesAgo": "hace {h} h {m} min",
     "timeMinutes": "{m} min",
@@ -153,7 +152,8 @@
     "update": "Actualizar",
     "windowControls": "Controles de ventana",
     "yes": "Sí",
-    "back": "Atrás"
+    "back": "Atrás",
+    "tax": "Impuestos"
   },
   "countries": {
     "selectCountry": "Seleccioná un país…"
@@ -450,12 +450,12 @@
     "staff": "Personal",
     "statusError": "No se pudo obtener el estado",
     "support": "Soporte",
-    "tables": "Mesas",
     "toggleSidebar": "Expandir/contraer menú",
     "uptimeLabel": "Activo: ",
     "user": "Usuario",
     "whatsapp": "WhatsApp",
-    "inventory": "Inventario"
+    "inventory": "Inventario",
+    "tables": "Mesas"
   },
   "orders": {
     "active": "Activos",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Otro cliente en esta mesa",
     "customerMismatchWarning": "Esta mesa está ocupada por {customer}. ¿Querés continuar y agregar estos ítems a su pedido?",
     "customerName": "Nombre",
+    "customerAddress": "Dirección del cliente",
     "customerRequiredBeforeOrder": "Hace falta un cliente antes de confirmar el pedido.",
     "customerUpdateFailed": "No se pudo actualizar el cliente",
     "customerUpdated": "Cliente actualizado",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Precio de costo",
     "fieldImage": "Imagen del producto",
     "fieldInventoryProduct": "Producto de inventario",
+    "fieldInventoryProductHint": "Vender este producto descuenta la cantidad indicada del producto de inventario seleccionado.",
     "fieldInventoryProductNone": "Ninguno",
     "fieldInventoryDeductionQuantity": "Deducción por venta",
     "fieldLowStockThreshold": "Umbral de Existencias Bajas",
@@ -1244,8 +1246,8 @@
     "statusServed": "Servido",
     "statusWaiting": "En espera",
     "tableLabel": "Mesa {name}",
-    "tables": "Mesas",
-    "title": "App de mesero"
+    "title": "App de mesero",
+    "tables": "Mesas"
   },
   "settings": {
     "aboutDescription": "FloPOS es un POS para restaurantes de código abierto y gratuito para siempre, para cafeterías, restaurantes, panaderías, camiones de comida, cocinas fantasma y bares. Incluye pedidos, mesas, menús, pantalla de cocina, impresión de recibos, acceso de personal y almacenamiento de datos local. Descárgalo, ejecuta el servicio, mantén tus datos y sé dueño de tu POS.",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Pedidos y mesas",
     "chefDescription": "Pantalla de cocina",
     "areas": {
+      "tables": "Mesas",
+      "cash": "Caja",
+      "inventory": "Inventario y recetas",
+      "authorization": "Permisos",
+      "tax": "Impuestos",
+      "printing": "Impresión",
+      "apps": "Aplicaciones",
       "orders": "Pedidos",
       "payments": "Pagos",
       "customers": "Clientes",
@@ -2208,6 +2217,16 @@
       "support": "Soporte"
     },
     "capabilities": {
+      "tablesView": "Ver mesas",
+      "refunds": "Emitir reembolsos",
+      "cashShiftsView": "Ver turnos de caja",
+      "cashMovements": "Registrar y anular movimientos de efectivo",
+      "cashDayClose": "Cerrar el día de operación",
+      "inventoryView": "Ver inventario y recetas",
+      "kitchenStatusUpdate": "Actualizar el estado del pedido en la pantalla de cocina",
+      "reportsDailySalesExport": "Exportar el informe de ventas diarias",
+      "authorizationManage": "Cambiar permisos de roles y acceso del personal",
+      "mobileAccessManage": "Gestionar el acceso desde dispositivos móviles",
       "pos": "Usar el terminal POS",
       "dashboard": "Ver el panel del propietario",
       "ordersReadCreate": "Ver y crear pedidos",

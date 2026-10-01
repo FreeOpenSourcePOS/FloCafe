@@ -799,6 +799,7 @@ export default function ProductsPage() {
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                   </select>
+                  <p className="text-xs text-gray-400 mt-1">{t('fieldInventoryProductHint')}</p>
                 </div>
                 {!!form.inventory_product_id && (
                   <div>

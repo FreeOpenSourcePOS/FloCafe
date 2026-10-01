@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Carregar info do App do garçom",
     "loading": "Carregando…",
     "localNetwork": "Rede Local",
-    "localNetworkHint": "Use quando todos os dispositivos puderem se comunicar na mesma rede local, por Wi-Fi ou Ethernet",
+    "localNetworkHint": "Use quando todos os dispositivos puderem acessar este endereço por Wi-Fi, Ethernet ou uma rede VPN/mesh",
     "loyalty": "Fidelidade",
     "loyaltyHint": "Os clientes ganham pontos com base na taxa de ganho de fidelidade de cada item no carrinho",
     "loyaltyProgram": "Programa de Fidelidade",

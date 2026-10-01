@@ -946,6 +946,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
     qr_data_url: null,
     ips_data: [
       { ip: '192.168.1.25', url: 'http://192.168.1.25:3001', qr_data: null },
+      { ip: '10.42.0.25', url: 'http://10.42.0.25:3001', qr_data: null },
       { ip: '100.64.0.25', url: 'http://100.64.0.25:3001', qr_data: null },
     ],
   };
@@ -970,9 +971,13 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
 
   await page.goto(BASE + '/settings?tab=pos');
   await page.getByRole('button', { name: 'Load POS Info', exact: true }).click();
-  const englishLocalHint = 'Use when all devices can reach each other on the same local network, over Wi-Fi or Ethernet';
+  const englishLocalHint = 'Use when all devices can reach this address over Wi-Fi, Ethernet, or a VPN/mesh network';
   const englishVpnHint = 'Use when devices connect via a VPN or mesh network across different subnets or locations';
   await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+
+  const privateVpnCard = page.getByText('http://10.42.0.25:3001', { exact: true }).locator('xpath=..');
+  await expect(privateVpnCard.getByRole('link')).toHaveAttribute('href', 'http://10.42.0.25:3001');
+  await expect(privateVpnCard).toContainText(/VPN\/mesh/i);
 
   const networkGrid = page.getByText(englishLocalHint, { exact: true }).first().locator('xpath=../../..');
   const desktopColumns = await networkGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
@@ -992,7 +997,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await selectLanguage('Store Details', 'es');
   await page.getByRole('button', { name: 'Flujo del POS', exact: true }).click();
   await expectPairingHints(
-    'Úsalo cuando todos los dispositivos puedan comunicarse en la misma red local, por Wi-Fi o Ethernet',
+    'Úsalo cuando todos los dispositivos puedan acceder a esta dirección por Wi-Fi, Ethernet o una red VPN/mesh',
     'Úsalo cuando los dispositivos se conecten mediante una VPN o una red mesh entre distintas subredes o ubicaciones',
     'VPN / Red mesh',
   );
@@ -1000,7 +1005,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await selectLanguage('Datos del Negocio', 'de');
   await page.getByRole('button', { name: 'KDS & Küche', exact: true }).click();
   await expectPairingHints(
-    'Verwenden Sie diese Option, wenn alle Geräte dasselbe lokale Netzwerk über WLAN oder Ethernet erreichen können',
+    'Verwenden Sie diese Option, wenn alle Geräte diese Adresse über WLAN, Ethernet oder ein VPN-/Mesh-Netzwerk erreichen können',
     'Verwenden Sie diese Option, wenn Geräte über ein VPN oder Mesh-Netzwerk über verschiedene Subnetze oder Standorte hinweg verbunden sind',
     'VPN / Mesh-Netzwerk',
   );
@@ -1009,7 +1014,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await page.getByRole('button', { name: 'الطلب من جانب الطاولة', exact: true }).click();
   await expectPairingHints(
-    'استخدم هذا الخيار عندما تتمكن جميع الأجهزة من الوصول إلى بعضها عبر الشبكة المحلية نفسها، سواء عبر Wi-Fi أو Ethernet',
+    'استخدم هذا الخيار عندما تتمكن جميع الأجهزة من الوصول إلى هذا العنوان عبر Wi-Fi أو Ethernet أو شبكة VPN/mesh',
     'استخدم هذا الخيار عندما تتصل الأجهزة عبر VPN أو شبكة متداخلة بين شبكات فرعية أو مواقع مختلفة',
     'شبكة VPN / شبكة متشابكة',
   );

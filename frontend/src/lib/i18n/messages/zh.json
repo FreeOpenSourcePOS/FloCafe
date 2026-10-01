@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "加载服务员应用信息",
     "loading": "加载中…",
     "localNetwork": "本地网络",
-    "localNetworkHint": "当所有设备都能通过 Wi-Fi 或 Ethernet 在同一局域网内相互连接时使用",
+    "localNetworkHint": "当所有设备都能通过 Wi-Fi、Ethernet 或 VPN/mesh 网络访问此地址时使用",
     "loyalty": "积分",
     "loyaltyHint": "顾客按购物车中每件商品的积分费率赚取积分",
     "loyaltyProgram": "积分计划",

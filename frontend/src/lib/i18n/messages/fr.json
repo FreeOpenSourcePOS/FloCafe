@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Charger les informations de l’application serveur",
     "loading": "Chargement…",
     "localNetwork": "Réseau local",
-    "localNetworkHint": "À utiliser lorsque tous les appareils peuvent communiquer sur le même réseau local, en Wi-Fi ou Ethernet",
+    "localNetworkHint": "À utiliser lorsque tous les appareils peuvent accéder à cette adresse en Wi-Fi, Ethernet ou via un réseau VPN/mesh",
     "loyalty": "Fidélité",
     "loyaltyHint": "Les clients gagnent des points selon le taux d’acquisition de fidélité de chaque article du panier",
     "loyaltyProgram": "Programme de fidélité",

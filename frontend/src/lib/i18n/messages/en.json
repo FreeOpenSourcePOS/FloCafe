@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Load Server App Info",
     "loading": "Loading…",
     "localNetwork": "Local Network",
-    "localNetworkHint": "Use when all devices can reach each other on the same local network, over Wi-Fi or Ethernet",
+    "localNetworkHint": "Use when all devices can reach this address over Wi-Fi, Ethernet, or a VPN/mesh network",
     "loyalty": "Loyalty",
     "loyaltyHint": "Customers earn points based on the loyalty earning rate of each item in the cart",
     "loyaltyProgram": "Loyalty Program",

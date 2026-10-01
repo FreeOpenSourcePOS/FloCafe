@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Garson Terminali Bilgilerini Yükle",
     "loading": "Yükleniyor...",
     "localNetwork": "Yerel Ağ (LAN)",
-    "localNetworkHint": "Tüm cihazlar aynı yerel ağda Wi-Fi veya Ethernet üzerinden birbirine erişebiliyorsa kullanın",
+    "localNetworkHint": "Tüm cihazlar bu adrese Wi-Fi, Ethernet veya VPN/mesh ağı üzerinden erişebiliyorsa kullanın",
     "loyalty": "Müşteri Sadakat Programı",
     "loyaltyHint": "Müşterilerin alışverişlerinden puan kazanıp indirim olarak harcamasını sağlayın",
     "loyaltyProgram": "Sadakat Puan Sistemi",

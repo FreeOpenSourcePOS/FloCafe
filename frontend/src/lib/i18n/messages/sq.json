@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "Ngarko informacionin e Server App",
     "loading": "Po ngarkohet…",
     "localNetwork": "Rrjeti lokal",
-    "localNetworkHint": "Përdoreni kur të gjitha pajisjet mund të komunikojnë në të njëjtin rrjet lokal, përmes Wi-Fi ose Ethernet",
+    "localNetworkHint": "Përdoreni kur të gjitha pajisjet mund të arrijnë këtë adresë përmes Wi-Fi, Ethernet ose një rrjeti VPN/mesh",
     "loyalty": "Loyaliteti",
     "loyaltyHint": "Klientët fitojnë pikë bazuar në normën e fitimit të besnikërisë për çdo artikull në karrocë",
     "loyaltyProgram": "Programi i Besnikërisë",

@@ -1679,7 +1679,7 @@
     "loadServerAppInfo": "I-load ang Impormasyon ng Server App",
     "loading": "Naglo-load...",
     "localNetwork": "Lokal na Network",
-    "localNetworkHint": "Gamitin kapag naaabot ng lahat ng device ang isa't isa sa iisang lokal na network, sa Wi-Fi man o Ethernet",
+    "localNetworkHint": "Gamitin kapag naaabot ng lahat ng device ang address na ito sa pamamagitan ng Wi-Fi, Ethernet, o VPN/mesh network",
     "loyalty": "Loyalty",
     "loyaltyHint": "Mga Customer earn points based on the loyalty earning rate of each item in the cart",
     "loyaltyProgram": "Loyalty Program",

@@ -229,4 +229,359 @@ test('Orders page browser printing shows unpaid collection and settled payment d
   await expect(page.getByText('Please allow popups to print')).toBeVisible();
   expect(blockedPaymentRequests).toBe(0);
   page.off('request', blockedRequestListener);
+
+  let printerList: Array<Record<string, unknown>> = [{
+    id: 'e2e-network-printer',
+    name: 'E2E Network Printer',
+    connection_type: 'network',
+    ip_address: '127.0.0.1',
+    port: 9100,
+    paper_width: '80mm',
+    is_default: 1,
+  }];
+  await page.route(`${BASE}/api/printers`, async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ printers: printerList }),
+    });
+  });
+  await page.reload();
+  const reloadedUnpaidCard = page.locator('div.bg-card.rounded-xl').filter({ hasText: `#${unpaidOrder.order_number}` }).first();
+  await expect(reloadedUnpaidCard).toBeVisible();
+
+  let nativePrintRequests = 0;
+  await page.route(`${BASE}/api/printers/print-delivery-slip`, async (route) => {
+    nativePrintRequests += 1;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, warnings: [] }) });
+  });
+  const printCountBeforeNativeSuccess = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ));
+  const openCountBeforeNativeSuccess = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = true;
+  });
+  await reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await expect.poll(() => nativePrintRequests).toBe(1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeNativeSuccess + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ))).toBe(printCountBeforeNativeSuccess);
+
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = false;
+  });
+  const openCountBeforeNativeSuccessWithPopup = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const closeCountBeforeNativeSuccessWithPopup = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCloseCount?: number }).__deliverySlipPrintCloseCount ?? 0
+  ));
+  await reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await expect.poll(() => nativePrintRequests).toBe(2);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeNativeSuccessWithPopup + 1);
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCloseCount?: number }).__deliverySlipPrintCloseCount ?? 0
+  ))).toBe(closeCountBeforeNativeSuccessWithPopup + 1);
+
+  let blockedNativeFallbackPaymentRequests = 0;
+  const blockedNativeFallbackListener = (request: import('@playwright/test').Request) => {
+    if (new URL(request.url()).pathname === `/api/printers/delivery-slip-payment/${unpaidOrder.id}`) {
+      blockedNativeFallbackPaymentRequests += 1;
+    }
+  };
+  page.on('request', blockedNativeFallbackListener);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = true;
+  });
+  await page.route(`${BASE}/api/printers/print-delivery-slip`, async (route) => {
+    nativePrintRequests += 1;
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'No default printer configured. Add a printer in Settings.' }),
+    });
+  }, { times: 1 });
+  await reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await expect(page.getByText('Please allow popups to print')).toBeVisible();
+  expect(blockedNativeFallbackPaymentRequests).toBe(0);
+  page.off('request', blockedNativeFallbackListener);
+
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = false;
+  });
+  await page.route(`${BASE}/api/printers/print-delivery-slip`, async (route) => {
+    nativePrintRequests += 1;
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'No default printer configured. Add a printer in Settings.' }),
+    });
+  }, { times: 1 });
+  let releaseFallbackPayment!: () => void;
+  let signalFallbackPayment!: () => void;
+  const fallbackPaymentReached = new Promise<void>((resolve) => { signalFallbackPayment = resolve; });
+  await page.route(`${BASE}/api/printers/delivery-slip-payment/${unpaidOrder.id}`, async (route) => {
+    signalFallbackPayment();
+    await new Promise<void>((resolve) => { releaseFallbackPayment = resolve; });
+    await route.continue();
+  }, { times: 1 });
+  const openCountBeforeFallback = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const fallbackPrint = reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await fallbackPaymentReached;
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeFallback + 1);
+  releaseFallbackPayment();
+  await fallbackPrint;
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintHtml?: string }).__deliverySlipPrintHtml ?? ''
+  ))).toContain('Unpaid delivery note');
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeFallback + 1);
+
+  printerList = [
+    {
+      id: 'e2e-network-printer',
+      name: 'E2E Network Printer',
+      connection_type: 'network',
+      ip_address: '127.0.0.1',
+      port: 9100,
+      paper_width: '80mm',
+      is_default: 1,
+    },
+    {
+      id: 'e2e-webusb-printer',
+      name: 'E2E WebUSB Printer',
+      connection_type: 'webusb',
+      paper_width: '80mm',
+      is_default: 0,
+    },
+  ];
+  await page.addInitScript(() => {
+    const appWindow = window as Window & {
+      __deliverySlipUsbConnected?: boolean;
+      __deliverySlipUsbClaimRequested?: boolean;
+      __deliverySlipUsbReleaseClaim?: () => void;
+      __deliverySlipUsbTransferCount?: number;
+      __deliverySlipUsb?: { usb: EventTarget; device: object };
+    };
+    appWindow.__deliverySlipUsbTransferCount = 0;
+    const device = {
+      vendorId: 0x1234,
+      productId: 0x5678,
+      manufacturerName: 'E2E',
+      productName: 'E2E WebUSB Printer',
+      serialNumber: 'e2e-webusb',
+      configuration: { configurationValue: 1 },
+      configurations: [{
+        interfaces: [{
+          interfaceNumber: 0,
+          alternates: [{
+            interfaceClass: 7,
+            endpoints: [{ type: 'bulk', direction: 'out', endpointNumber: 1 }],
+          }],
+        }],
+      }],
+      open: async () => {},
+      selectConfiguration: async () => {},
+      claimInterface: async () => {
+        if (sessionStorage.getItem('delivery-slip-hold-usb-reconnect') === '1') {
+          appWindow.__deliverySlipUsbClaimRequested = true;
+          await new Promise<void>((resolve) => { appWindow.__deliverySlipUsbReleaseClaim = resolve; });
+        }
+      },
+      releaseInterface: async () => {},
+      transferOut: async () => {
+        appWindow.__deliverySlipUsbTransferCount = (appWindow.__deliverySlipUsbTransferCount ?? 0) + 1;
+        return { status: 'ok', bytesWritten: 0 };
+      },
+      close: async () => {},
+    };
+    const usb = new EventTarget();
+    Object.assign(usb, { getDevices: async () => [device] });
+    const addEventListener = usb.addEventListener.bind(usb);
+    usb.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) => {
+      addEventListener(type, listener, options);
+      if (type === 'disconnect') appWindow.__deliverySlipUsbConnected = true;
+    }) as typeof usb.addEventListener;
+    Object.defineProperty(navigator, 'usb', { configurable: true, value: usb });
+    appWindow.__deliverySlipUsb = { usb, device };
+  });
+  await page.evaluate(() => sessionStorage.setItem('delivery-slip-hold-usb-reconnect', '1'));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbClaimRequested?: boolean }).__deliverySlipUsbClaimRequested ?? false
+  ))).toBe(true);
+
+  let signalUsbNativeNoDefault!: () => void;
+  const usbNativeNoDefaultReached = new Promise<void>((resolve) => { signalUsbNativeNoDefault = resolve; });
+  await page.route(`${BASE}/api/printers/print-delivery-slip`, async (route) => {
+    nativePrintRequests += 1;
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'No default printer configured. Add a printer in Settings.' }),
+    });
+    signalUsbNativeNoDefault();
+  });
+
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = true;
+  });
+  let releaseBlockedUsbPayment!: () => void;
+  let signalBlockedUsbPayment!: () => void;
+  const blockedUsbPaymentReached = new Promise<void>((resolve) => { signalBlockedUsbPayment = resolve; });
+  await page.route(`${BASE}/api/printers/delivery-slip-payment/${unpaidOrder.id}`, async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseBlockedUsbPayment = resolve;
+      signalBlockedUsbPayment();
+    });
+    await route.continue();
+  }, { times: 1 });
+  const openCountBeforeBlockedUsbPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const printCountBeforeBlockedUsbPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ));
+  const transferCountBeforeBlockedUsbPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
+  ));
+  const blockedUsbPaymentRequest = page.waitForRequest((request) => new URL(request.url()).pathname
+    === `/api/printers/delivery-slip-payment/${unpaidOrder.id}`, { timeout: 5000 });
+  const blockedUsbPrint = reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await usbNativeNoDefaultReached;
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeBlockedUsbPrint + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
+  ))).toBe(transferCountBeforeBlockedUsbPrint);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipUsbReleaseClaim?: () => void }).__deliverySlipUsbReleaseClaim?.();
+  });
+  await blockedUsbPaymentRequest;
+  await blockedUsbPaymentReached;
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeBlockedUsbPrint + 1);
+  releaseBlockedUsbPayment();
+  await blockedUsbPrint;
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
+  ))).toBe(transferCountBeforeBlockedUsbPrint + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ))).toBe(printCountBeforeBlockedUsbPrint);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = false;
+  });
+
+  printerList = [{
+    id: 'e2e-webusb-printer',
+    name: 'E2E WebUSB Printer',
+    connection_type: 'webusb',
+    paper_width: '80mm',
+    is_default: 0,
+  }];
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbClaimRequested?: boolean }).__deliverySlipUsbClaimRequested ?? false
+  ))).toBe(true);
+
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = true;
+  });
+  let releasePendingUsbPayment!: () => void;
+  let signalPendingUsbPayment!: () => void;
+  const pendingUsbPaymentReached = new Promise<void>((resolve) => { signalPendingUsbPayment = resolve; });
+  await page.route(`${BASE}/api/printers/delivery-slip-payment/${unpaidOrder.id}`, async (route) => {
+    await new Promise<void>((resolve) => {
+      releasePendingUsbPayment = resolve;
+      signalPendingUsbPayment();
+    });
+    await route.continue();
+  }, { times: 1 });
+  const openCountBeforePendingUsbPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const transferCountBeforePendingUsbPrint = await page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
+  ));
+  const pendingUsbPaymentRequest = page.waitForRequest((request) => new URL(request.url()).pathname
+    === `/api/printers/delivery-slip-payment/${unpaidOrder.id}`, { timeout: 5000 });
+  const pendingUsbPrint = reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforePendingUsbPrint + 1);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipUsbReleaseClaim?: () => void }).__deliverySlipUsbReleaseClaim?.();
+  });
+  await pendingUsbPaymentRequest;
+  await pendingUsbPaymentReached;
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbConnected?: boolean }).__deliverySlipUsbConnected ?? false
+  ))).toBe(true);
+  releasePendingUsbPayment();
+  await pendingUsbPrint;
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipUsbTransferCount?: number }).__deliverySlipUsbTransferCount ?? 0
+  ))).toBe(transferCountBeforePendingUsbPrint + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ))).toBe(0);
+  await page.evaluate(() => {
+    (window as Window & { __deliverySlipPrintBlocked?: boolean }).__deliverySlipPrintBlocked = false;
+  });
+
+  let releaseUsbPayment!: () => void;
+  let signalUsbPayment!: () => void;
+  const usbPaymentReached = new Promise<void>((resolve) => { signalUsbPayment = resolve; });
+  await page.route(`${BASE}/api/printers/delivery-slip-payment/${unpaidOrder.id}`, async (route) => {
+    signalUsbPayment();
+    await new Promise<void>((resolve) => { releaseUsbPayment = resolve; });
+    await route.continue();
+  }, { times: 1 });
+  const openCountBeforeUsbDisconnect = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ));
+  const printCountBeforeUsbDisconnect = await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ));
+  const usbPrint = reloadedUnpaidCard.getByRole('button', { name: 'Delivery Slip' }).click();
+  await usbPaymentReached;
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeUsbDisconnect + 1);
+  await page.evaluate(() => {
+    const mock = (window as Window & { __deliverySlipUsb?: { usb: EventTarget; device: object } }).__deliverySlipUsb;
+    const disconnected = new Event('disconnect');
+    Object.defineProperty(disconnected, 'device', { value: mock?.device });
+    mock?.usb.dispatchEvent(disconnected);
+  });
+  releaseUsbPayment();
+  await usbPrint;
+  await expect.poll(() => page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintCount?: number }).__deliverySlipPrintCount ?? 0
+  ))).toBe(printCountBeforeUsbDisconnect + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintOpenCount?: number }).__deliverySlipPrintOpenCount ?? 0
+  ))).toBe(openCountBeforeUsbDisconnect + 1);
+  expect(await page.evaluate(() => (
+    (window as Window & { __deliverySlipPrintHtml?: string }).__deliverySlipPrintHtml ?? ''
+  ))).toContain('Unpaid delivery note');
 });

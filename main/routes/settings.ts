@@ -212,6 +212,9 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       bill_delivery_show_customer_phone_always,
       currency_display, number_digits, calendar } = req.body;
     const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
+    const normalizedInstagramHandle = instagram_handle !== undefined
+      ? String(instagram_handle || '').trim().slice(0, 100)
+      : undefined;
 
     if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
@@ -280,7 +283,7 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
         : undefined,
       tax_registration_number, state_code, business_address,
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
-      instagram_handle,
+      instagram_handle: normalizedInstagramHandle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,

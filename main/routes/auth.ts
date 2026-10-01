@@ -759,7 +759,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         business_phone: outletPhone,
         address: outletAddress,
         phone: outletPhone,
-        instagram_handle: String(instagram_handle || '').trim(),
+        instagram_handle: String(instagram_handle || '').trim().slice(0, 100),
         email,
         tax_registration_number,
         state_code,

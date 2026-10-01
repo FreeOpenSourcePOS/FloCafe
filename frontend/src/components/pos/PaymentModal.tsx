@@ -379,14 +379,17 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         }))
         .filter((p) => p.amount > 0 && !isNaN(p.amount));
       if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
+      const zeroBalanceSettlement = remainingMinor === 0 && splitLines.length === 0;
 
       // Atomic call ensures all split payment lines succeed together
       // or fail together without leaving partial payments.
       const idempotencyKey = idempotencyKeyRef.current || createPaymentIdempotencyKey();
       idempotencyKeyRef.current = idempotencyKey;
       const res = await api.post(
-        `/bills/${bill.id}/payments`,
-        { payments: splitLines, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined },
+        zeroBalanceSettlement ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
+        zeroBalanceSettlement
+          ? { method: 'cash', amount: null, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined }
+          : { payments: splitLines, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined },
         { headers: { 'Idempotency-Key': idempotencyKey } },
       );
       const updatedBill = res.data?.bill as Bill | undefined;

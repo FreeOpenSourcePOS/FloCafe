@@ -51,6 +51,7 @@ export interface CashCloseWhatsAppLabels {
   refunds?: string;
   netCollections?: string;
   billCount?: (count: number) => string;
+  openingFloat?: string;
   expectedCash?: string;
   countedCash?: string;
   variance?: string;
@@ -73,6 +74,7 @@ export function formatCashCloseWhatsAppMessage(
 ): string {
   const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
   const isZReport = 'zNumber' in report;
+  const expectedCash = isZReport ? report.expectedCash : report.expectedCash + report.openingFloat;
   const period = `${formatReportDateTime(report.periodStart, locale, tenant.timezone)} - ${formatReportDateTime(report.periodEnd, locale, tenant.timezone)}`;
   const lines = [
     `📊 *${isZReport ? `${labels.zReport || 'Z-Report'} #${report.zNumber}` : labels.xReport || 'X-Report'} - ${tenant.business_name}*`,
@@ -97,7 +99,8 @@ export function formatCashCloseWhatsAppMessage(
   lines.push(
     '',
     `💵 *${labels.drawerReconciliation || 'DRAWER RECONCILIATION'}*`,
-    `• ${labels.expectedCash || 'Expected Cash'}: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
+    `• ${labels.openingFloat || 'Opening Float'}: ${formatAmount(report.openingFloat, tenant.currency, locale)}`,
+    `• ${labels.expectedCash || 'Expected Cash'}: ${formatAmount(expectedCash, tenant.currency, locale)}`,
   );
 
   if (isZReport) {

@@ -87,7 +87,8 @@ function zReport(cashVariance: number) {
     closedAt: '2026-10-01T04:05:00.000Z',
     closedBy: 'Alex',
     notes: 'Drawer counted twice',
-    countedCash: reportBase.expectedCash + cashVariance,
+    expectedCash: reportBase.expectedCash + reportBase.openingFloat,
+    countedCash: reportBase.expectedCash + reportBase.openingFloat + cashVariance,
     cashVariance,
   };
 }
@@ -108,6 +109,7 @@ function getLocalizedLabels(localeFile: string): any {
     refunds: dashboard.refunds,
     netCollections: dashboard.netCollections,
     billCount: (count: number) => dashboard.billsCount.replace('{count}', String(count)),
+    openingFloat: dashboard.openingFloat,
     expectedCash: dashboard.expectedCash,
     countedCash: dashboard.countedCash,
     variance: dashboard.variance,
@@ -148,12 +150,15 @@ async function main(): Promise<void> {
     assert.match(xMessage, /\$1,234\.50/);
     assert.match(xMessage, /SALES SUMMARY/);
     assert.match(xMessage, /Cash: \$430\.00 \(10\)/);
-    assert.match(xMessage, /Expected Cash: \$430\.00/);
+    assert.match(xMessage, /Opening Float: \$100\.00/);
+    assert.match(xMessage, /Expected Cash: \$530\.00/);
     assert.match(xMessage, /DRAWER RECONCILIATION/);
 
     const exactMessage = formatCashCloseWhatsAppMessage(zReport(0), tenant, 'en-US');
     assert.match(exactMessage, /Z-Report #7 - Cafe North/);
     assert.match(exactMessage, /Closed by:\* Alex/);
+    assert.match(exactMessage, /Opening Float: \$100\.00/);
+    assert.match(exactMessage, /Expected Cash: \$530\.00/);
     assert.match(exactMessage, /Variance: \$0\.00 \(✅ Exact\)/);
     assert.match(exactMessage, /Notes:\* Drawer counted twice/);
 
@@ -187,6 +192,8 @@ async function main(): Promise<void> {
       assert.ok(localizedZ.includes(`• ${labels.billCount(reportBase.billCount)}`), `${localeFile}: bill count is localized`);
       assert.ok(localizedX.includes(`• ${labels.expectedCash}:`), `${localeFile}: X report expected cash is localized`);
       assert.ok(localizedZ.includes(`• ${labels.expectedCash}:`), `${localeFile}: expected cash label is localized`);
+      assert.ok(localizedX.includes(`• ${labels.openingFloat}:`), `${localeFile}: X report opening float is localized`);
+      assert.ok(localizedZ.includes(`• ${labels.openingFloat}:`), `${localeFile}: Z report opening float is localized`);
       assert.ok(localizedZ.includes(`• ${labels.countedCash}:`), `${localeFile}: counted cash label is localized`);
       assert.ok(localizedZ.includes(`• ${labels.variance}:`), `${localeFile}: variance label is localized`);
       assert.ok(localizedZ.includes(`📝 *${labels.notes}:* Drawer counted twice`), `${localeFile}: notes label is localized`);

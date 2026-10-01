@@ -337,7 +337,15 @@
     "kpiChangeVsSameDayLastWeek": "較上週同日 {percent}%",
     "kpiNewVsSameDayLastWeek": "較上週同日新增",
     "kpiNoChangeVsSameDayLastWeek": "較上週同日無變化",
-    "shiftLoadFailed": "無法載入班次狀態。"
+    "shiftLoadFailed": "無法載入班次狀態。",
+    "sendViaWhatsApp": "傳送至 WhatsApp",
+    "sendWhatsAppTitle": "透過 WhatsApp 傳送報表",
+    "recipientPhone": "收件者電話號碼",
+    "reportSentSuccess": "報表已成功傳送至 WhatsApp",
+    "reportOpeningWhatsAppWeb": "正在開啟含報表的 WhatsApp...",
+    "salesSummary": "銷售摘要",
+    "paymentBreakdown": "付款",
+    "drawerReconciliation": "錢櫃核對"
   },
   "inventory": {
     "tabSupplies": "庫存",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "自動跟進",
       "bill_receipt": "帳單收據",
-      "manual_reply": "手動回覆"
+      "manual_reply": "手動回覆",
+      "z_report": "Z 報表"
     },
     "lastError": {
       "cooldown": "傳送已暫停。",

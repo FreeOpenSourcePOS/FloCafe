@@ -337,7 +337,15 @@
     "xReportSales": "बिक्री आज",
     "refundsCount": "{count} रिफंड",
     "ticketNoPayments": "इस दिन के लिए कोई भुगतान नहीं",
-    "shiftLoadFailed": "शिफ्ट स्थिति लोड नहीं की जा सकी."
+    "shiftLoadFailed": "शिफ्ट स्थिति लोड नहीं की जा सकी.",
+    "sendViaWhatsApp": "WhatsApp पर भेजें",
+    "sendWhatsAppTitle": "WhatsApp पर रिपोर्ट भेजें",
+    "recipientPhone": "प्राप्तकर्ता का फ़ोन नंबर",
+    "reportSentSuccess": "रिपोर्ट WhatsApp पर सफलतापूर्वक भेजी गई",
+    "reportOpeningWhatsAppWeb": "रिपोर्ट के साथ WhatsApp खुल रहा है...",
+    "salesSummary": "बिक्री सारांश",
+    "paymentBreakdown": "भुगतान",
+    "drawerReconciliation": "कैश ड्रॉअर मिलान"
   },
   "inventory": {
     "tabSupplies": "आपूर्ति",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "ऑटो अनुवर्ती",
       "bill_receipt": "बिल रसीद",
-      "manual_reply": "मैन्युअल उत्तर"
+      "manual_reply": "मैन्युअल उत्तर",
+      "z_report": "Z रिपोर्ट"
     },
     "lastError": {
       "cooldown": "भेजना अस्थायी रूप से रोक दिया गया है.",

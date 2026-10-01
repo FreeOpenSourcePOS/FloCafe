@@ -337,7 +337,15 @@
     "xReportSales": "Sales today",
     "refundsCount": "{count} refunds",
     "ticketNoPayments": "No payments for this day",
-    "shiftLoadFailed": "Could not load shift status."
+    "shiftLoadFailed": "Could not load shift status.",
+    "sendViaWhatsApp": "Send to WhatsApp",
+    "sendWhatsAppTitle": "Send Report to WhatsApp",
+    "recipientPhone": "Recipient Phone Number",
+    "reportSentSuccess": "Report sent to WhatsApp successfully",
+    "reportOpeningWhatsAppWeb": "Opening WhatsApp with report...",
+    "salesSummary": "SALES SUMMARY",
+    "paymentBreakdown": "PAYMENTS",
+    "drawerReconciliation": "DRAWER RECONCILIATION"
   },
   "inventory": {
     "tabSupplies": "Supplies",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "Auto follow-up",
       "bill_receipt": "Bill receipt",
-      "manual_reply": "Manual reply"
+      "manual_reply": "Manual reply",
+      "z_report": "Z-Report"
     },
     "lastError": {
       "cooldown": "Send is temporarily paused.",

@@ -62,7 +62,7 @@ interface SentMessage {
   bill_id: number | null;
   customer_id: number | null;
   direction: 'inbound' | 'outbound';
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup';
+  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
   status: string;
   body: string;
   error: string | null;
@@ -103,13 +103,14 @@ const WHATSAPP_STATUS_KEYS = {
   failed: 'failed',
 } as const satisfies Record<WhatsAppMessageStatus, WhatsAppStatusKey>;
 
-type WhatsAppMessageKind = 'bill_receipt' | 'manual_reply' | 'auto_followup';
+type WhatsAppMessageKind = 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
 type WhatsAppKindKey = keyof AppConfig['Messages']['whatsapp']['kind'];
 
 const WHATSAPP_KIND_KEYS = {
   bill_receipt: 'bill_receipt',
   manual_reply: 'manual_reply',
   auto_followup: 'auto_followup',
+  z_report: 'z_report',
 } as const satisfies Record<WhatsAppMessageKind, WhatsAppKindKey>;
 
 type WhatsAppState = 'disconnected' | 'connecting' | 'waiting_qr' | 'waiting_pairing' | 'connected' | 'cooldown';

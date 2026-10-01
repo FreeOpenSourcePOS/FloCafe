@@ -337,7 +337,15 @@
     "xReportSales": "فروش امروز",
     "refundsCount": "{count} بازپرداخت",
     "ticketNoPayments": "در این روز پرداختی نشده",
-    "shiftLoadFailed": "بارگیری وضعیت شیفت ممکن نبود."
+    "shiftLoadFailed": "بارگیری وضعیت شیفت ممکن نبود.",
+    "sendViaWhatsApp": "ارسال به واتساپ",
+    "sendWhatsAppTitle": "ارسال گزارش به واتساپ",
+    "recipientPhone": "شماره تلفن گیرنده",
+    "reportSentSuccess": "گزارش با موفقیت به واتساپ ارسال شد",
+    "reportOpeningWhatsAppWeb": "در حال باز کردن واتساپ همراه گزارش...",
+    "salesSummary": "خلاصه فروش",
+    "paymentBreakdown": "پرداخت‌ها",
+    "drawerReconciliation": "تطبیق صندوق"
   },
   "inventory": {
     "tabSupplies": "مواد اولیه",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "پیگیری خودکار",
       "bill_receipt": "رسید صورت‌حساب",
-      "manual_reply": "پاسخ دستی"
+      "manual_reply": "پاسخ دستی",
+      "z_report": "گزارش Z"
     },
     "lastError": {
       "cooldown": "ارسال به‌طور موقت متوقف است.",

@@ -122,7 +122,7 @@ interface QueuedSend {
   body: string;
   billId: number | null;
   customerId: number | null;
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup';
+  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
   userId: string | null;
   signal?: AbortSignal;
 }
@@ -1237,7 +1237,7 @@ export interface SentMessageRow {
   bill_id: number | null;
   customer_id: number | null;
   direction: 'inbound' | 'outbound';
-  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup';
+  kind: 'bill_receipt' | 'manual_reply' | 'auto_followup' | 'z_report';
   status: string;
   body: string;
   error: string | null;

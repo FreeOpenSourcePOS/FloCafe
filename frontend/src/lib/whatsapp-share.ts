@@ -15,6 +15,135 @@ export interface WhatsAppShareOptions {
   businessPhone?: string;
 }
 
+interface CashCloseReportBase {
+  businessDate: string;
+  periodStart: string;
+  periodEnd: string;
+  grossSales: number;
+  refunds: number;
+  netCollections: number;
+  billCount: number;
+  expectedCash: number;
+  openingFloat: number;
+  payIn: number;
+  payOut: number;
+  safeDrops: number;
+  paymentMethods: { method: string; count: number; total: number }[];
+}
+
+export type XReportExport = CashCloseReportBase;
+
+export interface ZReportExport extends CashCloseReportBase {
+  zNumber: number;
+  closedAt: string;
+  closedBy: string;
+  notes: string | null;
+  countedCash: number;
+  cashVariance: number;
+}
+
+export interface CashCloseWhatsAppLabels {
+  salesSummary?: string;
+  paymentBreakdown?: string;
+  drawerReconciliation?: string;
+}
+
+export function formatCashCloseWhatsAppMessage(
+  report: XReportExport | ZReportExport,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country' | 'timezone'>,
+  localeOverride?: string,
+  labels: CashCloseWhatsAppLabels = {},
+): string {
+  const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
+  const isZReport = 'zNumber' in report;
+  const period = `${formatReportDateTime(report.periodStart, locale, tenant.timezone)} - ${formatReportDateTime(report.periodEnd, locale, tenant.timezone)}`;
+  const lines = [
+    `📊 *${isZReport ? `Z-Report #${report.zNumber}` : 'X-Report'} - ${tenant.business_name}*`,
+    `📅 *Date:* ${formatBusinessDate(report.businessDate, locale)} (${period})`,
+  ];
+
+  if (isZReport) lines.push(`👤 *Closed by:* ${report.closedBy}`);
+
+  lines.push(
+    '',
+    `💰 *${labels.salesSummary || 'SALES SUMMARY'}*`,
+    `• Gross Sales: ${formatAmount(report.grossSales, tenant.currency, locale)}`,
+    `• Refunds: ${formatAmount(report.refunds, tenant.currency, locale)}`,
+    `• Net Collections: ${formatAmount(report.netCollections, tenant.currency, locale)}`,
+    `• Total Bills: ${report.billCount}`,
+    '',
+    `💳 *${labels.paymentBreakdown || 'PAYMENTS'}*`,
+    ...report.paymentMethods.map((payment) =>
+      `• ${payment.method}: ${formatAmount(payment.total, tenant.currency, locale)} (${payment.count})`),
+  );
+
+  if (isZReport) {
+    const varianceIndicator = report.cashVariance === 0
+      ? '✅ Exact'
+      : report.cashVariance < 0 ? '⚠️ Short' : '⚠️ Over';
+    lines.push(
+      '',
+      `💵 *${labels.drawerReconciliation || 'DRAWER RECONCILIATION'}*`,
+      `• Expected Cash: ${formatAmount(report.expectedCash, tenant.currency, locale)}`,
+      `• Counted Cash: ${formatAmount(report.countedCash, tenant.currency, locale)}`,
+      `• Variance: ${formatAmount(report.cashVariance, tenant.currency, locale)} (${varianceIndicator})`,
+      '',
+      `📝 *Notes:* ${report.notes || 'None'}`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+export async function shareCashCloseViaWhatsApp(
+  report: XReportExport | ZReportExport,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country' | 'timezone'>,
+  phoneE164: string,
+  labels: CashCloseWhatsAppLabels = {},
+  cashCloseId?: number,
+  localeOverride?: string,
+): Promise<'sent' | 'opened' | false> {
+  const message = formatCashCloseWhatsAppMessage(report, tenant, localeOverride, labels);
+  const url = `https://wa.me/${phoneE164.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
+  const popup = window.electronAPI ? null : window.open('', '_blank');
+  if (popup) popup.opener = null;
+
+  const openFallback = async (): Promise<'opened' | false> => {
+    if (window.electronAPI?.openWhatsAppShare) {
+      const result = await window.electronAPI.openWhatsAppShare(url);
+      return 'success' in result && result.success === true ? 'opened' : false;
+    }
+    if (!popup) return false;
+    popup.location.href = url;
+    return 'opened';
+  };
+
+  if ('zNumber' in report && cashCloseId !== undefined) {
+    try {
+      const { data } = await api.post(`/reports/cash-closes/${cashCloseId}/whatsapp`, {
+        phone_e164: phoneE164,
+        body: message,
+      });
+      if (data?.success === true) {
+        popup?.close();
+        return 'sent';
+      }
+      if (data?.fallback === true && data?.reason === 'not_connected') return openFallback();
+      popup?.close();
+      return false;
+    } catch (error: unknown) {
+      const reason = (error as { response?: { data?: { reason?: string } } })?.response?.data?.reason;
+      if (reason !== 'not_connected') {
+        popup?.close();
+        throw error;
+      }
+      return openFallback();
+    }
+  }
+
+  return openFallback();
+}
+
 /** Generates a wa.me URL pre-filled with bill details for WhatsApp sharing. */
 export function getWhatsAppShareUrl(
   bill: Bill,
@@ -147,6 +276,30 @@ function formatAmount(value: number | string, currencyCode: string, locale: stri
     // yet) — Intl throws for an empty/invalid currency. Plain number, no
     // symbol, rather than crashing or guessing a currency (never restore INR).
     return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeAmount);
+  }
+}
+
+function formatBusinessDate(value: string, locale: string): string {
+  try {
+    const date = new Date(`${value}T12:00:00Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function formatReportDateTime(value: string, locale: string, timeZone: string): string {
+  try {
+    const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone,
+    }).format(date);
+  } catch {
+    return value;
   }
 }
 

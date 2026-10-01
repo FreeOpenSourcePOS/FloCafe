@@ -337,7 +337,15 @@
     "xReportSales": "Verkoop van vandaag",
     "refundsCount": "{count} terugbetalingen",
     "ticketNoPayments": "Geen betalingen voor deze dag",
-    "shiftLoadFailed": "Kan de dienststatus niet laden."
+    "shiftLoadFailed": "Kan de dienststatus niet laden.",
+    "sendViaWhatsApp": "Verstuur via WhatsApp",
+    "sendWhatsAppTitle": "Rapport via WhatsApp versturen",
+    "recipientPhone": "Telefoonnummer van ontvanger",
+    "reportSentSuccess": "Rapport succesvol via WhatsApp verstuurd",
+    "reportOpeningWhatsAppWeb": "WhatsApp wordt geopend met het rapport...",
+    "salesSummary": "VERKOOPOVERZICHT",
+    "paymentBreakdown": "BETALINGEN",
+    "drawerReconciliation": "KASLA-RECONCILIATIE"
   },
   "inventory": {
     "tabSupplies": "Voorraadartikelen",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "Automatische opvolging",
       "bill_receipt": "Bon",
-      "manual_reply": "Handmatig antwoord"
+      "manual_reply": "Handmatig antwoord",
+      "z_report": "Z-rapport"
     },
     "lastError": {
       "cooldown": "Het verzenden is tijdelijk onderbroken.",

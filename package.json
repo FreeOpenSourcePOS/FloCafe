@@ -119,7 +119,7 @@
     "test:cancel-override": "node tests/run-electron-node-test.cjs tests/cancel-override.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-rate-limit-bypass.test.ts",
     "test:refunds": "node tests/run-electron-node-test.cjs tests/refunds.test.ts",
     "test:refund-completed-orders": "node tests/run-electron-node-test.cjs tests/refund-completed-orders.test.ts",
-    "test:cash-closures": "node tests/run-electron-node-test.cjs tests/cash-closures.test.ts",
+    "test:cash-closures": "node tests/run-electron-node-test.cjs tests/cash-closures.test.ts && node tests/run-electron-node-test.cjs tests/reports-whatsapp.test.ts",
     "test:cash-sessions": "node tests/run-electron-node-test.cjs tests/cash-sessions.test.ts",
     "test:kitchen-addons": "node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts",
     "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts && node tests/run-electron-node-test.cjs tests/addon-price-integrity.test.ts && node tests/run-electron-node-test.cjs tests/issue-122-addon-quantities.test.ts",

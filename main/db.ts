@@ -5409,6 +5409,57 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 96,
+    name: 'add_whatsapp_z_report_kind',
+    up: () => {
+      db.exec(`
+        ALTER TABLE whatsapp_messages RENAME TO whatsapp_messages_v95;
+        CREATE TABLE whatsapp_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_id INTEGER REFERENCES bills(id),
+          customer_id TEXT REFERENCES customers(id),
+          phone_e164 TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
+          kind TEXT NOT NULL DEFAULT 'manual_reply'
+            CHECK (kind IN ('bill_receipt','manual_reply','auto_followup','z_report')),
+          status TEXT NOT NULL DEFAULT 'queued'
+            CHECK (status IN ('queued','seen','typing','sent','delivered','read','failed')),
+          body TEXT NOT NULL,
+          external_message_id TEXT,
+          error TEXT,
+          queued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          seen_at TEXT,
+          typing_at TEXT,
+          sent_at TEXT,
+          delivered_at TEXT,
+          read_at TEXT,
+          failed_at TEXT,
+          created_by_user_id TEXT
+        );
+        INSERT INTO whatsapp_messages (
+          id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+          external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+          delivered_at, read_at, failed_at, created_by_user_id
+        )
+        SELECT
+          id, bill_id, customer_id, phone_e164, direction, kind, status, body,
+          external_message_id, error, queued_at, seen_at, typing_at, sent_at,
+          delivered_at, read_at, failed_at, created_by_user_id
+        FROM whatsapp_messages_v95;
+        DROP TABLE whatsapp_messages_v95;
+        CREATE INDEX idx_whatsapp_messages_phone
+          ON whatsapp_messages(phone_e164, queued_at DESC);
+        CREATE INDEX idx_whatsapp_messages_status
+          ON whatsapp_messages(status, queued_at DESC);
+        CREATE INDEX idx_whatsapp_messages_bill
+          ON whatsapp_messages(bill_id);
+        CREATE INDEX idx_whatsapp_messages_inbound_unread
+          ON whatsapp_messages(direction, status, queued_at DESC)
+          WHERE direction = 'inbound' AND status NOT IN ('read','failed');
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -6068,7 +6119,7 @@ function createWhatsAppSchema(): void {
       phone_e164 TEXT NOT NULL,
       direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
       kind TEXT NOT NULL DEFAULT 'manual_reply'
-        CHECK (kind IN ('bill_receipt','manual_reply','auto_followup')),
+        CHECK (kind IN ('bill_receipt','manual_reply','auto_followup','z_report')),
       status TEXT NOT NULL DEFAULT 'queued'
         CHECK (status IN ('queued','seen','typing','sent','delivered','read','failed')),
       body TEXT NOT NULL,

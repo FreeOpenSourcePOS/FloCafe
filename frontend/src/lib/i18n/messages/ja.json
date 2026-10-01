@@ -337,7 +337,15 @@
     "kpiChangeVsSameDayLastWeek": "先週の同じ曜日と比べて{percent}%",
     "kpiNewVsSameDayLastWeek": "先週の同じ曜日と比べて新規",
     "kpiNoChangeVsSameDayLastWeek": "先週の同じ曜日と比べて変化なし",
-    "shiftLoadFailed": "シフトの状態を読み込めませんでした。"
+    "shiftLoadFailed": "シフトの状態を読み込めませんでした。",
+    "sendViaWhatsApp": "WhatsAppに送信",
+    "sendWhatsAppTitle": "WhatsAppにレポートを送信",
+    "recipientPhone": "受信者の電話番号",
+    "reportSentSuccess": "レポートをWhatsAppに送信しました",
+    "reportOpeningWhatsAppWeb": "レポートを添えてWhatsAppを開いています...",
+    "salesSummary": "売上概要",
+    "paymentBreakdown": "支払い",
+    "drawerReconciliation": "レジ現金の照合"
   },
   "inventory": {
     "tabSupplies": "食材",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "自動フォローアップ",
       "bill_receipt": "請求レシート",
-      "manual_reply": "手動返信"
+      "manual_reply": "手動返信",
+      "z_report": "Zレポート"
     },
     "lastError": {
       "cooldown": "送信は一時停止中です。",

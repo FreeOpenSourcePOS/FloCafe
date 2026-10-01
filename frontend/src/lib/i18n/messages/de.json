@@ -337,7 +337,15 @@
     "xReportSales": "Heutiger Umsatz",
     "refundsCount": "{count} Erstattungen",
     "ticketNoPayments": "Keine Zahlungen an diesem Tag",
-    "shiftLoadFailed": "Schichtstatus konnte nicht geladen werden."
+    "shiftLoadFailed": "Schichtstatus konnte nicht geladen werden.",
+    "sendViaWhatsApp": "An WhatsApp senden",
+    "sendWhatsAppTitle": "Bericht an WhatsApp senden",
+    "recipientPhone": "Telefonnummer des Empfängers",
+    "reportSentSuccess": "Bericht erfolgreich an WhatsApp gesendet",
+    "reportOpeningWhatsAppWeb": "WhatsApp mit Bericht wird geöffnet...",
+    "salesSummary": "UMSATZÜBERSICHT",
+    "paymentBreakdown": "ZAHLUNGEN",
+    "drawerReconciliation": "KASSENABSTIMMUNG"
   },
   "inventory": {
     "tabSupplies": "Vorräte",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "Automatische Nachverfolgung",
       "bill_receipt": "Rechnungsbeleg",
-      "manual_reply": "Manuelle Antwort"
+      "manual_reply": "Manuelle Antwort",
+      "z_report": "Z-Bericht"
     },
     "lastError": {
       "cooldown": "Versand vorübergehend pausiert.",

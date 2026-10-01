@@ -337,7 +337,15 @@
     "xReportSales": "Penjualan hari ini",
     "refundsCount": "{count} pengembalian dana",
     "ticketNoPayments": "Tidak ada pembayaran untuk hari ini",
-    "shiftLoadFailed": "Tidak dapat memuat status shift."
+    "shiftLoadFailed": "Tidak dapat memuat status shift.",
+    "sendViaWhatsApp": "Kirim ke WhatsApp",
+    "sendWhatsAppTitle": "Kirim laporan ke WhatsApp",
+    "recipientPhone": "Nomor telepon penerima",
+    "reportSentSuccess": "Laporan berhasil dikirim ke WhatsApp",
+    "reportOpeningWhatsAppWeb": "Membuka WhatsApp dengan laporan...",
+    "salesSummary": "RINGKASAN PENJUALAN",
+    "paymentBreakdown": "PEMBAYARAN",
+    "drawerReconciliation": "REKONSILIASI LACI KAS"
   },
   "inventory": {
     "tabSupplies": "Persediaan",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "Tindak lanjut otomatis",
       "bill_receipt": "Struk tagihan",
-      "manual_reply": "Balasan manual"
+      "manual_reply": "Balasan manual",
+      "z_report": "Laporan Z"
     },
     "lastError": {
       "cooldown": "Pengiriman dihentikan sementara.",

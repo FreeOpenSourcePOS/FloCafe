@@ -337,7 +337,15 @@
     "xReportSales": "المبيعات اليوم",
     "refundsCount": "{count} عمليات استرداد الأموال",
     "ticketNoPayments": "لا توجد مدفوعات لهذا اليوم",
-    "shiftLoadFailed": "تعذر تحميل حالة الوردية."
+    "shiftLoadFailed": "تعذر تحميل حالة الوردية.",
+    "sendViaWhatsApp": "إرسال إلى واتساب",
+    "sendWhatsAppTitle": "إرسال التقرير عبر واتساب",
+    "recipientPhone": "رقم هاتف المستلم",
+    "reportSentSuccess": "تم إرسال التقرير إلى واتساب بنجاح",
+    "reportOpeningWhatsAppWeb": "جارٍ فتح واتساب مع التقرير...",
+    "salesSummary": "ملخص المبيعات",
+    "paymentBreakdown": "المدفوعات",
+    "drawerReconciliation": "مطابقة درج النقد"
   },
   "inventory": {
     "tabSupplies": "المستلزمات",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "المتابعة التلقائية",
       "bill_receipt": "إيصال الدفع",
-      "manual_reply": "الرد اليدوي"
+      "manual_reply": "الرد اليدوي",
+      "z_report": "تقرير Z"
     },
     "lastError": {
       "cooldown": "تم إيقاف ميزة «الإرسال» مؤقتًا.",

@@ -337,7 +337,15 @@
     "xReportSales": "Bugünkü satışlar",
     "refundsCount": "{count} iade",
     "ticketNoPayments": "Bu gün ödeme yok",
-    "shiftLoadFailed": "Vardiya durumu yüklenemedi."
+    "shiftLoadFailed": "Vardiya durumu yüklenemedi.",
+    "sendViaWhatsApp": "WhatsApp’a gönder",
+    "sendWhatsAppTitle": "Raporu WhatsApp’a gönder",
+    "recipientPhone": "Alıcının telefon numarası",
+    "reportSentSuccess": "Rapor WhatsApp’a başarıyla gönderildi",
+    "reportOpeningWhatsAppWeb": "Raporla birlikte WhatsApp açılıyor...",
+    "salesSummary": "SATIŞ ÖZETİ",
+    "paymentBreakdown": "ÖDEMELER",
+    "drawerReconciliation": "KASA MUTABAKATI"
   },
   "inventory": {
     "tabSupplies": "Sarf malzemeleri",
@@ -2768,7 +2776,8 @@
     "kind": {
       "auto_followup": "Otomatik Takip",
       "bill_receipt": "Hesap Fişi",
-      "manual_reply": "Manuel Yanıt"
+      "manual_reply": "Manuel Yanıt",
+      "z_report": "Z Raporu"
     },
     "lastError": {
       "cooldown": "Gönderim geçici olarak duraklatıldı.",

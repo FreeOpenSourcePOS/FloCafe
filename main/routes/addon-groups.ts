@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -143,7 +143,11 @@ function wouldBreakMinSelection(db: ReturnType<typeof getDatabase>, groupId: str
 router.get('/', addonGroupReadRateLimit, requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const groups = db.prepare('SELECT * FROM addon_groups WHERE is_active = 1 ORDER BY sort_order, name').all();
+    const includeInactive = req.query.include_inactive === 'true'
+      && hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'catalog.manage');
+    const groups = db.prepare(`
+      SELECT * FROM addon_groups ${includeInactive ? '' : 'WHERE is_active = 1'} ORDER BY sort_order, name
+    `).all();
 
     const groupsWithAddons = groups.map((group: any) => {
       const addons = db.prepare('SELECT * FROM addons WHERE addon_group_id = ? AND is_active = 1 ORDER BY sort_order, name').all(group.id);

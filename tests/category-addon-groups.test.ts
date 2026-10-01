@@ -114,8 +114,38 @@ async function main() {
     });
     assert.equal(retainedGroupCategory.status, 201);
     const retainedGroupCategoryId = retainedGroupCategory.data.category.id;
+    seedAddon(db, 'addon-retired', 'ag-retired', 'Retired add-on');
+    seedProduct(db, 'prod-retired-group', retainedGroupCategoryId, 'Retired Group Product', 100);
+    seedProduct(db, 'prod-direct-retired-group', categoryId, 'Direct Retired Group Product', 100);
+    db.prepare('INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)').run('prod-direct-retired-group', 'ag-retired');
+    const historicalOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-retired-group', quantity: 1, addons: [{ id: 'addon-retired' }] }] },
+    });
+    assert.equal(historicalOrder.status, 201, 'active add-ons from active category groups are accepted before deactivation');
+    const historicalItemId = historicalOrder.data.order.items[0].id;
     res = await api(baseUrl, '/api/addon-groups/ag-retired', { method: 'DELETE', headers: authHeader });
     assert.equal(res.status, 200, 'assigned add-on groups can be deactivated');
+    const activeGroupsAfterDeactivation = await api(baseUrl, '/api/addon-groups', { headers: authHeader });
+    assert(!activeGroupsAfterDeactivation.data.addon_groups.some((group: any) => group.id === 'ag-retired'), 'default add-on group listing still hides inactive groups');
+    const historicalOrderAfterDeactivation = await api(baseUrl, `/api/orders/${historicalOrder.data.order.id}`, { headers: authHeader });
+    assert.equal(historicalOrderAfterDeactivation.data.order.items[0].addons[0].name, 'Retired add-on', 'group deactivation preserves saved order add-on snapshots');
+    assert.equal(historicalOrderAfterDeactivation.data.order.items[0].addons[0].price, 25, 'group deactivation preserves the saved add-on price');
+    const categoryLinkedInactiveGroupOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-retired-group', quantity: 1, addons: [{ id: 'addon-retired' }] }] },
+    });
+    assert.equal(categoryLinkedInactiveGroupOrder.status, 400, 'an active add-on under an inactive category-linked group is rejected');
+    const productLinkedInactiveGroupOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-direct-retired-group', quantity: 1, addons: [{ id: 'addon-retired' }] }] },
+    });
+    assert.equal(productLinkedInactiveGroupOrder.status, 400, 'an active add-on under an inactive product-linked group is rejected');
+    const allGroupsAfterDeactivation = await api(baseUrl, '/api/addon-groups?include_inactive=true', { headers: authHeader });
+    const retiredGroup = allGroupsAfterDeactivation.data.addon_groups.find((group: any) => group.id === 'ag-retired');
+    assert.equal(retiredGroup?.name, 'Retired', 'category editor can load the inactive group name');
+    assert.equal(retiredGroup?.is_active, false, 'category editor receives inactive status');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM order_item_addons WHERE order_item_id = ?').get(historicalItemId).count, 1, 'historical order add-on snapshot remains stored');
     const afterGroupDeactivation = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, { headers: authHeader });
     assert.deepEqual(new Set(afterGroupDeactivation.data.category.addon_group_ids), new Set(['ag-category-a', 'ag-retired']), 'category retains its assigned group after the group is deactivated');
     res = await api(baseUrl, `/api/categories/${retainedGroupCategoryId}`, {

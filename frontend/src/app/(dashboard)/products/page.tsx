@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
@@ -82,6 +82,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
+  const [categoryAddonGroups, setCategoryAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -91,6 +92,7 @@ export default function ProductsPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] as string[] });
+  const categoryEditRequestId = useRef(0);
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
@@ -128,6 +130,7 @@ export default function ProductsPage() {
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
+  const categoryAddonGroupOptions = [...addonGroups, ...categoryAddonGroups];
 
   const fetchData = async () => {
     try {
@@ -364,19 +367,36 @@ export default function ProductsPage() {
   };
 
   const resetCategoryForm = () => {
+    categoryEditRequestId.current += 1;
     setCategoryForm({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] });
+    setCategoryAddonGroups([]);
     setEditingCategory(null);
     setShowForm(false);
   };
 
-  const openEditCategory = (cat: Category) => {
+  const openEditCategory = async (cat: Category) => {
+    const requestId = ++categoryEditRequestId.current;
+    const addonGroupIds = cat.addon_group_ids || [];
+    const inactiveGroupIds = addonGroupIds.filter((id) => !addonGroups.some((group) => group.id === id));
+    let inactiveGroups: AddonGroup[] = [];
+    if (inactiveGroupIds.length > 0) {
+      try {
+        const response = await api.get('/addon-groups?include_inactive=true');
+        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || [])
+          .filter((group) => !group.is_active && inactiveGroupIds.includes(group.id));
+      } catch {
+        if (requestId === categoryEditRequestId.current) toast.error(t('failedToLoad'));
+      }
+    }
+    if (requestId !== categoryEditRequestId.current) return;
+    setCategoryAddonGroups(inactiveGroups);
     setEditingCategory(cat);
     setCategoryForm({
       name: cat.name,
       description: cat.description || '',
       color: cat.color || '',
       is_active: cat.is_active,
-      addon_group_ids: cat.addon_group_ids || [],
+      addon_group_ids: addonGroupIds,
     });
     setShowForm(true);
   };
@@ -1109,11 +1129,11 @@ export default function ProductsPage() {
                       ))}
                     </div>
                   </div>
-                  {isRestaurant && addonGroups.length > 0 && (
+                  {isRestaurant && categoryAddonGroupOptions.length > 0 && (
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
                       <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
-                        {addonGroups.map((group) => (
+                        {categoryAddonGroupOptions.map((group) => (
                           <label key={group.id} htmlFor={`category-addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
                             <input
                               type="checkbox"
@@ -1130,7 +1150,7 @@ export default function ProductsPage() {
                               }}
                               className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                             />
-                            <span className="text-sm text-foreground">{group.name}</span>
+                            <span className="text-sm text-foreground">{group.name}{group.is_active ? '' : ` (${tCommon('inactive')})`}</span>
                           </label>
                         ))}
                       </div>

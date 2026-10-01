@@ -143,7 +143,6 @@
     "somethingWrong": "केही गडबड भयो",
     "subtotal": "उप-जम्मा",
     "tableFallback": "तालिका",
-    "tax": "कर",
     "timeHoursMinutes": "{h} घण्टा {m} मिनेट",
     "timeHoursMinutesAgo": "{h} घण्टा {m} मिनेट पहिले",
     "timeMinutes": "{m} मिनेट",
@@ -153,7 +152,8 @@
     "update": "अपडेट गर्नुहोस्",
     "windowControls": "विन्डो नियन्त्रणहरू",
     "yes": "हो",
-    "back": "पछाडि"
+    "back": "पछाडि",
+    "tax": "कर"
   },
   "countries": {
     "selectCountry": "देश चयन गर्नुहोस्..."
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "यस टेबलमा फरक ग्राहक",
     "customerMismatchWarning": "यो तालिका हाल ओगटेको छ {customer}। के तपाइँ यी वस्तुहरू तिनीहरूको अर्डरमा थप्न र अगाडि बढ्न चाहनुहुन्छ?",
     "customerName": "नाम",
+    "customerAddress": "ग्राहकको ठेगाना",
     "customerRequiredBeforeOrder": "अर्डर गर्नु अघि एक ग्राहक आवश्यक छ।",
     "customerUpdateFailed": "ग्राहक अद्यावधिक गर्न असफल",
     "customerUpdated": "ग्राहक अपडेट गरियो",
@@ -827,7 +828,6 @@
     "tagSpicy": "मसालेदार",
     "tagVeg": "शाकाहारी",
     "tagVegan": "शाकाहारी",
-    "tax": "कर",
     "taxLine": "{title} @{rate}%",
     "total": "जम्मा",
     "totalDue": "कुल देय",
@@ -840,7 +840,8 @@
     "exitFullscreen": "पूर्ण-स्क्रिन POS बाट बाहिर निस्कनुहोस्",
     "fullscreenUnavailable": "पूर्ण-स्क्रिन मोड अनुपलब्ध छ",
     "backspaceAmount": "ब्याकस्पेस रकम",
-    "numericKeypad": "संख्यात्मक कीप्याड"
+    "numericKeypad": "संख्यात्मक कीप्याड",
+    "tax": "कर"
   },
   "printTest": {
     "amt": "रकम",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "लागत मूल्य",
     "fieldImage": "उत्पादन छवि",
     "fieldInventoryProduct": "इन्भेन्टरी उत्पादन",
+    "fieldInventoryProductHint": "यो उत्पादन बिक्री गर्दा तलको परिमाण छानिएको स्टक उत्पादनबाट घटाइन्छ।",
     "fieldInventoryProductNone": "कुनै पनि छैन",
     "fieldInventoryDeductionQuantity": "प्रति बिक्री कटौती",
     "fieldLowStockThreshold": "कम स्टक थ्रेसहोल्ड",
@@ -2195,6 +2197,13 @@
     "serverDescription": "अर्डर र तालिकाहरू",
     "chefDescription": "भान्सा प्रदर्शन",
     "areas": {
+      "tables": "टेबलहरू",
+      "cash": "नगद",
+      "inventory": "स्टक र रेसिपी",
+      "authorization": "अनुमतिहरू",
+      "tax": "कर",
+      "printing": "छापाइ",
+      "apps": "एपहरू",
       "orders": "आदेश",
       "payments": "भुक्तानीहरू",
       "customers": "ग्राहकहरु",
@@ -2208,6 +2217,16 @@
       "support": "समर्थन"
     },
     "capabilities": {
+      "tablesView": "टेबलहरू हेर्नुहोस्",
+      "refunds": "रिफन्ड जारी गर्नुहोस्",
+      "cashShiftsView": "नगद शिफ्ट हेर्नुहोस्",
+      "cashMovements": "नगद गतिविधि दर्ता रद्द गर्नुहोस्",
+      "cashDayClose": "व्यापार दिन समाप्त गर्नुहोस्",
+      "inventoryView": "स्टक र रेसिपी हेर्नुहोस्",
+      "kitchenStatusUpdate": "किचन डिस्प्लेमा अर्डरको अवस्था अपडेट गर्नुहोस्",
+      "reportsDailySalesExport": "दैनिक बिक्री प्रतिवेदन निर्यात गर्नुहोस्",
+      "authorizationManage": "भूमिकाका अनुमति र कर्मचारीको पहुँच परिवर्तन गर्नुहोस्",
+      "mobileAccessManage": "मोबाइल उपकरणको पहुँच व्यवस्थापन गर्नुहोस्",
       "pos": "POS टर्मिनल प्रयोग गर्नुहोस्",
       "dashboard": "मालिकको ड्यासबोर्ड हेर्नुहोस्",
       "ordersReadCreate": "हेर्नुहोस् र अर्डरहरू सिर्जना गर्नुहोस्",
@@ -2588,7 +2607,6 @@
     "subtitle": "तपाईंको स्टोर देशको लागि प्रमाणित कर नियमहरू सक्षम गर्नुहोस्। FloCafe ले मानक उत्पादन कर समूह स्वचालित रूपमा लागू गर्दछ; अपवाद प्रति उत्पादन परिवर्तन गर्न सकिन्छ।",
     "supportUnavailable": "को लागि कर समर्थन {country} अझै उपलब्ध छैन। हामीले FloCafe टोलीबाट प्लगइन अनुरोध गरेका छौं र यसलाई चाँडै निर्माण गर्नेछौं। यो तयार नभएसम्म करहरू बन्द रहन्छ।",
     "target": "लक्ष्य",
-    "tax": "कर",
     "taxableBase": "कर योग्य आधार",
     "testCalculation": "परीक्षण गणना",
     "testCalculationHint": "सक्रिय प्याक र चेकआउटको रूपमा उही कर इन्जिन प्रयोग गर्दछ। यसले लेनदेन बचत गर्दैन।",
@@ -2604,7 +2622,8 @@
     "updated": "अद्यावधिक गरियो",
     "updatedTo": "कर प्लगइन v{version} मा अद्यावधिक गरियो",
     "value": "मूल्य",
-    "yourStore": "आफ्नो पसल"
+    "yourStore": "आफ्नो पसल",
+    "tax": "कर"
   },
   "update": {
     "currentVersion": "हालको संस्करण: {version}",

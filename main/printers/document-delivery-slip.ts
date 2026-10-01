@@ -7,6 +7,7 @@ import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capa
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
+
   pushWrapped,
   truncate,
   truncateShapedLine,
@@ -23,16 +24,21 @@ import { detectPrintLanguageDirection } from './document-classic';
 import { displayCellWidth, graphemeSegments } from '../../shared/print/width';
 import {
   buildDeliverySlipDocument,
+  clampDeliverySlipText,
+  MAX_DELIVERY_SLIP_NOTE_CHARS,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
   type DeliverySlipDocument,
   type DeliverySlipDocumentBlock,
   type DeliverySlipHeaderBlock,
   type DeliverySlipItemsBlock,
+  type DeliverySlipNotesBlock,
   type DeliverySlipPrintData,
   type PrintContext,
   type SemanticLabel,
 } from '../../shared/print';
+
+export { MAX_DELIVERY_SLIP_NOTE_CHARS };
 
 export const MAX_DELIVERY_SLIP_ADDRESS_CHARS = 300;
 
@@ -64,6 +70,8 @@ export interface DeliverySlipOrderRow {
   readonly type?: unknown;
   /** Address confirmed for this delivery; absent on every pre-column order. */
   readonly delivery_address?: unknown;
+  /** Order-level note. Item-level instructions arrive on DeliverySlipItemRow. */
+  readonly special_instructions?: unknown;
   readonly customer?: { readonly name?: unknown } | null;
 }
 
@@ -86,6 +94,9 @@ export function buildDeliverySlipPrintData(
   const addressSource: DeliverySlipAddressSource | null = address.length === 0
     ? null
     : (orderAddress.length > 0 ? 'order' : (contact?.addressSource ?? 'customer'));
+  const { text: note, truncatedChars: noteTruncatedChars } = clampDeliverySlipText(
+    String(order?.special_instructions ?? '').trim(),
+  );
 
   const ticketItems = Array.isArray(items) ? items : [];
   return {
@@ -94,6 +105,10 @@ export function buildDeliverySlipPrintData(
       createdAt: String(order?.created_at ?? ''),
       orderType: String(order?.type ?? '').trim(),
     },
+    // Courier instruction for the whole delivery, printed once rather than per
+    // item. Stored on every order; printed on none before this.
+    note,
+    noteTruncatedChars,
     contact: {
       name: String(contact?.name ?? order?.customer?.name ?? '').trim(),
       // The delivery override, or the receipt setting when it is off: both
@@ -113,17 +128,7 @@ export function buildDeliverySlipPrintData(
 }
 
 function clampAddress(address: string): { text: string; truncatedChars: number } {
-  if (address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS) return { text: address, truncatedChars: 0 };
-  const kept: string[] = [];
-  let units = 0;
-  for (const cluster of graphemeSegments(address)) {
-    const size = cluster.length;
-    if (units + size > MAX_DELIVERY_SLIP_ADDRESS_CHARS) break;
-    kept.push(cluster);
-    units += size;
-  }
-  const text = kept.join('');
-  return { text, truncatedChars: address.length - text.length };
+  return clampDeliverySlipText(address, MAX_DELIVERY_SLIP_ADDRESS_CHARS);
 }
 
 export function buildDeliverySlipPrintContext(opts: {
@@ -277,9 +282,45 @@ function slipContactLines(
   return lines;
 }
 
+function slipNoteLines(
+  notes: DeliverySlipNotesBlock,
+  options: DeliverySlipDocumentRenderOptions,
+  sourceLines: string[],
+  sourceControlLines: string[],
+): string[] {
+  const lines: string[] = [];
+  if (!notes.note && notes.noteTruncatedChars <= 0) return lines;
+  // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
+  // than one that runs long. pushWrapped is the same helper the address uses.
+  if (notes.note) {
+    const labeled = thermalSafeText(
+      `${labelOf(notes.label)}: `,
+      'Note: ',
+      options.arabicShaping,
+      options.capabilities,
+    ) + notes.note.text;
+    const start = lines.length;
+    pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
+    sourceLines.push(labeled);
+    sourceControlLines.push(lines[start] ?? '');
+  }
+  // A courier instruction that ends without saying it was cut reads as the whole
+  // instruction, so the drop is stated on the paper rather than only in the data.
+  if (notes.noteTruncatedChars > 0) {
+    const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
+      .replace('{count}', String(notes.noteTruncatedChars));
+    pushWrapped(lines, marker, options.columns, options.language, options.capabilities);
+    sourceLines.push(marker);
+    sourceControlLines.push(lines.at(-1) ?? '');
+  }
+  return lines;
+}
+
 function slipItemLines(row: DeliverySlipItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
+  // These all arrive through directionalText, which already neutralised control
+  // tokens, so the renderer only has to fit them to the column.
   lines.push('{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities) + '{/BOLD}');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
@@ -301,6 +342,7 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
 
   const header = slipBlock(document, 'delivery-slip-header');
   const contact = slipBlock(document, 'delivery-slip-contact');
+  const notes = slipBlock(document, 'delivery-slip-notes');
   const items = slipBlock(document, 'delivery-slip-items');
 
   lines.push('{INIT}');
@@ -334,6 +376,22 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
       sourceLines: contactSourceLines,
       sourceControlLines: contactControlLines,
     });
+  }
+
+  if (notes) {
+    const notesStart = lines.length;
+    const notesSourceLines: string[] = [];
+    const notesControlLines: string[] = [];
+    lines.push(...slipNoteLines(notes, options, notesSourceLines, notesControlLines));
+    if (lines.length > notesStart) {
+      options.rasterGroups?.push({
+        groupId: 'delivery-slip-notes',
+        lineIndex: notesStart,
+        lineCount: lines.length - notesStart,
+        sourceLines: notesSourceLines,
+        sourceControlLines: notesControlLines,
+      });
+    }
   }
 
   if (items) {

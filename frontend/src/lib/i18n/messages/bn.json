@@ -143,7 +143,6 @@
     "somethingWrong": "কিছু ভুল হয়েছে",
     "subtotal": "সাবটোটাল",
     "tableFallback": "টেবিল",
-    "tax": "কর",
     "timeHoursMinutes": "{h} জ {m} মি",
     "timeHoursMinutesAgo": "{h} জ {m} মি আগে",
     "timeMinutes": "{m} মি",
@@ -153,7 +152,8 @@
     "update": "আপডেট",
     "windowControls": "উইন্ডো নিয়ন্ত্রণ",
     "yes": "হ্যাঁ",
-    "back": "ব্যাক"
+    "back": "ব্যাক",
+    "tax": "কর"
   },
   "countries": {
     "selectCountry": "দেশ নির্বাচন করুন..."
@@ -450,12 +450,12 @@
     "staff": "স্টাফ",
     "statusError": "স্ট্যাটাস পেতে ব্যর্থ",
     "support": "সমর্থন",
-    "tables": "টেবিল",
     "toggleSidebar": "সাইডবার টগল করুন",
     "uptimeLabel": "উপরে:",
     "user": "ব্যবহারকারী",
     "whatsapp": "হোয়াটসঅ্যাপ",
-    "inventory": "ইনভেন্টরি"
+    "inventory": "ইনভেন্টরি",
+    "tables": "টেবিল"
   },
   "orders": {
     "active": "সক্রিয়",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "এই টেবিলে বিভিন্ন গ্রাহক",
     "customerMismatchWarning": "এই টেবিলটি এখন {customer} দ্বারা ব্যবহৃত হচ্ছে। আপনি কি এগিয়ে গিয়ে তাঁর অর্ডারে এই আইটেমগুলো যোগ করতে চান?",
     "customerName": "নাম",
+    "customerAddress": "গ্রাহকের ঠিকানা",
     "customerRequiredBeforeOrder": "অর্ডার দেওয়ার আগে একজন গ্রাহক প্রয়োজন।",
     "customerUpdateFailed": "গ্রাহক আপডেট করতে ব্যর্থ হয়েছে",
     "customerUpdated": "গ্রাহক আপডেট করা হয়েছে",
@@ -827,7 +828,6 @@
     "tagSpicy": "মশলাদার",
     "tagVeg": "ভেজ",
     "tagVegan": "ভেগান",
-    "tax": "কর",
     "taxLine": "{title} · {rate}%",
     "total": "মোট",
     "totalDue": "মোট বকেয়া",
@@ -840,7 +840,8 @@
     "exitFullscreen": "পূর্ণ-স্ক্রীন POS থেকে প্রস্থান করুন",
     "fullscreenUnavailable": "পূর্ণ-স্ক্রীন মোড অনুপলব্ধ",
     "backspaceAmount": "ব্যাকস্পেস পরিমাণ",
-    "numericKeypad": "সংখ্যাসূচক কীপ্যাড"
+    "numericKeypad": "সংখ্যাসূচক কীপ্যাড",
+    "tax": "কর"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "খরচ মূল্য",
     "fieldImage": "পণ্যের ছবি",
     "fieldInventoryProduct": "ইনভেন্টরি পণ্য",
+    "fieldInventoryProductHint": "এই পণ্য বিক্রি করলে নিচের পরিমাণ নির্বাচিত স্টক পণ্য থেকে বিয়োজন হয়।",
     "fieldInventoryProductNone": "কোনোটিই নয়",
     "fieldInventoryDeductionQuantity": "বিক্রয় প্রতি কর্তন",
     "fieldLowStockThreshold": "নিম্ন স্টক থ্রেশহোল্ড",
@@ -1244,8 +1246,8 @@
     "statusServed": "পরিবেশিত",
     "statusWaiting": "অপেক্ষা করছে",
     "tableLabel": "টেবিল {name}",
-    "tables": "টেবিল",
-    "title": "সার্ভার অ্যাপ"
+    "title": "সার্ভার অ্যাপ",
+    "tables": "টেবিল"
   },
   "settings": {
     "aboutDescription": "FloPOS হল চিরকালের জন্য বিনামূল্যে, ক্যাফে, রেস্তোরাঁ, বেকারি, ফুড ট্রাক, ক্লাউড কিচেন এবং বারগুলির জন্য ওপেন সোর্স রেস্তোরাঁ POS। এতে অর্ডার, টেবিল, মেনু, রান্নাঘরের প্রদর্শন, রসিদ মুদ্রণ, কর্মীদের অ্যাক্সেস এবং স্থানীয় ডেটা স্টোরেজ অন্তর্ভুক্ত রয়েছে। এটি ডাউনলোড করুন, পরিষেবা চালান, আপনার ডেটা রাখুন এবং আপনার POS এর মালিক।",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "চালু থাকলে, মুদ্রার চিহ্ন (₹, €, £, ¥…) মুদ্রণ করে। বন্ধ থাকলে, এগুলিকে ASCII (Rs, EUR, GBP, Yen…) দিয়ে প্রতিস্থাপন করুন — বেশিরভাগ তাপীয় প্রিন্টারের জন্য নিরাপদ ডিফল্ট।",
     "printerUpdated": "প্রিন্টার আপডেট করা হয়েছে",
     "printers": "প্রিন্টার",
-    "printing": "প্রিন্টিং",
     "printingSettingsSaved": "মুদ্রণ সেটিংস সংরক্ষিত",
     "privacy": "গোপনীয়তা",
     "productImagesDisabled": "পণ্য ছবি নিষ্ক্রিয়",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "ডিফল্টভাবে বন্ধ। বন্ধ থাকলে লিপিবদ্ধ সমস্যাগুলো এই ডিভাইসেই থাকে এবং কখনও পাঠানো হয় না। আপনার নিজে পাঠানো সহায়তার অনুরোধ অক্ষত থাকে।",
     "diagnosticsTicketUnaffected": "আপনার নিজে পাঠানো সহায়তার অনুরোধ সবসময় কাজ করে, এই সেটিং চালু থাকুক বা বন্ধ।",
     "diagnosticsLocalOnlyHintTransmitting": "এই স্ক্রিনটি এই ডিভাইসের সাম্প্রতিক সমস্যাগুলো সহজ ভাষায় দেখায়। স্বয়ংক্রিয় পাঠানো চালু আছে, তাই লিপিবদ্ধ সমস্যাগুলো আপনার FloCafe ক্লাউড অ্যাকাউন্টে পাঠানো হতে পারে।",
-    "diagnosticsLocalOnlyHintPending": "এই স্ক্রিনটি এই ডিভাইসের সাম্প্রতিক সমস্যাগুলো সহজ ভাষায় দেখায়।"
+    "diagnosticsLocalOnlyHintPending": "এই স্ক্রিনটি এই ডিভাইসের সাম্প্রতিক সমস্যাগুলো সহজ ভাষায় দেখায়।",
+    "printing": "প্রিন্টিং"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",
@@ -2195,6 +2197,13 @@
     "serverDescription": "অর্ডার এবং টেবিল",
     "chefDescription": "রান্নাঘর প্রদর্শন",
     "areas": {
+      "tables": "টেবিল",
+      "cash": "নগদ",
+      "inventory": "স্টক ও রেসিপি",
+      "authorization": "অনুমতি",
+      "tax": "কর",
+      "printing": "প্রিন্টিং",
+      "apps": "অ্যাপ",
       "orders": "অর্ডার",
       "payments": "পেমেন্ট",
       "customers": "গ্রাহকদের",
@@ -2208,6 +2217,16 @@
       "support": "সমর্থন"
     },
     "capabilities": {
+      "tablesView": "টেবিল দেখুন",
+      "refunds": "রিফান্ড করুন",
+      "cashShiftsView": "ক্যাশ শিফট দেখুন",
+      "cashMovements": "নগদ লেনদেন লিখুন ও বাতিল করুন",
+      "cashDayClose": "ব্যবসার দিন বন্ধ করুন",
+      "inventoryView": "স্টক ও রেসিপি দেখুন",
+      "kitchenStatusUpdate": "রান্নাঘর ডিসপ্লেতে অর্ডারের অবস্থা আপডেট করুন",
+      "reportsDailySalesExport": "দৈনিক বিক্রয় রিপোর্ট এক্সপোর্ট করুন",
+      "authorizationManage": "ভূমিকার অনুমতি ও কর্মীদের প্রবেশাধিকার পরিবর্তন করুন",
+      "mobileAccessManage": "মোবাইল ডিভাইস অ্যাক্সেস পরিচালনা করুন",
       "pos": "POS টার্মিনাল ব্যবহার করুন",
       "dashboard": "মালিক ড্যাশবোর্ড দেখুন",
       "ordersReadCreate": "দেখুন এবং অর্ডার তৈরি করুন",
@@ -2601,7 +2620,6 @@
     "subtitle": "আপনার স্টোর দেশের জন্য যাচাইকৃত কর নিয়ম সক্রিয় করুন. FloCafe স্বয়ংক্রিয়ভাবে আদর্শ পণ্য কর গ্রুপ প্রয়োগ করে; পণ্য প্রতি ব্যতিক্রম পরিবর্তন করা যেতে পারে.",
     "supportUnavailable": "জন্য কর সমর্থন {country} এখনও উপলব্ধ নয় আমরা FloCafe টিম থেকে প্লাগইনটির জন্য অনুরোধ করেছি এবং শীঘ্রই এটি তৈরি করব। এটি প্রস্তুত না হওয়া পর্যন্ত কর বন্ধ থাকে।",
     "target": "টার্গেট",
-    "tax": "কর",
     "taxableBase": "করযোগ্য ভিত্তি",
     "testCalculation": "পরীক্ষার হিসাব",
     "testCalculationHint": "চেকআউট হিসাবে সক্রিয় প্যাক এবং একই কর ইঞ্জিন ব্যবহার করে। এটি একটি লেনদেন সংরক্ষণ করে না।",
@@ -2617,7 +2635,8 @@
     "updated": "আপডেট করা হয়েছে",
     "updatedTo": "কর প্লাগইন v এ আপডেট করা হয়েছে {version}",
     "value": "মান",
-    "yourStore": "আপনার স্টোর"
+    "yourStore": "আপনার স্টোর",
+    "tax": "কর"
   },
   "update": {
     "currentVersion": "বর্তমান সংস্করণ:{version}",

@@ -450,12 +450,12 @@
     "staff": "Personal",
     "statusError": "Status konnte nicht abgerufen werden",
     "support": "Support",
-    "tables": "Tische",
     "toggleSidebar": "Seitenleiste umschalten",
     "uptimeLabel": "Laufzeit: ",
     "user": "Benutzer",
     "whatsapp": "WhatsApp",
-    "inventory": "Bestand"
+    "inventory": "Bestand",
+    "tables": "Tische"
   },
   "orders": {
     "active": "Aktiv",
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "Anderer Kunde an diesem Tisch",
     "customerMismatchWarning": "Diese Bestellung gehört zu {customer}. Trotzdem fortfahren?",
     "customerName": "Kundenname",
+    "customerAddress": "Kundenadresse",
     "customerRequiredBeforeOrder": "Vor dem Aufgeben einer Bestellung ist ein Kunde erforderlich.",
     "customerUpdateFailed": "Kunde konnte nicht aktualisiert werden",
     "customerUpdated": "Kunde aktualisiert",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "Einkaufspreis",
     "fieldImage": "Produktbild",
     "fieldInventoryProduct": "Lagerprodukt",
+    "fieldInventoryProductHint": "Der Verkauf dieses Produkts zieht die unten angegebene Menge vom gewählten Lagerbestandsprodukt ab.",
     "fieldInventoryProductNone": "Keine",
     "fieldInventoryDeductionQuantity": "Abzug pro Verkauf",
     "fieldLowStockThreshold": "Mindestbestand",
@@ -1244,8 +1246,8 @@
     "statusServed": "Serviert",
     "statusWaiting": "Wartend",
     "tableLabel": "Tisch {name}",
-    "tables": "Tische",
-    "title": "Server-App"
+    "title": "Server-App",
+    "tables": "Tische"
   },
   "settings": {
     "aboutDescription": "FloPOS ist ein dauerhaft kostenloses Open-Source-Kassensystem für Cafés, Restaurants, Bäckereien, Imbisse, Cloud-Küchen und Bars. Es umfasst Bestellungen, Tische, Menüs, Küchenanzeige, Belegdruck, Personalzugänge und lokale Datenspeicherung. Laden Sie es herunter, nutzen Sie es und behalten Sie die Kontrolle über Ihre Daten und Ihr Kassensystem.",
@@ -2195,6 +2197,13 @@
     "serverDescription": "Bestellungen und Tische",
     "chefDescription": "Küchenanzeige",
     "areas": {
+      "tables": "Tische",
+      "cash": "Kasse",
+      "inventory": "Bestand und Rezepte",
+      "authorization": "Berechtigungen",
+      "tax": "Steuern",
+      "printing": "Drucken",
+      "apps": "Apps",
       "orders": "Bestellungen",
       "payments": "Zahlungen",
       "customers": "Kunden",
@@ -2208,6 +2217,16 @@
       "support": "Support"
     },
     "capabilities": {
+      "tablesView": "Tische ansehen",
+      "refunds": "Erstattungen auslösen",
+      "cashShiftsView": "Kassenschichten ansehen",
+      "cashMovements": "Bareingänge und -ausgänge buchen und stornieren",
+      "cashDayClose": "Geschäftstag abschließen",
+      "inventoryView": "Bestand und Rezepte ansehen",
+      "kitchenStatusUpdate": "Bestellstatus auf der Küchenanzeige aktualisieren",
+      "reportsDailySalesExport": "Tagesumsatzbericht exportieren",
+      "authorizationManage": "Rollenberechtigungen und Personalzugriff ändern",
+      "mobileAccessManage": "Zugriff mobiler Geräte verwalten",
       "pos": "Kassenterminal bedienen",
       "dashboard": "Inhaber-Dashboard anzeigen",
       "ordersReadCreate": "Bestellungen anzeigen und erstellen",

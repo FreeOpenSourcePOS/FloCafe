@@ -244,6 +244,8 @@ export function loadFrontendPrintModules(): {
   webPrint: typeof import('../../frontend/src/lib/printer/web-print');
   printDocument: typeof import('../../frontend/src/lib/printer/print-document');
   taxBillEncoder: typeof import('../../frontend/src/lib/printer/tax-bill-encoder');
+  deliverySlipEncoder: typeof import('../../frontend/src/lib/printer/delivery-slip-encoder');
+  deliverySlipWebPrint: typeof import('../../frontend/src/lib/printer/delivery-slip-web-print');
   warnings: typeof import('../../frontend/src/lib/printer/warnings');
 } {
   const nodePath = require('path') as typeof import('path');
@@ -268,6 +270,8 @@ export function loadFrontendPrintModules(): {
       webPrint: require('../../frontend/src/lib/printer/web-print'),
       printDocument: require('../../frontend/src/lib/printer/print-document'),
       taxBillEncoder: require('../../frontend/src/lib/printer/tax-bill-encoder'),
+      deliverySlipEncoder: require('../../frontend/src/lib/printer/delivery-slip-encoder'),
+      deliverySlipWebPrint: require('../../frontend/src/lib/printer/delivery-slip-web-print'),
       warnings: require('../../frontend/src/lib/printer/warnings'),
     };
   } finally {

@@ -143,7 +143,6 @@
     "somethingWrong": "حدث خطأ ما",
     "subtotal": "المجموع الفرعي",
     "tableFallback": "جدول",
-    "tax": "الضرائب",
     "timeHoursMinutes": "{h} ساعة {m} دقيقة",
     "timeHoursMinutesAgo": "منذ {h} ساعة و {m} دقيقة",
     "timeMinutes": "{m}m",
@@ -153,7 +152,8 @@
     "update": "تحديث",
     "windowControls": "عناصر التحكم في النوافذ",
     "yes": "نعم",
-    "back": "العودة"
+    "back": "العودة",
+    "tax": "الضرائب"
   },
   "countries": {
     "selectCountry": "اختر البلد…"
@@ -667,6 +667,7 @@
     "customerMismatchTitle": "عميل مختلف في هذا الجدول",
     "customerMismatchWarning": "هذه الطاولة مشغولة حاليًا بواسطة {customer}. هل تريد المتابعة وإضافة هذه الأصناف إلى الطلب؟",
     "customerName": "الاسم",
+    "customerAddress": "عنوان العميل",
     "customerRequiredBeforeOrder": "يجب اختيار عميل قبل تقديم الطلب.",
     "customerUpdateFailed": "فشل تحديث بيانات العميل",
     "customerUpdated": "تم تحديث بيانات العميل",
@@ -827,7 +828,6 @@
     "tagSpicy": "حار",
     "tagVeg": "نباتي",
     "tagVegan": "نباتي",
-    "tax": "الضرائب",
     "taxLine": "{title} @{rate}%",
     "total": "المجموع",
     "totalDue": "المبلغ الإجمالي المستحق",
@@ -840,7 +840,8 @@
     "exitFullscreen": "الخروج من وضع الشاشة الكاملة لنظام نقاط البيع",
     "fullscreenUnavailable": "وضع ملء الشاشة غير متاح",
     "backspaceAmount": "حذف آخر رقم",
-    "numericKeypad": "لوحة الأرقام"
+    "numericKeypad": "لوحة الأرقام",
+    "tax": "الضرائب"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -1076,6 +1077,7 @@
     "fieldCostPrice": "سعر التكلفة",
     "fieldImage": "صورة المنتج",
     "fieldInventoryProduct": "منتج متوفر في المخزون",
+    "fieldInventoryProductHint": "بيع هذا المنتج يخصم الكمية أدناه من منتج المخزون المحدد.",
     "fieldInventoryProductNone": "لا شيء",
     "fieldInventoryDeductionQuantity": "الخصم على كل عملية بيع",
     "fieldLowStockThreshold": "حد انخفاض المخزون",
@@ -1816,7 +1818,6 @@
     "printerUnicodeHint": "إذا كان الخيار «مفعَّلًا»، فسيتم طباعة رموز العملات (₹، €، £، ¥...) كما هي. أما إذا كان «معطَّلًا»، فسيتم استبدالها برموز ASCII (Rs، EUR، GBP، Yen...) — وهو الإعداد الافتراضي الأكثر أمانًا لمعظم الطابعات الحرارية.",
     "printerUpdated": "تم تحديث الطابعة",
     "printers": "الطابعات",
-    "printing": "الطباعة",
     "printingSettingsSaved": "تم حفظ إعدادات الطباعة",
     "privacy": "الخصوصية",
     "productImagesDisabled": "تم تعطيل عرض صور المنتج",
@@ -2042,7 +2043,8 @@
     "diagnosticsSendAutomaticallyHint": "معطّل افتراضيًا. عند التعطيل تبقى المشكلات المسجلة على هذا الجهاز ولا تُرسل أبدًا. أما طلبات الدعم التي ترسلها بنفسك فلا تتأثر.",
     "diagnosticsTicketUnaffected": "طلب الدعم الذي ترسله بنفسك يعمل دائمًا، سواء كان هذا الخيار مفعّلًا أو غير مفعّل.",
     "diagnosticsLocalOnlyHintTransmitting": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهودة. الإرسال التلقائي مُفعَّل، لذا قد تُرسَل المشكلات المسجلة إلى حساب FloCafe السحابي.",
-    "diagnosticsLocalOnlyHintPending": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهومة."
+    "diagnosticsLocalOnlyHintPending": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهومة.",
+    "printing": "الطباعة"
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",
@@ -2195,6 +2197,13 @@
     "serverDescription": "الأوامر والجداول",
     "chefDescription": "واجهة عرض المطبخ",
     "areas": {
+      "tables": "الطاولات",
+      "cash": "الصندوق",
+      "inventory": "المخزون والوصفات",
+      "authorization": "الأذونات",
+      "tax": "الضرائب",
+      "printing": "الطباعة",
+      "apps": "التطبيقات",
       "orders": "الطلبات",
       "payments": "المدفوعات",
       "customers": "العملاء",
@@ -2208,6 +2217,16 @@
       "support": "الدعم"
     },
     "capabilities": {
+      "tablesView": "عرض الطاولات",
+      "refunds": "تنفيذ المبالغ المستردة",
+      "cashShiftsView": "عرض ورديات الصندوق",
+      "cashMovements": "تسجيل حركة الصندوق وإلغائها",
+      "cashDayClose": "إغلاق يوم العمل",
+      "inventoryView": "عرض المخزون والوصفات",
+      "kitchenStatusUpdate": "تحديث حالة الطلب على شاشة المطبخ",
+      "reportsDailySalesExport": "تصدير تقرير المبيعات اليومي",
+      "authorizationManage": "تغيير صلاحيات الأدوار ووصول الموظفين",
+      "mobileAccessManage": "إدارة الوصول من الأجهزة المحمولة",
       "pos": "استخدم جهاز نقطة البيع",
       "dashboard": "عرض لوحة تحكم المالك",
       "ordersReadCreate": "عرض الطلبات وإنشاؤها",
@@ -2601,7 +2620,6 @@
     "subtitle": "قم بتفعيل القواعد الضريبية المعتمدة لبلد متجرك. يقوم FloCafe بتطبيق فئة الضريبة القياسية للمنتج تلقائيًا؛ ويمكن تعديل الاستثناءات لكل منتج على حدة.",
     "supportUnavailable": "الدعم الضريبي لـ {country} غير متوفر حتى الآن. لقد طلبنا المكون الإضافي من فريق FloCafe وسنقوم بتطويره قريبًا. ستظل الضرائب معطلة حتى يصبح جاهزًا.",
     "target": "الهدف",
-    "tax": "الضرائب",
     "taxableBase": "الأساس الضريبي",
     "testCalculation": "حساب تجريبي",
     "testCalculationHint": "يستخدم الحزمة النشطة ونفس محرك الضرائب المستخدم في عملية الدفع. ولا يقوم بحفظ المعاملة.",
@@ -2617,7 +2635,8 @@
     "updated": "تم التحديث",
     "updatedTo": "تم تحديث المكون الإضافي الخاص بالضرائب إلى الإصدار v{version}",
     "value": "القيمة",
-    "yourStore": "متجرك"
+    "yourStore": "متجرك",
+    "tax": "الضرائب"
   },
   "update": {
     "currentVersion": "الإصدار الحالي: {version}",

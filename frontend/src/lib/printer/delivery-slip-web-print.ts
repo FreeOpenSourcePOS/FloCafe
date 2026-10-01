@@ -10,6 +10,7 @@ import type {
   DeliverySlipItem,
   DeliverySlipOrder,
 } from './delivery-slip-encoder';
+import { clampDeliverySlipText } from '@print/document';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -26,6 +27,18 @@ function translatorFor(lang: Language): ((key: string) => string) {
   const locale = LANGUAGES[lang]?.locale ?? 'en';
   const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
+}
+
+function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {
+  const { text, truncatedChars: truncated } = clampDeliverySlipText((raw ?? '').trim());
+  if (!text && truncated <= 0) return '';
+  const marker = truncated > 0
+    ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
+    : '';
+  const noteHtml = text
+    ? `<p style="margin:2px 0;">${escapeHtml(tr('print.note'))}: ${escapeHtml(text)}</p>`
+    : '';
+  return `${noteHtml}${marker}`;
 }
 
 export function generateDeliverySlipHtml(
@@ -60,6 +73,7 @@ export function generateDeliverySlipHtml(
       ${contact.name ? `<p style="margin:2px 0;font-weight:bold;">${escapeHtml(contact.name)}</p>` : ''}
       ${contact.phone ? `<p style="margin:2px 0;">${escapeHtml(tr('print.numberShort'))}: ${escapeHtml(contact.phone)}</p>` : ''}
       ${contact.address ? `<p style="margin:2px 0;">${escapeHtml(tr('print.deliverySlip.address'))}: ${escapeHtml(contact.address)}</p>` : ''}
+      ${slipNoteHtml(order.special_instructions, tr)}
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${itemRows}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

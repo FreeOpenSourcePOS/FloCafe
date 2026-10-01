@@ -78,6 +78,9 @@ test('getCurrencyFractionDigits: resolves ISO 4217 standard precision', () => {
   assert.equal(getCurrencyFractionDigits('VND'), 0);
   assert.equal(getCurrencyMinorUnitFactor('VND'), 1);
 
+  assert.equal(getCurrencyFractionDigits('COP'), 0);
+  assert.equal(getCurrencyMinorUnitFactor('COP'), 1);
+
   assert.equal(getCurrencyFractionDigits('USD'), 2);
   assert.equal(getCurrencyMinorUnitFactor('USD'), 100);
 

@@ -280,6 +280,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         country: 'CA',
         currency: 'cad',
         timezone: 'America/Vancouver',
+        instagram_handle: '@'.repeat(150),
         // Deliberately sent as false: first-run setup no longer asks about
         // telemetry, it discloses it. The route must ignore this field
         // entirely rather than let a stale client switch telemetry off.
@@ -302,6 +303,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('country'), 'CA', 'setup persists the chosen country');
     assert.equal(setting('currency'), 'CAD', 'setup persists the chosen currency');
     assert.equal(setting('timezone'), 'America/Vancouver', 'setup persists a custom tenant timezone independently of the country default');
+    assert.equal(setting('instagram_handle'), '@'.repeat(100), 'setup truncates overlong Instagram handles to 100 characters');
     assert.equal(setting('billing_type'), 'prepaid');
     assert.equal(setting('tables_required'), 'false');
     assert.equal(setting('onboarding_completed'), 'true');

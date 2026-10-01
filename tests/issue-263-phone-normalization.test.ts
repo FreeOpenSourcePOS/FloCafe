@@ -198,6 +198,24 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     assert.equal(resInvalid.status, 400);
   });
 
+  test('PUT /api/settings/business truncates overlong instagram_handle', async () => {
+    const res = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      body: {
+        business_name: 'FloCafe Main',
+        country: 'IN',
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        instagram_handle: '@'.repeat(150),
+      },
+      headers: ownerAuth.authHeader,
+    });
+
+    assert.equal(res.status, 200);
+    const storedHandle = getDatabase().prepare("SELECT value FROM settings WHERE key = 'instagram_handle'").get();
+    assert.equal(storedHandle.value, '@'.repeat(100), 'business settings truncate Instagram handles to 100 characters');
+  });
+
   test('PUT /api/settings/:key validates and normalizes business_phone', async () => {
     const db = getDatabase();
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();

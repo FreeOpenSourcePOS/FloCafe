@@ -334,10 +334,6 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const handlePay = async () => {
-    if (kitchenOverrideRequired && !/^\d{4,6}$/.test(kitchenOverridePin)) {
-      setKitchenDeliveryError(t('kitchenDeliveryOverridePrompt'));
-      return;
-    }
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -394,6 +390,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         { headers: { 'Idempotency-Key': idempotencyKey } },
       );
       const updatedBill = res.data?.bill as Bill | undefined;
+      setKitchenOverrideRequired(false);
       if (!updatedBill || updatedBill.payment_status !== 'paid') {
         // This request committed a partial payment, so the next attempt is a
         // new request and must not reuse the completed request's hash.
@@ -832,7 +829,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               </Button>
             </>
           ) : (
-            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor || (kitchenOverrideRequired && !/^\d{4,6}$/.test(kitchenOverridePin))} className="w-full" size="lg">
+            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
               {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
             </Button>
           )}

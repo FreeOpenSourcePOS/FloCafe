@@ -5410,7 +5410,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     },
   },
   {
-    version: 96,
+    version: 97,
     name: 'add_kitchen_delivery_settlement_setting',
     up: () => {
       insertSettingIfMissing('require_kitchen_delivered_before_settlement', 'false');

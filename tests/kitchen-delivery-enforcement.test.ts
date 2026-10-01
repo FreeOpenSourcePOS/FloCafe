@@ -15,7 +15,7 @@ const {
   api, assertEqualOrThrow, assertOrThrow, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
-const { billRoutes } = require('../main/routes/bills');
+const { billRoutes, resetPinRateLimitForTests } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
 
 async function main() {
@@ -115,24 +115,54 @@ async function main() {
     assertEqualOrThrow(batchRejected.data.undeliveredCount, 3, 'split-payment error reports all pending, preparing, and ready items');
     assertEqualOrThrow(batchRejected.data.undeliveredItems.slice().sort().join(','), 'Soup,Taco,Tea', 'split-payment error includes the undelivered item names');
 
+    resetPinRateLimitForTests();
     const overrideBill = await createBill('override', 'kitchen-delivery-ready');
-    const invalidPin = await api(baseUrl, `/api/bills/${overrideBill.bill.id}/payments`, {
-      method: 'POST',
-      body: { payments: [{ method: 'card', amount: overrideBill.bill.total }], override_pin: '9999' },
-      headers: owner.authHeader,
-    });
-    assertEqualOrThrow(invalidPin.status, 403, 'invalid manager PIN is rejected');
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const invalidPin = await api(baseUrl, `/api/bills/${overrideBill.bill.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'card', amount: overrideBill.bill.total }], override_pin: '9999' },
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(invalidPin.status, 403, `invalid manager PIN attempt ${attempt} is rejected`);
+    }
     const overridePaid = await api(baseUrl, `/api/bills/${overrideBill.bill.id}/payments`, {
       method: 'POST',
       body: { payments: [{ method: 'card', amount: overrideBill.bill.total }], override_pin: '1234' },
       headers: owner.authHeader,
     });
-    assertEqualOrThrow(overridePaid.status, 200, 'valid manager PIN authorizes settlement');
+    assertEqualOrThrow(overridePaid.status, 200, 'valid manager PIN authorizes settlement and clears failed attempts');
     const overrideAudit = db.prepare("SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'").get(overrideBill.orderId);
     assertOrThrow(Boolean(overrideAudit), 'manager override is recorded in the order audit log');
     assertEqualOrThrow(overrideAudit.actor_user_id, owner.userId, 'audit actor is the authenticated request user');
     assertEqualOrThrow(JSON.parse(overrideAudit.details_json).manager_user_id, manager.userId, 'audit details identify the authorizing manager');
     assertOrThrow(!JSON.stringify(overridePaid.data.bill.payment_details).includes('1234'), 'manager PIN is not stored with payment details');
+    for (let attempt = 2; attempt <= 6; attempt++) {
+      const nextOverrideBill = await createBill(`override-success-${attempt}`, 'kitchen-delivery-ready');
+      const nextOverridePaid = await api(baseUrl, `/api/bills/${nextOverrideBill.bill.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'card', amount: nextOverrideBill.bill.total }], override_pin: '1234' },
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(nextOverridePaid.status, 200, `valid manager PIN attempt ${attempt} authorizes independent settlement`);
+    }
+
+    resetPinRateLimitForTests();
+    const rateLimitedBill = await createBill('override-rate-limit', 'kitchen-delivery-ready');
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const invalidPin = await api(baseUrl, `/api/bills/${rateLimitedBill.bill.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'card', amount: rateLimitedBill.bill.total }], override_pin: '9999' },
+        headers: owner.authHeader,
+      });
+      assertEqualOrThrow(invalidPin.status, 403, `invalid manager PIN attempt ${attempt} remains within the failure limit`);
+    }
+    const blockedPin = await api(baseUrl, `/api/bills/${rateLimitedBill.bill.id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'card', amount: rateLimitedBill.bill.total }], override_pin: '1234' },
+      headers: owner.authHeader,
+    });
+    assertEqualOrThrow(blockedPin.status, 429, 'five failed manager PIN attempts block further attempts');
+    resetPinRateLimitForTests();
 
     const deliveredBill = await createBill('delivered');
     db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(deliveredBill.orderId);

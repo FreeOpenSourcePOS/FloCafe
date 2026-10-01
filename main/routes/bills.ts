@@ -59,16 +59,22 @@ function checkKitchenDeliveryStatus(
   if (overridePin === undefined || overridePin === null || overridePin === '') {
     return { allowed: false, count: items.length, items };
   }
-  if (!checkPinRateLimit(`pin:${clientIp}:kitchen-delivery`)) {
+  const rateLimitKey = `pin:${clientIp}:kitchen-delivery`;
+  if (isPinRateLimited(rateLimitKey)) {
     throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
   }
   if (typeof overridePin !== 'string' || !/^\d{4,6}$/.test(overridePin)) {
+    checkPinRateLimit(rateLimitKey);
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
 
   const managers = db.prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as { id: string; role: string; pin_hash: string }[];
   const manager = managers.find((user) => hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin));
-  if (!manager) throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  if (!manager) {
+    checkPinRateLimit(rateLimitKey);
+    throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  }
+  pinAttempts.delete(rateLimitKey);
   return { allowed: true, count: items.length, items, overridden: true, managerUserId: manager.id };
 }
 
@@ -420,6 +426,15 @@ function checkPinRateLimit(key: string): boolean {
   if (entry.count >= PIN_MAX_ATTEMPTS) return false;
   entry.count++;
   return true;
+}
+
+function isPinRateLimited(key: string): boolean {
+  const entry = pinAttempts.get(key);
+  if (!entry || Date.now() > entry.resetAt) {
+    pinAttempts.delete(key);
+    return false;
+  }
+  return entry.count >= PIN_MAX_ATTEMPTS;
 }
 
 export function resetPinRateLimitForTests(): void {

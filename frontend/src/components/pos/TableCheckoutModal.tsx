@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AlertTriangle, X, ShoppingCart, Users } from 'lucide-react';
+import { X, ShoppingCart, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -31,7 +31,6 @@ export default function TableCheckoutModal({
   onAddCartToOrder
 }: Props) {
   const t = useTranslations('pos');
-  const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -45,9 +44,6 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
-  const [requireKitchenDelivered, setRequireKitchenDelivered] = useState(false);
-  const [checkoutOverrideBill, setCheckoutOverrideBill] = useState<Bill | null>(null);
-  const [kitchenDeliveryPin, setKitchenDeliveryPin] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -59,21 +55,6 @@ export default function TableCheckoutModal({
         if (activeOrder) {
           const orderRes = await api.get(`/orders/${activeOrder.id}`, { signal: controller.signal });
           setOrder(orderRes.data.order);
-        }
-        try {
-          const [requireSetting, kdsSetting, billingType] = await Promise.all([
-            api.get('/settings/require_kitchen_delivered_before_settlement', { signal: controller.signal }),
-            api.get('/settings/kds_enabled', { signal: controller.signal }),
-            api.get('/settings/billing_type', { signal: controller.signal }),
-          ]);
-          setRequireKitchenDelivered(
-            requireSetting.data.setting?.value === 'true'
-            && kdsSetting.data.setting?.value !== 'false'
-            && billingType.data.setting?.value !== 'prepaid',
-          );
-        } catch {
-          if (controller.signal.aborted) return;
-          setRequireKitchenDelivered(false);
         }
       } catch {
         if (controller.signal.aborted) return;
@@ -90,18 +71,7 @@ export default function TableCheckoutModal({
     api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
   }, []);
 
-  const undeliveredItems = requireKitchenDelivered
-    ? (order?.items || []).filter((item: OrderItem) => ['pending', 'preparing', 'ready'].includes(item.status || ''))
-    : [];
-
-  const handlePayment = (bill: Bill) => {
-    if (undeliveredItems.length > 0) {
-      setKitchenDeliveryPin('');
-      setCheckoutOverrideBill(bill);
-      return;
-    }
-    onPayment(bill);
-  };
+  const handlePayment = (bill: Bill) => onPayment(bill);
 
   const handleCheckout = async () => {
     if (!order) return;
@@ -118,13 +88,6 @@ export default function TableCheckoutModal({
     } finally {
       setGenerating(false);
     }
-  };
-
-  const continueWithKitchenOverride = () => {
-    if (!checkoutOverrideBill || !/^\d{4,6}$/.test(kitchenDeliveryPin)) return;
-    onPayment(checkoutOverrideBill, kitchenDeliveryPin);
-    setCheckoutOverrideBill(null);
-    setKitchenDeliveryPin('');
   };
 
   const handleSplitCheck = async () => {
@@ -200,15 +163,6 @@ export default function TableCheckoutModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {undeliveredItems.length > 0 && (
-            <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-200">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('kitchenItemsPendingWarning', { count: undeliveredItems.length })}</p>
-                <p className="mt-1 break-words text-xs">{undeliveredItems.map((item) => item.product_name).join(', ')}</p>
-              </div>
-            </div>
-          )}
           {/* Existing order items - shown as disabled/reference */}
           <div className="mb-3">
             <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{t('previousItems')}</p>
@@ -287,30 +241,6 @@ export default function TableCheckoutModal({
         </div>
       </div>
     </div>
-    {checkoutOverrideBill && (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-        <div className="w-full max-w-sm rounded-2xl bg-card p-5 shadow-xl">
-          <h3 className="text-lg font-bold text-foreground">{t('kitchenDeliveryOverridePrompt')}</h3>
-          <p className="mt-2 text-sm text-muted-foreground">{t('kitchenItemsPendingWarning', { count: undeliveredItems.length })}</p>
-          <p className="mt-1 break-words text-xs text-muted-foreground">{undeliveredItems.map((item) => item.product_name).join(', ')}</p>
-          <input
-            type="password"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={6}
-            value={kitchenDeliveryPin}
-            onChange={(event) => setKitchenDeliveryPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder={t('managerPin')}
-            aria-label={t('managerPin')}
-            className="mt-4 min-h-11 w-full rounded-lg border border-border bg-card px-3 py-2 text-center text-lg tracking-[0.5em]"
-          />
-          <div className="mt-4 flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setCheckoutOverrideBill(null)}>{t('close')}</Button>
-            <Button className="flex-1" disabled={!/^\d{4,6}$/.test(kitchenDeliveryPin)} onClick={continueWithKitchenOverride}>{tCommon('continue')}</Button>
-          </div>
-        </div>
-      </div>
-    )}
     {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
     </>
   );

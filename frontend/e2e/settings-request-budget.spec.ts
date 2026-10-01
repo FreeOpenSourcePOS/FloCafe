@@ -935,3 +935,82 @@ test('Health-check deep link loads from the existing store URL', async ({ page }
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect.poll(() => apiPaths.filter((path) => path === '/api/db-tools/health-check').length).toBe(1);
 });
+
+test('Network pairing cards explain local and VPN/mesh QR choices across settings tabs and languages', async ({ page }) => {
+  await startMockedSettingsSession(page);
+
+  const pairingInfo = {
+    mdns_url: 'http://flo.local:3001',
+    ip_url: 'http://192.168.1.25:3001',
+    qr_url: 'http://192.168.1.25:3001/qr',
+    qr_data_url: null,
+    ips_data: [
+      { ip: '192.168.1.25', url: 'http://192.168.1.25:3001', qr_data: null },
+      { ip: '100.64.0.25', url: 'http://100.64.0.25:3001', qr_data: null },
+    ],
+  };
+  for (const path of ['/api/pos-info', '/api/kds-info', '/api/server-app-info']) {
+    await page.route('**' + path, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pairingInfo) });
+    });
+  }
+
+  const expectPairingHints = async (localHint: string, vpnHint: string, vpnLabel: string) => {
+    await expect(page.getByText(localHint, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(vpnHint, { exact: true }).first()).toBeVisible();
+
+    await page.getByRole('button', { name: vpnLabel, exact: true }).focus();
+    await expect(page.getByRole('tooltip')).toHaveText(vpnHint);
+  };
+  const selectLanguage = async (storeLabel: string, language: string) => {
+    await page.getByRole('button', { name: storeLabel, exact: true }).click();
+    const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
+    await languageSelect.selectOption(language);
+  };
+
+  await page.goto(BASE + '/settings?tab=pos');
+  await page.getByRole('button', { name: 'Load POS Info', exact: true }).click();
+  const englishLocalHint = 'Use when all devices are connected to the same local Wi-Fi router';
+  const englishVpnHint = 'Use when devices connect via a VPN or mesh network across different subnets or locations';
+  await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+
+  const networkGrid = page.getByText(englishLocalHint, { exact: true }).first().locator('xpath=../../..');
+  const desktopColumns = await networkGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(desktopColumns).toBe(2);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const mobileColumns = await networkGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(mobileColumns).toBe(1);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+
+  await page.getByRole('button', { name: 'Tableside Ordering', exact: true }).click();
+  await page.getByRole('button', { name: 'Load Server App Info', exact: true }).click();
+  await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+
+  await selectLanguage('Store Details', 'es');
+  await page.getByRole('button', { name: 'Flujo del POS', exact: true }).click();
+  await expectPairingHints(
+    'Úsalo cuando todos los dispositivos estén conectados al mismo router Wi-Fi local',
+    'Úsalo cuando los dispositivos se conecten mediante una VPN o una red mesh entre distintas subredes o ubicaciones',
+    'VPN / Red mesh',
+  );
+
+  await selectLanguage('Datos del Negocio', 'de');
+  await page.getByRole('button', { name: 'KDS & Küche', exact: true }).click();
+  await expectPairingHints(
+    'Verwenden Sie diese Option, wenn alle Geräte mit demselben lokalen WLAN-Router verbunden sind',
+    'Verwenden Sie diese Option, wenn Geräte über ein VPN oder Mesh-Netzwerk über verschiedene Subnetze oder Standorte hinweg verbunden sind',
+    'VPN / Mesh-Netzwerk',
+  );
+
+  await selectLanguage('Geschäftsdaten', 'ar');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await page.getByRole('button', { name: 'الطلب من جانب الطاولة', exact: true }).click();
+  await expectPairingHints(
+    'استخدم هذا الخيار عندما تكون جميع الأجهزة متصلة بموجّه Wi-Fi محلي واحد',
+    'استخدم هذا الخيار عندما تتصل الأجهزة عبر VPN أو شبكة متداخلة بين شبكات فرعية أو مواقع مختلفة',
+    'شبكة VPN / شبكة متشابكة',
+  );
+});

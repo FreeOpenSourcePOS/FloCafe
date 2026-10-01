@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Nabigong save category",
     "fieldActive": "Aktibo",
     "fieldAddonGroups": "Mga Grupo ng Addon",
+    "inheritedFromCategory": "Namana mula sa kategorya",
     "fieldBarcode": "Barcode",
     "fieldBarcodeHint": "I-scan ang produktong ito sa POS upang direktang idagdag sa cart.",
     "fieldBarcodePlaceholder": "I-scan o i-type ang barcode",

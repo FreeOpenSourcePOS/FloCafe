@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Failed to save category",
     "fieldActive": "Active",
     "fieldAddonGroups": "Addon Groups",
+    "inheritedFromCategory": "Inherited from category",
     "fieldBarcode": "Barcode",
     "fieldBarcodeHint": "Scan this product at POS to add it to the cart directly.",
     "fieldBarcodePlaceholder": "Scan or type a barcode",

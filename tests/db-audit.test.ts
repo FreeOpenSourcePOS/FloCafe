@@ -161,6 +161,8 @@ for (const dbPath of targets) {
     { child: 'addons', childCol: 'addon_group_id', parent: 'addon_groups' },
     { child: 'addon_group_product', childCol: 'product_id', parent: 'products' },
     { child: 'addon_group_product', childCol: 'addon_group_id', parent: 'addon_groups' },
+    { child: 'category_addon_groups', childCol: 'category_id', parent: 'categories' },
+    { child: 'category_addon_groups', childCol: 'addon_group_id', parent: 'addon_groups' },
     { child: 'orders', childCol: 'table_id', parent: 'tables' },
     { child: 'orders', childCol: 'customer_id', parent: 'customers' },
     { child: 'orders', childCol: 'user_id', parent: 'users' },

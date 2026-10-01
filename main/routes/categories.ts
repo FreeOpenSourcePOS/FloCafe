@@ -23,6 +23,54 @@ function normalizeCategoryName(value: unknown): string | null {
   return trimmed || null;
 }
 
+function validateCategoryAddonGroupIds(
+  db: ReturnType<typeof getDatabase>,
+  rawIds: unknown,
+): { ids?: string[]; error?: string } {
+  if (rawIds === undefined) return {};
+  if (!Array.isArray(rawIds)) return { error: 'addon_group_ids must be an array' };
+  const ids: string[] = [];
+  for (const id of rawIds) {
+    if (typeof id !== 'string' || !id.trim()) {
+      return { error: 'addon_group_ids must contain non-empty string IDs' };
+    }
+    ids.push(id.trim());
+  }
+
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length !== ids.length) return { error: 'addon_group_ids must not contain duplicates' };
+  if (uniqueIds.length === 0) return { ids: [] };
+
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const activeIds = new Set((db.prepare(
+    `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`,
+  ).all(...uniqueIds) as { id: string }[]).map((row) => row.id));
+  const missingIds = uniqueIds.filter((id) => !activeIds.has(id));
+  if (missingIds.length > 0) {
+    return { error: `Unknown or inactive addon_group_ids: ${missingIds.join(', ')}` };
+  }
+
+  return { ids: uniqueIds };
+}
+
+function loadAddonGroupIdsByCategory(db: ReturnType<typeof getDatabase>, categories: { id: string }[]): Map<string, string[]> {
+  const categoryIds = [...new Set(categories.map((category) => category.id).filter(Boolean))];
+  if (categoryIds.length === 0) return new Map();
+
+  const placeholders = categoryIds.map(() => '?').join(',');
+  const rows = db.prepare(
+    `SELECT category_id, addon_group_id FROM category_addon_groups
+     WHERE category_id IN (${placeholders}) ORDER BY category_id, addon_group_id`,
+  ).all(...categoryIds) as { category_id: string; addon_group_id: string }[];
+  const result = new Map<string, string[]>();
+  for (const row of rows) {
+    const ids = result.get(row.category_id) || [];
+    ids.push(row.addon_group_id);
+    result.set(row.category_id, ids);
+  }
+  return result;
+}
+
 function slugForName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -109,9 +157,16 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       }
     }
 
+    const allCategories = [...categories, ...[...childRowsByParent.values()].flat()];
+    const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, allCategories);
+
     const categoriesWithChildren = categories.map((cat) => serializeCategory({
       ...cat,
-      children: childRowsByParent.get(cat.id) || [],
+      addon_group_ids: addonGroupIdsByCategory.get(cat.id) || [],
+      children: (childRowsByParent.get(cat.id) || []).map((child) => ({
+        ...child,
+        addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
+      })),
     }));
 
     res.json({ categories: categoriesWithChildren });
@@ -124,15 +179,24 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
 router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as ({ id: string } & Record<string, unknown>) | undefined;
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
-    const children = db.prepare('SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(req.params.id);
+    const children = db.prepare('SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(req.params.id) as ({ id: string } & Record<string, unknown>)[];
     const products = db.prepare('SELECT * FROM products WHERE category_id = ? AND deleted_at IS NULL').all(req.params.id);
+    const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, [category, ...children]);
 
-    res.json({ category: serializeCategory({ ...category, children, products }) });
+    res.json({ category: serializeCategory({
+      ...category,
+      addon_group_ids: addonGroupIdsByCategory.get(String(req.params.id)) || [],
+      children: children.map((child) => ({
+        ...child,
+        addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
+      })),
+      products,
+    }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -141,7 +205,7 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
 
 function createCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } = req.body;
 
     const categoryName = normalizeCategoryName(name);
     if (!categoryName) {
@@ -154,27 +218,40 @@ function createCategory(req: Request, res: Response) {
       return res.status(400).json({ error: parentError });
     }
 
+    const addonGroupValidation = validateCategoryAddonGroupIds(db, addon_group_ids);
+    if (addonGroupValidation.error) {
+      return res.status(400).json({ error: addonGroupValidation.error });
+    }
+
     const slug = slugForName(categoryName);
     const id = generateShortId('categories');
-    db.prepare(`
-      INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      categoryName,
-      slug,
-      normalizeOptionalString(description),
-      normalizeOptionalString(parent_id),
-      sort_order || 0,
-      is_active !== false ? 1 : 0,
-      normalizeOptionalString(color),
-      normalizeOptionalString(icon),
-      now(),
-      now()
-    );
+    const insertCategory = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO categories (id, name, slug, description, parent_id, sort_order, is_active, color, icon, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        categoryName,
+        slug,
+        normalizeOptionalString(description),
+        normalizeOptionalString(parent_id),
+        sort_order || 0,
+        is_active !== false ? 1 : 0,
+        normalizeOptionalString(color),
+        normalizeOptionalString(icon),
+        now(),
+        now()
+      );
 
-    const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
-    res.status(201).json({ category: serializeCategory(category) });
+      if (addonGroupValidation.ids) {
+        const insertAddonGroup = db.prepare('INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)');
+        for (const addonGroupId of addonGroupValidation.ids) insertAddonGroup.run(id, addonGroupId);
+      }
+    });
+    insertCategory();
+
+    const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Record<string, unknown>;
+    res.status(201).json({ category: serializeCategory({ ...category, addon_group_ids: addonGroupValidation.ids || [] }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -185,7 +262,7 @@ router.post('/', categoryWriteRateLimit, requirePermission('catalog.manage'), cr
 
 function updateCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } = req.body;
     const db = getDatabase();
     const categoryId = String(req.params.id);
 
@@ -206,43 +283,60 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
+    const addonGroupValidation: { ids?: string[]; error?: string } = hasOwn(req.body, 'addon_group_ids')
+      ? validateCategoryAddonGroupIds(db, addon_group_ids)
+      : {};
+    if (addonGroupValidation.error) {
+      return res.status(400).json({ error: addonGroupValidation.error });
+    }
+
     const slug = categoryName ? slugForName(categoryName) : (category as any).slug;
     const activeInt = is_active !== undefined ? (is_active ? 1 : 0) : undefined;
 
-    db.prepare(`
-      UPDATE categories SET
-      name = CASE WHEN @has_name = 1 THEN @name ELSE name END,
-      slug = @slug,
-      description = CASE WHEN @has_description = 1 THEN @description ELSE description END,
-      parent_id = CASE WHEN @has_parent_id = 1 THEN @parent_id ELSE parent_id END,
-      sort_order = CASE WHEN @has_sort_order = 1 THEN @sort_order ELSE sort_order END,
-      is_active = CASE WHEN @has_is_active = 1 THEN @is_active ELSE is_active END,
-      color = CASE WHEN @has_color = 1 THEN @color ELSE color END,
-      icon = CASE WHEN @has_icon = 1 THEN @icon ELSE icon END,
-      updated_at = @updated_at
-      WHERE id = @id
-    `).run({
-      has_name: hasName ? 1 : 0,
-      name: categoryName,
-      slug,
-      has_description: hasOwn(req.body, 'description') ? 1 : 0,
-      description: normalizeOptionalString(description),
-      has_parent_id: hasOwn(req.body, 'parent_id') ? 1 : 0,
-      parent_id: normalizeOptionalString(parent_id),
-      has_sort_order: hasOwn(req.body, 'sort_order') ? 1 : 0,
-      sort_order: sort_order ?? null,
-      has_is_active: hasOwn(req.body, 'is_active') ? 1 : 0,
-      is_active: activeInt ?? null,
-      has_color: hasOwn(req.body, 'color') ? 1 : 0,
-      color: normalizeOptionalString(color),
-      has_icon: hasOwn(req.body, 'icon') ? 1 : 0,
-      icon: normalizeOptionalString(icon),
-      updated_at: now(),
-      id: categoryId,
-    });
+    const saveCategory = db.transaction(() => {
+      db.prepare(`
+        UPDATE categories SET
+        name = CASE WHEN @has_name = 1 THEN @name ELSE name END,
+        slug = @slug,
+        description = CASE WHEN @has_description = 1 THEN @description ELSE description END,
+        parent_id = CASE WHEN @has_parent_id = 1 THEN @parent_id ELSE parent_id END,
+        sort_order = CASE WHEN @has_sort_order = 1 THEN @sort_order ELSE sort_order END,
+        is_active = CASE WHEN @has_is_active = 1 THEN @is_active ELSE is_active END,
+        color = CASE WHEN @has_color = 1 THEN @color ELSE color END,
+        icon = CASE WHEN @has_icon = 1 THEN @icon ELSE icon END,
+        updated_at = @updated_at
+        WHERE id = @id
+      `).run({
+        has_name: hasName ? 1 : 0,
+        name: categoryName,
+        slug,
+        has_description: hasOwn(req.body, 'description') ? 1 : 0,
+        description: normalizeOptionalString(description),
+        has_parent_id: hasOwn(req.body, 'parent_id') ? 1 : 0,
+        parent_id: normalizeOptionalString(parent_id),
+        has_sort_order: hasOwn(req.body, 'sort_order') ? 1 : 0,
+        sort_order: sort_order ?? null,
+        has_is_active: hasOwn(req.body, 'is_active') ? 1 : 0,
+        is_active: activeInt ?? null,
+        has_color: hasOwn(req.body, 'color') ? 1 : 0,
+        color: normalizeOptionalString(color),
+        has_icon: hasOwn(req.body, 'icon') ? 1 : 0,
+        icon: normalizeOptionalString(icon),
+        updated_at: now(),
+        id: categoryId,
+      });
 
-    const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId);
-    res.json({ category: serializeCategory(updated) });
+      if (addonGroupValidation.ids !== undefined) {
+        db.prepare('DELETE FROM category_addon_groups WHERE category_id = ?').run(categoryId);
+        const insertAddonGroup = db.prepare('INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)');
+        for (const addonGroupId of addonGroupValidation.ids) insertAddonGroup.run(categoryId, addonGroupId);
+      }
+    });
+    saveCategory();
+
+    const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId) as Record<string, unknown>;
+    const updatedAddonGroupIds = loadAddonGroupIdsByCategory(db, [{ id: categoryId }]).get(categoryId) || [];
+    res.json({ category: serializeCategory({ ...updated, addon_group_ids: updatedAddonGroupIds }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

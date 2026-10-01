@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Kategori kaydedilemedi",
     "fieldActive": "Aktif",
     "fieldAddonGroups": "Eklenti Grupları",
+    "inheritedFromCategory": "Kategoriden devralındı",
     "fieldBarcode": "Barkod",
     "fieldBarcodeHint": "Doğrudan sepete eklemek için POS'ta bu barkodu taratın.",
     "fieldBarcodePlaceholder": "Barkod taratın veya yazın",

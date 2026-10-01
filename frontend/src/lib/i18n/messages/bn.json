@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "বিভাগ সংরক্ষণ করতে ব্যর্থ হয়েছে",
     "fieldActive": "সক্রিয়",
     "fieldAddonGroups": "অ্যাড-অন গ্রুপ",
+    "inheritedFromCategory": "বিভাগ থেকে উত্তরাধিকারসূত্রে প্রাপ্ত",
     "fieldBarcode": "বারকোড",
     "fieldBarcodeHint": "এই পণ্যটি সরাসরি কার্টে যোগ করতে POS এ স্ক্যান করুন।",
     "fieldBarcodePlaceholder": "বারকোড স্ক্যান বা টাইপ করুন",

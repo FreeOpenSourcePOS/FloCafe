@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Không thể lưu danh mục",
     "fieldActive": "Đang hoạt động",
     "fieldAddonGroups": "Nhóm tuỳ chọn",
+    "inheritedFromCategory": "Kế thừa từ danh mục",
     "fieldBarcode": "Mã vạch",
     "fieldBarcodeHint": "Quét sản phẩm này tại POS để thêm thẳng vào giỏ.",
     "fieldBarcodePlaceholder": "Quét hoặc nhập mã vạch",

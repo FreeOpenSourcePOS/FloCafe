@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Falha ao salvar a categoria",
     "fieldActive": "Ativo",
     "fieldAddonGroups": "Grupos de Adicionais",
+    "inheritedFromCategory": "Herdado da categoria",
     "fieldBarcode": "Código de barras",
     "fieldBarcodeHint": "Escanear este produto no PDV para adicioná-lo diretamente ao carrinho.",
     "fieldBarcodePlaceholder": "Escanear ou digitar um código de barras",

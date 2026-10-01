@@ -44,6 +44,7 @@ async function main() {
     ) VALUES ('oat', 'milk', 'Oat milk', 40, 'food', 'exclusive', 0, 1, ?, ?)`)
     .run(stamp, stamp);
   db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('latte', 'milk')").run();
+  db.prepare("INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES ('cat', 'milk')").run();
   db.pragma('foreign_keys = OFF');
   db.prepare(`INSERT INTO products (
       id, category_id, name, price, cost, stock_quantity, inventory_product_id,
@@ -54,6 +55,8 @@ async function main() {
     VALUES ('orphan-addon', 'missing-group', 'Orphan add-on', 10, 1, ?, ?)`).run(stamp, stamp);
   db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('missing-product', 'milk')").run();
   db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('latte', 'missing-group')").run();
+  db.prepare("INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES ('missing-category', 'milk')").run();
+  db.prepare("INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES ('cat', 'missing-group')").run();
   db.pragma('foreign_keys = ON');
   db.prepare(`INSERT INTO customers (id, name, is_active, created_at, updated_at)
     VALUES ('customer', 'Customer', 1, ?, ?)`).run(stamp, stamp);
@@ -82,6 +85,7 @@ async function main() {
   assert.equal(count('addon_groups'), 1, 'add-on groups are preserved');
   assert.equal(count('addons'), 1, 'add-ons are preserved');
   assert.equal(count('addon_group_product'), 1, 'menu relationships are preserved');
+  assert.equal(count('category_addon_groups'), 1, 'category add-on group relationships are preserved without orphans');
   assert.deepEqual(
     fresh.prepare("SELECT category_id, inventory_product_id FROM products WHERE id = 'orphan-product'").get(),
     { category_id: null, inventory_product_id: null },

@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "儲存分類失敗",
     "fieldActive": "啟用",
     "fieldAddonGroups": "加購分組",
+    "inheritedFromCategory": "繼承自類別",
     "fieldBarcode": "條碼",
     "fieldBarcodeHint": "在 POS 掃描此商品可直接加入購物車。",
     "fieldBarcodePlaceholder": "掃描或輸入條碼",

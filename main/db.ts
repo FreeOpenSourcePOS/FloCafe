@@ -1550,6 +1550,7 @@ type CurrencyResetMenuSnapshot = {
   addonGroups: Record<string, unknown>[];
   addons: Record<string, unknown>[];
   addonGroupProducts: Record<string, unknown>[];
+  categoryAddonGroups: Record<string, unknown>[];
 };
 
 export interface CurrencyResetImpact {
@@ -1587,6 +1588,7 @@ function captureCurrencyResetMenu(dbInstance: Database.Database): CurrencyResetM
     addonGroups: rows('addon_groups'),
     addons: rows('addons'),
     addonGroupProducts: rows('addon_group_product'),
+    categoryAddonGroups: rows('category_addon_groups'),
   };
 }
 
@@ -1631,6 +1633,9 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
   const addonGroupProducts = snapshot.addonGroupProducts.filter(
     (link) => productIds.has(link.product_id) && addonGroupIds.has(link.addon_group_id),
   );
+  const categoryAddonGroups = snapshot.categoryAddonGroups.filter(
+    (link) => categoryIds.has(link.category_id) && addonGroupIds.has(link.addon_group_id),
+  );
 
   insertSnapshotRows(dbInstance, 'categories', snapshot.categories);
   insertSnapshotRows(dbInstance, 'addon_groups', snapshot.addonGroups);
@@ -1643,6 +1648,7 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
   }
   insertSnapshotRows(dbInstance, 'addons', addons);
   insertSnapshotRows(dbInstance, 'addon_group_product', addonGroupProducts);
+  insertSnapshotRows(dbInstance, 'category_addon_groups', categoryAddonGroups);
 }
 
 export async function resetDatabaseForCurrencyChange(
@@ -5409,6 +5415,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 96,
+    name: 'add_category_addon_groups',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS category_addon_groups (
+          category_id TEXT NOT NULL,
+          addon_group_id TEXT NOT NULL,
+          PRIMARY KEY (category_id, addon_group_id),
+          FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+          FOREIGN KEY (addon_group_id) REFERENCES addon_groups(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_category_addon_groups_category ON category_addon_groups(category_id);
+        CREATE INDEX IF NOT EXISTS idx_category_addon_groups_group ON category_addon_groups(addon_group_id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5606,6 +5629,16 @@ function createSchema(): void {
       addon_group_id TEXT NOT NULL,
       PRIMARY KEY (product_id, addon_group_id)
     );
+
+    CREATE TABLE IF NOT EXISTS category_addon_groups (
+      category_id TEXT NOT NULL,
+      addon_group_id TEXT NOT NULL,
+      PRIMARY KEY (category_id, addon_group_id),
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+      FOREIGN KEY (addon_group_id) REFERENCES addon_groups(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_category_addon_groups_category ON category_addon_groups(category_id);
+    CREATE INDEX IF NOT EXISTS idx_category_addon_groups_group ON category_addon_groups(addon_group_id);
 
     CREATE TABLE IF NOT EXISTS kitchen_stations (
       id TEXT PRIMARY KEY,

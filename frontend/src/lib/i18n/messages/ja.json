@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "カテゴリの保存に失敗しました",
     "fieldActive": "有効",
     "fieldAddonGroups": "追加項目グループ",
+    "inheritedFromCategory": "カテゴリーから継承",
     "fieldBarcode": "バーコード",
     "fieldBarcodeHint": "POSでこの商品をスキャンすると、直接カートに追加できます。",
     "fieldBarcodePlaceholder": "バーコードをスキャンまたは入力",

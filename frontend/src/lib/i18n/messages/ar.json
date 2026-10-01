@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "فشل حفظ الفئة",
     "fieldActive": "نشط",
     "fieldAddonGroups": "مجموعات الإضافات",
+    "inheritedFromCategory": "موروث من الفئة",
     "fieldBarcode": "الرمز الشريطي",
     "fieldBarcodeHint": "امسح هذا المنتج ضوئيًا عند نقطة البيع لإضافته إلى سلة التسوق مباشرةً.",
     "fieldBarcodePlaceholder": "امسح الرمز الشريطي ضوئيًّا أو اكتبه",

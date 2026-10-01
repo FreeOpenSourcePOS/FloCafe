@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "บันทึกหมวดหมู่ไม่สำเร็จ",
     "fieldActive": "ใช้งานอยู่",
     "fieldAddonGroups": "กลุ่มตัวเลือกเพิ่ม",
+    "inheritedFromCategory": "สืบทอดจากหมวดหมู่",
     "fieldBarcode": "บาร์โค้ด",
     "fieldBarcodeHint": "สแกนสินค้านี้ที่ POS เพื่อเพิ่มลงตะกร้าโดยตรง",
     "fieldBarcodePlaceholder": "สแกนหรือป้อนบาร์โค้ด",

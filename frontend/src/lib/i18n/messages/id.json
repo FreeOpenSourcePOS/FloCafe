@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Gagal menyimpan kategori",
     "fieldActive": "Aktif",
     "fieldAddonGroups": "Grup Tambahan",
+    "inheritedFromCategory": "Diwarisi dari kategori",
     "fieldBarcode": "Barcode",
     "fieldBarcodeHint": "Pindai produk ini di POS untuk menambahkannya langsung ke keranjang.",
     "fieldBarcodePlaceholder": "Pindai atau ketik barcode",

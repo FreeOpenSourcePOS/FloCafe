@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "카테고리 저장에 실패했습니다",
     "fieldActive": "활성",
     "fieldAddonGroups": "추가 옵션 그룹",
+    "inheritedFromCategory": "카테고리에서 상속됨",
     "fieldBarcode": "바코드",
     "fieldBarcodeHint": "이 상품을 POS에서 스캔하면 장바구니에 바로 담깁니다.",
     "fieldBarcodePlaceholder": "바코드 스캔 또는 입력",

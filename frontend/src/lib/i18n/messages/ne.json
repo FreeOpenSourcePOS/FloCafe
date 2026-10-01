@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "कोटी बचत गर्न असफल भयो",
     "fieldActive": "सक्रिय",
     "fieldAddonGroups": "एडअन समूहहरू",
+    "inheritedFromCategory": "वर्गबाट प्राप्त गरिएको",
     "fieldBarcode": "बारकोड",
     "fieldBarcodeHint": "यो उत्पादनलाई कार्टमा सिधै थप्न POS मा स्क्यान गर्नुहोस्।",
     "fieldBarcodePlaceholder": "स्क्यान वा बारकोड टाइप गर्नुहोस्",

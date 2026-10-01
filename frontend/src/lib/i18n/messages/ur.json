@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "زمرہ محفوظ نہیں ہو سکا",
     "fieldActive": "فعال",
     "fieldAddonGroups": "ایڈ آن گروپس",
+    "inheritedFromCategory": "زمرے سے وراثت میں ملا",
     "fieldBarcode": "بارکوڈ",
     "fieldBarcodeHint": "اس پروڈکٹ کو براہ راست کارٹ میں شامل کرنے کے لیے POS پر اسکین کریں۔",
     "fieldBarcodePlaceholder": "بارکوڈ اسکین کریں یا ٹائپ کریں",

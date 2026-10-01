@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Salvataggio della categoria non riuscito",
     "fieldActive": "Attivo",
     "fieldAddonGroups": "Gruppi di extra",
+    "inheritedFromCategory": "Ereditato dalla categoria",
     "fieldBarcode": "Codice a barre",
     "fieldBarcodeHint": "Scansiona questo prodotto al POS per aggiungerlo direttamente al carrello.",
     "fieldBarcodePlaceholder": "Scansiona o digita un codice a barre",

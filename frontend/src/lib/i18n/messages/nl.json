@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Kan categorie niet opslaan",
     "fieldActive": "Actief",
     "fieldAddonGroups": "Add-on-groepen",
+    "inheritedFromCategory": "Overgenomen van categorie",
     "fieldBarcode": "Streepjescode",
     "fieldBarcodeHint": "Scan dit product op POS om het direct aan de winkelwagen toe te voegen.",
     "fieldBarcodePlaceholder": "Scan of typ een streepjescode",

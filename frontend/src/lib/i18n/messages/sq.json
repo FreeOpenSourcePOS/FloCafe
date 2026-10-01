@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Ruajtja e kategorisë dështoi",
     "fieldActive": "Aktiv",
     "fieldAddonGroups": "Grupet shtesë",
+    "inheritedFromCategory": "Trashëguar nga kategoria",
     "fieldBarcode": "Barkodi",
     "fieldBarcodeHint": "Skanoni këtë produkt në POS për ta shtuar direkt në karrocë.",
     "fieldBarcodePlaceholder": "Skanoni ose shkruani një barkod",

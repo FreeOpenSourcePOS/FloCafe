@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Не удалось сохранить категорию.",
     "fieldActive": "Активен",
     "fieldAddonGroups": "Группы дополнений",
+    "inheritedFromCategory": "Унаследовано от категории",
     "fieldBarcode": "Штрих-код",
     "fieldBarcodeHint": "Отсканируйте этот товар в POS-терминале, чтобы добавить его напрямую в корзину.",
     "fieldBarcodePlaceholder": "Отсканируйте или введите штрих-код",

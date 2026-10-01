@@ -196,7 +196,21 @@ function loadProductRelationsBatch(db: any, products: any[]) {
     `SELECT product_id, addon_group_id FROM addon_group_product WHERE product_id IN (${placeholders})`
   ).all(...productIds) as any[];
 
-  // Group addon_group_ids by product_id
+  // 3. Load all addon_group ↔ category mappings for these products' categories
+  const categoryAddonGroupRows = categoryIds.length > 0
+    ? db.prepare(
+      `SELECT category_id, addon_group_id FROM category_addon_groups WHERE category_id IN (${categoryIds.map(() => '?').join(',')})`
+    ).all(...categoryIds) as { category_id: string; addon_group_id: string }[]
+    : [];
+
+  const addonGroupIdsByCategory = new Map<string, string[]>();
+  for (const row of categoryAddonGroupRows) {
+    const ids = addonGroupIdsByCategory.get(row.category_id) || [];
+    ids.push(row.addon_group_id);
+    addonGroupIdsByCategory.set(row.category_id, ids);
+  }
+
+  // 4. Group addon_group_ids by product_id
   const addonGroupIdsByProduct = new Map<string, string[]>();
   for (const row of agpRows) {
     const ids = addonGroupIdsByProduct.get(row.product_id) || [];
@@ -204,20 +218,23 @@ function loadProductRelationsBatch(db: any, products: any[]) {
     addonGroupIdsByProduct.set(row.product_id, ids);
   }
 
-  // 3. Load all referenced addon groups in one query
-  const allAddonGroupIds = [...new Set(agpRows.map((r: any) => r.addon_group_id))];
+  // 5. Load all referenced addon groups in one query
+  const allAddonGroupIds = [...new Set([
+    ...agpRows.map((row: any) => row.addon_group_id),
+    ...categoryAddonGroupRows.map((row) => row.addon_group_id),
+  ])];
   const addonGroupMap = new Map<string, any>();
   if (allAddonGroupIds.length > 0) {
     const agPlaceholders = allAddonGroupIds.map(() => '?').join(',');
     const addonGroups = db.prepare(
-      `SELECT * FROM addon_groups WHERE is_active = 1 AND id IN (${agPlaceholders})`
+      `SELECT * FROM addon_groups WHERE is_active = 1 AND id IN (${agPlaceholders}) ORDER BY sort_order, name`
     ).all(...allAddonGroupIds) as any[];
     for (const ag of addonGroups) {
       addonGroupMap.set(ag.id, ag);
     }
   }
 
-  // 4. Load all addons for these groups in one query
+  // 6. Load all addons for these groups in one query
   const addonMap = new Map<string, any[]>();
   if (allAddonGroupIds.length > 0) {
     const agPlaceholders = allAddonGroupIds.map(() => '?').join(',');
@@ -231,21 +248,21 @@ function loadProductRelationsBatch(db: any, products: any[]) {
     }
   }
 
-  // 5. Assemble results
-  const result = new Map<string, { category: any; addon_groups: any[] }>();
+  // 7. Assemble results
+  const result = new Map<string, { category: any; addon_groups: any[]; addon_group_ids: string[] }>();
   for (const p of products) {
     const category = p.category_id ? categoryMap.get(p.category_id) || null : null;
 
-    const agIds = addonGroupIdsByProduct.get(p.id) || [];
-    const addon_groups = agIds
-      .map((agId: string) => {
-        const ag = addonGroupMap.get(agId);
-        if (!ag) return null;
-        return { ...ag, addons: addonMap.get(agId) || [] };
-      })
-      .filter(Boolean);
+    const addon_group_ids = addonGroupIdsByProduct.get(p.id) || [];
+    const effectiveGroupIds = new Set([
+      ...(p.category_id ? addonGroupIdsByCategory.get(p.category_id) || [] : []),
+      ...addon_group_ids,
+    ]);
+    const addon_groups = [...addonGroupMap.values()]
+      .filter((group) => effectiveGroupIds.has(group.id))
+      .map((group) => ({ ...group, addons: addonMap.get(group.id) || [] }));
 
-    result.set(p.id, { category, addon_groups });
+    result.set(p.id, { category, addon_groups, addon_group_ids });
   }
 
   return result;
@@ -560,12 +577,13 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const relations = loadProductRelationsBatch(db, products as any[]);
 
     const productsWithRelations = (products as any[]).map((product: any) => {
-      const rel = relations.get(product.id) || { category: null, addon_groups: [] };
+      const rel = relations.get(product.id) || { category: null, addon_groups: [], addon_group_ids: [] };
       return serializeProduct({
         ...product,
         tags: parseTags(product.tags),
         category: rel.category,
         addon_groups: rel.addon_groups,
+        addon_group_ids: rel.addon_group_ids,
       });
     });
 
@@ -641,9 +659,15 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
 
     // Single-product query — still batch-style for consistency
     const relations = loadProductRelationsBatch(db, [product as any]);
-    const rel = relations.get((product as any).id) || { category: null, addon_groups: [] };
+    const rel = relations.get((product as any).id) || { category: null, addon_groups: [], addon_group_ids: [] };
 
-    res.json({ product: serializeProduct({ ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addon_groups: rel.addon_groups }) });
+    res.json({ product: serializeProduct({
+      ...(product as any),
+      tags: parseTags((product as any).tags),
+      category: rel.category,
+      addon_groups: rel.addon_groups,
+      addon_group_ids: rel.addon_group_ids,
+    }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

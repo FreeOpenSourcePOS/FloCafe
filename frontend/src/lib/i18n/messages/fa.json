@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "ذخیره دسته انجام نشد",
     "fieldActive": "فعال",
     "fieldAddonGroups": "گروه‌های افزودنی",
+    "inheritedFromCategory": "به‌ارث‌رسیده از دسته‌بندی",
     "fieldBarcode": "بارکد",
     "fieldBarcodeHint": "این کالا را در صندوق پویش کنید تا بی‌درنگ به سبد افزوده شود.",
     "fieldBarcodePlaceholder": "بارکد را پویش کنید یا بنویسید",

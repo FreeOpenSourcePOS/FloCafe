@@ -55,6 +55,7 @@ export interface Category {
   is_active: boolean;
   color: string | null;
   icon: string | null;
+  addon_group_ids?: string[];
   children?: Category[];
   products?: Product[];
 }
@@ -102,6 +103,7 @@ export interface Product {
   sort_order: number;
   category?: Category;
   addon_groups?: AddonGroup[];
+  addon_group_ids?: string[];
 }
 
 export interface AddonGroup {

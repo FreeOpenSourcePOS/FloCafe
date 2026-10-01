@@ -135,10 +135,14 @@ function resolveItemAddons(
 ): { id: string; name: string; price: number; quantity: number }[] {
   const addonInputs = Array.isArray(addons) ? addons : [];
 
-  const linkedGroupIds = new Set(
-    (db.prepare('SELECT addon_group_id FROM addon_group_product WHERE product_id = ?').all(productId) as { addon_group_id: string }[])
-      .map((row) => row.addon_group_id),
-  );
+  const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(productId) as { category_id: string | null } | undefined;
+  const productGroupIds = (db.prepare('SELECT addon_group_id FROM addon_group_product WHERE product_id = ?').all(productId) as { addon_group_id: string }[])
+    .map((row) => row.addon_group_id);
+  const categoryGroupIds = product?.category_id
+    ? (db.prepare('SELECT addon_group_id FROM category_addon_groups WHERE category_id = ?').all(product.category_id) as { addon_group_id: string }[])
+      .map((row) => row.addon_group_id)
+    : [];
+  const linkedGroupIds = new Set([...productGroupIds, ...categoryGroupIds]);
 
   const resolved: { id: string; name: string; price: number; quantity: number }[] = [];
   const groupSelections = new Map<string, { totalQty: number; hasMultiQty: boolean }>();

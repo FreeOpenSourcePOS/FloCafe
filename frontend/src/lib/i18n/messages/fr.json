@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Impossible d’enregistrer la catégorie",
     "fieldActive": "Actif",
     "fieldAddonGroups": "Groupes d’options",
+    "inheritedFromCategory": "Hérité de la catégorie",
     "fieldBarcode": "Code-barres",
     "fieldBarcodeHint": "Scannez ce produit à la caisse pour l’ajouter directement au panier.",
     "fieldBarcodePlaceholder": "Scannez ou saisissez un code-barres",

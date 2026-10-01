@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "श्रेणी सहेजने में विफल",
     "fieldActive": "सक्रिय",
     "fieldAddonGroups": "एड-ऑन समूह",
+    "inheritedFromCategory": "श्रेणी से विरासत में मिला",
     "fieldBarcode": "बारकोड",
     "fieldBarcodeHint": "इस उत्पाद को सीधे कार्ट में जोड़ने के लिए पीओएस पर स्कैन करें।",
     "fieldBarcodePlaceholder": "बारकोड को स्कैन करें या टाइप करें",

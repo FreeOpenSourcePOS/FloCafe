@@ -1069,6 +1069,7 @@
     "failedToSaveCategory": "Kategorie konnte nicht gespeichert werden",
     "fieldActive": "Aktiv",
     "fieldAddonGroups": "Zusatzgruppen",
+    "inheritedFromCategory": "Von der Kategorie übernommen",
     "fieldBarcode": "Barcode",
     "fieldBarcodeHint": "Scannen Sie dieses Produkt an der Kasse, um es direkt in den Warenkorb zu legen.",
     "fieldBarcodePlaceholder": "Barcode scannen oder eingeben",

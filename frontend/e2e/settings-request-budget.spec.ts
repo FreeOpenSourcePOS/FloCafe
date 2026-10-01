@@ -973,11 +973,15 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
   await page.getByRole('button', { name: 'Load POS Info', exact: true }).click();
   const englishLocalHint = 'Use when all devices can reach this address over Wi-Fi, Ethernet, or a VPN/mesh network';
   const englishVpnHint = 'Use when devices connect via a VPN or mesh network across different subnets or locations';
+  const expectLocalAddressCard = async () => {
+    const localAddress = 'http://10.42.0.25:3001';
+    const localCard = page.getByText(localAddress, { exact: true }).locator('xpath=..');
+    await expect(localCard.getByRole('link')).toHaveAttribute('href', localAddress);
+    await expect(localCard.getByText('Local Network', { exact: true })).toBeVisible();
+    await expect(localCard).toContainText(englishLocalHint);
+  };
   await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
-
-  const privateVpnCard = page.getByText('http://10.42.0.25:3001', { exact: true }).locator('xpath=..');
-  await expect(privateVpnCard.getByRole('link')).toHaveAttribute('href', 'http://10.42.0.25:3001');
-  await expect(privateVpnCard).toContainText(/VPN\/mesh/i);
+  await expectLocalAddressCard();
 
   const networkGrid = page.getByText(englishLocalHint, { exact: true }).first().locator('xpath=../../..');
   const desktopColumns = await networkGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
@@ -989,10 +993,12 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
 
   await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
   await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+  await expectLocalAddressCard();
 
   await page.getByRole('button', { name: 'Tableside Ordering', exact: true }).click();
   await page.getByRole('button', { name: 'Load Server App Info', exact: true }).click();
   await expectPairingHints(englishLocalHint, englishVpnHint, 'VPN / Mesh Network');
+  await expectLocalAddressCard();
 
   await selectLanguage('Store Details', 'es');
   await page.getByRole('button', { name: 'Flujo del POS', exact: true }).click();

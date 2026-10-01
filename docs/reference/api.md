@@ -594,7 +594,7 @@ Router: `main/routes/whatsapp.ts`. Full path: `/api/whatsapp`.
 | `POST` | `/connect` | `ROLE_ACCESS.ownerManager` | body: `method`, `phone` | - |
 | `POST` | `/disconnect` | `ROLE_ACCESS.ownerManager` | none | - |
 | `POST` | `/send` | `ROLE_ACCESS.ownerManagerCashier` | body: `bill_id`, `phone_e164`, `body`, `kind` | Body `bill_id` or `phone_e164`, `body`, `kind`. |
-| `GET` | `/messages` | `ROLE_ACCESS.ownerManagerCashier` | query: `?limit`, `?offset`, `?direction`, `?status`, `?phone`, `?bill_id` | - |
+| `GET` | `/messages` | `whatsapp.use` | query: `?limit`, `?offset`, `?direction`, `?status`, `?phone`, `?bill_id` | Message history; entries with `kind: "z_report"` are omitted unless the caller also has `reports.view`. This permission filter is applied before pagination. |
 | `GET` | `/inbox` | `ROLE_ACCESS.ownerManager` | query: `?limit`, `?offset` | - |
 | `POST` | `/inbox/:messageId/reply` | `ROLE_ACCESS.ownerManager` | path: `messageId`; body: `body` | Replies to an inbound message. |
 | `GET` | `/blocklist` | `ROLE_ACCESS.ownerManager` | none | - |
@@ -679,6 +679,7 @@ day-boundary rules.
 | `GET` | `/z-report` | `ROLE_ACCESS.ownerManager` | query: `?date` | The immutable close snapshot for one business date. `404` with `{ error: "Day not closed", alreadyClosed: false, businessDate }` when no close row exists. The `zReport` object carries integer-minor-unit `*_cents` fields, `payment_methods`, `staff_sales`, `tax_components`, and `cash_movements` arrays, plus `z_number`, `closed_by`, `closed_by_name`, `notes`, `created_at`, `business_date`, `period_start`, and `period_end`. `variance_cents` is `counted_cash_cents - expected_cash_cents` and may be negative. |
 | `GET` | `/x-report/export` | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv` or `xlsx`) | Exports a live X-report snapshot for one business date. Returns `400` with `{ error: "format must be xlsx or csv" }` when `format` is missing or invalid. Sets `Content-Disposition` to `attachment; filename="x-report-<date>.<format>"`. |
 | `GET` | `/z-report/export` | `reports.view` (`ROLE_ACCESS.ownerManager` by default) | query: `?date`, `?format` (required: `csv` or `xlsx`) | Exports the stored Z-report snapshot for a closed business date. Returns `400` with `{ error: "format must be xlsx or csv" }` when `format` is missing or invalid, and `404` with `{ error: "Day not closed" }` when the day has not been closed. Sets `Content-Disposition` to `attachment; filename="z-report-Z<z_number>-<date>.<format>"`. |
+| `POST` | `/cash-closes/:id/whatsapp` | `reports.view` + `whatsapp.use` | path: `id`; body: `phone_e164`, `body` (non-empty, max 4096 chars) | Sends the submitted report body and returns `{ success: true, messageId }`; when WhatsApp is disconnected, returns `{ fallback: true, reason: "not_connected" }` so the client can open WhatsApp for sharing. Invalid input returns `400`; an unknown day close returns `404`. |
 | `GET` | `/daily-sales/export` | `ROLE_ACCESS.owner` | query: `?date`, `?format`, `?part` | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport). |
 
 ### GET `/api/reports/daily-sales/export`

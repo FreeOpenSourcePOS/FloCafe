@@ -410,6 +410,7 @@ export function useCashClose() {
           refunds: t('refunds'),
           netCollections: t('netCollections'),
           billCount: (count) => t('billsCount', { count }),
+          openingFloat: t('openingFloat'),
           expectedCash: t('expectedCash'),
           countedCash: t('countedCash'),
           variance: t('variance'),

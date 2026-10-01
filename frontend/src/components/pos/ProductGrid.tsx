@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
@@ -12,6 +12,7 @@ import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import { subscribeToQuickSearch } from '@/lib/quick-search';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
   red: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800/40', activeBg: 'bg-red-500', activeText: 'text-white' },
@@ -54,10 +55,18 @@ export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
   search, setSearch, onProductClick, sidebarOpen = true,
 }: Props) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
+  useEffect(() => {
+    const focusSearchInput = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    return subscribeToQuickSearch(focusSearchInput);
+  }, []);
   const cartQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();
     for (const item of cart.items) {
@@ -78,6 +87,7 @@ export default function ProductGrid({
         <div className="relative mb-2">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
+            ref={searchInputRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

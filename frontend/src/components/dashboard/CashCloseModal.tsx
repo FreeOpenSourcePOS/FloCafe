@@ -3,14 +3,36 @@ import { Ltr } from '@/components/layout/Ltr';
 import { CashCloseTicketPreview, type CashCloseTicketPreviewProps } from '@/components/dashboard/CashCloseTicketPreview';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Lock, Loader2, Printer, AlertTriangle, X, Check, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Lock, Loader2, Printer, AlertTriangle, X, Check, ArrowLeft, ArrowRight, Download, ChevronDown, FileSpreadsheet, FileText } from 'lucide-react';
 import type { CashCloseModel } from '@/hooks/useCashClose';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 /** Day-close wizard modal (steps 1 Revisar / 2 Contar / 3 Cerrar).
  *  Pure view over useCashClose: every value and action arrives on
  *  `model`, so this file holds JSX only. */
 export function CashCloseModal({ model }: { model: CashCloseModel }) {
-  const { closeOpen, setCloseOpen, closeAnotherDay, businessDate, setBusinessDate, xReport, xLoading, xError, closeStep, setCloseStep, openingFloatInput, setOpeningFloatInput, countedInput, setCountedInput, submittingClose, submitError, alreadyClosedOverride, setAlreadyClosedOverride, amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ, hasPrintedFresh, setHasPrintedFresh, hydratedZ, minorFactor, fmt, unitAdapter, t, tCommon, shiftDate, todayLocal, submitClose, printZ } = model;
+  const { closeOpen, setCloseOpen, closeAnotherDay, businessDate, setBusinessDate, xReport, xLoading, xError, closeStep, setCloseStep, openingFloatInput, setOpeningFloatInput, countedInput, setCountedInput, submittingClose, submitError, alreadyClosedOverride, setAlreadyClosedOverride, amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ, exportingReport, exportReport, hasPrintedFresh, setHasPrintedFresh, hydratedZ, minorFactor, fmt, unitAdapter, t, tCommon, shiftDate, todayLocal, submitClose, printZ } = model;
+  const exportMenu = (report: 'x' | 'z') => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" disabled={exportingReport}>
+          <Download size={14} />
+          {t('exportSales')}
+          <ChevronDown size={14} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onSelect={() => { void exportReport(report, 'xlsx'); }}>
+          <FileSpreadsheet size={14} />
+          {t('exportXlsx')}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => { void exportReport(report, 'csv'); }}>
+          <FileText size={14} />
+          {t('exportCsv')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   return (
     <>
 {/* ── Close-day modal ─────────────────────────────────────────────── */}
@@ -106,6 +128,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
           </div>
           {xReport && (
             <>
+              <div className="flex justify-end">{exportMenu('x')}</div>
               {(xReport.alreadyClosed || alreadyClosedOverride) && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
                   <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -330,6 +353,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
     <DialogFooter>
       {closeStep === 3 ? (
         <>
+          {exportMenu('z')}
           <Button variant="outline" onClick={() => setCloseOpen(false)}>
             {tCommon('close')}
           </Button>

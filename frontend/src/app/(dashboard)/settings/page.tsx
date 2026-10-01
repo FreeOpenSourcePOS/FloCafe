@@ -316,7 +316,12 @@ export default function SettingsPage() {
 
 
   const searchParams = useSearchParams();
-  const requestedTab = searchParams?.get('tab') || 'store';
+  const requestedTabParam = searchParams?.get('tab') || 'store';
+  const requestedTab = requestedTabParam === 'general'
+    ? 'store'
+    : requestedTabParam === 'printers'
+      ? 'receipts-printers'
+      : requestedTabParam;
   const requestedAction = searchParams?.get('action');
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);

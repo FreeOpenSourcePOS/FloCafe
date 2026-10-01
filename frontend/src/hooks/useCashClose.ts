@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
@@ -11,6 +11,7 @@ import { getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
 import { businessDateForInstant } from '@shared/business-date';
+import { downloadBlob } from '@/lib/download';
 /** Live day aggregates returned by GET /api/reports/x-report. Display totals
  *  are in tenant major units (minorFactor-divided); expectedCashCents is the
  *  integer-cents drawer expected figure. Do not rename fields — the backend
@@ -98,6 +99,7 @@ export function useCashClose() {
   // the POST boundary via the unit adapter, and back to display for the
   // preview).
   const [closeOpen, setCloseOpen] = useState(false);
+  const [entryView, setEntryView] = useState<'x-report' | 'z-report' | null>(null);
   // Bumping this token is how we re-trigger the load effect on each open.
   // Reset of the form fields happens during render via the token comparison
   // below (React-recommended idiom for "adjusting state when a prop
@@ -139,6 +141,7 @@ export function useCashClose() {
   const [printingZ, setPrintingZ] = useState(false);
   const [hasPrintedFresh, setHasPrintedFresh] = useState(false);
   const [hydratedZ, setHydratedZ] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
   const unitAdapter = useCurrencyUnitAdapter();
   // Storage minor-unit factor (`Math.pow(10, fractionDigits)`) is the cents
   // denominator; the adapter's `maxDecimals` would be wrong for IRR/Toman
@@ -293,14 +296,15 @@ export function useCashClose() {
   // of step 3. Fire only after the closed-Z hydrate finishes — otherwise the
   // operator lands on a blank step 3 with no Back path. Recomputes on every
   // render of the open modal — the cost is two field reads and a conditional.
-  if (closeOpen && xReport?.alreadyClosed && !xLoading && closedZ !== null && closeStep !== 3) {
+  if (closeOpen && entryView !== 'x-report' && xReport?.alreadyClosed && !xLoading && closedZ !== null && closeStep !== 3) {
     setCloseStep(3);
   }
 
-  const openCloseModal = () => {
+  const openCloseModal = useCallback((view: 'x-report' | 'z-report' | null = null) => {
+    setEntryView(view);
     setOpenToken((n) => n + 1);
     setCloseOpen(true);
-  };
+  }, []);
   // Close-another-day entry point from the stored-Z view. The reset block
   // above (driven by `openToken !== resetToken`) already wipes closedZ,
   // hasPrintedFresh, countedInput, submitError and forces closeStep back to
@@ -309,8 +313,28 @@ export function useCashClose() {
   // resets to todayLocal, matching the open-from-header behavior — the
   // operator then uses the existing step-1 date picker to navigate back.
   const closeAnotherDay = () => {
+    setEntryView(null);
     setDateOverride('');
     setOpenToken((n) => n + 1);
+  };
+
+  const exportReport = async (report: 'x' | 'z', format: 'csv' | 'xlsx') => {
+    if (report === 'z' && !closedZ) return;
+    setExportingReport(true);
+    try {
+      const res = await api.get(`/reports/${report}-report/export`, {
+        params: { date: businessDate, format },
+        responseType: 'blob',
+      });
+      const filename = report === 'x'
+        ? `x-report-${businessDate}.${format}`
+        : `z-report-Z${closedZ!.z_number}-${businessDate}.${format}`;
+      downloadBlob(res.data as Blob, filename);
+    } catch {
+      toast.error(tCommon('downloadFailed'));
+    } finally {
+      setExportingReport(false);
+    }
   };
 
   // Shared display→cents semantics with shift close (lib/money.ts): the
@@ -398,7 +422,7 @@ export function useCashClose() {
     xReport, xLoading, xError, closeStep, setCloseStep,
     openingFloatInput, setOpeningFloatInput, countedInput, setCountedInput,
     submittingClose, submitError, alreadyClosedOverride, setAlreadyClosedOverride,
-    amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ,
+    amountsValid, expectedCashTotalCents, varianceCents, closedZ, printingZ, exportingReport, exportReport,
     hasPrintedFresh, setHasPrintedFresh, hydratedZ, minorFactor, fmt, unitAdapter, t, tCommon,
     shiftDate, todayLocal, submitClose, printZ,
   };

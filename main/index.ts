@@ -1081,6 +1081,20 @@ function createMenu(): void {
       ],
     },
     {
+      label: 'View',
+      submenu: [
+        { label: 'POS', accelerator: 'CmdOrCtrl+1', click: () => mainWindow?.webContents.send('go-pos') },
+        { label: 'Dashboard', accelerator: 'CmdOrCtrl+2', click: () => mainWindow?.webContents.send('go-dashboard') },
+        { label: 'Orders', accelerator: 'CmdOrCtrl+3', click: () => mainWindow?.webContents.send('go-orders') },
+        { label: 'Kitchen Display', accelerator: 'CmdOrCtrl+4', click: () => mainWindow?.webContents.send('go-kds') },
+        { label: 'Tables', accelerator: 'CmdOrCtrl+5', click: () => mainWindow?.webContents.send('go-tables') },
+        { label: 'Catalog', accelerator: 'CmdOrCtrl+6', click: () => mainWindow?.webContents.send('go-products') },
+        { label: 'Inventory', accelerator: 'CmdOrCtrl+7', click: () => mainWindow?.webContents.send('go-inventory') },
+        { label: 'Customers', accelerator: 'CmdOrCtrl+8', click: () => mainWindow?.webContents.send('go-customers') },
+        { label: 'Staff', accelerator: 'CmdOrCtrl+9', click: () => mainWindow?.webContents.send('go-staff') },
+      ],
+    },
+    {
       label: 'Orders',
       submenu: [
         { label: 'View All Orders', accelerator: 'CmdOrCtrl+O', click: () => mainWindow?.webContents.send('view-orders') },

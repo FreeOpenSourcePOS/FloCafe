@@ -303,6 +303,9 @@
     "closureNotes": "Note",
     "countedCash": "Cassa contata",
     "variance": "Differenza",
+    "varianceExact": "Esatto",
+    "varianceShort": "Ammanco",
+    "varianceOver": "Eccedenza",
     "printZReport": "Stampa Z",
     "reprintZ": "Ristampa Z",
     "reprintAddsMarker": "La ristampa aggiunge una riga RISTAMPA",
@@ -337,7 +340,15 @@
     "xReportSales": "Vendite di oggi",
     "refundsCount": "{count} rimborsi",
     "ticketNoPayments": "Nessun pagamento per questa giornata",
-    "shiftLoadFailed": "Impossibile caricare lo stato del turno."
+    "shiftLoadFailed": "Impossibile caricare lo stato del turno.",
+    "sendViaWhatsApp": "Invia su WhatsApp",
+    "sendWhatsAppTitle": "Invia il report su WhatsApp",
+    "recipientPhone": "Numero di telefono del destinatario",
+    "reportSentSuccess": "Report inviato correttamente su WhatsApp",
+    "reportOpeningWhatsAppWeb": "Apertura di WhatsApp con il report...",
+    "salesSummary": "RIEPILOGO VENDITE",
+    "paymentBreakdown": "PAGAMENTI",
+    "drawerReconciliation": "RICONCILIAZIONE CASSA"
   },
   "inventory": {
     "tabSupplies": "Scorte",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Esci dal POS a schermo intero",
     "fullscreenUnavailable": "La modalità a schermo intero non è disponibile",
     "backspaceAmount": "Cancella importo",
-    "numericKeypad": "Tastierino numerico"
+    "numericKeypad": "Tastierino numerico",
+    "kitchenItemsPendingWarning": "{count, plural, one {Ci sono ancora # articoli in preparazione in cucina} other {Ci sono ancora # articoli in preparazione in cucina}}",
+    "kitchenDeliveryOverridePrompt": "Gli articoli della cucina non sono ancora stati consegnati. Inserisci il PIN del responsabile per autorizzare il pagamento.",
+    "kitchenDeliveryOverrideSuccess": "Autorizzazione del responsabile accettata per gli articoli non consegnati.",
+    "kitchenDeliveryOverrideInvalid": "PIN del responsabile non valido. Riprova."
   },
   "printTest": {
     "amt": "Importo",
@@ -2045,7 +2060,9 @@
     "diagnosticsTicketUnaffected": "Una richiesta di assistenza che invii tu funziona sempre, che questa opzione sia attiva o no.",
     "diagnosticsLocalOnlyHintTransmitting": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo. La trasmissione automatica è attiva, quindi i problemi registrati possono essere inviati al tuo account FloCafe cloud.",
     "diagnosticsLocalOnlyHintPending": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo.",
-    "printing": "Stampa"
+    "printing": "Stampa",
+    "requireKitchenDeliveredToggle": "Richiedi la consegna dalla cucina prima della fatturazione",
+    "requireKitchenDeliveredHint": "Impedisce il saldo dei conti postpagati finché tutti gli articoli non risultano serviti dalla cucina. Il controllo viene ignorato automaticamente se il KDS è disattivato."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "Follow-up automatico",
       "bill_receipt": "Ricevuta conto",
-      "manual_reply": "Risposta manuale"
+      "manual_reply": "Risposta manuale",
+      "z_report": "Report Z"
     },
     "lastError": {
       "cooldown": "L'invio è temporaneamente in pausa.",

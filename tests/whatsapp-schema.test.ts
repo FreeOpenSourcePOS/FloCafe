@@ -71,6 +71,12 @@ async function main() {
 
     threw = false;
     try {
+      db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`).run('+15555550112', 'outbound', 'z_report', 'Daily close');
+    } catch { threw = true; }
+    assert(!threw, 'whatsapp_messages accepts kind=z_report');
+
+    threw = false;
+    try {
       db.prepare(`INSERT INTO whatsapp_messages (phone_e164, direction, kind, body) VALUES (?, ?, ?, ?)`).run('+15555550111', 'outbound', 'marketing', 'x');
     } catch { threw = true; }
     assert(threw, 'whatsapp_messages kind CHECK rejects bad values');

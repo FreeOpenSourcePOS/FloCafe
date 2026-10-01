@@ -303,6 +303,9 @@
     "closureNotes": "Примечания",
     "countedCash": "Фактические наличные",
     "variance": "Расхождение",
+    "varianceExact": "Без расхождений",
+    "varianceShort": "Недостача",
+    "varianceOver": "Излишек",
     "printZReport": "Печать Z-отчёта",
     "reprintZ": "Печать Z-отчёта повторно",
     "reprintAddsMarker": "Повторная печать добавляет строку REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Продажи сегодня",
     "refundsCount": "Возвратов: {count}",
     "ticketNoPayments": "За этот день платежей нет",
-    "shiftLoadFailed": "Не удалось загрузить статус смены."
+    "shiftLoadFailed": "Не удалось загрузить статус смены.",
+    "sendViaWhatsApp": "Отправить в WhatsApp",
+    "sendWhatsAppTitle": "Отправить отчёт в WhatsApp",
+    "recipientPhone": "Номер телефона получателя",
+    "reportSentSuccess": "Отчёт успешно отправлен в WhatsApp",
+    "reportOpeningWhatsAppWeb": "Открываем WhatsApp с отчётом...",
+    "salesSummary": "СВОДКА ПРОДАЖ",
+    "paymentBreakdown": "ПЛАТЕЖИ",
+    "drawerReconciliation": "СВЕРКА ДЕНЕЖНОГО ЯЩИКА"
   },
   "inventory": {
     "tabSupplies": "Расходные материалы",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Выйти из полноэкранного POS-терминала",
     "fullscreenUnavailable": "Полноэкранный режим недоступен",
     "backspaceAmount": "Удалить последний символ суммы",
-    "numericKeypad": "Цифровая клавиатура"
+    "numericKeypad": "Цифровая клавиатура",
+    "kitchenItemsPendingWarning": "{count, plural, one {На кухне ещё готовятся блюда: #} other {На кухне ещё готовятся блюда: #}}",
+    "kitchenDeliveryOverridePrompt": "Блюда с кухни ещё не поданы. Введите PIN-код менеджера, чтобы разрешить оплату.",
+    "kitchenDeliveryOverrideSuccess": "Разрешение менеджера на оплату неподанных блюд принято.",
+    "kitchenDeliveryOverrideInvalid": "Неверный PIN-код менеджера. Попробуйте ещё раз."
   },
   "printTest": {
     "amt": "Сумма",
@@ -2045,7 +2060,9 @@
     "diagnosticsTicketUnaffected": "Обращение в поддержку, которое вы отправляете сами, работает всегда, независимо от этой настройки.",
     "diagnosticsLocalOnlyHintTransmitting": "Этот экран показывает недавние проблемы на этом устройстве простым языком. Автоматическая отправка включена, поэтому записанные проблемы могут отправляться в ваш облачный аккаунт FloCafe.",
     "diagnosticsLocalOnlyHintPending": "Этот экран показывает недавние проблемы на этом устройстве простым языком.",
-    "printing": "Печать"
+    "printing": "Печать",
+    "requireKitchenDeliveredToggle": "Требовать выдачу блюд с кухни до оплаты",
+    "requireKitchenDeliveredHint": "Запрещает оплату постоплатных счетов, пока все блюда не отмечены как поданные. Если KDS отключена, проверка пропускается автоматически."
   },
   "setup": {
     "alreadyCompleted": "Настройка этой установки уже завершена. Перенаправление на вход…",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "Автоматическое отслеживание",
       "bill_receipt": "Чек",
-      "manual_reply": "Ответ вручную"
+      "manual_reply": "Ответ вручную",
+      "z_report": "Z-отчёт"
     },
     "lastError": {
       "cooldown": "Отправка временно приостановлена.",

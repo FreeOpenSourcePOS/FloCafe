@@ -294,6 +294,9 @@
     "closureNotes": "备注",
     "countedCash": "清点现金",
     "variance": "差额",
+    "varianceExact": "相符",
+    "varianceShort": "短缺",
+    "varianceOver": "溢收",
     "printZReport": "打印 Z 报表",
     "reprintZ": "重打 Z 报表",
     "reprintAddsMarker": "重打会添加 REIMPRESION 行",
@@ -337,7 +340,15 @@
     "kpiChangeVsSameDayLastWeek": "较上周同日 {percent}%",
     "kpiNewVsSameDayLastWeek": "较上周同日新增",
     "kpiNoChangeVsSameDayLastWeek": "较上周同日无变化",
-    "shiftLoadFailed": "无法加载班次状态。"
+    "shiftLoadFailed": "无法加载班次状态。",
+    "sendViaWhatsApp": "发送到 WhatsApp",
+    "sendWhatsAppTitle": "通过 WhatsApp 发送报表",
+    "recipientPhone": "收件人电话号码",
+    "reportSentSuccess": "报表已成功发送到 WhatsApp",
+    "reportOpeningWhatsAppWeb": "正在打开附带报表的 WhatsApp...",
+    "salesSummary": "销售摘要",
+    "paymentBreakdown": "付款",
+    "drawerReconciliation": "钱箱对账"
   },
   "inventory": {
     "tabSupplies": "库存",
@@ -841,7 +852,11 @@
     "exitFullscreen": "退出全屏 POS",
     "fullscreenUnavailable": "全屏模式不可用",
     "backspaceAmount": "退格金额",
-    "numericKeypad": "数字键盘"
+    "numericKeypad": "数字键盘",
+    "kitchenItemsPendingWarning": "{count, plural, one {厨房仍有 # 道菜正在准备} other {厨房仍有 # 道菜正在准备}}",
+    "kitchenDeliveryOverridePrompt": "厨房菜品尚未送达。请输入经理 PIN 以授权结账。",
+    "kitchenDeliveryOverrideSuccess": "已接受经理对未送达菜品的授权。",
+    "kitchenDeliveryOverrideInvalid": "经理 PIN 无效，请重试。"
   },
   "printTest": {
     "amt": "金额",
@@ -2045,7 +2060,9 @@
     "diagnosticsTicketUnaffected": "您自己发送的支持请求始终有效，无论此设置是否开启。",
     "diagnosticsLocalOnlyHintTransmitting": "此界面以通俗语言显示本设备最近的问题。已开启自动发送，因此记录的问题可能会发送到您的 FloCafe 云端账户。",
     "diagnosticsLocalOnlyHintPending": "此界面以通俗语言显示本设备最近的问题。",
-    "printing": "打印"
+    "printing": "打印",
+    "requireKitchenDeliveredToggle": "结账前要求厨房出餐",
+    "requireKitchenDeliveredHint": "所有菜品在厨房标记为已上菜前，禁止结清后付账单。关闭 KDS 时会自动跳过此检查。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "自动跟进",
       "bill_receipt": "账单收据",
-      "manual_reply": "手动回复"
+      "manual_reply": "手动回复",
+      "z_report": "Z 报表"
     },
     "lastError": {
       "cooldown": "发送已暂停。",

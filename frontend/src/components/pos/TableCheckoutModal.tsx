@@ -17,7 +17,7 @@ interface Props {
   cartItemCount: number;
   onClose: () => void;
   onAddItems: (table: Table, order: Order) => void;
-  onPayment: (bill: Bill) => void;
+  onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
 }
 
@@ -71,16 +71,18 @@ export default function TableCheckoutModal({
     api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
   }, []);
 
+  const handlePayment = (bill: Bill) => onPayment(bill);
+
   const handleCheckout = async () => {
     if (!order) return;
     setGenerating(true);
     try {
       if (order.bill) {
-        onPayment({ ...order.bill, order });
+        handlePayment({ ...order.bill, order });
         return;
       }
       const { data } = await api.post('/bills/generate', { order_id: order.id });
-      onPayment(data.bill);
+      handlePayment(data.bill);
     } catch {
       toast.error(t('generateBillFailed'));
     } finally {
@@ -205,7 +207,7 @@ export default function TableCheckoutModal({
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
+          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => handlePayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
 
           {/* Show different buttons based on cart state */}
           {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}

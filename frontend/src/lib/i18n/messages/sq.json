@@ -303,6 +303,9 @@
     "closureNotes": "Shënime",
     "countedCash": "Paratë e numëruara",
     "variance": "Ndryshimi",
+    "varianceExact": "Saktë",
+    "varianceShort": "Mungesë",
+    "varianceOver": "Tepricë",
     "printZReport": "Printo Z",
     "reprintZ": "Printo Z përsëri",
     "reprintAddsMarker": "Rishtypja shton një rresht RISHTYPJE",
@@ -337,7 +340,15 @@
     "xReportSales": "Shitjet e sotme",
     "refundsCount": "{count} rimbursimet",
     "ticketNoPayments": "Nuk ka pagesa për këtë ditë",
-    "shiftLoadFailed": "Statusi i ndërrimit nuk mund të ngarkohej."
+    "shiftLoadFailed": "Statusi i ndërrimit nuk mund të ngarkohej.",
+    "sendViaWhatsApp": "Dërgo në WhatsApp",
+    "sendWhatsAppTitle": "Dërgo raportin në WhatsApp",
+    "recipientPhone": "Numri i telefonit të marrësit",
+    "reportSentSuccess": "Raporti u dërgua me sukses në WhatsApp",
+    "reportOpeningWhatsAppWeb": "Po hapet WhatsApp me raportin...",
+    "salesSummary": "PËRMBLEDHJE E SHITJEVE",
+    "paymentBreakdown": "PAGESAT",
+    "drawerReconciliation": "RAKORDIMI I ARKËS"
   },
   "inventory": {
     "tabSupplies": "Materialet",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Dilni nga POS me ekran të plotë",
     "fullscreenUnavailable": "Modaliteti i ekranit të plotë nuk ofrohet",
     "backspaceAmount": "Shuma e hapësirës së pasme",
-    "numericKeypad": "Tastiera numerike"
+    "numericKeypad": "Tastiera numerike",
+    "kitchenItemsPendingWarning": "{count, plural, one {# artikuj po përgatiten ende në kuzhinë} other {# artikuj po përgatiten ende në kuzhinë}}",
+    "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-in e menaxherit për të autorizuar faturimin.",
+    "kitchenDeliveryOverrideSuccess": "U pranua miratimi i menaxherit për artikujt e padërguar.",
+    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish."
   },
   "printTest": {
     "amt": "Shuma",
@@ -2045,7 +2060,9 @@
     "diagnosticsSendAutomaticallyHint": "Fikur që në fillim. Kur është i fikur, problemet e regjistruara mbeten në këtë pajisje dhe nuk dërgohen kurrë. Kërkesat që i dërgoni vetë nuk preken.",
     "diagnosticsTicketUnaffected": "Një kërkesë mbështetëse që e dërgoni ju vetë funksionon gjithmonë, pavarësisht nëse kjo cilësim është i ndezur apo jo.",
     "diagnosticsLocalOnlyHintTransmitting": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë. Dërgimi automatik është i ndezur, prandaj problemet e regjistruara mund të dërgohen në llogarinë tuaj FloCafe cloud.",
-    "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë."
+    "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë.",
+    "requireKitchenDeliveredToggle": "Kërko dorëzimin nga kuzhina para faturimit",
+    "requireKitchenDeliveredHint": "Pengon shlyerjen e faturave me pagesë të mëvonshme derisa të gjitha artikujt të shënohen si të servirur nga kuzhina. Kontrolli anashkalohet automatikisht kur KDS është çaktivizuar."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "Ndjekja automatike",
       "bill_receipt": "Dëftesë",
-      "manual_reply": "Përgjigje manuale"
+      "manual_reply": "Përgjigje manuale",
+      "z_report": "Raporti Z"
     },
     "lastError": {
       "cooldown": "Dërgimi është ndërprerë përkohësisht.",

@@ -303,6 +303,9 @@
     "closureNotes": "Notizen",
     "countedCash": "Gezähltes Bargeld",
     "variance": "Differenz",
+    "varianceExact": "Ausgeglichen",
+    "varianceShort": "Fehlbetrag",
+    "varianceOver": "Überschuss",
     "printZReport": "Z drucken",
     "reprintZ": "Z erneut drucken",
     "reprintAddsMarker": "Wiederholter Druck fügt eine REIMPRESION-Zeile hinzu",
@@ -337,7 +340,15 @@
     "xReportSales": "Heutiger Umsatz",
     "refundsCount": "{count} Erstattungen",
     "ticketNoPayments": "Keine Zahlungen an diesem Tag",
-    "shiftLoadFailed": "Schichtstatus konnte nicht geladen werden."
+    "shiftLoadFailed": "Schichtstatus konnte nicht geladen werden.",
+    "sendViaWhatsApp": "An WhatsApp senden",
+    "sendWhatsAppTitle": "Bericht an WhatsApp senden",
+    "recipientPhone": "Telefonnummer des Empfängers",
+    "reportSentSuccess": "Bericht erfolgreich an WhatsApp gesendet",
+    "reportOpeningWhatsAppWeb": "WhatsApp mit Bericht wird geöffnet...",
+    "salesSummary": "UMSATZÜBERSICHT",
+    "paymentBreakdown": "ZAHLUNGEN",
+    "drawerReconciliation": "KASSENABSTIMMUNG"
   },
   "inventory": {
     "tabSupplies": "Vorräte",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Vollbildmodus beenden",
     "fullscreenUnavailable": "Vollbildmodus nicht verfügbar",
     "backspaceAmount": "Ziffer löschen",
-    "numericKeypad": "Ziffernblock"
+    "numericKeypad": "Ziffernblock",
+    "kitchenItemsPendingWarning": "{count, plural, one {# Artikel werden noch in der Küche zubereitet} other {# Artikel werden noch in der Küche zubereitet}}",
+    "kitchenDeliveryOverridePrompt": "Küchenartikel wurden noch nicht serviert. PIN der Leitung eingeben, um die Abrechnung freizugeben.",
+    "kitchenDeliveryOverrideSuccess": "Freigabe durch die Leitung für noch nicht servierte Artikel akzeptiert.",
+    "kitchenDeliveryOverrideInvalid": "Ungültige Manager-PIN. Bitte erneut versuchen."
   },
   "printTest": {
     "amt": "Betrag",
@@ -2045,7 +2060,9 @@
     "diagnosticsSendAutomaticallyHint": "Standardmäßig aus. Ist die Einstellung aus, bleiben aufgezeichnete Probleme auf diesem Gerät und werden nie gesendet. Von dir selbst gesendete Support-Anfragen sind nicht betroffen.",
     "diagnosticsTicketUnaffected": "Eine selbst gesendete Support-Anfrage funktioniert immer, unabhängig davon, ob diese Einstellung aktiv ist.",
     "diagnosticsLocalOnlyHintTransmitting": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an. Die automatische Übertragung ist aktiv, daher können aufgezeichnete Probleme an dein FloCafe-Cloudkonto gesendet werden.",
-    "diagnosticsLocalOnlyHintPending": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an."
+    "diagnosticsLocalOnlyHintPending": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an.",
+    "requireKitchenDeliveredToggle": "Küchenlieferung vor der Abrechnung verlangen",
+    "requireKitchenDeliveredHint": "Verhindert die Abrechnung von Postpaid-Rechnungen, bis alle Artikel in der Küche als serviert markiert sind. Bei deaktiviertem KDS wird die Prüfung automatisch umgangen."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "Automatische Nachverfolgung",
       "bill_receipt": "Rechnungsbeleg",
-      "manual_reply": "Manuelle Antwort"
+      "manual_reply": "Manuelle Antwort",
+      "z_report": "Z-Bericht"
     },
     "lastError": {
       "cooldown": "Versand vorübergehend pausiert.",

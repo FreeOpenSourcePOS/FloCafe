@@ -303,6 +303,9 @@
     "closureNotes": "नोटहरू",
     "countedCash": "नगद गणना गरियो",
     "variance": "फरक",
+    "varianceExact": "ठीक",
+    "varianceShort": "कमी",
+    "varianceOver": "बढी",
     "printZReport": "Z छाप्नुहोस्",
     "reprintZ": "Z पुनः छाप्नुहोस्",
     "reprintAddsMarker": "पुनः प्रिन्टले REIMPRESION लाइन थप्छ",
@@ -337,7 +340,15 @@
     "xReportSales": "आज बिक्री",
     "refundsCount": "{count} फिर्ता",
     "ticketNoPayments": "यस दिनको लागि कुनै भुक्तानी छैन",
-    "shiftLoadFailed": "शिफ्ट स्थिति लोड गर्न सकिएन।"
+    "shiftLoadFailed": "शिफ्ट स्थिति लोड गर्न सकिएन।",
+    "sendViaWhatsApp": "WhatsApp मा पठाउनुहोस्",
+    "sendWhatsAppTitle": "WhatsApp मा प्रतिवेदन पठाउनुहोस्",
+    "recipientPhone": "प्रापकको फोन नम्बर",
+    "reportSentSuccess": "प्रतिवेदन WhatsApp मा सफलतापूर्वक पठाइयो",
+    "reportOpeningWhatsAppWeb": "प्रतिवेदनसहित WhatsApp खोलिँदैछ...",
+    "salesSummary": "बिक्री सारांश",
+    "paymentBreakdown": "भुक्तानी",
+    "drawerReconciliation": "नगद दराज मिलान"
   },
   "inventory": {
     "tabSupplies": "आपूर्तिहरू",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "पूर्ण-स्क्रिन मोड अनुपलब्ध छ",
     "backspaceAmount": "ब्याकस्पेस रकम",
     "numericKeypad": "संख्यात्मक कीप्याड",
-    "tax": "कर"
+    "tax": "कर",
+    "kitchenItemsPendingWarning": "{count, plural, one {भान्सामा अझै # परिकार तयार हुँदैछन्} other {भान्सामा अझै # परिकार तयार हुँदैछन्}}",
+    "kitchenDeliveryOverridePrompt": "भान्साका परिकार अझै पुगेका छैनन्। बिल स्वीकृत गर्न म्यानेजरको PIN हाल्नुहोस्।",
+    "kitchenDeliveryOverrideSuccess": "नपुगेका परिकारका लागि म्यानेजरको स्वीकृति स्वीकार गरियो।",
+    "kitchenDeliveryOverrideInvalid": "म्यानेजरको PIN मिलेन। फेरि प्रयास गर्नुहोस्।"
   },
   "printTest": {
     "amt": "रकम",
@@ -2045,7 +2060,9 @@
     "diagnosticsSendAutomaticallyHint": "पहिले नै बन्द हुन्छ। बन्द हुँदा दर्ता गरिएका समस्याहरू यसै यन्त्रमा रहन्छन् र कहिल्यै पठाइँदैनन्। आफैँ पठाउने सहायता अनुरोधमा असर पर्दैन।",
     "diagnosticsTicketUnaffected": "आफैँ पठाउने सहायता अनुरोध यो सेटिङ खुला होस् वा बन्द होस्, सधैँ चल्छ।",
     "diagnosticsLocalOnlyHintTransmitting": "यो स्क्रिनले यस यन्त्रमा भएका हालका समस्याहरू सरल भाषामा देखाउँछ। स्वतः पठाउने सक्षम छ, त्यसैले दर्ता गरिएका समस्याहरू तपाईंको FloCafe क्लाउड खातामा पठाउन सकिन्छन्।",
-    "diagnosticsLocalOnlyHintPending": "यो स्क्रिनले यस यन्त्रमा भएका हालका समस्याहरू सरल भाषामा देखाउँछ।"
+    "diagnosticsLocalOnlyHintPending": "यो स्क्रिनले यस यन्त्रमा भएका हालका समस्याहरू सरल भाषामा देखाउँछ।",
+    "requireKitchenDeliveredToggle": "बिल गर्नुअघि भान्साबाट खाना पुगेको हुनुपर्ने",
+    "requireKitchenDeliveredHint": "भान्साका सबै परिकार पस्किएको भनी चिन्हित नभएसम्म उधारो बिलको भुक्तानी रोक्छ। KDS बन्द हुँदा यो जाँच स्वतः छोडिन्छ।"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",
@@ -2756,7 +2773,8 @@
     "kind": {
       "auto_followup": "स्वत: फलो-अप",
       "bill_receipt": "बिल रसिद",
-      "manual_reply": "म्यानुअल जवाफ"
+      "manual_reply": "म्यानुअल जवाफ",
+      "z_report": "Z प्रतिवेदन"
     },
     "lastError": {
       "cooldown": "पठाउने कार्य अस्थायी रूपमा रोकिएको छ।",

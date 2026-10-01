@@ -1356,6 +1356,8 @@ export default function SettingsPage() {
   // Kitchen workflow toggle states (defaults to enabled).
   const [kdsEnabledSetting, setKdsEnabledSetting] = useState(true);
   const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
+  const [requireKitchenDeliveredSetting, setRequireKitchenDeliveredSetting] = useState(false);
+  const [savingRequireKitchenDelivered, setSavingRequireKitchenDelivered] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
   const [savingServerAppEnabled, setSavingServerAppEnabled] = useState(false);
   const [serverAppBillPrintingEnabledSetting, setServerAppBillPrintingEnabledSetting] = useState(false);
@@ -2021,7 +2023,7 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'kds') {
-        const [kdsInfoLoaded, settingLoaded] = await Promise.all([
+        const [kdsInfoLoaded, settingLoaded, deliverySettingLoaded] = await Promise.all([
           fetchKdsInfo(signal),
           get('/settings/kds_enabled').then((res) => {
             if (!active()) return false;
@@ -2034,8 +2036,16 @@ export default function SettingsPage() {
             if (isRequestCancelled(error)) throw error;
             return false;
           }),
+          get('/settings/require_kitchen_delivered_before_settlement').then((res) => {
+            if (!active()) return false;
+            setRequireKitchenDeliveredSetting(res.data.setting?.value === 'true');
+            return true;
+          }).catch((error) => {
+            if (isRequestCancelled(error)) throw error;
+            return false;
+          }),
         ]);
-        if (!kdsInfoLoaded || !settingLoaded) {
+        if (!kdsInfoLoaded || !settingLoaded || !deliverySettingLoaded) {
           throw new Error('KDS hydration failed');
         }
         return;
@@ -2590,6 +2600,20 @@ export default function SettingsPage() {
       toast.error(t('saveFailed'));
     } finally {
       setSavingKdsEnabled(false);
+    }
+  };
+
+  const saveRequireKitchenDelivered = async (enabled: boolean) => {
+    const previous = requireKitchenDeliveredSetting;
+    setRequireKitchenDeliveredSetting(enabled);
+    setSavingRequireKitchenDelivered(true);
+    try {
+      await api.put('/settings/require_kitchen_delivered_before_settlement', { value: enabled ? 'true' : 'false' });
+    } catch {
+      setRequireKitchenDeliveredSetting(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingRequireKitchenDelivered(false);
     }
   };
 
@@ -3477,6 +3501,20 @@ export default function SettingsPage() {
                   </p>
                 </div>
               )}
+            </div>
+
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground">{t('requireKitchenDeliveredToggle')}</p>
+                  <p className="text-sm text-muted-foreground">{t('requireKitchenDeliveredHint')}</p>
+                </div>
+                <Toggle
+                  value={requireKitchenDeliveredSetting}
+                  label={t('requireKitchenDeliveredToggle')}
+                  onChange={(value) => { if (!savingRequireKitchenDelivered) void saveRequireKitchenDelivered(value); }}
+                />
+              </div>
             </div>
 
             {!kdsEnabledSetting && (

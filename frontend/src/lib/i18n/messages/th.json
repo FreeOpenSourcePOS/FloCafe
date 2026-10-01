@@ -303,6 +303,9 @@
     "closureNotes": "หมายเหตุ",
     "countedCash": "เงินสดที่นับได้",
     "variance": "ผลต่าง",
+    "varianceExact": "ตรง",
+    "varianceShort": "ขาด",
+    "varianceOver": "เกิน",
     "printZReport": "พิมพ์รายงาน Z",
     "reprintZ": "พิมพ์รายงาน Z ซ้ำ",
     "reprintAddsMarker": "การพิมพ์ซ้ำจะเพิ่มบรรทัด REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "ยอดขายวันนี้",
     "refundsCount": "คืนเงิน {count} รายการ",
     "ticketNoPayments": "ไม่มีการชำระเงินในวันนี้",
-    "shiftLoadFailed": "ไม่สามารถโหลดสถานะกะได้"
+    "shiftLoadFailed": "ไม่สามารถโหลดสถานะกะได้",
+    "sendViaWhatsApp": "ส่งไปยัง WhatsApp",
+    "sendWhatsAppTitle": "ส่งรายงานไปยัง WhatsApp",
+    "recipientPhone": "หมายเลขโทรศัพท์ผู้รับ",
+    "reportSentSuccess": "ส่งรายงานไปยัง WhatsApp สำเร็จแล้ว",
+    "reportOpeningWhatsAppWeb": "กำลังเปิด WhatsApp พร้อมรายงาน...",
+    "salesSummary": "สรุปยอดขาย",
+    "paymentBreakdown": "การชำระเงิน",
+    "drawerReconciliation": "การกระทบยอดลิ้นชักเงินสด"
   },
   "inventory": {
     "tabSupplies": "วัสดุ",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "ไม่สามารถใช้โหมดเต็มหน้าจอได้",
     "backspaceAmount": "ลบตัวเลขจำนวนเงิน",
     "numericKeypad": "แป้นตัวเลข",
-    "tax": "ภาษี"
+    "tax": "ภาษี",
+    "kitchenItemsPendingWarning": "{count, plural, one {ยังมี # รายการที่กำลังเตรียมอยู่ในครัว} other {ยังมี # รายการที่กำลังเตรียมอยู่ในครัว}}",
+    "kitchenDeliveryOverridePrompt": "รายการจากครัวยังไม่ได้ส่งมอบ โปรดใส่ PIN ผู้จัดการเพื่ออนุมัติการชำระเงิน",
+    "kitchenDeliveryOverrideSuccess": "ยอมรับการอนุมัติจากผู้จัดการสำหรับรายการที่ยังไม่ส่งมอบแล้ว",
+    "kitchenDeliveryOverrideInvalid": "PIN ผู้จัดการไม่ถูกต้อง โปรดลองอีกครั้ง"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -2045,7 +2060,9 @@
     "diagnosticsTicketUnaffected": "คำขอช่วยเหลือที่คุณส่งเองจะใช้งานได้เสมอ ไม่ว่าการตั้งค่านี้จะเปิดหรือปิด",
     "diagnosticsLocalOnlyHintTransmitting": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย เปิดการส่งอัตโนมัติไว้ ปัญหาที่บันทึกไว้จึงอาจถูกส่งไปยังบัญชี FloCafe Cloud ของคุณ",
     "diagnosticsLocalOnlyHintPending": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย",
-    "printing": "การพิมพ์"
+    "printing": "การพิมพ์",
+    "requireKitchenDeliveredToggle": "กำหนดให้ครัวส่งอาหารก่อนชำระเงิน",
+    "requireKitchenDeliveredHint": "ป้องกันการชำระบิลแบบจ่ายภายหลังจนกว่ารายการทั้งหมดจะถูกทำเครื่องหมายว่าเสิร์ฟแล้ว หากปิด KDS ระบบจะข้ามการตรวจสอบนี้โดยอัตโนมัติ"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",
@@ -2769,7 +2786,8 @@
     "kind": {
       "auto_followup": "ติดตามอัตโนมัติ",
       "bill_receipt": "ใบเสร็จบิล",
-      "manual_reply": "ตอบกลับด้วยตนเอง"
+      "manual_reply": "ตอบกลับด้วยตนเอง",
+      "z_report": "รายงาน Z"
     },
     "lastError": {
       "cooldown": "การส่งถูกหยุดชั่วคราว",

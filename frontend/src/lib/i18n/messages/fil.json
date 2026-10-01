@@ -303,6 +303,9 @@
     "closureNotes": "Mga Tala",
     "countedCash": "Bilang na cash",
     "variance": "Pagkakaiba",
+    "varianceExact": "Tama",
+    "varianceShort": "Kulang",
+    "varianceOver": "Sobra",
     "printZReport": "I-print ang Z",
     "reprintZ": "I-print muli ang Z",
     "reprintAddsMarker": "Ang I-print muli ay nagdadagdag ng linyang REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Mga benta ngayong araw",
     "refundsCount": "{count} refundo",
     "ticketNoPayments": "Walang bayad sa araw na ito",
-    "shiftLoadFailed": "Hindi ma-load ang status ng shift."
+    "shiftLoadFailed": "Hindi ma-load ang status ng shift.",
+    "sendViaWhatsApp": "Ipadala sa WhatsApp",
+    "sendWhatsAppTitle": "Ipadala ang ulat sa WhatsApp",
+    "recipientPhone": "Numero ng telepono ng tatanggap",
+    "reportSentSuccess": "Matagumpay na naipadala ang ulat sa WhatsApp",
+    "reportOpeningWhatsAppWeb": "Binubuksan ang WhatsApp kasama ang ulat...",
+    "salesSummary": "BUOD NG BENTA",
+    "paymentBreakdown": "MGA BAYAD",
+    "drawerReconciliation": "PAGTUTUGMA NG CASH DRAWER"
   },
   "inventory": {
     "tabSupplies": "Mga Supply",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "Hindi available ang full-screen mode",
     "backspaceAmount": "I-backspace ang halaga",
     "numericKeypad": "Numeric keypad",
-    "tax": "Buwis"
+    "tax": "Buwis",
+    "kitchenItemsPendingWarning": "{count, plural, one {# item pa ang inihahanda sa kusina} other {# item pa ang inihahanda sa kusina}}",
+    "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng manager para pahintulutan ang paniningil.",
+    "kitchenDeliveryOverrideSuccess": "Tinanggap ang pahintulot ng manager para sa mga hindi pa naihahatid na item.",
+    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli."
   },
   "printTest": {
     "amt": "Halaga",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "I-load ang Impormasyon ng Server App",
     "loading": "Naglo-load...",
     "localNetwork": "Lokal na Network",
+    "localNetworkHint": "Gamitin kapag naaabot ng lahat ng device ang address na ito sa pamamagitan ng Wi-Fi, Ethernet, o VPN/mesh network",
     "loyalty": "Loyalty",
     "loyaltyHint": "Mga Customer earn points based on the loyalty earning rate of each item in the cart",
     "loyaltyProgram": "Loyalty Program",
@@ -2010,6 +2026,7 @@
     "version": "Bersyon",
     "viewTableInfo": "View Lamesa Info",
     "vpnMeshNetwork": "VPN / Mesh Network",
+    "vpnMeshNetworkHint": "Gamitin kapag nagkokonekta ang mga device sa pamamagitan ng VPN o mesh network sa magkakaibang subnet o lokasyon",
     "waitingForApproval": "Naghihintay ng pag-apruba",
     "webusbHint": "WebUSB printers are connected directly from the browser via the toolbar Kumonekta button. I-save this entry to remember the paper width preference.",
     "webusbTestHint": "WebUSB: use the Kumonekta button in the POS toolbar to test.",
@@ -2051,7 +2068,9 @@
     "diagnosticsSendAutomaticallyHint": "Naka-off sa pagiging default. Kapag naka-off, nananatili sa device na ito ang mga naitalang problema at hindi kailanman ipinapadala. Hindi apektado ang mga kahilingan ng suporta na ipinapadala mo mismo.",
     "diagnosticsTicketUnaffected": "Laging gumagana ang kahilingan ng suporta na ipinapadala mo mismo, may pagkaka-on o wala man ito.",
     "diagnosticsLocalOnlyHintTransmitting": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika. Naka-on ang awtomatikong pagpapadala, kaya ang mga naitalang problema ay maaaring ipadala sa iyong FloCafe cloud account.",
-    "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika."
+    "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika.",
+    "requireKitchenDeliveredToggle": "Kailangang maihatid muna ang mga pagkain bago maningil",
+    "requireKitchenDeliveredHint": "Pigilan ang pagbabayad ng postpaid na bill hangga’t hindi minamarkahang naihain sa kusina ang lahat ng item. Awtomatikong lalaktawan kapag naka-off ang KDS."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Awtomatikong follow-up",
       "bill_receipt": "Resibo ng bill",
-      "manual_reply": "Manual na tugon"
+      "manual_reply": "Manual na tugon",
+      "z_report": "Ulat Z"
     },
     "lastError": {
       "cooldown": "Pansamantalang naka-pause ang pagpapadala.",

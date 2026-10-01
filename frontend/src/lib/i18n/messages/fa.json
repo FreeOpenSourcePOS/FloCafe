@@ -303,6 +303,9 @@
     "closureNotes": "یادداشت‌ها",
     "countedCash": "وجه نقد شمارش‌شده",
     "variance": "اختلاف",
+    "varianceExact": "مطابق",
+    "varianceShort": "کسری",
+    "varianceOver": "مازاد",
     "printZReport": "چاپ Z",
     "reprintZ": "چاپ مجدد Z",
     "reprintAddsMarker": "چاپ مجدد یک خط REIMPRESION اضافه می‌کند",
@@ -337,7 +340,15 @@
     "xReportSales": "فروش امروز",
     "refundsCount": "{count} بازپرداخت",
     "ticketNoPayments": "در این روز پرداختی نشده",
-    "shiftLoadFailed": "بارگیری وضعیت شیفت ممکن نبود."
+    "shiftLoadFailed": "بارگیری وضعیت شیفت ممکن نبود.",
+    "sendViaWhatsApp": "ارسال به واتساپ",
+    "sendWhatsAppTitle": "ارسال گزارش به واتساپ",
+    "recipientPhone": "شماره تلفن گیرنده",
+    "reportSentSuccess": "گزارش با موفقیت به واتساپ ارسال شد",
+    "reportOpeningWhatsAppWeb": "در حال باز کردن واتساپ همراه گزارش...",
+    "salesSummary": "خلاصه فروش",
+    "paymentBreakdown": "پرداخت‌ها",
+    "drawerReconciliation": "تطبیق صندوق"
   },
   "inventory": {
     "tabSupplies": "مواد اولیه",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "حالت تمام‌صفحه در دسترس نیست",
     "backspaceAmount": "حذف رقم آخر",
     "numericKeypad": "صفحه‌کلید عددی",
-    "tax": "مالیات"
+    "tax": "مالیات",
+    "kitchenItemsPendingWarning": "{count, plural, one {# مورد هنوز در آشپزخانه در حال آماده‌سازی است} other {# مورد هنوز در آشپزخانه در حال آماده‌سازی است}}",
+    "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، رمز مدیر را وارد کنید.",
+    "kitchenDeliveryOverrideSuccess": "تأیید مدیر برای اقلام تحویل‌نشده پذیرفته شد.",
+    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید."
   },
   "printTest": {
     "amt": "مبلغ",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "بارگذاری اطلاعات برنامه سرور",
     "loading": "در حال بارگذاری…",
     "localNetwork": "شبکه محلی",
+    "localNetworkHint": "وقتی همه دستگاه‌ها بتوانند از طریق Wi-Fi، Ethernet یا شبکه VPN/mesh به این نشانی دسترسی داشته باشند، از این گزینه استفاده کنید",
     "loyalty": "وفاداری",
     "loyaltyHint": "مشتریان بر پایه نرخ امتیاز وفاداری هر کالا در سبد، امتیاز می‌گیرند",
     "loyaltyProgram": "برنامه وفاداری",
@@ -2009,6 +2025,7 @@
     "version": "نسخه",
     "viewTableInfo": "مشاهده اطلاعات میز",
     "vpnMeshNetwork": "VPN / شبکه مش",
+    "vpnMeshNetworkHint": "وقتی دستگاه‌ها از طریق VPN یا شبکه مش بین زیرشبکه‌ها یا مکان‌های مختلف متصل می‌شوند، از این گزینه استفاده کنید",
     "waitingForApproval": "در انتظار تأیید",
     "webusbHint": "چاپگرهای WebUSB مستقیماً از مرورگر از طریق دکمه اتصال در نوار ابزار متصل می‌شوند. برای به خاطر سپردن ترجیح عرض کاغذ، این ورودی را ذخیره کنید.",
     "webusbTestHint": "WebUSB: برای آزمون از دکمه اتصال در نوار ابزار POS استفاده کنید.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "درخواست پشتیبانی که خودتان می‌فرستید همیشه کار می‌کند، فارغ از اینکه این گزینه روشن باشد یا خاموش.",
     "diagnosticsLocalOnlyHintTransmitting": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد. ارسال خودکار روشن است، بنابراین ممکن است مشکلات ثبت‌شده به حساب ابری FloCafe شما ارسال شوند.",
     "diagnosticsLocalOnlyHintPending": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد.",
-    "printing": "چاپ"
+    "printing": "چاپ",
+    "requireKitchenDeliveredToggle": "تحویل آشپزخانه را پیش از تسویه الزامی کن",
+    "requireKitchenDeliveredHint": "تا زمانی که همه اقلام در آشپزخانه به‌عنوان تحویل‌شده علامت نخورده‌اند، تسویه پس‌پرداخت را متوقف می‌کند. با غیرفعال بودن KDS این بررسی خودکار نادیده گرفته می‌شود."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "پیگیری خودکار",
       "bill_receipt": "رسید صورت‌حساب",
-      "manual_reply": "پاسخ دستی"
+      "manual_reply": "پاسخ دستی",
+      "z_report": "گزارش Z"
     },
     "lastError": {
       "cooldown": "ارسال به‌طور موقت متوقف است.",

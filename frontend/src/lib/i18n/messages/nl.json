@@ -303,6 +303,9 @@
     "closureNotes": "Opmerkingen",
     "countedCash": "Geteld contant geld",
     "variance": "Verschil",
+    "varianceExact": "In balans",
+    "varianceShort": "Tekort",
+    "varianceOver": "Overschot",
     "printZReport": "Z-rapport afdrukken",
     "reprintZ": "Z-rapport herdrukken",
     "reprintAddsMarker": "Een herdruk voegt de regel HERDRUK toe",
@@ -337,7 +340,15 @@
     "xReportSales": "Verkoop van vandaag",
     "refundsCount": "{count} terugbetalingen",
     "ticketNoPayments": "Geen betalingen voor deze dag",
-    "shiftLoadFailed": "Kan de dienststatus niet laden."
+    "shiftLoadFailed": "Kan de dienststatus niet laden.",
+    "sendViaWhatsApp": "Verstuur via WhatsApp",
+    "sendWhatsAppTitle": "Rapport via WhatsApp versturen",
+    "recipientPhone": "Telefoonnummer van ontvanger",
+    "reportSentSuccess": "Rapport succesvol via WhatsApp verstuurd",
+    "reportOpeningWhatsAppWeb": "WhatsApp wordt geopend met het rapport...",
+    "salesSummary": "VERKOOPOVERZICHT",
+    "paymentBreakdown": "BETALINGEN",
+    "drawerReconciliation": "KASLA-RECONCILIATIE"
   },
   "inventory": {
     "tabSupplies": "Voorraadartikelen",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Volledig scherm POS verlaten",
     "fullscreenUnavailable": "De modus Volledig scherm is niet beschikbaar",
     "backspaceAmount": "Laatste cijfer wissen",
-    "numericKeypad": "Numeriek toetsenbord"
+    "numericKeypad": "Numeriek toetsenbord",
+    "kitchenItemsPendingWarning": "{count, plural, one {Er worden nog # items in de keuken bereid} other {Er worden nog # items in de keuken bereid}}",
+    "kitchenDeliveryOverridePrompt": "Keukenitems zijn nog niet bezorgd. Voer de manager-pincode in om afrekenen toe te staan.",
+    "kitchenDeliveryOverrideSuccess": "Managergoedkeuring voor niet-bezorgde items is geaccepteerd.",
+    "kitchenDeliveryOverrideInvalid": "Ongeldige manager-pincode. Probeer het opnieuw."
   },
   "printTest": {
     "amt": "Bedrag",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Laad server-app-info",
     "loading": "Laden…",
     "localNetwork": "Lokaal netwerk",
+    "localNetworkHint": "Gebruik dit wanneer alle apparaten dit adres kunnen bereiken via wifi, ethernet of een VPN-/meshnetwerk",
     "loyalty": "Loyaliteit",
     "loyaltyHint": "Klanten verdienen punten op basis van het loyaliteitspercentage van elk artikel in de winkelwagen",
     "loyaltyProgram": "Loyaliteitsprogramma",
@@ -2009,6 +2025,7 @@
     "version": "Versie",
     "viewTableInfo": "Tafelgegevens bekijken",
     "vpnMeshNetwork": "VPN/Mesh-netwerk",
+    "vpnMeshNetworkHint": "Gebruik dit wanneer apparaten via een VPN- of meshnetwerk tussen verschillende subnetten of locaties verbinding maken",
     "waitingForApproval": "Wachten op goedkeuring",
     "webusbHint": "WebUSB-printers zijn rechtstreeks vanuit de browser verbonden via de knop Verbinden op de werkbalk. Sla deze configuratie op om de voorkeur voor de papierbreedte te behouden.",
     "webusbTestHint": "WebUSB: gebruik de knop Verbinden in de POS werkbalk om te testen.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "Een supportaanvraag die je zelf stuurt werkt altijd, ongeacht of dit aanstaat.",
     "diagnosticsLocalOnlyHintTransmitting": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal. Automatische verzending staat aan, dus vastgelegde problemen kunnen naar je FloCafe-cloudaccount worden gestuurd.",
     "diagnosticsLocalOnlyHintPending": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal.",
-    "printing": "Afdrukken"
+    "printing": "Afdrukken",
+    "requireKitchenDeliveredToggle": "Keukenbezorging vereisen vóór afrekenen",
+    "requireKitchenDeliveredHint": "Voorkomt het afrekenen van rekeningen op rekening totdat alle items in de keuken als geserveerd zijn gemarkeerd. Wordt automatisch overgeslagen als KDS is uitgeschakeld."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Automatische opvolging",
       "bill_receipt": "Bon",
-      "manual_reply": "Handmatig antwoord"
+      "manual_reply": "Handmatig antwoord",
+      "z_report": "Z-rapport"
     },
     "lastError": {
       "cooldown": "Het verzenden is tijdelijk onderbroken.",

@@ -303,6 +303,9 @@
     "closureNotes": "نوٹس",
     "countedCash": "گنی گئی نقد",
     "variance": "فرق",
+    "varianceExact": "برابر",
+    "varianceShort": "کمی",
+    "varianceOver": "زیادہ",
     "printZReport": "Z پرنٹ کریں",
     "reprintZ": "Z دوبارہ پرنٹ کریں",
     "reprintAddsMarker": "دوبارہ پرنٹ میں «REIMPRESION» سطر شامل ہوتی ہے",
@@ -337,7 +340,15 @@
     "xReportSales": "آج کی فروخت",
     "refundsCount": "{count} رقم کی واپسیاں",
     "ticketNoPayments": "اس دن کوئی ادائیگی نہیں",
-    "shiftLoadFailed": "شفٹ کی حالت لوڈ نہیں ہو سکی۔"
+    "shiftLoadFailed": "شفٹ کی حالت لوڈ نہیں ہو سکی۔",
+    "sendViaWhatsApp": "WhatsApp پر بھیجیں",
+    "sendWhatsAppTitle": "رپورٹ WhatsApp پر بھیجیں",
+    "recipientPhone": "وصول کنندہ کا فون نمبر",
+    "reportSentSuccess": "رپورٹ کامیابی سے WhatsApp پر بھیج دی گئی",
+    "reportOpeningWhatsAppWeb": "رپورٹ کے ساتھ WhatsApp کھولا جا رہا ہے...",
+    "salesSummary": "فروخت کا خلاصہ",
+    "paymentBreakdown": "ادائیگیاں",
+    "drawerReconciliation": "کیش دراز کی مطابقت"
   },
   "inventory": {
     "tabSupplies": "سامان",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "فل اسکرین موڈ دستیاب نہیں",
     "backspaceAmount": "رقم میں بیک اسپیس",
     "numericKeypad": "عددی کی پیڈ",
-    "tax": "ٹیکس"
+    "tax": "ٹیکس",
+    "kitchenItemsPendingWarning": "{count, plural, one {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں} other {باورچی خانے میں ابھی # آئٹمز تیار ہو رہی ہیں}}",
+    "kitchenDeliveryOverridePrompt": "باورچی خانے کے آئٹمز ابھی پیش نہیں کیے گئے۔ بل کی اجازت دینے کے لیے مینیجر کا PIN درج کریں۔",
+    "kitchenDeliveryOverrideSuccess": "نہ پہنچائے گئے آئٹمز کے لیے مینیجر کی اجازت قبول کر لی گئی۔",
+    "kitchenDeliveryOverrideInvalid": "مینیجر کا PIN درست نہیں۔ دوبارہ کوشش کریں۔"
   },
   "printTest": {
     "amt": "رقم",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Server App معلومات لوڈ کریں",
     "loading": "لوڈ ہو رہا ہے…",
     "localNetwork": "مقامی نیٹ ورک",
+    "localNetworkHint": "جب تمام آلات Wi-Fi، Ethernet یا VPN/mesh نیٹ ورک کے ذریعے اس پتے تک رسائی حاصل کر سکیں تو اسے استعمال کریں",
     "loyalty": "وفاداری",
     "loyaltyHint": "گاہک کارٹ میں موجود ہر آئٹم کی وفاداری کمائی کی شرح کے مطابق پوائنٹس کماتے ہیں",
     "loyaltyProgram": "وفاداری پروگرام",
@@ -2009,6 +2025,7 @@
     "version": "ورژن",
     "viewTableInfo": "میز کی معلومات دیکھیں",
     "vpnMeshNetwork": "VPN / میش نیٹ ورک",
+    "vpnMeshNetworkHint": "جب آلات مختلف سب نیٹس یا مقامات کے درمیان VPN یا میش نیٹ ورک کے ذریعے جڑیں تو اسے استعمال کریں",
     "waitingForApproval": "منظوری کا انتظار",
     "webusbHint": "WebUSB پرنٹرز ٹول بار کے Connect بٹن سے براہ راست براؤزر سے منسلک ہوتے ہیں۔ کاغذ کی چوڑائی کی ترجیح یاد رکھنے کے لیے یہ اندراج محفوظ کریں۔",
     "webusbTestHint": "WebUSB: آزمائش کے لیے POS ٹول بار کے Connect بٹن استعمال کریں۔",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "آپ کی اپنی بھیجی معاونت درخواست ہمیشہ کام کرتی ہے، چاہے یہ سیٹنگ فعال ہو یا غیر فعال۔",
     "diagnosticsLocalOnlyHintTransmitting": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔ خودکار بھیجنا چالو ہے، اس لیے ریکارڈ شدہ مسائل آپ کے FloCafe کلاؤڈ اکاؤنٹ میں بھیجے جا سکتے ہیں۔",
     "diagnosticsLocalOnlyHintPending": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔",
-    "printing": "پرنٹنگ"
+    "printing": "پرنٹنگ",
+    "requireKitchenDeliveredToggle": "بل بنانے سے پہلے باورچی خانے سے ترسیل لازمی کریں",
+    "requireKitchenDeliveredHint": "جب تک باورچی خانے کے تمام آئٹمز کو پیش کیا گیا نشان زد نہ کیا جائے، ادھار بل کی ادائیگی روکے رکھیں۔ KDS بند ہونے پر یہ جانچ خود بخود چھوڑ دی جائے گی۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "خودکار فالو اپ",
       "bill_receipt": "بل کی رسید",
-      "manual_reply": "دستی جواب"
+      "manual_reply": "دستی جواب",
+      "z_report": "Z رپورٹ"
     },
     "lastError": {
       "cooldown": "بھیجنا عارضی طور پر روکا گیا ہے۔",

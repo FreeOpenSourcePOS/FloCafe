@@ -302,6 +302,9 @@
     "closureNotes": "Ghi chú",
     "countedCash": "Tiền mặt đã kiểm đếm",
     "variance": "Chênh lệch",
+    "varianceExact": "Khớp",
+    "varianceShort": "Thiếu",
+    "varianceOver": "Thừa",
     "printZReport": "In báo cáo Z",
     "reprintZ": "In lại báo cáo Z",
     "reprintAddsMarker": "Bản in lại có thêm dòng ĐÃ IN LẠI",
@@ -337,7 +340,15 @@
     "refundsCount": "{count} lần hoàn tiền",
     "ticketNoPayments": "Không có thanh toán trong ngày này",
     "shiftLoadFailed": "Không thể tải trạng thái ca.",
-    "refunds": "Hoàn tiền"
+    "refunds": "Hoàn tiền",
+    "sendViaWhatsApp": "Gửi qua WhatsApp",
+    "sendWhatsAppTitle": "Gửi báo cáo qua WhatsApp",
+    "recipientPhone": "Số điện thoại người nhận",
+    "reportSentSuccess": "Đã gửi báo cáo qua WhatsApp thành công",
+    "reportOpeningWhatsAppWeb": "Đang mở WhatsApp cùng báo cáo...",
+    "salesSummary": "TÓM TẮT DOANH SỐ",
+    "paymentBreakdown": "THANH TOÁN",
+    "drawerReconciliation": "ĐỐI SOÁT NGĂN KÉO TIỀN"
   },
   "inventory": {
     "tabSupplies": "Vật tư",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "Không có chế độ toàn màn hình",
     "backspaceAmount": "Xóa lùi số tiền",
     "numericKeypad": "Bàn phím số",
-    "tax": "Thuế"
+    "tax": "Thuế",
+    "kitchenItemsPendingWarning": "{count, plural, one {Còn # món đang được chuẩn bị trong bếp} other {Còn # món đang được chuẩn bị trong bếp}}",
+    "kitchenDeliveryOverridePrompt": "Món ăn từ bếp chưa được giao. Nhập mã PIN quản lý để cho phép thanh toán.",
+    "kitchenDeliveryOverrideSuccess": "Đã chấp nhận quyền duyệt của quản lý cho các món chưa giao.",
+    "kitchenDeliveryOverrideInvalid": "Mã PIN quản lý không hợp lệ. Vui lòng thử lại."
   },
   "printTest": {
     "amt": "Số tiền",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Tải thông tin Server App",
     "loading": "Đang tải…",
     "localNetwork": "Mạng cục bộ",
+    "localNetworkHint": "Dùng khi tất cả thiết bị có thể truy cập địa chỉ này qua Wi-Fi, Ethernet hoặc mạng VPN/mesh",
     "loyalty": "Tích điểm",
     "loyaltyHint": "Khách hàng nhận điểm theo tỷ lệ tích điểm của từng món trong giỏ",
     "loyaltyProgram": "Chương trình tích điểm",
@@ -2010,6 +2026,7 @@
     "version": "Phiên bản",
     "viewTableInfo": "Xem thông tin bàn",
     "vpnMeshNetwork": "VPN / mạng lưới Mesh",
+    "vpnMeshNetworkHint": "Dùng khi các thiết bị kết nối qua VPN hoặc mạng mesh giữa các mạng con hay địa điểm khác nhau",
     "waitingForApproval": "Đang chờ phê duyệt",
     "webusbHint": "Máy in WebUSB được kết nối trực tiếp từ trình duyệt qua nút Kết nối trên thanh công cụ. Lưu mục này để ghi nhớ tùy chọn khổ giấy.",
     "webusbTestHint": "WebUSB: dùng nút Kết nối trên thanh công cụ POS để kiểm tra.",
@@ -2051,7 +2068,9 @@
     "diagnosticsSendAutomaticallyHint": "Tắt theo mặc định. Khi tắt, các sự cố đã ghi nhận vẫn ở trên thiết bị này và không bao giờ được gửi đi. Các yêu cầu hỗ trợ do bạn tự gửi không bị ảnh hưởng.",
     "diagnosticsTicketUnaffected": "Yêu cầu hỗ trợ do bạn tự gửi luôn hoạt động, bất kể cài đặt này bật hay tắt.",
     "diagnosticsLocalOnlyHintTransmitting": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Đã bật gửi tự động, nên các sự cố đã ghi nhận có thể được gửi tới tài khoản FloCafe cloud của bạn.",
-    "diagnosticsLocalOnlyHintPending": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu."
+    "diagnosticsLocalOnlyHintPending": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu.",
+    "requireKitchenDeliveredToggle": "Yêu cầu bếp giao món trước khi thanh toán",
+    "requireKitchenDeliveredHint": "Ngăn thanh toán hóa đơn trả sau cho đến khi tất cả món được đánh dấu đã phục vụ. Tự động bỏ qua nếu KDS bị tắt."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Tự động liên hệ lại",
       "bill_receipt": "Biên nhận hóa đơn",
-      "manual_reply": "Trả lời thủ công"
+      "manual_reply": "Trả lời thủ công",
+      "z_report": "Báo cáo Z"
     },
     "lastError": {
       "cooldown": "Đang tạm dừng gửi.",

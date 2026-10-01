@@ -303,6 +303,9 @@
     "closureNotes": "Observações",
     "countedCash": "Dinheiro contado",
     "variance": "Diferença",
+    "varianceExact": "Exato",
+    "varianceShort": "Falta",
+    "varianceOver": "Excesso",
     "printZReport": "Imprimir Z",
     "reprintZ": "Reimprimir Z",
     "reprintAddsMarker": "Reimprimir adiciona uma linha REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Vendas do dia",
     "refundsCount": "{count} reembolsos",
     "ticketNoPayments": "Sem pagamentos neste dia",
-    "shiftLoadFailed": "Não foi possível carregar o status do turno."
+    "shiftLoadFailed": "Não foi possível carregar o status do turno.",
+    "sendViaWhatsApp": "Enviar pelo WhatsApp",
+    "sendWhatsAppTitle": "Enviar relatório pelo WhatsApp",
+    "recipientPhone": "Número de telefone do destinatário",
+    "reportSentSuccess": "Relatório enviado pelo WhatsApp com sucesso",
+    "reportOpeningWhatsAppWeb": "Abrindo o WhatsApp com o relatório...",
+    "salesSummary": "RESUMO DE VENDAS",
+    "paymentBreakdown": "PAGAMENTOS",
+    "drawerReconciliation": "CONCILIAÇÃO DO CAIXA"
   },
   "inventory": {
     "tabSupplies": "Insumos",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Sair do PDV em tela cheia",
     "fullscreenUnavailable": "O modo de tela cheia não está disponível",
     "backspaceAmount": "Apagar último dígito",
-    "numericKeypad": "Teclado numérico"
+    "numericKeypad": "Teclado numérico",
+    "kitchenItemsPendingWarning": "{count, plural, one {Ainda há # item(ns) sendo preparado(s) na cozinha} other {Ainda há # item(ns) sendo preparado(s) na cozinha}}",
+    "kitchenDeliveryOverridePrompt": "Os itens da cozinha ainda não foram entregues. Insira o PIN do gerente para autorizar a cobrança.",
+    "kitchenDeliveryOverrideSuccess": "Autorização do gerente aceita para os itens não entregues.",
+    "kitchenDeliveryOverrideInvalid": "PIN do gerente inválido. Tente novamente."
   },
   "printTest": {
     "amt": "Total",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Carregar info do App do garçom",
     "loading": "Carregando…",
     "localNetwork": "Rede Local",
+    "localNetworkHint": "Use quando todos os dispositivos puderem acessar este endereço por Wi-Fi, Ethernet ou uma rede VPN/mesh",
     "loyalty": "Fidelidade",
     "loyaltyHint": "Os clientes ganham pontos com base na taxa de ganho de fidelidade de cada item no carrinho",
     "loyaltyProgram": "Programa de Fidelidade",
@@ -2009,6 +2025,7 @@
     "version": "Versão",
     "viewTableInfo": "Ver Informações da Mesa",
     "vpnMeshNetwork": "VPN / Rede em Malha",
+    "vpnMeshNetworkHint": "Use quando os dispositivos se conectarem por uma VPN ou rede mesh entre sub-redes ou locais diferentes",
     "waitingForApproval": "Aguardando aprovação",
     "webusbHint": "As impressoras WebUSB são conectadas diretamente do navegador pelo botão Conectar da barra de ferramentas. Salve esta entrada para lembrar a preferência de largura do papel.",
     "webusbTestHint": "WebUSB: use o botão Conectar na barra de ferramentas do PDV para testar.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "Um pedido de suporte que envie você próprio funciona sempre, esteja esta opção ligada ou não.",
     "diagnosticsLocalOnlyHintTransmitting": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples. O envio automático está ativado, pelo que os problemas registados podem ser enviados para a sua conta FloCafe na nuvem.",
     "diagnosticsLocalOnlyHintPending": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples.",
-    "printing": "Impressão"
+    "printing": "Impressão",
+    "requireKitchenDeliveredToggle": "Exigir entrega da cozinha antes de cobrar",
+    "requireKitchenDeliveredHint": "Impede o pagamento de contas pós-pagas até que todos os itens estejam marcados como servidos pela cozinha. Ignorado automaticamente se o KDS estiver desativado."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Acompanhamento automático",
       "bill_receipt": "Comprovante de conta",
-      "manual_reply": "Resposta manual"
+      "manual_reply": "Resposta manual",
+      "z_report": "Relatório Z"
     },
     "lastError": {
       "cooldown": "O envio foi pausado temporariamente.",

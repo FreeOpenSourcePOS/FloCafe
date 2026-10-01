@@ -294,6 +294,9 @@
     "closureNotes": "メモ",
     "countedCash": "実査現金",
     "variance": "差額",
+    "varianceExact": "一致",
+    "varianceShort": "不足",
+    "varianceOver": "過剰",
     "printZReport": "Zレポートを印刷",
     "reprintZ": "Zレポートを再印刷",
     "reprintAddsMarker": "再印刷にはREIMPRESION行が追加されます",
@@ -337,7 +340,15 @@
     "kpiChangeVsSameDayLastWeek": "先週の同じ曜日と比べて{percent}%",
     "kpiNewVsSameDayLastWeek": "先週の同じ曜日と比べて新規",
     "kpiNoChangeVsSameDayLastWeek": "先週の同じ曜日と比べて変化なし",
-    "shiftLoadFailed": "シフトの状態を読み込めませんでした。"
+    "shiftLoadFailed": "シフトの状態を読み込めませんでした。",
+    "sendViaWhatsApp": "WhatsAppに送信",
+    "sendWhatsAppTitle": "WhatsAppにレポートを送信",
+    "recipientPhone": "受信者の電話番号",
+    "reportSentSuccess": "レポートをWhatsAppに送信しました",
+    "reportOpeningWhatsAppWeb": "レポートを添えてWhatsAppを開いています...",
+    "salesSummary": "売上概要",
+    "paymentBreakdown": "支払い",
+    "drawerReconciliation": "レジ現金の照合"
   },
   "inventory": {
     "tabSupplies": "食材",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "フルスクリーンモードは利用できません",
     "backspaceAmount": "金額を1文字削除",
     "numericKeypad": "数字キーパッド",
-    "tax": "税"
+    "tax": "税",
+    "kitchenItemsPendingWarning": "{count, plural, one {キッチンで準備中の商品が # 件あります} other {キッチンで準備中の商品が # 件あります}}",
+    "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはマネージャー PIN を入力してください。",
+    "kitchenDeliveryOverrideSuccess": "未提供の商品に対するマネージャーの承認を受け付けました。",
+    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。"
   },
   "printTest": {
     "amt": "金額",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Server App情報を読み込む",
     "loading": "読み込み中…",
     "localNetwork": "ローカルネットワーク",
+    "localNetworkHint": "すべてのデバイスがWi-Fi、Ethernet、またはVPN/メッシュネットワーク経由でこのアドレスに接続できる場合に使用します",
     "loyalty": "ロイヤルティ",
     "loyaltyHint": "カート内の各商品のロイヤルティ付与率に基づいて顧客にポイントを付与します",
     "loyaltyProgram": "ロイヤルティプログラム",
@@ -2009,6 +2025,7 @@
     "version": "バージョン",
     "viewTableInfo": "テーブル情報を表示",
     "vpnMeshNetwork": "VPN / メッシュネットワーク",
+    "vpnMeshNetworkHint": "デバイスが異なるサブネットや場所からVPNまたはメッシュネットワーク経由で接続する場合に使用します",
     "waitingForApproval": "承認待ち",
     "webusbHint": "WebUSBプリンターはブラウザーのツールバーにある接続ボタンから直接接続します。この項目を保存すると用紙幅の設定を記憶できます。",
     "webusbTestHint": "WebUSB: POSツールバーの接続ボタンでテストしてください。",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "自分で送るサポート依頼は、この設定のオン・オフにかかわらず常に利用できます。",
     "diagnosticsLocalOnlyHintTransmitting": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。自動送信がオンになっているため、記録された問題がFloCafeクラウドアカウントに送信される場合があります。",
     "diagnosticsLocalOnlyHintPending": "この画面は、この端末で最近発生した問題をやさしい言葉で表示します。",
-    "printing": "印刷"
+    "printing": "印刷",
+    "requireKitchenDeliveredToggle": "会計前にキッチンからの提供を必須にする",
+    "requireKitchenDeliveredHint": "キッチンのすべての商品が提供済みになるまで後払いの会計を確定できません。KDS が無効の場合、この確認は自動的に省略されます。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "自動フォローアップ",
       "bill_receipt": "請求レシート",
-      "manual_reply": "手動返信"
+      "manual_reply": "手動返信",
+      "z_report": "Zレポート"
     },
     "lastError": {
       "cooldown": "送信は一時停止中です。",

@@ -142,6 +142,11 @@ function main() {
     'existing stores receive the opt-in split-check default during upgrade',
   );
   console.log('   ✓ existing stores receive split checks disabled by default');
+  assert.equal(
+    (db.prepare("SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'").get() as { value: string }).value,
+    'false',
+    'existing stores receive kitchen delivery enforcement disabled by default during upgrade',
+  );
   // #447: migration v72 upgrades the persisted value to the structured
   // selection identity; the bare string keeps resolving during transition.
   assert.deepEqual(

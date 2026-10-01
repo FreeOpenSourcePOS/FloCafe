@@ -9,6 +9,7 @@ import {
   now,
   parseItemJson,
   parseRowJson,
+  recordOrderAudit,
   utcTodayDate,
   verifyPin,
   withTxn,
@@ -34,6 +35,58 @@ import {
 } from '../countries';
 
 const router = Router();
+
+function checkKitchenDeliveryStatus(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+  overridePin?: unknown,
+  clientIp = 'unknown',
+  billId?: string | number,
+): { allowed: boolean; count: number; items: string[]; overridden?: boolean; managerUserId?: string } {
+  const setting = db.prepare("SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'").get() as { value: string } | undefined;
+  const kdsEnabled = db.prepare("SELECT value FROM settings WHERE key = 'kds_enabled'").get() as { value: string } | undefined;
+  const billingType = db.prepare("SELECT value FROM settings WHERE key = 'billing_type'").get() as { value: string } | undefined;
+  if (setting?.value !== 'true' || kdsEnabled?.value === 'false' || billingType?.value === 'prepaid') {
+    return { allowed: true, count: 0, items: [] };
+  }
+
+  const hasBillItems = billId !== undefined
+    && db.prepare('SELECT 1 FROM bill_items WHERE bill_id = ? LIMIT 1').get(billId);
+  const undeliveredItems = hasBillItems
+    ? db.prepare(`
+        SELECT oi.product_name FROM bill_items bi
+        JOIN order_items oi ON oi.id = bi.order_item_id
+        WHERE bi.bill_id = ? AND bi.quantity > 0 AND oi.order_id = ?
+          AND oi.status IN ('pending', 'preparing', 'ready')
+      `).all(billId, orderId) as { product_name: string }[]
+    : db.prepare(`
+        SELECT product_name FROM order_items
+        WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+      `).all(orderId) as { product_name: string }[];
+  if (undeliveredItems.length === 0) return { allowed: true, count: 0, items: [] };
+
+  const items = undeliveredItems.map((item) => item.product_name);
+  if (overridePin === undefined || overridePin === null || overridePin === '') {
+    return { allowed: false, count: items.length, items };
+  }
+  const rateLimitKey = `pin:${clientIp}:kitchen-delivery`;
+  if (isPinRateLimited(rateLimitKey)) {
+    throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
+  }
+  if (typeof overridePin !== 'string' || !/^\d{4,6}$/.test(overridePin)) {
+    checkPinRateLimit(rateLimitKey);
+    throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  }
+
+  const managers = db.prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as { id: string; role: string; pin_hash: string }[];
+  const manager = managers.find((user) => hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin));
+  if (!manager) {
+    checkPinRateLimit(rateLimitKey);
+    throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  }
+  pinAttempts.delete(rateLimitKey);
+  return { allowed: true, count: items.length, items, overridden: true, managerUserId: manager.id };
+}
 
 export function getTenantCurrency(): string {
   // '' rather than a default country code: resolveTenantCurrency throws
@@ -383,6 +436,15 @@ function checkPinRateLimit(key: string): boolean {
   if (entry.count >= PIN_MAX_ATTEMPTS) return false;
   entry.count++;
   return true;
+}
+
+function isPinRateLimited(key: string): boolean {
+  const entry = pinAttempts.get(key);
+  if (!entry || Date.now() > entry.resetAt) {
+    pinAttempts.delete(key);
+    return false;
+  }
+  return entry.count >= PIN_MAX_ATTEMPTS;
 }
 
 export function resetPinRateLimitForTests(): void {
@@ -1494,7 +1556,7 @@ export function syncUnpaidBillsForOrder(
       allocations.roundOff[index], total, balance, now(), bill.id,
     );
     if (total <= 0 && balance <= 0) {
-      if (bill.payment_status !== 'paid') {
+      if (bill.payment_status !== 'paid' && checkKitchenDeliveryStatus(db, bill.order_id, undefined, 'unknown', bill.id).allowed) {
         db.prepare(`UPDATE bills SET payment_status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?`).run(now(), now(), bill.id);
       }
     } else if (zeroClosed) {
@@ -1950,7 +2012,9 @@ function applyPaymentBatch(
   idempotencyKey?: string | null,
   requestHash?: string,
   idempotencyUserId?: string,
-): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
+  overridePin?: unknown,
+  clientIp = 'unknown',
+): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number; kitchenDeliveryOverridden?: boolean } {
   if (idempotencyKey && idempotencyUserId) {
     // Look up idempotency record scoped to user or legacy fallback.
     const prior = db.prepare(`
@@ -1977,9 +2041,26 @@ function applyPaymentBatch(
   if (idempotentReplay) {
     return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited: false, loyaltyPointsEarned: 0 };
   }
+  const kitchenStatus = checkKitchenDeliveryStatus(db, bill.order_id, overridePin, clientIp, bill.id);
+  if (!kitchenStatus.allowed) {
+    throw Object.assign(new Error('Kitchen items must be delivered before billing'), {
+      statusCode: 409,
+      code: 'KITCHEN_ITEMS_UNDELIVERED',
+      undeliveredCount: kitchenStatus.count,
+      undeliveredItems: kitchenStatus.items,
+    });
+  }
+  if (kitchenStatus.overridden) {
+    recordOrderAudit(db, {
+      orderId: bill.order_id,
+      actorUserId: String(idempotencyUserId),
+      action: 'kitchen_delivery_override',
+      details: { manager_user_id: kitchenStatus.managerUserId, undelivered_count: kitchenStatus.count },
+    });
+  }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
-  requireOpenSessionForCashTender(db, payments);
+  requireOpenSessionForCashTender(db, prepared.map((line) => line.payment));
   const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
@@ -2040,7 +2121,12 @@ function applyPaymentBatch(
       }
     }
   }
-  const result = { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited, loyaltyPointsEarned };
+  const result = {
+    bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)),
+    walletDebited,
+    loyaltyPointsEarned,
+    ...(kitchenStatus.overridden ? { kitchenDeliveryOverridden: true } : {}),
+  };
   if (idempotencyKey && requestHash && idempotencyUserId) {
     db.prepare('INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(idempotencyUserId, idempotencyKey, billId, requestHash, JSON.stringify(result), changedAt);
@@ -2055,10 +2141,12 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
       return res.status(400).json({ error: 'Payment body must be an object' });
     }
     const db = getDatabase();
-    const requestHash = paymentRequestHash(req.params.id as string, [payment], payment.customer_id);
+    const { override_pin, ...paymentLine } = payment;
+    const requestHash = paymentRequestHash(req.params.id as string, [paymentLine], paymentLine.customer_id);
     const result = withTxn(() => applyPaymentBatch(
-      db, req.params.id as string, [payment], payment.customer_id, true,
-      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId),
+      db, req.params.id as string, [paymentLine], paymentLine.customer_id, true,
+      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId), override_pin,
+      req.ip || req.socket.remoteAddress || 'unknown',
     ));
 
     const billStatus = (result.bill as any)?.payment_status;
@@ -2069,7 +2157,10 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill payment failed:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+    res.status(statusCode).json({
+      error: statusCode >= 500 ? 'Bill payment failed' : error.message,
+      ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
+    });
   }
 });
 
@@ -2080,7 +2171,7 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return res.status(400).json({ error: 'Payment batch body must be an object' });
     }
-    const { payments, customer_id: bodyCustomerId } = body;
+    const { payments, customer_id: bodyCustomerId, override_pin } = body;
     if (!Array.isArray(payments) || payments.length === 0) {
       return res.status(400).json({ error: 'payments must be a non-empty array' });
     }
@@ -2089,7 +2180,8 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
     const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, payments, bodyCustomerId, false,
-      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId),
+      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId), override_pin,
+      req.ip || req.socket.remoteAddress || 'unknown',
     ));
 
     const billStatus = (result.bill as any)?.payment_status;
@@ -2113,7 +2205,10 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
         }, error);
       } catch { /* diagnostics must never mask the original failure */ }
     }
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+    res.status(statusCode).json({
+      error: statusCode >= 500 ? 'Bill payment failed' : error.message,
+      ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
+    });
   }
 });
 

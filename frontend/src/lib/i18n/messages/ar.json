@@ -303,6 +303,9 @@
     "closureNotes": "ملاحظات",
     "countedCash": "النقود التي تم عدها",
     "variance": "الفرق",
+    "varianceExact": "مطابق",
+    "varianceShort": "عجز",
+    "varianceOver": "زيادة",
     "printZReport": "طباعة Z",
     "reprintZ": "إعادة طبع Z",
     "reprintAddsMarker": "تؤدي إعادة الطباعة إلى إضافة سطر «إعادة طباعة»",
@@ -337,7 +340,15 @@
     "xReportSales": "المبيعات اليوم",
     "refundsCount": "{count} عمليات استرداد الأموال",
     "ticketNoPayments": "لا توجد مدفوعات لهذا اليوم",
-    "shiftLoadFailed": "تعذر تحميل حالة الوردية."
+    "shiftLoadFailed": "تعذر تحميل حالة الوردية.",
+    "sendViaWhatsApp": "إرسال إلى واتساب",
+    "sendWhatsAppTitle": "إرسال التقرير عبر واتساب",
+    "recipientPhone": "رقم هاتف المستلم",
+    "reportSentSuccess": "تم إرسال التقرير إلى واتساب بنجاح",
+    "reportOpeningWhatsAppWeb": "جارٍ فتح واتساب مع التقرير...",
+    "salesSummary": "ملخص المبيعات",
+    "paymentBreakdown": "المدفوعات",
+    "drawerReconciliation": "مطابقة درج النقد"
   },
   "inventory": {
     "tabSupplies": "المستلزمات",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "وضع ملء الشاشة غير متاح",
     "backspaceAmount": "حذف آخر رقم",
     "numericKeypad": "لوحة الأرقام",
-    "tax": "الضرائب"
+    "tax": "الضرائب",
+    "kitchenItemsPendingWarning": "{count, plural, one {# صنفًا ما زال قيد التحضير في المطبخ} other {# صنفًا ما زال قيد التحضير في المطبخ}}",
+    "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل الرقم السري للمدير للسماح بالفوترة.",
+    "kitchenDeliveryOverrideSuccess": "تم قبول تجاوز المدير للأصناف غير المسلّمة.",
+    "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى."
   },
   "printTest": {
     "amt": "المبلغ",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "تحميل معلومات تطبيق الخادم",
     "loading": "جاري التحميل…",
     "localNetwork": "الشبكة المحلية",
+    "localNetworkHint": "استخدم هذا الخيار عندما تتمكن جميع الأجهزة من الوصول إلى هذا العنوان عبر Wi-Fi أو Ethernet أو شبكة VPN/mesh",
     "loyalty": "الولاء",
     "loyaltyHint": "يحصل العملاء على نقاط بناءً على معدل تجميع نقاط الولاء الخاص بكل عنصر في سلة التسوق",
     "loyaltyProgram": "برنامج الولاء",
@@ -2009,6 +2025,7 @@
     "version": "الإصدار",
     "viewTableInfo": "عرض معلومات الجدول",
     "vpnMeshNetwork": "شبكة VPN / شبكة متشابكة",
+    "vpnMeshNetworkHint": "استخدم هذا الخيار عندما تتصل الأجهزة عبر VPN أو شبكة متداخلة بين شبكات فرعية أو مواقع مختلفة",
     "waitingForApproval": "في انتظار الموافقة",
     "webusbHint": "يتم توصيل طابعات WebUSB مباشرةً من المتصفح عبر زر «الاتصال» الموجود في شريط الأدوات. احفظ هذا الإعداد لتذكر تفضيلات عرض الورق.",
     "webusbTestHint": "WebUSB: استخدم زر «اتصال» الموجود في شريط أدوات POS لإجراء الاختبار.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "طلب الدعم الذي ترسله بنفسك يعمل دائمًا، سواء كان هذا الخيار مفعّلًا أو غير مفعّل.",
     "diagnosticsLocalOnlyHintTransmitting": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهودة. الإرسال التلقائي مُفعَّل، لذا قد تُرسَل المشكلات المسجلة إلى حساب FloCafe السحابي.",
     "diagnosticsLocalOnlyHintPending": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهومة.",
-    "printing": "الطباعة"
+    "printing": "الطباعة",
+    "requireKitchenDeliveredToggle": "اشترط تسليم المطبخ قبل الفوترة",
+    "requireKitchenDeliveredHint": "امنع تسوية الفواتير المؤجلة حتى يتم تحديد جميع الأصناف على أنها قُدّمت من المطبخ. يتم التجاوز تلقائيًا عند تعطيل KDS."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "المتابعة التلقائية",
       "bill_receipt": "إيصال الدفع",
-      "manual_reply": "الرد اليدوي"
+      "manual_reply": "الرد اليدوي",
+      "z_report": "تقرير Z"
     },
     "lastError": {
       "cooldown": "تم إيقاف ميزة «الإرسال» مؤقتًا.",

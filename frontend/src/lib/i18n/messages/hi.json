@@ -303,6 +303,9 @@
     "closureNotes": "टिप्पणियाँ",
     "countedCash": "गिना गया नकद",
     "variance": "अंतर",
+    "varianceExact": "सटीक",
+    "varianceShort": "कमी",
+    "varianceOver": "अधिक",
     "printZReport": "Z प्रिंट करें",
     "reprintZ": "पुनर्मुद्रण Z",
     "reprintAddsMarker": "पुनर्मुद्रण पर एक REIMPRESSION पंक्ति जोड़ी जाती है",
@@ -337,7 +340,15 @@
     "xReportSales": "बिक्री आज",
     "refundsCount": "{count} रिफंड",
     "ticketNoPayments": "इस दिन के लिए कोई भुगतान नहीं",
-    "shiftLoadFailed": "शिफ्ट स्थिति लोड नहीं की जा सकी."
+    "shiftLoadFailed": "शिफ्ट स्थिति लोड नहीं की जा सकी.",
+    "sendViaWhatsApp": "WhatsApp पर भेजें",
+    "sendWhatsAppTitle": "WhatsApp पर रिपोर्ट भेजें",
+    "recipientPhone": "प्राप्तकर्ता का फ़ोन नंबर",
+    "reportSentSuccess": "रिपोर्ट WhatsApp पर सफलतापूर्वक भेजी गई",
+    "reportOpeningWhatsAppWeb": "रिपोर्ट के साथ WhatsApp खुल रहा है...",
+    "salesSummary": "बिक्री सारांश",
+    "paymentBreakdown": "भुगतान",
+    "drawerReconciliation": "कैश ड्रॉअर मिलान"
   },
   "inventory": {
     "tabSupplies": "आपूर्ति",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "फ़ुल-स्क्रीन मोड अनुपलब्ध है",
     "backspaceAmount": "बैकस्पेस राशि",
     "numericKeypad": "संख्यात्मक कीपैड",
-    "tax": "कर"
+    "tax": "कर",
+    "kitchenItemsPendingWarning": "{count, plural, one {रसोई में अभी # आइटम तैयार हो रहे हैं} other {रसोई में अभी # आइटम तैयार हो रहे हैं}}",
+    "kitchenDeliveryOverridePrompt": "रसोई के आइटम अभी परोसे नहीं गए हैं। बिल की अनुमति देने के लिए मैनेजर PIN दर्ज करें।",
+    "kitchenDeliveryOverrideSuccess": "अभी तक न परोसे गए आइटम के लिए मैनेजर की अनुमति स्वीकार की गई।",
+    "kitchenDeliveryOverrideInvalid": "मैनेजर PIN गलत है। फिर से कोशिश करें।"
   },
   "printTest": {
     "amt": "राशि",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "सर्वर ऐप जानकारी लोड करें",
     "loading": "लोड हो रहा है...",
     "localNetwork": "स्थानीय नेटवर्क",
+    "localNetworkHint": "जब सभी डिवाइस Wi-Fi, Ethernet या VPN/mesh नेटवर्क के ज़रिए इस पते तक पहुँच सकते हों, तब इसका उपयोग करें",
     "loyalty": "लॉयल्टी",
     "loyaltyHint": "ग्राहक कार्ट में प्रत्येक आइटम की लॉयल्टी कमाई दर के आधार पर अंक अर्जित करते हैं",
     "loyaltyProgram": "लॉयल्टी कार्यक्रम",
@@ -2010,6 +2026,7 @@
     "version": "संस्करण",
     "viewTableInfo": "तालिका जानकारी देखें",
     "vpnMeshNetwork": "वीपीएन/मेश नेटवर्क",
+    "vpnMeshNetworkHint": "जब डिवाइस अलग-अलग सबनेट या स्थानों के बीच VPN या मेश नेटवर्क से जुड़ते हों, तब इसका उपयोग करें",
     "waitingForApproval": "मंजूरी का इंतजार है",
     "webusbHint": "WebUSB प्रिंटर टूलबार कनेक्ट बटन के माध्यम से सीधे ब्राउज़र से जुड़े होते हैं। कागज़ की चौड़ाई की प्राथमिकता याद रखने के लिए इस प्रविष्टि को सहेजें।",
     "webusbTestHint": "WebUSB: परीक्षण करने के लिए POS टूलबार में कनेक्ट बटन का उपयोग करें।",
@@ -2051,7 +2068,9 @@
     "diagnosticsSendAutomaticallyHint": "डिफ़ॉल्ट रूप से बंद। बंद होने पर दर्ज की गई समस्याएँ इसी डिवाइस पर रहती हैं और कभी नहीं भेजी जातीं। आपके द्वारा भेजे गए सहायता अनुरोध प्रभावित नहीं होते।",
     "diagnosticsTicketUnaffected": "आपके द्वारा स्वयं भेजा गया सहायता अनुरोध हमेशा काम करता है, चाहे यह सेटिंग चालू हो या बंद।",
     "diagnosticsLocalOnlyHintTransmitting": "यह स्क्रीन इस डिवाइस की हाल की समस्याएँ आसान भाषा में दिखाती है। स्वचालित भेजना चालू है, इसलिए दर्ज की गई समस्याएँ आपके FloCafe क्लाउड खाते में भेजी जा सकती हैं।",
-    "diagnosticsLocalOnlyHintPending": "यह स्क्रीन इस डिवाइस की हाल की समस्याएँ आसान भाषा में दिखाती है।"
+    "diagnosticsLocalOnlyHintPending": "यह स्क्रीन इस डिवाइस की हाल की समस्याएँ आसान भाषा में दिखाती है।",
+    "requireKitchenDeliveredToggle": "बिल से पहले रसोई से परोसना अनिवार्य करें",
+    "requireKitchenDeliveredHint": "जब तक रसोई के सभी आइटम परोसे गए के रूप में चिह्नित न हों, तब तक पोस्टपेड बिल का भुगतान रोकें। KDS बंद होने पर यह जाँच अपने आप छोड़ दी जाएगी।"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "ऑटो अनुवर्ती",
       "bill_receipt": "बिल रसीद",
-      "manual_reply": "मैन्युअल उत्तर"
+      "manual_reply": "मैन्युअल उत्तर",
+      "z_report": "Z रिपोर्ट"
     },
     "lastError": {
       "cooldown": "भेजना अस्थायी रूप से रोक दिया गया है.",

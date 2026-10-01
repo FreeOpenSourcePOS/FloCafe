@@ -234,6 +234,16 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
   assert(cardOn.status === 200, 'enforcement on: non-cash payment without a session works (200)');
 
+  const billBatchCardUnusedCash = seedUnpaidBill('batch-card-unused-cash');
+  const batchCardUnusedCash = await request(app).post(`/api/bills/${billBatchCardUnusedCash}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ payments: [{ method: 'card', amount: 50 }, { method: 'cash', amount: 1 }] });
+  assert(batchCardUnusedCash.status === 200, 'enforcement on: unapplied cash line does not require a shift');
+  const unusedCashDetails = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billBatchCardUnusedCash) as any;
+  const recordedUnusedCashDetails = JSON.parse(unusedCashDetails?.payment_details || '[]');
+  assert(recordedUnusedCashDetails.length === 1 && recordedUnusedCashDetails[0].method === 'card',
+    'enforcement on: zero-applied cash line is not recorded as a tender');
+
   const movBlocked = await request(app).post('/api/cash-closures/movements')
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ business_date: todayLocal, movement_type: 'pay_in', amount_cents: 1000, reason: 'test' });

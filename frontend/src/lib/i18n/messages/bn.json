@@ -303,6 +303,9 @@
     "closureNotes": "নোট",
     "countedCash": "নগদ গণনা",
     "variance": "পার্থক্য",
+    "varianceExact": "মিলে গেছে",
+    "varianceShort": "ঘাটতি",
+    "varianceOver": "বেশি",
     "printZReport": "প্রিন্ট Z",
     "reprintZ": "পুনর্মুদ্রণ Z",
     "reprintAddsMarker": "পুনর্মুদ্রণের সময় রসিদে একটি REPRINT ব্যানার যোগ হবে।",
@@ -337,7 +340,15 @@
     "xReportSales": "আজ বিক্রয়",
     "refundsCount": "{count} ফেরত",
     "ticketNoPayments": "এই দিনের জন্য কোন পেমেন্ট",
-    "shiftLoadFailed": "শিফট স্ট্যাটাস লোড করা যায়নি।"
+    "shiftLoadFailed": "শিফট স্ট্যাটাস লোড করা যায়নি।",
+    "sendViaWhatsApp": "WhatsApp-এ পাঠান",
+    "sendWhatsAppTitle": "WhatsApp-এ প্রতিবেদন পাঠান",
+    "recipientPhone": "প্রাপকের ফোন নম্বর",
+    "reportSentSuccess": "প্রতিবেদনটি WhatsApp-এ সফলভাবে পাঠানো হয়েছে",
+    "reportOpeningWhatsAppWeb": "প্রতিবেদনসহ WhatsApp খোলা হচ্ছে...",
+    "salesSummary": "বিক্রয় সারাংশ",
+    "paymentBreakdown": "পেমেন্ট",
+    "drawerReconciliation": "ক্যাশ ড্রয়ার মিল"
   },
   "inventory": {
     "tabSupplies": "সরবরাহ",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "পূর্ণ-স্ক্রীন মোড অনুপলব্ধ",
     "backspaceAmount": "ব্যাকস্পেস পরিমাণ",
     "numericKeypad": "সংখ্যাসূচক কীপ্যাড",
-    "tax": "কর"
+    "tax": "কর",
+    "kitchenItemsPendingWarning": "{count, plural, one {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে} other {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে}}",
+    "kitchenDeliveryOverridePrompt": "রান্নাঘরের আইটেম এখনও পরিবেশন করা হয়নি। বিল অনুমোদন করতে ম্যানেজারের PIN দিন।",
+    "kitchenDeliveryOverrideSuccess": "পরিবেশন না হওয়া আইটেমের জন্য ম্যানেজারের অনুমোদন গ্রহণ করা হয়েছে।",
+    "kitchenDeliveryOverrideInvalid": "ম্যানেজারের PIN সঠিক নয়। আবার চেষ্টা করুন।"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "সার্ভার অ্যাপের তথ্য লোড করুন",
     "loading": "লোড হচ্ছে...",
     "localNetwork": "স্থানীয় নেটওয়ার্ক",
+    "localNetworkHint": "সব ডিভাইস Wi-Fi, Ethernet বা VPN/mesh নেটওয়ার্কের মাধ্যমে এই ঠিকানায় পৌঁছাতে পারলে এটি ব্যবহার করুন",
     "loyalty": "আনুগত্য",
     "loyaltyHint": "গ্রাহকরা কার্টের প্রতিটি আইটেমের আনুগত্য উপার্জনের হারের উপর ভিত্তি করে পয়েন্ট অর্জন করে",
     "loyaltyProgram": "আনুগত্য প্রোগ্রাম",
@@ -2009,6 +2025,7 @@
     "version": "সংস্করণ",
     "viewTableInfo": "টেবিল তথ্য দেখুন",
     "vpnMeshNetwork": "ভিপিএন / মেশ নেটওয়ার্ক",
+    "vpnMeshNetworkHint": "বিভিন্ন সাবনেট বা অবস্থানের মধ্যে VPN বা মেশ নেটওয়ার্কের মাধ্যমে ডিভাইস যুক্ত হলে এটি ব্যবহার করুন",
     "waitingForApproval": "অনুমোদনের অপেক্ষায়",
     "webusbHint": "WebUSB প্রিন্টার সরাসরি ব্রাউজার থেকে টুলবার কানেক্ট বোতামের মাধ্যমে সংযুক্ত থাকে। কাগজের প্রস্থ পছন্দ মনে রাখতে এই এন্ট্রি সংরক্ষণ করুন।",
     "webusbTestHint": "WebUSB: পরীক্ষা করতে POS টুলবারে সংযোগ বোতামটি ব্যবহার করুন।",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "আপনার নিজে পাঠানো সহায়তার অনুরোধ সবসময় কাজ করে, এই সেটিং চালু থাকুক বা বন্ধ।",
     "diagnosticsLocalOnlyHintTransmitting": "এই স্ক্রিনটি এই ডিভাইসের সাম্প্রতিক সমস্যাগুলো সহজ ভাষায় দেখায়। স্বয়ংক্রিয় পাঠানো চালু আছে, তাই লিপিবদ্ধ সমস্যাগুলো আপনার FloCafe ক্লাউড অ্যাকাউন্টে পাঠানো হতে পারে।",
     "diagnosticsLocalOnlyHintPending": "এই স্ক্রিনটি এই ডিভাইসের সাম্প্রতিক সমস্যাগুলো সহজ ভাষায় দেখায়।",
-    "printing": "প্রিন্টিং"
+    "printing": "প্রিন্টিং",
+    "requireKitchenDeliveredToggle": "বিল করার আগে রান্নাঘরের খাবার পরিবেশন নিশ্চিত করুন",
+    "requireKitchenDeliveredHint": "সব আইটেম রান্নাঘর থেকে পরিবেশিত হিসেবে চিহ্নিত না হওয়া পর্যন্ত বাকিতে বিল পরিশোধ বন্ধ রাখুন। KDS বন্ধ থাকলে এটি স্বয়ংক্রিয়ভাবে এড়িয়ে যাবে।"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "অটো ফলো-আপ",
       "bill_receipt": "বিলের রসিদ",
-      "manual_reply": "ম্যানুয়াল উত্তর"
+      "manual_reply": "ম্যানুয়াল উত্তর",
+      "z_report": "Z প্রতিবেদন"
     },
     "lastError": {
       "cooldown": "পাঠানো সাময়িকভাবে থামানো হয়েছে.",

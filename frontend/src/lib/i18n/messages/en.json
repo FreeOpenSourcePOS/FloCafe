@@ -303,6 +303,9 @@
     "closureNotes": "Notes",
     "countedCash": "Counted cash",
     "variance": "Difference",
+    "varianceExact": "Exact",
+    "varianceShort": "Short",
+    "varianceOver": "Over",
     "printZReport": "Print Z",
     "reprintZ": "Reprint Z",
     "reprintAddsMarker": "Reprint adds a REIMPRESION line",
@@ -337,7 +340,15 @@
     "xReportSales": "Sales today",
     "refundsCount": "{count} refunds",
     "ticketNoPayments": "No payments for this day",
-    "shiftLoadFailed": "Could not load shift status."
+    "shiftLoadFailed": "Could not load shift status.",
+    "sendViaWhatsApp": "Send to WhatsApp",
+    "sendWhatsAppTitle": "Send Report to WhatsApp",
+    "recipientPhone": "Recipient Phone Number",
+    "reportSentSuccess": "Report sent to WhatsApp successfully",
+    "reportOpeningWhatsAppWeb": "Opening WhatsApp with report...",
+    "salesSummary": "SALES SUMMARY",
+    "paymentBreakdown": "PAYMENTS",
+    "drawerReconciliation": "DRAWER RECONCILIATION"
   },
   "inventory": {
     "tabSupplies": "Supplies",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "Full-screen mode is unavailable",
     "backspaceAmount": "Backspace amount",
     "numericKeypad": "Numeric keypad",
-    "tax": "Tax"
+    "tax": "Tax",
+    "kitchenItemsPendingWarning": "{count, plural, one {# item still being prepared in the kitchen} other {# items still being prepared in the kitchen}}",
+    "kitchenDeliveryOverridePrompt": "Kitchen items are not yet delivered. Enter Manager PIN to authorize billing.",
+    "kitchenDeliveryOverrideSuccess": "Manager override accepted for undelivered items.",
+    "kitchenDeliveryOverrideInvalid": "Invalid Manager PIN. Please try again."
   },
   "printTest": {
     "amt": "Amt",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Load Server App Info",
     "loading": "Loading…",
     "localNetwork": "Local Network",
+    "localNetworkHint": "Use when all devices can reach this address over Wi-Fi, Ethernet, or a VPN/mesh network",
     "loyalty": "Loyalty",
     "loyaltyHint": "Customers earn points based on the loyalty earning rate of each item in the cart",
     "loyaltyProgram": "Loyalty Program",
@@ -2009,6 +2025,7 @@
     "version": "Version",
     "viewTableInfo": "View Table Info",
     "vpnMeshNetwork": "VPN / Mesh Network",
+    "vpnMeshNetworkHint": "Use when devices connect via a VPN or mesh network across different subnets or locations",
     "waitingForApproval": "Waiting for approval",
     "webusbHint": "WebUSB printers are connected directly from the browser via the toolbar Connect button. Save this entry to remember the paper width preference.",
     "webusbTestHint": "WebUSB: use the Connect button in the POS toolbar to test.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "A support request you raise and send yourself always works, whether or not this is on.",
     "diagnosticsLocalOnlyHintTransmitting": "This screen shows recent problems on this device in plain language. Automatic transmission is on, so recorded problems may be sent to your FloCafe cloud account.",
     "diagnosticsLocalOnlyHintPending": "This screen shows recent problems on this device in plain language.",
-    "printing": "Printing"
+    "printing": "Printing",
+    "requireKitchenDeliveredToggle": "Require kitchen delivery before billing",
+    "requireKitchenDeliveredHint": "Prevent settling postpaid bills until all items are marked served in the kitchen. Bypassed automatically if KDS is disabled."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Auto follow-up",
       "bill_receipt": "Bill receipt",
-      "manual_reply": "Manual reply"
+      "manual_reply": "Manual reply",
+      "z_report": "Z-Report"
     },
     "lastError": {
       "cooldown": "Send is temporarily paused.",

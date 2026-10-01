@@ -303,6 +303,9 @@
     "closureNotes": "Notas",
     "countedCash": "Efectivo contado",
     "variance": "Diferencia",
+    "varianceExact": "Exacto",
+    "varianceShort": "Faltante",
+    "varianceOver": "Sobrante",
     "printZReport": "Imprimir Z",
     "reprintZ": "Reimprimir Z",
     "reprintAddsMarker": "Reimprimir agrega una línea REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Ventas del día",
     "refundsCount": "{count} reembolsos",
     "ticketNoPayments": "No hay pagos en este día",
-    "shiftLoadFailed": "No se pudo cargar el estado del turno."
+    "shiftLoadFailed": "No se pudo cargar el estado del turno.",
+    "sendViaWhatsApp": "Enviar a WhatsApp",
+    "sendWhatsAppTitle": "Enviar informe por WhatsApp",
+    "recipientPhone": "Número de teléfono del destinatario",
+    "reportSentSuccess": "Informe enviado a WhatsApp correctamente",
+    "reportOpeningWhatsAppWeb": "Abriendo WhatsApp con el informe...",
+    "salesSummary": "RESUMEN DE VENTAS",
+    "paymentBreakdown": "PAGOS",
+    "drawerReconciliation": "CUADRE DE CAJA"
   },
   "inventory": {
     "tabSupplies": "Insumos",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Salir del POS en pantalla completa",
     "fullscreenUnavailable": "El modo de pantalla completa no está disponible",
     "backspaceAmount": "Borrar último dígito",
-    "numericKeypad": "Teclado numérico"
+    "numericKeypad": "Teclado numérico",
+    "kitchenItemsPendingWarning": "{count, plural, one {Hay # artículo(s) aún en preparación en la cocina} other {Hay # artículo(s) aún en preparación en la cocina}}",
+    "kitchenDeliveryOverridePrompt": "Los artículos de cocina aún no se han entregado. Introduce el PIN de gerente para autorizar el cobro.",
+    "kitchenDeliveryOverrideSuccess": "Se aceptó la autorización del gerente para los artículos sin entregar.",
+    "kitchenDeliveryOverrideInvalid": "El PIN de gerente no es válido. Inténtalo de nuevo."
   },
   "printTest": {
     "amt": "Total",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Cargar info de la App de mesero",
     "loading": "Cargando…",
     "localNetwork": "Red local",
+    "localNetworkHint": "Úsalo cuando todos los dispositivos puedan acceder a esta dirección por Wi-Fi, Ethernet o una red VPN/mesh",
     "loyalty": "Fidelidad",
     "loyaltyHint": "Los clientes suman puntos según la tasa de ganancia de lealtad de cada ítem del carrito",
     "loyaltyProgram": "Programa de Lealtad",
@@ -2010,6 +2026,7 @@
     "version": "Versión",
     "viewTableInfo": "Ver info de las tablas",
     "vpnMeshNetwork": "VPN / Red mesh",
+    "vpnMeshNetworkHint": "Úsalo cuando los dispositivos se conecten mediante una VPN o una red mesh entre distintas subredes o ubicaciones",
     "waitingForApproval": "Esperando aprobación",
     "webusbHint": "Las impresoras WebUSB se conectan directo desde el navegador con el botón Conectar de la barra. Guardá esta entrada para recordar el ancho de papel preferido.",
     "webusbTestHint": "WebUSB: usá el botón Conectar en la barra del POS para probar.",
@@ -2051,7 +2068,9 @@
     "diagnosticsSendAutomaticallyHint": "Desactivado por defecto. Cuando está desactivado, los problemas registrados permanecen en este dispositivo y nunca se envían. Las solicitudes de soporte que envíes tú no se ven afectadas.",
     "diagnosticsTicketUnaffected": "Una solicitud de soporte que envías tú siempre funciona, esté esto activado o no.",
     "diagnosticsLocalOnlyHintTransmitting": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro. El envío automático está activado, por lo que los problemas registrados pueden enviarse a tu cuenta de FloCafe en la nube.",
-    "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro."
+    "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro.",
+    "requireKitchenDeliveredToggle": "Exigir la entrega de cocina antes de cobrar",
+    "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Seguimiento automático",
       "bill_receipt": "Recibo",
-      "manual_reply": "Respuesta manual"
+      "manual_reply": "Respuesta manual",
+      "z_report": "Informe Z"
     },
     "lastError": {
       "cooldown": "Los envíos están en pausa.",

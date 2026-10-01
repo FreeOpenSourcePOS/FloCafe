@@ -294,6 +294,9 @@
     "closureNotes": "備註",
     "countedCash": "清點現金",
     "variance": "差額",
+    "varianceExact": "相符",
+    "varianceShort": "短少",
+    "varianceOver": "溢收",
     "printZReport": "列印 Z 報表",
     "reprintZ": "重印 Z 報表",
     "reprintAddsMarker": "重印會新增 REIMPRESION 行",
@@ -337,7 +340,15 @@
     "kpiChangeVsSameDayLastWeek": "較上週同日 {percent}%",
     "kpiNewVsSameDayLastWeek": "較上週同日新增",
     "kpiNoChangeVsSameDayLastWeek": "較上週同日無變化",
-    "shiftLoadFailed": "無法載入班次狀態。"
+    "shiftLoadFailed": "無法載入班次狀態。",
+    "sendViaWhatsApp": "傳送至 WhatsApp",
+    "sendWhatsAppTitle": "透過 WhatsApp 傳送報表",
+    "recipientPhone": "收件者電話號碼",
+    "reportSentSuccess": "報表已成功傳送至 WhatsApp",
+    "reportOpeningWhatsAppWeb": "正在開啟含報表的 WhatsApp...",
+    "salesSummary": "銷售摘要",
+    "paymentBreakdown": "付款",
+    "drawerReconciliation": "錢櫃核對"
   },
   "inventory": {
     "tabSupplies": "庫存",
@@ -841,7 +852,11 @@
     "exitFullscreen": "退出全屏 POS",
     "fullscreenUnavailable": "全屏模式不可用",
     "backspaceAmount": "退格金額",
-    "numericKeypad": "數字鍵盤"
+    "numericKeypad": "數字鍵盤",
+    "kitchenItemsPendingWarning": "{count, plural, one {廚房仍有 # 道餐點正在準備} other {廚房仍有 # 道餐點正在準備}}",
+    "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入經理 PIN 以授權結帳。",
+    "kitchenDeliveryOverrideSuccess": "已接受經理對未送達餐點的授權。",
+    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。"
   },
   "printTest": {
     "amt": "金額",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "載入服務員應用程式資訊",
     "loading": "載入中…",
     "localNetwork": "本機網路",
+    "localNetworkHint": "當所有裝置都能透過 Wi-Fi、Ethernet 或 VPN/mesh 網路連線到此位址時使用",
     "loyalty": "積分",
     "loyaltyHint": "顧客按購物車中每件商品的積分費率賺取積分",
     "loyaltyProgram": "積分計畫",
@@ -2009,6 +2025,7 @@
     "version": "版本",
     "viewTableInfo": "檢視桌台資訊",
     "vpnMeshNetwork": "VPN / 網狀網路",
+    "vpnMeshNetworkHint": "當裝置透過 VPN 或網狀網路跨不同子網路或地點連線時使用",
     "waitingForApproval": "等待批准",
     "webusbHint": "WebUSB 印表機從瀏覽器工具欄的連線按鈕直接連線。儲存此條目以記住紙張寬度偏好。",
     "webusbTestHint": "WebUSB：使用 POS 工具欄中的連線按鈕進行測試。",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "您自己送出的支援請求一律有效，不論此設定是否開啟。",
     "diagnosticsLocalOnlyHintTransmitting": "此畫面以淺白文字顯示本裝置最近的問題。已開啟自動傳送，因此記錄的問題可能會傳送到您的 FloCafe 雲端帳戶。",
     "diagnosticsLocalOnlyHintPending": "此畫面以淺白文字顯示本裝置最近的問題。",
-    "printing": "列印"
+    "printing": "列印",
+    "requireKitchenDeliveredToggle": "結帳前要求廚房出餐",
+    "requireKitchenDeliveredHint": "所有餐點在廚房標記為已送達前，禁止結清後付帳單。關閉 KDS 時會自動略過此檢查。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "自動跟進",
       "bill_receipt": "帳單收據",
-      "manual_reply": "手動回覆"
+      "manual_reply": "手動回覆",
+      "z_report": "Z 報表"
     },
     "lastError": {
       "cooldown": "傳送已暫停。",

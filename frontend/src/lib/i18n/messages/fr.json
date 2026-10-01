@@ -303,6 +303,9 @@
     "closureNotes": "Remarques",
     "countedCash": "Espèces comptées",
     "variance": "Écart",
+    "varianceExact": "Sans écart",
+    "varianceShort": "Manquant",
+    "varianceOver": "Excédent",
     "printZReport": "Imprimer Z",
     "reprintZ": "Réimprimer Z",
     "reprintAddsMarker": "La réimpression ajoute une ligne REIMPRESION",
@@ -337,7 +340,15 @@
     "xReportSales": "Ventes du jour",
     "refundsCount": "{count} remboursements",
     "ticketNoPayments": "Aucun paiement ce jour",
-    "shiftLoadFailed": "Impossible de charger le statut du poste."
+    "shiftLoadFailed": "Impossible de charger le statut du poste.",
+    "sendViaWhatsApp": "Envoyer sur WhatsApp",
+    "sendWhatsAppTitle": "Envoyer le rapport sur WhatsApp",
+    "recipientPhone": "Numéro de téléphone du destinataire",
+    "reportSentSuccess": "Rapport envoyé sur WhatsApp avec succès",
+    "reportOpeningWhatsAppWeb": "Ouverture de WhatsApp avec le rapport...",
+    "salesSummary": "RÉSUMÉ DES VENTES",
+    "paymentBreakdown": "PAIEMENTS",
+    "drawerReconciliation": "RAPPROCHEMENT DE CAISSE"
   },
   "inventory": {
     "tabSupplies": "Approvisionnements",
@@ -841,7 +852,11 @@
     "exitFullscreen": "Quitter le POS en plein écran",
     "fullscreenUnavailable": "Le mode plein écran n'est pas disponible",
     "backspaceAmount": "Effacer le dernier chiffre",
-    "numericKeypad": "Pavé numérique"
+    "numericKeypad": "Pavé numérique",
+    "kitchenItemsPendingWarning": "{count, plural, one {# article(s) sont encore en préparation en cuisine} other {# article(s) sont encore en préparation en cuisine}}",
+    "kitchenDeliveryOverridePrompt": "Les articles de cuisine ne sont pas encore servis. Saisissez le code PIN du responsable pour autoriser le règlement.",
+    "kitchenDeliveryOverrideSuccess": "Dérogation du responsable acceptée pour les articles non servis.",
+    "kitchenDeliveryOverrideInvalid": "Code PIN du responsable incorrect. Réessayez."
   },
   "printTest": {
     "amt": "Montant",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Charger les informations de l’application serveur",
     "loading": "Chargement…",
     "localNetwork": "Réseau local",
+    "localNetworkHint": "À utiliser lorsque tous les appareils peuvent accéder à cette adresse en Wi-Fi, Ethernet ou via un réseau VPN/mesh",
     "loyalty": "Fidélité",
     "loyaltyHint": "Les clients gagnent des points selon le taux d’acquisition de fidélité de chaque article du panier",
     "loyaltyProgram": "Programme de fidélité",
@@ -2009,6 +2025,7 @@
     "version": "Version",
     "viewTableInfo": "Afficher les informations sur les tables",
     "vpnMeshNetwork": "VPN / réseau maillé",
+    "vpnMeshNetworkHint": "À utiliser lorsque les appareils se connectent via un VPN ou un réseau maillé entre différents sous-réseaux ou emplacements",
     "waitingForApproval": "En attente d’approbation",
     "webusbHint": "Les imprimantes WebUSB sont connectées directement depuis le navigateur au moyen du bouton Connecter de la barre d’outils. Enregistrez cette entrée pour mémoriser la largeur de papier choisie.",
     "webusbTestHint": "WebUSB : utilisez le bouton Connecter de la barre d’outils de la caisse pour effectuer un test.",
@@ -2051,7 +2068,9 @@
     "diagnosticsTicketUnaffected": "Une demande d’assistance que vous envoyez vous-même fonctionne toujours, que ce réglage soit activé ou non.",
     "diagnosticsLocalOnlyHintTransmitting": "Cet écran affiche en langage clair les problèmes récents sur cet appareil. La transmission automatique est activée, les problèmes enregistrés peuvent donc être envoyés à votre compte FloCafe Cloud.",
     "diagnosticsLocalOnlyHintPending": "Cet écran affiche en langage clair les problèmes récents sur cet appareil.",
-    "printing": "Impression"
+    "printing": "Impression",
+    "requireKitchenDeliveredToggle": "Exiger la livraison de la cuisine avant la facturation",
+    "requireKitchenDeliveredHint": "Empêche le règlement des additions après paiement tant que tous les articles ne sont pas marqués comme servis en cuisine. Vérification ignorée automatiquement si le KDS est désactivé."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Suivi automatique",
       "bill_receipt": "Reçu de facture",
-      "manual_reply": "Réponse manuelle"
+      "manual_reply": "Réponse manuelle",
+      "z_report": "Rapport Z"
     },
     "lastError": {
       "cooldown": "L’envoi est temporairement suspendu.",

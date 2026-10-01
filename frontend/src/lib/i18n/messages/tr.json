@@ -303,6 +303,9 @@
     "closureNotes": "Notlar",
     "countedCash": "Sayılan nakit",
     "variance": "Fark",
+    "varianceExact": "Tam",
+    "varianceShort": "Eksik",
+    "varianceOver": "Fazla",
     "printZReport": "Z yazdır",
     "reprintZ": "Z'yi yeniden yazdır",
     "reprintAddsMarker": "Yeniden yazdırma bir REIMPRESION satırı ekler",
@@ -337,7 +340,15 @@
     "xReportSales": "Bugünkü satışlar",
     "refundsCount": "{count} iade",
     "ticketNoPayments": "Bu gün ödeme yok",
-    "shiftLoadFailed": "Vardiya durumu yüklenemedi."
+    "shiftLoadFailed": "Vardiya durumu yüklenemedi.",
+    "sendViaWhatsApp": "WhatsApp’a gönder",
+    "sendWhatsAppTitle": "Raporu WhatsApp’a gönder",
+    "recipientPhone": "Alıcının telefon numarası",
+    "reportSentSuccess": "Rapor WhatsApp’a başarıyla gönderildi",
+    "reportOpeningWhatsAppWeb": "Raporla birlikte WhatsApp açılıyor...",
+    "salesSummary": "SATIŞ ÖZETİ",
+    "paymentBreakdown": "ÖDEMELER",
+    "drawerReconciliation": "KASA MUTABAKATI"
   },
   "inventory": {
     "tabSupplies": "Sarf malzemeleri",
@@ -841,7 +852,11 @@
     "fullscreenUnavailable": "Tam ekran desteklenmiyor",
     "backspaceAmount": "Sil",
     "numericKeypad": "Sayısal Tuş Takımı",
-    "tax": "Vergi"
+    "tax": "Vergi",
+    "kitchenItemsPendingWarning": "{count, plural, one {Mutfakta hâlâ hazırlanan # ürün var} other {Mutfakta hâlâ hazırlanan # ürün var}}",
+    "kitchenDeliveryOverridePrompt": "Mutfak ürünleri henüz teslim edilmedi. Ödemeye izin vermek için yönetici PIN kodunu girin.",
+    "kitchenDeliveryOverrideSuccess": "Teslim edilmemiş ürünler için yönetici onayı kabul edildi.",
+    "kitchenDeliveryOverrideInvalid": "Yönetici PIN kodu geçersiz. Tekrar deneyin."
   },
   "printTest": {
     "amt": "Tutar",
@@ -1686,6 +1701,7 @@
     "loadServerAppInfo": "Garson Terminali Bilgilerini Yükle",
     "loading": "Yükleniyor...",
     "localNetwork": "Yerel Ağ (LAN)",
+    "localNetworkHint": "Tüm cihazlar bu adrese Wi-Fi, Ethernet veya VPN/mesh ağı üzerinden erişebiliyorsa kullanın",
     "loyalty": "Müşteri Sadakat Programı",
     "loyaltyHint": "Müşterilerin alışverişlerinden puan kazanıp indirim olarak harcamasını sağlayın",
     "loyaltyProgram": "Sadakat Puan Sistemi",
@@ -2010,6 +2026,7 @@
     "version": "Sürüm",
     "viewTableInfo": "Masa Bilgilerini Görüntüle",
     "vpnMeshNetwork": "VPN / Mesh Ağı",
+    "vpnMeshNetworkHint": "Cihazlar farklı alt ağlar veya konumlar arasında VPN ya da mesh ağı üzerinden bağlanıyorsa kullanın",
     "waitingForApproval": "Yönetici onayı bekleniyor...",
     "webusbHint": "WebUSB tarayıcı üzerinden doğrudan USB termal yazıcı erişimi sağlar",
     "webusbTestHint": "Uyumlu USB yazıcıyı bağlayıp test edin",
@@ -2051,7 +2068,9 @@
     "diagnosticsSendAutomaticallyHint": "Varsayılan olarak kapalı. Kapalıyken kaydedilen sorunlar bu cihazda kalır ve hiçbir zaman gönderilmez. Kendi gönderdiğiniz destek talepleri etkilenmez.",
     "diagnosticsTicketUnaffected": "Kendi gönderdiğiniz bir destek talebi, bu ayar açık da kapalı da olsa her zaman çalışır.",
     "diagnosticsLocalOnlyHintTransmitting": "Bu ekran, bu cihazdaki son sorunları sade bir dille gösterir. Otomatik gönderim açık, bu yüzden kaydedilen sorunlar FloCafe bulut hesabınıza gönderilebilir.",
-    "diagnosticsLocalOnlyHintPending": "Bu ekran, bu cihazdaki son sorunları sade bir dille gösterir."
+    "diagnosticsLocalOnlyHintPending": "Bu ekran, bu cihazdaki son sorunları sade bir dille gösterir.",
+    "requireKitchenDeliveredToggle": "Faturalandırmadan önce mutfak teslimatını zorunlu kıl",
+    "requireKitchenDeliveredHint": "Tüm ürünler mutfakta servis edildi olarak işaretlenene kadar veresiye hesabın ödenmesini engeller. KDS kapalıysa bu kontrol otomatik olarak atlanır."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",
@@ -2775,7 +2794,8 @@
     "kind": {
       "auto_followup": "Otomatik Takip",
       "bill_receipt": "Hesap Fişi",
-      "manual_reply": "Manuel Yanıt"
+      "manual_reply": "Manuel Yanıt",
+      "z_report": "Z Raporu"
     },
     "lastError": {
       "cooldown": "Gönderim geçici olarak duraklatıldı.",

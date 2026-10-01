@@ -21,7 +21,7 @@ import {
   thermalTextFallback,
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
-import { displayCellWidth, graphemeSegments } from '../../shared/print/width';
+import { displayCellWidth } from '../../shared/print/width';
 import {
   buildDeliverySlipDocument,
   clampDeliverySlipText,

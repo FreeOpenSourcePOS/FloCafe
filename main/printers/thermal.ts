@@ -23,6 +23,7 @@ import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel } from '../print/print-labels.generated';
+import { receiptChargeLines } from '../../shared/charges';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -1766,6 +1767,10 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   // chargeRows capability declaration preserves stable country/legal row order.
+  // When the bill carries an engine breakdown it is the itemised source of truth,
+  // so the standard rows it already covers are not repeated below.
+  const itemisedCharges = receiptChargeLines(bill.charges_breakdown);
+  const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
   const chargeAmounts: Record<TemplateChargeRowId, number> = {
     serviceCharge: Number(bill.service_charge) || 0,
     deliveryCharge: Number(bill.delivery_charge) || 0,
@@ -1774,8 +1779,14 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   for (const row of declaredTemplateChargeRows(payload?.totals?.chargeRows)) {
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
+    if (itemisedIds.has(row)) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
     pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+  }
+  // Merchant-named surcharges have no catalog label; the configured name is the
+  // label, so only the amount needs formatting.
+  for (const charge of itemisedCharges) {
+    pushFinancialLines(financialRows(charge.name, formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence: template literal wins, then labels map, then localized catalog.

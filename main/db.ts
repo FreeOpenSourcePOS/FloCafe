@@ -5490,6 +5490,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 99,
+    name: 'add_charges_breakdown_and_custom_charges_setting',
+    up: () => {
+      // Additive only: existing orders/bills keep a NULL charges_breakdown and
+      // fall back to the dedicated service_charge/packaging_charge columns.
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('charges_breakdown')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN charges_breakdown TEXT`);
+      }
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('charges_breakdown')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN charges_breakdown TEXT`);
+      }
+      insertSettingIfMissing('custom_charges', '[]');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5788,6 +5805,7 @@ function createSchema(): void {
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
       service_charge REAL DEFAULT 0,
+      charges_breakdown TEXT,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -5856,6 +5874,7 @@ function createSchema(): void {
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
       service_charge REAL DEFAULT 0,
+      charges_breakdown TEXT,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,
@@ -6253,6 +6272,9 @@ function seedInstallDefaults(): void {
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
+  // Unified charges & fees engine: JSON array of ChargeDefinition objects.
+  // Validated only by the dedicated /settings/charges endpoints.
+  insert('custom_charges', '[]');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
   insert('cloud_sync_enabled', '1');

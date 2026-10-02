@@ -30,6 +30,7 @@ import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
+import { ChargesSettingsCard } from '@/components/settings/ChargesSettingsCard';
 import { GeneralSettingsTab, type BusinessForm, type InvoiceResetPeriod, type OrderNumberForm } from '@/components/settings/GeneralSettingsTab';
 import {
   PrintersSettingsTab,
@@ -3664,6 +3665,8 @@ export default function SettingsPage() {
             )}
 
             <KdsDefaultViewCard />
+
+            <ChargesSettingsCard />
 
             <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
               <strong>{t('howItWorks')}</strong> {t('howItWorksBody')}

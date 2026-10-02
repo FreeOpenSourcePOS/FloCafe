@@ -29,6 +29,8 @@ import {
   type DiscountType,
 } from '@/lib/discount-settings';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
+import { parseAppliedCharges, type AppliedCharge } from '@/lib/charges';
+import { useChargesStore, chargesForOrderType } from '@/store/charges';
 
 interface Props {
   bill: Bill;
@@ -129,6 +131,36 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
+
+  const charges = useChargesStore((s) => s.charges);
+  const loadCharges = useChargesStore((s) => s.load);
+  const [updatingChargeId, setUpdatingChargeId] = useState<string | null>(null);
+  useEffect(() => {
+    void loadCharges();
+  }, [loadCharges]);
+
+  const appliedCharges: AppliedCharge[] = parseAppliedCharges(bill.charges_breakdown);
+  const applicableCharges = chargesForOrderType(charges, bill.order?.type || '');
+  // The backend rejects a waiver on a split check (its charges are already
+  // allocated) and on a settled bill, so the toggle is not offered there.
+  const canToggleCharges = !bill.split_group_id
+    && bill.payment_status !== 'paid'
+    && Number(bill.paid_amount || 0) === 0
+    && bill.payment_status !== 'refunded'
+    && bill.payment_status !== 'partially_refunded';
+
+  const toggleChargeWaiver = async (charge: AppliedCharge) => {
+    setUpdatingChargeId(charge.id);
+    try {
+      await api.patch(`/bills/${bill.id}/charges`, { charge_id: charge.id, waived: !charge.waived });
+      const { data } = await api.get(`/bills/${bill.id}`);
+      if (data.bill && onBillUpdate) onBillUpdate(data.bill);
+    } catch {
+      toast.error(t('chargeUpdateFailed'));
+    } finally {
+      setUpdatingChargeId(null);
+    }
+  };
 
   // Sync state with active bill discount during render before paint
   // to prevent flashing stale values.
@@ -554,16 +586,43 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   <span>{currencyFmt(Number(bill.delivery_charge))}</span>
                 </div>
               )}
-              {Number(bill.packaging_charge) > 0 && (
+              {Number(bill.packaging_charge) > 0 && appliedCharges.length === 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('packaging')}</span>
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
                 </div>
               )}
-              {Number(bill.service_charge) > 0 && (
+              {Number(bill.service_charge) > 0 && appliedCharges.length === 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{tReceipt('serviceCharge')}</span>
                   <span>{currencyFmt(Number(bill.service_charge))}</span>
+                </div>
+              )}
+              {appliedCharges.length > 0 && (
+                <div className="space-y-1 pt-1" data-testid="payment-charges">
+                  {appliedCharges.map((charge) => {
+                    const definition = applicableCharges.find((c) => c.id === charge.id);
+                    const isOptional = definition?.is_optional ?? false;
+                    return (
+                      <div key={charge.id} className="flex justify-between items-center gap-2 text-slate-300">
+                        <span className={charge.waived ? 'line-through' : undefined}>{charge.name}</span>
+                        <span className="flex items-center gap-2">
+                          <span className={charge.waived ? 'line-through' : undefined}>{currencyFmt(charge.amount)}</span>
+                          {isOptional && (
+                            <button
+                              type="button"
+                              disabled={!canToggleCharges || updatingChargeId === charge.id}
+                              onClick={() => toggleChargeWaiver(charge)}
+                              aria-pressed={charge.waived}
+                              className="text-[11px] px-2 py-0.5 rounded border border-white/20 text-slate-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {charge.waived ? t('applyCharge') : t('waiveCharge')}
+                            </button>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (

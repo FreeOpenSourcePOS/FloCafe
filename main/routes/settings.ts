@@ -28,6 +28,12 @@ import {
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
 import { isThemeMode } from '../title-bar-theme';
+import {
+  ChargeValidationError,
+  CUSTOM_CHARGES_SETTING_KEY,
+  getChargeDefinitions,
+  normalizeChargeDefinitions,
+} from '../services/charges';
 
 const router = Router();
 const configuredSettingsReadLimit = Number.parseInt(process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX || '', 10);
@@ -874,6 +880,49 @@ router.post('/google-drive/restore', requirePermission('google-drive.manage'), r
   } catch (error) { return googleDriveErrorResponse(res, error); }
 }));
 
+// ── Charges & fees (must come BEFORE /:key wildcard) ───────────────────────
+
+/**
+ * Dedicated, validated charges & fees endpoints. `custom_charges` is
+ * deliberately unreachable from the generic wildcard route below: a charge
+ * definition needs range, enum and order-type validation that the wildcard
+ * handler does not perform, and PR #829 shipped exactly that gap.
+ */
+router.get('/charges', settingsReadRateLimit, requirePermission('settings.view'), (_req: Request, res: Response) => {
+  try {
+    return res.json({ charges: getChargeDefinitions() });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manage'), (req: Request, res: Response) => {
+  try {
+    const payload = (req.body || {}).charges ?? req.body;
+    let definitions;
+    try {
+      definitions = normalizeChargeDefinitions(payload);
+    } catch (error: unknown) {
+      if (error instanceof ChargeValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(CUSTOM_CHARGES_SETTING_KEY, JSON.stringify(definitions), now());
+
+    return res.json({ charges: definitions });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
@@ -901,7 +950,19 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'theme_mode',
 ]);
 
+/**
+ * Settings whose payload needs schema validation the wildcard route cannot do.
+ * Listed as an explicit deny so widening ALLOWED_WILDCARD_KEYS can never
+ * quietly reopen the unvalidated path.
+ */
+const DEDICATED_SETTING_KEYS = new Set<string>([
+  CUSTOM_CHARGES_SETTING_KEY,
+]);
+
 function isAllowedWildcardKey(key: string): boolean {
+  // Explicit deny: `custom_charges` is a validated JSON document owned by the
+  // dedicated /charges routes, not a scalar the wildcard can write.
+  if (DEDICATED_SETTING_KEYS.has(key)) return false;
   return ALLOWED_WILDCARD_KEYS.has(key) || /^tax_plugin_request:[A-Z]{2}$/.test(key);
 }
 

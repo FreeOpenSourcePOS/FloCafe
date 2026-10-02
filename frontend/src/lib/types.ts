@@ -242,6 +242,8 @@ export interface Bill {
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string; tendered_amount?: number; change_amount?: number }[] | null;
   split_group_id?: string | null;
   split_label?: string | null;
+  /** Itemised unified engine charges; null on bills created before the engine. */
+  charges_breakdown?: string | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   order?: Order;

@@ -4,6 +4,7 @@ import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { receiptChargeLines } from '../../shared/charges';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import { displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
 import {
@@ -354,7 +355,9 @@ export function renderBillDocumentToCompactLines(
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
       pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, labelOf(totals.tax.label), value);
     }
-    if (totals.serviceCharge) {
+    const itemisedCharges = receiptChargeLines(totals.chargesBreakdown);
+    const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
+    if (totals.serviceCharge && !itemisedIds.has('service_charge')) {
       const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.serviceCharge.label), value);
     }
@@ -362,9 +365,14 @@ export function renderBillDocumentToCompactLines(
       const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.deliveryCharge.label), value);
     }
-    if (totals.packagingCharge) {
+    if (totals.packagingCharge && !itemisedIds.has('packaging_charge')) {
       const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.packagingCharge.label), value);
+    }
+    // Itemised engine charges: a bill without a breakdown keeps the legacy rows.
+    for (const charge of itemisedCharges) {
+      const value = formatCurrency(charge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      pushTotalRow(financialRows(charge.name, value, cols, options.language, options.capabilities), false, charge.name, value);
     }
     const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
     pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, labelOf(totals.grandTotal.label), grandTotalValue);

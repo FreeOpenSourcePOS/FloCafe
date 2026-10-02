@@ -5,6 +5,7 @@ import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } fro
 import { selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { columnsForReceiptPaperSize, displayCellWidth, fitThermalLine, graphemeSegments, padToDisplayCells, truncateToDisplayCells } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+import { receiptChargeLines } from '@/lib/charges';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -562,14 +563,21 @@ export function buildClassicReceiptBytes(
     if (totals.tax) {
       safePrinterText(enc, padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
     }
-    if (totals.serviceCharge) {
+    // An engine breakdown is the itemised source of truth; the standard rows it
+    // covers are skipped so the fee is never printed twice.
+    const itemisedCharges = receiptChargeLines(totals?.chargesBreakdown);
+    const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
+    if (totals.serviceCharge && !itemisedIds.has('service_charge')) {
       safePrinterText(enc, padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
     }
     if (totals.deliveryCharge) {
       safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
     }
-    if (totals.packagingCharge) {
+    if (totals.packagingCharge && !itemisedIds.has('packaging_charge')) {
       safePrinterText(enc, padRow(labelOf(totals.packagingCharge.label), formatAmount(totals.packagingCharge.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+    }
+    for (const charge of itemisedCharges) {
+      safePrinterText(enc, padRow(charge.name, formatAmount(charge.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
     }
 
     enc.rule({ style: 'double' });
@@ -785,14 +793,19 @@ export function buildCompactReceiptBytes(
   if (totals?.tax) {
     safePrinterText(enc, padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
   }
-  if (totals?.serviceCharge) {
+  const itemisedCharges = receiptChargeLines(totals?.chargesBreakdown);
+  const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
+  if (totals?.serviceCharge && !itemisedIds.has('service_charge')) {
     safePrinterText(enc, padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
   }
   if (totals?.deliveryCharge) {
     safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
   }
-  if (totals?.packagingCharge) {
+  if (totals?.packagingCharge && !itemisedIds.has('packaging_charge')) {
     safePrinterText(enc, padRow(labelOf(totals.packagingCharge.label), formatAmount(totals.packagingCharge.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+  }
+  for (const charge of itemisedCharges) {
+    safePrinterText(enc, padRow(charge.name, formatAmount(charge.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
   }
   if (breakdown && breakdown.lines.length > 0) {
     for (const line of breakdown.lines) {

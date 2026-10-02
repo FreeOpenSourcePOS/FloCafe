@@ -13,6 +13,7 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import { buildAppliedCharges, serializeAppliedCharges } from '../services/charges';
 import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
@@ -34,6 +35,35 @@ const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, s
 const orderItemCancelRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;
+
+/**
+ * Resolves the unified engine's charges for an order, carrying forward the
+ * waivers already recorded on it so a recompute never silently un-waives a fee.
+ * Returns null when the merchant configured nothing that matches this order, so
+ * the row keeps the charge amounts it already carried.
+ */
+function resolveEngineCharges(order: any, subtotal: number, discountAmount: number) {
+  const resolved = buildAppliedCharges({
+    currency: getTenantCurrency(),
+    orderType: String(order?.type || ''),
+    subtotal,
+    discountAmount,
+    existingBreakdown: order?.charges_breakdown,
+  });
+  if (!resolved.configured) return null;
+  const engineOwns = (id: string) => resolved.charges.some((charge) => charge.id === id);
+  return {
+    appliedCharges: resolved.charges,
+    // The engine owns a standard column only when it produced a charge with that
+    // id; otherwise the amount already on the row stands.
+    columns: {
+      ...resolved.columns,
+      service_charge: engineOwns('service_charge') ? resolved.columns.service_charge : Number(order?.service_charge || 0),
+      packaging_charge: engineOwns('packaging_charge') ? resolved.columns.packaging_charge : Number(order?.packaging_charge || 0),
+    },
+    chargesJson: serializeAppliedCharges(resolved.charges),
+  };
+}
 
 function reportOrderCreateFailure(status: number, itemCount: number, stage: 'inventory_validation' | 'order_insert', error?: unknown): void {
   try {
@@ -700,10 +730,28 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         }
       }
 
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeContext, customer);
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
       const minorFactor = getCurrencyMinorUnitFactor(currency);
+
+      // Unified charges & fees engine. Charges the merchant configured for this
+      // order type are applied here and the standard ids are projected onto the
+      // dedicated columns; with nothing configured, manually entered amounts stand.
+      const resolvedCharges = buildAppliedCharges({
+        currency,
+        orderType: type,
+        subtotal,
+        discountAmount: 0,
+      });
+      const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
+      const appliedServiceCharge = engineColumns ? engineColumns.service_charge : serviceCharge;
+      const appliedPackagingCharge = engineColumns ? engineColumns.packaging_charge : pkgCharge;
+      const otherCharges = engineColumns ? engineColumns.other_charges : 0;
+      const appliedChargeContext: typeof chargeContext = engineColumns
+        ? { ...chargeContext, service_charge: appliedServiceCharge, packaging_charge: appliedPackagingCharge }
+        : chargeContext;
+
+      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, appliedChargeContext, customer);
       const taxRollup = combineItemAndChargeTaxes({
         itemTaxAmount: totalTax,
         itemExclusiveTaxAmount: exclusiveTax,
@@ -714,16 +762,18 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         minorFactor,
       });
       const preRoundTotal = subtotal + taxRollup.exclusiveTaxAmount
-        + delCharge + pkgCharge + serviceCharge;
+        + delCharge + appliedPackagingCharge + appliedServiceCharge + otherCharges;
       const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
-          round_off = ?, updated_at = ? WHERE id = ?
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
         subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns),
-        taxRollup.snapshotJson, total, roundOff, now(), orderId,
+        taxRollup.snapshotJson, total, appliedServiceCharge, appliedPackagingCharge,
+        engineColumns ? serializeAppliedCharges(resolvedCharges.charges) : null,
+        roundOff, now(), orderId,
       );
 
       if (table_id && type === 'dine_in') {
@@ -950,6 +1000,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         // amount type: keep same value
       }
 
+      const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);
       const { taxRollup, total, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
@@ -957,17 +1008,22 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         totals,
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
       });
+
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (currentOrder.service_charge || 0);
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (currentOrder.packaging_charge || 0);
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (currentOrder.charges_breakdown ?? null);
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, special_instructions = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, special_instructions || null, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, special_instructions = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, special_instructions || null, now(), req.params.id);
       } else {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), req.params.id);
       }
 
       // BUG #4 FIX: Sync bill if it exists (add-items didn't update the bill)
@@ -976,8 +1032,8 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         const pack = getActiveCountryPack(tenantInfo.country);
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
+        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
@@ -1262,6 +1318,17 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requirePermission(
       db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
         .run(nowStr, req.params.id);
 
+      // Charges are defined per order type, so converting re-resolves them
+      // against 'takeaway'. Waivers recorded for the dine-in charges do not
+      // carry over to a charge the merchant scoped to dine-in only.
+      const { subtotal } = calculateOrderTotals(db, req.params.id as string);
+      const discountAmount = Number(order.discount_amount || 0);
+      const engineCharges = resolveEngineCharges({ ...order, type: 'takeaway' }, subtotal, discountAmount);
+      if (engineCharges) {
+        db.prepare(`UPDATE orders SET service_charge = ?, packaging_charge = ?, charges_breakdown = ?, updated_at = ? WHERE id = ?`)
+          .run(engineCharges.columns.service_charge, engineCharges.columns.packaging_charge, engineCharges.chargesJson, nowStr, req.params.id);
+      }
+
       if (order.table_id) {
         db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
           .run(nowStr, order.table_id);
@@ -1407,6 +1474,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         discountAmount = Number(discountAmount.toFixed(decimals));
       }
 
+      const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
       const { taxRollup, total: newTotal, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
@@ -1414,18 +1482,25 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         totals,
         discountAmount,
         taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
       });
+
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (currentOrder.service_charge || 0);
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (currentOrder.packaging_charge || 0);
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (currentOrder.charges_breakdown ?? null);
 
       db.prepare(`
         UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
-          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
         totals.subtotal,
         discountAmount,
         discount_value > 0 ? discount_type : null,
         discount_value > 0 ? discount_value : null,
         discount_value > 0 ? (discount_reason || null) : null,
-        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newTotal, roundOff, now(), req.params.id
+        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newTotal,
+        syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), req.params.id
       );
 
       // Sync discount to bill if it exists and is unpaid
@@ -1437,7 +1512,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`
           UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
-            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?, service_charge = ?, round_off = ?, updated_at = ?
+            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
+            service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
           WHERE id = ?
         `).run(
           totals.subtotal,
@@ -1445,7 +1521,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
           discount_value > 0 ? discount_type : null,
           discount_value > 0 ? discount_value : null,
           discount_value > 0 ? (discount_reason || null) : null,
-          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id
+          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance,
+          syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id
         );
       }
 
@@ -1616,6 +1693,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
       }
 
       // Recalculate tax on discounted subtotal
+      const engineCharges = resolveEngineCharges(order, orderTotals.subtotal, newOrderDiscount);
       const { taxRollup, total: orderTotal, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: order,
@@ -1623,11 +1701,18 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
         totals: orderTotals,
         discountAmount: newOrderDiscount,
         taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
       });
 
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (order.packaging_charge || 0);
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (order.charges_breakdown ?? null);
+
       db.prepare(`
-        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-      `).run(orderTotals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, orderTotal, roundOff, now(), req.params.id);
+        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(orderTotals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, orderTotal,
+        syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), req.params.id);
 
       // BUG #15 FIX: Sync item-level discount to bill
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
@@ -1635,8 +1720,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
         const pack = getActiveCountryPack(tenantInfo.country);
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(orderTotals.subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
+        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+          .run(orderTotals.subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, {
@@ -1841,6 +1926,7 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
         : null;
       // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
+      const engineCharges = resolveEngineCharges(order, subtotal, newDiscountAmount);
       const { taxRollup, total, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
@@ -1848,24 +1934,33 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         totals: orderTotals,
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
       });
+
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (order.packaging_charge || 0);
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (order.charges_breakdown ?? null);
 
       // Cancelling the last active item marks the entire order cancelled and frees table.
       const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
 
       if (orderCancelled) {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
             status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total,
+          syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), 'All items cancelled', now(), orderId);
         if (currentOrder.table_id) {
           db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
             .run(now(), currentOrder.table_id);
         }
       } else {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total,
+          syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), orderId);
       }
 
       syncUnpaidBillsForOrder(db, orderId, {
@@ -1875,8 +1970,9 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         taxSnapshot: taxRollup.snapshotJson,
         discountAmount: newDiscountAmount,
         deliveryCharge: order.delivery_charge || 0,
-        packagingCharge: order.packaging_charge || 0,
-        serviceCharge: order.service_charge || 0,
+        packagingCharge: syncedPackagingCharge,
+        serviceCharge: syncedServiceCharge,
+        chargesBreakdown: syncedChargesJson,
         total,
       }, tenantInfo.country);
 
@@ -2013,6 +2109,7 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
         : null;
       // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
+      const engineCharges = resolveEngineCharges(order, subtotal, newDiscountAmount);
       const { taxRollup, total, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
@@ -2020,11 +2117,18 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         totals: orderTotals,
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
       });
 
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (order.packaging_charge || 0);
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (order.charges_breakdown ?? null);
+
       db.prepare(`
-        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-      `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
+        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total,
+        syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, roundOff, now(), orderId);
 
       syncUnpaidBillsForOrder(db, orderId, {
         subtotal,
@@ -2033,8 +2137,9 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         taxSnapshot: taxRollup.snapshotJson,
         discountAmount: newDiscountAmount,
         deliveryCharge: order.delivery_charge || 0,
-        packagingCharge: order.packaging_charge || 0,
-        serviceCharge: order.service_charge || 0,
+        packagingCharge: syncedPackagingCharge,
+        serviceCharge: syncedServiceCharge,
+        chargesBreakdown: syncedChargesJson,
         total,
       }, tenantInfo.country);
 

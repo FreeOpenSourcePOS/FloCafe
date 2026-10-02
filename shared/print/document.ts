@@ -158,6 +158,8 @@ export interface BillSnapshot {
   readonly deliveryCharge?: number;
   /** Flat packaging charge, when the bill carries one. */
   readonly packagingCharge?: number;
+  /** Itemised charges JSON from the unified charges engine, when present. */
+  readonly chargesBreakdown?: string | null;
   readonly taxComponents: readonly TaxComponentSnapshot[];
   readonly payments: readonly PaymentSnapshot[];
   readonly pointsEarned: number;
@@ -364,6 +366,11 @@ export interface TotalsBlock {
   readonly deliveryCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat packaging-charge line, present when the snapshot carries a nonzero charge. */
   readonly packagingCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
+  /**
+   * Itemised engine charges, passed through verbatim for the renderers that
+   * print merchant-named surcharges the semantic-label catalog cannot name.
+   */
+  readonly chargesBreakdown: string | null;
   readonly grandTotal: { readonly label: SemanticLabel; readonly amount: number };
   readonly pointsRedeemed: { readonly label: SemanticLabel; readonly points: number } | null;
   readonly pointsEarned: { readonly label: SemanticLabel; readonly points: number } | null;
@@ -705,6 +712,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
         amount: toFiniteNumber(bill.packagingCharge),
       })
       : null,
+    chargesBreakdown: typeof bill.chargesBreakdown === 'string' ? bill.chargesBreakdown : null,
     grandTotal: Object.freeze({
       label: resolveSemanticLabel(labels, 'print.grandTotal'),
       amount: bill.total,
@@ -1300,6 +1308,7 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         && isSemanticLabel(value[key].label)
         && isFiniteNumber(value[key].amount))
         && ['discount', 'tax', 'serviceCharge', 'deliveryCharge', 'packagingCharge'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].amount)))
+        && (value.chargesBreakdown === null || typeof value.chargesBreakdown === 'string')
         && ['pointsRedeemed', 'pointsEarned', 'pointsBalance'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].points)));
     case 'payments':
       return isSemanticLabel(value.heading)

@@ -178,26 +178,29 @@ async function prepareDineInSettings(page: import('@playwright/test').Page, head
   if (splitSettingResponse) expect(splitSettingResponse.ok()).toBeTruthy();
   const originalSplitChecks = splitSettingResponse ? (await splitSettingResponse.json()).setting?.value ?? 'false' : null;
 
-  const updateBusiness = async (settings: { billing_type: string; tables_required: boolean }) => {
-    const response = await page.request.put(`${BASE}/api/settings/business`, { headers, data: settings });
+  const updateBusiness = async (
+    request: import('@playwright/test').APIRequestContext,
+    settings: { billing_type: string; tables_required: boolean },
+  ) => {
+    const response = await request.put(`${BASE}/api/settings/business`, { headers, data: settings, timeout: 5_000 });
     expect(response.ok()).toBeTruthy();
   };
-  const updateSplitSetting = async (value: string) => {
-    const response = await page.request.put(`${BASE}/api/settings/split_checks_enabled`, { headers, data: { value } });
+  const updateSplitSetting = async (request: import('@playwright/test').APIRequestContext, value: string) => {
+    const response = await request.put(`${BASE}/api/settings/split_checks_enabled`, { headers, data: { value }, timeout: 5_000 });
     expect(response.ok()).toBeTruthy();
   };
 
-  const restore = async () => {
-    if (enableSplitting) await updateSplitSetting(String(originalSplitChecks));
-    await updateBusiness({
+  const restore = async (request: import('@playwright/test').APIRequestContext = page.request) => {
+    if (enableSplitting) await updateSplitSetting(request, String(originalSplitChecks));
+    await updateBusiness(request, {
       billing_type: business.billing_type,
       tables_required: Boolean(business.tables_required),
     });
   };
 
   try {
-    await updateBusiness({ billing_type: 'postpaid', tables_required: true });
-    if (enableSplitting) await updateSplitSetting('true');
+    await updateBusiness(page.request, { billing_type: 'postpaid', tables_required: true });
+    if (enableSplitting) await updateSplitSetting(page.request, 'true');
   } catch (error) {
     try {
       await restore();
@@ -232,7 +235,7 @@ async function createDineInFixture(
       },
     });
     expect(orderResponse.ok()).toBeTruthy();
-    const order = (await orderResponse.json()).order as { id: number; items: Array<{ id: number }> };
+    const order = (await orderResponse.json()).order as { id: number; order_number: string; items: Array<{ id: number }> };
     return { tableId: table.id, tableNumber, order };
   } catch (error) {
     await page.request.patch(`${BASE}/api/tables/${table.id}/status`, {
@@ -245,19 +248,19 @@ async function createDineInFixture(
 }
 
 async function cleanupDineInFixture(
-  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
   headers: Record<string, string>,
   fixture: { tableId: string; orderId?: number },
 ) {
   if (fixture.orderId) {
-    const orderResponse = await page.request.patch(`${BASE}/api/orders/${fixture.orderId}/status`, {
+    const orderResponse = await request.patch(`${BASE}/api/orders/${fixture.orderId}/status`, {
       headers,
       data: { status: 'cancelled', reason: 'E2E fixture cleanup' },
       timeout: 5_000,
     });
     expect(orderResponse.ok()).toBeTruthy();
   }
-  const tableResponse = await page.request.patch(`${BASE}/api/tables/${fixture.tableId}/status`, {
+  const tableResponse = await request.patch(`${BASE}/api/tables/${fixture.tableId}/status`, {
     headers,
     data: { status: 'available' },
     timeout: 5_000,
@@ -384,7 +387,7 @@ test('dine-in bill print uses order items and totals refreshed after another ter
   } finally {
     let cleanupError: unknown;
     try {
-      if (tableId) await cleanupDineInFixture(page, authHeaders, { orderId, tableId });
+      if (tableId) await cleanupDineInFixture(page.request, authHeaders, { orderId, tableId });
     } catch (error) {
       cleanupError = error;
     }
@@ -442,7 +445,7 @@ test('dine-in bill print does not open or generate a bill when the fresh order r
     page.off('request', countGenerateRequest);
     let cleanupError: unknown;
     try {
-      if (createdFixture) await cleanupDineInFixture(page, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
+      if (createdFixture) await cleanupDineInFixture(page.request, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
     } catch (error) {
       cleanupError = error;
     }
@@ -503,7 +506,7 @@ test('dine-in parent bill printing stops when another terminal splits its check'
     page.off('request', countGenerateRequest);
     let cleanupError: unknown;
     try {
-      if (createdFixture) await cleanupDineInFixture(page, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
+      if (createdFixture) await cleanupDineInFixture(page.request, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
     } catch (error) {
       cleanupError = error;
     }
@@ -570,7 +573,7 @@ test('dine-in bill print does not print a split bill generated by another termin
     page.off('request', countGenerateRequest);
     let cleanupError: unknown;
     try {
-      if (createdFixture) await cleanupDineInFixture(page, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
+      if (createdFixture) await cleanupDineInFixture(page.request, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
     } catch (error) {
       cleanupError = error;
     }
@@ -579,67 +582,120 @@ test('dine-in bill print does not print a split bill generated by another termin
   }
 });
 
-test('server with POS access but without bill generation cannot start bill printing', async ({ page }) => {
-  const ownerHeaders = { Authorization: `Bearer ${getE2eToken()}` };
-  const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
-  const serverHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
-  let restoreSettings: (() => Promise<void>) | undefined;
-  let createdFixture: Awaited<ReturnType<typeof createDineInFixture>> | undefined;
-  let originalOverrides: Array<{ permission_id: string; effect: string }> | undefined;
-  let permissionsMayHaveChanged = false;
-  let testError: unknown;
+test.describe('server POS bill print permissions', () => {
+  type PermissionTestCleanup = {
+    ownerHeaders: Record<string, string>;
+    managerHeaders: Record<string, string>;
+    restoreSettings?: Awaited<ReturnType<typeof prepareDineInSettings>>;
+    fixture?: Awaited<ReturnType<typeof createDineInFixture>>;
+    originalOverrides?: Array<{ permission_id: string; effect: string }>;
+    permissionsMayHaveChanged: boolean;
+  };
+  let cleanup: PermissionTestCleanup | undefined;
 
-  try {
-    restoreSettings = await prepareDineInSettings(page, managerHeaders);
+  test.afterEach(async ({ request }) => {
+    const pendingCleanup = cleanup;
+    cleanup = undefined;
+    if (!pendingCleanup) return;
+
+    let cleanupError: unknown;
+    const attempt = async (action: () => Promise<void>) => {
+      try {
+        await action();
+      } catch (error) {
+        cleanupError ??= error;
+      }
+    };
+
+    if (pendingCleanup.permissionsMayHaveChanged && pendingCleanup.originalOverrides) {
+      await attempt(async () => {
+        const latestUserResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, {
+          headers: pendingCleanup.ownerHeaders,
+          timeout: 5_000,
+        });
+        expect(latestUserResponse.ok()).toBeTruthy();
+        const latestUser = await latestUserResponse.json();
+        const restoredPermissions = await request.put(`${BASE}/api/authorization/users/e2e-server`, {
+          headers: pendingCleanup.ownerHeaders,
+          data: { revision: latestUser.revision, overrides: pendingCleanup.originalOverrides },
+          timeout: 5_000,
+        });
+        expect(restoredPermissions.ok()).toBeTruthy();
+      });
+    }
+    if (pendingCleanup.fixture) {
+      await attempt(() => cleanupDineInFixture(request, pendingCleanup.managerHeaders, {
+        tableId: pendingCleanup.fixture!.tableId,
+        orderId: pendingCleanup.fixture!.order.id,
+      }));
+    }
+    if (pendingCleanup.restoreSettings) {
+      await attempt(() => pendingCleanup.restoreSettings!(request));
+    }
+    if (cleanupError) throw cleanupError;
+  });
+
+  test('server with POS access but without bill generation cannot start bill printing', async ({ page }) => {
+    const ownerHeaders = { Authorization: `Bearer ${getE2eToken()}` };
+    const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+    const serverHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
+    const pendingCleanup: PermissionTestCleanup = { ownerHeaders, managerHeaders, permissionsMayHaveChanged: false };
+    cleanup = pendingCleanup;
+
+    pendingCleanup.restoreSettings = await prepareDineInSettings(page, managerHeaders);
     const fixture = await createDineInFixture(page, managerHeaders);
-    createdFixture = fixture;
+    pendingCleanup.fixture = fixture;
     const userResponse = await page.request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
     expect(userResponse.ok()).toBeTruthy();
     const originalUser = await userResponse.json();
-    originalOverrides = originalUser.overrides;
+    pendingCleanup.originalOverrides = originalUser.overrides;
     const overrides = (originalUser.overrides as Array<{ permission_id: string; effect: string }>)
       .filter((override) => override.permission_id !== 'pos.use');
     overrides.push({ permission_id: 'pos.use', effect: 'allow' });
 
-    permissionsMayHaveChanged = true;
+    pendingCleanup.permissionsMayHaveChanged = true;
     const permissionResponse = await page.request.put(`${BASE}/api/authorization/users/e2e-server`, {
       headers: ownerHeaders,
       data: { revision: originalUser.revision, overrides },
     });
     expect(permissionResponse.ok()).toBeTruthy();
-    expect((await page.request.get(`${BASE}/api/orders/${fixture.order.id}`, { headers: serverHeaders })).status()).toBe(200);
+
+    const serverOrderResponse = await page.request.get(`${BASE}/api/orders/${fixture.order.id}`, { headers: serverHeaders });
+    expect(serverOrderResponse.status()).toBe(200);
+    const serverOrder = (await serverOrderResponse.json()).order;
+    expect(serverOrder.bill).toBeFalsy();
+    expect(serverOrder.bills ?? []).toHaveLength(0);
     expect((await page.request.post(`${BASE}/api/bills/generate`, {
       headers: serverHeaders,
       data: { order_id: fixture.order.id },
     })).status()).toBe(403);
+    const serverTablesResponse = await page.request.get(`${BASE}/api/tables`, { headers: serverHeaders });
+    expect(serverTablesResponse.status()).toBe(200);
+    const serverTables = (await serverTablesResponse.json()).tables as Array<{
+      id: string;
+      current_order?: { id: number } | null;
+    }>;
+    expect(serverTables.find((table) => table.id === fixture.tableId)?.current_order?.id).toBe(fixture.order.id);
 
+    await page.goto(`${BASE}/auth/login`);
+    await page.evaluate(() => {
+      localStorage.removeItem('token');
+      localStorage.removeItem('tenant');
+    });
     await loginToPos(page, 'server@flo.local');
+    const browserPermissions = await page.evaluate(() => {
+      const tenant = JSON.parse(localStorage.getItem('tenant') || 'null');
+      return { role: tenant?.role, permissionIds: tenant?.permission_ids };
+    });
+    expect(browserPermissions.role).toBe('server');
+    expect(browserPermissions.permissionIds).toContain('pos.use');
+    expect(browserPermissions.permissionIds).toContain('tables.view');
+    expect(browserPermissions.permissionIds).not.toContain('bills.generate');
+
     await openOccupiedTable(page, fixture.tableNumber);
+    await expect(page.getByRole('heading', { name: fixture.tableNumber, exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.order.order_number)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Add Items/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Print Bill/ })).toHaveCount(0);
-  } catch (error) {
-    testError = error;
-    throw error;
-  } finally {
-    let cleanupError: unknown;
-    if (permissionsMayHaveChanged && originalOverrides) {
-      try {
-        const latestUserResponse = await page.request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
-        const latestUser = await latestUserResponse.json();
-        const restoredPermissions = await page.request.put(`${BASE}/api/authorization/users/e2e-server`, {
-          headers: ownerHeaders,
-          data: { revision: latestUser.revision, overrides: originalOverrides },
-        });
-        if (!restoredPermissions.ok()) throw new Error('Could not restore the E2E server permission overrides');
-      } catch (error) {
-        cleanupError = error;
-      }
-    }
-    try {
-      if (createdFixture) await cleanupDineInFixture(page, managerHeaders, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
-    } catch (error) {
-      cleanupError ??= error;
-    }
-    try { await restoreSettings?.(); } catch (error) { cleanupError ??= error; }
-    if (testError === undefined && cleanupError) throw cleanupError;
-  }
+  });
 });

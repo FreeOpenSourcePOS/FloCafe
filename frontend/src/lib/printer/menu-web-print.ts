@@ -63,9 +63,11 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
 </html>`;
 }
 
+export class MenuPopupBlockedError extends Error {}
+
 export function printMenuInBrowser(html: string): void {
   const printWindow = window.open('', '_blank');
-  if (!printWindow) throw new Error('Allow pop-ups to use browser printing');
+  if (!printWindow) throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();

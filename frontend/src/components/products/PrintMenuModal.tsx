@@ -20,7 +20,7 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatDateForTenant } from '@/lib/countries';
 import type { Category, Product } from '@/lib/types';
-import { buildMenuWebPrintHtml, printMenuInBrowser, type MenuWebPrintSection } from '@/lib/printer/menu-web-print';
+import { buildMenuWebPrintHtml, MenuPopupBlockedError, printMenuInBrowser, type MenuWebPrintSection } from '@/lib/printer/menu-web-print';
 
 interface Props {
   open: boolean;
@@ -157,8 +157,8 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       if (code === 'printer_not_configured' || status === 502 || (status !== undefined && status >= 500) || status === undefined) {
         try {
           if (await printBrowserFallback(filters)) setDialogOpen(false);
-        } catch {
-          toast.error(t('menuPrintFailed'));
+        } catch (popupError) {
+          toast.error(popupError instanceof MenuPopupBlockedError ? t('menuPopupBlocked') : t('menuPrintFailed'));
         }
         return;
       }

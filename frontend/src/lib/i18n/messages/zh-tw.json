@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "沒有符合所選條件的商品",
     "printerDestination": "印表機",
     "systemBrowserPrint": "系統 / 瀏覽器列印",
-    "menuPrintFailed": "無法列印菜單"
+    "menuPrintFailed": "無法列印菜單",
+    "menuPopupBlocked": "您的瀏覽器封鎖了列印視窗。請允許此網站顯示彈出視窗，然後再試一次。"
   },
   "receipt": {
     "amount": "金額",

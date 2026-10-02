@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Keine Produkte entsprechen den ausgewählten Kriterien",
     "printerDestination": "Drucker",
     "systemBrowserPrint": "System / Browserdruck",
-    "menuPrintFailed": "Menü konnte nicht gedruckt werden"
+    "menuPrintFailed": "Menü konnte nicht gedruckt werden",
+    "menuPopupBlocked": "Ihr Browser hat das Druckfenster blockiert. Erlauben Sie Pop-ups für diese Seite und versuchen Sie es erneut."
   },
   "receipt": {
     "amount": "Betrag",

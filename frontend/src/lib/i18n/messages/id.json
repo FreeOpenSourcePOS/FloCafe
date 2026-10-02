@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Tidak ada produk yang sesuai dengan kriteria yang dipilih",
     "printerDestination": "Tujuan printer",
     "systemBrowserPrint": "Sistem / Cetak Browser",
-    "menuPrintFailed": "Menu tidak dapat dicetak"
+    "menuPrintFailed": "Menu tidak dapat dicetak",
+    "menuPopupBlocked": "Browser Anda memblokir jendela cetak. Izinkan pop-up untuk situs ini lalu coba lagi."
   },
   "receipt": {
     "amount": "Jumlah",

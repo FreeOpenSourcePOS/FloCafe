@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Nenhum produto corresponde aos critérios selecionados",
     "printerDestination": "Impressora",
     "systemBrowserPrint": "Sistema / impressão do navegador",
-    "menuPrintFailed": "Não foi possível imprimir o menu"
+    "menuPrintFailed": "Não foi possível imprimir o menu",
+    "menuPopupBlocked": "Seu navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente."
   },
   "receipt": {
     "amount": "Valor",

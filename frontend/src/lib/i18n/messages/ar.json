@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "لا توجد منتجات تطابق الخيارات المحددة",
     "printerDestination": "الطابعة",
     "systemBrowserPrint": "النظام / الطباعة عبر المتصفح",
-    "menuPrintFailed": "تعذرت طباعة القائمة"
+    "menuPrintFailed": "تعذرت طباعة القائمة",
+    "menuPopupBlocked": "قام متصفحك بحجب نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة."
   },
   "receipt": {
     "amount": "المبلغ",

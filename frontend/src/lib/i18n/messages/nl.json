@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Geen producten voldoen aan de gekozen criteria",
     "printerDestination": "Printerbestemming",
     "systemBrowserPrint": "Systeem / browserafdruk",
-    "menuPrintFailed": "Menu afdrukken is mislukt"
+    "menuPrintFailed": "Menu afdrukken is mislukt",
+    "menuPopupBlocked": "Uw browser heeft het afdrukvakster geblokkeerd. Sta pop-ups voor deze site toe en probeer het opnieuw."
   },
   "receipt": {
     "amount": "Bedrag",

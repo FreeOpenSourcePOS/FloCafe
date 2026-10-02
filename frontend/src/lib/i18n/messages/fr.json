@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Aucun produit ne correspond aux critères sélectionnés",
     "printerDestination": "Imprimante",
     "systemBrowserPrint": "Système / impression du navigateur",
-    "menuPrintFailed": "Impossible d’imprimer le menu"
+    "menuPrintFailed": "Impossible d’imprimer le menu",
+    "menuPopupBlocked": "Votre navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres contextuelles pour ce site et réessayez."
   },
   "receipt": {
     "amount": "Montant",

@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "ไม่มีสินค้าที่ตรงกับเกณฑ์ที่เลือก",
     "printerDestination": "เครื่องพิมพ์",
     "systemBrowserPrint": "ระบบ / พิมพ์ผ่านเบราว์เซอร์",
-    "menuPrintFailed": "พิมพ์เมนูไม่สำเร็จ"
+    "menuPrintFailed": "พิมพ์เมนูไม่สำเร็จ",
+    "menuPopupBlocked": "เบราว์เซอร์บล็อกหน้าต่างการพิมพ์ กรุณาอนุญาต pop-up สำหรับเว็บไซต์นี้แล้วลองใหม่อีกครั้ง"
   },
   "receipt": {
     "amount": "จำนวนเงิน",

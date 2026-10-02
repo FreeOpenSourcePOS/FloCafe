@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "هیچ محصولی با معیارهای انتخاب‌شده مطابقت ندارد",
     "printerDestination": "چاپگر",
     "systemBrowserPrint": "سیستم / چاپ مرورگر",
-    "menuPrintFailed": "چاپ منو انجام نشد"
+    "menuPrintFailed": "چاپ منو انجام نشد",
+    "menuPopupBlocked": "مرورگر شما پنجره چاپ را مسدود کرد. برای این سایت اجازه پنجره‌های بازشو بدهید و دوباره تلاش کنید."
   },
   "receipt": {
     "amount": "مبلغ",

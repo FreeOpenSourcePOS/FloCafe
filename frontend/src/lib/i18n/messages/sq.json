@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Asnjë produkt nuk përputhet me kriteret e zgjedhura",
     "printerDestination": "Printeri",
     "systemBrowserPrint": "Sistemi / printimi në shfletues",
-    "menuPrintFailed": "Printimi i menusë dështoi"
+    "menuPrintFailed": "Printimi i menusë dështoi",
+    "menuPopupBlocked": "Shfletuesi juaj bllokuar dritaren e printimit. Lejooni pop-up-et për këtë faqe dhe provoni përsëri."
   },
   "receipt": {
     "amount": "Shuma",

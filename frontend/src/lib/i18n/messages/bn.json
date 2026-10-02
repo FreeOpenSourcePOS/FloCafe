@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "নির্বাচিত শর্তে কোনো পণ্য নেই",
     "printerDestination": "প্রিন্টার",
     "systemBrowserPrint": "সিস্টেম / ব্রাউজার প্রিন্ট",
-    "menuPrintFailed": "মেনু প্রিন্ট করা যায়নি"
+    "menuPrintFailed": "মেনু প্রিন্ট করা যায়নি",
+    "menuPopupBlocked": "আপনার ব্রাউজার প্রিন্ট উইন্ডো ব্লক করেছে। এই সাইটের জন্য পপ-আপ অনুমতি দিন এবং আবার চেষ্টা করুন।"
   },
   "receipt": {
     "amount": "পরিমাণ",

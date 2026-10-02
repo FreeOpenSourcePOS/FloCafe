@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Walang produktong tumutugma sa mga napiling pamantayan",
     "printerDestination": "Lokasyon ng printer",
     "systemBrowserPrint": "System / Pag-print sa Browser",
-    "menuPrintFailed": "Hindi na-print ang menu"
+    "menuPrintFailed": "Hindi na-print ang menu",
+    "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli."
   },
   "receipt": {
     "amount": "Halaga",

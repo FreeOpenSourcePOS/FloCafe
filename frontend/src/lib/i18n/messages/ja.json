@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "選択した条件に一致する商品がありません",
     "printerDestination": "プリンター",
     "systemBrowserPrint": "システム / ブラウザー印刷",
-    "menuPrintFailed": "メニューを印刷できませんでした"
+    "menuPrintFailed": "メニューを印刷できませんでした",
+    "menuPopupBlocked": "ブラウザーが印刷ウィンドウをブロックしました。このサイトのポップアップを許可してから、もう一度お試しください。"
   },
   "receipt": {
     "amount": "金額",

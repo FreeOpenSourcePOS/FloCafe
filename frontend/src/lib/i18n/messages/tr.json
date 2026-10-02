@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Seçilen ölçütlere uygun ürün yok",
     "printerDestination": "Yazıcı",
     "systemBrowserPrint": "Sistem / Tarayıcı Yazdırma",
-    "menuPrintFailed": "Menü yazdırılamadı"
+    "menuPrintFailed": "Menü yazdırılamadı",
+    "menuPopupBlocked": "Tarayıcınız yazdırma penceresini engelledi. Bu site için açılır pencerelere izin verin ve yeniden deneyin."
   },
   "receipt": {
     "amount": "Tutar",

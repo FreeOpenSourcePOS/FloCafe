@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Nessun prodotto corrisponde ai criteri selezionati",
     "printerDestination": "Stampante",
     "systemBrowserPrint": "Sistema / stampa del browser",
-    "menuPrintFailed": "Impossibile stampare il menu"
+    "menuPrintFailed": "Impossibile stampare il menu",
+    "menuPopupBlocked": "Il tuo browser ha bloccato la finestra di stampa. Consenti i popup per questo sito e riprova."
   },
   "receipt": {
     "amount": "Importo",

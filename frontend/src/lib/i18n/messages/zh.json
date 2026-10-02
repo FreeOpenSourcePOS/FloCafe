@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "没有符合所选条件的商品",
     "printerDestination": "打印机",
     "systemBrowserPrint": "系统 / 浏览器打印",
-    "menuPrintFailed": "无法打印菜单"
+    "menuPrintFailed": "无法打印菜单",
+    "menuPopupBlocked": "您的浏览器阻止了打印窗口。请允许此网站显示弹出窗口，然后重试。"
   },
   "receipt": {
     "amount": "金额",

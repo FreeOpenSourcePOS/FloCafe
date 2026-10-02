@@ -1299,7 +1299,7 @@ function getPrinterConfig(): any {
 export async function printMenuDocument(
   document: MenuDocument,
   signal?: AbortSignal,
-  targetPrinter?: any,
+  targetPrinter?: unknown,
   language = 'en',
 ): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
   try {

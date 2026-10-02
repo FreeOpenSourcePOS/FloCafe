@@ -375,7 +375,12 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       FROM categories
       WHERE deleted_at IS NULL
       ORDER BY sort_order, name
-    `).all() as any[]).map((category) => ({
+    `).all() as Array<{
+      id: string | number;
+      name: string | null;
+      is_active: number;
+      sort_order: number | null;
+    }>).map((category) => ({
       id: String(category.id),
       name: String(category.name ?? ''),
       isActive: category.is_active === 1,
@@ -386,7 +391,15 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       FROM products p
       WHERE p.deleted_at IS NULL
       ORDER BY p.sort_order, p.name
-    `).all() as any[]).map((product) => ({
+    `).all() as Array<{
+      category_id: string | number | null;
+      name: string | null;
+      price: number | null;
+      is_active: number;
+      track_inventory: number;
+      stock_quantity: number | null;
+      sort_order: number | null;
+    }>).map((product) => ({
       categoryId: typeof product.category_id === 'string' ? product.category_id : null,
       name: String(product.name ?? ''),
       price: Number(product.price),
@@ -426,7 +439,7 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       WHERE connection_type = 'webusb'
       ORDER BY is_default DESC, name
       LIMIT 1
-    `).get()) as any;
+    `).get()) as { name?: string; paper_width?: string; connection_type?: string } | undefined;
     if (!printer) {
       return res.status(400).json({ error: 'No default printer configured', code: 'printer_not_configured' });
     }
@@ -447,7 +460,7 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       });
     }
     return res.json({ success: true, printerName: printer.name, warnings: result.warnings || [] });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[Print Menu] Error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

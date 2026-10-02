@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "منتخب معیار کے مطابق کوئی مصنوعات نہیں",
     "printerDestination": "پرنٹر",
     "systemBrowserPrint": "سسٹم / براؤزر پرنٹ",
-    "menuPrintFailed": "مینو پرنٹ نہیں ہوسکا"
+    "menuPrintFailed": "مینو پرنٹ نہیں ہوسکا",
+    "menuPopupBlocked": "آپ کا براؤزر پرنٹ ونڈو بلاک کر دیا۔ اس سائٹ کے لیے پاپ اپس کی اجازت دیں اور دوبارہ کوشش کریں۔"
   },
   "receipt": {
     "amount": "رقم",

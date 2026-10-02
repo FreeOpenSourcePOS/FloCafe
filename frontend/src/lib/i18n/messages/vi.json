@@ -1208,7 +1208,8 @@
     "noProductsToPrint": "Không có sản phẩm nào phù hợp với tiêu chí đã chọn",
     "printerDestination": "Máy in",
     "systemBrowserPrint": "Hệ thống / In bằng trình duyệt",
-    "menuPrintFailed": "Không thể in menu"
+    "menuPrintFailed": "Không thể in menu",
+    "menuPopupBlocked": "Trình duyệt của bạn đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi thử lại."
   },
   "receipt": {
     "amount": "Số tiền",

@@ -2079,7 +2079,7 @@
     "requireKitchenDeliveredToggle": "Exigir la entrega de cocina antes de cobrar",
     "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado.",
     "chargesAndSurcharges": "Cargos y recargos",
-    "chargesAndSurchargesHint": "Cargo por servicio, frais de embalaje y recargos aplicados automáticamente a los pedidos.",
+    "chargesAndSurchargesHint": "Cargo por servicio, cargo por embalaje y recargos aplicados automáticamente a los pedidos.",
     "noChargesConfigured": "Aún no hay cargos configurados.",
     "addCharge": "Añadir cargo",
     "deleteChargeConfirm": "¿Eliminar {name}? Los pedidos ya facturados conservan los cargos registrados.",

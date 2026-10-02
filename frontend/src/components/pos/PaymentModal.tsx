@@ -586,13 +586,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   <span>{currencyFmt(Number(bill.delivery_charge))}</span>
                 </div>
               )}
-              {Number(bill.packaging_charge) > 0 && appliedCharges.length === 0 && (
+              {Number(bill.packaging_charge) > 0 && !appliedCharges.some((charge) => charge.id === 'packaging_charge') && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('packaging')}</span>
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
                 </div>
               )}
-              {Number(bill.service_charge) > 0 && appliedCharges.length === 0 && (
+              {Number(bill.service_charge) > 0 && !appliedCharges.some((charge) => charge.id === 'service_charge') && (
                 <div className="flex justify-between text-slate-300">
                   <span>{tReceipt('serviceCharge')}</span>
                   <span>{currencyFmt(Number(bill.service_charge))}</span>

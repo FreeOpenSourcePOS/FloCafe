@@ -126,6 +126,9 @@ export function buildAppliedCharges(args: {
   subtotal: number;
   discountAmount: number;
   existingBreakdown?: unknown;
+  /** Explicit cashier decisions; derived from the breakdown when omitted. */
+  waivedIds?: string[];
+  optedInIds?: string[];
 }): ResolvedOrderCharges {
   return resolveOrderCharges({ definitions: getChargeDefinitions(), ...args });
 }

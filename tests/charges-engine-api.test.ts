@@ -30,6 +30,7 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
+const { escPosToText, formatReceipt } = require('../main/printers/thermal');
 
 const SERVICE_CHARGE = {
   id: 'service_charge',
@@ -67,6 +68,40 @@ function setSetting(key: string, value: string) {
   getDatabase().prepare(
     'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime(\'now\')) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
   ).run(key, value);
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
+/**
+ * Installs a country-pack receipt template that declares the standard charge
+ * rows, so the thermal compliance renderer is the one under test.
+ */
+function installThermalChargeTemplate(db: any, templateId: string): void {
+  const payload = {
+    format: 'escpos-line-template-v1',
+    widthProfiles: [{ columns: 48, layout: {} }],
+    header: { businessNameTransform: 'uppercase', titleWhenTaxAbsent: 'INVOICE', taxTitleWhenTaxPresent: 'TAX INVOICE' },
+    totals: {
+      showSubtotal: true,
+      grandTotalLabel: 'GRAND TOTAL',
+      chargeRows: ['serviceCharge', 'packagingCharge', 'deliveryCharge'],
+    },
+  };
+  db.prepare(`INSERT INTO country_packs (id, publisher, country, jurisdiction, status) VALUES (?, 'test', 'US', 'US-FED', 'active')`).run('pack-charges');
+  db.prepare(`
+    INSERT INTO country_pack_versions (id, pack_id, version, schema_version, manifest_json, pack_json, effective_from, min_flo_version, published_at, status)
+    VALUES (?, 'pack-charges', '1.0.0', 1, '{}', '{}', '2026-01-01', '3.0.0', '2026-01-01', 'installed')
+  `).run('pack-charges-v1');
+  db.prepare(`
+    INSERT INTO installed_print_templates (template_id, pack_id, pack_version_id, country, jurisdiction, display_name, paper_widths_json, renderer_json, template_payload_json, status)
+    VALUES (?, 'pack-charges', 'pack-charges-v1', 'US', 'US-FED', 'Charges receipt', '[48]', ?, ?, 'installed')
+  `).run(
+    templateId,
+    JSON.stringify({ id: 'flocafe-thermal-receipt-template', version: 1 }),
+    JSON.stringify(payload),
+  );
 }
 
 async function main() {
@@ -224,6 +259,110 @@ async function main() {
     assertOrThrow(Number.isInteger(jpyOrder.data.order.service_charge), 'the JPY service_charge column is integral');
     assertEqualOrThrow(jpyOrder.data.order.service_charge, 10, '10% of 100 JPY is 10 JPY');
     setCurrency('USD', 'US');
+
+    console.log('\n7. A thermal receipt prints an engine charge exactly once');
+    await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
+    const RECEIPT_TEMPLATE_ID = 'tpl-charges-dup';
+    installThermalChargeTemplate(getDatabase(), RECEIPT_TEMPLATE_ID);
+    const receiptOrder = await createOrder('dine_in');
+    const receiptBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: receiptOrder.data.order.id }, headers: authHeader,
+    });
+    const receiptText = escPosToText(formatReceipt(
+      receiptOrder.data.order,
+      receiptBill.data.bill,
+      { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' },
+      RECEIPT_TEMPLATE_ID,
+      48,
+    ));
+    assertEqualOrThrow(countOccurrences(receiptText, 'Service Charge'), 1, 'the declared service-charge row is not repeated by the itemised line');
+    assertEqualOrThrow(countOccurrences(receiptText, 'Late Night'), 1, 'the merchant-named surcharge prints once');
+
+    console.log('\n8. Converting to takeaway recomputes totals and clears the dine-in charge');
+    await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
+    const dineIn = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    const dineInBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: dineIn.data.order.id }, headers: authHeader,
+    });
+    assertEqualOrThrow(dineIn.data.order.service_charge, 10, 'the dine-in order carries the 10% service charge');
+    const converted = await api(baseUrl, `/api/orders/${dineIn.data.order.id}/convert-to-takeaway`, {
+      method: 'PATCH', body: {}, headers: authHeader,
+    });
+    assertEqualOrThrow(converted.status, 200, 'the dine-in order converts to takeaway');
+    assertEqualOrThrow(converted.data.order.type, 'takeaway', 'the order type is takeaway');
+    assertEqualOrThrow(converted.data.order.service_charge, 0, 'the dine-in service charge is cleared');
+    assertEqualOrThrow(JSON.parse(converted.data.order.charges_breakdown).length, 0, 'the stale dine-in breakdown is emptied');
+    assertEqualOrThrow(converted.data.order.total, 100, 'the total drops both dine-in fees');
+    const syncedBill = getDatabase().prepare('SELECT * FROM bills WHERE id = ?').get(dineInBill.data.bill.id) as any;
+    assertEqualOrThrow(Number(syncedBill.service_charge), 0, 'the unpaid bill service charge is synced to zero');
+    assertEqualOrThrow(Number(syncedBill.total), 100, 'the unpaid bill total is synced to the converted total');
+    assertEqualOrThrow(JSON.parse(syncedBill.charges_breakdown).length, 0, 'the unpaid bill breakdown is synced empty');
+
+    console.log('\n9. Removing the last charge stores [] instead of resurrecting the stale breakdown');
+    await putCharges([{ ...LATE_NIGHT, id: 'packaging_fee', name: 'Packaging Fee', value: 5, is_optional: true, is_default_active: false }]);
+    const removeOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', opted_in_charge_ids: ['packaging_fee'], items: [{ product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(removeOrder.data.order.total, 105, 'the opted-in packaging fee is charged at creation');
+    const removeBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: removeOrder.data.order.id }, headers: authHeader,
+    });
+    const removeBillId = removeBill.data.bill.id;
+    const removed = await api(baseUrl, `/api/bills/${removeBillId}/charges`, {
+      method: 'PATCH', body: { charge_id: 'packaging_fee', applied: false }, headers: authHeader,
+    });
+    assertEqualOrThrow(removed.status, 200, 'the last charge is removed');
+    assertEqualOrThrow(removed.data.bill.charges_breakdown, '[]', 'removing the last charge stores an empty array, not null');
+    assertEqualOrThrow(JSON.parse(removed.data.bill.charges_breakdown).length, 0, 'the bill breakdown is empty');
+    const orderAfterRemove = getDatabase().prepare('SELECT charges_breakdown FROM orders WHERE id = ?').get(removeOrder.data.order.id) as any;
+    assertEqualOrThrow(orderAfterRemove.charges_breakdown, '[]', 'the order breakdown is emptied too');
+
+    console.log('\n10. Order create keeps a manual charge column the engine has no rule for');
+    await putCharges([{ ...LATE_NIGHT, id: 'late_night', order_types: ['dine_in'] }]);
+    const manual = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', service_charge: 4, packaging_charge: 3, items: [{ product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(manual.status, 201, 'an order with manual charge columns is created');
+    assertEqualOrThrow(manual.data.order.service_charge, 4, 'a manual service charge survives an engine that owns no service_charge');
+    assertEqualOrThrow(manual.data.order.packaging_charge, 3, 'a manual packaging charge survives too');
+    assertEqualOrThrow(manual.data.order.total, 114, 'the total still includes the manual columns');
+    const manualBreakdown = JSON.parse(manual.data.order.charges_breakdown);
+    assertEqualOrThrow(manualBreakdown.some((charge: any) => charge.id === 'service_charge'), false, 'the manual column is not faked as an engine charge');
+
+    console.log('\n11. Cart charge decisions survive order creation');
+    await putCharges([
+      { ...SERVICE_CHARGE, is_optional: true },
+      { ...LATE_NIGHT, id: 'nightly', is_default_active: false, is_optional: false },
+    ]);
+    const withDecisions = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        waived_charge_ids: ['service_charge'],
+        opted_in_charge_ids: ['nightly'],
+        items: [{ product_id: 'prod-charges', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(withDecisions.status, 201, 'an order carrying cart charge decisions is created');
+    const decided = JSON.parse(withDecisions.data.order.charges_breakdown);
+    assertEqualOrThrow(decided.find((c: any) => c.id === 'service_charge').waived, true, 'the cashier waiver is applied at creation');
+    assertEqualOrThrow(decided.find((c: any) => c.id === 'service_charge').amount, 0, 'the waived fee is not charged');
+    assertEqualOrThrow(decided.find((c: any) => c.id === 'nightly').amount, 7, 'the opted-in charge the cashier added is applied');
+    assertEqualOrThrow(withDecisions.data.order.service_charge, 0, 'the waived column is cleared');
+    assertEqualOrThrow(withDecisions.data.order.total, 107, 'the total reflects the waiver and the opt-in');
+    const badIds = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', waived_charge_ids: 'service_charge', items: [{ product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(badIds.status, 400, 'a non-array waived_charge_ids is rejected');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     closeDatabase();

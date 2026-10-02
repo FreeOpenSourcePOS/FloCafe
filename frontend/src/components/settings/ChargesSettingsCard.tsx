@@ -50,8 +50,10 @@ function toForm(charge: ChargeDefinition): ChargeForm {
 }
 
 function toDefinition(form: ChargeForm): ChargeDefinition {
+  // A blank id falls back to the name so the form never submits an empty id.
+  const rawId = (form.id.trim() || form.name).trim();
   return {
-    id: form.id.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_'),
+    id: rawId.toLowerCase().replace(/[^a-z0-9_-]+/g, '_'),
     name: form.name.trim(),
     type: form.type,
     value: Number(form.value),
@@ -76,6 +78,7 @@ export function ChargesSettingsCard() {
   const save = useChargesStore((s) => s.save);
 
   const [editing, setEditing] = useState<ChargeForm | null>(null);
+  const [editingOriginalId, setEditingOriginalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -106,20 +109,30 @@ export function ChargesSettingsCard() {
   const submitForm = async () => {
     if (!editing) return;
     const definition = toDefinition(editing);
-    const isNew = !charges.some((charge) => charge.id === definition.id);
-    const next = isNew
-      ? [...charges, definition]
-      : charges.map((charge) => (charge.id === definition.id ? definition : charge));
+    // Editing replaces the row it came from, so renaming the id renames that
+    // charge instead of adding a second one beside it.
+    const targetId = editingOriginalId && charges.some((charge) => charge.id === editingOriginalId)
+      ? editingOriginalId
+      : definition.id;
+    const next = charges.some((charge) => charge.id === targetId)
+      ? charges.map((charge) => (charge.id === targetId ? definition : charge))
+      : [...charges, definition];
     setSaving(true);
     try {
       await save(next);
       setEditing(null);
+      setEditingOriginalId(null);
       toast.success(t('chargesSaved'));
     } catch {
       toast.error(t('chargesSaveFailed'));
     } finally {
       setSaving(false);
     }
+  };
+
+  const closeForm = () => {
+    setEditing(null);
+    setEditingOriginalId(null);
   };
 
   return (
@@ -129,7 +142,7 @@ export function ChargesSettingsCard() {
           <Percent size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('chargesAndSurcharges')}</h2>
         </div>
-        <Button size="sm" onClick={() => setEditing(emptyForm())}>
+        <Button size="sm" onClick={() => { setEditing(emptyForm()); setEditingOriginalId(null); }}>
           <Plus size={14} className="me-1" /> {t('addCharge')}
         </Button>
       </div>
@@ -156,7 +169,7 @@ export function ChargesSettingsCard() {
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" aria-label={tCommon('edit')} onClick={() => setEditing(toForm(charge))}>
+                <Button size="sm" variant="ghost" aria-label={tCommon('edit')} onClick={() => { setEditing(toForm(charge)); setEditingOriginalId(charge.id); }}>
                   <Pencil size={14} />
                 </Button>
                 <Button size="sm" variant="ghost" aria-label={tCommon('delete')} onClick={() => void removeCharge(charge)}>
@@ -168,7 +181,7 @@ export function ChargesSettingsCard() {
         </div>
       )}
 
-      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null); }}>
+      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) closeForm(); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('addCharge')}</DialogTitle>
@@ -268,7 +281,7 @@ export function ChargesSettingsCard() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>{tCommon('cancel')}</Button>
+            <Button variant="outline" onClick={closeForm}>{tCommon('cancel')}</Button>
             <Button onClick={() => void submitForm()} disabled={saving || !editing?.name || editing.value === ''}>
               {tCommon('save')}
             </Button>

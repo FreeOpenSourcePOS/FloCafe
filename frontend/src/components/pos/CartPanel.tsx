@@ -165,6 +165,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     (sum, charge) => sum + (charge.waived ? 0 : charge.amount),
     0,
   );
+  // A charge the merchant left off by default is never applied until the cashier
+  // adds it, so it has to be listed here or there is no way to add it.
+  const addableCharges = applicableCharges.filter(
+    (charge) => !charge.is_default_active && !cart.optedInChargeIds.has(charge.id),
+  );
 
   const handleHold = async () => {
     if (!cart.tableId) {
@@ -369,7 +374,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             {fmt(cart.subtotal())}
           </span>
         </div>
-        {appliedCharges.length > 0 && (
+        {(appliedCharges.length > 0 || addableCharges.length > 0) && (
           <div className="mb-4 space-y-1" data-testid="cart-charges">
             {appliedCharges.map((charge) => {
               const definition = applicableCharges.find((c) => c.id === charge.id);
@@ -407,10 +412,24 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 </div>
               );
             })}
-            <div className="flex justify-between text-sm font-medium">
-              <span>{t('chargesTotal')}</span>
-              <span>{fmt(chargeTotal)}</span>
-            </div>
+            {addableCharges.map((charge) => (
+              <div key={charge.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">{charge.name}</span>
+                <button
+                  type="button"
+                  onClick={() => cart.toggleOptedInCharge(charge.id)}
+                  className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                >
+                  {t('addCharge')}
+                </button>
+              </div>
+            ))}
+            {appliedCharges.length > 0 && (
+              <div className="flex justify-between text-sm font-medium">
+                <span>{t('chargesTotal')}</span>
+                <span>{fmt(chargeTotal)}</span>
+              </div>
+            )}
           </div>
         )}
         <div className="flex gap-2">

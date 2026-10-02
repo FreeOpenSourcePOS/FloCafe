@@ -10,6 +10,7 @@ import {
   invertTaxBreakdown,
   invertTaxSnapshot,
   normalizeChargeAmount,
+  type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
@@ -499,7 +500,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address } = body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address, waived_charge_ids, opted_in_charge_ids } = body;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -539,6 +540,15 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const message = error instanceof Error ? error.message : 'Invalid charge amount';
       return res.status(statusCode).json({ error: message });
     }
+
+    // Cashier charge decisions taken in the cart travel with the order, so the
+    // engine applies them instead of resetting to the merchant defaults.
+    if ([waived_charge_ids, opted_in_charge_ids].some((list) => list !== undefined && list !== null
+      && (!Array.isArray(list) || list.some((entry) => typeof entry !== 'string')))) {
+      return res.status(400).json({ error: 'waived_charge_ids and opted_in_charge_ids must be arrays of charge ids' });
+    }
+    const waivedChargeIds = (waived_charge_ids || []) as string[];
+    const optedInChargeIds = (opted_in_charge_ids || []) as string[];
 
     if (online_platform !== undefined && online_platform !== null && typeof online_platform !== 'string') {
       return res.status(400).json({ error: 'online_platform must be a string' });
@@ -744,20 +754,26 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 
       // Unified charges & fees engine. Charges the merchant configured for this
       // order type are applied here and the standard ids are projected onto the
-      // dedicated columns; with nothing configured, manually entered amounts stand.
+      // dedicated columns. The engine owns a column only for an id it actually
+      // produced, so a manually entered charge survives when no rule names it.
       const resolvedCharges = buildAppliedCharges({
         currency,
         orderType: type,
         subtotal,
         discountAmount: 0,
+        waivedIds: waivedChargeIds,
+        optedInIds: optedInChargeIds,
       });
+      const engineOwns = (id: string) => resolvedCharges.charges.some((charge) => charge.id === id);
       const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
-      const appliedServiceCharge = engineColumns ? engineColumns.service_charge : serviceCharge;
-      const appliedPackagingCharge = engineColumns ? engineColumns.packaging_charge : pkgCharge;
+      const appliedServiceCharge = engineOwns('service_charge') ? resolvedCharges.columns.service_charge : serviceCharge;
+      const appliedPackagingCharge = engineOwns('packaging_charge') ? resolvedCharges.columns.packaging_charge : pkgCharge;
       const otherCharges = engineColumns ? engineColumns.other_charges : 0;
-      const appliedChargeContext: typeof chargeContext = engineColumns
-        ? { ...chargeContext, service_charge: appliedServiceCharge, packaging_charge: appliedPackagingCharge }
-        : chargeContext;
+      const appliedChargeContext: typeof chargeContext = {
+        ...chargeContext,
+        service_charge: appliedServiceCharge,
+        packaging_charge: appliedPackagingCharge,
+      };
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, appliedChargeContext, customer);
       const taxRollup = combineItemAndChargeTaxes({
@@ -1323,19 +1339,60 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requirePermission(
         throw Object.assign(new Error('A split dine-in check cannot be converted to takeaway'), { statusCode: 409 });
       }
 
-      db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
-        .run(nowStr, req.params.id);
-
       // Charges are defined per order type, so converting re-resolves them
-      // against 'takeaway'. Waivers recorded for the dine-in charges do not
-      // carry over to a charge the merchant scoped to dine-in only.
-      const { subtotal } = calculateOrderTotals(db, req.params.id as string);
+      // against 'takeaway'. The dine-in breakdown is deliberately not carried
+      // forward: its waivers belong to a charge set the takeaway order no longer
+      // uses, and a takeaway order that configures no charge must end at zero
+      // rather than keep the dine-in fee.
+      const totals = calculateOrderTotals(db, req.params.id as string);
       const discountAmount = Number(order.discount_amount || 0);
-      const engineCharges = resolveEngineCharges({ ...order, type: 'takeaway' }, subtotal, discountAmount);
-      if (engineCharges) {
-        db.prepare(`UPDATE orders SET service_charge = ?, packaging_charge = ?, charges_breakdown = ?, updated_at = ? WHERE id = ?`)
-          .run(engineCharges.columns.service_charge, engineCharges.columns.packaging_charge, engineCharges.chargesJson, nowStr, req.params.id);
-      }
+      const engineCharges = resolveEngineCharges({ ...order, type: 'takeaway', charges_breakdown: null }, totals.subtotal, discountAmount);
+      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : 0;
+      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : 0;
+      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : '[]';
+
+      const tenantInfo = {
+        country: getSettingValue('country') || '',
+        business_type: getSettingValue('business_type') || 'restaurant',
+        state_code: getSettingValue('state_code') || '',
+        currency: getTenantCurrency(),
+        taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+      };
+      const customer = order.customer_id
+        ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as Customer | null
+        : null;
+
+      // The order type changed, so tax, rounding and the payable total are all
+      // stale until they are recomputed from the item data.
+      const { taxRollup, total, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: { ...order, service_charge: syncedServiceCharge, packaging_charge: syncedPackagingCharge },
+        customer,
+        totals,
+        discountAmount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : [],
+      });
+
+      db.prepare(`
+        UPDATE orders SET type = 'takeaway', table_id = NULL, subtotal = ?, tax_amount = ?, tax_breakdown = ?,
+          tax_snapshot = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
+          total = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(totals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson,
+        syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, total, roundOff, nowStr, req.params.id);
+
+      syncUnpaidBillsForOrder(db, req.params.id as string, {
+        subtotal: totals.subtotal,
+        taxAmount: taxRollup.taxAmount,
+        taxBreakdown: JSON.stringify(taxRollup.breakdowns),
+        taxSnapshot: taxRollup.snapshotJson,
+        discountAmount,
+        deliveryCharge: Number(order.delivery_charge || 0),
+        packagingCharge: syncedPackagingCharge,
+        serviceCharge: syncedServiceCharge,
+        chargesBreakdown: syncedChargesJson,
+        total,
+      }, tenantInfo.country);
 
       if (order.table_id) {
         db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")

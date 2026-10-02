@@ -2536,7 +2536,7 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
     const engineOwns = (id: string) => nextCharges.some((charge) => charge.id === id);
     const serviceCharge = engineOwns('service_charge') ? rawColumns.service_charge : Number(order.service_charge || 0);
     const packagingCharge = engineOwns('packaging_charge') ? rawColumns.packaging_charge : Number(order.packaging_charge || 0);
-    const chargesJson = nextCharges.length > 0 ? serializeAppliedCharges(nextCharges) : null;
+    const chargesJson = serializeAppliedCharges(nextCharges);
 
     const updated = withTxn(() => {
       const totals = calculateOrderTotals(db, order.id);

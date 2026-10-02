@@ -1668,6 +1668,12 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
+/** Template charge-row ids are camelCase; the engine breakdown stores snake_case ids. */
+const TEMPLATE_ROW_TO_CHARGE_ID: Partial<Record<TemplateChargeRowId, string>> = {
+  serviceCharge: 'service_charge',
+  packagingCharge: 'packaging_charge',
+};
+
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
@@ -1779,7 +1785,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   for (const row of declaredTemplateChargeRows(payload?.totals?.chargeRows)) {
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
-    if (itemisedIds.has(row)) continue;
+    const chargeId = TEMPLATE_ROW_TO_CHARGE_ID[row] ?? row;
+    if (itemisedIds.has(chargeId)) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
     pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }

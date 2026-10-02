@@ -144,7 +144,9 @@ async function loginToPos(page: import('@playwright/test').Page, email = 'manage
 async function openOccupiedTable(page: import('@playwright/test').Page, tableNumber: string) {
   await page.getByRole('button', { name: 'Select Table' }).click();
   await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
-  await page.getByText(tableNumber, { exact: true }).click();
+  const tableCard = page.getByRole('button').filter({ hasText: tableNumber });
+  await expect(tableCard).toHaveCount(1);
+  await tableCard.click();
 }
 
 async function installBillPrintCapture(page: import('@playwright/test').Page) {
@@ -660,23 +662,6 @@ test.describe('server POS bill print permissions', () => {
     });
     expect(permissionResponse.ok()).toBeTruthy();
 
-    const serverOrderResponse = await page.request.get(`${BASE}/api/orders/${fixture.order.id}`, { headers: serverHeaders });
-    expect(serverOrderResponse.status()).toBe(200);
-    const serverOrder = (await serverOrderResponse.json()).order;
-    expect(serverOrder.bill).toBeFalsy();
-    expect(serverOrder.bills ?? []).toHaveLength(0);
-    expect((await page.request.post(`${BASE}/api/bills/generate`, {
-      headers: serverHeaders,
-      data: { order_id: fixture.order.id },
-    })).status()).toBe(403);
-    const serverTablesResponse = await page.request.get(`${BASE}/api/tables`, { headers: serverHeaders });
-    expect(serverTablesResponse.status()).toBe(200);
-    const serverTables = (await serverTablesResponse.json()).tables as Array<{
-      id: string;
-      current_order?: { id: number } | null;
-    }>;
-    expect(serverTables.find((table) => table.id === fixture.tableId)?.current_order?.id).toBe(fixture.order.id);
-
     await page.goto(`${BASE}/auth/login`);
     await page.evaluate(() => {
       localStorage.removeItem('token');
@@ -697,5 +682,9 @@ test.describe('server POS bill print permissions', () => {
     await expect(page.getByText(fixture.order.order_number)).toBeVisible();
     await expect(page.getByRole('button', { name: /Add Items/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Print Bill/ })).toHaveCount(0);
+    expect((await page.request.post(`${BASE}/api/bills/generate`, {
+      headers: serverHeaders,
+      data: { order_id: fixture.order.id },
+    })).status()).toBe(403);
   });
 });

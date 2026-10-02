@@ -1,6 +1,7 @@
 /** Anonymous usage telemetry using a randomized local UUID, independent of cloud sync. */
 
 import { app } from 'electron';
+import * as fs from 'fs';
 import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
 import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
@@ -11,8 +12,9 @@ export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 export type RunMode = 'packaged' | 'dev';
 
 /**
- * Where the running binary came from. `linux_package` covers native .deb/.rpm
- * installs, which cannot be told apart from the runtime signals available here.
+ * Where the running binary came from. `linux_package` is the honest fallback for
+ * a native Linux install whose distro is unreadable or unrecognised, so an
+ * unknown distribution is never reported as `deb` or `rpm`.
  */
 export type InstallSource =
   | 'github'
@@ -21,6 +23,8 @@ export type InstallSource =
   | 'snap'
   | 'appimage'
   | 'flatpak'
+  | 'deb'
+  | 'rpm'
   | 'linux_package'
   | 'dev';
 
@@ -56,6 +60,38 @@ function envFlag(name: string): boolean {
   return String(process.env[name] ?? '').trim() !== '';
 }
 
+/** The distro families each native Linux package format belongs to. */
+const DEBIAN_FAMILY = ['debian', 'ubuntu'];
+const RPM_FAMILY = ['rhel', 'fedora', 'suse'];
+
+/**
+ * Maps `/etc/os-release` contents to a native Linux package format. `ID` is
+ * authoritative; `ID_LIKE` carries the parent families, which is how a
+ * derivative such as Rocky Linux or Linux Mint still resolves. Anything else
+ * reports `linux_package` rather than a guess.
+ */
+export function linuxPackageFromOsRelease(contents: string): 'deb' | 'rpm' | 'linux_package' {
+  const fields = new Map<string, string>();
+  for (const line of contents.split('\n')) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/m.exec(line.trim());
+    if (match) fields.set(match[1].toLowerCase(), match[2].trim().replace(/^"(.*)"$/, '$1'));
+  }
+  const families = [fields.get('id'), ...String(fields.get('id_like') ?? '').split(/\s+/)]
+    .map((value) => String(value ?? '').trim().toLowerCase())
+    .filter(Boolean);
+  if (families.some((id) => DEBIAN_FAMILY.includes(id))) return 'deb';
+  if (families.some((id) => RPM_FAMILY.includes(id))) return 'rpm';
+  return 'linux_package';
+}
+
+function linuxPackageFormat(): 'deb' | 'rpm' | 'linux_package' {
+  try {
+    return linuxPackageFromOsRelease(fs.readFileSync('/etc/os-release', 'utf8'));
+  } catch {
+    return 'linux_package';
+  }
+}
+
 /** `packaged` for a real merchant install, `dev` for `npm run dev` and non-Electron hosts. */
 export function getRunMode(): RunMode {
   return isPackagedRun() ? 'packaged' : 'dev';
@@ -70,9 +106,7 @@ export function getInstallSource(): InstallSource {
   if (envFlag('APPIMAGE')) return 'appimage';
   if (envFlag('FLATPAK_ID')) return 'flatpak';
   if (process.platform === 'win32' || process.platform === 'darwin') return 'github';
-  // Native Linux packages expose no distinguishing runtime signal, so report the
-  // honest category rather than guessing between .deb and .rpm.
-  return 'linux_package';
+  return linuxPackageFormat();
 }
 
 function matrixOffline(): boolean {

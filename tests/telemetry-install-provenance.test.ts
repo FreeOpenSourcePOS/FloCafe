@@ -10,6 +10,7 @@
  */
 
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -38,7 +39,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { getRunMode, getInstallSource, sendEvent } = require('../main/services/telemetry');
+const { getRunMode, getInstallSource, linuxPackageFromOsRelease, sendEvent } = require('../main/services/telemetry');
+
+/** What the host's own distro resolves to, so the fall-through case stays exact on any runner. */
+function hostLinuxPackage(): string {
+  try {
+    return linuxPackageFromOsRelease(fs.readFileSync('/etc/os-release', 'utf8'));
+  } catch {
+    return 'linux_package';
+  }
+}
 
 const ENV_KEYS = ['SNAP', 'APPIMAGE', 'FLATPAK_ID'] as const;
 const savedEnv: Record<string, string | undefined> = {};
@@ -151,19 +161,39 @@ async function main() {
   );
   assert.deepEqual(
     detect({ platform: 'linux' }),
-    { runMode: 'packaged', installSource: 'linux_package' },
-    'a packaged Linux build with no store signal reports the honest linux_package'
+    { runMode: 'packaged', installSource: hostLinuxPackage() },
+    'a packaged Linux build with no store signal resolves the distro package format'
   );
+
+  // ── Native Linux package format, read from /etc/os-release ───────────────
+  const osReleaseCases: Array<[string, string, string]> = [
+    ['ID=debian\nID_LIKE=\n', 'deb', 'ID=debian reports deb'],
+    ['ID=ubuntu\nID_LIKE=debian\n', 'deb', 'ID=ubuntu reports deb'],
+    ['ID=linuxmint\nID_LIKE="ubuntu debian"\n', 'deb', 'a debian derivative resolves through ID_LIKE'],
+    ['ID="ubuntu"\nVERSION_ID="22.04"\n', 'deb', 'quoted os-release values are unquoted before matching'],
+    ['ID=ubuntu\r\nID_LIKE=debian\r\n', 'deb', 'a CRLF os-release file parses'],
+    ['ID=rhel\nID_LIKE="fedora"\n', 'rpm', 'ID=rhel reports rpm'],
+    ['ID=fedora\nID_LIKE=\n', 'rpm', 'ID=fedora reports rpm'],
+    ['ID=opensuse\nID_LIKE="suse suse"\n', 'rpm', 'a suse derivative resolves through ID_LIKE'],
+    ['ID=rocky\nID_LIKE="rhel centos fedora"\n', 'rpm', 'an RHEL derivative resolves through ID_LIKE'],
+    ['ID=arch\nID_LIKE=\n', 'linux_package', 'a distro in neither family reports linux_package'],
+    ['ID=gentoo\n', 'linux_package', 'a source-based distro reports linux_package'],
+    ['PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n', 'linux_package', 'a PRETTY_NAME-only file never implies deb'],
+    ['', 'linux_package', 'an empty os-release file reports linux_package'],
+  ];
+  for (const [contents, expected, message] of osReleaseCases) {
+    assert.equal(linuxPackageFromOsRelease(contents), expected, message);
+  }
 
   // ── Signal hygiene and precedence ──────────────────────────────────────────
   assert.deepEqual(
     detect({ platform: 'linux', env: { SNAP: '' } }),
-    { runMode: 'packaged', installSource: 'linux_package' },
+    { runMode: 'packaged', installSource: hostLinuxPackage() },
     'an empty SNAP variable is not a snap signal'
   );
   assert.deepEqual(
     detect({ platform: 'linux', env: { APPIMAGE: '   ' } }),
-    { runMode: 'packaged', installSource: 'linux_package' },
+    { runMode: 'packaged', installSource: hostLinuxPackage() },
     'a whitespace APPIMAGE variable is not an appimage signal'
   );
   assert.deepEqual(
@@ -195,7 +225,7 @@ async function main() {
     assert.equal(await sendEvent('app_launch'), true, 'telemetry delivery succeeds');
     assert.deepEqual(
       { run_mode: body?.run_mode, install_source: body?.install_source },
-      { run_mode: 'packaged', install_source: 'linux_package' },
+      { run_mode: 'packaged', install_source: hostLinuxPackage() },
       'sendEvent reports the detected run mode and install source alongside existing fields'
     );
     assert.equal(body?.app, 'flocafe', 'existing telemetry fields are preserved');

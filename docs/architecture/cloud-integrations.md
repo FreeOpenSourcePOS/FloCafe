@@ -50,11 +50,23 @@ that flips the default uses `INSERT OR IGNORE`; an install that already ran the 
 **Run mode and install source.** Every telemetry event and every FloAdmin registration carries two
 provenance fields, so a merchant install is distinguishable from a developer's local run. `run_mode`
 is `packaged` or `dev`, read from `app.isPackaged`. `install_source` is `github`, `ms_store`,
-`mac_app_store`, `snap`, `appimage`, `flatpak`, `linux_package`, or `dev`, resolved from
-`process.windowsStore`, `process.mas`, `SNAP`, `APPIMAGE`, `FLATPAK_ID`, and `process.platform` in
-that order. `linux_package` covers native `.deb` and `.rpm` installs, which no available runtime
-signal tells apart, so the honest category is reported instead of a guess. Detection is total:
-outside Electron - unit tests, scripts - it degrades to `dev` rather than throwing.
+`mac_app_store`, `snap`, `appimage`, `flatpak`, `deb`, `rpm`, `linux_package`, or `dev`, resolved in
+this order:
+
+1. An unpackaged build reports `dev` for both fields, which also covers non-Electron hosts.
+2. `process.windowsStore` -> `ms_store`; `process.mas` -> `mac_app_store`.
+3. `SNAP` -> `snap`; `APPIMAGE` -> `appimage`; `FLATPAK_ID` -> `flatpak`. An empty or whitespace
+   variable is not a signal.
+4. `win32` or `darwin` -> `github`, the GitHub-release installers.
+5. Anything else is a native Linux package, and its format is read from `/etc/os-release`:
+   `ID` first, then the `ID_LIKE` family list, giving `deb` for the Debian/Ubuntu families and `rpm`
+   for the RHEL/Fedora/SUSE families. Derivatives resolve through `ID_LIKE`, so Rocky or Linux Mint
+   are classified without being listed themselves.
+
+An unreadable or unrecognised `/etc/os-release` reports `linux_package`. That is a real value, not a
+placeholder for "unknown": the distribution could not be identified, so the format is not guessed and
+neither `deb` nor `rpm` is claimed. Detection is total - outside Electron, in unit tests and scripts,
+it degrades to `dev` rather than throwing.
 
 ## Store-attributed diagnostics
 

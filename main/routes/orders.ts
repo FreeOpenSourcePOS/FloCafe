@@ -42,7 +42,15 @@ const MAX_ORDER_ITEMS = 200;
  * Returns null when the merchant configured nothing that matches this order, so
  * the row keeps the charge amounts it already carried.
  */
-function resolveEngineCharges(order: any, subtotal: number, discountAmount: number) {
+/** The order columns the charge engine reads. */
+interface EngineChargeOrderRow {
+  type?: string | null;
+  charges_breakdown?: string | null;
+  service_charge?: number | null;
+  packaging_charge?: number | null;
+}
+
+function resolveEngineCharges(order: EngineChargeOrderRow, subtotal: number, discountAmount: number) {
   const resolved = buildAppliedCharges({
     currency: getTenantCurrency(),
     orderType: String(order?.type || ''),

@@ -24,6 +24,7 @@ import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionFor
 import {
   getActiveCountryPack,
   scaleTaxSnapshots,
+  type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
@@ -34,7 +35,34 @@ import {
   resolveOrderCharges,
   serializeAppliedCharges,
   toStandardChargeColumns,
+  type ChargeOrderType,
 } from '../services/charges';
+
+/** Rows the charges endpoint reads; the charge columns it projects onto. */
+interface ChargeBillRow {
+  id: number | string;
+  order_id: number | string;
+  split_group_id: string | null;
+  payment_status: string;
+  paid_amount: number | null;
+  charges_breakdown: string | null;
+}
+
+interface ChargeOrderRow {
+  id: number | string;
+  customer_id: string | null;
+  /** Validated on order create, so the stored value is one of the four types. */
+  type: ChargeOrderType;
+  subtotal: number | null;
+  tax_amount: number | null;
+  tax_breakdown: string | null;
+  tax_snapshot: string | null;
+  discount_amount: number | null;
+  delivery_charge: number | null;
+  service_charge: number | null;
+  packaging_charge: number | null;
+  charges_breakdown: string | null;
+}
 import { sendEvent } from '../services/telemetry';
 import {
   getCurrencyFractionDigits,
@@ -2444,7 +2472,7 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
     }
 
     const db = getDatabase();
-    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as ChargeBillRow | undefined;
     if (!bill) {
       return res.status(404).json({ error: 'Bill not found' });
     }
@@ -2458,7 +2486,7 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
       return res.status(409).json({ error: 'Charges cannot be changed on a refunded bill' });
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as ChargeOrderRow | undefined;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -2513,7 +2541,7 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
     const updated = withTxn(() => {
       const totals = calculateOrderTotals(db, order.id);
       const customer = order.customer_id
-        ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any
+        ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as Customer | null
         : null;
       const { taxRollup, total } = recomputeOrderTotals({
         tenantInfo: {
@@ -2543,7 +2571,7 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
 
       recordOrderAudit(db, {
         orderId: String(order.id),
-        actorUserId: String((req as any).user?.userId || ''),
+        actorUserId: String((req as Request & { user?: { userId?: string } }).user?.userId || ''),
         action: 'order_charge_updated',
         details: { charge_id: chargeId, waived: waivedRequested, applied: appliedRequested },
       });
@@ -2566,10 +2594,10 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
 
     notifyOrderUpdated();
     res.json({ bill: updated });
-  } catch (error: any) {
-    const statusCode = error.statusCode || 500;
+  } catch (error) {
+    const statusCode = (error as { statusCode?: number }).statusCode || 500;
     console.error('[API] Bill charge update failed:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : (error as Error).message });
   }
 });
 

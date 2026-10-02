@@ -891,7 +891,7 @@ router.post('/google-drive/restore', requirePermission('google-drive.manage'), r
 router.get('/charges', settingsReadRateLimit, requirePermission('settings.view'), (_req: Request, res: Response) => {
   try {
     return res.json({ charges: getChargeDefinitions() });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[API] Internal error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
@@ -917,7 +917,7 @@ router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manag
     `).run(CUSTOM_CHARGES_SETTING_KEY, JSON.stringify(definitions), now());
 
     return res.json({ charges: definitions });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[API] Internal error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }

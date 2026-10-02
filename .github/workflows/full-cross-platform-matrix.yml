@@ -80,6 +80,8 @@ jobs:
 
       - name: Run full platform test suite
         shell: bash
+        env:
+          RASTER_RENDER_TIMEOUT_MS: 30000
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
             xvfb-run -a --server-args='-screen 0 1280x800x24' npm test

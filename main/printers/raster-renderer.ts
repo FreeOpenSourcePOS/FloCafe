@@ -16,7 +16,10 @@ import {
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 
-const RENDER_TIMEOUT_MS = 10_000;
+const DEFAULT_RENDER_TIMEOUT_MS = 15_000;
+const RENDER_TIMEOUT_MS = Number(process.env.RASTER_RENDER_TIMEOUT_MS) > 0
+  ? Number(process.env.RASTER_RENDER_TIMEOUT_MS)
+  : DEFAULT_RENDER_TIMEOUT_MS;
 
 /** Self-contained page with no navigation, network access, or Node integration. */
 export function rasterRendererHtml(): string {

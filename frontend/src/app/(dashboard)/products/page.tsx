@@ -10,7 +10,7 @@ import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
-import PrintMenuModal from '@/components/products/PrintMenuModal';
+import dynamic from 'next/dynamic';
 import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
 import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -23,6 +23,10 @@ import { tenantCan } from '@/lib/permissions';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
+
+// Loaded on demand: the menu printer pulls the thermal print kernel in, which the
+// catalog page has no use for until the merchant opens the dialog.
+const PrintMenuModal = dynamic(() => import('@/components/products/PrintMenuModal'), { ssr: false });
 
 const PRESET_TAGS: { key: string; labelKey: PosKey }[] = [
   { key: 'veg', labelKey: 'tagVeg' },

@@ -133,11 +133,14 @@ export default function AppSidebar() {
     api.get('/settings/kds_enabled')
       .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
-    // Sync WhatsApp status from backend so sidebar only shows the entry
-    // when integration is enabled on this tenant.
-    api.get('/whatsapp/status')
-      .then((res) => setWhatsappEnabled(!!res.data?.enabled))
-      .catch(() => { });
+    if (tenantCan(currentTenant, 'whatsapp.use')) {
+      // Sync WhatsApp status so the sidebar only shows the entry when enabled.
+      api.get('/whatsapp/status')
+        .then((res) => setWhatsappEnabled(!!res.data?.enabled))
+        .catch(() => { });
+    } else {
+      setWhatsappEnabled(false);
+    }
   }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {

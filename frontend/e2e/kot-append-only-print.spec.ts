@@ -662,6 +662,10 @@ test.describe('server POS bill print permissions', () => {
     });
     expect(permissionResponse.ok()).toBeTruthy();
 
+    let whatsappStatusRequests = 0;
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/whatsapp/status') whatsappStatusRequests += 1;
+    });
     await page.goto(`${BASE}/auth/login`);
     await page.evaluate(() => {
       localStorage.removeItem('token');
@@ -676,12 +680,14 @@ test.describe('server POS bill print permissions', () => {
     expect(browserPermissions.permissionIds).toContain('pos.use');
     expect(browserPermissions.permissionIds).toContain('tables.view');
     expect(browserPermissions.permissionIds).not.toContain('bills.generate');
+    expect(browserPermissions.permissionIds).not.toContain('whatsapp.use');
 
     await openOccupiedTable(page, fixture.tableNumber);
     await expect(page.getByRole('heading', { name: fixture.tableNumber, exact: true })).toBeVisible();
     await expect(page.getByText(fixture.order.order_number)).toBeVisible();
     await expect(page.getByRole('button', { name: /Add Items/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Print Bill/ })).toHaveCount(0);
+    expect(whatsappStatusRequests).toBe(0);
     expect((await page.request.post(`${BASE}/api/bills/generate`, {
       headers: serverHeaders,
       data: { order_id: fixture.order.id },

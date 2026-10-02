@@ -477,7 +477,8 @@ function releaseRefRequest({
       retryDelayMs: 1,
       requestFn: async (url, options = {}) => {
         requestCalls.push({ url, options });
-        if (url.startsWith('https://uploads.test')) {
+        const parsedUrl = new URL(url);
+        if (parsedUrl.origin === 'https://uploads.test') {
           attempts += 1;
           if (attempts === 1) {
             throw new Error('GitHub request failed (408) for https://uploads.test/...: {"message":"Upload body timed out due to inactivity"}');
@@ -487,7 +488,7 @@ function releaseRefRequest({
             json: async () => ({ id: 999, name: 'flocafe-mac.dmg' }),
           };
         }
-        if (url.startsWith('https://api.test')) {
+        if (parsedUrl.origin === 'https://api.test') {
           return {
             json: async () => [],
           };

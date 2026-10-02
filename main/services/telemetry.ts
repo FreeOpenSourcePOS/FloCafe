@@ -7,6 +7,23 @@ import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTime
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
+/** How this instance was launched, so a merchant install is distinguishable from a developer's run. */
+export type RunMode = 'packaged' | 'dev';
+
+/**
+ * Where the running binary came from. `linux_package` covers native .deb/.rpm
+ * installs, which cannot be told apart from the runtime signals available here.
+ */
+export type InstallSource =
+  | 'github'
+  | 'ms_store'
+  | 'mac_app_store'
+  | 'snap'
+  | 'appimage'
+  | 'flatpak'
+  | 'linux_package'
+  | 'dev';
+
 const REQUEST_TIMEOUT_MS = 8_000;
 const DAILY_PING_INTERVAL_MS = 60 * 60_000; // check hourly, send at most once/24h
 const DAILY_PING_MIN_GAP_MS = 24 * 60 * 60_000;
@@ -15,6 +32,48 @@ let dailyPingTimer: ReturnType<typeof setInterval> | null = null;
 let telemetryStopping = false;
 let telemetryStopPromise: Promise<void> | null = null;
 const inFlightTelemetry = new Set<Promise<unknown>>();
+
+/**
+ * Resolves Electron's `app` without assuming an Electron runtime. This module is
+ * imported by unit tests and scripts where `electron` resolves to a path string
+ * or is missing entirely, so an unguarded `app.isPackaged` would throw. Any
+ * failure degrades to a dev-mode report instead of breaking the import.
+ */
+function electronApp(): typeof app | undefined {
+  try {
+    const electronModule = require('electron') as { app?: typeof app } | undefined;
+    return electronModule?.app;
+  } catch {
+    return undefined;
+  }
+}
+
+function isPackagedRun(): boolean {
+  return electronApp()?.isPackaged === true;
+}
+
+function envFlag(name: string): boolean {
+  return String(process.env[name] ?? '').trim() !== '';
+}
+
+/** `packaged` for a real merchant install, `dev` for `npm run dev` and non-Electron hosts. */
+export function getRunMode(): RunMode {
+  return isPackagedRun() ? 'packaged' : 'dev';
+}
+
+/** Classifies the distribution channel the running binary was installed from. */
+export function getInstallSource(): InstallSource {
+  if (!isPackagedRun()) return 'dev';
+  if (process.windowsStore) return 'ms_store';
+  if (process.mas) return 'mac_app_store';
+  if (envFlag('SNAP')) return 'snap';
+  if (envFlag('APPIMAGE')) return 'appimage';
+  if (envFlag('FLATPAK_ID')) return 'flatpak';
+  if (process.platform === 'win32' || process.platform === 'darwin') return 'github';
+  // Native Linux packages expose no distinguishing runtime signal, so report the
+  // honest category rather than guessing between .deb and .rpm.
+  return 'linux_package';
+}
 
 function matrixOffline(): boolean {
   return process.env.FLO_MATRIX_OFFLINE === '1';
@@ -43,6 +102,8 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
         app_version: app.getVersion(),
         event_type: eventType,
         platform: process.platform,
+        run_mode: getRunMode(),
+        install_source: getInstallSource(),
         ...(country ? { country } : {}),
         ...(payload ? { payload } : {}),
       }),

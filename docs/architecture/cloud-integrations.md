@@ -47,6 +47,15 @@ that flips the default uses `INSERT OR IGNORE`; an install that already ran the 
 
 **Offline behaviour.** Events are dropped, not queued. There is no telemetry outbox.
 
+**Run mode and install source.** Every telemetry event and every FloAdmin registration carries two
+provenance fields, so a merchant install is distinguishable from a developer's local run. `run_mode`
+is `packaged` or `dev`, read from `app.isPackaged`. `install_source` is `github`, `ms_store`,
+`mac_app_store`, `snap`, `appimage`, `flatpak`, `linux_package`, or `dev`, resolved from
+`process.windowsStore`, `process.mas`, `SNAP`, `APPIMAGE`, `FLATPAK_ID`, and `process.platform` in
+that order. `linux_package` covers native `.deb` and `.rpm` installs, which no available runtime
+signal tells apart, so the honest category is reported instead of a guess. Detection is total:
+outside Electron - unit tests, scripts - it degrades to `dev` rather than throwing.
+
 ## Store-attributed diagnostics
 
 A second, separate channel that attaches store identity to a diagnostic report. It has a local tier

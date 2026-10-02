@@ -230,7 +230,7 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (): Promise<boolean> => {
     try {
       const { data } = await api.get('/orders', { params: { per_page: 50 } });
       const orders = data.orders || [];
@@ -242,8 +242,10 @@ export default function OrdersPage() {
           fetchPrintHistory(order.bill.id);
         }
       });
+      return true;
     } catch {
       toast.error(tOrders('loadOrdersFailed'));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -580,8 +582,11 @@ export default function OrdersPage() {
     try {
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       const bill = data.bill as Bill;
-      await fetchOrders();
-      setConfirmPrintBillId(bill.id);
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
+      const refreshed = await fetchOrders();
+      if (refreshed) {
+        setConfirmPrintBillId(bill.id);
+      }
     } catch {
       toast.error(tOrders('generateBillFailed'));
     } finally {

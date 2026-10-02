@@ -105,7 +105,7 @@ export default function TableCheckoutModal({
         setOrder({ ...order, bill: targetBill });
       }
       if (targetBill) {
-        await onPrintBill(targetBill);
+        await onPrintBill({ ...targetBill, order: targetBill.order ?? order });
       }
     } catch {
       toast.error(t('generateBillFailed'));

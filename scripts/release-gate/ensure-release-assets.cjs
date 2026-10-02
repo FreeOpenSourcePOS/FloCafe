@@ -86,7 +86,7 @@ function tryUploadWithGh(release, filePath, repo) {
   const targetRepo = repo || (release.url && release.url.match(/repos\/([^/]+\/[^/]+)/)?.[1]);
   const args = ['release', 'upload', release.tag_name, filePath, '--clobber'];
   if (targetRepo) args.push('--repo', targetRepo);
-  execFileSync('gh', args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
+  execFileSync('gh', args, { stdio: 'inherit', env: process.env });
   return { name: path.basename(filePath) };
 }
 
@@ -97,8 +97,10 @@ async function uploadAsset(release, name, bytes, { maxRetries = 3, retryDelayMs 
         try {
           return tryUploadWithGh(release, filePath, repo);
         } catch (ghError) {
-          if (ghError.code !== 'ENOENT') {
-            console.warn(`gh release upload failed (${ghError.message.slice(0, 200)}), falling back to HTTP request...`);
+          if (ghError.code === 'ENOENT') {
+            // gh CLI not installed, fall back to HTTP upload
+          } else {
+            throw ghError;
           }
         }
       }

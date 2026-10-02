@@ -18,6 +18,7 @@ interface Props {
   onClose: () => void;
   onAddItems: (table: Table, order: Order) => void;
   onPrintBill?: (bill: Bill) => Promise<void>;
+  canGenerateBill: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
 }
@@ -29,6 +30,7 @@ export default function TableCheckoutModal({
   onClose,
   onAddItems,
   onPrintBill,
+  canGenerateBill,
   onPayment,
   onAddCartToOrder
 }: Props) {
@@ -98,14 +100,31 @@ export default function TableCheckoutModal({
     if (!order || !onPrintBill) return;
     setPrintingBill(true);
     try {
-      let targetBill = order.bill;
+      let currentOrder: Order;
+      try {
+        const { data } = await api.get(`/orders/${order.id}`);
+        currentOrder = data.order as Order;
+      } catch {
+        toast.error(t('loadOrderFailed'));
+        return;
+      }
+      setOrder(currentOrder);
+      if (currentOrder.bill?.split_group_id || currentOrder.bills?.some((bill) => bill.split_group_id)) return;
+
+      let targetBill = currentOrder.bill;
       if (!targetBill) {
-        const { data } = await api.post('/bills/generate', { order_id: order.id });
+        if (!canGenerateBill) return;
+        const { data } = await api.post('/bills/generate', { order_id: currentOrder.id });
         targetBill = data.bill;
-        setOrder({ ...order, bill: targetBill });
+        setOrder({ ...currentOrder, bill: targetBill });
+      }
+      if (targetBill?.split_group_id) {
+        const { data } = await api.get(`/orders/${currentOrder.id}`);
+        setOrder(data.order as Order);
+        return;
       }
       if (targetBill) {
-        await onPrintBill({ ...targetBill, order: targetBill.order ?? order });
+        await onPrintBill({ ...targetBill, order: targetBill.order ?? currentOrder });
       }
     } catch {
       toast.error(t('generateBillFailed'));
@@ -253,23 +272,25 @@ export default function TableCheckoutModal({
             </div>
           ) : splitBills.length === 0 ? (
             // Cart empty - show both options
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid ${order.bill || canGenerateBill ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
               <Button variant="outline" onClick={() => onAddItems(table, order)} disabled={generating || printingBill}>
                 {t('addItems')}
               </Button>
-              <Button
-                variant="outline"
-                onClick={handlePrintBill}
-                disabled={generating || printingBill}
-                className="font-medium"
-              >
-                {printingBill ? (
-                  <Loader2 size={15} className="animate-spin me-1.5" />
-                ) : (
-                  <Printer size={15} className="me-1.5" />
-                )}
-                {tReceipt('printBill')}
-              </Button>
+              {(order.bill || canGenerateBill) && (
+                <Button
+                  variant="outline"
+                  onClick={handlePrintBill}
+                  disabled={generating || printingBill}
+                  className="font-medium"
+                >
+                  {printingBill ? (
+                    <Loader2 size={15} className="animate-spin me-1.5" />
+                  ) : (
+                    <Printer size={15} className="me-1.5" />
+                  )}
+                  {tReceipt('printBill')}
+                </Button>
+              )}
               <Button onClick={handleCheckout} disabled={generating || printingBill}>
                 {generating ? t('generating') : t('checkout')}
               </Button>

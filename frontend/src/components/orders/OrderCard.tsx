@@ -285,7 +285,7 @@ export function OrderCard({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {(bill || (order.type === 'dine_in' && order.status !== 'cancelled')) && (
+            {(bill || (onPrintOrder && order.type === 'dine_in' && order.status !== 'cancelled')) && (
               <Button
                 variant="outline"
                 size="icon"

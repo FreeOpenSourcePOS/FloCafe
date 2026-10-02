@@ -1273,6 +1273,7 @@ export default function POSPage() {
           onPrintBill={async (bill) => {
             await printBillForTenant(bill, true);
           }}
+          canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           onPayment={(bill, overridePin) => { setCheckoutTable(null); setPaymentBill(bill); setCheckoutOverridePin(overridePin); }}
           onAddCartToOrder={handleAddCartToOrder}
         />

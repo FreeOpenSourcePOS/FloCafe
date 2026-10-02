@@ -17,9 +17,7 @@ import {
 } from '../../shared/print/thermal-capabilities';
 
 const DEFAULT_RENDER_TIMEOUT_MS = 15_000;
-const RENDER_TIMEOUT_MS = Number(process.env.RASTER_RENDER_TIMEOUT_MS) > 0
-  ? Number(process.env.RASTER_RENDER_TIMEOUT_MS)
-  : DEFAULT_RENDER_TIMEOUT_MS;
+const MAX_RENDER_TIMEOUT_MS = 2_147_483_647;
 
 /** Self-contained page with no navigation, network access, or Node integration. */
 export function rasterRendererHtml(): string {
@@ -227,7 +225,14 @@ export class ChromiumRasterRenderer {
   };
 
   constructor(options: RasterRendererOptions = {}) {
-    this.timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
+    const configuredTimeoutMs = Number(process.env.RASTER_RENDER_TIMEOUT_MS);
+    const renderTimeoutMs = Number.isFinite(configuredTimeoutMs)
+      && Number.isInteger(configuredTimeoutMs)
+      && configuredTimeoutMs > 0
+      && configuredTimeoutMs <= MAX_RENDER_TIMEOUT_MS
+      ? configuredTimeoutMs
+      : DEFAULT_RENDER_TIMEOUT_MS;
+    this.timeoutMs = options.timeoutMs ?? renderTimeoutMs;
     this.ipc = options.ipc ?? ipcMain;
     this.onActivity = options.onActivity;
     this.ready = new Promise<void>((resolve) => { this.readyResolve = resolve; });

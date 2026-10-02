@@ -79,8 +79,8 @@ async function run() {
       style: 'bold',
       styles: ['bold', 'double-height', 'double-width'],
     });
-    assert.equal(normal.ok, true);
-    assert.equal(styled.ok, true);
+    assert.equal(normal.ok, true, `normal raster failed: ${normal.code ?? 'unknown'} - ${normal.detail ?? 'no detail'}`);
+    assert.equal(styled.ok, true, `styled raster failed: ${styled.code ?? 'unknown'} - ${styled.detail ?? 'no detail'}`);
     const fontCount = await surface.webContents.executeJavaScript('document.fonts.size');
     assert.equal(fontCount, 1);
     assert.equal(normal.unit.complete, true);

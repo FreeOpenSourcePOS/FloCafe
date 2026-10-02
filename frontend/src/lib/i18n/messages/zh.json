@@ -942,7 +942,14 @@
       "title": "配送单",
       "banner": "配送单",
       "address": "送货地址",
-      "addressTruncated": "... 另有 {count} 个字符未显示，请核对订单"
+      "addressTruncated": "... 另有 {count} 个字符未显示，请核对订单",
+      "paid": "已付款",
+      "toCollect": "待收款",
+      "refunded": "已退款",
+      "partiallyRefunded": "部分退款",
+      "cashOnDelivery": "货到付款",
+      "amountDue": "应付金额",
+      "multiplePaymentMethods": "多种付款方式"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "加载服务员应用信息",
     "loading": "加载中…",
     "localNetwork": "本地网络",
+    "localNetworkHint": "当所有设备都能通过 Wi-Fi、Ethernet 或 VPN/mesh 网络访问此地址时使用",
     "loyalty": "积分",
     "loyaltyHint": "顾客按购物车中每件商品的积分费率赚取积分",
     "loyaltyProgram": "积分计划",
@@ -2018,6 +2026,7 @@
     "version": "版本",
     "viewTableInfo": "查看桌台信息",
     "vpnMeshNetwork": "VPN / 网状网络",
+    "vpnMeshNetworkHint": "当设备通过 VPN 或网状网络跨不同子网或地点连接时使用",
     "waitingForApproval": "等待批准",
     "webusbHint": "WebUSB 打印机从浏览器工具栏的连接按钮直接连接。保存此条目以记住纸张宽度偏好。",
     "webusbTestHint": "WebUSB：使用 POS 工具栏中的连接按钮进行测试。",

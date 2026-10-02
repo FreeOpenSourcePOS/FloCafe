@@ -942,7 +942,14 @@
       "title": "配達伝票",
       "banner": "配達伝票",
       "address": "配達先住所",
-      "addressTruncated": "... 他 {count} 文字は表示されていません。注文を確認してください"
+      "addressTruncated": "... 他 {count} 文字は表示されていません。注文を確認してください",
+      "paid": "支払済み",
+      "toCollect": "集金額",
+      "refunded": "返金済み",
+      "partiallyRefunded": "一部返金済み",
+      "cashOnDelivery": "代金引換",
+      "amountDue": "未払い金額",
+      "multiplePaymentMethods": "複数の支払い方法"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "Server App情報を読み込む",
     "loading": "読み込み中…",
     "localNetwork": "ローカルネットワーク",
+    "localNetworkHint": "すべてのデバイスがWi-Fi、Ethernet、またはVPN/メッシュネットワーク経由でこのアドレスに接続できる場合に使用します",
     "loyalty": "ロイヤルティ",
     "loyaltyHint": "カート内の各商品のロイヤルティ付与率に基づいて顧客にポイントを付与します",
     "loyaltyProgram": "ロイヤルティプログラム",
@@ -2018,6 +2026,7 @@
     "version": "バージョン",
     "viewTableInfo": "テーブル情報を表示",
     "vpnMeshNetwork": "VPN / メッシュネットワーク",
+    "vpnMeshNetworkHint": "デバイスが異なるサブネットや場所からVPNまたはメッシュネットワーク経由で接続する場合に使用します",
     "waitingForApproval": "承認待ち",
     "webusbHint": "WebUSBプリンターはブラウザーのツールバーにある接続ボタンから直接接続します。この項目を保存すると用紙幅の設定を記憶できます。",
     "webusbTestHint": "WebUSB: POSツールバーの接続ボタンでテストしてください。",

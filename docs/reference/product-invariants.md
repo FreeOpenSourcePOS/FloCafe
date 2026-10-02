@@ -331,19 +331,21 @@ therefore already read every customer phone number and address in the shop on on
 `printing.execute` ships to the same roles. Adding a permission to the slip would close one door
 in a room with three open ones while claiming a protection that does not exist.
 
-**The divergence is deliberate and visible, not accidental.** The slip is a separate document kind
-with its own builder, so it never passes through `buildBillDocument`; it resolves the number
-through `shouldShowCustomerNumber` instead, which is why a slip and a delivery receipt can never
-disagree. A merchant who hides the number on receipts gets a slip that differs by default, and can
-change that from the same panel. Do not "fix" it by routing the slip through the receipt document,
-which would make the two documents share one default and reopen the question.
+**The documents remain intentionally distinct.** The slip has its own document kind and never
+passes through `buildBillDocument`. Its API route and browser/WebUSB hook apply the same visibility
+rule before building it: they include the phone when either `bill_delivery_show_customer_phone_always`
+or `bill_show_customer_phone` is on, and omit it only when both are off. This keeps a delivery
+receipt and the courier slip aligned. A merchant who turns off only `bill_show_customer_phone`
+still gets the phone on delivery slips while the delivery override is on; the same Printers panel
+controls both settings. Do not "fix" it by routing the slip through the receipt document, which
+would conflate the two document defaults.
 
-**Enforced by:** `shouldShowCustomerNumber()` in `shared/print/document.ts`, the one rule both
-delivery surfaces resolve; `buildDeliverySlipDocument`, which has no mask parameter to flip;
-`main/printers/document-delivery-slip.ts`, which imports neither the mask helper nor the shared
-option name; `resolveReceiptPhone()` in `frontend/src/lib/printer/receipt-encoder.ts`, where the
-receipt's mask is a named option that defaults to masked. The slip's route is `POST /api/printers/print-delivery-slip` in
-`main/routes/printers.ts`, gated on the same `printing.execute` permission as every other print.
+**Enforced by:** `shouldShowCustomerNumber()` in `shared/print/document.ts` for receipt customer-number
+visibility; `main/routes/printers.ts` and `frontend/src/hooks/usePrinter.ts` apply the OR rule to
+delivery-slip contact data before rendering; `buildDeliverySlipPrintData` consumes the caller-filtered
+phone; `resolveReceiptPhone()` in `frontend/src/lib/printer/receipt-encoder.ts` keeps receipt masking
+separate. The slip's route is `POST /api/printers/print-delivery-slip` in `main/routes/printers.ts`,
+gated on the same `printing.execute` permission as every other print.
 
 **How to verify:**
 

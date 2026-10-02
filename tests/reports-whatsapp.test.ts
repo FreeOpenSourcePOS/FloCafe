@@ -6,6 +6,8 @@ import * as path from 'node:path';
 const Module = require('node:module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-reports-whatsapp-'));
+const whatsappSharePath = path.resolve(__dirname, '../frontend/src/lib/whatsapp-share.ts');
+const reportsRoutePath = path.resolve(__dirname, '../main/routes/reports.ts');
 const clientApiCalls: Array<{ path: string; body: any }> = [];
 let clientApiResponse: any = { success: true, messageId: 44 };
 let sendResult: any = { ok: true, messageId: 71 };
@@ -27,10 +29,10 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   }
-  if (request === '../services/whatsapp' && parent?.filename?.endsWith('/main/routes/reports.ts')) {
+  if (request === '../services/whatsapp' && parent?.filename && path.resolve(parent.filename) === reportsRoutePath) {
     return fakeWhatsApp;
   }
-  if (parent?.filename?.endsWith('/frontend/src/lib/whatsapp-share.ts')) {
+  if (parent?.filename && path.resolve(parent.filename) === whatsappSharePath) {
     if (request === '@/lib/countries') {
       return {
         getCountryByCode: () => ({ locale: 'en-US' }),
@@ -49,6 +51,7 @@ const jwt = require('jsonwebtoken');
 const testSetup = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { reportRoutes } = require('../main/routes/reports');
+const { whatsappRoutes } = require('../main/routes/whatsapp');
 const { isSafeWhatsAppShareUrl } = require('../main/security/url-allowlist');
 const {
   formatCashCloseWhatsAppMessage,
@@ -257,6 +260,59 @@ async function main(): Promise<void> {
       .set('Authorization', `Bearer ${cashierToken}`).send(payload);
     assert.equal(forbidden.status, 403);
     assert.equal(forbidden.body.permission, 'reports.view');
+
+    const manager = testSetup.seedManagerUser(db);
+    const historyRows = [
+      { kind: 'manual_reply', body: 'Z-Report: $420.00 (manual message)', queuedAt: '2026-10-01T09:00:00.000Z' },
+      { kind: 'manual_reply', body: 'Ordinary WhatsApp reply', queuedAt: '2026-10-01T08:00:00.000Z' },
+      { kind: 'z_report', body: 'Z-Report: $500.00 (stored report)', queuedAt: '2026-10-01T12:00:00.000Z' },
+      { kind: 'z_report', body: 'Z-Report: $600.00 (stored report)', queuedAt: '2026-10-01T13:00:00.000Z' },
+    ];
+    const insertHistory = db.prepare(`
+      INSERT INTO whatsapp_messages (phone_e164, direction, kind, status, body, queued_at, created_by_user_id)
+      VALUES ('+14165551234', 'outbound', ?, 'sent', ?, ?, ?)
+    `);
+    for (const row of historyRows) insertHistory.run(row.kind, row.body, row.queuedAt, owner.userId);
+
+    const whatsappApp = testSetup.createApp({ '/api/whatsapp': whatsappRoutes });
+    const cashierHistory = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=10')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert.equal(cashierHistory.status, 200);
+    assert.deepEqual(cashierHistory.body.messages.map((message: any) => message.kind), ['manual_reply', 'manual_reply']);
+    assert.ok(cashierHistory.body.messages.some((message: any) => message.body === 'Z-Report: $420.00 (manual message)'),
+      'cashiers retain access to ordinary messages even when their text resembles a report');
+
+    const cashierHistoryPage = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=1')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert.equal(cashierHistoryPage.body.messages[0]?.body, 'Z-Report: $420.00 (manual message)',
+      'report filtering happens before the SQL limit and pagination');
+    const cashierHistoryNextPage = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=1&offset=1')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert.equal(cashierHistoryNextPage.body.messages[0]?.body, 'Ordinary WhatsApp reply');
+
+    const cashierExplicitReportKind = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&kind=z_report')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert.ok(cashierExplicitReportKind.body.messages.every((message: any) => message.kind !== 'z_report'),
+      'requesting report-kind history does not bypass the report permission filter');
+
+    const managerHistory = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=10')
+      .set('Authorization', `Bearer ${manager.token}`);
+    assert.equal(managerHistory.status, 200);
+    assert.equal(managerHistory.body.messages.filter((message: any) => message.kind === 'z_report').length, 2,
+      'managers with reports.view can read stored report messages');
+    const ownerHistory = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=10')
+      .set('Authorization', `Bearer ${owner.token}`);
+    assert.equal(ownerHistory.body.messages.filter((message: any) => message.kind === 'z_report').length, 2,
+      'owners with reports.view can read stored report messages');
+
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, 'reports.view', 'allow', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(cashierId, owner.userId);
+    const permittedCashierHistory = await request(whatsappApp).get('/api/whatsapp/messages?direction=outbound&limit=10')
+      .set('Authorization', `Bearer ${cashierToken}`);
+    assert.equal(permittedCashierHistory.body.messages.filter((message: any) => message.kind === 'z_report').length, 2,
+      'cashiers explicitly granted reports.view can read stored report messages');
 
     clientApiCalls.length = 0;
     clientApiResponse = { success: true, messageId: 44 };

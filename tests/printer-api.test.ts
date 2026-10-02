@@ -324,6 +324,27 @@ async function runTests() {
     });
     assert(printerRes.status === 201, `safety printer fixture is created (got ${printerRes.status})`);
 
+    const deliveryOrderRes = db.prepare(
+      `INSERT INTO orders (order_number, status, type, subtotal, total, created_at, updated_at)
+       VALUES ('ORD-UNSUPPORTED-SLIP', 'completed', 'delivery', 11, 11, datetime('now'), datetime('now'))`
+    ).run();
+    const deliveryOrderId = Number(deliveryOrderRes.lastInsertRowid);
+    db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
+       VALUES (?, 'prod-unsupported-slip', 'Tea', 11, 1, 11, 11, datetime('now'), datetime('now'))`
+    ).run(deliveryOrderId);
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+       VALUES ('BILL-UNSUPPORTED-SLIP', ?, 11, 11, 11, 0, 'paid', ?, datetime('now'), datetime('now'))`
+    ).run(deliveryOrderId, JSON.stringify([{ method: 'کارت', amount: 11 }]));
+
+    const deliverySlipRes = await request(app).post('/api/printers/print-delivery-slip').send({ orderId: deliveryOrderId });
+    assert(deliverySlipRes.status === 502, `unsupported delivery-slip financial text is refused (got ${deliverySlipRes.status})`);
+    assert(deliverySlipRes.body.failure_class === 'unsupported', 'delivery-slip refusal is classified as unsupported');
+    assert(deliverySlipRes.body.detail?.startsWith('Receipt not printed: a financial row'), 'delivery-slip refusal includes the operator warning');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert(transportConnections === 0 && transportBytes === 0, 'unsupported delivery-slip refusal opens no transport or sends bytes');
+
     const printArgs = [
       {
         order_number: 'ORD-UNSUPPORTED-FINANCIAL',

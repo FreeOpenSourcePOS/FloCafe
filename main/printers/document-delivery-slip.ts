@@ -1,5 +1,6 @@
 
 import { parseDbTimestamp } from '../db';
+import { formatMoney, getCurrencyMinorUnitFactor, type CurrencyDisplay, type DigitMode } from '../countries';
 import { printLabel } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
@@ -26,13 +27,16 @@ import {
   buildDeliverySlipDocument,
   clampDeliverySlipText,
   MAX_DELIVERY_SLIP_NOTE_CHARS,
+  resolveDeliverySlipPaymentSummary,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
+  type DeliverySlipPaymentBill,
   type DeliverySlipDocument,
   type DeliverySlipDocumentBlock,
   type DeliverySlipHeaderBlock,
   type DeliverySlipItemsBlock,
   type DeliverySlipNotesBlock,
+  type DeliverySlipPaymentBlock,
   type DeliverySlipPrintData,
   type PrintContext,
   type SemanticLabel,
@@ -72,6 +76,15 @@ export interface DeliverySlipOrderRow {
   readonly delivery_address?: unknown;
   /** Order-level note. Item-level instructions arrive on DeliverySlipItemRow. */
   readonly special_instructions?: unknown;
+  readonly total?: unknown;
+  readonly bill?: {
+    readonly payment_status?: unknown;
+    readonly total?: unknown;
+    readonly balance?: unknown;
+    readonly payment_method?: unknown;
+    readonly payment_details?: unknown;
+  } | null;
+  readonly bills?: readonly DeliverySlipPaymentBill[];
   readonly customer?: { readonly name?: unknown } | null;
 }
 
@@ -86,7 +99,13 @@ export function buildDeliverySlipPrintData(
   order: DeliverySlipOrderRow,
   items: readonly DeliverySlipItemRow[],
   contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
-  options: { showCustomerPhone?: boolean } = {},
+  options: {
+    showCustomerPhone?: boolean;
+    locale?: string;
+    currency?: string;
+    currencyDisplay?: CurrencyDisplay;
+    digits?: DigitMode;
+  } = {},
 ): DeliverySlipPrintData {
   const orderAddress = typeof order?.delivery_address === 'string' ? order.delivery_address.trim() : '';
   const customerAddress = typeof contact?.address === 'string' ? contact.address.trim() : '';
@@ -99,6 +118,23 @@ export function buildDeliverySlipPrintData(
   );
 
   const ticketItems = Array.isArray(items) ? items : [];
+  const paymentBills = Array.isArray(order?.bills) ? order.bills : order?.bill;
+  const paymentSummary = resolveDeliverySlipPaymentSummary(
+    order?.total,
+    paymentBills,
+    getCurrencyMinorUnitFactor(String(options.currency ?? '')),
+  );
+  const formatAmount = (amount: number) => formatMoney(amount, String(options.currency ?? ''), options.locale ?? 'en-US', {
+    currencyDisplay: options.currencyDisplay,
+    digits: options.digits,
+  });
+  const payment = paymentSummary
+    ? {
+      ...paymentSummary,
+      formattedAmount: formatAmount(paymentSummary.amount),
+      formattedAmountDue: formatAmount(paymentSummary.amountDue),
+    }
+    : undefined;
   return {
     order: {
       orderNumber: String(order?.order_number ?? ''),
@@ -118,6 +154,7 @@ export function buildDeliverySlipPrintData(
       addressSource,
       addressTruncatedChars: truncatedChars,
     },
+    ...(payment ? { payment } : {}),
     items: ticketItems.map((item) => ({
       productName: String(item?.product_name ?? ''),
       quantity: Number(item?.quantity) || 0,
@@ -134,15 +171,18 @@ function clampAddress(address: string): { text: string; truncatedChars: number }
 export function buildDeliverySlipPrintContext(opts: {
   columns: number;
   language: string;
+  locale?: string;
+  currency?: string;
+  currencySymbol?: string;
   timezone?: string;
 }): PrintContext {
   return {
     columns: opts.columns,
     languages: [opts.language],
     baseDirection: detectPrintLanguageDirection(opts.language),
-    locale: 'en-US',
-    currency: '',
-    currencySymbol: '',
+    locale: opts.locale ?? 'en-US',
+    currency: opts.currency ?? '',
+    currencySymbol: opts.currencySymbol ?? '',
     trimDecimals: false,
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),
@@ -162,6 +202,7 @@ export interface DeliverySlipDocumentRenderOptions {
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly rasterGroups?: RasterSemanticLineGroup[];
+  readonly financialLineRanges?: Array<{ lineIndex: number; lineCount: number }>;
 }
 
 function slipBlock<K extends DeliverySlipDocumentBlock['kind']>(
@@ -316,6 +357,36 @@ function slipNoteLines(
   return lines;
 }
 
+function slipPaymentLines(
+  payment: DeliverySlipPaymentBlock,
+  options: DeliverySlipDocumentRenderOptions,
+): string[] {
+  const fallbackStatus = payment.status === 'paid'
+    ? 'PAID'
+    : payment.status === 'refunded'
+      ? 'REFUNDED'
+      : payment.status === 'partially_refunded'
+        ? 'PARTIAL REFUND'
+        : !payment.detailsText
+          ? 'AMOUNT DUE'
+          : 'TO COLLECT';
+  const status = thermalSafeText(labelOf(payment.label), fallbackStatus, options.arabicShaping, options.capabilities);
+  const method = payment.methodLabel?.primary ?? payment.methodName?.text ?? '';
+  const totalLabel = thermalSafeText(printLabel(options.language, 'pos.total'), 'Total', options.arabicShaping, options.capabilities);
+  const summary = payment.status === 'paid'
+    ? `${status}: ${method ? `${method} ` : ''}(${totalLabel}: ${payment.amountText.text})`
+    : payment.status === 'unpaid' && payment.detailsText
+      ? `${status}: ${payment.amountText.text} (${payment.detailsText.text})`
+      : `${status}${payment.amountText.text ? `: ${payment.amountText.text}` : ''}`;
+  const lines: string[] = [];
+  pushWrapped(lines, summary, options.columns, options.language, options.capabilities);
+  if (lines.length > 0) lines[0] = `{BOLD}${lines[0]}{/BOLD}`;
+  if ((payment.status === 'paid' || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.detailsText) {
+    pushWrapped(lines, payment.detailsText.text, options.columns, options.language, options.capabilities);
+  }
+  return lines;
+}
+
 function slipItemLines(row: DeliverySlipItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
@@ -343,6 +414,7 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
   const header = slipBlock(document, 'delivery-slip-header');
   const contact = slipBlock(document, 'delivery-slip-contact');
   const notes = slipBlock(document, 'delivery-slip-notes');
+  const payment = slipBlock(document, 'delivery-slip-payment');
   const items = slipBlock(document, 'delivery-slip-items');
 
   lines.push('{INIT}');
@@ -391,6 +463,25 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
         sourceLines: notesSourceLines,
         sourceControlLines: notesControlLines,
       });
+    }
+  }
+
+  if (payment) {
+    lines.push('');
+    const paymentStart = lines.length;
+    const paymentLines = slipPaymentLines(payment, options);
+    lines.push(...paymentLines);
+    if (paymentLines.length > 0) {
+      options.rasterGroups?.push({
+        groupId: 'delivery-slip-payment',
+        lineIndex: paymentStart,
+        lineCount: paymentLines.length,
+        sourceLines: paymentLines.map((line) => line.replace(/\{\/?BOLD\}/g, '')),
+        sourceControlLines: paymentLines,
+        financial: true,
+      });
+      options.financialLineRanges?.push({ lineIndex: paymentStart, lineCount: paymentLines.length });
+      lines.push('-'.repeat(cols));
     }
   }
 
@@ -450,6 +541,10 @@ export function renderDeliverySlipViaDocument(
     columns: number;
     language: string;
     locale?: string;
+    currency?: string;
+    currencySymbol?: string;
+    currencyDisplay?: CurrencyDisplay;
+    digits?: DigitMode;
     timezone?: string;
     useUnicode: boolean;
     arabicShaping: boolean;
@@ -463,11 +558,15 @@ export function renderDeliverySlipViaDocument(
   const printContext = buildDeliverySlipPrintContext({
     columns: opts.columns,
     language: opts.language,
+    ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
+    ...(opts.currency !== undefined ? { currency: opts.currency } : {}),
+    ...(opts.currencySymbol !== undefined ? { currencySymbol: opts.currencySymbol } : {}),
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
   });
   const document = buildDeliverySlipDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
   const rasterGroups: RasterSemanticLineGroup[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const lines = renderDeliverySlipDocumentToLines(document, {
     columns: opts.columns,
     language: opts.language,
@@ -478,6 +577,7 @@ export function renderDeliverySlipViaDocument(
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
     rasterGroups,
+    financialLineRanges,
   });
   const data = buildEscPos(lines, opts.useUnicode, {
     cutMode: opts.cutMode,
@@ -485,6 +585,7 @@ export function renderDeliverySlipViaDocument(
     columns: opts.columns,
     language: opts.language,
     capabilities: opts.capabilities,
+    financialLineRanges,
   }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

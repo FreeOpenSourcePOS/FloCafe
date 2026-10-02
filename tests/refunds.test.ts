@@ -31,10 +31,11 @@ const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
   api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
-const { orderRoutes } = require('../main/routes/orders');
+const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
 const { reportRoutes } = require('../main/routes/reports');
+const { printerRoutes } = require('../main/routes/printers');
 const { getJWTSecret } = require('../main/routes/auth');
 
 async function main() {
@@ -66,6 +67,7 @@ async function main() {
     '/api/bills': billRoutes,
     '/api/refunds': refundRoutes,
     '/api/reports': reportRoutes,
+    '/api/printers': printerRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
@@ -328,6 +330,67 @@ async function main() {
       headers: ownerAuth,
     });
     assertEqual(sixthAttempt.status, 429, 'the 6th refund call reaching PIN approval is throttled regardless of a correct PIN');
+
+    resetPinRateLimitForTests();
+    const outstandingOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'prod-refund', quantity: 1 }] }, headers: ownerAuth,
+    });
+    const outstandingBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: outstandingOrder.data.order.id }, headers: ownerAuth,
+    });
+    const partialPayment = await api(baseUrl, `/api/bills/${outstandingBill.data.bill.id}/payment`, {
+      method: 'POST', body: { method: 'cash', amount: 60 }, headers: ownerAuth,
+    });
+    assertEqual(partialPayment.status, 200, 'partial payment creates the outstanding-refund fixture');
+    assertEqual(partialPayment.data.bill.balance, 40, 'partial payment stores the remaining bill balance');
+    const partialRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: outstandingBill.data.bill.id, amount: 20, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
+    });
+    assertEqual(partialRefund.status, 201, 'a partial refund after partial payment is accepted');
+    const partialRefundSlip = await api(baseUrl, `/api/printers/delivery-slip-payment/${outstandingOrder.data.order.id}`, { headers: ownerAuth });
+    assertEqual(partialRefundSlip.status, 200, 'delivery-slip payment snapshot reads the refunded bill');
+    assertEqual(partialRefundSlip.data.payment.status, 'partially_refunded', 'delivery slip retains partial-refund state');
+    assertEqual(partialRefundSlip.data.payment.formattedAmountDue, '₹40.00', 'partial refund keeps the stored balance collectible on the slip');
+
+    const remainingRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: outstandingBill.data.bill.id, amount: 40, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
+    });
+    assertEqual(remainingRefund.status, 201, 'the remainder of the partially paid amount can be refunded');
+    const fullRefundBill = db.prepare('SELECT payment_status, balance FROM bills WHERE id = ?').get(outstandingBill.data.bill.id) as any;
+    assertEqual(fullRefundBill.payment_status, 'refunded', 'refunding all collected money marks the bill refunded');
+    assertEqual(fullRefundBill.balance, 40, 'refund does not mutate the independent stored outstanding balance');
+    const fullRefundSlip = await api(baseUrl, `/api/printers/delivery-slip-payment/${outstandingOrder.data.order.id}`, { headers: ownerAuth });
+    assertEqual(fullRefundSlip.data.payment.status, 'refunded', 'delivery slip retains full-refund state');
+    assertEqual(fullRefundSlip.data.payment.formattedAmountDue, '₹40.00', 'full refund does not hide the stored outstanding balance');
+
+    const splitPaymentOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items: [
+        { product_id: 'prod-refund', quantity: 1 },
+        { product_id: 'prod-refund-inv', quantity: 1 },
+      ] }, headers: ownerAuth,
+    });
+    const splitBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: splitPaymentOrder.data.order.id }, headers: ownerAuth,
+    });
+    const splitPaymentChecks = await api(baseUrl, `/api/bills/${splitBill.data.bill.id}/split-check`, {
+      method: 'POST', body: { checks: [
+        { label: 'Refunded check', items: [{ order_item_id: splitPaymentOrder.data.order.items[0].id, quantity: 1 }] },
+        { label: 'Open check', items: [{ order_item_id: splitPaymentOrder.data.order.items[1].id, quantity: 1 }] },
+      ] }, headers: ownerAuth,
+    });
+    assertEqual(splitPaymentChecks.status, 201, 'split-refund fixture creates both checks');
+    const refundedCheckPayment = await api(baseUrl, `/api/bills/${splitPaymentChecks.data.bills[0].id}/payment`, {
+      method: 'POST', body: { method: 'cash', amount: 60 }, headers: ownerAuth,
+    });
+    assertEqual(refundedCheckPayment.status, 200, 'split-refund fixture partially pays the first check');
+    resetPinRateLimitForTests();
+    const splitRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: splitPaymentChecks.data.bills[0].id, amount: 60, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
+    });
+    assertEqual(splitRefund.status, 201, 'the paid portion of a split check can be refunded');
+    const splitRefundSlip = await api(baseUrl, `/api/printers/delivery-slip-payment/${splitPaymentOrder.data.order.id}`, { headers: ownerAuth });
+    assertEqual(splitRefundSlip.data.payment.status, 'partially_refunded', 'mixed split checks keep the refund annotation');
+    assertEqual(splitRefundSlip.data.payment.formattedAmountDue, '₹90.00', 'slip sums stored balances from refunded and open split checks');
   } finally {
     server.close();
     closeDatabase();

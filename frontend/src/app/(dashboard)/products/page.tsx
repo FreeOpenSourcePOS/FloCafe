@@ -82,6 +82,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
+  const [productInactiveAddonGroups, setProductInactiveAddonGroups] = useState<AddonGroup[]>([]);
   const [categoryAddonGroups, setCategoryAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
@@ -92,7 +93,7 @@ export default function ProductsPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] as string[] });
-  const categoryEditRequestId = useRef(0);
+  const editRequestId = useRef(0);
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
@@ -130,6 +131,7 @@ export default function ProductsPage() {
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
+  const productAddonGroupOptions = [...addonGroups, ...productInactiveAddonGroups];
   const categoryAddonGroupOptions = [...addonGroups, ...categoryAddonGroups];
 
   const fetchData = async () => {
@@ -246,6 +248,8 @@ export default function ProductsPage() {
   };
 
   const resetForm = () => {
+    editRequestId.current += 1;
+    setProductInactiveAddonGroups([]);
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3',
@@ -265,7 +269,22 @@ export default function ProductsPage() {
     setShowForm(true);
   };
 
-  const openEdit = (product: Product) => {
+  const openEdit = async (product: Product) => {
+    const requestId = ++editRequestId.current;
+    const addonGroupIds = product.addon_group_ids ?? product.addon_groups?.map((group) => group.id) ?? [];
+    const inactiveGroupIds = addonGroupIds.filter((id) => !addonGroups.some((group) => group.id === id));
+    let inactiveGroups: AddonGroup[] = [];
+    if (inactiveGroupIds.length > 0) {
+      try {
+        const response = await api.get('/addon-groups?include_inactive=true');
+        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || [])
+          .filter((group) => !group.is_active && inactiveGroupIds.includes(group.id));
+      } catch {
+        if (requestId === editRequestId.current) toast.error(t('failedToLoad'));
+      }
+    }
+    if (requestId !== editRequestId.current) return;
+    setProductInactiveAddonGroups(inactiveGroups);
     setEditingProduct(product);
     setForm({
       name: product.name,
@@ -289,7 +308,7 @@ export default function ProductsPage() {
       is_active: product.is_active,
       tags: product.tags || [],
       customTag: '',
-      addon_group_ids: product.addon_group_ids ?? product.addon_groups?.map((g) => g.id) ?? [],
+      addon_group_ids: addonGroupIds,
       image_url: product.has_image ? 'EXISTING' : null,
     });
     setShowForm(true);
@@ -367,7 +386,8 @@ export default function ProductsPage() {
   };
 
   const resetCategoryForm = () => {
-    categoryEditRequestId.current += 1;
+    editRequestId.current += 1;
+    setProductInactiveAddonGroups([]);
     setCategoryForm({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] });
     setCategoryAddonGroups([]);
     setEditingCategory(null);
@@ -375,7 +395,8 @@ export default function ProductsPage() {
   };
 
   const openEditCategory = async (cat: Category) => {
-    const requestId = ++categoryEditRequestId.current;
+    const requestId = ++editRequestId.current;
+    setProductInactiveAddonGroups([]);
     const addonGroupIds = cat.addon_group_ids || [];
     const inactiveGroupIds = addonGroupIds.filter((id) => !addonGroups.some((group) => group.id === id));
     let inactiveGroups: AddonGroup[] = [];
@@ -385,10 +406,10 @@ export default function ProductsPage() {
         inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || [])
           .filter((group) => !group.is_active && inactiveGroupIds.includes(group.id));
       } catch {
-        if (requestId === categoryEditRequestId.current) toast.error(t('failedToLoad'));
+        if (requestId === editRequestId.current) toast.error(t('failedToLoad'));
       }
     }
-    if (requestId !== categoryEditRequestId.current) return;
+    if (requestId !== editRequestId.current) return;
     setCategoryAddonGroups(inactiveGroups);
     setEditingCategory(cat);
     setCategoryForm({
@@ -969,11 +990,11 @@ export default function ProductsPage() {
                   </button>
                 </div>
               </div>
-              {isRestaurant && addonGroups.length > 0 && (
+              {isRestaurant && productAddonGroupOptions.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
                   <div className="space-y-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
-                    {addonGroups.map((group) => {
+                    {productAddonGroupOptions.map((group) => {
                       const isChecked = form.addon_group_ids.includes(group.id);
                       const isInherited = categories.find((category) => category.id === form.category_id)?.addon_group_ids?.includes(group.id) || false;
                       return (
@@ -994,7 +1015,7 @@ export default function ProductsPage() {
                             className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                           />
                           <label htmlFor={`addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
-                            <span className="text-sm text-foreground">{group.name}</span>
+                            <span className="text-sm text-foreground">{group.name}{group.is_active ? '' : ` (${tCommon('inactive')})`}</span>
                             {isInherited && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{t('inheritedFromCategory')}</span>}
                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                               {group.is_required ? t('required') : t('optional')}

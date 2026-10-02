@@ -1258,6 +1258,7 @@ export function listMessages(opts: {
   billId?: number;
   limit: number;
   offset: number;
+  canViewReports: boolean;
 }): SentMessageRow[] {
   const where: string[] = [];
   const params: any[] = [];
@@ -1265,6 +1266,7 @@ export function listMessages(opts: {
   if (opts.status) { where.push('status = ?'); params.push(opts.status); }
   if (opts.phone) { where.push('phone_e164 = ?'); params.push(opts.phone); }
   if (opts.billId) { where.push('bill_id = ?'); params.push(opts.billId); }
+  if (!opts.canViewReports) where.push("kind != 'z_report'");
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   params.push(opts.limit, opts.offset);
   return getDatabase().prepare(`

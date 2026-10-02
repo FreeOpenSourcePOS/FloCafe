@@ -942,7 +942,14 @@
       "title": "FLETË DËRGIMI",
       "banner": "FLETË DËRGIMI",
       "address": "Adresa e dorëzimit",
-      "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë"
+      "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë",
+      "paid": "PAGUAR",
+      "toCollect": "PËR T'U ARKËTUAR",
+      "refunded": "RIMBURSUA",
+      "partiallyRefunded": "PJESËRISHT I RIMBURSUA",
+      "cashOnDelivery": "Pagesë në dorëzim",
+      "amountDue": "Shuma për t'u paguar",
+      "multiplePaymentMethods": "Disa mënyra pagese"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "Ngarko informacionin e Server App",
     "loading": "Po ngarkohet…",
     "localNetwork": "Rrjeti lokal",
+    "localNetworkHint": "Përdoreni kur të gjitha pajisjet mund të arrijnë këtë adresë përmes Wi-Fi, Ethernet ose një rrjeti VPN/mesh",
     "loyalty": "Loyaliteti",
     "loyaltyHint": "Klientët fitojnë pikë bazuar në normën e fitimit të besnikërisë për çdo artikull në karrocë",
     "loyaltyProgram": "Programi i Besnikërisë",
@@ -2019,6 +2027,7 @@
     "version": "Versioni",
     "viewTableInfo": "Shikoni informacionin e tavolinës",
     "vpnMeshNetwork": "Rrjeti VPN / Mesh",
+    "vpnMeshNetworkHint": "Përdoreni kur pajisjet lidhen përmes një VPN-je ose rrjeti mesh nga nënrrjete ose vende të ndryshme",
     "waitingForApproval": "Në pritje të miratimit",
     "webusbHint": "Printerët WebUSB lidhen drejtpërdrejt nga shfletuesi nëpërmjet butonit Lidhu në shiritin e veglave. Ruajeni këtë hyrje për të kujtuar preferencën e gjerësisë së letrës.",
     "webusbTestHint": "WebUSB: përdorni butonin Connect në shiritin e veglave POS për të testuar.",

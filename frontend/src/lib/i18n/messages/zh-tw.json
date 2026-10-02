@@ -942,7 +942,14 @@
       "title": "外送單",
       "banner": "外送單",
       "address": "外送地址",
-      "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單"
+      "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單",
+      "paid": "已付款",
+      "toCollect": "待收款",
+      "refunded": "已退款",
+      "partiallyRefunded": "部分退款",
+      "cashOnDelivery": "貨到付款",
+      "amountDue": "應付金額",
+      "multiplePaymentMethods": "多種付款方式"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "載入服務員應用程式資訊",
     "loading": "載入中…",
     "localNetwork": "本機網路",
+    "localNetworkHint": "當所有裝置都能透過 Wi-Fi、Ethernet 或 VPN/mesh 網路連線到此位址時使用",
     "loyalty": "積分",
     "loyaltyHint": "顧客按購物車中每件商品的積分費率賺取積分",
     "loyaltyProgram": "積分計畫",
@@ -2018,6 +2026,7 @@
     "version": "版本",
     "viewTableInfo": "檢視桌台資訊",
     "vpnMeshNetwork": "VPN / 網狀網路",
+    "vpnMeshNetworkHint": "當裝置透過 VPN 或網狀網路跨不同子網路或地點連線時使用",
     "waitingForApproval": "等待批准",
     "webusbHint": "WebUSB 印表機從瀏覽器工具欄的連線按鈕直接連線。儲存此條目以記住紙張寬度偏好。",
     "webusbTestHint": "WebUSB：使用 POS 工具欄中的連線按鈕進行測試。",

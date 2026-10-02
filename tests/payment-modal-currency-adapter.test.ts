@@ -459,11 +459,11 @@ async function runCatalogSaveBoundaryTests() {
       React.useState = ((initial: unknown) => {
         stateCall += 1;
         if (stateCall === 1) return [activeTab, () => undefined];
-        if (stateCall === 8) return [false, () => undefined];
-        if (stateCall === 9) return [activeTab === 'products', () => undefined];
-        if (stateCall === 15) return [activeTab === 'addons', () => undefined];
-        if (stateCall === 16) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
-        if (stateCall === 17) return [{
+        if (stateCall === 9) return [false, () => undefined];
+        if (stateCall === 10) return [activeTab === 'products', () => undefined];
+        if (stateCall === 16) return [activeTab === 'addons', () => undefined];
+        if (stateCall === 17) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+        if (stateCall === 18) return [{
           name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
           sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
           tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',

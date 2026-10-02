@@ -497,7 +497,7 @@ function validateCategoryId(db: any, categoryId: unknown): string | null {
   return null;
 }
 
-function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; error?: string } {
+function validateAddonGroupIds(db: any, rawIds: unknown, productId?: string): { ids?: string[]; error?: string } {
   if (rawIds === undefined) return {};
   if (!Array.isArray(rawIds)) {
     return { error: 'addon_group_ids must be an array' };
@@ -521,7 +521,13 @@ function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; erro
     `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`
   ).all(...uniqueIds) as Array<{ id: string }>;
   const activeIds = new Set(activeRows.map((row) => row.id));
-  const missingIds = uniqueIds.filter((id) => !activeIds.has(id));
+  const retainedRows = productId
+    ? db.prepare(
+      `SELECT addon_group_id FROM addon_group_product WHERE product_id = ? AND addon_group_id IN (${placeholders})`
+    ).all(productId, ...uniqueIds) as Array<{ addon_group_id: string }>
+    : [];
+  const retainedIds = new Set(retainedRows.map((row) => row.addon_group_id));
+  const missingIds = uniqueIds.filter((id) => !activeIds.has(id) && !retainedIds.has(id));
   if (missingIds.length > 0) {
     return { error: `Unknown or inactive addon_group_ids: ${missingIds.join(', ')}` };
   }
@@ -1028,7 +1034,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       }
     }
 
-    const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
+    const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids, String(req.params.id));
     if (addonGroupValidation.error) {
       return res.status(400).json({ error: addonGroupValidation.error });
     }

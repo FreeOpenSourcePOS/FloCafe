@@ -942,7 +942,14 @@
       "title": "LIEFERSCHEIN",
       "banner": "LIEFERSCHEIN",
       "address": "Lieferadresse",
-      "addressTruncated": "... {count} weitere Zeichen nicht angezeigt, Bestellung pruefen"
+      "addressTruncated": "... {count} weitere Zeichen nicht angezeigt, Bestellung pruefen",
+      "paid": "BEZAHLT",
+      "toCollect": "EINZUZIEHEN",
+      "refunded": "ERSTATTET",
+      "partiallyRefunded": "TEILWEISE ERSTATTET",
+      "cashOnDelivery": "Nachnahme",
+      "amountDue": "Fälliger Betrag",
+      "multiplePaymentMethods": "Mehrere Zahlungsmethoden"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "Informationen der Bedienungs-App laden",
     "loading": "Wird geladen…",
     "localNetwork": "Lokales Netzwerk",
+    "localNetworkHint": "Verwenden Sie diese Option, wenn alle Geräte diese Adresse über WLAN, Ethernet oder ein VPN-/Mesh-Netzwerk erreichen können",
     "loyalty": "Treueprogramm",
     "loyaltyHint": "Kunden sammeln Punkte anhand der Treuepunktquote jedes Artikels im Warenkorb.",
     "loyaltyProgram": "Treueprogramm",
@@ -2019,6 +2027,7 @@
     "version": "Version",
     "viewTableInfo": "Tischinformationen anzeigen",
     "vpnMeshNetwork": "VPN / Mesh-Netzwerk",
+    "vpnMeshNetworkHint": "Verwenden Sie diese Option, wenn Geräte über ein VPN oder Mesh-Netzwerk über verschiedene Subnetze oder Standorte hinweg verbunden sind",
     "waitingForApproval": "Wartet auf Genehmigung",
     "webusbHint": "WebUSB-Drucker werden direkt über die Schaltfläche Verbinden in der Browserleiste verbunden. Speichern Sie diesen Eintrag, um die bevorzugte Papierbreite zu merken.",
     "webusbTestHint": "WebUSB: Verwenden Sie die Verbinden-Schaltfläche in der Kassenleiste zum Testen.",

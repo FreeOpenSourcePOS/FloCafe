@@ -12,8 +12,9 @@ import {
   parseStoredReceiptLanguagePolicy,
 } from '@/lib/print-language-policies';
 import { usePrinterStore } from '@/hooks/usePrinter';
-import { Settings, Monitor, Users, Gift, Lock, Smartphone, RefreshCw, Copy, Check, Trash2, Plus, ChefHat, QrCode, CheckCircle2, Cloud, CloudOff, Zap, Percent, AlertTriangle, SunMoon } from 'lucide-react';
+import { Settings, Monitor, Users, Gift, Info, Lock, Smartphone, RefreshCw, Copy, Check, Trash2, Plus, ChefHat, QrCode, CheckCircle2, Cloud, CloudOff, Zap, Percent, AlertTriangle, SunMoon } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
@@ -3198,9 +3199,26 @@ export default function SettingsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
                         {posInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                           <div key={idx} className="flex flex-col items-center p-4 bg-muted border border-border rounded-lg">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                              {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
-                            </p>
+                            <div className="w-full mb-3">
+                              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                <span>{ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}</span>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" aria-label={ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')} className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                                        <Info size={14} aria-hidden="true" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs text-center">
+                                      {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                              <p className="mt-1 text-[11px] text-muted-foreground text-center">
+                                {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                              </p>
+                            </div>
                             {ipInfo.qr_data ? (
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                             ) : (
@@ -3546,9 +3564,26 @@ export default function SettingsPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
                         {kdsInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                           <div key={idx} className="flex flex-col items-center p-4 bg-muted border border-border rounded-lg">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                              {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
-                            </p>
+                            <div className="w-full mb-3">
+                              <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                <span>{ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}</span>
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" aria-label={ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')} className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                                        <Info size={14} aria-hidden="true" />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-xs text-center">
+                                      {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </div>
+                              <p className="mt-1 text-[11px] text-muted-foreground text-center">
+                                {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                              </p>
+                            </div>
                             {ipInfo.qr_data ? (
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                             ) : (
@@ -3693,9 +3728,26 @@ export default function SettingsPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
                           {serverAppInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                             <div key={idx} className="flex flex-col items-center p-4 bg-muted border border-border rounded-lg">
-                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-                                {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
-                              </p>
+                              <div className="w-full mb-3">
+                                <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  <span>{ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}</span>
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button type="button" aria-label={ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')} className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                                          <Info size={14} aria-hidden="true" />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs text-center">
+                                        {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </div>
+                                <p className="mt-1 text-[11px] text-muted-foreground text-center">
+                                  {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetworkHint') : t('localNetworkHint')}
+                                </p>
+                              </div>
                               {ipInfo.qr_data ? (
                                 <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                               ) : (

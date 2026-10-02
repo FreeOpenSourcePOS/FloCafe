@@ -128,6 +128,25 @@ async function main() {
     assert.equal(res.status, 200, 'assigned add-on groups can be deactivated');
     const activeGroupsAfterDeactivation = await api(baseUrl, '/api/addon-groups', { headers: authHeader });
     assert(!activeGroupsAfterDeactivation.data.addon_groups.some((group: any) => group.id === 'ag-retired'), 'default add-on group listing still hides inactive groups');
+    const retainedInactiveProductUpdate = await api(baseUrl, '/api/products/prod-direct-retired-group', {
+      method: 'PUT', headers: authHeader,
+      body: { name: 'Direct Retired Group Product Renamed', addon_group_ids: ['ag-retired'] },
+    });
+    assert.equal(retainedInactiveProductUpdate.status, 200, 'product edits can retain an already-assigned inactive add-on group');
+    assert.equal(retainedInactiveProductUpdate.data.product.name, 'Direct Retired Group Product Renamed');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM addon_group_product WHERE product_id = ? AND addon_group_id = ?').get('prod-direct-retired-group', 'ag-retired').count, 1);
+    const removeInactiveProductGroup = await api(baseUrl, '/api/products/prod-direct-retired-group', {
+      method: 'PUT', headers: authHeader,
+      body: { addon_group_ids: [] },
+    });
+    assert.equal(removeInactiveProductGroup.status, 200, 'product edits can remove an existing inactive add-on group');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM addon_group_product WHERE product_id = ? AND addon_group_id = ?').get('prod-direct-retired-group', 'ag-retired').count, 0);
+    const reattachInactiveProductGroup = await api(baseUrl, '/api/products/prod-direct-retired-group', {
+      method: 'PUT', headers: authHeader,
+      body: { addon_group_ids: ['ag-retired'] },
+    });
+    assert.equal(reattachInactiveProductGroup.status, 400, 'removed inactive add-on groups cannot be newly attached to products');
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM addon_group_product WHERE product_id = ? AND addon_group_id = ?').get('prod-direct-retired-group', 'ag-retired').count, 0);
     const historicalOrderAfterDeactivation = await api(baseUrl, `/api/orders/${historicalOrder.data.order.id}`, { headers: authHeader });
     assert.equal(historicalOrderAfterDeactivation.data.order.items[0].addons[0].name, 'Retired add-on', 'group deactivation preserves saved order add-on snapshots');
     assert.equal(historicalOrderAfterDeactivation.data.order.items[0].addons[0].price, 25, 'group deactivation preserves the saved add-on price');
@@ -202,6 +221,17 @@ async function main() {
     });
     assert.equal(order.status, 201, 'order accepts an add-on from an inherited category group');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = ?) AND addon_id = ?').get(order.data.order.id, 'addon-category-a').count, 1);
+    db.prepare('UPDATE addon_groups SET is_required = 1, min_selection = 1 WHERE id = ?').run('ag-category-a');
+    const omittedInheritedRequiredGroupOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-category-addon', quantity: 1 }] },
+    });
+    assert.equal(omittedInheritedRequiredGroupOrder.status, 400, 'orders cannot omit a required inherited category add-on group');
+    const selectedInheritedRequiredGroupOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-category-addon', quantity: 1, addons: [{ id: 'addon-category-a' }] }] },
+    });
+    assert.equal(selectedInheritedRequiredGroupOrder.status, 201, 'orders accept the selected required inherited category add-on');
 
     res = await api(baseUrl, `/api/categories/${categoryId}`, {
       method: 'PUT', headers: authHeader,

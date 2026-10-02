@@ -942,7 +942,14 @@
       "title": "배달전표",
       "banner": "배달전표",
       "address": "배달 주소",
-      "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요"
+      "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요",
+      "paid": "결제 완료",
+      "toCollect": "수금 예정",
+      "refunded": "환불 완료",
+      "partiallyRefunded": "부분 환불",
+      "cashOnDelivery": "착불",
+      "amountDue": "미결제 금액",
+      "multiplePaymentMethods": "여러 결제 수단"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "Server App 정보 불러오기",
     "loading": "불러오는 중…",
     "localNetwork": "로컬 네트워크",
+    "localNetworkHint": "모든 기기가 Wi-Fi, Ethernet 또는 VPN/mesh 네트워크를 통해 이 주소에 연결할 수 있을 때 사용하세요",
     "loyalty": "멤버십",
     "loyaltyHint": "장바구니 각 항목의 멤버십 적립 비율에 따라 고객이 포인트를 적립합니다",
     "loyaltyProgram": "멤버십 포인트 프로그램",
@@ -2018,6 +2026,7 @@
     "version": "버전",
     "viewTableInfo": "테이블 정보 보기",
     "vpnMeshNetwork": "VPN / 메시 네트워크",
+    "vpnMeshNetworkHint": "기기가 서로 다른 서브넷이나 위치에서 VPN 또는 메시 네트워크를 통해 연결될 때 사용하세요",
     "waitingForApproval": "승인 대기 중",
     "webusbHint": "WebUSB 프린터는 툴바의 연결 버튼에서 브라우저로 직접 연결됩니다. 이 항목을 저장하면 용지 너비 환경설정이 기억됩니다.",
     "webusbTestHint": "WebUSB: 테스트하려면 POS 툴바의 연결 버튼을 사용하세요.",

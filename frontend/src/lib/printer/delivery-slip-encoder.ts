@@ -1,11 +1,13 @@
-/** A courier slip has no money on it and no mask option; see product-invariants. */
+/** A courier slip has no mask option; see product-invariants. */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
-import { clampDeliverySlipText } from '@print/document';
+import { clampDeliverySlipText, sanitizeDeliverySlipPaymentMethod, type DeliverySlipPrintData } from '@print/document';
+
+export type DeliverySlipPayment = NonNullable<DeliverySlipPrintData['payment']>;
 
 export interface DeliverySlipWebUsbOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -18,6 +20,7 @@ export interface DeliverySlipWebUsbOptions {
   timezone?: string;
   /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
   arabicShaping?: boolean;
+  payment?: DeliverySlipPayment;
 }
 
 /** Contact facts for one courier slip. The phone is already country-code prefixed. */
@@ -41,6 +44,17 @@ export interface DeliverySlipItem {
   /** Selected add-ons, printed under the item as the kitchen ticket does. */
   addons?: Array<{ name: string; quantity?: number }>;
   special_instructions?: string | null;
+}
+
+function paymentMethodLabel(method: string, label: (concept: string) => string): string {
+  switch (method.toLowerCase()) {
+    case 'cash': return label('pos.methodCash');
+    case 'card': return label('pos.methodCard');
+    case 'wallet':
+    case 'loyalty':
+    case 'loyalty wallet': return label('pos.methodWallet');
+    default: return method;
+  }
 }
 
 // Paper-size fallback only; callers that know the configured printer pass
@@ -110,6 +124,45 @@ export function buildDeliverySlipBytes(
       const marker = label('print.deliverySlip.addressTruncated').replace('{count}', String(noteTruncated));
       for (const row of wrapPrinterText(marker, cols)) {
         safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      }
+    }
+  }
+
+  if (opts.payment) {
+    const payment = opts.payment;
+    const isPaid = payment.status === 'paid';
+    const isCollectible = payment.status === 'unpaid' && payment.amount > 0;
+    const method = isPaid
+      ? payment.methods && payment.methods.length > 1
+        ? label('print.deliverySlip.multiplePaymentMethods')
+        : paymentMethodLabel(sanitizeDeliverySlipPaymentMethod(payment.method), label)
+      : '';
+    const statusKey = isPaid
+      ? 'print.deliverySlip.paid'
+      : payment.status === 'refunded'
+        ? 'print.deliverySlip.refunded'
+        : payment.status === 'partially_refunded'
+          ? 'print.deliverySlip.partiallyRefunded'
+          : isCollectible
+            ? 'print.deliverySlip.toCollect'
+            : 'print.deliverySlip.amountDue';
+    const status = label(statusKey);
+    const summary = isPaid
+      ? `${status}: ${method ? `${method} ` : ''}(${label('pos.total')}: ${payment.formattedAmount})`
+      : isCollectible
+        ? `${status}: ${payment.formattedAmount} (${label('print.deliverySlip.cashOnDelivery')})`
+        : payment.status === 'unpaid'
+          ? `${status}: ${payment.formattedAmount}`
+          : status;
+    enc.newline().bold(true);
+    for (const row of wrapPrinterText(summary, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
+    }
+    enc.bold(false);
+    if ((isPaid || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.formattedAmountDue) {
+      const due = `${label('print.deliverySlip.amountDue')}: ${payment.formattedAmountDue}`;
+      for (const row of wrapPrinterText(due, cols)) {
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
       }
     }
   }

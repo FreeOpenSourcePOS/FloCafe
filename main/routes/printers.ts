@@ -3,6 +3,8 @@ import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServer
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { buildDeliverySlipPrintData, type DeliverySlipOrderRow } from '../printers/document-delivery-slip';
+import type { DeliverySlipPaymentBill } from '../../shared/print';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
   resolveKotLanguage,
@@ -14,7 +16,7 @@ import {
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
 import { requirePermission } from '../services/authorization';
-import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
+import { getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -63,6 +65,14 @@ function ensureDefaultPrinter(db: any): void {
     const replacement = db.prepare('SELECT id FROM printers ORDER BY created_at, name LIMIT 1').get() as any;
     if (replacement) db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), replacement.id);
   }
+}
+
+function getDeliverySlipBills(db: ReturnType<typeof getDatabase>, orderId: number): DeliverySlipPaymentBill[] {
+  const latestBill = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id DESC LIMIT 1').get(orderId) as DeliverySlipPaymentBill | undefined;
+  if (!latestBill) return [];
+  return typeof latestBill.split_group_id === 'string' && latestBill.split_group_id.length > 0
+    ? db.prepare('SELECT * FROM bills WHERE order_id = ? AND split_group_id = ? ORDER BY id').all(orderId, latestBill.split_group_id) as DeliverySlipPaymentBill[]
+    : [latestBill];
 }
 
 function printerShape(printer: any) {
@@ -694,6 +704,33 @@ router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(as
   }
 }));
 
+router.get('/delivery-slip-payment/:orderId', requirePermission('printing.execute'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId) as (DeliverySlipOrderRow & { id: number }) | undefined;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const bills = getDeliverySlipBills(db, order.id);
+    const settings = Object.fromEntries(
+      (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
+        .map(({ key, value }) => [key, value]),
+    );
+    const regional = resolveRegionalSnapshot(settings);
+    const { payment } = buildDeliverySlipPrintData({ ...order, bills }, [], {}, {
+      locale: regional.locale,
+      currency: regional.currency,
+      currencyDisplay: regional.preferences.currencyDisplay,
+      digits: regional.preferences.digits,
+    });
+    return res.json({ payment });
+  } catch (error: unknown) {
+    console.error('[Delivery Slip Payment] Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/printers/print-delivery-slip. No bill is required, so a slip can be
 // handed over before the customer pays. See docs/reference/product-invariants.md.
 router.post('/print-delivery-slip', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
@@ -721,6 +758,9 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    const bills = getDeliverySlipBills(db, order.id);
+    const deliverySlipOrder = { ...order, bills };
+
     const items = getEffectiveOrderItems(db, orderId);
 
     // The slip prints the address in full, so it reads the column the receipt
@@ -742,7 +782,7 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
     )?.value !== 'false'
       || (db.prepare("SELECT value FROM settings WHERE key = 'bill_show_customer_phone'").get() as { value?: string } | undefined)?.value !== 'false';
     const result = await printDeliverySlipDetailed(
-      order,
+      deliverySlipOrder,
       items,
       {
         name: customer?.name || '',

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { asyncHandler } from '../middleware/async-handler';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
@@ -146,7 +146,9 @@ router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: R
   if (billId === null) {
     return res.status(400).json({ error: 'bill_id must be a non-negative integer' });
   }
-  res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset }) });
+  const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+  const canViewReports = hasPermission(userId, 'reports.view');
+  res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset, canViewReports }) });
 });
 
 router.get('/inbox', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {

@@ -254,8 +254,12 @@ class PrinterService {
   }
 
   /** Print using browser's print dialog with thermal-optimized styles. */
-  async printViaBrowser(htmlContent: string, paperWidth: 58 | 80): Promise<void> {
-    const printWindow = window.open('', '_blank');
+  reserveBrowserPrintWindow(): Window | null {
+    return typeof window === 'undefined' ? null : window.open('', '_blank');
+  }
+
+  async printViaBrowser(htmlContent: string, paperWidth: 58 | 80, reservedWindow?: Window | null): Promise<void> {
+    const printWindow = reservedWindow === undefined ? this.reserveBrowserPrintWindow() : reservedWindow;
     if (!printWindow) {
       throw new Error('Please allow popups to print');
     }

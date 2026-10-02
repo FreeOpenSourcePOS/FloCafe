@@ -942,7 +942,14 @@
       "title": "TESLİMAT MAKBUZU",
       "banner": "TESLİMAT MAKBUZU",
       "address": "Teslimat Adresi",
-      "addressTruncated": "... {count} karakter daha gosterilmedi, siparisi kontrol edin"
+      "addressTruncated": "... {count} karakter daha gosterilmedi, siparisi kontrol edin",
+      "paid": "ÖDENDİ",
+      "toCollect": "TAHSİL EDİLECEK",
+      "refunded": "İADE EDİLDİ",
+      "partiallyRefunded": "KISMEN İADE EDİLDİ",
+      "cashOnDelivery": "Kapıda ödeme",
+      "amountDue": "Ödenecek tutar",
+      "multiplePaymentMethods": "Birden fazla ödeme yöntemi"
     },
     "hsn": "HSN / GTİP",
     "zReport": {
@@ -1695,6 +1702,7 @@
     "loadServerAppInfo": "Garson Terminali Bilgilerini Yükle",
     "loading": "Yükleniyor...",
     "localNetwork": "Yerel Ağ (LAN)",
+    "localNetworkHint": "Tüm cihazlar bu adrese Wi-Fi, Ethernet veya VPN/mesh ağı üzerinden erişebiliyorsa kullanın",
     "loyalty": "Müşteri Sadakat Programı",
     "loyaltyHint": "Müşterilerin alışverişlerinden puan kazanıp indirim olarak harcamasını sağlayın",
     "loyaltyProgram": "Sadakat Puan Sistemi",
@@ -2019,6 +2027,7 @@
     "version": "Sürüm",
     "viewTableInfo": "Masa Bilgilerini Görüntüle",
     "vpnMeshNetwork": "VPN / Mesh Ağı",
+    "vpnMeshNetworkHint": "Cihazlar farklı alt ağlar veya konumlar arasında VPN ya da mesh ağı üzerinden bağlanıyorsa kullanın",
     "waitingForApproval": "Yönetici onayı bekleniyor...",
     "webusbHint": "WebUSB tarayıcı üzerinden doğrudan USB termal yazıcı erişimi sağlar",
     "webusbTestHint": "Uyumlu USB yazıcıyı bağlayıp test edin",

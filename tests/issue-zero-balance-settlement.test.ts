@@ -228,8 +228,14 @@ async function main(): Promise<void> {
     console.log('\n─── kitchen-zero-split-settlement: pending zero-balance check waits for delivery ───');
     {
       setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+      setSetting(db, 'require_open_shift', 'true');
       setSetting(db, 'kds_enabled', 'true');
       setSetting(db, 'discount_mode', 'both');
+      assertEqual(
+        Number((db.prepare("SELECT COUNT(*) AS count FROM cash_sessions WHERE status = 'open'").get() as any).count),
+        0,
+        'kitchen-zero-split-settlement: fixture has no open cash session',
+      );
       setSetting(db, 'discount_max_amount', '0');
       const create = await createOrder({
         type: 'dine_in',
@@ -265,7 +271,8 @@ async function main(): Promise<void> {
       assertEqual(billRow(db, checkC.id).payment_status, 'paid', 'kitchen-zero-split-settlement: cancelled zero-total check can auto-close');
 
       const blocked = await pay(checkA.id, { method: 'cash', amount: null });
-      assertEqual(blocked.status, 409, 'kitchen-zero-split-settlement: zero-balance check requires delivery or manager override');
+      assertEqual(blocked.status, 409, 'kitchen-zero-split-settlement: pending zero-balance check remains blocked');
+      assertEqual(blocked.data.code, 'KITCHEN_ITEMS_UNDELIVERED', 'kitchen-zero-split-settlement: kitchen gate runs before shift enforcement');
       const override = await pay(checkA.id, { method: 'cash', amount: null, override_pin: pin });
       assertEqual(override.status, 200, 'kitchen-zero-split-settlement: manager can settle pending zero-balance check');
       const overrideAudit = db.prepare("SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'").get(orderId) as any;
@@ -277,6 +284,9 @@ async function main(): Promise<void> {
       const servedZeroBill = await pay(checkB.id, { method: 'cash', amount: null });
       assertEqual(servedZeroBill.status, 200, 'kitchen-zero-split-settlement: served zero-balance check settles without a PIN');
       assertEqual(Number(billRow(db, checkB.id).paid_amount), 0, 'kitchen-zero-split-settlement: zero settlement records no payment amount');
+      const zeroPaymentDetails = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(checkB.id) as any;
+      assertEqual(JSON.parse(zeroPaymentDetails.payment_details || '[]').length, 0, 'kitchen-zero-split-settlement: no cash tender is recorded');
+      setSetting(db, 'require_open_shift', 'false');
       setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
     }
 

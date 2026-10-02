@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, zero {لا توجد عناصر ملغاة} one {عنصر واحد ملغى · اضغط للعرض} two {عنصران ملغيان · اضغط للعرض} few {# عناصر ملغاة · اضغط للعرض} many {# عنصرًا ملغى · اضغط للعرض} other {# عنصر ملغى · اضغط للعرض}}",
     "voidingItem": "إلغاء...",
     "walkInCustomer": "العميل العابر",
-    "whatsappFailed": "فشل فتح تطبيق WhatsApp"
+    "whatsappFailed": "فشل فتح تطبيق WhatsApp",
+    "selectOrderPlaceholder": "اختر طلبًا على اليسار لعرض التفاصيل.",
+    "itemCount": "{count, plural, zero {لا توجد عناصر} one {عنصر واحد} two {عنصران} few {# عناصر} many {# عنصرًا} other {# عنصر}}"
   },
   "pos": {
     "addCustomer": "إضافة عميل",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "تعرض هذه الشاشة المشكلات الأخيرة على هذا الجهاز بلغة مفهومة.",
     "printing": "الطباعة",
     "requireKitchenDeliveredToggle": "اشترط تسليم المطبخ قبل الفوترة",
-    "requireKitchenDeliveredHint": "امنع تسوية الفواتير المؤجلة حتى يتم تحديد جميع الأصناف على أنها قُدّمت من المطبخ. يتم التجاوز تلقائيًا عند تعطيل KDS."
+    "requireKitchenDeliveredHint": "امنع تسوية الفواتير المؤجلة حتى يتم تحديد جميع الأصناف على أنها قُدّمت من المطبخ. يتم التجاوز تلقائيًا عند تعطيل KDS.",
+    "ordersLayoutTitle": "تخطيط شاشة الطلبات",
+    "ordersLayoutSplit": "الرئيسي / التفصيلي (عرض مقسوم)",
+    "ordersLayoutSplitHint": "قائمة طلبات مضغوطة على اليسار مع تفاصيل الطلب الكاملة على اليمين.",
+    "ordersLayoutCards": "شبكة البطاقات",
+    "ordersLayoutCardsHint": "شبكة كلاسيكية من بطاقات الطلبات المستقلة."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 geannuleerd artikel - tik om te bekijken} other {# geannuleerde artikelen - tik om te bekijken}}",
     "voidingItem": "Annuleren...",
     "walkInCustomer": "Passerende klant",
-    "whatsappFailed": "Kan WhatsApp niet openen"
+    "whatsappFailed": "Kan WhatsApp niet openen",
+    "selectOrderPlaceholder": "Selecteer links een bestelling om de details te bekijken.",
+    "itemCount": "{count, plural, one {1 artikel} other {# artikelen}}"
   },
   "pos": {
     "addCustomer": "Klant toevoegen",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal.",
     "printing": "Afdrukken",
     "requireKitchenDeliveredToggle": "Keukenbezorging vereisen vóór afrekenen",
-    "requireKitchenDeliveredHint": "Voorkomt het afrekenen van rekeningen op rekening totdat alle items in de keuken als geserveerd zijn gemarkeerd. Wordt automatisch overgeslagen als KDS is uitgeschakeld."
+    "requireKitchenDeliveredHint": "Voorkomt het afrekenen van rekeningen op rekening totdat alle items in de keuken als geserveerd zijn gemarkeerd. Wordt automatisch overgeslagen als KDS is uitgeschakeld.",
+    "ordersLayoutTitle": "Indeling van het bestelscherm",
+    "ordersLayoutSplit": "Master / detail (gesplitste weergave)",
+    "ordersLayoutSplitHint": "Compacte bestellijst links en volledige bestelgegevens rechts.",
+    "ordersLayoutCards": "Kaartenraster",
+    "ordersLayoutCardsHint": "Klassiek raster van losse bestelkaarten."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

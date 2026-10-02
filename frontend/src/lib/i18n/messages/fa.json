@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {۱ مورد باطل شده · برای مشاهده لمس کنید} other {# مورد باطل شده · برای مشاهده لمس کنید}}",
     "voidingItem": "در حال باطل کردن",
     "walkInCustomer": "مشتری حضوری",
-    "whatsappFailed": "باز کردن واتساپ انجام نشد"
+    "whatsappFailed": "باز کردن واتساپ انجام نشد",
+    "selectOrderPlaceholder": "برای مشاهده جزئیات، یک سفارش را از سمت چپ انتخاب کنید.",
+    "itemCount": "{count, plural, one {۱ کالا} other {# کالا}}"
   },
   "pos": {
     "addCustomer": "افزودن مشتری",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "این صفحه مشکلات اخیر این دستگاه را به زبانی ساده نشان می‌دهد.",
     "printing": "چاپ",
     "requireKitchenDeliveredToggle": "تحویل آشپزخانه را پیش از تسویه الزامی کن",
-    "requireKitchenDeliveredHint": "تا زمانی که همه اقلام در آشپزخانه به‌عنوان تحویل‌شده علامت نخورده‌اند، تسویه پس‌پرداخت را متوقف می‌کند. با غیرفعال بودن KDS این بررسی خودکار نادیده گرفته می‌شود."
+    "requireKitchenDeliveredHint": "تا زمانی که همه اقلام در آشپزخانه به‌عنوان تحویل‌شده علامت نخورده‌اند، تسویه پس‌پرداخت را متوقف می‌کند. با غیرفعال بودن KDS این بررسی خودکار نادیده گرفته می‌شود.",
+    "ordersLayoutTitle": "چیدمان صفحه سفارش‌ها",
+    "ordersLayoutSplit": "اصلی / جزئی (نمایش دو ستونه)",
+    "ordersLayoutSplitHint": "فهرست فشرده سفارش‌ها در سمت چپ و جزئیات کامل سفارش در سمت راست.",
+    "ordersLayoutCards": "شبکه کارت‌ها",
+    "ordersLayoutCardsHint": "شبکه کلاسیک کارت‌های مستقل سفارش."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

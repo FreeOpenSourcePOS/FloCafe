@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 artículo anulado · Tocá para ver} other {# artículos anulados · Tocá para ver}}",
     "voidingItem": "Anulando...",
     "walkInCustomer": "Cliente de paso",
-    "whatsappFailed": "No se pudo abrir WhatsApp"
+    "whatsappFailed": "No se pudo abrir WhatsApp",
+    "selectOrderPlaceholder": "Selecciona un pedido a la izquierda para ver los detalles.",
+    "itemCount": "{count, plural, one {1 ítem} other {# ítems}}"
   },
   "pos": {
     "addCustomer": "Agregar Cliente",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro. El envío automático está activado, por lo que los problemas registrados pueden enviarse a tu cuenta de FloCafe en la nube.",
     "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro.",
     "requireKitchenDeliveredToggle": "Exigir la entrega de cocina antes de cobrar",
-    "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado."
+    "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado.",
+    "ordersLayoutTitle": "Diseño de la pantalla de pedidos",
+    "ordersLayoutSplit": "Maestro / Detalle (vista dividida)",
+    "ordersLayoutSplitHint": "Lista de pedidos compacta a la izquierda y detalles completos del pedido a la derecha.",
+    "ordersLayoutCards": "Cuadrícula de tarjetas",
+    "ordersLayoutCardsHint": "Cuadrícula clásica de tarjetas de pedido independientes."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

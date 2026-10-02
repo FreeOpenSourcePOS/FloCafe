@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 kinanselang aytem · I-tap para makita} other {# kinanselang aytem · I-tap para makita}}",
     "voidingItem": "Vino-void...",
     "walkInCustomer": "Walk-in na Kustomer",
-    "whatsappFailed": "Nabigong open WhatsApp"
+    "whatsappFailed": "Nabigong open WhatsApp",
+    "selectOrderPlaceholder": "Pumili ng order sa kaliwa upang makita ang detalye.",
+    "itemCount": "{count, plural, one {1 item} other {# na item}}"
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika. Naka-on ang awtomatikong pagpapadala, kaya ang mga naitalang problema ay maaaring ipadala sa iyong FloCafe cloud account.",
     "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika.",
     "requireKitchenDeliveredToggle": "Kailangang maihatid muna ang mga pagkain bago maningil",
-    "requireKitchenDeliveredHint": "Pigilan ang pagbabayad ng postpaid na bill hangga’t hindi minamarkahang naihain sa kusina ang lahat ng item. Awtomatikong lalaktawan kapag naka-off ang KDS."
+    "requireKitchenDeliveredHint": "Pigilan ang pagbabayad ng postpaid na bill hangga’t hindi minamarkahang naihain sa kusina ang lahat ng item. Awtomatikong lalaktawan kapag naka-off ang KDS.",
+    "ordersLayoutTitle": "Layout ng Orders Screen",
+    "ordersLayoutSplit": "Master / Detalye (Split View)",
+    "ordersLayoutSplitHint": "Compact na listahan ng order sa kaliwa at buong detalye ng order sa kanan.",
+    "ordersLayoutCards": "Card Grid",
+    "ordersLayoutCardsHint": "Klasikong grid ng hiwalay na card ng order."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

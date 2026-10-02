@@ -39,8 +39,11 @@ error code is persisted so the settings screen can explain the failure after a r
 
 Posts anonymous usage and error events to `https://telemetry.flopos.com/collect`.
 
-**Enabled by** the `telemetry_enabled` setting. It ships **off**: a fresh install writes
-`telemetry_enabled` as `'false'`.
+**Enabled by** the `telemetry_enabled` setting, read as on when the value is `'true'`. It ships
+**on** for a new install, which writes `telemetry_enabled` as `'true'`. An install that already
+carries an explicit value keeps it, because the `telemetry_default_on_for_new_installs` migration
+that flips the default uses `INSERT OR IGNORE`; an install that already ran the earlier
+`seed_telemetry_settings` migration therefore still holds `'false'`.
 
 **Offline behaviour.** Events are dropped, not queued. There is no telemetry outbox.
 

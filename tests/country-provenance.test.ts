@@ -196,6 +196,12 @@ async function run() {
     await cloudSync.register();
     assertEqual(body?.business?.country, null, 'an unconfirmed install registers without a country');
     assertEqual(body?.business?.country_source, 'default', 'the payload says the value is a default');
+    assertEqual(body?.run_mode, 'packaged', 'the payload reports how the install is running');
+    assert(
+      ['github', 'ms_store', 'mac_app_store', 'snap', 'appimage', 'flatpak', 'deb', 'rpm', 'linux_package', 'dev']
+        .includes(String(body?.install_source)),
+      'the payload reports a documented install source'
+    );
     assertEqual(body?.business?.os_country, 'DO', 'the payload carries the OS region');
     assertEqual(body?.business?.os_locale, 'es-DO', 'the payload carries the OS locale');
     assert(

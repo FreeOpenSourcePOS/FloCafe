@@ -64,11 +64,11 @@ vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax
 total with zero due, or the selected bill balance(s) as amount due. Refund status stays visible and
 does not hide a refund-marked bill's positive stored balance; when no bill exists, the slip falls
 back to the order total. It is a **separate kind, not a receipt
-template**, and that is load-bearing. It carries the full customer number and the delivery
-address, and it never passes through `buildBillDocument`, so it does not consult the receipt's
-`bill_show_customer_phone` setting and does not share the receipt's mask default. A merchant who
-hides the customer number on receipts still gets it on the slip; see
-[product invariants](../reference/product-invariants.md). The contact block also records
+template**, and that is load-bearing. It carries the delivery address and the full customer number
+when the caller's visibility rule permits it. The API route and browser/WebUSB hook include the
+number when either `bill_delivery_show_customer_phone_always` or `bill_show_customer_phone` is on,
+and omit it only when both are off; see [product invariants](../reference/product-invariants.md).
+The contact block also records
 `addressSource`, so a printed slip records whether the address came from the order or from the
 customer's standing record.
 

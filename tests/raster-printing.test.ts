@@ -1021,6 +1021,56 @@ async function run(): Promise<void> {
   surface.webContents = webContents;
   surface.isDestroyed = () => false;
   surface.close = () => surface.emit('closed');
+  const originalRasterTimeout = process.env.RASTER_RENDER_TIMEOUT_MS;
+  const originalSetTimeout = globalThis.setTimeout;
+  const scheduledTimeouts: number[] = [];
+  const timeoutCases: Array<[string | undefined, number]> = [
+    [undefined, 15_000],
+    ['30000', 30_000],
+    ['2147483647', 2_147_483_647],
+    ['NaN', 15_000],
+    ['Infinity', 15_000],
+    ['2147483648', 15_000],
+    ['1.5', 15_000],
+    ['0', 15_000],
+    ['-1', 15_000],
+  ];
+  globalThis.setTimeout = ((callback: Parameters<typeof setTimeout>[0], delay?: number) => {
+    scheduledTimeouts.push(Number(delay));
+    return originalSetTimeout(callback, 60_000);
+  }) as typeof setTimeout;
+  try {
+    for (const [value, expectedTimeout] of timeoutCases) {
+      if (value === undefined) delete process.env.RASTER_RENDER_TIMEOUT_MS;
+      else process.env.RASTER_RENDER_TIMEOUT_MS = value;
+      const previousTimeoutCount = scheduledTimeouts.length;
+      const timeoutRenderer = new ChromiumRasterRenderer({
+        ipc: ipc as any,
+        windowFactory: () => surface as any,
+      });
+      try {
+        assert.equal(scheduledTimeouts[previousTimeoutCount], expectedTimeout);
+      } finally {
+        timeoutRenderer.destroy();
+      }
+    }
+    process.env.RASTER_RENDER_TIMEOUT_MS = '30000';
+    const previousTimeoutCount = scheduledTimeouts.length;
+    const overriddenTimeoutRenderer = new ChromiumRasterRenderer({
+      timeoutMs: 100,
+      ipc: ipc as any,
+      windowFactory: () => surface as any,
+    });
+    try {
+      assert.equal(scheduledTimeouts[previousTimeoutCount], 100);
+    } finally {
+      overriddenTimeoutRenderer.destroy();
+    }
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    if (originalRasterTimeout === undefined) delete process.env.RASTER_RENDER_TIMEOUT_MS;
+    else process.env.RASTER_RENDER_TIMEOUT_MS = originalRasterTimeout;
+  }
   const renderer = new ChromiumRasterRenderer({
     timeoutMs: 100,
     ipc: ipc as any,

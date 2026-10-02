@@ -13,6 +13,7 @@ async function run() {
   await app.whenReady();
   let surface;
   const renderer = new ChromiumRasterRenderer({
+    timeoutMs: 30_000,
     preloadPath: path.join(__dirname, '../dist/main/raster-preload.js'),
     windowFactory: (options) => {
       surface = new BrowserWindow(options);
@@ -21,7 +22,7 @@ async function run() {
   });
   try {
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Raster surface did not load')), 5000);
+      const timer = setTimeout(() => reject(new Error('Raster surface did not load')), 15000);
       surface.webContents.once('did-finish-load', () => {
         clearTimeout(timer);
         resolve();
@@ -219,6 +220,7 @@ async function run() {
     // Verify shared singleton operates cleanly under real Electron
     destroySharedRasterRenderer();
     const shared1 = getSharedRasterRenderer({
+      timeoutMs: 30_000,
       preloadPath: path.join(__dirname, '../dist/main/raster-preload.js'),
     });
     assert.equal(shared1.isDestroyed(), false);

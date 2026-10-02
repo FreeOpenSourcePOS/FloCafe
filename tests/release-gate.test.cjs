@@ -30,7 +30,7 @@ const {
 const { createSnapEvidence } = require('../scripts/release-gate/snap-evidence.cjs');
 const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require('../scripts/release-gate/matrix-contract.cjs');
 const { assertCorrelatedRun } = require('../scripts/release-gate/matrix-dispatch.cjs');
-const { ensureReleaseAssets } = require('../scripts/release-gate/ensure-release-assets.cjs');
+const { ensureReleaseAssets, uploadAsset } = require('../scripts/release-gate/ensure-release-assets.cjs');
 const { verifyStablePromotion } = require('../scripts/release-gate/verify-stable-promotion.cjs');
 const { validateReleaseRef } = require('../scripts/release-gate/validate-release-ref.cjs');
 const { expectedArtifactNames, expectedManifestNames } = require('../scripts/verify-release-assets.cjs');
@@ -462,6 +462,45 @@ function releaseRefRequest({
     );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+
+  {
+    let attempts = 0;
+    const requestCalls = [];
+    const testBytes = Buffer.from('dmg binary content');
+    const mockRelease = {
+      upload_url: 'https://uploads.test/releases/123/assets{?name,label}',
+      assets_url: 'https://api.test/releases/123/assets',
+    };
+    const uploadResult = await uploadAsset(mockRelease, 'flocafe-mac.dmg', testBytes, {
+      maxRetries: 3,
+      retryDelayMs: 1,
+      requestFn: async (url, options = {}) => {
+        requestCalls.push({ url, options });
+        if (url.startsWith('https://uploads.test')) {
+          attempts += 1;
+          if (attempts === 1) {
+            throw new Error('GitHub request failed (408) for https://uploads.test/...: {"message":"Upload body timed out due to inactivity"}');
+          }
+          return {
+            status: 201,
+            json: async () => ({ id: 999, name: 'flocafe-mac.dmg' }),
+          };
+        }
+        if (url.startsWith('https://api.test')) {
+          return {
+            json: async () => [],
+          };
+        }
+        throw new Error(`unexpected url ${url}`);
+      },
+    });
+    assert.deepEqual(uploadResult, { id: 999, name: 'flocafe-mac.dmg' });
+    assert.equal(attempts, 2);
+    const postCalls = requestCalls.filter((c) => c.options.method === 'POST');
+    assert.equal(postCalls.length, 2);
+    assert.equal(postCalls[0].options.headers['Content-Length'], String(testBytes.length));
+    assert.equal(postCalls[1].options.headers['Content-Length'], String(testBytes.length));
   }
 
   const currentMatrix = `name: Runtime upgrade matrix

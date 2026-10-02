@@ -59,16 +59,54 @@ function assetName(filePath) {
   return name;
 }
 
-async function uploadAsset(release, name, bytes) {
+async function deleteAsset(assetUrl, requestFn = request) {
+  try {
+    await requestFn(assetUrl, { method: 'DELETE' });
+  } catch (error) {
+    if (!/404/.test(error.message)) {
+      throw error;
+    }
+  }
+}
+
+async function uploadAsset(release, name, bytes, { maxRetries = 3, retryDelayMs = 3000, requestFn = request } = {}) {
   if (typeof release.upload_url !== 'string' || release.upload_url === '') throw new Error('release has no upload URL');
   const uploadUrl = release.upload_url.replace(/\{\?name,label\}$/, '');
-  const response = await request(`${uploadUrl}?name=${encodeURIComponent(name)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/octet-stream' },
-    body: bytes,
-  });
-  if (response.status !== 201) throw new Error(`GitHub asset upload returned unexpected status ${response.status} for ${name}`);
-  return response.json();
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+    try {
+      const response = await requestFn(`${uploadUrl}?name=${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(bytes.length),
+        },
+        body: bytes,
+      });
+      if (response.status !== 201) throw new Error(`GitHub asset upload returned unexpected status ${response.status} for ${name}`);
+      return await response.json();
+    } catch (error) {
+      const isRetryable = /408|422|500|502|503|504|ECONNRESET|ETIMEDOUT|EPIPE|fetch failed/i.test(error.message);
+      if (!isRetryable || attempt === maxRetries) {
+        throw error;
+      }
+      console.warn(`upload ${name} attempt ${attempt} failed (${error.message}); cleaning up and retrying in ${Math.round((retryDelayMs * attempt) / 1000)}s...`);
+      if (typeof release.assets_url === 'string' && release.assets_url !== '') {
+        try {
+          const assetsResponse = await requestFn(release.assets_url);
+          const assetsList = await assetsResponse.json();
+          if (Array.isArray(assetsList)) {
+            const stale = assetsList.find((a) => a.name === name);
+            if (stale && stale.url) {
+              await deleteAsset(stale.url, requestFn);
+            }
+          }
+        } catch {
+          // ignore lookup/cleanup errors and proceed to retry
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+    }
+  }
 }
 
 async function ensureReleaseAssets({ release, files, readFile = fs.readFile, fetchExistingAsset = fetchAssetBytes, upload = uploadAsset } = {}) {
@@ -116,4 +154,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { ensureReleaseAssets };
+module.exports = { ensureReleaseAssets, uploadAsset };

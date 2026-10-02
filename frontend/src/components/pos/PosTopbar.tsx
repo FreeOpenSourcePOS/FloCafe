@@ -87,12 +87,11 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
       <button
         type="button"
         onClick={onShowPrintMenu}
-        className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap"
+        className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
         title={tProducts('printMenu')}
         aria-label={tProducts('printMenu')}
       >
         <Printer size={16} />
-        <span className="hidden xl:inline">{tProducts('printMenu')}</span>
       </button>
       <button
         type="button"

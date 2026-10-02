@@ -6,6 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
+import { getInstallSource, getRunMode } from './telemetry';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 import { classClauseSummary, deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
 import { getTenantCurrency } from './refund';
@@ -650,6 +651,8 @@ export class CloudSyncService {
       platform: process.platform,
       arch: process.arch,
       app_version: require('../../package.json').version,
+      run_mode: getRunMode(),
+      install_source: getInstallSource(),
       store_type: 'cafe',
       business: {
         name: settings.business_name || '',

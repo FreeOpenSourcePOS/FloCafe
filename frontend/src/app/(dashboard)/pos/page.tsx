@@ -1270,6 +1270,9 @@ export default function POSPage() {
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
           onAddItems={handleAddItemsToOrder}
+          onPrintBill={async (bill) => {
+            await printBillForTenant(bill, true);
+          }}
           onPayment={(bill, overridePin) => { setCheckoutTable(null); setPaymentBill(bill); setCheckoutOverridePin(overridePin); }}
           onAddCartToOrder={handleAddCartToOrder}
         />

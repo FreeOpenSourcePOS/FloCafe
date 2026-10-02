@@ -571,6 +571,24 @@ export default function OrdersPage() {
     }
   };
 
+  const handlePrintOrder = async (order: Order) => {
+    if (order.bill?.id) {
+      setConfirmPrintBillId(order.bill.id);
+      return;
+    }
+    setGeneratingBill(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      const bill = data.bill as Bill;
+      await fetchOrders();
+      setConfirmPrintBillId(bill.id);
+    } catch {
+      toast.error(tOrders('generateBillFailed'));
+    } finally {
+      setGeneratingBill(null);
+    }
+  };
+
   const handlePrintDeliverySlip = async (order: Order) => {
     const customer = order.customer;
     const phone = customer?.phone
@@ -1071,6 +1089,7 @@ export default function OrdersPage() {
               onConvertToTakeaway={handleConvertToTakeaway}
               onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
               onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onPrintOrder={handlePrintOrder}
               onSendWhatsApp={handleSendViaFlo}
               onLinkCustomer={(orderId) => {
                 setLinkCustomerOrderId(orderId);

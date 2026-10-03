@@ -99,7 +99,7 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
   const waivedIds = input.waivedIds ?? derivedWaivedIds;
   const optedInIds = input.optedInIds ?? derivedOptedInIds;
 
-  const charges = calculateAppliedCharges({
+  const activeCharges = calculateAppliedCharges({
     definitions,
     orderType,
     subtotal,
@@ -109,8 +109,11 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
     currencyDecimals: getCurrencyFractionDigits(currency),
   });
 
+  const retainedCharges = existing.filter((charge) => !byId.get(charge.id)?.is_active);
+  const charges = [...activeCharges, ...retainedCharges];
+
   const columns = toStandardChargeColumns(charges, getCurrencyFractionDigits(currency));
-  const configured = definitions.some(
+  const configured = retainedCharges.length > 0 || definitions.some(
     (definition) => definition.is_active
       && (definition.is_default_active || optedInIds.includes(definition.id))
       && definition.order_types.includes(orderType as ChargeOrderType),

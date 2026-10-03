@@ -2397,6 +2397,22 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     const customer = bill.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
       : null;
+    const resolvedCharges = resolveOrderCharges({
+      definitions: getChargeDefinitions(),
+      orderType: order.type,
+      subtotal: totals.subtotal,
+      discountAmount,
+      currency,
+      existingBreakdown: bill.charges_breakdown ?? order.charges_breakdown,
+    });
+    const appliedCharges = resolvedCharges.configured ? resolvedCharges.charges : undefined;
+    const ownsServiceCharge = appliedCharges?.some((charge) => charge.id === 'service_charge') ?? false;
+    const ownsPackagingCharge = appliedCharges?.some((charge) => charge.id === 'packaging_charge') ?? false;
+    const serviceCharge = ownsServiceCharge ? resolvedCharges.columns.service_charge : Number(bill.service_charge) || 0;
+    const packagingCharge = ownsPackagingCharge ? resolvedCharges.columns.packaging_charge : Number(bill.packaging_charge) || 0;
+    const chargesBreakdown = resolvedCharges.configured
+      ? serializeAppliedCharges(resolvedCharges.charges)
+      : bill.charges_breakdown ?? order.charges_breakdown ?? null;
     // The bill is the settlement boundary: it rounds the tax even with no discount
     // applied, which is why this site passes 'always'. Payable rounding is applied
     // once, below, to the bill total only.
@@ -2404,14 +2420,15 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       tenantInfo,
       chargeContext: {
         ...order,
-        packaging_charge: bill.packaging_charge || 0,
+        packaging_charge: packagingCharge,
         delivery_charge: bill.delivery_charge || 0,
-        service_charge: bill.service_charge || 0,
+        service_charge: serviceCharge,
       },
       customer,
       totals,
       discountAmount,
       taxScaling: 'always',
+      appliedCharges,
     });
     const taxBreakdownJson = JSON.stringify(taxRollup.breakdowns);
     const pack = getActiveCountryPack(tenantInfo.country);
@@ -2422,12 +2439,14 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
           total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
       `).run(
         totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
-        taxRollup.snapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
+        taxRollup.snapshotJson, serviceCharge, packagingCharge, chargesBreakdown,
+        newTotal, newRoundOff, newBalance, now(), req.params.id,
       );
 
       // orders.total stays the exact, unrounded amount — only the bill (the
@@ -2435,12 +2454,14 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       db.prepare(`
         UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
           total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
       `).run(
         totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
-        taxRollup.snapshotJson, exactTotal, 0, now(), bill.order_id,
+        taxRollup.snapshotJson, serviceCharge, packagingCharge, chargesBreakdown,
+        exactTotal, 0, now(), bill.order_id,
       );
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));

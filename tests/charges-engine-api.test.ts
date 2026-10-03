@@ -363,6 +363,67 @@ async function main() {
       headers: authHeader,
     });
     assertEqualOrThrow(badIds.status, 400, 'a non-array waived_charge_ids is rejected');
+
+    console.log('\n12. Recomputed orders retain inactive fee snapshots without charging new orders');
+    await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
+    const inactiveOrder = await createOrder('dine_in');
+    const inactiveBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: inactiveOrder.data.order.id }, headers: authHeader,
+    });
+    await putCharges([SERVICE_CHARGE, { ...LATE_NIGHT, is_active: false }]);
+    const inactiveAppend = await api(baseUrl, `/api/orders/${inactiveOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(inactiveAppend.status, 200, 'item append succeeds after a fee is disabled');
+    const inactiveCharges = JSON.parse(inactiveAppend.data.order.charges_breakdown);
+    assertEqualOrThrow(inactiveCharges.find((charge: any) => charge.id === 'late_night')?.amount, 7, 'disabled fixed fee snapshot remains unchanged');
+    assertEqualOrThrow(inactiveCharges.find((charge: any) => charge.id === 'service_charge')?.amount, 20, 'still-active percentage fee recalculates against the new subtotal');
+    assertEqualOrThrow(inactiveAppend.data.order.total, 227, 'the total includes the retained fee once');
+    const inactiveBillRow = db.prepare('SELECT total, charges_breakdown FROM bills WHERE id = ?').get(inactiveBill.data.bill.id) as any;
+    assertEqualOrThrow(inactiveBillRow.total, 227, 'the unpaid bill total follows the recomputed order');
+    assertEqualOrThrow(JSON.parse(inactiveBillRow.charges_breakdown).find((charge: any) => charge.id === 'late_night')?.amount, 7, 'the unpaid bill keeps the same retained fee snapshot');
+    const afterDisable = await createOrder('dine_in');
+    assertEqualOrThrow(afterDisable.data.order.total, 110, 'a new order does not receive the disabled fee');
+    assertEqualOrThrow(JSON.parse(afterDisable.data.order.charges_breakdown).some((charge: any) => charge.id === 'late_night'), false, 'the disabled fee is absent from a new order');
+
+    console.log('\n13. Recomputed orders retain deleted fee snapshots while preserving unpaid bill totals');
+    await putCharges([LATE_NIGHT]);
+    const deletedOrder = await createOrder('dine_in');
+    const deletedBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: deletedOrder.data.order.id }, headers: authHeader,
+    });
+    await putCharges([]);
+    const deletedAppend = await api(baseUrl, `/api/orders/${deletedOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(deletedAppend.status, 200, 'item append succeeds after the fee definition is removed');
+    assertEqualOrThrow(JSON.parse(deletedAppend.data.order.charges_breakdown).find((charge: any) => charge.id === 'late_night')?.amount, 7, 'deleted fee remains as the original snapshot');
+    assertEqualOrThrow(deletedAppend.data.order.total, 207, 'the total includes the retained deleted fee once');
+    const deletedBillRow = db.prepare('SELECT total, charges_breakdown FROM bills WHERE id = ?').get(deletedBill.data.bill.id) as any;
+    assertEqualOrThrow(deletedBillRow.total, 207, 'the unpaid bill retains the deleted fee in its total');
+    assertEqualOrThrow(JSON.parse(deletedBillRow.charges_breakdown).find((charge: any) => charge.id === 'late_night')?.amount, 7, 'the unpaid bill keeps the original deleted fee snapshot');
+    const afterDelete = await createOrder('dine_in');
+    assertEqualOrThrow(afterDelete.data.order.total, 100, 'a new order receives no deleted fee');
+    assertEqualOrThrow(afterDelete.data.order.charges_breakdown == null || JSON.parse(afterDelete.data.order.charges_breakdown).length === 0, true, 'the deleted fee is absent from a new order');
+
+    console.log('\n14. Bill discounts recompute configured percentage fees and retain fixed fees');
+    await putCharges([{ ...SERVICE_CHARGE, calculation_basis: 'net' }, LATE_NIGHT]);
+    const discountedOrder = await createOrder('dine_in');
+    const discountedBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: discountedOrder.data.order.id }, headers: authHeader,
+    });
+    const discounted = await api(baseUrl, `/api/bills/${discountedBill.data.bill.id}/applyDiscount`, {
+      method: 'POST', body: { type: 'percentage', value: 10, reason: 'charge recalculation test' }, headers: authHeader,
+    });
+    assertEqualOrThrow(discounted.status, 200, 'bill discount succeeds with configured charges');
+    assertEqualOrThrow(discounted.data.bill.total, 106, 'bill total includes discounted net percentage and fixed charges');
+    assertEqualOrThrow(discounted.data.bill.service_charge, 9, 'bill service charge recalculates from the discounted net');
+    const discountedCharges = JSON.parse(discounted.data.bill.charges_breakdown);
+    assertEqualOrThrow(discountedCharges.find((charge: any) => charge.id === 'service_charge')?.amount, 9, 'order snapshot stores the recomputed percentage fee');
+    assertEqualOrThrow(discountedCharges.find((charge: any) => charge.id === 'late_night')?.amount, 7, 'order snapshot retains the fixed fee');
+    const discountedOrderRow = db.prepare('SELECT total, charges_breakdown FROM orders WHERE id = ?').get(discountedOrder.data.order.id) as any;
+    assertEqualOrThrow(discountedOrderRow.total, 106, 'order exact total agrees with the discounted bill');
+    assertEqualOrThrow(JSON.parse(discountedOrderRow.charges_breakdown).find((charge: any) => charge.id === 'late_night')?.amount, 7, 'order and bill share the same charge breakdown');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     closeDatabase();

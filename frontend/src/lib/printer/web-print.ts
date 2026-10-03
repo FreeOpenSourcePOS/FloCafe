@@ -1,6 +1,7 @@
 /** Thermal-width bill printing using browser print dialog for merchants without hardware printers. */
 
 import type { Bill, Tenant } from '@/lib/types';
+import { receiptChargeLines } from '@/lib/charges';
 import toast from 'react-hot-toast';
 import type { PrintWarning } from './warnings';
 import {
@@ -292,6 +293,8 @@ export function generateBillHtml(
   const styles = getPaperStyles(paperSize);
 
   const items = itemsBlock?.rows ?? [];
+  const itemisedCharges = receiptChargeLines(totals?.chargesBreakdown);
+  const itemisedChargeIds = new Set(itemisedCharges.map((charge) => charge.id));
   const fmtAmount = (value: number) => formatAmount(value, tenant, trimDecimals);
   const fmtQuantity = (value: number) => formatNumberForTenant(
     Number(value) || 0,
@@ -389,9 +392,10 @@ export function generateBillHtml(
       <tr><td>${escapeHtml(totals.subtotal.label.primary)}</td><td class="text-end num">${fmtAmount(totals.subtotal.amount)}</td></tr>
       ${totals.discount ? `<tr><td>${escapeHtml(totals.discount.label.primary)}</td><td class="text-end num">-${fmtAmount(totals.discount.amount)}</td></tr>` : ''}
       ${totals.tax ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(totals.tax.amount)}</td></tr>` : ''}
-      ${totals.serviceCharge ? `<tr><td>${escapeHtml(totals.serviceCharge.label.primary)}</td><td class="text-end num">${fmtAmount(totals.serviceCharge.amount)}</td></tr>` : ''}
+      ${totals.serviceCharge && !itemisedChargeIds.has('service_charge') ? `<tr><td>${escapeHtml(totals.serviceCharge.label.primary)}</td><td class="text-end num">${fmtAmount(totals.serviceCharge.amount)}</td></tr>` : ''}
       ${totals.deliveryCharge ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(totals.deliveryCharge.amount)}</td></tr>` : ''}
-      ${totals.packagingCharge ? `<tr><td>${escapeHtml(L.packagingCharge)}</td><td class="text-end num">${fmtAmount(totals.packagingCharge.amount)}</td></tr>` : ''}
+      ${totals.packagingCharge && !itemisedChargeIds.has('packaging_charge') ? `<tr><td>${escapeHtml(L.packagingCharge)}</td><td class="text-end num">${fmtAmount(totals.packagingCharge.amount)}</td></tr>` : ''}
+      ${itemisedCharges.map((charge) => `<tr><td>${escapeHtml(charge.name)}</td><td class="text-end num">${fmtAmount(charge.amount)}</td></tr>`).join('')}
       <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(totals.grandTotal.amount)}</strong></td></tr>
       ${totals.pointsEarned ? `<tr><td>${escapeHtml(totals.pointsEarned.label.primary)}</td><td class="text-end num">${escapeHtml(totals.pointsEarned.points)} pts</td></tr>` : ''}
       ${totals.pointsBalance ? `<tr><td>${escapeHtml(totals.pointsBalance.label.primary)}</td><td class="text-end num">${escapeHtml(totals.pointsBalance.points)} pts</td></tr>` : ''}

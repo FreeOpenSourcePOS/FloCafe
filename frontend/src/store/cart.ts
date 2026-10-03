@@ -153,7 +153,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
-    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, customerSource: customerId == null ? null : 'explicit', guestCount, orderNotes: orderNotes || '' });
+    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, customerSource: customerId == null ? null : 'explicit', guestCount, orderNotes: orderNotes || '', waivedChargeIds: new Set<string>(), optedInChargeIds: new Set<string>() });
   },
 
   setOrderType: (type) => set((state) => ({

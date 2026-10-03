@@ -740,6 +740,8 @@ export default function POSPage() {
       online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
       external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
+      waived_charge_ids: Array.from(cart.waivedChargeIds),
+      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
     });
     let storedAttempt: PrepaidAttempt | null;
     try {

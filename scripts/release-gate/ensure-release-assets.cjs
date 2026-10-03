@@ -6,17 +6,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { findReleaseByTag } = require('./candidate-manifest.cjs');
 
-try {
-  const { Agent, setGlobalDispatcher } = require('undici');
-  setGlobalDispatcher(new Agent({
-    bodyTimeout: 0,
-    headersTimeout: 0,
-    connectTimeout: 60000,
-  }));
-} catch {
-  // undici dispatcher optional
-}
-
 function requiredArg(args, name) {
   const index = args.indexOf(name);
   if (index === -1 || !args[index + 1]) throw new Error(`missing required argument ${name}`);

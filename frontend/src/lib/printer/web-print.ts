@@ -113,26 +113,36 @@ export async function ensureReceiptMessagesLoaded(lang: Language): Promise<Langu
 export async function printWebBill(
   bill: Bill,
   tenant: ReceiptTenant,
-  opts: WebPrintOptions = {}
+  opts: WebPrintOptions = {},
+  reservedWindow?: Window | null
 ): Promise<PrintWarning[]> {
   const languages = resolvePrintLanguages(opts);
 
   // 1. Open popup window synchronously to maintain transient user activation
-  const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
+  const printWindow = reservedWindow === undefined
+    ? (typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null)
+    : reservedWindow;
   if (!printWindow) {
     toast.error('Please allow popups to print bills');
     throw new Error('Popup window was blocked by browser');
   }
 
   // Ensure print languages are loaded before synchronous document build.
-  const failedLanguages = await ensurePrintLanguagesLoaded(languages);
-  const warnings: PrintWarning[] = failedLanguages.map((language) => ({
-    field: 'receipt language',
-    text: language,
-    message: `Receipt language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
-    kind: 'locale' as const,
-  }));
-  const html = generateBillHtml(bill, tenant, { ...opts, languages });
+  let warnings: PrintWarning[];
+  let html: string;
+  try {
+    const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+    warnings = failedLanguages.map((language) => ({
+      field: 'receipt language',
+      text: language,
+      message: `Receipt language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+      kind: 'locale' as const,
+    }));
+    html = generateBillHtml(bill, tenant, { ...opts, languages });
+  } catch (error) {
+    if (!printWindow.closed) printWindow.close();
+    throw error;
+  }
 
   // 3. Write HTML and trigger print
   if (printWindow.closed) {
@@ -155,6 +165,7 @@ export async function printWebBill(
       settled = true;
       cleanup();
       if (err) {
+        if (!printWindow.closed) printWindow.close();
         reject(err);
       } else {
         resolve();

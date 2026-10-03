@@ -230,7 +230,7 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (): Promise<boolean> => {
     try {
       const { data } = await api.get('/orders', { params: { per_page: 50 } });
       const orders = data.orders || [];
@@ -242,8 +242,10 @@ export default function OrdersPage() {
           fetchPrintHistory(order.bill.id);
         }
       });
+      return true;
     } catch {
       toast.error(tOrders('loadOrdersFailed'));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -568,6 +570,25 @@ export default function OrdersPage() {
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
+    }
+  };
+
+  const handlePrintOrder = async (order: Order) => {
+    if (order.bill?.id) {
+      setConfirmPrintBillId(order.bill.id);
+      return;
+    }
+    setGeneratingBill(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      const bill = data.bill as Bill;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
+      await fetchOrders();
+      setConfirmPrintBillId(bill.id);
+    } catch {
+      toast.error(tOrders('generateBillFailed'));
+    } finally {
+      setGeneratingBill(null);
     }
   };
 
@@ -1071,6 +1092,7 @@ export default function OrdersPage() {
               onConvertToTakeaway={handleConvertToTakeaway}
               onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
               onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onPrintOrder={tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined}
               onSendWhatsApp={handleSendViaFlo}
               onLinkCustomer={(orderId) => {
                 setLinkCustomerOrderId(orderId);

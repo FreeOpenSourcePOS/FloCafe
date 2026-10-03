@@ -108,7 +108,7 @@ interface PrinterState {
   refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
+  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions, reservedWindow?: Window | null) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
   printDeliverySlip: (order: Order, contact: DeliverySlipContact, opts?: DeliverySlipWebUsbOptions) => Promise<PrintWarning[]>;
@@ -162,8 +162,9 @@ export const usePrinterStore = create<PrinterState>()(
         await printerService.disconnect();
       },
 
-      printBill: async (bill, tenant, opts) => {
+      printBill: async (bill, tenant, opts, reservedWindow) => {
         set({ lastError: null });
+        let windowTransferred = false;
         try {
           const {
             billTemplate,
@@ -195,6 +196,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
+            windowTransferred = true;
             const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               columns: billColumns,
@@ -214,7 +216,7 @@ export const usePrinterStore = create<PrinterState>()(
               useUnicode: printerUseUnicode,
               isReprint,
               trimDecimals: printerTrimDecimals,
-            });
+            }, reservedWindow);
             return billTemplateWarning ? [...browserWarnings, billTemplateWarning] : browserWarnings;
           };
 
@@ -222,6 +224,8 @@ export const usePrinterStore = create<PrinterState>()(
           if (hw && get().printMethod === 'escpos') {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping, isReprint });
+              if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+              windowTransferred = true;
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
@@ -244,6 +248,9 @@ export const usePrinterStore = create<PrinterState>()(
             }
             return await executeBrowserPrint();
           }
+
+          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+          windowTransferred = true;
 
           // ESC/POS thermal path: load requested language bundles before resolving labels.
           const languages = opts?.languages ?? resolveBillPrintLanguages();
@@ -347,6 +354,7 @@ export const usePrinterStore = create<PrinterState>()(
           await printerService.print(bytes);
           return warnings;
         } catch (err) {
+          if (!windowTransferred && reservedWindow && !reservedWindow.closed) reservedWindow.close();
           set({ lastError: (err as Error).message });
           throw err;
         }

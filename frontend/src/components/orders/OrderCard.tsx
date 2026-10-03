@@ -109,6 +109,7 @@ interface OrderCardProps {
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
+  onPrintOrder?: (order: Order) => void;
   onPrintDeliverySlip?: (order: Order) => void;
   printingSlipOrderId?: number | null;
   onSendWhatsApp: (order: Order) => void;
@@ -147,6 +148,7 @@ export function OrderCard({
   onConvertToTakeaway,
   onCancelOrder,
   onPrint,
+  onPrintOrder,
   onPrintDeliverySlip,
   printingSlipOrderId,
   onSendWhatsApp,
@@ -283,16 +285,19 @@ export function OrderCard({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {bill && (
+            {(bill || (onPrintOrder && order.type === 'dine_in' && order.status !== 'cancelled')) && (
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => onPrint(bill.id)}
-                disabled={printingBillId === bill.id}
+                onClick={() => {
+                  if (bill) onPrint(bill.id);
+                  else if (onPrintOrder) onPrintOrder(order);
+                }}
+                disabled={(bill && printingBillId === bill.id) || generatingBillId === order.id}
                 className="size-9 rounded-lg border-border/70 text-muted-foreground hover:text-foreground touch-manipulation active:scale-95"
                 title={printCount > 0 ? tCommon('reprint') : tCommon('print')}
               >
-                {printingBillId === bill.id ? (
+                {(bill && printingBillId === bill.id) || generatingBillId === order.id ? (
                   <Loader2 size={16} className="animate-spin" />
                 ) : (
                   <Printer size={17} />
@@ -828,6 +833,24 @@ export function OrderCard({
           </div>
         ) : (
           <div className="flex items-center gap-2">
+            {onPrintOrder && order.type === 'dine_in' && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (bill) onPrint(bill.id);
+                  else onPrintOrder(order);
+                }}
+                disabled={(bill && printingBillId === bill.id) || generatingBillId === order.id}
+                className="h-10 px-3 justify-center border-border text-foreground hover:bg-muted active:scale-95 touch-manipulation font-semibold text-xs"
+              >
+                {(bill && printingBillId === bill.id) || generatingBillId === order.id ? (
+                  <Loader2 size={15} className="animate-spin me-1.5" />
+                ) : (
+                  <Printer size={15} className="me-1.5 text-muted-foreground" />
+                )}
+                {tReceipt('printBill')}
+              </Button>
+            )}
             <Button
               onClick={() => onCheckout(order.id)}
               disabled={generatingBillId === order.id}

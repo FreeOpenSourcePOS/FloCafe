@@ -583,10 +583,8 @@ export default function OrdersPage() {
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       const bill = data.bill as Bill;
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
-      const refreshed = await fetchOrders();
-      if (refreshed) {
-        setConfirmPrintBillId(bill.id);
-      }
+      await fetchOrders();
+      setConfirmPrintBillId(bill.id);
     } catch {
       toast.error(tOrders('generateBillFailed'));
     } finally {

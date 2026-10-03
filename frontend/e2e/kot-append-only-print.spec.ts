@@ -154,17 +154,23 @@ async function installBillPrintCapture(page: import('@playwright/test').Page) {
     const appWindow = window as Window & {
       __billPrintHtml?: string[];
       __billPrintOpenCount?: number;
+      __billPrintCloseCount?: number;
     };
     appWindow.__billPrintHtml = [];
     appWindow.__billPrintOpenCount = 0;
+    appWindow.__billPrintCloseCount = 0;
     window.open = (() => {
       appWindow.__billPrintOpenCount = (appWindow.__billPrintOpenCount ?? 0) + 1;
       const printDocument = document.implementation.createHTMLDocument('Bill');
+      let closed = false;
       return {
+        get closed() { return closed; },
         document: printDocument,
-        closed: false,
         print: () => appWindow.__billPrintHtml?.push(printDocument.body.innerHTML),
-        close: () => undefined,
+        close: () => {
+          closed = true;
+          appWindow.__billPrintCloseCount = (appWindow.__billPrintCloseCount ?? 0) + 1;
+        },
       } as unknown as Window;
     }) as typeof window.open;
   });
@@ -281,7 +287,7 @@ async function useBrowserBillPrint(page: import('@playwright/test').Page) {
   });
 }
 
-test('dine-in bill print uses order items and totals refreshed after another terminal edits the order', async ({ page }) => {
+test('dine-in bill print reserves its popup before refreshing the order and prints current items and totals', async ({ page }) => {
   const setupToken = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const authHeaders = { Authorization: `Bearer ${setupToken}` };
   const businessRes = await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
@@ -291,6 +297,7 @@ test('dine-in bill print uses order items and totals refreshed after another ter
   let tableId: string | undefined;
   let orderId: number | undefined;
   let testError: unknown;
+  let releaseFreshOrderRead!: () => void;
 
   try {
     const putRes = await page.request.put(`${BASE}/api/settings/business`, {
@@ -359,7 +366,24 @@ test('dine-in bill print uses order items and totals refreshed after another ter
     expect(Number(freshBill.discount_amount)).toBeGreaterThan(0);
     expect(freshBill.payment_status).toBe('unpaid');
 
+    let signalFreshOrderRead!: () => void;
+    const freshOrderReadIntercepted = new Promise<void>((resolve) => {
+      signalFreshOrderRead = resolve;
+    });
+    const heldFreshOrderRead = new Promise<void>((resolve) => {
+      releaseFreshOrderRead = resolve;
+    });
+    await page.route(`${BASE}/api/orders/${order.id}`, async (route) => {
+      signalFreshOrderRead();
+      await heldFreshOrderRead;
+      await route.continue();
+    }, { times: 1 });
+
     await page.getByRole('button', { name: /Print Bill/ }).click();
+    await freshOrderReadIntercepted;
+    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(1);
+    expect(await page.evaluate(() => (window as Window & { __billPrintCloseCount?: number }).__billPrintCloseCount)).toBe(0);
+    releaseFreshOrderRead();
     await expect.poll(() => page.evaluate(() => (
       (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length ?? 0
     ))).toBe(1);
@@ -387,6 +411,7 @@ test('dine-in bill print uses order items and totals refreshed after another ter
     testError = error;
     throw error;
   } finally {
+    releaseFreshOrderRead?.();
     let cleanupError: unknown;
     try {
       if (tableId) await cleanupDineInFixture(page.request, authHeaders, { orderId, tableId });
@@ -409,7 +434,7 @@ test('dine-in bill print uses order items and totals refreshed after another ter
   }
 });
 
-test('dine-in bill print does not open or generate a bill when the fresh order read fails', async ({ page }) => {
+test('dine-in bill print closes its reserved popup when the order read or bill generation fails', async ({ page }) => {
   const headers = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
   let restoreSettings: (() => Promise<void>) | undefined;
   let createdFixture: Awaited<ReturnType<typeof createDineInFixture>> | undefined;
@@ -438,8 +463,23 @@ test('dine-in bill print does not open or generate a bill when the fresh order r
       && new URL(response.url()).pathname === `/api/orders/${fixture.order.id}`);
     await page.getByRole('button', { name: /Print Bill/ }).click();
     expect((await freshRead).status()).toBe(503);
-    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(0);
+    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __billPrintCloseCount?: number }).__billPrintCloseCount)).toBe(1);
+    expect(await page.evaluate(() => (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length)).toBe(0);
     expect(generateRequests).toBe(0);
+
+    await page.route(`${BASE}/api/bills/generate`, (route) => route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'bill generation temporarily unavailable' }),
+    }), { times: 1 });
+    const generation = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/bills/generate');
+    await page.getByRole('button', { name: /Print Bill/ }).click();
+    expect((await generation).status()).toBe(503);
+    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(2);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __billPrintCloseCount?: number }).__billPrintCloseCount)).toBe(2);
+    expect(await page.evaluate(() => (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length)).toBe(0);
   } catch (error) {
     testError = error;
     throw error;
@@ -498,7 +538,8 @@ test('dine-in parent bill printing stops when another terminal splits its check'
     expect((await refresh).ok()).toBeTruthy();
     await expect(page.getByText('Guest 1', { exact: true })).toBeVisible();
     await expect(page.getByText('Guest 2', { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(0);
+    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __billPrintCloseCount?: number }).__billPrintCloseCount)).toBe(1);
     expect(await page.evaluate(() => (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length)).toBe(0);
     expect(generateRequests).toBe(0);
   } catch (error) {
@@ -537,35 +578,58 @@ test('dine-in bill print does not print a split bill generated by another termin
     await loginToPos(page);
     await openOccupiedTable(page, fixture.tableNumber);
     page.on('request', countGenerateRequest);
+    let splitSetupError: unknown;
+    let splitSetupFailed = false;
     await page.route(`${BASE}/api/bills/generate`, async (route) => {
-      const otherTerminalBillResponse = await page.request.post(`${BASE}/api/bills/generate`, {
-        headers,
-        data: { order_id: fixture.order.id },
-      });
-      expect(otherTerminalBillResponse.ok()).toBeTruthy();
-      const otherTerminalBill = (await otherTerminalBillResponse.json()).bill;
-      generatedBillId = otherTerminalBill.id;
-      const splitResponse = await page.request.post(`${BASE}/api/bills/${otherTerminalBill.id}/split-check`, {
-        headers,
-        data: { checks: fixture.order.items.map((item, index) => ({
-          label: `Guest ${index + 1}`,
-          items: [{ order_item_id: item.id, quantity: 1 }],
-        })) },
-      });
-      expect(splitResponse.status()).toBe(201);
-      const split = await splitResponse.json();
-      splitGroupId = split.bills[0].split_group_id;
-      await route.continue();
+      try {
+        const otherTerminalBillResponse = await page.request.post(`${BASE}/api/bills/generate`, {
+          headers,
+          data: { order_id: fixture.order.id },
+        });
+        expect(otherTerminalBillResponse.ok()).toBeTruthy();
+        const otherTerminalBill = (await otherTerminalBillResponse.json()).bill;
+        generatedBillId = otherTerminalBill.id;
+        const splitResponse = await page.request.post(`${BASE}/api/bills/${otherTerminalBill.id}/split-check`, {
+          headers,
+          data: { checks: fixture.order.items.map((item, index) => ({
+            label: `Guest ${index + 1}`,
+            items: [{ order_item_id: item.id, quantity: 1 }],
+          })) },
+        });
+        expect(splitResponse.status()).toBe(201);
+        const split = await splitResponse.json();
+        splitGroupId = split.bills[0].split_group_id;
+      } catch (error) {
+        splitSetupFailed = true;
+        splitSetupError = error;
+      } finally {
+        try {
+          await route.continue();
+        } catch (error) {
+          if (!splitSetupFailed) {
+            splitSetupFailed = true;
+            splitSetupError = error;
+          }
+        }
+      }
     }, { times: 1 });
 
     const generationResponse = page.waitForResponse((response) => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/bills/generate');
     await page.getByRole('button', { name: /Print Bill/ }).click();
-    const returnedBill = (await (await generationResponse).json()).bill;
+    let returnedBill: { id: number; split_group_id: string };
+    try {
+      returnedBill = (await (await generationResponse).json()).bill;
+    } catch (error) {
+      if (splitSetupFailed) throw splitSetupError;
+      throw error;
+    }
+    if (splitSetupFailed) throw splitSetupError;
     expect(returnedBill.id).toBe(generatedBillId);
     expect(returnedBill.split_group_id).toBe(splitGroupId);
     await expect(page.getByText('Guest 1', { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(0);
+    expect(await page.evaluate(() => (window as Window & { __billPrintOpenCount?: number }).__billPrintOpenCount)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as Window & { __billPrintCloseCount?: number }).__billPrintCloseCount)).toBe(1);
     expect(await page.evaluate(() => (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length)).toBe(0);
     expect(pageGenerateRequests).toBe(1);
   } catch (error) {
@@ -693,4 +757,85 @@ test.describe('server POS bill print permissions', () => {
       data: { order_id: fixture.order.id },
     })).status()).toBe(403);
   });
+});
+
+test('Orders keeps its bill print confirmation when the post-generation list refresh fails', async ({ page }) => {
+  const headers = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+  let restoreSettings: (() => Promise<void>) | undefined;
+  let createdFixture: Awaited<ReturnType<typeof createDineInFixture>> | undefined;
+  let testError: unknown;
+  let generationSucceeded = false;
+  let listRefreshFailed = false;
+
+  try {
+    restoreSettings = await prepareDineInSettings(page, headers);
+    const fixture = await createDineInFixture(page, headers);
+    createdFixture = fixture;
+    await useBrowserBillPrint(page);
+    await loginToPos(page);
+    await page.goto(`${BASE}/orders`);
+    await expect(page.getByRole('heading', { name: 'Orders', level: 1 })).toBeVisible();
+
+    const orderCard = page.locator('div.bg-card').filter({ hasText: fixture.order.order_number });
+    await expect(orderCard).toHaveCount(1);
+    const printButton = orderCard.getByRole('button', { name: /Print Bill/ });
+    await expect(printButton).toBeVisible();
+
+    await page.route(`${BASE}/api/bills/generate`, async (route) => {
+      const response = await route.fetch();
+      generationSucceeded = response.ok();
+      await route.fulfill({ response });
+    });
+    await page.route('**/api/orders*', async (route) => {
+      const request = route.request();
+      if (generationSucceeded
+        && !listRefreshFailed
+        && request.method() === 'GET'
+        && new URL(request.url()).pathname === '/api/orders') {
+        listRefreshFailed = true;
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'order list temporarily unavailable' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    const generation = page.waitForResponse((response) => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/bills/generate');
+    const listRefresh = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === '/api/orders');
+    await printButton.click();
+    const generationResponse = await generation;
+    expect(generationResponse.ok()).toBeTruthy();
+    const bill = (await generationResponse.json()).bill as { id: number; payment_status: string };
+    expect((await listRefresh).status()).toBe(503);
+    expect(listRefreshFailed).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Print Receipt' })).toBeVisible();
+
+    const freshBillRead = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === `/api/bills/${bill.id}`);
+    await page.getByRole('button', { name: 'Confirm Print' }).click();
+    expect((await freshBillRead).ok()).toBeTruthy();
+    await expect.poll(() => page.evaluate(() => (
+      (window as Window & { __billPrintHtml?: string[] }).__billPrintHtml?.length ?? 0
+    ))).toBe(1);
+    const finalBillResponse = await page.request.get(`${BASE}/api/bills/${bill.id}`, { headers });
+    expect(finalBillResponse.ok()).toBeTruthy();
+    expect((await finalBillResponse.json()).bill.payment_status).toBe('unpaid');
+  } catch (error) {
+    testError = error;
+    throw error;
+  } finally {
+    let cleanupError: unknown;
+    try {
+      if (createdFixture) await cleanupDineInFixture(page.request, headers, { tableId: createdFixture.tableId, orderId: createdFixture.order.id });
+    } catch (error) {
+      cleanupError = error;
+    }
+    try { await restoreSettings?.(); } catch (error) { cleanupError ??= error; }
+    if (testError === undefined && cleanupError) throw cleanupError;
+  }
 });

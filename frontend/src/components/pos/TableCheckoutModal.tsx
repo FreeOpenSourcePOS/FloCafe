@@ -17,7 +17,8 @@ interface Props {
   cartItemCount: number;
   onClose: () => void;
   onAddItems: (table: Table, order: Order) => void;
-  onPrintBill?: (bill: Bill) => Promise<void>;
+  onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void>;
+  reservePrintWindow?: () => Window | null | undefined;
   canGenerateBill: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
@@ -30,6 +31,7 @@ export default function TableCheckoutModal({
   onClose,
   onAddItems,
   onPrintBill,
+  reservePrintWindow,
   canGenerateBill,
   onPayment,
   onAddCartToOrder
@@ -98,6 +100,8 @@ export default function TableCheckoutModal({
 
   const handlePrintBill = async () => {
     if (!order || !onPrintBill) return;
+    const reservedWindow = reservePrintWindow?.();
+    let windowTransferred = false;
     setPrintingBill(true);
     try {
       let currentOrder: Order;
@@ -124,11 +128,13 @@ export default function TableCheckoutModal({
         return;
       }
       if (targetBill) {
-        await onPrintBill({ ...targetBill, order: targetBill.order ?? currentOrder });
+        windowTransferred = true;
+        await onPrintBill({ ...targetBill, order: targetBill.order ?? currentOrder }, reservedWindow);
       }
     } catch {
       toast.error(t('generateBillFailed'));
     } finally {
+      if (!windowTransferred && reservedWindow && !reservedWindow.closed) reservedWindow.close();
       setPrintingBill(false);
     }
   };

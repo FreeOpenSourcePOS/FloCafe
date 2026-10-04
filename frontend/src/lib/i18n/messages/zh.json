@@ -909,6 +909,7 @@
     "templateFallback": "所选账单模板不支持此打印路径，已使用内置小票版式。"
   },
   "print": {
+    "menu": {"title": "菜单", "totalItems": "商品总数"},
     "taxInvoiceTitle": "税务发票",
     "invoiceTitle": "发票",
     "invoiceNumber": "发票号：",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "包含描述",
+    "includeModifiers": "包含选项",
     "addAddon": "添加加购",
     "addAddonGroup": "添加加购分组",
     "addAddonGroupForm": "添加加购分组",

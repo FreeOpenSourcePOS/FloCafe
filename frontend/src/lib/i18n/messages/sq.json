@@ -909,6 +909,7 @@
     "templateFallback": "Shablloni i zgjedhur i dëftesës nuk mbështetet në këtë shteg printimi, prandaj u përdor paraqitja e integruar e dëftesës."
   },
   "print": {
+    "menu": {"title": "Menyja", "totalItems": "Artikuj gjithsej"},
     "taxInvoiceTitle": "FATURË TATIMORE",
     "invoiceTitle": "FATURË",
     "invoiceNumber": "Fatura nr.:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Përfshi përshkrimet",
+    "includeModifiers": "Përfshi opsionet",
     "addAddon": "Shto Shtesë",
     "addAddonGroup": "Shto grupin shtesë",
     "addAddonGroupForm": "Shto grupin shtesë",

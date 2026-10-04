@@ -909,6 +909,7 @@
     "templateFallback": "선택한 청구서 템플릿은 이 인쇄 경로에서 지원되지 않아 기본 영수증 레이아웃을 사용했습니다."
   },
   "print": {
+    "menu": {"title": "메뉴", "totalItems": "총 항목"},
     "taxInvoiceTitle": "세금 인보이스",
     "invoiceTitle": "인보이스",
     "invoiceNumber": "인보이스 #:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "설명 포함",
+    "includeModifiers": "옵션 포함",
     "addAddon": "추가 옵션 추가",
     "addAddonGroup": "추가 옵션 그룹 추가",
     "addAddonGroupForm": "추가 옵션 그룹 추가",

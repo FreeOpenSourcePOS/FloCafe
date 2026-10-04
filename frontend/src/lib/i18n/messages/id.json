@@ -909,6 +909,7 @@
     "templateFallback": "Templat tagihan yang dipilih tidak didukung pada jalur pencetakan ini, sehingga tata letak struk bawaan digunakan."
   },
   "print": {
+    "menu": {"title": "Daftar menu", "totalItems": "Total item"},
     "taxInvoiceTitle": "FAKTUR PAJAK",
     "invoiceTitle": "NOTA",
     "invoiceNumber": "No. nota:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Sertakan deskripsi",
+    "includeModifiers": "Sertakan opsi",
     "addAddon": "Tambah Tambahan",
     "addAddonGroup": "Tambah Grup Tambahan",
     "addAddonGroupForm": "Tambah Grup Tambahan",

@@ -909,6 +909,7 @@
     "templateFallback": "เทมเพลตบิลที่เลือกไม่รองรับวิธีพิมพ์นี้ จึงใช้รูปแบบใบเสร็จที่มาพร้อมระบบแทน"
   },
   "print": {
+    "menu": {"title": "เมนู", "totalItems": "จำนวนรายการทั้งหมด"},
     "taxInvoiceTitle": "ใบกำกับภาษี",
     "invoiceTitle": "ใบแจ้งหนี้",
     "invoiceNumber": "เลขที่ใบแจ้งหนี้#:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "รวมคำอธิบาย",
+    "includeModifiers": "รวมตัวเลือก",
     "addAddon": "เพิ่มตัวเลือกเพิ่ม",
     "addAddonGroup": "เพิ่มกลุ่มตัวเลือกเพิ่ม",
     "addAddonGroupForm": "เพิ่มกลุ่มตัวเลือกเพิ่ม",

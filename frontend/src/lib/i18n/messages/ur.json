@@ -909,6 +909,7 @@
     "templateFallback": "منتخب بل ٹیمپلیٹ اس پرنٹ مسیر پر دستیاب نہیں، اس لیے بلٹ رسید کا بلٹ اِن ڈیزائن استعمال ہوا۔"
   },
   "print": {
+    "menu": {"title": "مینو", "totalItems": "کل اشیاء"},
     "taxInvoiceTitle": "ٹیکس انوائس",
     "invoiceTitle": "انوائس",
     "invoiceNumber": "انوائس نمبر:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "تفصیلات شامل کریں",
+    "includeModifiers": "اضافے شامل کریں",
     "addAddon": "ایڈ آن شامل کریں",
     "addAddonGroup": "ایڈ آن گروپ شامل کریں",
     "addAddonGroupForm": "ایڈ آن گروپ شامل کریں",

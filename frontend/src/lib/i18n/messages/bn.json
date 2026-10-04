@@ -909,6 +909,7 @@
     "templateFallback": "নির্বাচিত বিল টেমপ্লেট এই মুদ্রণ পথে সমর্থিত নয়, তাই অন্তর্নির্মিত রসিদ বিন্যাস ব্যবহার করা হয়েছিল।"
   },
   "print": {
+    "menu": {"title": "মেনু", "totalItems": "মোট আইটেম"},
     "taxInvoiceTitle": "কর ইনভয়েস",
     "invoiceTitle": "বিল",
     "invoiceNumber": "চালান #:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "বিবরণ অন্তর্ভুক্ত করুন",
+    "includeModifiers": "বিকল্প অন্তর্ভুক্ত করুন",
     "addAddon": "অ্যাড-অন যোগ করুন",
     "addAddonGroup": "অ্যাড-অন গ্রুপ যোগ করুন",
     "addAddonGroupForm": "অ্যাড-অন গ্রুপ যোগ করুন",

@@ -909,6 +909,7 @@
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {
+    "menu": {"title": "Listahan ng pagkain", "totalItems": "Kabuuang item"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE / BILL",
     "invoiceNumber": "Invoice No:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Isama ang mga paglalarawan",
+    "includeModifiers": "Isama ang mga opsyon",
     "addAddon": "Magdagdag ng Addon",
     "addAddonGroup": "Magdagdag ng Grupo ng Addon",
     "addAddonGroupForm": "Magdagdag ng Grupo ng Addon",

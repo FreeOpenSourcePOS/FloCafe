@@ -107,3 +107,112 @@ test('menu text cannot inject ESC/POS commands through control bytes or token-sh
   });
   assert.equal(cashDrawerPayload.data.includes(Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa])), false);
 });
+
+test('menu includes optional descriptions and effective modifier prices only when requested', () => {
+  const product = { ...products[0], description: 'Fresh {CUT} coffee', modifiers: [{ name: 'Milk', options: [{ name: 'Oat', price: 2 }] }] };
+  const options = { businessName: 'Cafe', printedAt: '', baseDirection: 'ltr' as const, formatPrice: (value: number) => `$${value.toFixed(2)}` };
+  const omitted = buildMenuDocument(categories, [product], options);
+  assert.deepEqual(omitted.sections[0].products[0].details, []);
+  const included = buildMenuDocument(categories, [product], { ...options, includeDescriptions: true, includeModifiers: true });
+  assert.deepEqual(included.sections[0].products[0].details.map((detail) => detail.text), ['Fresh { CUT } coffee', 'Milk: Oat ($2.00)']);
+  const rendered = renderMenuViaDocument(included, { columns: 42, language: 'en' });
+  assert.match(escPosToText(rendered.data), /Milk: Oat \(\$2.00\)/);
+});
+
+test('menu thermal labels use the requested print language', () => {
+  const profile = resolvePrinterProfile({ profile_id: 'epson-tm-series' });
+  const rendered = renderMenuViaDocument(menuDocument(), { columns: 42, language: 'es', capabilities: capabilitiesForPrinter(profile, 'cols-42', false) });
+  assert.match(escPosToText(rendered.data), /Total de artículos: 1/);
+  assert.doesNotMatch(escPosToText(rendered.data), /Total items/);
+});
+
+test('browser menu supports A4 and Letter and escapes descriptions, modifiers, and labels', () => {
+  const { buildMenuWebPrintHtml } = require('../frontend/src/lib/printer/menu-web-print');
+  for (const pageSize of ['A4', 'Letter']) {
+    const html = buildMenuWebPrintHtml({ businessName: 'Cafe', printedAt: '', pageSize, menuTitle: 'Menú', totalItemsLabel: 'Total de artículos', itemCount: 1,
+      sections: [{ name: 'Tea', products: [{ name: 'Tea', price: '$1', details: ['Fresh <script>alert(1)</script>', 'Milk: Oat ($2)'] }] }],
+    });
+    assert.ok(html.includes(`size: ${pageSize} portrait`));
+    assert.match(html, /Milk: Oat \(\$2\)/);
+    assert.match(html, /&lt;script&gt;/);
+    assert.doesNotMatch(html, /<script>/);
+    assert.match(html, /Total de artículos: 1/);
+  }
+});
+
+test('Unicode menu printing uses raster-capable WebUSB output and refuses raster failure', async () => {
+  const raster = require('../main/printers/raster-renderer');
+  const originalRenderer = raster.getSharedRasterRenderer;
+  const requests: Array<{ text: string }> = [];
+  const printer = { connection_type: 'webusb', profile_id: 'epson-tm-series', paper_width: 'cols-48' };
+  const { printMenuDocument } = require('../main/printers/thermal');
+  raster.getSharedRasterRenderer = () => ({ render: async (request: { requestId: string; text: string; widthDots: number }) => {
+    requests.push(request);
+    return { version: 1, requestId: request.requestId, ok: true, unit: { unitId: request.requestId, complete: true, financial: false,
+      bands: [{ widthDots: request.widthDots, heightDots: 1, pixels: new Uint8Array(request.widthDots).fill(1) }] } };
+  } });
+  try {
+    const result = await printMenuDocument(menuDocument('抹茶'), undefined, printer);
+    assert.equal(result.ok, true, JSON.stringify({detail: result.detail, warnings: result.warnings}));
+    assert.ok(requests.some((request) => request.text.includes('抹茶')));
+    assert.ok(result.bytes?.includes(Buffer.from([0x1d, 0x76, 0x30])));
+    raster.getSharedRasterRenderer = () => ({ render: async (request: { requestId: string }) => ({ version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Unavailable' }) });
+    const failed = await printMenuDocument(menuDocument('抹茶'), undefined, printer);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.bytes, undefined);
+  } finally {
+    raster.getSharedRasterRenderer = originalRenderer;
+    raster.destroySharedRasterRenderer();
+  }
+});
+
+test('menu route preserves regional conflicts, validates filters, and honors the default WebUSB printer', async () => {
+  const express = require('express');
+  const request = require('supertest');
+  const database = require('../main/db');
+  const authorization = require('../main/services/authorization');
+  const thermal = require('../main/printers/thermal');
+  const originals = { getDatabase: database.getDatabase, requirePermission: authorization.requirePermission, printMenuDocument: thermal.printMenuDocument };
+  let configured = false;
+  let printed: any;
+  database.getDatabase = () => ({ prepare: (sql: string) => ({
+    all: () => {
+      if (sql.includes('FROM settings')) return configured ? [{ key: 'country', value: 'US' }, { key: 'currency', value: 'USD' }] : [];
+      if (sql.includes('FROM categories')) return [{ id: 'drinks', name: 'Drinks', is_active: 1, sort_order: 0 }];
+      if (sql.includes('FROM products p')) return [{ id: 'tea', category_id: 'drinks', name: 'Tea', description: 'Fresh tea', price: 5, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 0 }];
+      if (sql.includes('FROM addon_group_product')) return [{ product_id: 'tea', addon_group_id: 'milk' }];
+      if (sql.includes('FROM category_addon_groups')) return [];
+      if (sql.includes('FROM addon_groups')) return [{ id: 'milk', name: 'Milk', is_active: 1, sort_order: 0 }];
+      if (sql.includes('FROM addons')) return [{ id: 'oat', addon_group_id: 'milk', name: 'Oat', price: 2, is_active: 1 }];
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    get: () => {
+      if (sql.includes('WHERE is_default = 1')) return { name: 'Default WebUSB', connection_type: 'webusb', paper_width: '80mm' };
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  }) });
+  authorization.requirePermission = () => (_req: unknown, _res: unknown, next: () => void) => next();
+  thermal.printMenuDocument = async (document: unknown, _signal: unknown, printer: unknown) => {
+    printed = { document, printer };
+    return { ok: true, connection_type: 'webusb', bytes: Buffer.from([1, 2]) };
+  };
+  try {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/printers', require('../main/routes/printers').printerRoutes);
+    const missing = await request(app).post('/api/printers/print-menu').send({});
+    assert.equal(missing.status, 409);
+    configured = true;
+    const malformed = await request(app).post('/api/printers/print-menu').send({ includeModifiers: 'true' });
+    assert.equal(malformed.status, 400);
+    const success = await request(app).post('/api/printers/print-menu').send({ includeDescriptions: true, includeModifiers: true });
+    assert.equal(success.status, 200, JSON.stringify(success.body));
+    assert.equal(success.body.webusb, true);
+    assert.equal(printed.printer.name, 'Default WebUSB');
+    assert.deepEqual(printed.document.sections[0].products[0].details.map((detail: { text: string }) => detail.text), ['Fresh tea', 'Milk: Oat ($2.00)']);
+  } finally {
+    Object.assign(database, { getDatabase: originals.getDatabase });
+    Object.assign(authorization, { requirePermission: originals.requirePermission });
+    Object.assign(thermal, { printMenuDocument: originals.printMenuDocument });
+  }
+});

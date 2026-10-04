@@ -909,6 +909,7 @@
     "templateFallback": "Seçilen fiş şablonu bu yazdırma yolunda desteklenmediği için dahili fiş düzeni kullanıldı."
   },
   "print": {
+    "menu": {"title": "Menü", "totalItems": "Toplam ürün"},
     "taxInvoiceTitle": "VERGİ FATURASI",
     "invoiceTitle": "FATURA / FİŞ",
     "invoiceNumber": "Fatura No:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Açıklamaları dahil et",
+    "includeModifiers": "Seçenekleri dahil et",
     "addAddon": "Eklenti Ekle",
     "addAddonGroup": "Eklenti Grubu Ekle",
     "addAddonGroupForm": "Eklenti Grubu Ekle",

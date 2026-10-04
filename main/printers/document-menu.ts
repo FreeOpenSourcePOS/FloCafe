@@ -1,5 +1,6 @@
 /** Menu document builder and ESC/POS renderer. */
 
+import { printLabel } from '../print/print-labels.generated';
 import { directionalText, type DirectionalText, type TextDirection } from '../../shared/print';
 import { displayCellWidth } from '../../shared/print/width';
 import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
@@ -14,6 +15,8 @@ export interface MenuCategoryInput {
 }
 
 export interface MenuProductInput {
+  description?: string | null;
+  modifiers?: Array<{ name: string; options: Array<{ name: string; price: number }> }>;
   categoryId: string | null;
   name: string;
   price: number;
@@ -27,6 +30,8 @@ export interface MenuPrintFilters {
   includeInactive?: boolean;
   includeOutOfStock?: boolean;
   includeHidden?: boolean;
+  includeDescriptions?: boolean;
+  includeModifiers?: boolean;
 }
 
 export interface MenuDocument {
@@ -34,7 +39,7 @@ export interface MenuDocument {
   printedAt: string;
   sections: Array<{
     name: DirectionalText | null;
-    products: Array<{ name: DirectionalText; price: string }>;
+    products: Array<{ name: DirectionalText; price: string; details: DirectionalText[] }>;
   }>;
   itemCount: number;
 }
@@ -65,6 +70,12 @@ export function buildMenuDocument(
   const toRows = (rows: readonly MenuProductInput[]) => rows.map((product) => ({
     name: toDirectionalText(product.name),
     price: options.formatPrice(Number.isFinite(product.price) ? product.price : 0),
+    details: [
+      ...(options.includeDescriptions && product.description ? [toDirectionalText(product.description)] : []),
+      ...(options.includeModifiers ? (product.modifiers || []).map((group) => toDirectionalText(
+        `${group.name}: ${group.options.map((option) => `${option.name} (${options.formatPrice(option.price)})`).join(', ')}`,
+      )) : []),
+    ],
   }));
 
   const sections: MenuDocument['sections'] = categories
@@ -98,13 +109,13 @@ export interface MenuDocumentRenderOptions {
 export function renderMenuViaDocument(
   document: MenuDocument,
   options: MenuDocumentRenderOptions,
-): { data: Buffer; warnings: PrintWarning[] } {
+): { data: Buffer; warnings: PrintWarning[]; lines: string[] } {
   const capabilities = options.capabilities ?? GENERIC_THERMAL_CAPABILITIES;
   const warnings: PrintWarning[] = [];
   const lines = ['{INIT}'];
   const header = wrapText(normalizeThermalText(document.businessName.text, capabilities), options.columns);
   for (const line of header) lines.push(`{CENTER}${line}{/CENTER}`);
-  lines.push('{CENTER}{DOUBLE_HEIGHT}{BOLD}MENU{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}');
+  lines.push(`{CENTER}{DOUBLE_HEIGHT}{BOLD}${safePrinterText(printLabel(options.language, 'print.menu.title'))}{/BOLD}{/DOUBLE_HEIGHT}{/CENTER}`);
   lines.push(`{CENTER}${truncateShapedLine(document.printedAt, options.columns, options.arabicShaping === true, options.language, capabilities)}{/CENTER}`, '');
 
   for (const section of document.sections) {
@@ -120,14 +131,14 @@ export function renderMenuViaDocument(
       const firstName = nameLines.shift() ?? '';
       const leaderCount = Math.max(0, options.columns - displayCellWidth(firstName) - priceWidth);
       lines.push(`${firstName}${'.'.repeat(leaderCount)}${price}`);
-      for (const continuation of nameLines) {
+      for (const continuation of [...nameLines, ...product.details.flatMap((detail) => wrapText(normalizeThermalText(detail.text, capabilities), Math.max(1, options.columns - 2)))]) {
         lines.push(`  ${truncateShapedLine(continuation, Math.max(1, options.columns - 2), options.arabicShaping === true, options.language, capabilities)}`);
       }
     }
     lines.push('');
   }
 
-  lines.push(`{CENTER}Total items: ${document.itemCount}{/CENTER}`);
+  for (const line of wrapText(`${safePrinterText(printLabel(options.language, 'print.menu.totalItems'))}: ${document.itemCount}`, options.columns)) lines.push(`{CENTER}${line}{/CENTER}`);
   lines.push('{CENTER}Powered by FloCafe{/CENTER}', '{FEED}', '{CUT}');
   const data = buildEscPos(lines, options.useUnicode === true, {
     cutMode: options.cutMode,
@@ -136,5 +147,5 @@ export function renderMenuViaDocument(
     language: options.language,
     capabilities,
   }, warnings);
-  return { data, warnings };
+  return { data, warnings, lines };
 }

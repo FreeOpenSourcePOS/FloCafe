@@ -1308,13 +1308,28 @@ export async function printMenuDocument(
     if (!printer) return { ok: false, detail: 'No printer configured' };
 
     const { profile, columns, capabilities } = resolvePrinterContext(printer);
-    const rendered = renderMenuViaDocument(document, {
+    let rendered = renderMenuViaDocument(document, {
       columns,
       language,
       arabicShaping: capabilities.shaping.arabic,
       cutMode: profile.cutMode,
       capabilities,
     });
+    if (rasterCapabilityEnabled(capabilities)) {
+      const rasterized = await rasterizeDocumentLines(rendered.lines, rendered.warnings, {
+        useUnicode: false,
+        cutMode: profile.cutMode,
+        arabicShaping: capabilities.shaping.arabic,
+        columns,
+        language,
+        capabilities,
+        requestPrefix: 'menu',
+      });
+      if (rasterized.rasterFailed) {
+        return { ok: false, detail: 'Menu raster rendering failed', warnings: rasterized.warnings };
+      }
+      rendered = { ...rendered, data: rasterized.data, warnings: rasterized.warnings };
+    }
     if (rendered.warnings.length > 0) {
       return { ok: false, detail: 'Menu text is not supported by the selected printer', warnings: rendered.warnings };
     }

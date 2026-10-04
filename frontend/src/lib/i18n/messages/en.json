@@ -909,6 +909,7 @@
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
+    "menu": {"title": "Menu", "totalItems": "Total items"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE",
     "invoiceNumber": "Invoice #:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Include descriptions",
+    "includeModifiers": "Include modifiers",
     "addAddon": "Add Addon",
     "addAddonGroup": "Add Addon Group",
     "addAddonGroupForm": "Add Addon Group",

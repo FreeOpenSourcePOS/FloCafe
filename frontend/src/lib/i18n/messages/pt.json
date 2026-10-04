@@ -909,6 +909,7 @@
     "templateFallback": "O modelo de recibo selecionado não é compatível com este caminho de impressão; o layout de recibo integrado foi usado."
   },
   "print": {
+    "menu": {"title": "Menu", "totalItems": "Total de itens"},
     "taxInvoiceTitle": "FATURA COM IMPOSTOS",
     "invoiceTitle": "FATURA",
     "invoiceNumber": "Fatura N.º:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Incluir descrições",
+    "includeModifiers": "Incluir modificadores",
     "addAddon": "Adicionar Adicional",
     "addAddonGroup": "Adicionar Grupo de Adicionais",
     "addAddonGroupForm": "Adicionar Grupo de Adicionais",

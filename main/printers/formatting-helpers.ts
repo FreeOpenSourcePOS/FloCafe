@@ -45,7 +45,7 @@ const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
 export function safePrinterText(text: string): string {
   return String(text ?? '')
     .replace(ESCPOS_TEXT_CONTROL_RE, '')
-    .replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replace('{', '{ ').replace('}', ' }'));
+    .replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replace(/\{/g, '{ ').replace(/\}/g, ' }'));
 }
 
 function hasArabicScript(text: string): boolean {

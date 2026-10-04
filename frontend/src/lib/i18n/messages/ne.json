@@ -909,6 +909,7 @@
     "templateFallback": "चयन गरिएको बिल टेम्प्लेट यस मुद्रण मार्गमा समर्थित छैन, त्यसैले बिल्ट-इन रसिद लेआउट प्रयोग गरिएको थियो।"
   },
   "print": {
+    "menu": {"title": "मेनु", "totalItems": "कुल वस्तुहरू"},
     "taxInvoiceTitle": "कर इनभ्वाइस",
     "invoiceTitle": "इनभ्वाइस",
     "invoiceNumber": "बिल #:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "विवरण समावेश गर्नुहोस्",
+    "includeModifiers": "विकल्पहरू समावेश गर्नुहोस्",
     "addAddon": "एडअन थप्नुहोस्",
     "addAddonGroup": "एडअन समूह थप्नुहोस्",
     "addAddonGroupForm": "एडअन समूह थप्नुहोस्",

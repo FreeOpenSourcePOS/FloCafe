@@ -909,6 +909,7 @@
     "templateFallback": "Выбранный шаблон счета не поддерживается в этом пути печати, поэтому использовался встроенный макет квитанции."
   },
   "print": {
+    "menu": {"title": "Меню", "totalItems": "Всего позиций"},
     "taxInvoiceTitle": "НАЛОГОВЫЙ СЧЁТ",
     "invoiceTitle": "СЧЁТ",
     "invoiceNumber": "Счёт №:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Включить описания",
+    "includeModifiers": "Включить модификаторы",
     "addAddon": "Добавить дополнение",
     "addAddonGroup": "Добавить группу дополнений",
     "addAddonGroupForm": "Добавить группу дополнений",

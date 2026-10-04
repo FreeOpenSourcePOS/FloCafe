@@ -581,7 +581,7 @@ export default function POSPage() {
   // product grid — e.g. it could be a barcode field inside that modal.
   const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open
-    || shift.openModalOpen || shift.closeModalOpen;
+    || shift.openModalOpen || shift.closeModalOpen || showPrintMenuModal;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);

@@ -909,6 +909,7 @@
     "templateFallback": "قالب الفاتورة المحدد غير مدعوم في مسار الطباعة هذا، لذا تم استخدام تخطيط الإيصال المدمج."
   },
   "print": {
+    "menu": {"title": "القائمة", "totalItems": "إجمالي الأصناف"},
     "taxInvoiceTitle": "فاتورة ضريبية",
     "invoiceTitle": "الفاتورة",
     "invoiceNumber": "رقم الفاتورة:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "تضمين الأوصاف",
+    "includeModifiers": "تضمين الإضافات",
     "addAddon": "إضافة ملحق",
     "addAddonGroup": "إضافة مجموعة إضافات",
     "addAddonGroupForm": "إضافة مجموعة إضافات",

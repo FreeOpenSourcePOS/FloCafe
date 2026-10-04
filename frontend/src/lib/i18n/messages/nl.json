@@ -909,6 +909,7 @@
     "templateFallback": "Het geselecteerde bonsjabloon wordt niet ondersteund op dit afdrukpad, daarom is de ingebouwde kassabonindeling gebruikt."
   },
   "print": {
+    "menu": {"title": "Menukaart", "totalItems": "Totaal artikelen"},
     "taxInvoiceTitle": "BELASTINGFACTUUR",
     "invoiceTitle": "FACTUUR",
     "invoiceNumber": "Factuurnr.:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Beschrijvingen opnemen",
+    "includeModifiers": "Opties opnemen",
     "addAddon": "Add-on toevoegen",
     "addAddonGroup": "Add-ongroep toevoegen",
     "addAddonGroupForm": "Add-ongroep toevoegen",

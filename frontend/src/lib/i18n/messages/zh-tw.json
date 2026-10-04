@@ -909,6 +909,7 @@
     "templateFallback": "所選帳單模板不支援此列印路徑，已使用內建收據版式。"
   },
   "print": {
+    "menu": {"title": "菜單", "totalItems": "商品總數"},
     "taxInvoiceTitle": "稅務發票",
     "invoiceTitle": "發票",
     "invoiceNumber": "發票號：",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "包含描述",
+    "includeModifiers": "包含選項",
     "addAddon": "新增加購",
     "addAddonGroup": "新增加購分組",
     "addAddonGroupForm": "新增加購分組",

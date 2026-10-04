@@ -31,19 +31,19 @@ interface PrintFilters {
   includeInactive: boolean;
   includeOutOfStock: boolean;
   includeHidden: boolean;
+  includeDescriptions: boolean;
+  includeModifiers: boolean;
 }
 
 function isOutOfStock(product: Product): boolean {
   return product.track_inventory && Number(product.stock_quantity) <= 0;
 }
 
-function paperWidthForPrinter(value?: string | null): 58 | 80 {
-  return value === '58mm' || value === '58mm-36' || value === 'cols-32' || value === 'cols-36' ? 58 : 80;
-}
-
 export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
+  const tPrint = useTranslations('print.menu');
+  const tSettings = useTranslations('settings');
   const tenant = useAuthStore((state) => state.currentTenant);
   const formatCurrency = useFormatCurrency();
   const hardwarePrinter = usePrinterStore((state) => state.hardwarePrinter);
@@ -52,6 +52,9 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [includeOutOfStock, setIncludeOutOfStock] = useState(false);
   const [includeHidden, setIncludeHidden] = useState(false);
+  const [includeDescriptions, setIncludeDescriptions] = useState(false);
+  const [includeModifiers, setIncludeModifiers] = useState(false);
+  const [pageSize, setPageSize] = useState<'A4' | 'Letter'>('A4');
   const [printing, setPrinting] = useState(false);
   const printer = hardwarePrinter ?? webusbPrinter;
 
@@ -65,13 +68,15 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       setIncludeInactive(false);
       setIncludeOutOfStock(false);
       setIncludeHidden(false);
+      setIncludeDescriptions(false);
+      setIncludeModifiers(false);
     }
     onOpenChange(nextOpen);
   };
 
-  const filters: PrintFilters = { includeInactive, includeOutOfStock, includeHidden };
+  const filters: PrintFilters = { includeInactive, includeOutOfStock, includeHidden, includeDescriptions, includeModifiers };
 
-  const printBrowserFallback = async (selectedFilters: PrintFilters) => {
+  const printBrowserFallback = async (selectedFilters: PrintFilters, targetWindow?: Window | null) => {
     const [productResponse, categoryResponse] = await Promise.all([
       api.get('/products'),
       api.get('/categories'),
@@ -83,17 +88,26 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       (selectedFilters.includeInactive || product.is_active)
       && (selectedFilters.includeOutOfStock || !isOutOfStock(product))
       && (selectedFilters.includeHidden || !product.category_id || categoryById.get(product.category_id)?.is_active === true));
+    const toPrintProduct = (product: Product) => ({
+      name: product.name,
+      price: formatCurrency(Number(product.price)),
+      details: [
+        ...(selectedFilters.includeDescriptions && product.description ? [product.description] : []),
+        ...(selectedFilters.includeModifiers ? (product.addon_groups || []).map((group) =>
+          `${group.name}: ${(group.addons || []).filter((addon) => addon.is_active).map((addon) => `${addon.name} (${formatCurrency(Number(addon.price))})`).join(', ')}`) : []),
+      ],
+    });
     const sections: MenuWebPrintSection[] = categories
       .map((category) => ({
         name: category.name,
         products: included
           .filter((product) => product.category_id === category.id)
-          .map((product) => ({ name: product.name, price: formatCurrency(Number(product.price)) })),
+          .map(toPrintProduct),
       }))
       .filter((section) => section.products.length > 0);
     const uncategorized = included
       .filter((product) => !product.category_id || !categoryById.has(product.category_id))
-      .map((product) => ({ name: product.name, price: formatCurrency(Number(product.price)) }));
+      .map(toPrintProduct);
     if (uncategorized.length > 0) sections.push({ name: null, products: uncategorized });
     const itemCount = sections.reduce((total, section) => total + section.products.length, 0);
     if (itemCount === 0) {
@@ -117,9 +131,11 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       printedAt,
       sections,
       itemCount,
-      paperWidth: paperWidthForPrinter(printer?.paper_width),
+      menuTitle: tPrint('title'),
+      totalItemsLabel: tPrint('totalItems'),
+      pageSize,
     });
-    printMenuInBrowser(html);
+    printMenuInBrowser(html, targetWindow);
     toast.success(t('menuPrintedSuccess'));
     return true;
   };
@@ -127,6 +143,16 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const handlePrint = async () => {
     if (printing) return;
     setPrinting(true);
+    // Preserve the user gesture for browsers that block asynchronous popups.
+    let reservedWindow: Window | null = null;
+    try {
+      if (typeof window !== 'undefined') {
+        reservedWindow = window.open('', '_blank');
+      }
+    } catch {
+      reservedWindow = null;
+    }
+
     try {
       const response = await api.post('/printers/print-menu', filters);
       if (response.data.webusb === true) {
@@ -138,6 +164,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
         if (!printerService.isConnected) throw new Error('WebUSB printer is not connected');
         await printerService.print(new Uint8Array(bytes));
       }
+      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       toast.success(t('menuPrintedSuccess'));
       setDialogOpen(false);
     } catch (error) {
@@ -147,21 +174,29 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       const status = failure.response?.status;
       const code = failure.response?.data?.code;
       if (code === 'no_products_to_print') {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('noProductsToPrint'));
         return;
       }
       if (status === 401 || status === 403) {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('menuPrintFailed'));
         return;
       }
       if (code === 'printer_not_configured' || status === 502 || (status !== undefined && status >= 500) || status === undefined) {
         try {
-          if (await printBrowserFallback(filters)) setDialogOpen(false);
+          if (await printBrowserFallback(filters, reservedWindow)) {
+            setDialogOpen(false);
+          } else if (reservedWindow && !reservedWindow.closed) {
+            reservedWindow.close();
+          }
         } catch (popupError) {
+          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
           toast.error(popupError instanceof MenuPopupBlockedError ? t('menuPopupBlocked') : t('menuPrintFailed'));
         }
         return;
       }
+      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
       toast.error(t('menuPrintFailed'));
     } finally {
       setPrinting(false);
@@ -195,10 +230,19 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
           <DialogDescription>{t('printMenuDescription')}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto">
           {filterRow(t('includeInactiveItems'), includeInactive, setIncludeInactive)}
           {filterRow(t('includeOutOfStockItems'), includeOutOfStock, setIncludeOutOfStock)}
           {filterRow(t('includeHiddenItems'), includeHidden, setIncludeHidden)}
+          {filterRow(t('includeDescriptions'), includeDescriptions, setIncludeDescriptions)}
+          {filterRow(t('includeModifiers'), includeModifiers, setIncludeModifiers)}
+          <label className="flex items-center justify-between text-sm">
+            {t('systemBrowserPrint')}: {tSettings('paperSize')}
+            <select aria-label={tSettings('paperSize')} value={pageSize} disabled={printing} onChange={(event) => setPageSize(event.target.value as 'A4' | 'Letter')} className="min-h-11 rounded-md border border-input bg-background px-3">
+              <option value="A4">A4</option>
+              <option value="Letter">Letter</option>
+            </select>
+          </label>
         </div>
 
         <p className="text-xs text-muted-foreground">

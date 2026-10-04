@@ -909,6 +909,7 @@
     "templateFallback": "Die gewählte Druckvorlage wird auf diesem Pfad nicht unterstützt. Das integrierte Standard-Layout wurde verwendet."
   },
   "print": {
+    "menu": {"title": "Menü", "totalItems": "Artikel insgesamt"},
     "taxInvoiceTitle": "STEUERRECHNUNG",
     "invoiceTitle": "Rechnung",
     "invoiceNumber": "Rechnung Nr.",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Beschreibungen einschließen",
+    "includeModifiers": "Zusätze einschließen",
     "addAddon": "Zusatz hinzufügen",
     "addAddonGroup": "Zusatzgruppe hinzufügen",
     "addAddonGroupForm": "Zusatzgruppe hinzufügen",

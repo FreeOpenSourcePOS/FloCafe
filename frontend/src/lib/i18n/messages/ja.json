@@ -909,6 +909,7 @@
     "templateFallback": "選択した請求書テンプレートはこの印刷経路に対応していないため、内蔵レシートレイアウトを使用しました。"
   },
   "print": {
+    "menu": {"title": "メニュー", "totalItems": "商品数"},
     "taxInvoiceTitle": "税務請求書",
     "invoiceTitle": "請求書",
     "invoiceNumber": "請求書番号：",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "説明を含める",
+    "includeModifiers": "オプションを含める",
     "addAddon": "追加項目を追加",
     "addAddonGroup": "追加項目グループを追加",
     "addAddonGroupForm": "追加項目グループを追加",

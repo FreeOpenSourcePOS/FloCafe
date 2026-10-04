@@ -909,6 +909,7 @@
     "templateFallback": "Mẫu hóa đơn đã chọn không được hỗ trợ trên đường dẫn in này, nên đã dùng bố cục biên nhận tích hợp."
   },
   "print": {
+    "menu": {"title": "Thực đơn", "totalItems": "Tổng số món"},
     "taxInvoiceTitle": "HÓA ĐƠN THUẾ",
     "invoiceTitle": "HÓA ĐƠN",
     "invoiceNumber": "Số hóa đơn:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Bao gồm mô tả",
+    "includeModifiers": "Bao gồm tùy chọn",
     "addAddon": "Thêm tuỳ chọn",
     "addAddonGroup": "Thêm nhóm tuỳ chọn",
     "addAddonGroupForm": "Thêm nhóm tuỳ chọn",

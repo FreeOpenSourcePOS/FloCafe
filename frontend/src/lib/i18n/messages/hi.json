@@ -909,6 +909,7 @@
     "templateFallback": "इस प्रिंट पथ पर चयनित बिल टेम्पलेट समर्थित नहीं है, इसलिए अंतर्निहित रसीद लेआउट का उपयोग किया गया था।"
   },
   "print": {
+    "menu": {"title": "मेनू", "totalItems": "कुल आइटम"},
     "taxInvoiceTitle": "कर चालान",
     "invoiceTitle": "चालान",
     "invoiceNumber": "चालान #:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "विवरण शामिल करें",
+    "includeModifiers": "विकल्प शामिल करें",
     "addAddon": "एड-ऑन जोड़ें",
     "addAddonGroup": "एड-ऑन ग्रुप जोड़ें",
     "addAddonGroupForm": "एड-ऑन ग्रुप जोड़ें",

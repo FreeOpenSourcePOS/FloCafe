@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServerBillPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
+import { loadProductRelationsBatch } from './products';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText, printMenuDocument } from '../printers/thermal';
 import { buildDeliverySlipPrintData, type DeliverySlipOrderRow } from '../printers/document-delivery-slip';
@@ -18,7 +19,7 @@ import {
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
 import { requirePermission } from '../services/authorization';
-import { formatCurrencyForTenant, formatDateForTenant, getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
+import { formatCurrencyForTenant, formatDateForTenant, getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency, RegionalNotConfiguredError } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -360,7 +361,7 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       return res.status(400).json({ error: 'Request body must be an object' });
     }
     const body = req.body;
-    for (const key of ['includeInactive', 'includeOutOfStock', 'includeHidden'] as const) {
+    for (const key of ['includeInactive', 'includeOutOfStock', 'includeHidden', 'includeDescriptions', 'includeModifiers'] as const) {
       if (body[key] !== undefined && typeof body[key] !== 'boolean') {
         return res.status(400).json({ error: `${key} must be a boolean` });
       }
@@ -386,12 +387,14 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       isActive: category.is_active === 1,
       sortOrder: Number(category.sort_order) || 0,
     }));
-    const products = (db.prepare(`
-      SELECT p.category_id, p.name, p.price, p.is_active, p.track_inventory, p.stock_quantity, p.sort_order
+    const productRows = db.prepare(`
+      SELECT p.id, p.description, p.category_id, p.name, p.price, p.is_active, p.track_inventory, p.stock_quantity, p.sort_order
       FROM products p
       WHERE p.deleted_at IS NULL
       ORDER BY p.sort_order, p.name
     `).all() as Array<{
+      id: string;
+      description: string | null;
       category_id: string | number | null;
       name: string | null;
       price: number | null;
@@ -399,7 +402,14 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       track_inventory: number;
       stock_quantity: number | null;
       sort_order: number | null;
-    }>).map((product) => ({
+    }>;
+    const relations = body.includeModifiers ? loadProductRelationsBatch(db, productRows) : new Map();
+    const products = productRows.map((product) => ({
+      description: product.description,
+      modifiers: (relations.get(product.id)?.addon_groups || []).map((group: { name: string; addons: { name: string; price: number }[] }) => ({
+        name: group.name,
+        options: group.addons.map((addon) => ({ name: addon.name, price: addon.price })),
+      })),
       categoryId: typeof product.category_id === 'string' ? product.category_id : null,
       name: String(product.name ?? ''),
       price: Number(product.price),
@@ -417,6 +427,8 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       includeInactive: body.includeInactive,
       includeOutOfStock: body.includeOutOfStock,
       includeHidden: body.includeHidden,
+      includeDescriptions: body.includeDescriptions,
+      includeModifiers: body.includeModifiers,
       businessName: settings.business_name || 'Store',
       printedAt: formatDateForTenant(new Date(), regional.country, regional.timezone, regional.preferences, {
         dateStyle: 'medium',
@@ -429,15 +441,21 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       return res.status(422).json({ error: 'No products match the selected criteria', code: 'no_products_to_print' });
     }
 
-    const printer = (db.prepare(`
+    const defaultPrinter = db.prepare(`
+      SELECT * FROM printers
+      WHERE is_default = 1
+      ORDER BY name
+      LIMIT 1
+    `).get() as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    const printer = (defaultPrinter || db.prepare(`
       SELECT * FROM printers
       WHERE connection_type != 'webusb'
-      ORDER BY is_default DESC, name
+      ORDER BY name
       LIMIT 1
     `).get() || db.prepare(`
       SELECT * FROM printers
       WHERE connection_type = 'webusb'
-      ORDER BY is_default DESC, name
+      ORDER BY name
       LIMIT 1
     `).get()) as { name?: string; paper_width?: string; connection_type?: string } | undefined;
     if (!printer) {
@@ -461,6 +479,9 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
     }
     return res.json({ success: true, printerName: printer.name, warnings: result.warnings || [] });
   } catch (error) {
+    if (error instanceof RegionalNotConfiguredError) {
+      return res.status(409).json({ error: 'regional_not_configured' });
+    }
     console.error('[Print Menu] Error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

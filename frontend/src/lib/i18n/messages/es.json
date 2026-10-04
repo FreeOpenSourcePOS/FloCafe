@@ -909,6 +909,7 @@
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
   "print": {
+    "menu": {"title": "Menú", "totalItems": "Total de artículos"},
     "taxInvoiceTitle": "FACTURA CON IMPUESTOS",
     "invoiceTitle": "FACTURA",
     "invoiceNumber": "Factura N.º:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Incluir descripciones",
+    "includeModifiers": "Incluir modificadores",
     "addAddon": "Agregar adicional",
     "addAddonGroup": "Agregar grupo de adicionales",
     "addAddonGroupForm": "Agregar grupo de adicionales",

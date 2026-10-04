@@ -909,6 +909,7 @@
     "templateFallback": "قالب صورت‌حساب انتخاب‌شده در این مسیر چاپ پشتیبانی نمی‌شود؛ از طرح رسید داخلی استفاده شد."
   },
   "print": {
+    "menu": {"title": "منو", "totalItems": "تعداد اقلام"},
     "taxInvoiceTitle": "صورتحساب مالیاتی",
     "invoiceTitle": "صورتحساب",
     "invoiceNumber": "شماره صورتحساب:",
@@ -986,6 +987,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "شامل توضیحات",
+    "includeModifiers": "شامل افزودنی‌ها",
     "addAddon": "افزودن افزودنی",
     "addAddonGroup": "افزودن گروه افزودنی",
     "addAddonGroupForm": "افزودن گروه افزودنی",

@@ -12,10 +12,14 @@ export function listSupportedCurrencyCodes(): string[] {
   }
 }
 
-export function isSupportedCurrencyCode(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
+export function normalizeSupportedCurrencyCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
   const normalized = value.trim().toUpperCase();
-  return listSupportedCurrencyCodes().includes(normalized);
+  return listSupportedCurrencyCodes().includes(normalized) ? normalized : null;
+}
+
+export function isSupportedCurrencyCode(value: unknown): value is string {
+  return normalizeSupportedCurrencyCode(value) !== null;
 }
 
 export function getCurrencyDisplayName(code: string, locale: string): string {

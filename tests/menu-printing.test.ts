@@ -135,9 +135,14 @@ test('browser menu supports A4 and Letter and escapes descriptions, modifiers, a
     assert.ok(html.includes(`size: ${pageSize} portrait`));
     assert.match(html, /Milk: Oat \(\$2\)/);
     assert.match(html, /&lt;script&gt;/);
-    assert.doesNotMatch(html, /<script>/);
+    assert.doesNotMatch(html, /<script\b/i);
     assert.match(html, /Total de artículos: 1/);
   }
+  const invalidPage = buildMenuWebPrintHtml({ businessName: 'Cafe', printedAt: '',
+    pageSize: 'A4}</style><SCRIPT>alert(1)</SCRIPT>', menuTitle: 'Menu', totalItemsLabel: 'Total items', itemCount: 0, sections: [],
+  });
+  assert.ok(invalidPage.includes('size: A4 portrait'));
+  assert.doesNotMatch(invalidPage, /<script\b/i);
 });
 
 test('Unicode menu printing uses raster-capable WebUSB output and refuses raster failure', async () => {

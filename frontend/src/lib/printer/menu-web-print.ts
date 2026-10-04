@@ -24,8 +24,9 @@ function escapeHtml(value: string): string {
 }
 
 export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
+  const selectedPageSize = input.pageSize === 'Letter' ? 'Letter' : 'A4';
   const width = input.paperWidth ? `${input.paperWidth}mm` : input.pageSize === 'Letter' ? '216mm' : '210mm';
-  const pageSize = input.paperWidth ? `${width} auto` : `${input.pageSize || 'A4'} portrait`;
+  const pageSize = input.paperWidth ? `${width} auto` : `${selectedPageSize} portrait`;
   const sections = input.sections.map((section) => `
     ${section.name ? `<h2>${escapeHtml(section.name)}</h2>` : ''}
     <div class="items">${section.products.map((product) => `

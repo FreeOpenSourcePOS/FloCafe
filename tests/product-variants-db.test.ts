@@ -3,9 +3,9 @@
  *
  * Usage: node tests/run-electron-node-test.cjs tests/product-variants-db.test.ts
  *
- * Migration v99 adds the product_variants table plus the two dormant-column
+ * Migration v100 adds the product_variants table plus the two dormant-column
  * hooks the catalog relies on. It is proven twice: on a fresh install, and by
- * rewinding a populated database to the pre-v99 shape and replaying the
+ * rewinding a populated database to the pre-v100 shape and replaying the
  * migration, which is the only way to show a pre-existing store keeps its
  * products and orders.
  */
@@ -24,7 +24,7 @@ Module._load = function (request: string) {
 const assert = require('node:assert/strict');
 const { initDatabase, getDatabase, closeDatabase, now, MIGRATIONS, getCurrentSchemaVersion, buildIdealSchemaDb } = require('../main/db');
 
-const LATEST_VERSION = 99;
+const LATEST_VERSION = 100;
 
 function columnsOf(db: any, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((column) => column.name);
@@ -44,7 +44,7 @@ function main() {
   const tailVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
   // Pinned on purpose: adding a migration has to update this literal, so a new
   // tail cannot land unnoticed while every other assertion only checks ordering.
-  assert.equal(tailVersion, 100, 'the registry tail is the pinned head schema version');
+  assert.equal(tailVersion, 101, 'the registry tail is the pinned head schema version');
   assert.equal(getCurrentSchemaVersion(), tailVersion, 'a fresh install reaches the last registry version');
 
   assert.ok(
@@ -81,7 +81,7 @@ function main() {
   );
   console.log('   ✓ the table definition matches the ideal schema, including the cascade foreign key');
 
-  // ── A populated pre-v99 database upgrades cleanly ──────────────────────
+  // ── A populated pre-v100 database upgrades cleanly ──────────────────────
   const stamp = now();
   db.prepare(`INSERT INTO categories (id, name, is_active, created_at, updated_at) VALUES ('cat', 'Coffee', 1, ?, ?)`)
     .run(stamp, stamp);
@@ -96,7 +96,7 @@ function main() {
   db.prepare(`INSERT INTO product_variants (id, product_id, name, price, stock_quantity, is_active, created_at, updated_at)
     VALUES ('var-small', 'latte', 'Small', 200, 4, 1, ?, ?)`).run(stamp, stamp);
 
-  // Rewind to the shape a pre-v99 store has: no table, no columns.
+  // Rewind to the shape a pre-v100 store has: no table, no columns.
   db.pragma(`user_version = ${LATEST_VERSION - 1}`);
   db.exec('DROP TABLE product_variants');
   db.exec('ALTER TABLE order_items DROP COLUMN variant_id');
@@ -132,7 +132,7 @@ function main() {
     columnsOf(db, 'inventory_movements').includes('variant_id'),
     'the movement ledger gains its variant pool column on the same upgrade',
   );
-  console.log('   ✓ replaying the migration chain on a pre-v99 store restores the table, indexes, and columns');
+  console.log('   ✓ replaying the migration chain on a pre-v100 store restores the table, indexes, and columns');
 
   assert.deepEqual(
     db.prepare('SELECT id, name, price, cost, stock_quantity FROM products').all(),

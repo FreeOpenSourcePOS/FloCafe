@@ -35,6 +35,8 @@ const originalResolveFilename = moduleApi._resolveFilename;
 moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   const resolvedRequest = request === '@countries'
     ? path.resolve(ROOT, 'main/countries.ts')
+    : request.startsWith('@shared/')
+      ? path.resolve(ROOT, 'shared', request.slice('@shared/'.length))
     : request.startsWith('@/')
       ? path.resolve(ROOT, 'frontend/src', request.slice(2))
       : request;
@@ -274,6 +276,8 @@ async function runModalKeypadIntegrationTests() {
     customerId: null,
     items: [],
     orderType: 'dine_in',
+    waivedChargeIds: new Set<string>(),
+    optedInChargeIds: new Set<string>(),
     itemCount: () => 0,
   };
   const currentTenant = { currency: 'JPY', country: 'JP' };

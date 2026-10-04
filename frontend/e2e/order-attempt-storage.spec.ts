@@ -399,10 +399,16 @@ test.describe('prepaid retry charge decisions', () => {
       await page.getByRole('button', { name: 'Place Order' }).click();
       await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
       await page.getByRole('button', { name: 'Cash', exact: true }).click();
+      const paymentButton = page.getByRole('button', { name: /Confirm Payment/ });
+      await expect(paymentButton).toBeEnabled();
       const successfulOrder = page.waitForResponse((response) =>
         response.request().method() === 'POST'
         && new URL(response.url()).pathname === '/api/orders'
         && response.status() === 201,
+      );
+      const paymentRequest = page.waitForRequest((request) =>
+        request.method() === 'POST'
+        && /\/api\/bills\/[^/]+\/payments$/.test(new URL(request.url()).pathname),
       );
       const successfulPayment = page.waitForResponse((response) =>
         response.request().method() === 'POST'
@@ -411,9 +417,14 @@ test.describe('prepaid retry charge decisions', () => {
       await page.getByRole('button', { name: /Confirm Payment/ }).click();
       const orderResponse = await successfulOrder;
       const order = (await orderResponse.json()).order;
+      const submittedPayment = (await paymentRequest).postDataJSON().payments as Array<{ amount: number }>;
       const paymentResponse = await successfulPayment;
       expect(paymentResponse.status(), `payment batch returned HTTP ${paymentResponse.status()}`).toBe(200);
-      expect((await paymentResponse.json()).bill.payment_status).toBe('paid');
+      const paymentBill = (await paymentResponse.json()).bill;
+      expect(paymentBill.payment_status).toBe('paid');
+      expect(submittedPayment.reduce((sum, payment) => sum + payment.amount, 0)).toBe(paymentBill.total);
+      expect(paymentBill.balance).toBe(0);
+      expect(order.total).toBe(paymentBill.total);
       await expect(page.getByText(/Order #.+ paid!/)).toBeVisible({ timeout: 30000 });
 
       expect(orderRequests).toHaveLength(2);

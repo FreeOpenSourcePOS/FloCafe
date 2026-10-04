@@ -109,7 +109,10 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
     currencyDecimals: getCurrencyFractionDigits(currency),
   });
 
-  const retainedCharges = existing.filter((charge) => !byId.get(charge.id)?.is_active);
+  const retainedCharges = existing.filter((charge) => {
+    const definition = byId.get(charge.id);
+    return !definition?.is_active || !definition.order_types.includes(orderType as ChargeOrderType);
+  });
   const charges = [...activeCharges, ...retainedCharges];
 
   const columns = toStandardChargeColumns(charges, getCurrencyFractionDigits(currency));

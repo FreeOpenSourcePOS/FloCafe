@@ -1,6 +1,25 @@
-import { test, expect } from '@playwright/test';
-import { setLanguage } from './helpers/test-auth';
+import { test, expect, type APIRequestContext, type Route } from '@playwright/test';
+import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
+
+const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+
+async function readCharges(request: APIRequestContext): Promise<unknown[]> {
+  const response = await request.get(`${BASE}/api/settings/charges`, { headers: managerHeaders });
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()).charges;
+}
+
+async function writeCharges(request: APIRequestContext, charges: unknown[]): Promise<void> {
+  const response = await request.put(`${BASE}/api/settings/charges`, { headers: managerHeaders, data: { charges } });
+  expect(response.ok()).toBeTruthy();
+}
+
+async function readBusiness(request: APIRequestContext): Promise<Record<string, unknown>> {
+  const response = await request.get(`${BASE}/api/settings/business`, { headers: managerHeaders });
+  expect(response.ok()).toBeTruthy();
+  return response.json();
+}
 
 test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);
@@ -86,4 +105,365 @@ test('prepaid checkout never reports success when the payment response is partia
   expect(paymentBatchRequests).toBe(1);
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Place Order' })).toBeEnabled();
+});
+
+test('prepaid checkout fee choices use fresh quotes and fail closed when a quote fails', async ({ page, request }) => {
+  const originalCharges = await readCharges(request);
+  const configuredCharges = [
+    {
+      id: 'service_charge',
+      name: 'Checkout Service Fee',
+      type: 'fixed',
+      value: 5,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: true,
+      is_default_active: true,
+      is_active: true,
+    },
+    {
+      id: 'checkout_addon',
+      name: 'Checkout Add-on Fee',
+      type: 'fixed',
+      value: 7,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: false,
+      is_default_active: false,
+      is_active: true,
+    },
+    {
+      id: 'checkout_required',
+      name: 'Checkout Required Fee',
+      type: 'fixed',
+      value: 2,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    },
+  ];
+
+  try {
+    await writeCharges(request, configuredCharges);
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/pos`);
+    await page.getByTestId('pos-product-card').click();
+    await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
+    await page.getByRole('button', { name: 'Place Order' }).click();
+
+    const summary = page.getByTestId('prepaid-checkout-summary');
+    const serviceRow = page.getByTestId('prepaid-charge-service_charge');
+    const requiredRow = page.getByTestId('prepaid-charge-checkout_required');
+    const addonRow = page.getByTestId('prepaid-charge-checkout_addon');
+    await expect(serviceRow).toContainText('Checkout Service Fee');
+    await expect(requiredRow).toContainText('Checkout Required Fee');
+    await expect(serviceRow.getByRole('button', { name: 'Waive', exact: true })).toBeVisible();
+    await expect(requiredRow.getByRole('button')).toHaveCount(0);
+    await expect(addonRow.getByRole('button', { name: 'Add', exact: true })).toBeVisible();
+
+    const waivedPreview = page.waitForResponse((response) => {
+      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/tax/preview') return false;
+      return response.request().postDataJSON().waived_charge_ids?.includes('service_charge') === true;
+    });
+    await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
+    const waivedResponse = await waivedPreview;
+    expect(waivedResponse.ok()).toBeTruthy();
+    const waivedSummary = (await waivedResponse.json()).summary;
+    expect(waivedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'service_charge').waived).toBe(true);
+    expect(waivedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'checkout_required').amount).toBe(2);
+    await expect(serviceRow.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+
+    const addedPreview = page.waitForResponse((response) => {
+      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/tax/preview') return false;
+      return response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true;
+    });
+    await addonRow.getByRole('button', { name: 'Add', exact: true }).click();
+    const addedResponse = await addedPreview;
+    expect(addedResponse.ok()).toBeTruthy();
+    const addedSummary = (await addedResponse.json()).summary;
+    expect(addedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'checkout_addon').amount).toBe(7);
+    await expect(page.getByTestId('prepaid-charge-checkout_addon').getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+
+    let submittedOrders = 0;
+    let submittedPayments = 0;
+    page.on('request', (browserRequest) => {
+      if (browserRequest.method() !== 'POST') return;
+      const path = new URL(browserRequest.url()).pathname;
+      if (path === '/api/orders') submittedOrders += 1;
+      if (/^\/api\/bills\/[^/]+\/payments$/.test(path)) submittedPayments += 1;
+    });
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    await page.route('**/api/tax/preview', async (route) => {
+      const body = route.request().postDataJSON();
+      if (!body.waived_charge_ids?.includes('service_charge') && body.opted_in_charge_ids?.includes('checkout_addon')) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'quote unavailable' }) });
+      } else {
+        await route.continue();
+      }
+    });
+    const failedPreview = page.waitForResponse((response) =>
+      response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/tax/preview'
+      && !response.request().postDataJSON().waived_charge_ids?.includes('service_charge')
+      && response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true,
+    );
+    await serviceRow.getByRole('button', { name: 'Apply', exact: true }).click();
+    expect((await failedPreview).status()).toBe(503);
+    const confirm = page.getByRole('button', { name: /Confirm Payment/ });
+    await expect(confirm).toBeDisabled();
+    expect(submittedOrders).toBe(0);
+    expect(submittedPayments).toBe(0);
+    await expect(summary).toHaveCount(0);
+  } finally {
+    await writeCharges(request, originalCharges);
+  }
+});
+
+test('payment modal updates applied fees and hides fee controls without bill-discount permission', async ({ page, request, browser }) => {
+  const originalCharges = await readCharges(request);
+  const originalBusiness = await readBusiness(request);
+  const ownerHeaders = { Authorization: `Bearer ${getE2eToken()}` };
+  let originalServerOverrides: Array<{ permission_id: string; effect: string }> | undefined;
+  let serverPermissionsChanged = false;
+  const configuredCharges = [
+    {
+      id: 'service_charge',
+      name: 'Payment Service Fee',
+      type: 'fixed',
+      value: 5,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: true,
+      is_default_active: true,
+      is_active: true,
+    },
+    {
+      id: 'payment_addon',
+      name: 'Payment Add-on Fee',
+      type: 'fixed',
+      value: 7,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: false,
+      is_default_active: false,
+      is_active: true,
+    },
+    {
+      id: 'payment_required',
+      name: 'Payment Required Fee',
+      type: 'fixed',
+      value: 2,
+      calculation_basis: 'gross',
+      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    },
+  ];
+
+  try {
+    await request.put(`${BASE}/api/settings/business`, {
+      headers: managerHeaders,
+      data: { ...originalBusiness, billing_type: 'postpaid' },
+    }).then((response) => expect(response.ok()).toBeTruthy());
+    await writeCharges(request, configuredCharges);
+
+    const orderResponse = await request.post(`${BASE}/api/orders`, {
+      headers: managerHeaders,
+      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const { order } = await orderResponse.json();
+    const billResponse = await request.post(`${BASE}/api/bills/generate`, {
+      headers: managerHeaders,
+      data: { order_id: order.id },
+    });
+    expect(billResponse.status()).toBe(201);
+    const { bill } = await billResponse.json();
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+    await page.getByPlaceholder(/search/i).first().fill(order.order_number);
+    await expect(page.getByText(`#${order.order_number}`)).toBeVisible();
+    await page.getByRole('button', { name: 'Checkout', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
+
+    const serviceRow = page.getByTestId('payment-charge-service_charge');
+    const addonRow = page.getByTestId('payment-charge-payment_addon');
+    const requiredRow = page.getByTestId('payment-charge-payment_required');
+    await expect(serviceRow.getByRole('button', { name: 'Waive', exact: true })).toBeVisible();
+    await expect(requiredRow.getByRole('button')).toHaveCount(0);
+    await expect(addonRow.getByRole('button', { name: 'Add', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    const chargeRoute = `**/api/bills/${bill.id}/charges`;
+    let rejectNextUpdate = true;
+    const rejectUpdate = async (route: Route) => {
+      if (rejectNextUpdate && route.request().method() === 'PATCH') {
+        rejectNextUpdate = false;
+        await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'split check' }) });
+        return;
+      }
+      await route.continue();
+    };
+    await page.route(chargeRoute, rejectUpdate);
+    const rejectedUpdate = page.waitForResponse((response) =>
+      response.request().method() === 'PATCH'
+      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    );
+    await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
+    expect((await rejectedUpdate).status()).toBe(409);
+    await expect(page.getByRole('button', { name: /^Pay / })).toBeEnabled();
+    await page.unroute(chargeRoute, rejectUpdate);
+
+    let detailBillReads = 0;
+    await page.route(`**/api/bills/${bill.id}`, async (route) => {
+      if (route.request().method() === 'GET') {
+        detailBillReads += 1;
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected bill refresh' }) });
+        return;
+      }
+      await route.continue();
+    });
+    const waiverResponse = page.waitForResponse((response) =>
+      response.request().method() === 'PATCH'
+      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    );
+    await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
+    const updatedBill = (await waiverResponse).json().then((data) => data.bill);
+    const patchedBill = await updatedBill;
+    expect(Number(patchedBill.total)).toBeLessThan(Number(bill.total));
+    await expect(serviceRow.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+    await expect(serviceRow).toContainText('0.00');
+    expect(detailBillReads).toBe(0);
+
+    const addResponse = page.waitForResponse((response) =>
+      response.request().method() === 'PATCH'
+      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    );
+    await addonRow.getByRole('button', { name: 'Add', exact: true }).click();
+    const addedBill = (await addResponse).json().then((data) => data.bill);
+    expect(Number((await addedBill).total)).toBeGreaterThan(Number(patchedBill.total));
+    await expect(page.getByTestId('payment-charge-payment_addon').getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+    expect(detailBillReads).toBe(0);
+
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    let uncertainPatchStatus: number | undefined;
+    let committedBillTotal: number | undefined;
+    const losePatchResponse = async (route: Route) => {
+      if (route.request().method() === 'PATCH') {
+        const committed = await route.fetch();
+        uncertainPatchStatus = committed.status();
+        committedBillTotal = Number((await committed.json()).bill.total);
+        await route.abort('failed');
+        return;
+      }
+      await route.continue();
+    };
+    let paymentRequestsAfterUncertainUpdate = 0;
+    page.on('request', (browserRequest) => {
+      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+        paymentRequestsAfterUncertainUpdate += 1;
+      }
+    });
+    await page.route(chargeRoute, losePatchResponse);
+    const lostPatchRequest = page.waitForEvent('requestfailed', (browserRequest) =>
+      browserRequest.method() === 'PATCH'
+      && new URL(browserRequest.url()).pathname === `/api/bills/${bill.id}/charges`,
+    );
+    await serviceRow.getByRole('button', { name: 'Apply', exact: true }).click();
+    await lostPatchRequest;
+    expect(uncertainPatchStatus).toBe(200);
+    expect(committedBillTotal).toBeGreaterThan(Number((await addedBill).total));
+    await expect(page.getByRole('button', { name: /^Pay / })).toBeDisabled();
+    expect(paymentRequestsAfterUncertainUpdate).toBe(0);
+    await page.unroute(chargeRoute, losePatchResponse);
+
+    const userResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
+    expect(userResponse.ok()).toBeTruthy();
+    const originalUser = await userResponse.json();
+    originalServerOverrides = originalUser.overrides;
+    const feePermissionIds = new Set(['bills.read', 'bills.generate', 'bills.discount.apply', 'orders.create', 'settings.view']);
+    const overrides = (originalServerOverrides || []).filter((override) => !feePermissionIds.has(override.permission_id));
+    overrides.push(
+      { permission_id: 'bills.read', effect: 'allow' },
+      { permission_id: 'bills.generate', effect: 'allow' },
+      { permission_id: 'orders.create', effect: 'allow' },
+      { permission_id: 'bills.discount.apply', effect: 'deny' },
+      { permission_id: 'settings.view', effect: 'deny' },
+    );
+    serverPermissionsChanged = true;
+    const permissionResponse = await request.put(`${BASE}/api/authorization/users/e2e-server`, {
+      headers: ownerHeaders,
+      data: { revision: originalUser.revision, overrides },
+    });
+    expect(permissionResponse.ok()).toBeTruthy();
+
+    const serverContext = await browser.newContext();
+    const serverPage = await serverContext.newPage();
+    try {
+      await serverPage.goto(`${BASE}/auth/login`);
+      const serverEmail = serverPage.locator('#email');
+      await expect(serverEmail).toBeVisible({ timeout: 5000 });
+      await serverEmail.fill('server@flo.local');
+      await serverPage.locator('#password').fill(E2E_PASSWORD);
+      await serverPage.locator('button[type="submit"]').click();
+      await setLanguage(serverPage, 'en');
+      await serverPage.goto(`${BASE}/orders`);
+      await serverPage.getByPlaceholder(/search/i).first().fill(order.order_number);
+      await expect(serverPage.getByText(`#${order.order_number}`)).toBeVisible();
+      await serverPage.getByRole('button', { name: 'Checkout', exact: true }).click();
+      await expect(serverPage.getByRole('heading', { name: 'Payment' })).toBeVisible();
+      const readOnlyCharges = serverPage.getByTestId('payment-charges');
+      await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();
+      await expect(readOnlyCharges.getByText('Payment Add-on Fee')).toBeVisible();
+      await expect(readOnlyCharges.getByRole('button')).toHaveCount(0);
+      const limitedHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
+      const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, { headers: limitedHeaders });
+      expect(feeDefinitions.status()).toBe(200);
+      expect((await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id)).toContain('payment_required');
+      const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, { headers: limitedHeaders });
+      expect(settingsDenied.status()).toBe(403);
+      const forbiddenUpdate = await serverPage.request.patch(`${BASE}/api/bills/${bill.id}/charges`, {
+        headers: limitedHeaders,
+        data: { charge_id: 'service_charge', waived: true },
+      });
+      expect(forbiddenUpdate.status()).toBe(403);
+    } finally {
+      await serverContext.close();
+    }
+  } finally {
+    try {
+      if (serverPermissionsChanged && originalServerOverrides) {
+        const latestResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
+        expect(latestResponse.ok()).toBeTruthy();
+        const latestUser = await latestResponse.json();
+        const restored = await request.put(`${BASE}/api/authorization/users/e2e-server`, {
+          headers: ownerHeaders,
+          data: { revision: latestUser.revision, overrides: originalServerOverrides },
+        });
+        expect(restored.ok()).toBeTruthy();
+      }
+    } finally {
+      try {
+        await writeCharges(request, originalCharges);
+      } finally {
+        const restoredBusiness = await request.put(`${BASE}/api/settings/business`, {
+          headers: managerHeaders,
+          data: originalBusiness,
+        });
+        expect(restoredBusiness.ok()).toBeTruthy();
+      }
+    }
+  }
 });

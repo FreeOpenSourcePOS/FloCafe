@@ -106,7 +106,7 @@ function installThermalChargeTemplate(db: any, templateId: string): void {
 
 async function main() {
   const db = initTestDb();
-  const { authHeader } = seedOwnerUser(db);
+  const { userId: ownerId, authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-charges', 'Menu');
   seedProduct(db, 'prod-charges', 'cat-charges', 'Dish', 100, { tax_behavior: 'exempt' });
   setCurrency('USD', 'US');
@@ -211,7 +211,88 @@ async function main() {
       'the waived fee stays at zero',
     );
 
-    console.log('\n5. A waiver is refused once the check has been split');
+    console.log('\n5. A changed order-type rule applies only to new orders');
+    await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
+    const retainedOrder = await createOrder('dine_in');
+    assertEqualOrThrow(retainedOrder.status, 201, 'the original dine-in order is created');
+    assertEqualOrThrow(retainedOrder.data.order.service_charge, 10, 'the original snapshot stores the applied fee');
+    await putCharges([{ ...SERVICE_CHARGE, order_types: ['takeaway'] }, LATE_NIGHT]);
+    const retainedOrderAfterItem = await api(baseUrl, `/api/orders/${retainedOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(retainedOrderAfterItem.status, 200, 'the existing order can still be recomputed');
+    const retainedBreakdown = JSON.parse(retainedOrderAfterItem.data.order.charges_breakdown);
+    assertEqualOrThrow(retainedBreakdown.find((charge: any) => charge.id === 'service_charge').amount, 10, 'the excluded fee keeps its stored amount');
+    assertEqualOrThrow(retainedOrderAfterItem.data.order.service_charge, 10, 'the legacy service column keeps the stored amount');
+    assertEqualOrThrow(retainedOrderAfterItem.data.order.total, 217, 'the retained fee is not recalculated on the existing order');
+    const newDineInOrder = await createOrder('dine_in');
+    assertEqualOrThrow(newDineInOrder.status, 201, 'a new dine-in order is created after the rule changes');
+    assertEqualOrThrow(newDineInOrder.data.order.service_charge, 0, 'the new order does not receive the excluded fee');
+    assertEqualOrThrow(newDineInOrder.data.order.total, 107, 'only the remaining dine-in fee applies to the new order');
+
+    const orderCreatorId = 'server-charge-reader';
+    const orderCreatorEmail = 'server-charge-reader@test.local';
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 'unused-test-hash', 'server', 1, datetime('now'), datetime('now'))
+    `).run(orderCreatorId, 'Server Charge Reader', orderCreatorEmail);
+    const addUserPermission = db.prepare(`
+      INSERT INTO user_permission_overrides
+        (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+    `);
+    addUserPermission.run(orderCreatorId, 'orders.create', 'allow', ownerId);
+    addUserPermission.run(orderCreatorId, 'settings.view', 'deny', ownerId);
+    const jwt = require('jsonwebtoken');
+    const { getJWTSecret } = require('../main/routes/auth');
+    const orderCreatorAuth = { Authorization: `Bearer ${jwt.sign(
+      { userId: orderCreatorId, email: orderCreatorEmail, role: 'server' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    )}` };
+
+    const createdByOrderCreator = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: orderCreatorAuth,
+    });
+    assertEqualOrThrow(createdByOrderCreator.status, 201, 'the limited server can create an order');
+    const readableCharges = await api(baseUrl, '/api/settings/charges', { headers: orderCreatorAuth });
+    assertEqualOrThrow(readableCharges.status, 200, 'order creators can read charges for checkout without settings.view');
+    assertEqualOrThrow(readableCharges.data.charges.length, 2, 'the checkout fee definitions are available');
+    const deniedSettingsRead = await api(baseUrl, '/api/settings/business', { headers: orderCreatorAuth });
+    assertEqualOrThrow(deniedSettingsRead.status, 403, 'order creators still cannot read general settings');
+    const deniedChargesWrite = await api(baseUrl, '/api/settings/charges', {
+      method: 'PUT', body: { charges: [] }, headers: orderCreatorAuth,
+    });
+    assertEqualOrThrow(deniedChargesWrite.status, 403, 'order creators cannot edit fee settings');
+
+    const billDiscountUserId = 'server-charge-bill-discount-reader';
+    const billDiscountEmail = 'server-charge-bill-discount-reader@test.local';
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 'unused-test-hash', 'server', 1, datetime('now'), datetime('now'))
+    `).run(billDiscountUserId, 'Server Charge Bill Discount', billDiscountEmail);
+    addUserPermission.run(billDiscountUserId, 'bills.discount.apply', 'allow', ownerId);
+    addUserPermission.run(billDiscountUserId, 'settings.view', 'deny', ownerId);
+    addUserPermission.run(billDiscountUserId, 'orders.create', 'deny', ownerId);
+    const billDiscountAuth = { Authorization: `Bearer ${jwt.sign(
+      { userId: billDiscountUserId, email: billDiscountEmail, role: 'server' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    )}` };
+    const billDiscountCharges = await api(baseUrl, '/api/settings/charges', { headers: billDiscountAuth });
+    assertEqualOrThrow(billDiscountCharges.status, 200, 'bill charge editors can read fee definitions without settings.view or orders.create');
+    const billDiscountSettings = await api(baseUrl, '/api/settings/business', { headers: billDiscountAuth });
+    assertEqualOrThrow(billDiscountSettings.status, 403, 'bill charge editors cannot read general settings');
+    const billDiscountWrite = await api(baseUrl, '/api/settings/charges', {
+      method: 'PUT', body: { charges: [] }, headers: billDiscountAuth,
+    });
+    assertEqualOrThrow(billDiscountWrite.status, 403, 'bill charge editors cannot edit fee settings');
+    const billDiscountOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: billDiscountAuth,
+    });
+    assertEqualOrThrow(billDiscountOrder.status, 403, 'bill charge editors cannot create orders without orders.create');
+
+    console.log('\n6. A waiver is refused once the check has been split');
     setCurrency('USD', 'US');
     setSetting('split_checks_enabled', 'true');
     await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
@@ -249,7 +330,7 @@ async function main() {
     );
     assertEqualOrThrow(siblingRow.service_charge, 10, 'the split service_charge column matches its allocated share');
 
-    console.log('\n6. A zero-decimal currency never persists a fractional subunit');
+    console.log('\n7. A zero-decimal currency never persists a fractional subunit');
     setCurrency('JPY', 'JP');
     await putCharges([{ ...SERVICE_CHARGE, id: 'service_charge', name: 'Service Charge', type: 'percentage', value: 10 }]);
     const jpyOrder = await createOrder('dine_in');
@@ -260,7 +341,7 @@ async function main() {
     assertEqualOrThrow(jpyOrder.data.order.service_charge, 10, '10% of 100 JPY is 10 JPY');
     setCurrency('USD', 'US');
 
-    console.log('\n7. A thermal receipt prints an engine charge exactly once');
+    console.log('\n8. A thermal receipt prints an engine charge exactly once');
     await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
     const RECEIPT_TEMPLATE_ID = 'tpl-charges-dup';
     installThermalChargeTemplate(getDatabase(), RECEIPT_TEMPLATE_ID);
@@ -278,7 +359,7 @@ async function main() {
     assertEqualOrThrow(countOccurrences(receiptText, 'Service Charge'), 1, 'the declared service-charge row is not repeated by the itemised line');
     assertEqualOrThrow(countOccurrences(receiptText, 'Late Night'), 1, 'the merchant-named surcharge prints once');
 
-    console.log('\n8. Converting to takeaway recomputes totals and clears the dine-in charge');
+    console.log('\n9. Converting to takeaway recomputes totals and clears the dine-in charge');
     await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
     const dineIn = await api(baseUrl, '/api/orders', {
       method: 'POST', body: { type: 'dine_in', items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
@@ -300,7 +381,7 @@ async function main() {
     assertEqualOrThrow(Number(syncedBill.total), 100, 'the unpaid bill total is synced to the converted total');
     assertEqualOrThrow(JSON.parse(syncedBill.charges_breakdown).length, 0, 'the unpaid bill breakdown is synced empty');
 
-    console.log('\n9. Removing the last charge stores [] instead of resurrecting the stale breakdown');
+    console.log('\n10. Removing the last charge stores [] instead of resurrecting the stale breakdown');
     await putCharges([{ ...LATE_NIGHT, id: 'packaging_fee', name: 'Packaging Fee', value: 5, is_optional: true, is_default_active: false }]);
     const removeOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -321,7 +402,7 @@ async function main() {
     const orderAfterRemove = getDatabase().prepare('SELECT charges_breakdown FROM orders WHERE id = ?').get(removeOrder.data.order.id) as any;
     assertEqualOrThrow(orderAfterRemove.charges_breakdown, '[]', 'the order breakdown is emptied too');
 
-    console.log('\n10. Order create keeps a manual charge column the engine has no rule for');
+    console.log('\n11. Order create keeps a manual charge column the engine has no rule for');
     await putCharges([{ ...LATE_NIGHT, id: 'late_night', order_types: ['dine_in'] }]);
     const manual = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -335,7 +416,7 @@ async function main() {
     const manualBreakdown = JSON.parse(manual.data.order.charges_breakdown);
     assertEqualOrThrow(manualBreakdown.some((charge: any) => charge.id === 'service_charge'), false, 'the manual column is not faked as an engine charge');
 
-    console.log('\n11. Cart charge decisions survive order creation');
+    console.log('\n12. Cart charge decisions survive order creation');
     await putCharges([
       { ...SERVICE_CHARGE, is_optional: true },
       { ...LATE_NIGHT, id: 'nightly', is_default_active: false, is_optional: false },
@@ -364,7 +445,7 @@ async function main() {
     });
     assertEqualOrThrow(badIds.status, 400, 'a non-array waived_charge_ids is rejected');
 
-    console.log('\n12. Recomputed orders retain inactive fee snapshots without charging new orders');
+    console.log('\n13. Recomputed orders retain inactive fee snapshots without charging new orders');
     await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
     const inactiveOrder = await createOrder('dine_in');
     const inactiveBill = await api(baseUrl, '/api/bills/generate', {
@@ -386,7 +467,7 @@ async function main() {
     assertEqualOrThrow(afterDisable.data.order.total, 110, 'a new order does not receive the disabled fee');
     assertEqualOrThrow(JSON.parse(afterDisable.data.order.charges_breakdown).some((charge: any) => charge.id === 'late_night'), false, 'the disabled fee is absent from a new order');
 
-    console.log('\n13. Recomputed orders retain deleted fee snapshots while preserving unpaid bill totals');
+    console.log('\n14. Recomputed orders retain deleted fee snapshots while preserving unpaid bill totals');
     await putCharges([LATE_NIGHT]);
     const deletedOrder = await createOrder('dine_in');
     const deletedBill = await api(baseUrl, '/api/bills/generate', {
@@ -406,7 +487,7 @@ async function main() {
     assertEqualOrThrow(afterDelete.data.order.total, 100, 'a new order receives no deleted fee');
     assertEqualOrThrow(afterDelete.data.order.charges_breakdown == null || JSON.parse(afterDelete.data.order.charges_breakdown).length === 0, true, 'the deleted fee is absent from a new order');
 
-    console.log('\n14. Bill discounts recompute configured percentage fees and retain fixed fees');
+    console.log('\n15. Bill discounts recompute configured percentage fees and retain fixed fees');
     await putCharges([{ ...SERVICE_CHARGE, calculation_basis: 'net' }, LATE_NIGHT]);
     const discountedOrder = await createOrder('dine_in');
     const discountedBill = await api(baseUrl, '/api/bills/generate', {

@@ -20,6 +20,7 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
 import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
@@ -135,6 +136,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
   const [updatingChargeId, setUpdatingChargeId] = useState<string | null>(null);
+  const [chargeStateUncertain, setChargeStateUncertain] = useState(false);
   useEffect(() => {
     void loadCharges();
   }, [loadCharges]);
@@ -148,14 +150,23 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && Number(bill.paid_amount || 0) === 0
     && bill.payment_status !== 'refunded'
     && bill.payment_status !== 'partially_refunded';
+  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !chargeStateUncertain;
+  const addableCharges = applicableCharges.filter(
+    (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
+  );
 
-  const toggleChargeWaiver = async (charge: AppliedCharge) => {
-    setUpdatingChargeId(charge.id);
+  const updateCharge = async (chargeId: string, change: { waived?: boolean; applied?: boolean }) => {
+    if (!canEditCharges || processing || updatingChargeId) return;
+    setUpdatingChargeId(chargeId);
+    setChargeStateUncertain(true);
     try {
-      await api.patch(`/bills/${bill.id}/charges`, { charge_id: charge.id, waived: !charge.waived });
-      const { data } = await api.get(`/bills/${bill.id}`);
-      if (data.bill && onBillUpdate) onBillUpdate(data.bill);
-    } catch {
+      const { data } = await api.patch(`/bills/${bill.id}/charges`, { charge_id: chargeId, ...change });
+      if (!data.bill) throw new Error('Bill charge update returned no bill');
+      if (onBillUpdate) onBillUpdate({ ...bill, ...data.bill, order: bill.order });
+      setChargeStateUncertain(false);
+    } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } } | null)?.response?.status;
+      if (status !== undefined && status >= 400 && status < 500) setChargeStateUncertain(false);
       toast.error(t('chargeUpdateFailed'));
     } finally {
       setUpdatingChargeId(null);
@@ -366,6 +377,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const handlePay = async () => {
+    if (processing || updatingChargeId || chargeStateUncertain) return;
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -598,31 +610,53 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   <span>{currencyFmt(Number(bill.service_charge))}</span>
                 </div>
               )}
-              {appliedCharges.length > 0 && (
+              {(appliedCharges.length > 0 || (canEditCharges && addableCharges.length > 0)) && (
                 <div className="space-y-1 pt-1" data-testid="payment-charges">
                   {appliedCharges.map((charge) => {
                     const definition = applicableCharges.find((c) => c.id === charge.id);
-                    const isOptional = definition?.is_optional ?? false;
                     return (
-                      <div key={charge.id} className="flex justify-between items-center gap-2 text-slate-300">
+                      <div key={charge.id} data-testid={`payment-charge-${charge.id}`} className="flex justify-between items-center gap-2 text-slate-300">
                         <span className={charge.waived ? 'line-through' : undefined}>{charge.name}</span>
                         <span className="flex items-center gap-2">
                           <span className={charge.waived ? 'line-through' : undefined}>{currencyFmt(charge.amount)}</span>
-                          {isOptional && (
+                          {canEditCharges && definition?.is_optional && (
                             <button
                               type="button"
-                              disabled={!canToggleCharges || updatingChargeId === charge.id}
-                              onClick={() => toggleChargeWaiver(charge)}
+                              disabled={Boolean(updatingChargeId)}
+                              onClick={() => void updateCharge(charge.id, { waived: !charge.waived })}
                               aria-pressed={charge.waived}
                               className="text-[11px] px-2 py-0.5 rounded border border-white/20 text-slate-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               {charge.waived ? t('applyCharge') : t('waiveCharge')}
                             </button>
                           )}
+                          {canEditCharges && definition && !definition.is_default_active && (
+                            <button
+                              type="button"
+                              disabled={Boolean(updatingChargeId)}
+                              onClick={() => void updateCharge(charge.id, { applied: false })}
+                              className="text-[11px] px-2 py-0.5 rounded border border-white/20 text-slate-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {t('removeCharge')}
+                            </button>
+                          )}
                         </span>
                       </div>
                     );
                   })}
+                  {canEditCharges && addableCharges.map((charge) => (
+                    <div key={charge.id} data-testid={`payment-charge-${charge.id}`} className="flex justify-between items-center gap-2 text-slate-300">
+                      <span>{charge.name}</span>
+                      <button
+                        type="button"
+                        disabled={Boolean(updatingChargeId)}
+                        onClick={() => void updateCharge(charge.id, { applied: true })}
+                        className="text-[11px] px-2 py-0.5 rounded border border-white/20 text-slate-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {t('addCharge')}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (
@@ -891,7 +925,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               </Button>
             </>
           ) : (
-            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
+            <Button onClick={handlePay} disabled={processing || Boolean(updatingChargeId) || chargeStateUncertain || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
               {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
             </Button>
           )}

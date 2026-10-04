@@ -5,6 +5,7 @@ import { X, Sparkles, ArrowLeftRight, CheckCircle2, Percent, Wallet, ChevronDown
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
+import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { useAuthStore } from '@/store/auth';
 import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -87,6 +88,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
   const { currentTenant } = useAuthStore();
+  const charges = useChargesStore((s) => s.charges);
+  const loadCharges = useChargesStore((s) => s.load);
   const currencyCode =
     currentTenant?.currency ||
     (currentTenant?.country ? getCountryByCode(currentTenant.country)?.currency : undefined) ||
@@ -124,6 +127,15 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       value: discountType === 'percentage' ? normalizedValue : toStoredUnit(normalizedValue),
     };
   }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
+  const chargeContext = useMemo(() => ({
+    orderType: cart.orderType,
+    waivedChargeIds: Array.from(cart.waivedChargeIds),
+    optedInChargeIds: Array.from(cart.optedInChargeIds),
+  }), [cart.orderType, cart.waivedChargeIds, cart.optedInChargeIds]);
+  const applicableCharges = chargesForOrderType(charges, cart.orderType);
+  const addableCharges = applicableCharges.filter(
+    (charge) => !charge.is_default_active && !cart.optedInChargeIds.has(charge.id),
+  );
   const rawDiscountValue = Number.parseFloat(discountValue);
   const normalizedFixedDiscountValue = discountType === 'amount'
     && Number.isFinite(rawDiscountValue)
@@ -136,7 +148,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     cart.customerId,
     undefined,
     previewDiscount,
+    chargeContext,
   );
+
+  useEffect(() => {
+    void loadCharges();
+  }, [loadCharges]);
 
   const [payments, setPayments] = useState<Payment[]>(
     PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
@@ -209,6 +226,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       taxAmount: tax.tax_amount,
       taxBreakdown: tax.tax_breakdown,
       packagingCharge: tax.packaging_charge,
+      charges: tax.charges_breakdown || [],
       roundOff: tax.round_off,
       total: tax.total,
     };
@@ -402,7 +420,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
           {taxLoading || !preview ? (
             <div className="mt-3 h-24 animate-pulse rounded-xl bg-muted" />
           ) : (
-            <div className="mt-3 space-y-1 text-sm tabular-nums">
+            <div className="mt-3 space-y-1 text-sm tabular-nums" data-testid="prepaid-checkout-summary">
               <div className="flex justify-between text-foreground">
                 <span>{t('itemCount', { count: cart.itemCount() })}</span>
                 <span>{currencyFmt(preview.subtotal)}</span>
@@ -418,7 +436,50 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                 <span>{currencyFmt(preview.discountedSubtotal)}</span>
               </div>
               <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} theme="light" />
-              {preview.packagingCharge > 0 && (
+              {preview.charges.map((charge) => {
+                const definition = applicableCharges.find((candidate) => candidate.id === charge.id);
+                return (
+                  <div key={charge.id} data-testid={`prepaid-charge-${charge.id}`} className="flex justify-between items-center gap-2 text-muted-foreground">
+                    <span className={charge.waived ? 'line-through' : undefined}>{charge.name}</span>
+                    <span className="flex items-center gap-2">
+                      <span className={charge.waived ? 'line-through' : undefined}>{currencyFmt(charge.amount)}</span>
+                      {definition?.is_optional && (
+                        <button
+                          type="button"
+                          onClick={() => cart.toggleWaiveCharge(charge.id)}
+                          aria-pressed={charge.waived}
+                          className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
+                        >
+                          {charge.waived ? t('applyCharge') : t('waiveCharge')}
+                        </button>
+                      )}
+                      {definition && !definition.is_default_active && (
+                        <button
+                          type="button"
+                          onClick={() => cart.toggleOptedInCharge(charge.id)}
+                          aria-pressed={!cart.optedInChargeIds.has(charge.id)}
+                          className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
+                        >
+                          {t('removeCharge')}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+              {addableCharges.map((charge) => (
+                <div key={charge.id} data-testid={`prepaid-charge-${charge.id}`} className="flex justify-between items-center gap-2 text-muted-foreground">
+                  <span>{charge.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => cart.toggleOptedInCharge(charge.id)}
+                    className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
+                  >
+                    {t('addCharge')}
+                  </button>
+                </div>
+              ))}
+              {preview.packagingCharge > 0 && !preview.charges.some((charge) => charge.id === 'packaging_charge') && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>{t('packaging')}</span>
                   <span>{currencyFmt(preview.packagingCharge)}</span>
@@ -658,7 +719,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         <div className="shrink-0 border-t border-border px-5 pb-6 pt-3">
           <Button
             onClick={handleConfirm}
-            disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPaymentMinor < remainingMinor}
+            disabled={processing || taxLoading || !preview || hasInvalidFixedDiscount || totalPaymentMinor < remainingMinor}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >

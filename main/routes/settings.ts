@@ -3,7 +3,7 @@ import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { DRIVE_RESTORE_CONFIRMATION, getGoogleDriveErrorCode, googleDrive } from '../services/google-drive';
-import { requirePermission } from '../services/authorization';
+import { requireAnyPermission, requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
@@ -888,7 +888,7 @@ router.post('/google-drive/restore', requirePermission('google-drive.manage'), r
  * definition needs range, enum and order-type validation that the wildcard
  * handler does not perform, and PR #829 shipped exactly that gap.
  */
-router.get('/charges', settingsReadRateLimit, requirePermission('settings.view'), (_req: Request, res: Response) => {
+router.get('/charges', settingsReadRateLimit, requireAnyPermission('settings.view', 'orders.create', 'bills.discount.apply'), (_req: Request, res: Response) => {
   try {
     return res.json({ charges: getChargeDefinitions() });
   } catch (error) {

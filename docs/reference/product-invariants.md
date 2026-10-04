@@ -115,14 +115,21 @@ changing a shipped default, does not need this entry updated, but does need
 
 **Rule:** Disabling or removing a charge definition affects new orders only. A charge already
 applied to an existing order remains at its stored amount when the order is edited or discounted;
-still-active definitions continue to recalculate normally. Explicit cashier removal and order-type
+still-active definitions that apply to the order type continue to recalculate normally. Checkout
+shows every applied charge. Active, applicable definitions control which optional charges staff can
+add, remove, waive, or restore; retained snapshots without an applicable definition remain visible
+but read-only. Amounts remain configured in Settings. Explicit cashier removal and order-type
 conversion keep their existing behavior.
+
+Existing unpaid, unsplit bills with no payments can be adjusted under `bills.discount.apply`.
 
 **Reason:** Changing store settings should not retroactively alter an amount already applied to an
 open order.
 
 **Enforced by:** `main/services/charges.ts` retains applied snapshots for inactive or missing
-definitions; order and bill mutation routes use that resolver. `frontend/src/store/cart.ts` clears
+definitions; order and bill mutation routes use that resolver. `GET /api/settings/charges` is
+available to staff with `settings.view`, `orders.create`, or `bills.discount.apply`; changing fee
+definitions still requires Settings management permission. `frontend/src/store/cart.ts` clears
 waiver and opt-in choices when loading another order.
 
 **How to verify:**
@@ -130,7 +137,7 @@ waiver and opt-in choices when loading another order.
 ```sh
 npm run test:charges-engine
 npm run test:held-orders
-npm run test:e2e:browser -- --grep "prepaid: changing charge decisions after a failed order creates a new attempt"
+npm run test:e2e:browser -- --grep "changing charge decisions after a failed order"
 ```
 
 **Change policy:** changing how existing orders retain or recalculate applied charges needs an

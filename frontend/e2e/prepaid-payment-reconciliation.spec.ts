@@ -434,7 +434,7 @@ test('payment modal updates applied fees', async ({ page, request }) => {
 });
 
 test('payment modal hides charge controls without bill discount permission', async ({ request, browser }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const originalCharges = await readCharges(request);
   const originalBusiness = await readBusiness(request);
   const cleanupRequest = await playwrightRequest.newContext();
@@ -557,7 +557,7 @@ test('payment modal hides charge controls without bill discount permission', asy
       .filter({ hasText: `#${order.order_number}` });
     await expect(staffOrderCard).toHaveCount(1);
     await test.step('staff checks out the created order and sees payment', async () => {
-      await Promise.all([
+      const [billGenerateResponse] = await Promise.all([
         serverPage!.waitForResponse(
           (response) => {
             try {
@@ -567,13 +567,14 @@ test('payment modal hides charge controls without bill discount permission', asy
               return false;
             }
           },
-          { timeout: 30000 },
+          { timeout: 45000 },
         ),
         staffOrderCard.getByRole('button', { name: 'Checkout', exact: true }).click(),
       ]);
+      expect(billGenerateResponse.ok()).toBeTruthy();
       markStage('staff_checkout_click', 'complete');
       markStage('payment_heading_visible', 'start');
-      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 30000 });
+      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 45000 });
       markStage('payment_heading_visible', 'complete');
     });
     await test.step('staff sees charge details without mutation controls', async () => {

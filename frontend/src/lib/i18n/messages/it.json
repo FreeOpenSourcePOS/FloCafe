@@ -915,6 +915,7 @@
     "templateFallback": "Il modello di conto selezionato non è supportato su questo percorso di stampa, quindi è stato usato il layout ricevuta integrato."
   },
   "print": {
+    "menu": {"title": "Menù", "totalItems": "Articoli totali"},
     "taxInvoiceTitle": "FATTURA FISCALE",
     "invoiceTitle": "FATTURA",
     "invoiceNumber": "Fattura n.:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Includi descrizioni",
+    "includeModifiers": "Includi modificatori",
     "addAddon": "Aggiungi extra",
     "addAddonGroup": "Aggiungi gruppo extra",
     "addAddonGroupForm": "Aggiungi gruppo extra",
@@ -1204,7 +1207,18 @@
     "update": "Aggiorna",
     "updateProduct": "Aggiorna prodotto",
     "updated": "Prodotto aggiornato",
-    "uploadCsv": "Carica CSV"
+    "uploadCsv": "Carica CSV",
+    "printMenu": "Stampa menu",
+    "printMenuDescription": "Scegli quali prodotti includere nel menu stampato.",
+    "includeInactiveItems": "Includi prodotti non attivi",
+    "includeOutOfStockItems": "Includi prodotti esauriti",
+    "includeHiddenItems": "Includi prodotti nascosti",
+    "menuPrintedSuccess": "Menu stampato correttamente",
+    "noProductsToPrint": "Nessun prodotto corrisponde ai criteri selezionati",
+    "printerDestination": "Stampante",
+    "systemBrowserPrint": "Sistema / stampa del browser",
+    "menuPrintFailed": "Impossibile stampare il menu",
+    "menuPopupBlocked": "Il tuo browser ha bloccato la finestra di stampa. Consenti i popup per questo sito e riprova."
   },
   "receipt": {
     "amount": "Importo",

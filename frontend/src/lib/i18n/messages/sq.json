@@ -915,6 +915,7 @@
     "templateFallback": "Shablloni i zgjedhur i dëftesës nuk mbështetet në këtë shteg printimi, prandaj u përdor paraqitja e integruar e dëftesës."
   },
   "print": {
+    "menu": {"title": "Menyja", "totalItems": "Artikuj gjithsej"},
     "taxInvoiceTitle": "FATURË TATIMORE",
     "invoiceTitle": "FATURË",
     "invoiceNumber": "Fatura nr.:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Përfshi përshkrimet",
+    "includeModifiers": "Përfshi opsionet",
     "addAddon": "Shto Shtesë",
     "addAddonGroup": "Shto grupin shtesë",
     "addAddonGroupForm": "Shto grupin shtesë",
@@ -1204,7 +1207,18 @@
     "update": "Përditëso",
     "updateProduct": "Përditëso produktin",
     "updated": "Produkti u përditësua",
-    "uploadCsv": "Ngarko CSV"
+    "uploadCsv": "Ngarko CSV",
+    "printMenu": "Printo menunë",
+    "printMenuDescription": "Zgjidhni produktet që do të përfshihen në menunë e printuar.",
+    "includeInactiveItems": "Përfshi produktet joaktive",
+    "includeOutOfStockItems": "Përfshi produktet pa stok",
+    "includeHiddenItems": "Përfshi produktet e fshehura",
+    "menuPrintedSuccess": "Menuja u printua me sukses",
+    "noProductsToPrint": "Asnjë produkt nuk përputhet me kriteret e zgjedhura",
+    "printerDestination": "Printeri",
+    "systemBrowserPrint": "Sistemi / printimi në shfletues",
+    "menuPrintFailed": "Printimi i menusë dështoi",
+    "menuPopupBlocked": "Shfletuesi juaj bllokuar dritaren e printimit. Lejooni pop-up-et për këtë faqe dhe provoni përsëri."
   },
   "receipt": {
     "amount": "Shuma",

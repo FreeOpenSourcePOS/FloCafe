@@ -172,7 +172,7 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
 }
 
 /** Batch loads category and addon group relations for a list of products. */
-function loadProductRelationsBatch(db: any, products: any[]) {
+export function loadProductRelationsBatch(db: any, products: any[]) {
   if (products.length === 0) return new Map();
 
   const productIds = products.map((p: any) => p.id);

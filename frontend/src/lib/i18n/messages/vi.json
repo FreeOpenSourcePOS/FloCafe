@@ -915,6 +915,7 @@
     "templateFallback": "Mẫu hóa đơn đã chọn không được hỗ trợ trên đường dẫn in này, nên đã dùng bố cục biên nhận tích hợp."
   },
   "print": {
+    "menu": {"title": "Thực đơn", "totalItems": "Tổng số món"},
     "taxInvoiceTitle": "HÓA ĐƠN THUẾ",
     "invoiceTitle": "HÓA ĐƠN",
     "invoiceNumber": "Số hóa đơn:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Bao gồm mô tả",
+    "includeModifiers": "Bao gồm tùy chọn",
     "addAddon": "Thêm tuỳ chọn",
     "addAddonGroup": "Thêm nhóm tuỳ chọn",
     "addAddonGroupForm": "Thêm nhóm tuỳ chọn",
@@ -1204,7 +1207,18 @@
     "update": "Cập nhật",
     "updateProduct": "Cập nhật sản phẩm",
     "updated": "Đã cập nhật sản phẩm",
-    "uploadCsv": "Tải lên CSV"
+    "uploadCsv": "Tải lên CSV",
+    "printMenu": "In menu",
+    "printMenuDescription": "Chọn sản phẩm cần đưa vào menu in.",
+    "includeInactiveItems": "Bao gồm sản phẩm không hoạt động",
+    "includeOutOfStockItems": "Bao gồm sản phẩm hết hàng",
+    "includeHiddenItems": "Bao gồm sản phẩm bị ẩn",
+    "menuPrintedSuccess": "Đã in menu thành công",
+    "noProductsToPrint": "Không có sản phẩm nào phù hợp với tiêu chí đã chọn",
+    "printerDestination": "Máy in",
+    "systemBrowserPrint": "Hệ thống / In bằng trình duyệt",
+    "menuPrintFailed": "Không thể in menu",
+    "menuPopupBlocked": "Trình duyệt của bạn đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi thử lại."
   },
   "receipt": {
     "amount": "Số tiền",

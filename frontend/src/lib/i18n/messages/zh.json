@@ -915,6 +915,7 @@
     "templateFallback": "所选账单模板不支持此打印路径，已使用内置小票版式。"
   },
   "print": {
+    "menu": {"title": "菜单", "totalItems": "商品总数"},
     "taxInvoiceTitle": "税务发票",
     "invoiceTitle": "发票",
     "invoiceNumber": "发票号：",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "包含描述",
+    "includeModifiers": "包含选项",
     "addAddon": "添加加购",
     "addAddonGroup": "添加加购分组",
     "addAddonGroupForm": "添加加购分组",
@@ -1204,7 +1207,18 @@
     "update": "更新",
     "updateProduct": "更新商品",
     "updated": "商品已更新",
-    "uploadCsv": "上传 CSV"
+    "uploadCsv": "上传 CSV",
+    "printMenu": "打印菜单",
+    "printMenuDescription": "选择要列入打印菜单的商品。",
+    "includeInactiveItems": "包含未启用的商品",
+    "includeOutOfStockItems": "包含缺货商品",
+    "includeHiddenItems": "包含隐藏商品",
+    "menuPrintedSuccess": "菜单打印成功",
+    "noProductsToPrint": "没有符合所选条件的商品",
+    "printerDestination": "打印机",
+    "systemBrowserPrint": "系统 / 浏览器打印",
+    "menuPrintFailed": "无法打印菜单",
+    "menuPopupBlocked": "您的浏览器阻止了打印窗口。请允许此网站显示弹出窗口，然后重试。"
   },
   "receipt": {
     "amount": "金额",

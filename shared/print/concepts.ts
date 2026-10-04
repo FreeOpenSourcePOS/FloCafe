@@ -5,6 +5,8 @@
  * the typed contract between semantic documents and each locale catalog view.
  */
 export const PRINT_CONCEPT_IDS = [
+  'print.menu.title',
+  'print.menu.totalItems',
   'print.taxInvoiceTitle',
   'print.invoiceTitle',
   'print.invoiceNumber',

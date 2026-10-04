@@ -930,9 +930,21 @@ test('Save All persists when a settings read is rate limited', async ({ page }) 
 test('Health-check deep link loads from the existing store URL', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);
+  await page.route('**/api/db-tools/health-check', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      liveSchemaVersion: 1,
+      idealSchemaVersion: 1,
+      findings: [],
+      summary: { safeCount: 0, manualReviewCount: 0 },
+    }),
+  }));
 
   await page.goto(`${BASE}/settings?tab=store&action=health-check`);
   await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog').getByText('No issues found', { exact: false })).toBeVisible();
   await expect.poll(() => apiPaths.filter((path) => path === '/api/db-tools/health-check').length).toBe(1);
 });
 

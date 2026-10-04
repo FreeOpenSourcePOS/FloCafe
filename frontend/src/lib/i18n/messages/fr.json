@@ -915,6 +915,7 @@
     "templateFallback": "Le modèle de facture sélectionné n’est pas pris en charge par ce mode d’impression. La mise en page de reçu intégrée a donc été utilisée."
   },
   "print": {
+    "menu": {"title": "Carte", "totalItems": "Total des articles"},
     "taxInvoiceTitle": "FACTURE FISCALE",
     "invoiceTitle": "FACTURE",
     "invoiceNumber": "N° de facture :",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Inclure les descriptions",
+    "includeModifiers": "Inclure les options",
     "addAddon": "Ajouter une option",
     "addAddonGroup": "Ajouter un groupe d’options",
     "addAddonGroupForm": "Ajouter un groupe d’options",
@@ -1204,7 +1207,18 @@
     "update": "Mettre à jour",
     "updateProduct": "Mettre à jour le produit",
     "updated": "Produit mis à jour",
-    "uploadCsv": "Téléverser un fichier CSV"
+    "uploadCsv": "Téléverser un fichier CSV",
+    "printMenu": "Imprimer le menu",
+    "printMenuDescription": "Choisissez les articles à inclure dans le menu imprimé.",
+    "includeInactiveItems": "Inclure les articles inactifs",
+    "includeOutOfStockItems": "Inclure les articles en rupture de stock",
+    "includeHiddenItems": "Inclure les articles masqués",
+    "menuPrintedSuccess": "Menu imprimé avec succès",
+    "noProductsToPrint": "Aucun produit ne correspond aux critères sélectionnés",
+    "printerDestination": "Imprimante",
+    "systemBrowserPrint": "Système / impression du navigateur",
+    "menuPrintFailed": "Impossible d’imprimer le menu",
+    "menuPopupBlocked": "Votre navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres contextuelles pour ce site et réessayez."
   },
   "receipt": {
     "amount": "Montant",

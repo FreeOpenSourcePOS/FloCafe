@@ -915,6 +915,7 @@
     "templateFallback": "Templat tagihan yang dipilih tidak didukung pada jalur pencetakan ini, sehingga tata letak struk bawaan digunakan."
   },
   "print": {
+    "menu": {"title": "Daftar menu", "totalItems": "Total item"},
     "taxInvoiceTitle": "FAKTUR PAJAK",
     "invoiceTitle": "NOTA",
     "invoiceNumber": "No. nota:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Sertakan deskripsi",
+    "includeModifiers": "Sertakan opsi",
     "addAddon": "Tambah Tambahan",
     "addAddonGroup": "Tambah Grup Tambahan",
     "addAddonGroupForm": "Tambah Grup Tambahan",
@@ -1204,7 +1207,18 @@
     "update": "Perbarui",
     "updateProduct": "Perbarui Produk",
     "updated": "Produk diperbarui",
-    "uploadCsv": "Unggah CSV"
+    "uploadCsv": "Unggah CSV",
+    "printMenu": "Cetak Menu",
+    "printMenuDescription": "Atur produk yang akan disertakan dalam menu cetak.",
+    "includeInactiveItems": "Sertakan produk nonaktif",
+    "includeOutOfStockItems": "Sertakan produk yang kehabisan stok",
+    "includeHiddenItems": "Sertakan produk tersembunyi",
+    "menuPrintedSuccess": "Menu berhasil dicetak",
+    "noProductsToPrint": "Tidak ada produk yang sesuai dengan kriteria yang dipilih",
+    "printerDestination": "Tujuan printer",
+    "systemBrowserPrint": "Sistem / Cetak Browser",
+    "menuPrintFailed": "Menu tidak dapat dicetak",
+    "menuPopupBlocked": "Browser Anda memblokir jendela cetak. Izinkan pop-up untuk situs ini lalu coba lagi."
   },
   "receipt": {
     "amount": "Jumlah",

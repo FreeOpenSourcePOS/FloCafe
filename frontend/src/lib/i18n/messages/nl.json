@@ -915,6 +915,7 @@
     "templateFallback": "Het geselecteerde bonsjabloon wordt niet ondersteund op dit afdrukpad, daarom is de ingebouwde kassabonindeling gebruikt."
   },
   "print": {
+    "menu": {"title": "Menukaart", "totalItems": "Totaal artikelen"},
     "taxInvoiceTitle": "BELASTINGFACTUUR",
     "invoiceTitle": "FACTUUR",
     "invoiceNumber": "Factuurnr.:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Beschrijvingen opnemen",
+    "includeModifiers": "Opties opnemen",
     "addAddon": "Add-on toevoegen",
     "addAddonGroup": "Add-ongroep toevoegen",
     "addAddonGroupForm": "Add-ongroep toevoegen",
@@ -1204,7 +1207,18 @@
     "update": "Bijwerken",
     "updateProduct": "Product bijwerken",
     "updated": "Product bijgewerkt",
-    "uploadCsv": "CSV uploaden"
+    "uploadCsv": "CSV uploaden",
+    "printMenu": "Menu afdrukken",
+    "printMenuDescription": "Kies welke producten op het afgedrukte menu komen.",
+    "includeInactiveItems": "Inactieve producten opnemen",
+    "includeOutOfStockItems": "Uitverkochte producten opnemen",
+    "includeHiddenItems": "Verborgen producten opnemen",
+    "menuPrintedSuccess": "Menu afgedrukt",
+    "noProductsToPrint": "Geen producten voldoen aan de gekozen criteria",
+    "printerDestination": "Printerbestemming",
+    "systemBrowserPrint": "Systeem / browserafdruk",
+    "menuPrintFailed": "Menu afdrukken is mislukt",
+    "menuPopupBlocked": "Uw browser heeft het afdrukvakster geblokkeerd. Sta pop-ups voor deze site toe en probeer het opnieuw."
   },
   "receipt": {
     "amount": "Bedrag",

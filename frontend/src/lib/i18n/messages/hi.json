@@ -915,6 +915,7 @@
     "templateFallback": "इस प्रिंट पथ पर चयनित बिल टेम्पलेट समर्थित नहीं है, इसलिए अंतर्निहित रसीद लेआउट का उपयोग किया गया था।"
   },
   "print": {
+    "menu": {"title": "मेनू", "totalItems": "कुल आइटम"},
     "taxInvoiceTitle": "कर चालान",
     "invoiceTitle": "चालान",
     "invoiceNumber": "चालान #:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "विवरण शामिल करें",
+    "includeModifiers": "विकल्प शामिल करें",
     "addAddon": "एड-ऑन जोड़ें",
     "addAddonGroup": "एड-ऑन ग्रुप जोड़ें",
     "addAddonGroupForm": "एड-ऑन ग्रुप जोड़ें",
@@ -1204,7 +1207,18 @@
     "update": "अद्यतन करें",
     "updateProduct": "उत्पाद अद्यतन करें",
     "updated": "उत्पाद अद्यतन किया गया",
-    "uploadCsv": "सीएसवी अपलोड करें"
+    "uploadCsv": "सीएसवी अपलोड करें",
+    "printMenu": "मेनू प्रिंट करें",
+    "printMenuDescription": "चुनें कि प्रिंट किए गए मेनू में कौन से उत्पाद शामिल हों।",
+    "includeInactiveItems": "निष्क्रिय उत्पाद शामिल करें",
+    "includeOutOfStockItems": "स्टॉक में न होने वाले उत्पाद शामिल करें",
+    "includeHiddenItems": "छिपे हुए उत्पाद शामिल करें",
+    "menuPrintedSuccess": "मेनू सफलतापूर्वक प्रिंट हुआ",
+    "noProductsToPrint": "चुने गए मानदंडों से कोई उत्पाद मेल नहीं खाता",
+    "printerDestination": "प्रिंटर",
+    "systemBrowserPrint": "सिस्टम / ब्राउज़र प्रिंट",
+    "menuPrintFailed": "मेनू प्रिंट नहीं हो सका",
+    "menuPopupBlocked": "आपके ब्राउज़र ने प्रिंट विंडो ब्लॉक कर दी। इस साइट के लिए पॉप-अप की अनुमति दें और पुनः प्रयास करें।"
   },
   "receipt": {
     "amount": "रकम",

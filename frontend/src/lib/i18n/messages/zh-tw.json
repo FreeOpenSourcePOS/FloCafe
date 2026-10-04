@@ -915,6 +915,7 @@
     "templateFallback": "所選帳單模板不支援此列印路徑，已使用內建收據版式。"
   },
   "print": {
+    "menu": {"title": "菜單", "totalItems": "商品總數"},
     "taxInvoiceTitle": "稅務發票",
     "invoiceTitle": "發票",
     "invoiceNumber": "發票號：",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "包含描述",
+    "includeModifiers": "包含選項",
     "addAddon": "新增加購",
     "addAddonGroup": "新增加購分組",
     "addAddonGroupForm": "新增加購分組",
@@ -1204,7 +1207,18 @@
     "update": "更新",
     "updateProduct": "更新商品",
     "updated": "商品已更新",
-    "uploadCsv": "上傳 CSV"
+    "uploadCsv": "上傳 CSV",
+    "printMenu": "列印菜單",
+    "printMenuDescription": "選擇要列入列印菜單的商品。",
+    "includeInactiveItems": "包含未啟用的商品",
+    "includeOutOfStockItems": "包含缺貨商品",
+    "includeHiddenItems": "包含隱藏商品",
+    "menuPrintedSuccess": "菜單列印成功",
+    "noProductsToPrint": "沒有符合所選條件的商品",
+    "printerDestination": "印表機",
+    "systemBrowserPrint": "系統 / 瀏覽器列印",
+    "menuPrintFailed": "無法列印菜單",
+    "menuPopupBlocked": "您的瀏覽器封鎖了列印視窗。請允許此網站顯示彈出視窗，然後再試一次。"
   },
   "receipt": {
     "amount": "金額",

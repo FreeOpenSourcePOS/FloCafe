@@ -259,6 +259,13 @@ KOT path applies it, so an item that has left the kitchen does not reappear on a
 - `frontend/src/lib/printer/kot-web-print.ts`, the browser KOT HTML path
 - `frontend/src/lib/printer/kot-encoder.ts`, the browser KOT encoder
 
+## Menu catalog printing
+
+Products and POS expose a filtered menu print dialog with optional descriptions and effective
+add-on groups. `main/printers/document-menu.ts` builds the thermal menu; `printMenuDocument` uses
+the profile-owned raster path for unsupported text. Physical-print failures can fall back to
+`frontend/src/lib/printer/menu-web-print.ts` with the selected A4 or Letter page size.
+
 ## Raster printing
 
 Raster is an additive, profile-owned capability, not a rendering mode a document selects. A

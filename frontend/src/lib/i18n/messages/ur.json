@@ -915,6 +915,7 @@
     "templateFallback": "منتخب بل ٹیمپلیٹ اس پرنٹ مسیر پر دستیاب نہیں، اس لیے بلٹ رسید کا بلٹ اِن ڈیزائن استعمال ہوا۔"
   },
   "print": {
+    "menu": {"title": "مینو", "totalItems": "کل اشیاء"},
     "taxInvoiceTitle": "ٹیکس انوائس",
     "invoiceTitle": "انوائس",
     "invoiceNumber": "انوائس نمبر:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "تفصیلات شامل کریں",
+    "includeModifiers": "اضافے شامل کریں",
     "addAddon": "ایڈ آن شامل کریں",
     "addAddonGroup": "ایڈ آن گروپ شامل کریں",
     "addAddonGroupForm": "ایڈ آن گروپ شامل کریں",
@@ -1204,7 +1207,18 @@
     "update": "اپ ڈیٹ",
     "updateProduct": "پروڈکٹ اپ ڈیٹ",
     "updated": "پروڈکٹ اپ ڈیٹ ہو گیا",
-    "uploadCsv": "CSV اپ لوڈ کریں"
+    "uploadCsv": "CSV اپ لوڈ کریں",
+    "printMenu": "مینو پرنٹ کریں",
+    "printMenuDescription": "منتخب کریں کہ پرنٹ شدہ مینو میں کون سی مصنوعات شامل ہوں۔",
+    "includeInactiveItems": "غیر فعال مصنوعات شامل کریں",
+    "includeOutOfStockItems": "اسٹاک سے باہر مصنوعات شامل کریں",
+    "includeHiddenItems": "پوشیدہ مصنوعات شامل کریں",
+    "menuPrintedSuccess": "مینو کامیابی سے پرنٹ ہوگیا",
+    "noProductsToPrint": "منتخب معیار کے مطابق کوئی مصنوعات نہیں",
+    "printerDestination": "پرنٹر",
+    "systemBrowserPrint": "سسٹم / براؤزر پرنٹ",
+    "menuPrintFailed": "مینو پرنٹ نہیں ہوسکا",
+    "menuPopupBlocked": "آپ کا براؤزر پرنٹ ونڈو بلاک کر دیا۔ اس سائٹ کے لیے پاپ اپس کی اجازت دیں اور دوبارہ کوشش کریں۔"
   },
   "receipt": {
     "amount": "رقم",

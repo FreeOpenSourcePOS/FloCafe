@@ -915,6 +915,7 @@
     "templateFallback": "قالب الفاتورة المحدد غير مدعوم في مسار الطباعة هذا، لذا تم استخدام تخطيط الإيصال المدمج."
   },
   "print": {
+    "menu": {"title": "القائمة", "totalItems": "إجمالي الأصناف"},
     "taxInvoiceTitle": "فاتورة ضريبية",
     "invoiceTitle": "الفاتورة",
     "invoiceNumber": "رقم الفاتورة:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "تضمين الأوصاف",
+    "includeModifiers": "تضمين الإضافات",
     "addAddon": "إضافة ملحق",
     "addAddonGroup": "إضافة مجموعة إضافات",
     "addAddonGroupForm": "إضافة مجموعة إضافات",
@@ -1204,7 +1207,18 @@
     "update": "تحديث",
     "updateProduct": "تحديث المنتج",
     "updated": "تم تحديث المنتج",
-    "uploadCsv": "تحميل ملف CSV"
+    "uploadCsv": "تحميل ملف CSV",
+    "printMenu": "طباعة القائمة",
+    "printMenuDescription": "إعداد العناصر التي تريد تضمينها في قائمة الطعام المطبوعة.",
+    "includeInactiveItems": "تضمين العناصر غير النشطة",
+    "includeOutOfStockItems": "تضمين العناصر غير المتوفرة",
+    "includeHiddenItems": "تضمين العناصر المخفية",
+    "menuPrintedSuccess": "تمت طباعة القائمة بنجاح",
+    "noProductsToPrint": "لا توجد منتجات تطابق الخيارات المحددة",
+    "printerDestination": "الطابعة",
+    "systemBrowserPrint": "النظام / الطباعة عبر المتصفح",
+    "menuPrintFailed": "تعذرت طباعة القائمة",
+    "menuPopupBlocked": "قام متصفحك بحجب نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة."
   },
   "receipt": {
     "amount": "المبلغ",

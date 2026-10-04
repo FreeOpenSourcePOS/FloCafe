@@ -915,6 +915,7 @@
     "templateFallback": "เทมเพลตบิลที่เลือกไม่รองรับวิธีพิมพ์นี้ จึงใช้รูปแบบใบเสร็จที่มาพร้อมระบบแทน"
   },
   "print": {
+    "menu": {"title": "เมนู", "totalItems": "จำนวนรายการทั้งหมด"},
     "taxInvoiceTitle": "ใบกำกับภาษี",
     "invoiceTitle": "ใบแจ้งหนี้",
     "invoiceNumber": "เลขที่ใบแจ้งหนี้#:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "รวมคำอธิบาย",
+    "includeModifiers": "รวมตัวเลือก",
     "addAddon": "เพิ่มตัวเลือกเพิ่ม",
     "addAddonGroup": "เพิ่มกลุ่มตัวเลือกเพิ่ม",
     "addAddonGroupForm": "เพิ่มกลุ่มตัวเลือกเพิ่ม",
@@ -1204,7 +1207,18 @@
     "update": "อัปเดต",
     "updateProduct": "อัปเดตสินค้า",
     "updated": "อัปเดตสินค้าแล้ว",
-    "uploadCsv": "อัปโหลด CSV"
+    "uploadCsv": "อัปโหลด CSV",
+    "printMenu": "พิมพ์เมนู",
+    "printMenuDescription": "เลือกสินค้าที่ต้องการรวมไว้ในเมนูที่พิมพ์",
+    "includeInactiveItems": "รวมสินค้าที่ไม่ใช้งาน",
+    "includeOutOfStockItems": "รวมสินค้าที่หมดสต็อก",
+    "includeHiddenItems": "รวมสินค้าที่ซ่อนอยู่",
+    "menuPrintedSuccess": "พิมพ์เมนูสำเร็จ",
+    "noProductsToPrint": "ไม่มีสินค้าที่ตรงกับเกณฑ์ที่เลือก",
+    "printerDestination": "เครื่องพิมพ์",
+    "systemBrowserPrint": "ระบบ / พิมพ์ผ่านเบราว์เซอร์",
+    "menuPrintFailed": "พิมพ์เมนูไม่สำเร็จ",
+    "menuPopupBlocked": "เบราว์เซอร์บล็อกหน้าต่างการพิมพ์ กรุณาอนุญาต pop-up สำหรับเว็บไซต์นี้แล้วลองใหม่อีกครั้ง"
   },
   "receipt": {
     "amount": "จำนวนเงิน",

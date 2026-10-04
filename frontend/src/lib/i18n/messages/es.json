@@ -915,6 +915,7 @@
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
   "print": {
+    "menu": {"title": "Menú", "totalItems": "Total de artículos"},
     "taxInvoiceTitle": "FACTURA CON IMPUESTOS",
     "invoiceTitle": "FACTURA",
     "invoiceNumber": "Factura N.º:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Incluir descripciones",
+    "includeModifiers": "Incluir modificadores",
     "addAddon": "Agregar adicional",
     "addAddonGroup": "Agregar grupo de adicionales",
     "addAddonGroupForm": "Agregar grupo de adicionales",
@@ -1204,7 +1207,18 @@
     "update": "Actualizar",
     "updateProduct": "Actualizar producto",
     "updated": "Producto actualizado",
-    "uploadCsv": "Subir CSV"
+    "uploadCsv": "Subir CSV",
+    "printMenu": "Imprimir menú",
+    "printMenuDescription": "Configura qué productos incluir en el menú impreso.",
+    "includeInactiveItems": "Incluir productos inactivos",
+    "includeOutOfStockItems": "Incluir productos agotados",
+    "includeHiddenItems": "Incluir productos ocultos",
+    "menuPrintedSuccess": "Menú impreso correctamente",
+    "noProductsToPrint": "Ningún producto coincide con los criterios seleccionados",
+    "printerDestination": "Impresora",
+    "systemBrowserPrint": "Sistema / impresión del navegador",
+    "menuPrintFailed": "No se pudo imprimir el menú",
+    "menuPopupBlocked": "Tu navegador bloqueó la ventana de impresión. Permite las ventanas emergentes para este sitio e inténtalo de nuevo."
   },
   "receipt": {
     "amount": "Monto",

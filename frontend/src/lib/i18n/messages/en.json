@@ -915,6 +915,7 @@
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
+    "menu": {"title": "Menu", "totalItems": "Total items"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE",
     "invoiceNumber": "Invoice #:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Include descriptions",
+    "includeModifiers": "Include modifiers",
     "addAddon": "Add Addon",
     "addAddonGroup": "Add Addon Group",
     "addAddonGroupForm": "Add Addon Group",
@@ -1204,7 +1207,18 @@
     "update": "Update",
     "updateProduct": "Update Product",
     "updated": "Product updated",
-    "uploadCsv": "Upload CSV"
+    "uploadCsv": "Upload CSV",
+    "printMenu": "Print Menu",
+    "printMenuDescription": "Configure items to include on the printed menu roll.",
+    "includeInactiveItems": "Include inactive items",
+    "includeOutOfStockItems": "Include out-of-stock items",
+    "includeHiddenItems": "Include hidden items",
+    "menuPrintedSuccess": "Menu printed successfully",
+    "noProductsToPrint": "No products match the selected criteria",
+    "printerDestination": "Printer",
+    "systemBrowserPrint": "System / Browser Print",
+    "menuPrintFailed": "Could not print the menu",
+    "menuPopupBlocked": "Your browser blocked the print window. Allow pop-ups for this site and try again."
   },
   "receipt": {
     "amount": "Amount",

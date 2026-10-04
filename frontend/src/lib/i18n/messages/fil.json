@@ -915,6 +915,7 @@
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {
+    "menu": {"title": "Listahan ng pagkain", "totalItems": "Kabuuang item"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE / BILL",
     "invoiceNumber": "Invoice No:",
@@ -992,6 +993,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Isama ang mga paglalarawan",
+    "includeModifiers": "Isama ang mga opsyon",
     "addAddon": "Magdagdag ng Addon",
     "addAddonGroup": "Magdagdag ng Grupo ng Addon",
     "addAddonGroupForm": "Magdagdag ng Grupo ng Addon",
@@ -1204,7 +1207,18 @@
     "update": "I-update",
     "updateProduct": "I-update ang Produkto",
     "updated": "Na-update ang produkto",
-    "uploadCsv": "Mag-upload ng CSV"
+    "uploadCsv": "Mag-upload ng CSV",
+    "printMenu": "I-print ang Menu",
+    "printMenuDescription": "Piliin kung aling mga produkto ang isasama sa naka-print na menu.",
+    "includeInactiveItems": "Isama ang mga hindi aktibong produkto",
+    "includeOutOfStockItems": "Isama ang mga ubos na produkto",
+    "includeHiddenItems": "Isama ang mga nakatagong produkto",
+    "menuPrintedSuccess": "Matagumpay na na-print ang menu",
+    "noProductsToPrint": "Walang produktong tumutugma sa mga napiling pamantayan",
+    "printerDestination": "Lokasyon ng printer",
+    "systemBrowserPrint": "System / Pag-print sa Browser",
+    "menuPrintFailed": "Hindi na-print ang menu",
+    "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli."
   },
   "receipt": {
     "amount": "Halaga",

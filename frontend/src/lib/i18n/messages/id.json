@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 item dibatalkan · Ketuk untuk melihat} other {# item dibatalkan · Ketuk untuk melihat}}",
     "voidingItem": "Membatalkan...",
     "walkInCustomer": "Pelanggan Datang Langsung",
-    "whatsappFailed": "Gagal membuka WhatsApp"
+    "whatsappFailed": "Gagal membuka WhatsApp",
+    "selectOrderPlaceholder": "Pilih pesanan di kiri untuk melihat detail.",
+    "itemCount": "{count, plural, one {1 item} other {# item}}"
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -2092,6 +2094,11 @@
     "diagnosticsLocalOnlyHintPending": "Layar ini menampilkan masalah terbaru di perangkat ini dengan bahasa yang mudah dipahami.",
     "requireKitchenDeliveredToggle": "Wajibkan pesanan dapur diantar sebelum penagihan",
     "requireKitchenDeliveredHint": "Cegah pelunasan tagihan pascabayar sampai semua item ditandai telah disajikan dari dapur. Pemeriksaan otomatis dilewati jika KDS dinonaktifkan.",
+    "ordersLayoutTitle": "Tata Letak Layar Pesanan",
+    "ordersLayoutSplit": "Master / Detail (Tampilan Split)",
+    "ordersLayoutSplitHint": "Daftar pesanan ringkas di kiri dan detail pesanan lengkap di kanan.",
+    "ordersLayoutCards": "Grid Kartu",
+    "ordersLayoutCardsHint": "Grid klasik kartu pesanan mandiri.",
     "chargesAndSurcharges": "Biaya dan surcharge",
     "chargesAndSurchargesHint": "Biaya layanan, biaya kemasan, dan surcharge yang diterapkan otomatis ke pesanan.",
     "noChargesConfigured": "Belum ada biaya yang dikonfigurasi.",

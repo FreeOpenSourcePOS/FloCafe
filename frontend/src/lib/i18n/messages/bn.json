@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1টি বাতিল করা আইটেম · দেখতে ট্যাপ করুন} other {#টি অকার্যকর আইটেম · দেখতে আলতো চাপুন}}",
     "voidingItem": "ভয়ডিং...",
     "walkInCustomer": "ওয়াক-ইন গ্রাহক",
-    "whatsappFailed": "WhatsApp খুলতে ব্যর্থ হয়েছে।"
+    "whatsappFailed": "WhatsApp খুলতে ব্যর্থ হয়েছে।",
+    "selectOrderPlaceholder": "বিবরণ দেখতে বাম দিক থেকে একটি অর্ডার নির্বাচন করুন।",
+    "itemCount": "{count, plural, one {১টি আইটেম} other {#টি আইটেম}}"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",
@@ -2092,6 +2094,11 @@
     "printing": "প্রিন্টিং",
     "requireKitchenDeliveredToggle": "বিল করার আগে রান্নাঘরের খাবার পরিবেশন নিশ্চিত করুন",
     "requireKitchenDeliveredHint": "সব আইটেম রান্নাঘর থেকে পরিবেশিত হিসেবে চিহ্নিত না হওয়া পর্যন্ত বাকিতে বিল পরিশোধ বন্ধ রাখুন। KDS বন্ধ থাকলে এটি স্বয়ংক্রিয়ভাবে এড়িয়ে যাবে।",
+    "ordersLayoutTitle": "অর্ডার স্ক্রিন লেআউট",
+    "ordersLayoutSplit": "মাস্টার / ডিটেইল (স্প্লিট ভিউ)",
+    "ordersLayoutSplitHint": "বাম দিকে কমপ্যাক্ট অর্ডার তালিকা, ডান দিকে সম্পূর্ণ অর্ডারের বিবরণ।",
+    "ordersLayoutCards": "কার্ড গ্রিড",
+    "ordersLayoutCardsHint": "আলাদা অর্ডার কার্ডের ক্লাসিক গ্রিড।",
     "chargesAndSurcharges": "ফি ও অতিরিক্ত ফি",
     "chargesAndSurchargesHint": "সার্ভিস ফি, প্যাকেজিং ফি ও অতিরিক্ত ফি যা অর্ডারে স্বয়ংক্রিয়ভাবে প্রয়োগ হয়।",
     "noChargesConfigured": "এখনও কোনো ফি কনফিগার করা হয়নি।",

@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 аннулированный элемент · Нажмите для просмотра} few {# аннулированных элемента · Нажмите для просмотра} many {# аннулированных элементов · Нажмите для просмотра} other {# аннулированного элемента · Нажмите для просмотра}}",
     "voidingItem": "Отмена позиции…",
     "walkInCustomer": "Клиент без стола",
-    "whatsappFailed": "Не удалось открыть WhatsApp."
+    "whatsappFailed": "Не удалось открыть WhatsApp.",
+    "selectOrderPlaceholder": "Выберите заказ слева, чтобы увидеть подробности.",
+    "itemCount": "{count, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}"
   },
   "pos": {
     "addCustomer": "Добавить клиента",
@@ -2092,6 +2094,11 @@
     "printing": "Печать",
     "requireKitchenDeliveredToggle": "Требовать выдачу блюд с кухни до оплаты",
     "requireKitchenDeliveredHint": "Запрещает оплату постоплатных счетов, пока все блюда не отмечены как поданные. Если KDS отключена, проверка пропускается автоматически.",
+    "ordersLayoutTitle": "Макет экрана заказов",
+    "ordersLayoutSplit": "Список / Подробности (разделённый вид)",
+    "ordersLayoutSplitHint": "Компактный список заказов слева и полные детали заказа справа.",
+    "ordersLayoutCards": "Сетка карточек",
+    "ordersLayoutCardsHint": "Классическая сетка отдельных карточек заказа.",
     "chargesAndSurcharges": "Сборы и надбавки",
     "chargesAndSurchargesHint": "Сбор за обслуживание, упаковка и надбавки, автоматически применяемые к заказам.",
     "noChargesConfigured": "Сборы пока не настроены.",

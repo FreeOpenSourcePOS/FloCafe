@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 article annulé · Appuyer pour voir} other {# articles annulés · Appuyer pour voir}}",
     "voidingItem": "Annulation...",
     "walkInCustomer": "Client de passage",
-    "whatsappFailed": "Impossible d’ouvrir WhatsApp"
+    "whatsappFailed": "Impossible d’ouvrir WhatsApp",
+    "selectOrderPlaceholder": "Sélectionnez une commande à gauche pour afficher les détails.",
+    "itemCount": "{count, plural, one {1 article} other {# articles}}"
   },
   "pos": {
     "addCustomer": "Ajouter un client",
@@ -2092,6 +2094,11 @@
     "printing": "Impression",
     "requireKitchenDeliveredToggle": "Exiger la livraison de la cuisine avant la facturation",
     "requireKitchenDeliveredHint": "Empêche le règlement des additions après paiement tant que tous les articles ne sont pas marqués comme servis en cuisine. Vérification ignorée automatiquement si le KDS est désactivé.",
+    "ordersLayoutTitle": "Disposition de l'écran des commandes",
+    "ordersLayoutSplit": "Maître / Détail (vue divisée)",
+    "ordersLayoutSplitHint": "Liste compacte des commandes à gauche et détails complets de la commande à droite.",
+    "ordersLayoutCards": "Grille de cartes",
+    "ordersLayoutCardsHint": "Grille classique de fiches de commande indépendantes.",
     "chargesAndSurcharges": "Frais et suppléments",
     "chargesAndSurchargesHint": "Frais de service, frais d'emballage et suppléments appliqués automatiquement aux commandes.",
     "noChargesConfigured": "Aucun frais configuré pour l'instant.",

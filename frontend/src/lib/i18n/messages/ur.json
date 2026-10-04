@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 منسوخ آئٹم · دیکھنے کے لیے ٹیپ کریں} other {# منسوخ آئٹمز · دیکھنے کے لیے ٹیپ کریں}}",
     "voidingItem": "منسوخ کیا جا رہا ہے...",
     "walkInCustomer": "بغیر بکنگ گاہک",
-    "whatsappFailed": "WhatsApp نہیں کھل سکا"
+    "whatsappFailed": "WhatsApp نہیں کھل سکا",
+    "selectOrderPlaceholder": "تفصیلات دیکھنے کے لیے بائیں طرف سے آرڈر منتخب کریں۔",
+    "itemCount": "{count, plural, one {1 آئٹم} other {# آئٹم}}"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -2092,6 +2094,11 @@
     "printing": "پرنٹنگ",
     "requireKitchenDeliveredToggle": "بل بنانے سے پہلے باورچی خانے سے ترسیل لازمی کریں",
     "requireKitchenDeliveredHint": "جب تک باورچی خانے کے تمام آئٹمز کو پیش کیا گیا نشان زد نہ کیا جائے، ادھار بل کی ادائیگی روکے رکھیں۔ KDS بند ہونے پر یہ جانچ خود بخود چھوڑ دی جائے گی۔",
+    "ordersLayoutTitle": "آرڈر اسکرین لے آؤٹ",
+    "ordersLayoutSplit": "ماسٹر / تفصیل (تقسیم شدہ ویو)",
+    "ordersLayoutSplitHint": "بائیں طرف مختصر آرڈر فہرست اور دائیں طرف آرڈر کی مکمل تفصیلات۔",
+    "ordersLayoutCards": "کارڈ گرڈ",
+    "ordersLayoutCardsHint": "الگ آرڈر کارڈز کا کلاسیکی گرڈ۔",
     "chargesAndSurcharges": "فیس اور اضافی فیس",
     "chargesAndSurchargesHint": "سروس فیس، پیکجنگ فیس اور اضافی فیس جو آرڈرز پر خودکار طور پر لاگو ہوتی ہیں۔",
     "noChargesConfigured": "ابھی کوئی فیس ترتیب نہیں دی گئی۔",

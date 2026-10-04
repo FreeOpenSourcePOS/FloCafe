@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 iptal edilen ürün · Görüntülemek için dokunun} other {# iptal edilen ürün · Görüntülemek için dokunun}}",
     "voidingItem": "İptal ediliyor...",
     "walkInCustomer": "Giriş Müşterisi",
-    "whatsappFailed": "WhatsApp gönderimi başarısız"
+    "whatsappFailed": "WhatsApp gönderimi başarısız",
+    "selectOrderPlaceholder": "Ayrıntıları görmek için soldan bir sipariş seçin.",
+    "itemCount": "{count, plural, one {1 ürün} other {# ürün}}"
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -2092,6 +2094,11 @@
     "diagnosticsLocalOnlyHintPending": "Bu ekran, bu cihazdaki son sorunları sade bir dille gösterir.",
     "requireKitchenDeliveredToggle": "Faturalandırmadan önce mutfak teslimatını zorunlu kıl",
     "requireKitchenDeliveredHint": "Tüm ürünler mutfakta servis edildi olarak işaretlenene kadar veresiye hesabın ödenmesini engeller. KDS kapalıysa bu kontrol otomatik olarak atlanır.",
+    "ordersLayoutTitle": "Sipariş Ekranı Yerleşimi",
+    "ordersLayoutSplit": "Ana / Detay (Bölünmüş Görünüm)",
+    "ordersLayoutSplitHint": "Solda kompakt sipariş listesi, sağda siparişin tüm ayrıntıları.",
+    "ordersLayoutCards": "Kart Izgara",
+    "ordersLayoutCardsHint": "Bağımsız sipariş kartlarından oluşan klasik ızgara.",
     "chargesAndSurcharges": "Ücretler ve ek ücretler",
     "chargesAndSurchargesHint": "Siparişlere otomatik olarak uygulanan servis ücretleri, paketleme ücretleri ve ek ücretler.",
     "noChargesConfigured": "Henüz ücret tanımlanmadı.",

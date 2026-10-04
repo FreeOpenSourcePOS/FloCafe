@@ -47,7 +47,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
 
-const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
+export const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
   pending: { bg: 'bg-yellow-100 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', labelKey: 'pending' },
   preparing: { bg: 'bg-blue-100 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', labelKey: 'preparing' },
   ready: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'ready' },
@@ -56,13 +56,13 @@ const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labe
   cancelled: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'cancelled' },
 };
 
-const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
+export const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
   paid: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'paid' },
   partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partiallyPaid' },
   unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
 };
 
-const whatsappReceiptStatusBadge: Record<'sent' | 'partial' | 'pending' | 'failed' | 'notSent', { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
+export const whatsappReceiptStatusBadge: Record<'sent' | 'partial' | 'pending' | 'failed' | 'notSent', { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
   sent: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'sent' },
   partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partial' },
   pending: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'pending' },
@@ -70,7 +70,7 @@ const whatsappReceiptStatusBadge: Record<'sent' | 'partial' | 'pending' | 'faile
   notSent: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'notSent' },
 };
 
-const itemStatusDot: Record<OrderItem['status'], { dot: string; labelKey: OrdersKey }> = {
+export const itemStatusDot: Record<OrderItem['status'], { dot: string; labelKey: OrdersKey }> = {
   pending: { dot: 'bg-yellow-400', labelKey: 'itemStatusWaiting' },
   preparing: { dot: 'bg-blue-500', labelKey: 'itemStatusPreparing' },
   ready: { dot: 'bg-green-500', labelKey: 'itemStatusReady' },
@@ -80,7 +80,7 @@ const itemStatusDot: Record<OrderItem['status'], { dot: string; labelKey: Orders
   void_adjustment: { dot: 'bg-red-300', labelKey: 'itemStatusVoidAdjustment' },
 };
 
-const ORDER_TYPE_KEYS = {
+export const ORDER_TYPE_KEYS = {
   dine_in: 'dineIn',
   takeaway: 'takeaway',
   delivery: 'delivery',

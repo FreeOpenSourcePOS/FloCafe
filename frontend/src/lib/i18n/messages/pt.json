@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 item cancelado · Toque para ver} other {# itens cancelados · Toque para ver}}",
     "voidingItem": "Anulando...",
     "walkInCustomer": "Cliente sem reserva",
-    "whatsappFailed": "Falha ao abrir o WhatsApp"
+    "whatsappFailed": "Falha ao abrir o WhatsApp",
+    "selectOrderPlaceholder": "Selecione um pedido à esquerda para ver os detalhes.",
+    "itemCount": "{count, plural, one {1 item} other {# itens}}"
   },
   "pos": {
     "addCustomer": "Adicionar Cliente",
@@ -2092,6 +2094,11 @@
     "printing": "Impressão",
     "requireKitchenDeliveredToggle": "Exigir entrega da cozinha antes de cobrar",
     "requireKitchenDeliveredHint": "Impede o pagamento de contas pós-pagas até que todos os itens estejam marcados como servidos pela cozinha. Ignorado automaticamente se o KDS estiver desativado.",
+    "ordersLayoutTitle": "Layout da tela de pedidos",
+    "ordersLayoutSplit": "Mestre / Detalhe (visão dividida)",
+    "ordersLayoutSplitHint": "Lista compacta de pedidos à esquerda e detalhes completos do pedido à direita.",
+    "ordersLayoutCards": "Grade de cartões",
+    "ordersLayoutCardsHint": "Grade clássica de cartões de pedido independentes.",
     "chargesAndSurcharges": "Taxas e sobretaxas",
     "chargesAndSurchargesHint": "Taxa de serviço, taxa de embalagem e sobretaxas aplicadas automaticamente aos pedidos.",
     "noChargesConfigured": "Nenhuma taxa configurada ainda.",

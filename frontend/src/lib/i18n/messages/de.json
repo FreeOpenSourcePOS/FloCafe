@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 stornierter Artikel · Zum Anzeigen tippen} other {# stornierte Artikel · Zum Anzeigen tippen}}",
     "voidingItem": "Wird storniert…",
     "walkInCustomer": "Laufkunde",
-    "whatsappFailed": "WhatsApp konnte nicht geöffnet werden"
+    "whatsappFailed": "WhatsApp konnte nicht geöffnet werden",
+    "selectOrderPlaceholder": "Wählen Sie links eine Bestellung aus, um Details anzuzeigen.",
+    "itemCount": "{count, plural, one {1 Artikel} other {# Artikel}}"
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -2092,6 +2094,11 @@
     "diagnosticsLocalOnlyHintPending": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an.",
     "requireKitchenDeliveredToggle": "Küchenlieferung vor der Abrechnung verlangen",
     "requireKitchenDeliveredHint": "Verhindert die Abrechnung von Postpaid-Rechnungen, bis alle Artikel in der Küche als serviert markiert sind. Bei deaktiviertem KDS wird die Prüfung automatisch umgangen.",
+    "ordersLayoutTitle": "Bestellbildschirm-Layout",
+    "ordersLayoutSplit": "Master / Detail (geteilte Ansicht)",
+    "ordersLayoutSplitHint": "Kompakte Bestellliste links, vollständige Bestelldetails rechts.",
+    "ordersLayoutCards": "Kartenraster",
+    "ordersLayoutCardsHint": "Klassisches Raster aus eigenständigen Bestellkarten.",
     "chargesAndSurcharges": "Gebühren und Zuschläge",
     "chargesAndSurchargesHint": "Servicegebühren, Verpackungsgebühren und Zuschläge, die automatisch auf Bestellungen angewendet werden.",
     "noChargesConfigured": "Noch keine Gebühren konfiguriert.",

@@ -48,8 +48,12 @@ import {
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
 import { matchesOrderSearch } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
+import { cn } from '@/lib/utils';
 
 import { OrderCard } from '@/components/orders/OrderCard';
+import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
+import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
+import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
@@ -208,6 +212,10 @@ export default function OrdersPage() {
     ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
     : discountModal?.value ?? 0;
   const fmt = useFormatCurrency();
+  const { layout: ordersLayout } = useOrdersLayoutPreference();
+  // Selected order id survives refetches; it resolves against the filtered list
+  // so a selection that disappears degrades to the placeholder instead of throwing.
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
@@ -485,6 +493,10 @@ export default function OrdersPage() {
     }
     return true;
   });
+
+  const selectedOrder = selectedOrderId == null
+    ? undefined
+    : filteredOrders.find((order) => order.id === selectedOrderId);
 
   const handleCheckout = async (orderId: number) => {
     setGeneratingBill(orderId);
@@ -911,9 +923,9 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className={ordersLayout === 'split' ? 'h-full min-h-0 flex flex-col gap-4' : 'space-y-4'}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
         <div className="flex gap-2">
           {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
@@ -933,7 +945,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4 shrink-0">
         {/* Search by order number, customer name, or phone */}
         <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -1062,6 +1074,77 @@ export default function OrdersPage() {
       ) : filteredOrders.length === 0 ? (
         <div className="flex items-center justify-center py-24 text-gray-400">
           <p>{tOrders('empty')}</p>
+        </div>
+      ) : ordersLayout === 'split' ? (
+        <div className="flex-1 min-h-0 flex gap-4">
+          {/* Master pane — 40% on desktop, full width below md. */}
+          <div className={cn(selectedOrder ? 'hidden md:flex' : 'flex', 'w-full md:w-[40%] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden')}>
+            <OrdersMasterList
+              orders={filteredOrders}
+              selectedOrderId={selectedOrderId}
+              onSelect={setSelectedOrderId}
+              now={now}
+            />
+          </div>
+
+          {/* Detail pane — 60% on desktop, full width with back nav below md. */}
+          <div className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:w-[60%] min-w-0')}>
+            <OrderDetailPanel
+              order={selectedOrder ?? null}
+              onBack={() => setSelectedOrderId(null)}
+              now={now}
+              canCancelItems={canCancelItems}
+              canRestoreItems={canRestoreItems}
+              canRefund={canRefund}
+              isWhatsAppReady={isWhatsAppReady}
+              printHistory={printHistory}
+              generatingBillId={generatingBill}
+              printingBillId={printingBillId}
+              printingSlipOrderId={printingSlipOrderId}
+              sendingWaOrderId={sendingWaOrderId}
+              cancellingOrderId={cancellingOrderId}
+              convertingOrderId={convertingOrderId}
+              isLinkingCustomer={selectedOrderId !== null && linkCustomerOrderId === selectedOrderId}
+              linkCustomerSearch={linkCustomerSearch}
+              linkCustomerResults={linkCustomerResults}
+              linkingCustomer={linkingCustomer}
+              onCheckout={handleCheckout}
+              onAddItems={openAddItemsModal}
+              onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
+              onConvertToTakeaway={handleConvertToTakeaway}
+              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
+              onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onPrintOrder={tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined}
+              onPrintDeliverySlip={handlePrintDeliverySlip}
+              onSendWhatsApp={handleSendViaFlo}
+              onLinkCustomer={(orderId) => {
+                setLinkCustomerOrderId(orderId);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onCancelLinkCustomer={() => {
+                setLinkCustomerOrderId(null);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onSearchCustomer={(query) => {
+                setLinkCustomerSearch(query);
+                searchCustomersForLink(query);
+              }}
+              onSelectCustomer={handleLinkCustomer}
+              onCreateCustomer={(orderId, search) => {
+                setCreateCustomerSearch(search);
+                setCreateCustomerOrderId(orderId);
+              }}
+              onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
+              onDownloadPrintPreview={handleDownloadPrintPreview}
+              onDeleteItem={deleteItem}
+              onVoidItem={(orderId, itemId, productName) =>
+                setVoidItemModal({ orderId, itemId, productName, overridePin: '' })
+              }
+              onRestoreItem={restoreItem}
+            />
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">

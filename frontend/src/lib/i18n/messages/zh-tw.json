@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, other {# 件已作廢商品 · 點按檢視}}",
     "voidingItem": "作廢中…",
     "walkInCustomer": "散客",
-    "whatsappFailed": "開啟 WhatsApp 失敗"
+    "whatsappFailed": "開啟 WhatsApp 失敗",
+    "selectOrderPlaceholder": "請在左側選擇一筆訂單以檢視詳情。",
+    "itemCount": "{count, plural, other {# 件}}"
   },
   "pos": {
     "addCustomer": "新增顧客",
@@ -2092,6 +2094,11 @@
     "printing": "列印",
     "requireKitchenDeliveredToggle": "結帳前要求廚房出餐",
     "requireKitchenDeliveredHint": "所有餐點在廚房標記為已送達前，禁止結清後付帳單。關閉 KDS 時會自動略過此檢查。",
+    "ordersLayoutTitle": "訂單畫面版面",
+    "ordersLayoutSplit": "主從檢視（分割顯示）",
+    "ordersLayoutSplitHint": "左側為精簡的訂單清單，右側為完整的訂單詳情。",
+    "ordersLayoutCards": "卡片格狀版面",
+    "ordersLayoutCardsHint": "由獨立訂單卡片組成的傳統格狀版面。",
     "chargesAndSurcharges": "費用與附加費",
     "chargesAndSurchargesHint": "服務費、包裝費以及自動套用於訂單的附加費。",
     "noChargesConfigured": "尚未設定任何費用。",

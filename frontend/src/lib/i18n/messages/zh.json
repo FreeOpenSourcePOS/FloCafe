@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, other {# 件已作废商品 · 点按查看}}",
     "voidingItem": "作废中…",
     "walkInCustomer": "散客",
-    "whatsappFailed": "打开 WhatsApp 失败"
+    "whatsappFailed": "打开 WhatsApp 失败",
+    "selectOrderPlaceholder": "请在左侧选择一个订单以查看详情。",
+    "itemCount": "{count, plural, other {# 件}}"
   },
   "pos": {
     "addCustomer": "添加顾客",
@@ -2092,6 +2094,11 @@
     "printing": "打印",
     "requireKitchenDeliveredToggle": "结账前要求厨房出餐",
     "requireKitchenDeliveredHint": "所有菜品在厨房标记为已上菜前，禁止结清后付账单。关闭 KDS 时会自动跳过此检查。",
+    "ordersLayoutTitle": "订单屏幕布局",
+    "ordersLayoutSplit": "主从视图（分栏显示）",
+    "ordersLayoutSplitHint": "左侧为紧凑的订单列表，右侧为完整的订单详情。",
+    "ordersLayoutCards": "卡片网格",
+    "ordersLayoutCardsHint": "由独立订单卡片组成的经典网格。",
     "chargesAndSurcharges": "费用与附加费",
     "chargesAndSurchargesHint": "服务费、包装费以及自动应用到订单的附加费。",
     "noChargesConfigured": "尚未配置任何费用。",

@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 artículo anulado · Tocá para ver} other {# artículos anulados · Tocá para ver}}",
     "voidingItem": "Anulando...",
     "walkInCustomer": "Cliente de paso",
-    "whatsappFailed": "No se pudo abrir WhatsApp"
+    "whatsappFailed": "No se pudo abrir WhatsApp",
+    "selectOrderPlaceholder": "Selecciona un pedido a la izquierda para ver los detalles.",
+    "itemCount": "{count, plural, one {1 ítem} other {# ítems}}"
   },
   "pos": {
     "addCustomer": "Agregar Cliente",
@@ -2092,6 +2094,11 @@
     "diagnosticsLocalOnlyHintPending": "Esta pantalla muestra los problemas recientes de este dispositivo en lenguaje claro.",
     "requireKitchenDeliveredToggle": "Exigir la entrega de cocina antes de cobrar",
     "requireKitchenDeliveredHint": "Impide cobrar cuentas pospagadas hasta que todos los artículos estén marcados como servidos en la cocina. Se omite automáticamente si KDS está desactivado.",
+    "ordersLayoutTitle": "Diseño de la pantalla de pedidos",
+    "ordersLayoutSplit": "Maestro / Detalle (vista dividida)",
+    "ordersLayoutSplitHint": "Lista de pedidos compacta a la izquierda y detalles completos del pedido a la derecha.",
+    "ordersLayoutCards": "Cuadrícula de tarjetas",
+    "ordersLayoutCardsHint": "Cuadrícula clásica de tarjetas de pedido independientes.",
     "chargesAndSurcharges": "Cargos y recargos",
     "chargesAndSurchargesHint": "Cargo por servicio, cargo por embalaje y recargos aplicados automáticamente a los pedidos.",
     "noChargesConfigured": "Aún no hay cargos configurados.",

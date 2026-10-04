@@ -6,13 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
+import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 import type { KotLanguagePolicy, PrimaryLanguageSelection, ReceiptLanguagePolicy } from '@print/types';
 import {
   parseStoredKotLanguagePolicy,
   parseStoredReceiptLanguagePolicy,
 } from '@/lib/print-language-policies';
 import { usePrinterStore } from '@/hooks/usePrinter';
-import { Settings, Monitor, Users, Gift, Info, Lock, Smartphone, RefreshCw, Copy, Check, Trash2, Plus, ChefHat, QrCode, CheckCircle2, Cloud, CloudOff, Zap, Percent, AlertTriangle, SunMoon } from 'lucide-react';
+import { Settings, Monitor, Users, Gift, Info, Lock, Smartphone, RefreshCw, Copy, Check, Trash2, Plus, ChefHat, QrCode, CheckCircle2, Cloud, CloudOff, Zap, Percent, AlertTriangle, SunMoon, LayoutPanelTop } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -359,6 +360,7 @@ export default function SettingsPage() {
   const savingAllSettingsInFlight = useRef(false);
 
   const themeMode = useThemeMode((s) => s.mode);
+  const { layout: ordersLayout, save: saveOrdersLayout } = useOrdersLayoutPreference();
   const setThemeMode = useThemeMode((s) => s.setMode);
   const markUserSelectedTheme = useThemeMode((s) => s.markUserSelected);
 
@@ -3111,6 +3113,46 @@ export default function SettingsPage() {
                         </span>
                         <span className="font-medium text-foreground">{label}</span>
                       </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <LayoutPanelTop size={20} className="text-muted-foreground" />
+                <h2 className="font-semibold text-foreground">{t('ordersLayoutTitle')}</h2>
+              </div>
+              <div className="flex flex-col gap-3" role="radiogroup" aria-label={t('ordersLayoutTitle')}>
+                {([
+                  { value: 'split', label: t('ordersLayoutSplit'), hint: t('ordersLayoutSplitHint') },
+                  { value: 'cards', label: t('ordersLayoutCards'), hint: t('ordersLayoutCardsHint') },
+                ] as const).map((option) => {
+                  const active = ordersLayout === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => { if (!active) void saveOrdersLayout(option.value); }}
+                      className={`text-start rounded-lg border-2 px-4 py-3 transition ${
+                        active ? 'border-brand bg-brand/5' : 'border-border hover:border-gray-300 dark:border-border'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className={`inline-block w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                            active ? 'border-brand' : 'border-gray-300 dark:border-border'
+                          }`}
+                        >
+                          {active && <span className="block w-2 h-2 rounded-full bg-brand" />}
+                        </span>
+                        <span className="font-medium text-foreground">{option.label}</span>
+                      </div>
+                      <p className="mt-1 ps-6 text-xs text-muted-foreground">{option.hint}</p>
                     </button>
                   );
                 })}

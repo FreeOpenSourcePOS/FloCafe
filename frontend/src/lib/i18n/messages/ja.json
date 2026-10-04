@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {無効化した商品1点 · タップして表示} other {無効化した商品#点 · タップして表示}}",
     "voidingItem": "無効化中…",
     "walkInCustomer": "ウォークイン顧客",
-    "whatsappFailed": "WhatsAppを開けませんでした"
+    "whatsappFailed": "WhatsAppを開けませんでした",
+    "selectOrderPlaceholder": "詳細を表示するには、左側の注文を選択してください。",
+    "itemCount": "{count, plural, other {#点}}"
   },
   "pos": {
     "addCustomer": "顧客を追加",
@@ -2092,6 +2094,11 @@
     "printing": "印刷",
     "requireKitchenDeliveredToggle": "会計前にキッチンからの提供を必須にする",
     "requireKitchenDeliveredHint": "キッチンのすべての商品が提供済みになるまで後払いの会計を確定できません。KDS が無効の場合、この確認は自動的に省略されます。",
+    "ordersLayoutTitle": "注文画面のレイアウト",
+    "ordersLayoutSplit": "マスター / 詳細（分割表示）",
+    "ordersLayoutSplitHint": "左にコンパクトな注文一覧、右に注文の詳細全体を表示します。",
+    "ordersLayoutCards": "カードグリッド",
+    "ordersLayoutCardsHint": "独立した注文カードの従来型グリッドです。",
     "chargesAndSurcharges": "料金と追加料金",
     "chargesAndSurchargesHint": "サービス料、包装料、および注文に自動適用される追加料金です。",
     "noChargesConfigured": "料金はまだ設定されていません。",

@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {มีสินค้าที่ยกเลิก 1 รายการ · แตะเพื่อดู} other {มีสินค้าที่ยกเลิก # รายการ · แตะเพื่อดู}}",
     "voidingItem": "กำลังยกเลิกสินค้า...",
     "walkInCustomer": "ลูกค้าไม่นัด",
-    "whatsappFailed": "เปิด WhatsApp ไม่สำเร็จ"
+    "whatsappFailed": "เปิด WhatsApp ไม่สำเร็จ",
+    "selectOrderPlaceholder": "เลือกคำสั่งซื้อทางซ้ายเพื่อดูรายละเอียด",
+    "itemCount": "{count, plural, one {# รายการ} other {# รายการ}}"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",
@@ -2092,6 +2094,11 @@
     "printing": "การพิมพ์",
     "requireKitchenDeliveredToggle": "กำหนดให้ครัวส่งอาหารก่อนชำระเงิน",
     "requireKitchenDeliveredHint": "ป้องกันการชำระบิลแบบจ่ายภายหลังจนกว่ารายการทั้งหมดจะถูกทำเครื่องหมายว่าเสิร์ฟแล้ว หากปิด KDS ระบบจะข้ามการตรวจสอบนี้โดยอัตโนมัติ",
+    "ordersLayoutTitle": "เลย์เอาต์หน้าคำสั่งซื้อ",
+    "ordersLayoutSplit": "รายการ / รายละเอียด (มุมมองแบบแยก)",
+    "ordersLayoutSplitHint": "รายการคำสั่งซื้อแบบกระชับทางซ้าย และรายละเอียดคำสั่งซื้อทั้งหมดทางขวา",
+    "ordersLayoutCards": "ตารางการ์ด",
+    "ordersLayoutCardsHint": "ตารางการ์ดคำสั่งซื้อแยกแบบดั้งเดิม",
     "chargesAndSurcharges": "ค่าธรรมเนียมและค่าเพิ่มเติม",
     "chargesAndSurchargesHint": "ค่าบริการ ค่าบรรจุหีบห่อ และค่าเพิ่มเติมที่ใช้กับคำสั่งซื้อโดยอัตโนมัติ",
     "noChargesConfigured": "ยังไม่มีการตั้งค่าค่าธรรมเนียม",

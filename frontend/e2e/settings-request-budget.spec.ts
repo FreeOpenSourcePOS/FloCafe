@@ -1025,3 +1025,263 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
     'شبكة VPN / شبكة متشابكة',
   );
 });
+
+test('Charges stay read-only after a failed refresh until retry succeeds', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const charge = {
+    id: 'existing_fee',
+    name: 'Existing fee',
+    type: 'fixed',
+    value: 3,
+    calculation_basis: 'gross',
+    order_types: ['dine_in'],
+    is_optional: false,
+    is_default_active: true,
+    is_active: true,
+    tax_category_id: null,
+  };
+  let reads = 0;
+  let writes = 0;
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      reads += 1;
+      if (reads === 2) {
+        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [charge] }) });
+      return;
+    }
+    writes += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [charge] }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await page.getByRole('button', { name: 'POS Workflow', exact: true }).click();
+
+  const chargesError = page.getByRole('alert').filter({ hasText: 'Failed to reload settings' });
+  await expect(chargesError).toBeVisible();
+  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add Charge', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled();
+  expect(writes).toBe(0);
+
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(chargesError).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add Charge', exact: true })).toBeEnabled();
+  expect(reads).toBe(3);
+});
+
+test('Charges block duplicate IDs and confirm deletion before saving', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const charge = {
+    id: 'existing_fee',
+    name: 'Existing fee',
+    type: 'fixed',
+    value: 3,
+    calculation_basis: 'gross',
+    order_types: ['dine_in'],
+    is_optional: false,
+    is_default_active: true,
+    is_active: true,
+    tax_category_id: null,
+  };
+  let writes = 0;
+  let savedCharges: unknown[] = [];
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [charge] }) });
+      return;
+    }
+    writes += 1;
+    savedCharges = route.request().postDataJSON().charges;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: savedCharges }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  const form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('Another fee');
+  await form.getByLabel('Charge ID').fill('existing_fee');
+  await form.getByLabel('Value').fill('5');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form.getByRole('alert')).toContainText('Could not save charges');
+  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  expect(writes).toBe(0);
+
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  const confirmation = page.getByRole('dialog');
+  await expect(confirmation).toContainText('Delete Existing fee?');
+  await confirmation.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
+  expect(savedCharges).toEqual([]);
+});
+
+test('Charges ignore an older failed load after a newer load succeeds', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const latestCharge = {
+    id: 'latest_fee',
+    name: 'Latest fee',
+    type: 'fixed',
+    value: 4,
+    calculation_basis: 'gross',
+    order_types: ['dine_in'],
+    is_optional: false,
+    is_default_active: true,
+    is_active: true,
+    tax_category_id: null,
+  };
+  let releaseFirstRead!: () => void;
+  let signalFirstReadStarted!: () => void;
+  let signalFirstReadFinished!: () => void;
+  const firstReadHeld = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+  const firstReadStarted = new Promise<void>((resolve) => { signalFirstReadStarted = resolve; });
+  const firstReadFinished = new Promise<void>((resolve) => { signalFirstReadFinished = resolve; });
+  let reads = 0;
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [] }) });
+      return;
+    }
+    reads += 1;
+    if (reads === 1) {
+      signalFirstReadStarted();
+      await firstReadHeld;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+      signalFirstReadFinished();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [latestCharge] }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await firstReadStarted;
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await page.getByRole('button', { name: 'POS Workflow', exact: true }).click();
+  await expect(page.getByText('Latest fee', { exact: true })).toBeVisible();
+
+  const staleFailure = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/settings/charges' && response.request().method() === 'GET' && response.status() === 503;
+  });
+  releaseFirstRead();
+  await staleFailure;
+  await firstReadFinished;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  await expect(page.getByRole('alert').filter({ hasText: 'Failed to reload settings' })).toHaveCount(0);
+  await expect(page.getByText('Latest fee', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add Charge', exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
+});
+
+test('Charges keep saved definitions when a pending load completes later', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const originalCharge = {
+    id: 'existing_fee',
+    name: 'Existing fee',
+    type: 'fixed',
+    value: 3,
+    calculation_basis: 'gross',
+    order_types: ['dine_in'],
+    is_optional: false,
+    is_default_active: true,
+    is_active: true,
+    tax_category_id: null,
+  };
+  let savedCharges: Array<Record<string, unknown>> = [originalCharge];
+  let releaseSave!: () => void;
+  let signalSaveStarted!: () => void;
+  let releaseStaleRead!: () => void;
+  let signalStaleReadStarted!: () => void;
+  const saveHeld = new Promise<void>((resolve) => { releaseSave = resolve; });
+  const saveStarted = new Promise<void>((resolve) => { signalSaveStarted = resolve; });
+  const staleReadHeld = new Promise<void>((resolve) => { releaseStaleRead = resolve; });
+  const staleReadStarted = new Promise<void>((resolve) => { signalStaleReadStarted = resolve; });
+  let reads = 0;
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      reads += 1;
+      if (reads === 2) {
+        signalStaleReadStarted();
+        await staleReadHeld;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [originalCharge] }) });
+      return;
+    }
+    savedCharges = route.request().postDataJSON().charges;
+    signalSaveStarted();
+    await saveHeld;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: savedCharges }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await expect(page.getByText('Existing fee', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('Updated fee');
+  const saveResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/settings/charges' && response.request().method() === 'PUT';
+  });
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await saveStarted;
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await page.getByRole('button', { name: 'POS Workflow', exact: true }).click();
+  await staleReadStarted;
+
+  releaseSave();
+  await saveResponse;
+  await expect(page.getByText('Updated fee', { exact: true })).toBeVisible();
+  const staleResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/settings/charges' && response.request().method() === 'GET' && response.status() === 200;
+  });
+  releaseStaleRead();
+  await staleResponse;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  await expect(page.getByText('Updated fee', { exact: true })).toBeVisible();
+  await expect(page.getByText('Existing fee', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Add Charge', exact: true })).toBeEnabled();
+  expect(reads).toBe(2);
+});
+
+test('Charges generate distinct native IDs for non-ASCII names', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis.crypto, 'randomUUID', { configurable: true, value: undefined });
+  });
+  let savedCharges: Array<{ id: string; name: string }> = [];
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: [] }) });
+      return;
+    }
+    savedCharges = route.request().postDataJSON().charges;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ charges: savedCharges }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=pos`);
+  expect(await page.evaluate(() => typeof globalThis.crypto.randomUUID)).toBe('undefined');
+  expect(await page.evaluate(() => typeof globalThis.crypto.getRandomValues)).toBe('function');
+  for (const name of ['رسوم', '料金']) {
+    await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+    const form = page.getByRole('dialog');
+    await form.getByLabel('Name').fill(name);
+    await form.getByLabel('Value').fill('5');
+    await form.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(form).toHaveCount(0);
+  }
+
+  expect(savedCharges).toHaveLength(2);
+  expect(savedCharges[0].id).toMatch(/^charge-[0-9a-f]{32}$/);
+  expect(savedCharges[1].id).toMatch(/^charge-[0-9a-f]{32}$/);
+  expect(savedCharges[0].id).not.toBe(savedCharges[1].id);
+});

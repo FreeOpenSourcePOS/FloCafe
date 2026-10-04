@@ -37,6 +37,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
+import { receiptChargeLines } from '@/lib/charges';
 import { Ltr } from '@/components/layout/Ltr';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -214,6 +215,8 @@ export function OrderCard({
   const deliveryCharge = bill ? Number(bill.delivery_charge || 0) : Number(order.delivery_charge || 0);
   const serviceCharge = bill ? Number(bill.service_charge || 0) : Number(order.service_charge || 0);
   const packagingCharge = bill ? Number(bill.packaging_charge || 0) : Number(order.packaging_charge || 0);
+  const customCharges = receiptChargeLines(bill ? bill.charges_breakdown : order.charges_breakdown)
+    .filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
 
   const orderBills = (() => {
     if (order.bills && order.bills.length > 0) return order.bills;
@@ -715,6 +718,13 @@ export function OrderCard({
               <span className="font-medium text-foreground">{fmt(packagingCharge)}</span>
             </div>
           )}
+
+          {customCharges.map((charge) => (
+            <div key={charge.id} className="flex justify-between text-muted-foreground">
+              <span>{charge.name}</span>
+              <span className="font-medium text-foreground">{fmt(charge.amount)}</span>
+            </div>
+          ))}
 
           <div className="flex justify-between text-muted-foreground">
             <span>{tCommon('tax')}</span>

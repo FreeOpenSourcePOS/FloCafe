@@ -330,7 +330,8 @@ Router: `main/routes/bills.ts`. Full path: `/api/bills`.
 | `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries. `403` when `split_checks_enabled` is off. |
 | `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | Body is a single payment line; `customer_id` is read off it. Honours `Idempotency-Key`; a key reused for a different request returns `409`. |
 | `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | Body `payments` is an array applied in one transaction. Honours `Idempotency-Key`. |
-| `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | - |
+| `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | `409` when the order is cancelled. |
+| `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
 | `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |
 | `POST` | `/:id/print` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `print_type` | - |
 | `GET` | `/:id/print-history` | `ROLE_ACCESS.ownerManagerCashier` | path: `id` | Print jobs recorded for the bill, newest first. |
@@ -464,6 +465,8 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
+| `GET` | `/charges` | `settings.view`, `orders.create`, or `bills.discount.apply` | none | `{ charges }`; fee definitions only. |
+| `PUT` | `/charges` | `settings.manage` | body: `charges` or a charge-definition array | `{ charges }`; replaces the validated fee definitions. Fee amounts remain configured in Settings. |
 | `GET` | `/business` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/business` | `ROLE_ACCESS.ownerManager` | body: `business_name`, `timezone`, `business_day_start_time`, `currency`, `country`, `language`, `tax_registration_number`, `state_code`, `business_address`, `business_phone`, `instagram_handle`, `billing_type`, `tables_required`, `tax_registered`, `bill_show_name`, `bill_show_address`, `bill_show_phone`, `bill_show_tax_id`, `bill_show_tax_breakdown`, `bill_show_customer_name`, `bill_show_customer_phone`, `bill_show_table_number`, `currency_display`, `number_digits`, `calendar`, `country_selected` | A `currency` that differs from the stored value returns `409` with `error: "currency_change_requires_reset"` plus `current_currency` and `requested_currency`. Currency changes go through the reset flow, not this route. |
 | `GET` | `/tax` | `ROLE_ACCESS.allStaff` | none | - |
@@ -715,7 +718,7 @@ Router: declared inline in `main/routes/index.ts`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/tax/preview` | `pos.use`, `orders.create`, or `kitchen.use` | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value` | `400` when `items` is missing or empty. Returns the tax rollup for a hypothetical basket without persisting anything. Any one of those three permissions admits the caller, so by default every role prices a basket exactly as it did before the permission migration; the POS checkout modal calls this on every cart change. |
+| `POST` | `/api/tax/preview` | `pos.use`, `orders.create`, or `kitchen.use` | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value`; optional new-order context: `order_type` (required when any context field is supplied), `waived_charge_ids`, `opted_in_charge_ids` | `400` when `items` is missing or empty, the supplied order type is missing or invalid, or either supplied charge-ID value is neither `null` nor an array of strings. With the optional context, the server resolves configured charges for that order type and returns them as `summary.charges_breakdown` in the payable total; without it, the legacy manual charge inputs are unchanged. The route does not persist anything. Any one of the three sale permissions admits the caller, and the POS checkout modal calls this on every cart change. |
 | `GET` | `/api/tax/categories` | `ROLE_ACCESS.ownerManager` | none | `{ pack_id, country, categories, default_category_id, configuration_ready, unclassified_category_id }`. `categories` is empty until the pack's configuration is complete. |
 | `GET` | `/api/mobile/pairing-code` | `ROLE_ACCESS.owner` | none | `{ pairing_code, expires_at, qr_data_url }`. Returns the cached code when one is live, otherwise generates one. `409` when the store is not yet claimed in FloAdmin; `502` for any other cloud failure. |
 | `POST` | `/api/mobile/rotate-code` | `ROLE_ACCESS.owner` | none | Same shape as the read, and every already paired RevFlo device is disconnected. |

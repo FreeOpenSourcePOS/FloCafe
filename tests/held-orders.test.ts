@@ -239,6 +239,48 @@ async function main() {
     assertOrThrow(!JSON.stringify(malformedRes.data).includes('JSON'), 'Parser details are not exposed');
     console.log('  ✓ Malformed held orders are isolated');
 
+    // ─── Scenario G: a variant cart line survives the hold/restore round trip ───
+    console.log('\n─── Scenario G: a variant cart line is holdable ───');
+    // A real cart line id canonicalizes product + variant + add-ons + notes, so a
+    // variant line with add-ons is far longer than a 128-character identifier.
+    const variantLineId = `cart-v2:{"addons":[${Array.from({ length: 6 }, (_, index) => JSON.stringify({
+      addon_group_id: 'grp-sides', id: `addon-${index}`, is_active: true, name: `Side option ${index}`, price: 40, quantity: 1, sort_order: index,
+    })).join(',')}],"productId":"prod-cappuccino","specialInstructions":"${'no olives '.repeat(10)}","variantId":"var-sixteen"}`;
+    assertOrThrow(variantLineId.length > 128 && variantLineId.length < 2048, `the variant line id is the size a POS sends (${variantLineId.length})`);
+    const variantTableId = 'tbl-variant-line';
+    seedTable(db, variantTableId, 2);
+    const variantHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: variantTableId,
+        items: [{ id: variantLineId, product: { id: 'product-mango', name: 'Mango', price: 120 }, quantity: 1, addons: [], special_instructions: '' }],
+        guestCount: 1,
+        orderNotes: '',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(variantHold.status, 200, 'POST /held-orders accepts a variant cart line id');
+    const variantHeld = (await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders
+      .find((held: any) => held.tableId === variantTableId);
+    assertEqualOrThrow(variantHeld.items[0].id, variantLineId, 'the variant line id round-trips through storage');
+    assertEqualOrThrow(
+      (await api(baseUrl, `/api/held-orders/${variantTableId}?heldOrderId=${encodeURIComponent(variantHold.data.id)}`, { method: 'DELETE', headers: authHeader })).data.deleted,
+      true,
+      'the held variant line is released with its identity',
+    );
+    const absurdLineId = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: variantTableId,
+        items: [{ id: 'cart-v2:' + 'x'.repeat(2049), product: { id: 'product-mango', name: 'Mango', price: 120 }, quantity: 1, addons: [], special_instructions: '' }],
+        guestCount: 1,
+        orderNotes: '',
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(absurdLineId.status, 400, 'an absurd cart line id is still rejected');
+    console.log('  ✓ Variant cart lines are holdable');
+
     console.log('\n✅ All held orders tests passed');
   } finally {
     server.close();

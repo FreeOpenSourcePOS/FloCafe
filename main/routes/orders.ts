@@ -15,7 +15,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import { buildAppliedCharges, ChargeValidationError, serializeAppliedCharges } from '../services/charges';
-import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
+import { adjustProductStock, resolveInventoryDeduction, InventoryProductLike } from '../services/inventory';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
@@ -169,6 +169,98 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
   }
   db.prepare('UPDATE customers SET tag_counts = ?, updated_at = ? WHERE id = ?')
     .run(JSON.stringify(counts), now(), customerId);
+}
+
+interface OrderItemVariant {
+  id: string;
+  product_id: string;
+  name: string;
+  sku: string | null;
+  price: number;
+  online_price: number | null;
+  track_inventory: number;
+  inventory_product_id: string | null;
+  inventory_deduction_quantity: number | null;
+  is_active: number;
+}
+
+const ORDER_ITEM_VARIANT_COLUMNS = 'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, is_active';
+
+function loadOrderItemVariant(db: ReturnType<typeof getDatabase>, variantId: string): OrderItemVariant | undefined {
+  return db.prepare(`SELECT ${ORDER_ITEM_VARIANT_COLUMNS} FROM product_variants WHERE id = ?`).get(variantId) as OrderItemVariant | undefined;
+}
+
+/**
+ * Resolves the catalog variant an order item names. A missing, foreign, or
+ * inactive variant is rejected rather than silently sold at the base price,
+ * and the client never chooses the price: online orders use the variant's
+ * platform price when it has one, every other order uses its sellable price.
+ */
+function resolveOrderItemVariant(
+  db: ReturnType<typeof getDatabase>,
+  product: { id: string; name?: string },
+  item: { variant_id?: unknown },
+  isOnlineOrder: boolean,
+): OrderItemVariant | null {
+  const supplied = item.variant_id;
+  if (supplied !== undefined && supplied !== null && typeof supplied !== 'string') {
+    throw Object.assign(new Error('variant_id must be a string'), { statusCode: 400 });
+  }
+  const variantId = typeof supplied === 'string' ? supplied.trim() : '';
+  if (!variantId) {
+    const hasVariants = db.prepare('SELECT 1 FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1').get(product.id);
+    if (hasVariants) {
+      throw Object.assign(new Error(`A variant must be selected for ${product.name || product.id}`), { statusCode: 400 });
+    }
+    return null;
+  }
+
+  const variant = loadOrderItemVariant(db, variantId);
+  if (!variant) {
+    throw Object.assign(new Error(`Variant ${variantId} was not found`), { statusCode: 400 });
+  }
+  if (variant.product_id !== product.id) {
+    throw Object.assign(new Error(`Variant "${variant.name}" is not an option for ${product.name || product.id}`), { statusCode: 400 });
+  }
+  if (Number(variant.is_active) !== 1) {
+    throw Object.assign(new Error(`Variant "${variant.name}" is not available`), { statusCode: 400 });
+  }
+  return variant;
+}
+
+/** Backend-authoritative sell price for a variant; online orders may carry a platform price. */
+function variantUnitPrice(variant: OrderItemVariant, isOnlineOrder: boolean): number {
+  const platformPrice = variant.online_price;
+  if (isOnlineOrder && platformPrice !== null && platformPrice !== undefined) {
+    return Number(platformPrice);
+  }
+  return Number(variant.price);
+}
+
+function variantSelectionSnapshot(variant: OrderItemVariant): string {
+  return JSON.stringify({ id: variant.id, name: variant.name, price: Number(variant.price), sku: variant.sku });
+}
+
+/**
+ * The stock pool an order item consumed. Sale and restore both resolve through
+ * this, so a tracked variant always refunds its own pool and a recipe variant
+ * always refunds the base ingredient it depleted.
+ */
+function orderItemInventoryTarget(
+  db: ReturnType<typeof getDatabase>,
+  item: { product_id: string; variant_id?: string | null; quantity?: number; inventory_product_id?: string | null },
+): { productId: string; variantId: string | null } | null {
+  if (item.variant_id) {
+    const variant = loadOrderItemVariant(db, String(item.variant_id));
+    const product = db.prepare('SELECT id, track_inventory, inventory_product_id, inventory_deduction_quantity FROM products WHERE id = ?').get(item.product_id) as InventoryProductLike | undefined;
+    const deduction = variant && product ? resolveInventoryDeduction(product, Number(item.quantity) || 0, variant) : null;
+    if (deduction) return { productId: deduction.productId, variantId: deduction.variantId ?? null };
+  }
+
+  // Variant-free items refund the pool recorded on the line when it was sold.
+  const recordedProductId = item.inventory_product_id || item.product_id;
+  const recorded = db.prepare('SELECT id FROM products WHERE id = ?').get(recordedProductId) as { id: string } | undefined;
+  return recorded ? { productId: recorded.id, variantId: null } : null;
 }
 
 /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
@@ -567,6 +659,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     const deliveryAddress = typeof delivery_address === 'string' ? delivery_address.trim() || null : null;
     const onlinePlatform = typeof online_platform === 'string' ? online_platform.trim().slice(0, 100) : null;
     const externalOrderId = typeof external_order_id === 'string' ? external_order_id.trim().slice(0, 100) : null;
+    const isOnlineOrder = onlinePlatform !== null;
 
     const db = getDatabase();
 
@@ -662,10 +755,10 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const customer = orderCustomerId ? db.prepare('SELECT * FROM customers WHERE id = ?').get(orderCustomerId) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
+        INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -674,14 +767,15 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
           throw Object.assign(new Error(`Product ${item.product_id} not found`), { statusCode: 404 });
         }
 
-        const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);
-        const deduction = resolveInventoryDeduction(product, quantity);
+        const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
+        const unitPrice = variant ? variantUnitPrice(variant, isOnlineOrder) : parseFloat(product.price);
+        const deduction = resolveInventoryDeduction(product, quantity, variant);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw Object.assign(new Error(`Invalid price for ${product.name}: must be a non-negative number`), { statusCode: 400 });
         }
@@ -719,11 +813,11 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         const itemCreatedAt = now();
         const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity,
+          orderId, product.id, variant ? variant.id : null, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
-          JSON.stringify(item.variant_selection || null),
+          variant ? variantSelectionSnapshot(variant) : JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
           item.special_instructions || null,
           recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
@@ -734,6 +828,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         if (deduction) {
           adjustProductStock(db, {
             productId: deduction.productId,
+            variantId: deduction.variantId ?? null,
             quantityDelta: -deduction.deductedQuantity,
             movementType: 'sale',
             referenceType: 'order_item',
@@ -931,12 +1026,13 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       }
 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
+      const isOnlineOrder = !!currentOrder.online_platform;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
+        INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       const insertedItemIds: (number | bigint)[] = [];
@@ -945,14 +1041,15 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         if (!product) {
           throw Object.assign(new Error(`Product ${item.product_id} not found`), { statusCode: 404 });
         }
-        const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);
-        const deduction = resolveInventoryDeduction(product, quantity);
+        const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
+        const unitPrice = variant ? variantUnitPrice(variant, isOnlineOrder) : parseFloat(product.price);
+        const deduction = resolveInventoryDeduction(product, quantity, variant);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw Object.assign(new Error(`Invalid price for ${product.name}: must be a non-negative number`), { statusCode: 400 });
         }
@@ -979,11 +1076,11 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         const itemCreatedAt = now();
         const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
+          req.params.id, product.id, variant ? variant.id : null, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
-          JSON.stringify(item.variant_selection || null),
+          variant ? variantSelectionSnapshot(variant) : JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
           item.special_instructions || null,
           recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
@@ -995,6 +1092,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         if (deduction) {
           adjustProductStock(db, {
             productId: deduction.productId,
+            variantId: deduction.variantId ?? null,
             quantityDelta: -deduction.deductedQuantity,
             movementType: 'sale',
             referenceType: 'order_item',
@@ -1218,11 +1316,11 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
           `).all(req.params.id) as any[];
 
           for (const item of eligibleItems) {
-            const restoreProductId = item.inventory_product_id || item.product_id;
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
-            if (product && item.inventory_deducted_quantity > 0) {
+            const inventoryTarget = item.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, item) : null;
+            if (inventoryTarget) {
               adjustProductStock(db, {
-                productId: product.id,
+                productId: inventoryTarget.productId,
+                variantId: inventoryTarget.variantId,
                 quantityDelta: item.inventory_deducted_quantity,
                 movementType: 'cancel_restore',
                 referenceType: 'order_item',
@@ -1952,11 +2050,11 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
           .run(now(), itemId);
 
-        const restoreProductId = currentItem.inventory_product_id || currentItem.product_id;
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
-        if (product && currentItem.inventory_deducted_quantity > 0) {
+        const inventoryTarget = currentItem.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, currentItem) : null;
+        if (inventoryTarget) {
           adjustProductStock(db, {
-            productId: product.id,
+            productId: inventoryTarget.productId,
+            variantId: inventoryTarget.variantId,
             quantityDelta: currentItem.inventory_deducted_quantity,
             movementType: 'cancel_restore',
             referenceType: 'order_item',
@@ -2142,11 +2240,11 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
       }
 
       // Re-deduct the inventory quantity originally consumed by the item
-      const restoreProductId = currentItem.inventory_product_id || currentItem.product_id;
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
-      if (product && currentItem.inventory_deducted_quantity > 0) {
+      const inventoryTarget = currentItem.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, currentItem) : null;
+      if (inventoryTarget) {
         adjustProductStock(db, {
-          productId: product.id,
+          productId: inventoryTarget.productId,
+          variantId: inventoryTarget.variantId,
           quantityDelta: -currentItem.inventory_deducted_quantity,
           movementType: 'cancel_restore',
           referenceType: 'order_item',

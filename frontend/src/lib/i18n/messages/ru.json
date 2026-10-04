@@ -1198,7 +1198,18 @@
     "update": "Обновить",
     "updateProduct": "Обновить товар",
     "updated": "Товар обновлён",
-    "uploadCsv": "Загрузить CSV"
+    "uploadCsv": "Загрузить CSV",
+    "printMenu": "Печать меню",
+    "printMenuDescription": "Выберите товары для печатного меню.",
+    "includeInactiveItems": "Включить неактивные товары",
+    "includeOutOfStockItems": "Включить товары без остатка",
+    "includeHiddenItems": "Включить скрытые товары",
+    "menuPrintedSuccess": "Меню успешно напечатано",
+    "noProductsToPrint": "Нет товаров, соответствующих выбранным условиям",
+    "printerDestination": "Принтер",
+    "systemBrowserPrint": "Система / печать в браузере",
+    "menuPrintFailed": "Не удалось напечатать меню",
+    "menuPopupBlocked": "Браузер заблокировал окно печати. Разрешите всплывающие окна для этого сайта и повторите попытку."
   },
   "receipt": {
     "amount": "Сумма",

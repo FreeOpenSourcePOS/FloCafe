@@ -1198,7 +1198,18 @@
     "update": "업데이트",
     "updateProduct": "상품 업데이트",
     "updated": "상품이 업데이트되었습니다",
-    "uploadCsv": "CSV 업로드"
+    "uploadCsv": "CSV 업로드",
+    "printMenu": "메뉴 인쇄",
+    "printMenuDescription": "인쇄할 메뉴에 포함할 상품을 선택하세요.",
+    "includeInactiveItems": "비활성 상품 포함",
+    "includeOutOfStockItems": "품절 상품 포함",
+    "includeHiddenItems": "숨겨진 상품 포함",
+    "menuPrintedSuccess": "메뉴를 인쇄했습니다",
+    "noProductsToPrint": "선택한 조건에 맞는 상품이 없습니다",
+    "printerDestination": "프린터",
+    "systemBrowserPrint": "시스템 / 브라우저 인쇄",
+    "menuPrintFailed": "메뉴를 인쇄하지 못했습니다",
+    "menuPopupBlocked": "브라우저가 인쇄 창을 차단했습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."
   },
   "receipt": {
     "amount": "금액",

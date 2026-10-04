@@ -24,6 +24,7 @@ import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import dynamic from 'next/dynamic';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
@@ -64,6 +65,10 @@ import {
   persistOrderAttempt,
   readOrderAttempt,
 } from '@/lib/order-attempt';
+
+// Loaded on demand: the menu printer pulls the thermal print kernel in, which the
+// POS has no use for until the merchant opens the dialog.
+const PrintMenuModal = dynamic(() => import('@/components/products/PrintMenuModal'), { ssr: false });
 
 const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 
@@ -121,6 +126,7 @@ export default function POSPage() {
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [showPrintMenuModal, setShowPrintMenuModal] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
@@ -1181,6 +1187,7 @@ export default function POSPage() {
         shiftLoading={shift.loading}
         shiftError={shift.error}
         canUseShift={canUseShift}
+        onShowPrintMenu={() => setShowPrintMenuModal(true)}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
       />
@@ -1318,6 +1325,8 @@ export default function POSPage() {
       )}
 
       {ConfirmDialog}
+
+      <PrintMenuModal open={showPrintMenuModal} onOpenChange={setShowPrintMenuModal} />
 
       {/* Prepaid Checkout Modal - Payment BEFORE order is placed */}
       {showPrepaidCheckout && (

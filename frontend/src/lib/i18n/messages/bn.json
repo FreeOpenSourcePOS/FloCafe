@@ -1198,7 +1198,18 @@
     "update": "আপডেট",
     "updateProduct": "পণ্য আপডেট করুন",
     "updated": "পণ্য আপডেট করা হয়েছে",
-    "uploadCsv": "CSV আপলোড করুন"
+    "uploadCsv": "CSV আপলোড করুন",
+    "printMenu": "মেনু প্রিন্ট করুন",
+    "printMenuDescription": "মুদ্রিত মেনুতে কোন পণ্য থাকবে তা বেছে নিন।",
+    "includeInactiveItems": "নিষ্ক্রিয় পণ্য অন্তর্ভুক্ত করুন",
+    "includeOutOfStockItems": "স্টক-শেষ পণ্য অন্তর্ভুক্ত করুন",
+    "includeHiddenItems": "লুকানো পণ্য অন্তর্ভুক্ত করুন",
+    "menuPrintedSuccess": "মেনু সফলভাবে প্রিন্ট হয়েছে",
+    "noProductsToPrint": "নির্বাচিত শর্তে কোনো পণ্য নেই",
+    "printerDestination": "প্রিন্টার",
+    "systemBrowserPrint": "সিস্টেম / ব্রাউজার প্রিন্ট",
+    "menuPrintFailed": "মেনু প্রিন্ট করা যায়নি",
+    "menuPopupBlocked": "আপনার ব্রাউজার প্রিন্ট উইন্ডো ব্লক করেছে। এই সাইটের জন্য পপ-আপ অনুমতি দিন এবং আবার চেষ্টা করুন।"
   },
   "receipt": {
     "amount": "পরিমাণ",

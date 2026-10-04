@@ -1198,7 +1198,18 @@
     "update": "به‌روزرسانی",
     "updateProduct": "به‌روزرسانی کالا",
     "updated": "کالا به‌روزرسانی شد",
-    "uploadCsv": "بارگذاری CSV"
+    "uploadCsv": "بارگذاری CSV",
+    "printMenu": "چاپ منو",
+    "printMenuDescription": "انتخاب کنید کدام کالاها در منوی چاپی باشند.",
+    "includeInactiveItems": "شامل کردن کالاهای غیرفعال",
+    "includeOutOfStockItems": "شامل کردن کالاهای ناموجود",
+    "includeHiddenItems": "شامل کردن کالاهای پنهان",
+    "menuPrintedSuccess": "منو با موفقیت چاپ شد",
+    "noProductsToPrint": "هیچ محصولی با معیارهای انتخاب‌شده مطابقت ندارد",
+    "printerDestination": "چاپگر",
+    "systemBrowserPrint": "سیستم / چاپ مرورگر",
+    "menuPrintFailed": "چاپ منو انجام نشد",
+    "menuPopupBlocked": "مرورگر شما پنجره چاپ را مسدود کرد. برای این سایت اجازه پنجره‌های بازشو بدهید و دوباره تلاش کنید."
   },
   "receipt": {
     "amount": "مبلغ",

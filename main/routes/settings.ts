@@ -931,6 +931,24 @@ router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manag
   }
 });
 
+// ── Orders screen layout (must come BEFORE /:key wildcard) ─────────────────
+
+/**
+ * The Orders layout is a tenant-wide display preference, so every role that can
+ * open Orders has to read it — including roles denied `settings.view`. Writes
+ * stay on the generic settings route, which requires `settings.manage`.
+ */
+router.get('/orders_layout', settingsReadRateLimit, requireAnyPermission('settings.view', 'orders.read', 'orders.create'), (_req: Request, res: Response) => {
+  try {
+    const setting = getDatabase().prepare('SELECT * FROM settings WHERE key = ?').get('orders_layout');
+    if (setting) return res.json({ setting });
+    return res.json({ setting: { key: 'orders_layout', value: OPTIONAL_SETTING_DEFAULTS.orders_layout, updated_at: null } });
+  } catch (error) {
+    console.error('[API] Internal error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.

@@ -270,7 +270,13 @@ async function main() {
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: any, next: any) => {
-    req.user = { userId: 'orders-layout-owner', role: 'owner', name: 'Test Owner' };
+    // Permissions resolve from the users row keyed by userId, so the header lets
+    // a case act as a restricted role without re-mounting the app.
+    req.user = {
+      userId: String(req.headers['x-test-user'] || 'orders-layout-owner'),
+      role: 'owner',
+      name: 'Test Owner',
+    };
     next();
   });
   app.use('/api/settings', settingsRoutes);
@@ -365,7 +371,39 @@ async function main() {
     console.log('\n6. Preference hydration and concurrent saves recover correctly');
     await testPreferenceRecovery();
 
-    console.log('\n7. Unknown keys are still refused by the wildcard route');
+    console.log('\n7. Roles denied settings.view can still read the layout');
+    {
+      const db = getDatabase();
+      db.prepare(`
+        INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+        VALUES ('orders-layout-server', 'Test Server', 'orders-layout-server@test.local', 'unused', 'server', 1, ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(now(), now());
+      db.prepare("DELETE FROM user_permission_overrides WHERE user_id = 'orders-layout-server'").run();
+      db.prepare(`
+        INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+        VALUES ('orders-layout-server', 'settings.view', 'deny', 'orders-layout-owner', ?, ?)
+      `).run(now(), now());
+      const restricted = { headers: { 'x-test-user': 'orders-layout-server' } };
+
+      const read = await httpRequest(baseUrl, '/api/settings/orders_layout', restricted);
+      assert.equal(read.status, 200, 'a role denied settings.view still reads the tenant layout');
+      assert.equal(
+        read.data?.setting?.value,
+        readStored('orders_layout') ?? 'split',
+        'returns the persisted layout or its default',
+      );
+
+      const write = await httpRequest(baseUrl, '/api/settings/orders_layout', {
+        ...restricted,
+        method: 'PUT',
+        body: JSON.stringify({ value: 'cards' }),
+      });
+      assert.equal(write.status, 403, 'writes still require settings.manage');
+      assert.notEqual(readStored('orders_layout'), 'cards', 'the refused write never reached SQLite');
+    }
+
+    console.log('\n8. Unknown keys are still refused by the wildcard route');
     {
       const res = await httpRequest(baseUrl, '/api/settings/not_a_setting', {
         method: 'PUT',

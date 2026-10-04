@@ -1547,6 +1547,7 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
 type CurrencyResetMenuSnapshot = {
   categories: Record<string, unknown>[];
   products: Record<string, unknown>[];
+  productVariants: Record<string, unknown>[];
   addonGroups: Record<string, unknown>[];
   addons: Record<string, unknown>[];
   addonGroupProducts: Record<string, unknown>[];
@@ -1585,6 +1586,7 @@ function captureCurrencyResetMenu(dbInstance: Database.Database): CurrencyResetM
   return {
     categories: rows('categories'),
     products: rows('products'),
+    productVariants: rows('product_variants'),
     addonGroups: rows('addon_groups'),
     addons: rows('addons'),
     addonGroupProducts: rows('addon_group_product'),
@@ -1636,6 +1638,14 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
   const categoryAddonGroups = snapshot.categoryAddonGroups.filter(
     (link) => categoryIds.has(link.category_id) && addonGroupIds.has(link.addon_group_id),
   );
+  // Variants are restored with their prices; a recipe link whose base product
+  // did not survive the reset is dropped so the restored row stays referentially valid.
+  const productVariants = snapshot.productVariants
+    .filter((variant) => productIds.has(variant.product_id))
+    .map((variant) => ({
+      ...variant,
+      inventory_product_id: productIds.has(variant.inventory_product_id) ? variant.inventory_product_id : null,
+    }));
 
   insertSnapshotRows(dbInstance, 'categories', snapshot.categories);
   insertSnapshotRows(dbInstance, 'addon_groups', snapshot.addonGroups);
@@ -1647,6 +1657,7 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
     }
   }
   insertSnapshotRows(dbInstance, 'addons', addons);
+  insertSnapshotRows(dbInstance, 'product_variants', productVariants);
   insertSnapshotRows(dbInstance, 'addon_group_product', addonGroupProducts);
   insertSnapshotRows(dbInstance, 'category_addon_groups', categoryAddonGroups);
 }
@@ -5505,6 +5516,43 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         db.exec(`ALTER TABLE bills ADD COLUMN charges_breakdown TEXT`);
       }
       insertSettingIfMissing('custom_charges', '[]');
+    },
+  },
+  {
+    version: 100,
+    name: 'add_product_variants_table',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS product_variants (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          sku TEXT,
+          barcode TEXT,
+          price REAL NOT NULL,
+          online_price REAL DEFAULT NULL,
+          cost_price REAL DEFAULT NULL,
+          track_inventory INTEGER DEFAULT 0,
+          stock_quantity REAL DEFAULT 0,
+          low_stock_threshold REAL DEFAULT NULL,
+          inventory_product_id TEXT DEFAULT NULL REFERENCES products(id),
+          inventory_deduction_quantity REAL DEFAULT 1,
+          is_active INTEGER DEFAULT 1,
+          sort_order INTEGER DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+        CREATE INDEX IF NOT EXISTS idx_product_variants_barcode ON product_variants(barcode);
+      `);
+
+      if (!getColumns(db, 'order_items').includes('variant_id')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN variant_id TEXT DEFAULT NULL`);
+      }
+      if (!getColumns(db, 'products').includes('dietary_tags')) {
+        db.exec(`ALTER TABLE products ADD COLUMN dietary_tags TEXT DEFAULT NULL`);
+      }
     },
   },
 ];

@@ -68,8 +68,8 @@ async function main() {
   try {
     // The tail is whatever the registry currently ends at; this test follows it
     // so a new migration does not fail an unrelated suite.
-    assert.equal(MIGRATIONS[MIGRATIONS.length - 1].version, 99, 'the newest registry migration is 99');
-    assert.equal(getCurrentSchemaVersion(), 99, 'fresh database applies migration 99');
+    assert.equal(MIGRATIONS[MIGRATIONS.length - 1].version, 100, 'the newest registry migration is 100');
+    assert.equal(getCurrentSchemaVersion(), 100, 'fresh database applies migration 100');
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get());
     db.exec('DROP TABLE category_addon_groups');
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get(), undefined);

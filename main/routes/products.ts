@@ -513,6 +513,11 @@ function normalizeRequiredName(raw: unknown): string | null {
 }
 
 const MAX_DIETARY_TAGS = 32;
+// Matches the repo's other client-input caps (template labels 64, held order
+// items 100, order items 200). A menu with more than 64 sizes or flavours for a
+// single product is already past anything real, and the bound keeps the
+// per-write statement well inside SQLite's variable limit.
+const MAX_PRODUCT_VARIANTS = 64;
 
 function normalizeDietaryTags(raw: unknown): { tags?: string[] | null; error?: string } {
   if (raw === undefined) return {};
@@ -570,6 +575,9 @@ function normalizeVariants(
 ): { variants?: NormalizedVariant[]; error?: string } {
   if (!Array.isArray(raw)) {
     return { error: 'variants must be an array' };
+  }
+  if (raw.length > MAX_PRODUCT_VARIANTS) {
+    return { error: `variants must contain at most ${MAX_PRODUCT_VARIANTS} entries` };
   }
 
   const variants: NormalizedVariant[] = [];
@@ -672,37 +680,44 @@ function normalizeVariants(
 
 /**
  * A scanned barcode must resolve to exactly one sellable thing: one product or
- * one active variant. The product's own barcode may never equal a live variant
- * barcode, while a payload variant may keep a barcode it already holds.
- * `retainedVariantIds` are the variants that stay active after this write;
- * a variant the write deactivates releases its barcode for reuse.
+ * one active variant.
+ *
+ * `payloadVariantIds` are the variants this request names: they may keep or
+ * claim their own barcode (duplicates inside one payload are caught above).
+ * `deactivatedVariantIds` are the ones this write turns off, which releases
+ * their barcode for the product to take.
  */
 function validateCatalogBarcodes(
   db: ReturnType<typeof getDatabase>,
-  productId: string | null,
-  retainedVariantIds: string[],
-  productBarcode: string | null,
-  variantBarcodes: (string | null)[],
+  input: {
+    productId: string | null;
+    productBarcode: string | null;
+    variantBarcodes: (string | null)[];
+    payloadVariantIds: string[];
+    deactivatedVariantIds: string[];
+  },
 ): string | null {
-  const present = variantBarcodes.filter((barcode): barcode is string => !!barcode);
+  const { productId, productBarcode, payloadVariantIds, deactivatedVariantIds } = input;
+  const present = input.variantBarcodes.filter((barcode): barcode is string => !!barcode);
   const duplicateMessage = 'A barcode may be used only once across a product and its variants';
   if (productBarcode && present.includes(productBarcode)) return duplicateMessage;
   if (new Set(present).size !== present.length) return duplicateMessage;
 
-  const retainedClause = retainedVariantIds.length > 0
-    ? `AND NOT (v.product_id = ? AND v.id IN (${retainedVariantIds.map(() => '?').join(',')}))`
-    : '';
-  const retainedParams = retainedVariantIds.length > 0 ? [productId, ...retainedVariantIds] : [];
-  const findConflict = (barcode: string, ignoreRetainedVariants: boolean): 'product' | 'variant' | null => {
+  const findConflict = (
+    barcode: string,
+    excludedVariantIds: string[],
+  ): 'product' | 'variant' | null => {
     if (db.prepare(
       `SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND (? IS NULL OR id != ?)`,
     ).get(barcode, productId, productId)) return 'product';
+    const exclusion = excludedVariantIds.length > 0
+      ? `AND NOT (v.product_id = ? AND v.id IN (${excludedVariantIds.map(() => '?').join(',')}))`
+      : '';
     if (db.prepare(
       `SELECT v.id FROM product_variants v
        JOIN products p ON p.id = v.product_id
-       WHERE v.barcode = ? AND v.is_active = 1 AND p.deleted_at IS NULL
-         ${ignoreRetainedVariants ? retainedClause : ''}`,
-    ).get(barcode, ...(ignoreRetainedVariants ? retainedParams : []))) return 'variant';
+       WHERE v.barcode = ? AND v.is_active = 1 AND p.deleted_at IS NULL ${exclusion}`,
+    ).get(barcode, ...(excludedVariantIds.length > 0 ? [productId, ...excludedVariantIds] : []))) return 'variant';
     return null;
   };
   const conflictMessage = (holder: 'product' | 'variant') =>
@@ -711,19 +726,14 @@ function validateCatalogBarcodes(
       : 'Another product already uses this barcode';
 
   if (productBarcode) {
-    const holder = findConflict(productBarcode, false);
+    const holder = findConflict(productBarcode, deactivatedVariantIds);
     if (holder) return conflictMessage(holder);
   }
   for (const barcode of present) {
-    const holder = findConflict(barcode, true);
+    const holder = findConflict(barcode, payloadVariantIds);
     if (holder) return conflictMessage(holder);
   }
   return null;
-}
-
-function activeVariantIds(db: ReturnType<typeof getDatabase>, productId: string): string[] {
-  return (db.prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1').all(productId) as { id: string }[])
-    .map((row) => row.id);
 }
 
 /**
@@ -1185,13 +1195,13 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     if (normalizedVariants?.error) {
       return res.status(400).json({ error: normalizedVariants.error });
     }
-    const barcodeError = validateCatalogBarcodes(
-      db,
-      null,
-      [],
-      normalizedBarcode,
-      (normalizedVariants?.variants || []).map((variant) => variant.barcode),
-    );
+    const barcodeError = validateCatalogBarcodes(db, {
+      productId: null,
+      productBarcode: normalizedBarcode,
+      variantBarcodes: (normalizedVariants?.variants || []).map((variant) => variant.barcode),
+      payloadVariantIds: [],
+      deactivatedVariantIds: [],
+    });
     if (barcodeError) {
       return res.status(400).json({ error: barcodeError });
     }
@@ -1345,20 +1355,22 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     if (normalizedVariants.error) {
       return res.status(400).json({ error: normalizedVariants.error });
     }
-    // A barcode held by a variant this write deactivates becomes free; one held
-    // by a variant that stays active is still a conflict.
-    const retainedVariantIds = hasOwn(req.body, 'variants')
-      ? (normalizedVariants.variants || [])
-        .filter((variant) => variant.is_active === 1 && variant.id)
-        .map((variant) => variant.id as string)
-      : activeVariantIds(db, String(req.params.id));
-    const barcodeError = validateCatalogBarcodes(
-      db,
-      String(req.params.id),
-      retainedVariantIds,
-      hasOwn(req.body, 'barcode') ? normalizedBarcode : null,
-      (normalizedVariants.variants || []).map((variant) => variant.barcode),
-    );
+    // A barcode held by a variant this write deactivates becomes free. The
+    // product's stored barcode still counts when the client omits the key, so a
+    // variant cannot claim the barcode of the product it belongs to.
+    const payloadVariants = normalizedVariants.variants || [];
+    const payloadVariantIds = payloadVariants.map((variant) => variant.id).filter((id): id is string => !!id);
+    const barcodeError = validateCatalogBarcodes(db, {
+      productId: String(req.params.id),
+      productBarcode: hasOwn(req.body, 'barcode')
+        ? normalizedBarcode
+        : normalizeBarcode((product as { barcode?: unknown }).barcode),
+      variantBarcodes: payloadVariants.map((variant) => variant.barcode),
+      payloadVariantIds,
+      deactivatedVariantIds: payloadVariants
+        .filter((variant) => variant.is_active === 0 && variant.id)
+        .map((variant) => variant.id as string),
+    });
     if (barcodeError) {
       return res.status(400).json({ error: barcodeError });
     }
@@ -1537,8 +1549,13 @@ router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: R
     const linkedBy = db.prepare(
       'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
     ).get(req.params.id);
-    if (linkedBy) {
-      return res.status(409).json({ error: 'Cannot delete a product that is the inventory target for another product. Remove the inventory link first.' });
+    const linkedByVariant = db.prepare(
+      `SELECT v.id FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       WHERE v.inventory_product_id = ? AND v.is_active = 1 AND p.deleted_at IS NULL LIMIT 1`,
+    ).get(req.params.id);
+    if (linkedBy || linkedByVariant) {
+      return res.status(409).json({ error: 'Cannot delete a product that is the inventory target for another product or product variant. Remove the inventory link first.' });
     }
 
     db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);

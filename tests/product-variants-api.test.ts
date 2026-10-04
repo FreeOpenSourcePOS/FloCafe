@@ -271,6 +271,171 @@ async function main() {
       'an explicit null clears the dietary tags',
     );
 
+    // ── Guards the review round added ───────────────────────────────────
+    // The product-barcode guard also covers the stored barcode: a variant may
+    // not claim the barcode of the product it belongs to, even when the
+    // request omits the barcode key entirely.
+    const sharedBarcodeProduct = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Shared', price: 100, barcode: 'SHARED-1' },
+    });
+    assert.equal(sharedBarcodeProduct.status, 201, 'a product with a barcode is created');
+    const variantTakesProductBarcode = await api(baseUrl, `/api/products/${sharedBarcodeProduct.data.product.id}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ name: 'Solo', price: 100, barcode: 'SHARED-1' }] },
+    });
+    assert.equal(variantTakesProductBarcode.status, 400, 'a variant cannot take its own product barcode');
+
+    // A variant may be deactivated in the same request that keeps its barcode
+    // in the payload: Component 2 accepts is_active, and the row survives.
+    const deactivateBarcodedVariant = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: db.prepare('SELECT id, name, price, barcode, sku FROM product_variants WHERE product_id = ? AND is_active = 1 ORDER BY sort_order')
+          .all(productId)
+          .map((variant: any) => ({ ...variant, is_active: false })),
+      },
+    });
+    assert.equal(
+      deactivateBarcodedVariant.status,
+      200,
+      `a barcoded variant can be deactivated in the same request (${JSON.stringify(deactivateBarcodedVariant.data)})`,
+    );
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS count FROM product_variants WHERE product_id = ? AND is_active = 1').get(productId) as { count: number }).count,
+      0,
+      'every variant in the payload is deactivated',
+    );
+    assert.equal(
+      (db.prepare('SELECT is_active FROM product_variants WHERE id = ?').get(smallVariant.id) as { is_active: number }).is_active,
+      0,
+      'the deactivated variant keeps its row for historical references',
+    );
+
+    // The delete guard covers recipe bases referenced by a live variant, not
+    // only by a product's own inventory link.
+    const recipeProduct = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-food',
+        name: 'Recipe Pizza',
+        price: 700,
+        variants: [{ name: 'Large', price: 700, inventory_product_id: 'prod-dough' }],
+      },
+    });
+    assert.equal(recipeProduct.status, 201, 'a product with a live recipe variant is created');
+    const recipeGuard = await api(baseUrl, '/api/products/prod-dough', {
+      method: 'DELETE', headers: owner.authHeader,
+    });
+    assert.equal(recipeGuard.status, 409, 'a product used as a live variant recipe base cannot be deleted');
+    assert.equal(
+      (db.prepare('SELECT deleted_at FROM products WHERE id = ?').get('prod-dough') as { deleted_at: string | null }).deleted_at,
+      null,
+      'the rejected delete leaves the recipe base active',
+    );
+
+    // An over-long variants array is a client-input rejection, like every other
+    // 400 in this file, not an HTTP 500 from an oversized statement.
+    const tooManyVariants = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-drinks',
+        name: 'Too Many',
+        price: 100,
+        variants: Array.from({ length: 65 }, (_, index) => ({ name: `V${index}`, price: 100 })),
+      },
+    });
+    assert.equal(tooManyVariants.status, 400, 'more than 64 variants is rejected as a client error');
+    assert.match(tooManyVariants.data.error, /at most 64/, 'the rejection states the cap');
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS count FROM products WHERE name = 'Too Many'").get() as { count: number }).count,
+      0,
+      'the rejected over-long request writes nothing',
+    );
+
+    // A variant id from another product can never be written through this
+    // product, and that product's variant row stays untouched.
+    const cookieVariantBefore = db.prepare('SELECT * FROM product_variants WHERE id = ?').get(cookieVariantId);
+    const crossProductVariantId = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ id: cookieVariantId, name: 'Hijacked', price: 1 }] },
+    });
+    assert.equal(crossProductVariantId.status, 400, 'a variant id owned by another product is rejected');
+    assert.deepEqual(
+      db.prepare('SELECT * FROM product_variants WHERE id = ?').get(cookieVariantId),
+      cookieVariantBefore,
+      "the other product's variant row is byte-identical after the rejected write",
+    );
+
+    // ── Transaction atomicity ───────────────────────────────────────────
+    // Force a failure inside the product transaction and prove nothing the
+    // request wrote survives, including the field update that ran first.
+    db.exec(`
+      CREATE TRIGGER test_variant_write_failure BEFORE INSERT ON product_variants
+      WHEN NEW.name = 'Explode'
+      BEGIN SELECT RAISE(ABORT, 'forced variant write failure'); END;
+    `);
+    const variantMovementsBefore = (db.prepare(
+      `SELECT COUNT(*) AS count FROM inventory_movements WHERE variant_id IS NOT NULL`,
+    ).get() as { count: number }).count;
+    try {
+      const failedCreate = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          category_id: 'cat-drinks',
+          name: 'Atomic Product',
+          price: 100,
+          variants: [{ name: 'Good', price: 100, stock_quantity: 3 }, { name: 'Explode', price: 100 }],
+        },
+      });
+      assert.equal(failedCreate.status, 500, 'a mid-transaction failure surfaces as a server error');
+      assert.equal(
+        (db.prepare("SELECT COUNT(*) AS count FROM products WHERE name = 'Atomic Product'").get() as { count: number }).count,
+        0,
+        'the product insert is rolled back with the failed variant write',
+      );
+      assert.equal(
+        (db.prepare("SELECT COUNT(*) AS count FROM product_variants WHERE name IN ('Good', 'Explode')").get() as { count: number }).count,
+        0,
+        'no variant from the failed request survives',
+      );
+      assert.equal(
+        (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE variant_id IS NOT NULL').get() as { count: number }).count,
+        variantMovementsBefore,
+        'the variant ledger row written before the failure is rolled back too',
+      );
+
+      const before = db.prepare('SELECT price FROM products WHERE id = ?').get(productId) as { price: number };
+      const failedUpdate = await api(baseUrl, `/api/products/${productId}`, {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: {
+          price: 999,
+          variants: [{ name: 'Survivor', price: 100 }, { name: 'Explode', price: 100 }],
+        },
+      });
+      assert.equal(failedUpdate.status, 500, 'a mid-transaction failure aborts the update');
+      assert.deepEqual(
+        db.prepare('SELECT price FROM products WHERE id = ?').get(productId),
+        before,
+        'the product field update is rolled back with the failed variant write',
+      );
+      assert.equal(
+        (db.prepare("SELECT COUNT(*) AS count FROM product_variants WHERE name = 'Survivor'").get() as { count: number }).count,
+        0,
+        'the variant written before the failure is rolled back',
+      );
+    } finally {
+      db.exec('DROP TRIGGER IF EXISTS test_variant_write_failure');
+    }
+
     // ── Inventory rules ──────────────────────────────────────────────────
     assert.deepEqual(
       resolveInventoryDeduction(
@@ -350,6 +515,25 @@ async function main() {
       }),
       /Variant not found/,
       'adjusting an unknown variant is rejected, not silently written to the product',
+    );
+
+    // The variant pool is scoped to its owning product: another product's id
+    // must not move this variant's stock, even with a real variant id.
+    assert.throws(
+      () => adjustProductStock(db, {
+        productId: 'prod-dough',
+        variantId: 'v-seeded',
+        quantityDelta: 1,
+        movementType: 'adjustment',
+        actorUserId: owner.userId,
+      }),
+      /Variant not found/,
+      "a variant cannot be adjusted through a product that does not own it",
+    );
+    assert.equal(
+      db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get('v-seeded').stock_quantity,
+      1,
+      "the rejected cross-product adjustment leaves the owner's variant stock untouched",
     );
 
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0, 'the catalog has no foreign-key violations');

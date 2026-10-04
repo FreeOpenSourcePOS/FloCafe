@@ -188,7 +188,11 @@ router.post('/import', requirePermission('database.manage'),
           });
         }
       }
-      if (Array.isArray(importData.inventory_movements) && validateInventoryLedgerRows(importData.products, importData.inventory_movements)) {
+      if (Array.isArray(importData.inventory_movements) && validateInventoryLedgerRows(
+        importData.products,
+        importData.inventory_movements,
+        Array.isArray(importData.product_variants) ? importData.product_variants : [],
+      )) {
         return res.status(400).json({
           error: 'Product stock must match the latest inventory movement history',
         });
@@ -319,12 +323,12 @@ router.post('/import', requirePermission('database.manage'),
         if (tableName === 'inventory_movements') {
           const insertImportedMovement = db.prepare(`
             INSERT INTO inventory_movements (
-              product_id, quantity_delta, movement_type, reference_type, reference_id,
+              product_id, variant_id, quantity_delta, movement_type, reference_type, reference_id,
               reason, actor_user_id, stock_after, created_at,
               imported_by_user_id, import_batch_id,
               source_actor_user_id, source_reference_type, source_reference_id,
               source_reason, source_created_at
-            ) VALUES (?, ?, ?, 'import', ?, 'Imported inventory movement', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'import', ?, 'Imported inventory movement', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           const orderedRows = rows
             .map((row, index) => ({ row, index }))
@@ -342,6 +346,7 @@ router.post('/import', requirePermission('database.manage'),
             const sourceValue = (value: unknown): string | null => value == null ? null : String(value);
             insertImportedMovement.run(
               row.product_id,
+              sourceValue(row.variant_id),
               row.quantity_delta,
               row.movement_type,
               importBatchId,

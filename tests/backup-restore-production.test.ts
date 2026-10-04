@@ -33,7 +33,9 @@ import {
   getDbPath,
   initDatabase,
   restoreBackup,
+  validateInventoryLedgerDatabase,
 } from '../main/db';
+import { adjustProductStock } from '../main/services/inventory';
 
 function assertNoRestoreAttachment(): void {
   const attached = getDatabase().prepare('PRAGMA database_list').all() as { name: string }[];
@@ -451,6 +453,45 @@ async function run() {
     assert.equal((getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as { name: string }).name, 'Restore Product', 'startup recovers a durable interrupted-restore snapshot');
     assert.equal(fs.existsSync(recoveryMarker), false, 'startup removes the consumed recovery marker');
     assert.equal(fs.existsSync(recoveryJournal), false, 'startup removes the consumed recovery journal');
+
+    // A variant owns a stock pool of its own while its ledger row names the
+    // owning product, so the chain check must be per pool: a stocked variant
+    // used to make every later restore of this store fail.
+    getDatabase().prepare(`INSERT INTO product_variants (
+        id, product_id, name, price, track_inventory, stock_quantity, is_active, created_at, updated_at
+      ) VALUES ('restore-variant', 'restore-product', 'Large', 14, 1, 0, 1, datetime('now'), datetime('now'))`).run();
+    adjustProductStock(getDatabase(), {
+      productId: 'restore-product',
+      variantId: 'restore-variant',
+      quantityDelta: 5,
+      movementType: 'adjustment',
+      referenceType: 'manual_adjustment',
+      referenceId: 'restore-variant',
+      reason: 'Variant opening balance',
+      actorUserId: 'restore-station-chef',
+    });
+    assert.equal(
+      validateInventoryLedgerDatabase(getDatabase()),
+      null,
+      'a stocked variant passes the live inventory ledger pre-check',
+    );
+    const variantBackup = (await createBackup()).path;
+    const variantRestore = restoreBackup(variantBackup, true);
+    assert.equal(
+      variantRestore.success,
+      true,
+      `a backup carrying a stocked variant restores (got ${JSON.stringify(variantRestore)})`,
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get('restore-variant') as { stock_quantity: number }).stock_quantity,
+      5,
+      'the restored variant keeps its own stock',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT variant_id FROM inventory_movements WHERE product_id = ? AND variant_id IS NOT NULL').get('restore-product') as { variant_id: string }).variant_id,
+      'restore-variant',
+      'the restored ledger row keeps its pool attribution',
+    );
 
     console.log('✅ Production database restore tests passed');
   } finally {

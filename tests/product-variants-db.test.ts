@@ -42,7 +42,9 @@ function main() {
   assert.ok(variantsMigration, 'the product variants migration is registered');
   assert.equal(variantsMigration.name, 'add_product_variants_table', 'the migration is named add_product_variants_table');
   const tailVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
-  assert.ok(tailVersion >= LATEST_VERSION, 'the product variants migration is not orphaned behind the registry tail');
+  // Pinned on purpose: adding a migration has to update this literal, so a new
+  // tail cannot land unnoticed while every other assertion only checks ordering.
+  assert.equal(tailVersion, 100, 'the registry tail is the pinned head schema version');
   assert.equal(getCurrentSchemaVersion(), tailVersion, 'a fresh install reaches the last registry version');
 
   assert.ok(
@@ -107,8 +109,11 @@ function main() {
   assert.ok(!columnsOf(db, 'order_items').includes('variant_id'), 'the rewound database has no order_items.variant_id');
   assert.ok(!columnsOf(db, 'products').includes('dietary_tags'), 'the rewound database has no products.dietary_tags');
 
-  MIGRATIONS.find((migration: any) => migration.version === LATEST_VERSION).up();
-
+  // Replay every migration above the rewound version, exactly as an upgrade
+  // from the previous release would.
+  for (const migration of MIGRATIONS.filter((entry: any) => entry.version > LATEST_VERSION - 1)) {
+    migration.up();
+  }
   assert.ok(
     db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'product_variants'").get(),
     'the migration recreates product_variants on an upgraded database',
@@ -123,7 +128,11 @@ function main() {
   );
   assert.ok(columnsOf(db, 'order_items').includes('variant_id'), 'the migration adds order_items.variant_id');
   assert.ok(columnsOf(db, 'products').includes('dietary_tags'), 'the migration adds products.dietary_tags');
-  console.log('   ✓ replaying the migration on a pre-v99 store restores the table, indexes, and columns');
+  assert.ok(
+    columnsOf(db, 'inventory_movements').includes('variant_id'),
+    'the movement ledger gains its variant pool column on the same upgrade',
+  );
+  console.log('   ✓ replaying the migration chain on a pre-v99 store restores the table, indexes, and columns');
 
   assert.deepEqual(
     db.prepare('SELECT id, name, price, cost, stock_quantity FROM products').all(),

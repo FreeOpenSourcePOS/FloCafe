@@ -1854,11 +1854,17 @@ export function getTables(dbInstance: Database.Database): string[] {
 export function validateInventoryLedgerRows(
   productRows: readonly Record<string, unknown>[],
   movementRows: readonly Record<string, unknown>[],
+  variantRows: readonly Record<string, unknown>[] = [],
 ): string | null {
-  const movementsByProduct = new Map<string, { createdAt: string; id: number; movementType: string; quantityDelta: number; stockAfter: number }[]>();
+  type Chain = { createdAt: string; id: number; movementType: string; quantityDelta: number; stockAfter: number };
+  // A variant owns its own stock pool but shares the product id, so a chain is
+  // keyed by product AND variant: product pool on a null variant id.
+  const chainKey = (productId: string, variantId: string | null) => `${productId}|${variantId ?? ''}`;
+  const movementsByChain = new Map<string, Chain[]>();
 
   for (const [index, row] of movementRows.entries()) {
     const productId = row?.product_id == null ? '' : String(row.product_id);
+    const variantId = row?.variant_id == null ? null : String(row.variant_id);
     const movementType = String(row?.movement_type ?? '');
     const quantityDelta = Number(row?.quantity_delta);
     const stockAfter = Number(row?.stock_after);
@@ -1871,13 +1877,14 @@ export function validateInventoryLedgerRows(
     const createdAt = String(row?.created_at ?? '');
     const rawId = Number(row?.id);
     const id = Number.isFinite(rawId) ? rawId : index;
-    const movements = movementsByProduct.get(productId) ?? [];
+    const key = chainKey(productId, variantId);
+    const movements = movementsByChain.get(key) ?? [];
     movements.push({ createdAt, id, movementType, quantityDelta, stockAfter });
-    movementsByProduct.set(productId, movements);
+    movementsByChain.set(key, movements);
   }
 
-  const latestMovementByProduct = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
-  for (const [productId, movements] of movementsByProduct) {
+  const latestMovementByChain = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
+  for (const [key, movements] of movementsByChain) {
     movements.sort((left, right) => left.createdAt < right.createdAt ? -1 : left.createdAt > right.createdAt ? 1 : left.id - right.id);
     const firstMovement = movements[0];
     const firstTolerance = Number.EPSILON * Math.max(1, Math.abs(firstMovement.quantityDelta), Math.abs(firstMovement.stockAfter)) * 10;
@@ -1894,8 +1901,24 @@ export function validateInventoryLedgerRows(
       }
     }
     const latestMovement = movements[movements.length - 1];
-    latestMovementByProduct.set(productId, latestMovement);
+    latestMovementByChain.set(key, latestMovement);
   }
+
+  const matchesLatestMovement = (
+    label: 'Product' | 'Variant',
+    productId: string,
+    variantId: string | null,
+    stockQuantity: number,
+  ): string | null => {
+    const latestMovement = latestMovementByChain.get(chainKey(productId, variantId));
+    if (!latestMovement) {
+      return stockQuantity === 0 ? null : `${label} stock has no matching inventory movement history`;
+    }
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(latestMovement.stockAfter), Math.abs(stockQuantity)) * 10;
+    return Math.abs(latestMovement.stockAfter - stockQuantity) <= tolerance
+      ? null
+      : `${label} stock does not match the latest inventory movement`;
+  };
 
   for (const row of productRows) {
     const productId = row?.id == null ? '' : String(row.id);
@@ -1906,15 +1929,22 @@ export function validateInventoryLedgerRows(
     if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
       return 'Product stock quantity is invalid in the inventory snapshot';
     }
-    const latestMovement = latestMovementByProduct.get(productId);
-    if (!latestMovement) {
-      if (stockQuantity !== 0) return 'Product stock has no matching inventory movement history';
-      continue;
+    const mismatch = matchesLatestMovement('Product', productId, null, stockQuantity);
+    if (mismatch) return mismatch;
+  }
+
+  for (const row of variantRows) {
+    const productId = row?.product_id == null ? '' : String(row.product_id);
+    const variantId = row?.id == null ? '' : String(row.id);
+    if (!row || typeof row !== 'object' || !productId || !variantId || !Object.prototype.hasOwnProperty.call(row, 'stock_quantity')) {
+      return 'Variant stock quantity is missing from the inventory snapshot';
     }
-    const cacheTolerance = Number.EPSILON * Math.max(1, Math.abs(latestMovement.stockAfter), Math.abs(stockQuantity)) * 10;
-    if (Math.abs(latestMovement.stockAfter - stockQuantity) > cacheTolerance) {
-      return 'Product stock does not match the latest inventory movement';
+    const stockQuantity = row.stock_quantity == null ? 0 : Number(row.stock_quantity);
+    if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
+      return 'Variant stock quantity is invalid in the inventory snapshot';
     }
+    const mismatch = matchesLatestMovement('Variant', productId, variantId, stockQuantity);
+    if (mismatch) return mismatch;
   }
 
   return null;
@@ -1928,20 +1958,27 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
   }
 
   const products = dbInstance.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
+  const variants = tables.has('product_variants')
+    && getColumns(dbInstance, 'product_variants').includes('stock_quantity')
+    ? dbInstance.prepare('SELECT id, product_id, stock_quantity FROM product_variants').all() as Record<string, unknown>[]
+    : [];
   if (!tables.has('inventory_movements')) {
+    if (variants.some((variant) => Number(variant.stock_quantity ?? 0) !== 0)) {
+      return 'Backup is missing inventory movement history for variant stock';
+    }
     return products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
       ? 'Backup is missing inventory movement history for product stock'
       : null;
   }
 
   const movements = getInventoryMovementRows(dbInstance);
-  return validateInventoryLedgerRows(products, movements);
+  return validateInventoryLedgerRows(products, movements, variants);
 }
 
 export function getInventoryMovementRows(dbInstance: Database.Database): Record<string, unknown>[] {
   const columns = new Set(getColumns(dbInstance, 'inventory_movements'));
   const selectableColumns = [
-    'id', 'product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
+    'id', 'product_id', 'variant_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
     'reason', 'actor_user_id', 'stock_after', 'created_at', 'imported_by_user_id', 'import_batch_id',
     'source_actor_user_id', 'source_reference_type', 'source_reference_id',
     'source_reason', 'source_created_at',
@@ -1960,6 +1997,7 @@ function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
   return JSON.stringify([
     numericValue(row.id),
     nullableString(row.product_id),
+    nullableString(row.variant_id),
     numericValue(row.quantity_delta),
     nullableString(row.movement_type),
     nullableString(row.reference_type),

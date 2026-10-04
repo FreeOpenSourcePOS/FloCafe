@@ -95,11 +95,13 @@ const serverApi = {
 // behavior test without requiring a browser or a Next.js runtime.
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === '@/lib/api') return serverApi;
+  if (request === '@/lib/cart-identity') return frontendRequire('./src/lib/cart-identity');
   if (request === 'zustand') return originalLoad.call(this, frontendRequire.resolve('zustand'), parent, isMain);
   return originalLoad.apply(this, arguments as any);
 };
 
 const { createHeldOrdersStore } = require('../frontend/src/store/held-orders');
+const { useCartStore } = require('../frontend/src/store/cart');
 
 function makeHeldOrder(tableId: string): HeldOrder {
   return {
@@ -122,6 +124,17 @@ function makeHeldOrder(tableId: string): HeldOrder {
 async function main() {
   console.log('Held-order client store regression tests (#256)');
   console.log('='.repeat(60));
+
+  useCartStore.getState().clearCart();
+  useCartStore.getState().toggleWaiveCharge('waived');
+  useCartStore.getState().toggleOptedInCharge('opted-in');
+  useCartStore.getState().setOrderType('dine_in');
+  assert.equal(useCartStore.getState().waivedChargeIds.has('waived'), true, 'reselecting the current order type preserves the waiver');
+  assert.equal(useCartStore.getState().optedInChargeIds.has('opted-in'), true, 'reselecting the current order type preserves the opt-in');
+  useCartStore.getState().loadItems([], null, null, 1);
+  assert.deepEqual(Array.from(useCartStore.getState().waivedChargeIds), [], 'loading another order clears the prior order waiver');
+  assert.deepEqual(Array.from(useCartStore.getState().optedInChargeIds), [], 'loading another order clears the prior order opt-in');
+  useCartStore.getState().clearCart();
 
   serverOrders.clear();
   nextOrderId = 0;

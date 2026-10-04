@@ -597,6 +597,115 @@ async function main() {
     const paidDecimalOrder = await api(baseUrl, `/api/orders/${decimalOrder.data.order.id}`, { headers: authHeader });
     assertEqual(paidDecimalOrder.data.order.status, 'completed', 'decimal-total order completes after payment');
 
+    // ── Step 11b: prepaid previews price the same applied charges as checkout ──
+    console.log('\n11b. Prepaid charge preview matches the created order and bill');
+    const prepaidCharges = [
+      {
+        id: 'service_charge', name: 'Service Charge', type: 'percentage', value: 10,
+        calculation_basis: 'net', order_types: ['takeaway'], is_optional: true,
+        is_default_active: true, is_active: true,
+      },
+      {
+        id: 'waived_fee', name: 'Waived Fee', type: 'fixed', value: 2,
+        calculation_basis: 'gross', order_types: ['takeaway'], is_optional: true,
+        is_default_active: true, is_active: true,
+      },
+      {
+        id: 'optional_retry_fee', name: 'Optional Retry Fee', type: 'fixed', value: 5,
+        calculation_basis: 'gross', order_types: ['takeaway'], is_optional: true,
+        is_default_active: false, is_active: true,
+      },
+      {
+        id: 'required_fee', name: 'Required Fee', type: 'fixed', value: 3,
+        calculation_basis: 'gross', order_types: ['takeaway'], is_optional: false,
+        is_default_active: true, is_active: true,
+      },
+    ];
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(JSON.stringify(prepaidCharges), now());
+    const prepaidChargeContext = {
+      items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+      order_type: 'takeaway',
+      waived_charge_ids: ['waived_fee'],
+      opted_in_charge_ids: ['optional_retry_fee'],
+      discount_type: 'percentage',
+      discount_value: 10,
+    };
+    const prepaidChargePreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST', body: prepaidChargeContext, headers: authHeader,
+    });
+    assertEqual(prepaidChargePreview.status, 200, 'charge-aware prepaid preview succeeds');
+    const prepaidSummary = prepaidChargePreview.data.summary;
+    assertEqual(prepaidSummary.subtotal, 60, 'charge-aware preview uses the item subtotal');
+    assertEqual(prepaidSummary.discounted_subtotal, 54, 'charge-aware preview applies the order discount');
+    assertEqual(prepaidSummary.tax_amount, 3.78, 'charge-aware preview retains discounted item tax');
+    assertEqual(prepaidSummary.service_charge, 5.4, 'percentage service fee uses the discounted net subtotal');
+    assertEqual(prepaidSummary.charges_breakdown.find((charge: any) => charge.id === 'service_charge').amount, 5.4, 'preview returns the resolved service fee');
+    assertEqual(prepaidSummary.charges_breakdown.find((charge: any) => charge.id === 'waived_fee').amount, 0, 'preview returns the waived fee row');
+    assertEqual(prepaidSummary.charges_breakdown.find((charge: any) => charge.id === 'optional_retry_fee').amount, 5, 'preview includes the opted-in fee');
+    assertEqual(prepaidSummary.total, 71.18, 'preview includes each custom fee once');
+
+    const prepaidOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        waived_charge_ids: prepaidChargeContext.waived_charge_ids,
+        opted_in_charge_ids: prepaidChargeContext.opted_in_charge_ids,
+        items: prepaidChargeContext.items,
+      },
+      headers: authHeader,
+    });
+    assertEqual(prepaidOrder.status, 201, 'charge-aware prepaid order is created');
+    const prepaidDiscount = await api(baseUrl, `/api/orders/${prepaidOrder.data.order.id}/discount`, {
+      method: 'PATCH', body: { discount_type: 'percentage', discount_value: 10 }, headers: authHeader,
+    });
+    assertEqual(prepaidDiscount.status, 200, 'prepaid order discount is applied');
+    assertEqual(prepaidDiscount.data.order.total, prepaidSummary.total, 'preview matches discounted order total');
+    const prepaidBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: prepaidOrder.data.order.id }, headers: authHeader,
+    });
+    assertEqual(prepaidBill.status, 201, 'prepaid order bill is generated');
+    assertEqual(prepaidBill.data.bill.total, prepaidSummary.total, 'preview matches payable bill total');
+    const prepaidBillCharges = typeof prepaidBill.data.bill.charges_breakdown === 'string'
+      ? JSON.parse(prepaidBill.data.bill.charges_breakdown)
+      : prepaidBill.data.bill.charges_breakdown;
+    assertEqual(prepaidBillCharges.length, 4, 'bill retains the same applied fee rows');
+
+    const invalidChargeContext = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+        order_type: 'invalid',
+      },
+      headers: authHeader,
+    });
+    assertEqual(invalidChargeContext.status, 400, 'invalid charge order types are rejected');
+
+    const manualFallbackBody = {
+      items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+      packaging_charge: 4,
+      service_charge: 6,
+    };
+    const legacyManualPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST', body: manualFallbackBody, headers: authHeader,
+    });
+    const noMatchingChargePreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: { ...manualFallbackBody, order_type: 'online', waived_charge_ids: [], opted_in_charge_ids: [] },
+      headers: authHeader,
+    });
+    assertEqual(legacyManualPreview.status, 200, 'legacy manual-charge preview remains available');
+    assertEqual(noMatchingChargePreview.status, 200, 'charge context with no matching definitions succeeds');
+    assertEqual(noMatchingChargePreview.data.summary.packaging_charge, 4, 'manual packaging amount survives an unmatched charge context');
+    assertEqual(noMatchingChargePreview.data.summary.service_charge, 6, 'manual service amount survives an unmatched charge context');
+    assertEqual(noMatchingChargePreview.data.summary.total, legacyManualPreview.data.summary.total, 'unmatched charge context preserves legacy pricing');
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', '[]', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(now());
+
     const activeThailandVersion = db.prepare(`
       SELECT version.id, version.pack_json
       FROM country_packs AS pack

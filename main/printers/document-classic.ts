@@ -49,6 +49,7 @@ import {
   paymentDisplayRows,
   type ThermalLayoutContext,
 } from '../../shared/print';
+import { receiptChargeLines } from '../../shared/charges';
 
 // Direction facts (registry-derived, no language unions).
 
@@ -134,6 +135,7 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
         : {}),
       deliveryCharge: Number(bill?.delivery_charge) || 0,
       packagingCharge: Number(bill?.packaging_charge) || 0,
+      chargesBreakdown: bill?.charges_breakdown ?? null,
       taxComponents: resolveTaxComponents({ ...bill, items }),
       payments: parsePaymentDetails(bill?.payment_details),
       pointsEarned: Number(business?.points_earned) || 0,
@@ -326,7 +328,11 @@ export function renderBillDocumentToClassicLines(
   };
 
   const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
-    if (block.serviceCharge) {
+    // An engine breakdown is the itemised source of truth; the standard rows it
+    // covers are skipped so the fee is never printed twice.
+    const itemisedCharges = receiptChargeLines(block.chargesBreakdown);
+    const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
+    if (block.serviceCharge && !itemisedIds.has('service_charge')) {
       const label = labelOf(block.serviceCharge.label);
       const value = formatCurrency(block.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
@@ -336,10 +342,14 @@ export function renderBillDocumentToClassicLines(
       const value = formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
     }
-    if (block.packagingCharge) {
+    if (block.packagingCharge && !itemisedIds.has('packaging_charge')) {
       const label = labelOf(block.packagingCharge.label);
       const value = formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
+    }
+    for (const charge of itemisedCharges) {
+      const value = formatCurrency(charge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      appendFinancial(target, financialRows(charge.name, value, cols, options.language, options.capabilities), false, charge.name, value);
     }
   };
 

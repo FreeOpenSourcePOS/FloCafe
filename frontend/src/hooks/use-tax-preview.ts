@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import type { CartItem } from '@/lib/types';
+import type { AppliedCharge } from '@/lib/charges';
+import type { CartOrderType } from '@/store/cart';
 
 export interface TaxPreview {
   subtotal: number;
@@ -13,8 +15,15 @@ export interface TaxPreview {
   packaging_charge: number;
   delivery_charge: number;
   service_charge: number;
+  charges_breakdown?: AppliedCharge[];
   round_off: number;
   total: number;
+}
+
+export interface TaxPreviewChargeContext {
+  orderType: CartOrderType;
+  waivedChargeIds: string[];
+  optedInChargeIds: string[];
 }
 
 export interface TaxPreviewDiscount {
@@ -42,11 +51,30 @@ export function useTaxPreview(
   customerId: number | string | null,
   packagingCharge?: number,
   discount?: TaxPreviewDiscount | null,
+  chargeContext?: TaxPreviewChargeContext,
 ): { tax: TaxPreview | null; loading: boolean; error: string | null } {
   const isEmpty = !items || items.length === 0;
-  const [tax, setTax] = useState<TaxPreview | null>(null);
+  const requestPayload = {
+    items: items.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+      addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
+      discount_amount: 0,
+    })),
+    customer_id: customerId || null,
+    packaging_charge: packagingCharge || 0,
+    discount_type: discount?.type,
+    discount_value: discount?.value,
+    ...(chargeContext ? {
+      order_type: chargeContext.orderType,
+      waived_charge_ids: chargeContext.waivedChargeIds,
+      opted_in_charge_ids: chargeContext.optedInChargeIds,
+    } : {}),
+  };
+  const requestKey = JSON.stringify(requestPayload);
+  const [tax, setTax] = useState<{ requestKey: string; summary: TaxPreview } | null>(null);
   const [loading, setLoading] = useState(!isEmpty);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ requestKey: string; message: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -58,29 +86,12 @@ export function useTaxPreview(
     if (isEmpty) {
       setTax(null);
       setLoading(false);
+      setError(null);
     }
   }
-  const [syncedRequest, setSyncedRequest] = useState({
-    items,
-    customerId,
-    packagingCharge,
-    discountType: discount?.type,
-    discountValue: discount?.value,
-  });
-  if (
-    items !== syncedRequest.items
-    || customerId !== syncedRequest.customerId
-    || packagingCharge !== syncedRequest.packagingCharge
-    || discount?.type !== syncedRequest.discountType
-    || discount?.value !== syncedRequest.discountValue
-  ) {
-    setSyncedRequest({
-      items,
-      customerId,
-      packagingCharge,
-      discountType: discount?.type,
-      discountValue: discount?.value,
-    });
+  const [syncedRequestKey, setSyncedRequestKey] = useState(requestKey);
+  if (requestKey !== syncedRequestKey) {
+    setSyncedRequestKey(requestKey);
     if (!isEmpty) {
       setLoading(true);
       setError(null);
@@ -107,31 +118,23 @@ export function useTaxPreview(
 
     debounceRef.current = setTimeout(async () => {
       try {
-        const payload = {
-          items: items.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
-            discount_amount: 0,
-          })),
-          customer_id: customerId || null,
-          packaging_charge: packagingCharge || 0,
-          discount_type: discount?.type,
-          discount_value: discount?.value,
-        };
-
-        const { data } = await api.post<TaxPreviewResponse>('/tax/preview', payload, {
+        const { data } = await api.post<TaxPreviewResponse>('/tax/preview', JSON.parse(requestKey), {
           signal: controller.signal,
         });
 
-        setTax(data.summary);
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          setTax({ requestKey, summary: data.summary });
+          setError(null);
+        }
       } catch (err: unknown) {
         if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) {
           return; // Silently ignore aborted requests
         }
-        console.error('[useTaxPreview] Error:', err);
-        setError('Failed to calculate tax');
-        setTax(null);
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          console.error('[useTaxPreview] Error:', err);
+          setError({ requestKey, message: 'Failed to calculate tax' });
+          setTax(null);
+        }
       } finally {
         if (abortRef.current === controller) {
           setLoading(false);
@@ -145,7 +148,13 @@ export function useTaxPreview(
       }
       controller.abort();
     };
-  }, [items, customerId, packagingCharge, discount?.type, discount?.value, isEmpty]);
+  }, [requestKey, isEmpty]);
 
-  return { tax, loading, error };
+  const currentTax = tax?.requestKey === requestKey ? tax.summary : null;
+  const currentError = error?.requestKey === requestKey ? error.message : null;
+  return {
+    tax: currentTax,
+    loading: !isEmpty && (loading || syncedRequestKey !== requestKey || (!currentTax && !currentError)),
+    error: currentError,
+  };
 }

@@ -10,6 +10,7 @@ import {
   type TenantInfo,
 } from './tax';
 import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
+import { ChargeValidationError, toStandardChargeColumns, type AppliedCharge } from '../../shared/charges';
 
 type Database = ReturnType<typeof getDatabase>;
 type OrderItemRow = {
@@ -77,6 +78,15 @@ export type RecomputeOrderTotalsInput = {
    * the bill discount site the latter, which is why the flag exists.
    */
   taxScaling: 'when-discounted' | 'always';
+  /**
+   * Charges the unified engine resolved for this order. When present, the
+   * standard ids are projected onto the dedicated charge columns instead of the
+   * row's own amounts, and non-standard charges are added to the total so
+   * nothing is dropped from what the customer owes.
+   */
+  appliedCharges?: AppliedCharge[] | null;
+  /** Standard columns resolved from current definitions and retained snapshots. */
+  chargeColumnOverrides?: { service_charge?: number; packaging_charge?: number };
 };
 
 export interface RecomputedOrderTotals {
@@ -91,6 +101,10 @@ export interface RecomputedOrderTotals {
   /** Exact total, before any payable (settlement) rounding. */
   total: number;
   roundOff: 0;
+  /** Charges the engine applied; null when the merchant configured none. */
+  appliedCharges: AppliedCharge[] | null;
+  /** Charge amounts projected onto the dedicated columns. */
+  chargeColumns: { service_charge: number; packaging_charge: number } | null;
 }
 
 /**
@@ -104,6 +118,24 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
   const { tenantInfo, chargeContext, customer, totals, discountAmount, taxScaling } = input;
   const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');
   const minorFactor = getCurrencyMinorUnitFactor(tenantInfo.currency || '');
+
+  // Engine charges own the standard columns only for ids the merchant actually
+  // configured; a manually entered service charge survives when there is no
+  // engine charge behind that id.
+  const hasAppliedCharges = Array.isArray(input.appliedCharges);
+  const appliedCharges = hasAppliedCharges ? input.appliedCharges as AppliedCharge[] : [];
+  const chargeColumns = hasAppliedCharges ? toStandardChargeColumns(appliedCharges, decimals) : null;
+  const engineOwns = (id: string) => appliedCharges.some((charge) => charge.id === id);
+  // Only non-standard charges are added here: the standard ids are already
+  // summed through effectiveChargeContext, so adding them again would double count.
+  const otherCharges = chargeColumns ? chargeColumns.other_charges : 0;
+  const effectiveChargeContext: ChargeTaxContext = {
+    ...chargeContext,
+    packaging_charge: input.chargeColumnOverrides?.packaging_charge
+      ?? (engineOwns('packaging_charge') ? chargeColumns!.packaging_charge : chargeContext.packaging_charge),
+    service_charge: input.chargeColumnOverrides?.service_charge
+      ?? (engineOwns('service_charge') ? chargeColumns!.service_charge : chargeContext.service_charge),
+  };
   const subtotal = totals.subtotal;
   // The discount can never exceed the subtotal it is deducted from, so a
   // caller-supplied figure cannot drive the discounted share outside 0..1.
@@ -125,12 +157,19 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     itemBreakdowns: totals.allTaxBreakdowns,
     itemSnapshots: totals.allTaxSnapshots,
     itemTaxRatio: taxRatio,
-    chargeTaxes: calculateConfiguredChargeTaxes(tenantInfo, chargeContext, customer),
+    chargeTaxes: calculateConfiguredChargeTaxes(tenantInfo, effectiveChargeContext, customer),
     minorFactor,
   });
 
   const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-    + Number(chargeContext.delivery_charge || 0) + Number(chargeContext.packaging_charge || 0) + Number(chargeContext.service_charge || 0);
+    + Number(effectiveChargeContext.delivery_charge || 0)
+    + Number(effectiveChargeContext.packaging_charge || 0)
+    + Number(effectiveChargeContext.service_charge || 0)
+    + otherCharges;
+  const total = Number(preRoundTotal.toFixed(decimals));
+  if (!Number.isSafeInteger(Math.round(total * minorFactor))) {
+    throw new ChargeValidationError('Order total exceeds the supported currency precision');
+  }
   return {
     subtotal,
     discountedSubtotal,
@@ -138,7 +177,11 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     taxAmount,
     exclusiveTaxAmount,
     taxRollup,
-    total: Number(preRoundTotal.toFixed(decimals)),
+    total,
     roundOff: 0,
+    appliedCharges: hasAppliedCharges ? appliedCharges : null,
+    chargeColumns: chargeColumns
+      ? { service_charge: chargeColumns.service_charge, packaging_charge: chargeColumns.packaging_charge }
+      : null,
   };
 }

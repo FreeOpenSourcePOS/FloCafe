@@ -189,6 +189,9 @@ test('menu route preserves regional conflicts, validates filters, and honors the
       if (sql.includes('FROM category_addon_groups')) return [];
       if (sql.includes('FROM addon_groups')) return [{ id: 'milk', name: 'Milk', is_active: 1, sort_order: 0 }];
       if (sql.includes('FROM addons')) return [{ id: 'oat', addon_group_id: 'milk', name: 'Oat', price: 2, is_active: 1 }];
+      // The menu route reuses the catalog's shared relation loader, which also
+      // loads product variants. A menu has no variant rows to print.
+      if (sql.includes('FROM product_variants')) return [];
       throw new Error(`Unexpected query: ${sql}`);
     },
     get: () => {

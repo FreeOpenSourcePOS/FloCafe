@@ -9,7 +9,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import type { Addon, Category, Product, ProductVariant, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -571,13 +571,13 @@ export default function POSPage() {
     setAddonProduct(product);
   };
 
-  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
-    cart.addItem(product, quantity, addons, instructions);
+  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string, variant: ProductVariant | null) => {
+    cart.addItem(product, quantity, addons, instructions, variant);
   };
 
-  const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string) => {
+  const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string, variant: ProductVariant | null) => {
     if (!editingCartItem) return;
-    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions);
+    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions, variant);
   };
 
   // A modal already open means the scan (if one lands) isn't meant for the
@@ -626,6 +626,7 @@ export default function POSPage() {
         // Add new items to an existing order with a durable retry key.
         const newItems = cart.items.map((item) => ({
           product_id: item.product.id,
+          variant_id: item.variant?.id ?? null,
           quantity: item.quantity,
           addons: item.addons.length > 0
             ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -672,6 +673,7 @@ export default function POSPage() {
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map((item) => ({
             product_id: item.product.id,
+            variant_id: item.variant?.id ?? null,
             quantity: item.quantity,
             addons: item.addons.length > 0
               ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -726,6 +728,7 @@ export default function POSPage() {
     setSubmitting(true);
     const orderItems = cart.items.map((item) => ({
       product_id: item.product.id,
+      variant_id: item.variant?.id ?? null,
       quantity: item.quantity,
       addons: item.addons.length > 0
         ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -1026,6 +1029,7 @@ export default function POSPage() {
     try {
       const items = cart.items.map((item) => ({
         product_id: item.product.id,
+        variant_id: item.variant?.id ?? null,
         quantity: item.quantity,
         addons: item.addons.length > 0
           ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -1275,6 +1279,7 @@ export default function POSPage() {
           initialQuantity={editingCartItem.quantity}
           initialAddons={editingCartItem.addons}
           initialInstructions={editingCartItem.special_instructions}
+          initialVariant={editingCartItem.variant}
           onAdd={handleEditItemSave}
           onClose={() => setEditingCartItem(null)}
         />

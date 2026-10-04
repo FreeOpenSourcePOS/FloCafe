@@ -181,7 +181,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {
-      const itemPrice = Number(item.product?.price) || 0;
+      const itemPrice = Number(item.variant?.price ?? item.product?.price) || 0;
       const itemQty = Number(item.quantity) || 1;
       const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
       return sum + (itemPrice + addonTotal) * itemQty;

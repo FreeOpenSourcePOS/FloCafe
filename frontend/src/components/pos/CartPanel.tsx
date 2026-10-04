@@ -301,7 +301,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               <div key={item.id} className="border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
                 <div className="flex items-start gap-2">
                   <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
-                    {item.product.name}
+                    {item.variant
+                      ? `${item.product.name} (${item.variant.name})`
+                      : item.product.name}
                   </p>
                   <button
                     onClick={() => cart.removeItem(item.id)}
@@ -327,7 +329,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
-                    {fmt(Number(item.product.price))}
+                    {fmt(Number(item.variant?.price ?? item.product.price))}
                   </p>
                   <div className="flex items-center gap-1.5">
                     {onEditItem && (

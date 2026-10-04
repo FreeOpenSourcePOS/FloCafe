@@ -8,18 +8,19 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
-import type { Product, Addon, AddonGroup } from '@/lib/types';
+import type { Product, Addon, AddonGroup, ProductVariant } from '@/lib/types';
 
 interface Props {
   product: Product;
   currency: string;
   /** Overrides the signed-in tenant's currency formatting (e.g. for standalone pages with no auth store). */
   country?: string;
-  onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string) => void;
+  onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null) => void;
   onClose: () => void;
   initialQuantity?: number;
   initialAddons?: Addon[];
   initialInstructions?: string;
+  initialVariant?: ProductVariant | null;
   mode?: 'add' | 'edit';
 }
 
@@ -33,9 +34,20 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
   return grouped;
 }
 
+/** A tracked variant with no stock cannot be sold, so it is not selectable. */
+function isVariantSoldOut(variant: ProductVariant): boolean {
+  return Boolean(variant.track_inventory) && Number(variant.stock_quantity) <= 0;
+}
+
+function variantPillClassName(isSelected: boolean, soldOut: boolean): string {
+  if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
+  if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
+  return 'border-border hover:border-brand/40';
+}
+
 export default function AddonModal({
   product, currency, country, onAdd, onClose,
-  initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
+  initialQuantity = 1, initialAddons = [], initialInstructions = '', initialVariant = null, mode = 'add',
 }: Props) {
   const t = useTranslations('pos');
   const tenantFmt = useFormatCurrency();
@@ -44,6 +56,16 @@ export default function AddonModal({
   const [quantity, setQuantity] = useState(initialQuantity);
   const [qtyDraft, setQtyDraft] = useState(() => String(initialQuantity));
   const [instructions, setInstructions] = useState(initialInstructions);
+
+  const variants = (product.variants || []).filter((variant) => variant.is_active);
+  // An edit keeps the variant already on the line; a new item starts on the
+  // first variant that can actually be sold.
+  const defaultVariant = variants.find((variant) => variant.id === initialVariant?.id && !isVariantSoldOut(variant))
+    ?? variants.find((variant) => !isVariantSoldOut(variant))
+    ?? null;
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(defaultVariant?.id ?? null);
+  const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? null;
+  const basePrice = Number(selectedVariant?.price ?? product.price) || 0;
   const step = fractionalQuantityStep(product);
 
   const setQty = (next: number) => {
@@ -117,15 +139,18 @@ export default function AddonModal({
 
   const allAddons = Object.values(selected).flat();
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
-  const itemTotal = (Number(product.price) + addonTotal) * quantity;
+  const itemTotal = (basePrice + addonTotal) * quantity;
 
-  const isValid = groups.every((g) => {
+  const groupsSatisfied = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
     const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
     if (count < requiredMin) return false;
     if (g.max_selection && count > g.max_selection) return false;
     return true;
   });
+  // A product with variants cannot be sold without one, and a fully sold-out
+  // variant set cannot be sold at all.
+  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant));
 
   const handleAdd = () => {
     if (!isValid) return;
@@ -138,7 +163,7 @@ export default function AddonModal({
         setQtyDraft(String(effectiveQuantity));
       }
     }
-    onAdd(product, effectiveQuantity, allAddons, instructions);
+    onAdd(product, effectiveQuantity, allAddons, instructions, selectedVariant);
     onClose();
   };
 
@@ -148,7 +173,7 @@ export default function AddonModal({
         <div className="flex justify-between items-center p-5 border-b border-border">
           <div>
             <h2 className="text-lg font-bold text-foreground">{product.name}</h2>
-            <p className="text-brand font-semibold">{fmt(Number(product.price))}</p>
+            <p className="text-brand font-semibold">{fmt(basePrice)}</p>
           </div>
           <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
@@ -156,6 +181,38 @@ export default function AddonModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {variants.length > 0 && (
+            <div role="radiogroup" aria-label={product.name}>
+              <div className="flex flex-wrap gap-2">
+                {variants.map((variant) => {
+                  const soldOut = isVariantSoldOut(variant);
+                  const isSel = variant.id === selectedVariantId;
+                  return (
+                    <button
+                      key={variant.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSel}
+                      disabled={soldOut}
+                      onClick={() => setSelectedVariantId(variant.id)}
+                      className={`touch-target inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${variantPillClassName(isSel, soldOut)}`}
+                    >
+                      <span className="font-medium text-foreground">{variant.name}</span>
+                      <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
+                        {fmt(Number(variant.price))}
+                      </span>
+                      {soldOut && (
+                        <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+                          {t('outOfStock')}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {groups.map((group) => {
             const count = getGroupTotalQuantity(group.id);
             const activeAddons = (group.addons || []).filter((a) => a.is_active);

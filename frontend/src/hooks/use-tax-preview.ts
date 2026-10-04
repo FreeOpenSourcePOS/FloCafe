@@ -57,6 +57,10 @@ export function useTaxPreview(
   const requestPayload = {
     items: items.map((item) => ({
       product_id: item.product.id,
+      // The backend refuses a preview for a product with active variants that
+      // names none, so the variant travels with the line or the till cannot
+      // price it. It is part of requestKey, so switching variant re-quotes.
+      variant_id: item.variant?.id ?? null,
       quantity: item.quantity,
       addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
       discount_amount: 0,

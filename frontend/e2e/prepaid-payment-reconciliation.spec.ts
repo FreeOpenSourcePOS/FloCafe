@@ -557,10 +557,22 @@ test('payment modal hides charge controls without bill discount permission', asy
     await expect(staffOrderCard).toHaveCount(1);
     await test.step('staff checks out the created order and sees payment', async () => {
       markStage('staff_checkout_click', 'start');
+      const billGenerateResponsePromise = serverPage!.waitForResponse(
+        (response) => {
+          try {
+            const url = new URL(response.url());
+            return url.origin === new URL(BASE).origin && url.pathname === '/api/bills/generate' && response.request().method() === 'POST';
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 15000 },
+      );
       await staffOrderCard.getByRole('button', { name: 'Checkout', exact: true }).click();
+      await billGenerateResponsePromise;
       markStage('staff_checkout_click', 'complete');
       markStage('payment_heading_visible', 'start');
-      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible();
+      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 15000 });
       markStage('payment_heading_visible', 'complete');
     });
     await test.step('staff sees charge details without mutation controls', async () => {

@@ -32,6 +32,7 @@ async function main() {
   `);
   set.run('telemetry_enabled', 'true', now());
   set.run('country', 'AR', now());
+  set.run('currency', ' usd ', now());
   // settings.country is seeded to 'IN' at install, so telemetry only reports a
   // country a human confirmed. Without this stamp 'AR' is indistinguishable
   // from an untouched default and is deliberately withheld — see the
@@ -49,6 +50,7 @@ async function main() {
 
     assert.equal(await sendEvent('app_launch'), true, '2xx telemetry delivery succeeds');
     assert.equal(requestBody?.country, 'AR', 'telemetry sends the configured ISO country');
+    assert.equal(requestBody?.currency, 'USD', 'telemetry sends the normalized configured currency');
     assert.equal(requestBody?.app, 'flocafe');
     assert.equal(requestBody?.app_version, '2.7.2-test');
 
@@ -64,6 +66,25 @@ async function main() {
       'an unconfirmed country is omitted so the server can geolocate instead'
     );
     set.run('country_confirmed_at', new Date().toISOString(), now());
+
+    set.run('currency', '$', now());
+    requestBody = null;
+    assert.equal(await sendEvent('daily_ping'), true);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(requestBody ?? {}, 'currency'),
+      false,
+      'telemetry omits currency symbols',
+    );
+
+    set.run('currency', 'ZZZ', now());
+    requestBody = null;
+    assert.equal(await sendEvent('daily_ping'), true);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(requestBody ?? {}, 'currency'),
+      false,
+      'telemetry omits unsupported currency codes',
+    );
+    set.run('currency', 'USD', now());
 
     let bodyCancelled = false;
     globalThis.fetch = (async () => ({

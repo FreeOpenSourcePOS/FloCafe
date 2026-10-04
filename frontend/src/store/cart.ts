@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Customer, Product, Addon, CartItem } from '@/lib/types';
+import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
@@ -20,8 +20,8 @@ interface CartState {
   externalOrderId: string;
   orderNotes: string;
 
-  addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
-  updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
+  addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string, variant?: ProductVariant | null) => void;
+  updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string, variant?: ProductVariant | null) => void;
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -82,9 +82,9 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   resetCharges: () => set({ waivedChargeIds: new Set<string>(), optedInChargeIds: new Set<string>() }),
 
-  addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
+  addItem: (product, quantity = 1, addons = [], specialInstructions = '', variant = null) => {
     const items = get().items;
-    const itemId = generateCartItemId(product.id, addons, specialInstructions);
+    const itemId = generateCartItemId(product.id, variant?.id ?? null, addons, specialInstructions);
     const existing = items.find((i) => i.id === itemId);
 
     if (existing) {
@@ -95,21 +95,23 @@ export const useCartStore = create<CartState>((set, get) => ({
       });
     } else {
       set({
-        items: [...items, { id: itemId, product, quantity, addons, special_instructions: specialInstructions }],
+        items: [...items, { id: itemId, product, quantity, addons, special_instructions: specialInstructions, variant }],
       });
     }
   },
 
-  updateItemDetails: (cartItemId, quantity, addons, specialInstructions) => {
+  updateItemDetails: (cartItemId, quantity, addons, specialInstructions, variant) => {
     const items = get().items;
     const target = items.find((i) => i.id === cartItemId);
     if (!target) return;
 
-    const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+    // Omitting the variant keeps the one already chosen on the line.
+    const nextVariant = variant === undefined ? target.variant ?? null : variant;
+    const newId = generateCartItemId(target.product.id, nextVariant?.id ?? null, addons, specialInstructions);
     if (newId === cartItemId) {
       set({
         items: items.map((i) =>
-          i.id === cartItemId ? { ...i, quantity, addons, special_instructions: specialInstructions } : i
+          i.id === cartItemId ? { ...i, quantity, addons, special_instructions: specialInstructions, variant: nextVariant } : i
         ),
       });
       return;
@@ -126,7 +128,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     } else {
       set({
         items: items.map((i) =>
-          i.id === cartItemId ? { ...i, id: newId, quantity, addons, special_instructions: specialInstructions } : i
+          i.id === cartItemId ? { ...i, id: newId, quantity, addons, special_instructions: specialInstructions, variant: nextVariant } : i
         ),
       });
     }

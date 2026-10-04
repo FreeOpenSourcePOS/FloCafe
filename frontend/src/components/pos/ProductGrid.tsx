@@ -100,6 +100,7 @@ export default function ProductGrid({
               const match = resolveScannedProduct(trimmed, products);
               if (match) {
                 if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
+                else if (match.variant) cart.addItem(match.product, 1, [], '', match.variant);
                 else onProductClick(match.product);
                 setSearch('');
               }

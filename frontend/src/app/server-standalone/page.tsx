@@ -291,7 +291,7 @@ export default function ServerStandalonePage() {
 
   function addDraftLine(product: Product, quantity: number, addons: Addon[], specialInstructions: string) {
     setDraft((lines) => {
-      const lineId = generateCartItemId(product.id, addons, specialInstructions);
+      const lineId = generateCartItemId(product.id, null, addons, specialInstructions);
       const existing = lines.find((line) => line.id === lineId);
       if (existing) {
         return lines.map((line) => line.id === lineId ? { ...line, quantity: line.quantity + quantity } : line);
@@ -305,7 +305,7 @@ export default function ServerStandalonePage() {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
 
-      const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+      const newId = generateCartItemId(target.product.id, target.variant?.id ?? null, addons, specialInstructions);
       if (newId === lineId) {
         return lines.map((line) => line.id === lineId ? { ...line, quantity, addons, special_instructions: specialInstructions } : line);
       }

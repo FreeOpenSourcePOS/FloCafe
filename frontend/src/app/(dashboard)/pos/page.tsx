@@ -590,6 +590,7 @@ export default function POSPage() {
     const scan = resolveScannedProduct(code, products);
     if (scan) {
       if (scan.scaleBarcode) cart.addItem(scan.product, scan.quantity);
+      else if (scan.variant) cart.addItem(scan.product, 1, [], '', scan.variant);
       else handleProductClick(scan.product);
     } else {
       toast.error(t('barcodeNotFound', { code }));

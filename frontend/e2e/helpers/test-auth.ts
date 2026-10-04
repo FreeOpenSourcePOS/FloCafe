@@ -37,6 +37,16 @@ export function getE2eToken(
 export type E2EOrdersLayout = 'split' | 'cards';
 
 /**
+ * Token used by the layout helpers: an explicit override wins, then the token
+ * the page already holds, then the E2E owner token. Restricted roles that
+ * cannot read or write settings need an explicit owner token.
+ */
+async function ordersLayoutToken(page: Page, token?: string): Promise<string> {
+  if (token) return token;
+  return (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) || getE2eToken();
+}
+
+/**
  * Reads the tenant's Orders screen layout (`orders_layout`).
  *
  * Returns the backend default ('split') when the tenant never chose one, so a
@@ -45,12 +55,11 @@ export type E2EOrdersLayout = 'split' | 'cards';
 export async function readOrdersLayout(
   page: Page,
   base = E2E_BASE_URL,
+  token?: string,
 ): Promise<E2EOrdersLayout> {
-  const token =
-    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||
-    getE2eToken();
+  const authToken = await ordersLayoutToken(page, token);
   const res = await page.request.get(`${base}/api/settings/orders_layout`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${authToken}` },
   });
   expect(
     res.ok(),
@@ -77,12 +86,11 @@ export async function setOrdersLayout(
   page: Page,
   value: E2EOrdersLayout,
   base = E2E_BASE_URL,
+  token?: string,
 ): Promise<void> {
-  const token =
-    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||
-    getE2eToken();
+  const authToken = await ordersLayoutToken(page, token);
   const res = await page.request.put(`${base}/api/settings/orders_layout`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${authToken}` },
     data: { value },
   });
   expect(

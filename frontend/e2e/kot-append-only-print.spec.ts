@@ -1,6 +1,23 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
+import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setOrdersLayout, type E2EOrdersLayout } from './helpers/test-auth';
+
+// #639 made the Orders screen default to the master/detail split view, so this
+// spec pins the classic cards grid before driving OrderCard affordances. The
+// evidence for why lives in frontend/e2e/orders-master-detail.spec.ts.
+let ordersLayoutBefore: E2EOrdersLayout = 'split';
+// Restricted roles in this spec cannot write settings, so pin and restore with
+// the E2E owner token instead of whatever token the page happens to hold.
+const ordersLayoutOwnerToken = getE2eToken();
+
+test.beforeEach(async ({ page }) => {
+  ordersLayoutBefore = await readOrdersLayout(page, BASE, ordersLayoutOwnerToken);
+  await setOrdersLayout(page, 'cards', BASE, ordersLayoutOwnerToken);
+});
+
+test.afterEach(async ({ page }) => {
+  await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutOwnerToken);
+});
 
 /**
  * Regression coverage for a P2 review finding on the KOT append-only print

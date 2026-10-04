@@ -1,5 +1,12 @@
 import { test, expect, request as playwrightRequest, type APIRequestContext, type Page, type Request, type Route } from '@playwright/test';
-import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
+import {
+  E2E_PASSWORD,
+  getE2eToken,
+  readOrdersLayout,
+  setOrdersLayout,
+  setLanguage,
+  type E2EOrdersLayout,
+} from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
@@ -55,6 +62,23 @@ async function readBusiness(request: APIRequestContext): Promise<Record<string, 
   expect(response.ok()).toBeTruthy();
   return response.json();
 }
+
+// #639 made the Orders screen default to the master/detail split view, so this
+// spec pins the classic cards grid before driving OrderCard affordances. The
+// evidence for why lives in frontend/e2e/orders-master-detail.spec.ts.
+let ordersLayoutBefore: E2EOrdersLayout = 'split';
+// This spec drives restricted roles, so pin and restore with the E2E owner
+// token instead of whatever token the page happens to hold.
+const ordersLayoutOwnerToken = getE2eToken();
+
+test.beforeEach(async ({ page }) => {
+  ordersLayoutBefore = await readOrdersLayout(page, BASE, ordersLayoutOwnerToken);
+  await setOrdersLayout(page, 'cards', BASE, ordersLayoutOwnerToken);
+});
+
+test.afterEach(async ({ page }) => {
+  await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutOwnerToken);
+});
 
 test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);

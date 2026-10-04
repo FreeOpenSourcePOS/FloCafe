@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Mover para cima",
     "variantOnlinePrice": "Preço online",
     "variantRowInvalid": "Cada variante precisa de um nome e um preço.",
-    "variantToggle": "Este produto tem variantes (ex.: tamanho, massa, sabor)"
+    "variantToggle": "Este produto tem variantes (ex.: tamanho, massa, sabor)",
+    "variantDeactivateConfirm": "Esta variante será desativada ao guardar e não poderá ser restaurada a partir deste ecrã.",
+    "variantRemoveAllConfirm": "Ao desligar, todas as variantes deste produto serão desativadas. As encomendas anteriores mantêm-nas."
   },
   "receipt": {
     "amount": "Valor",

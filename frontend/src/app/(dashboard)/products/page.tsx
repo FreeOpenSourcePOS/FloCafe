@@ -7,6 +7,15 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
+import {
+  buildVariantsPayload,
+  hasInvalidVariantRow,
+  moveVariantRow,
+  newVariantRow,
+  removeVariantRow,
+  toVariantRows,
+  type ProductVariantRow,
+} from '@/lib/product-variants';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
@@ -37,6 +46,7 @@ const PRESET_TAGS: { key: string; labelKey: PosKey }[] = [
   { key: 'contains_nuts', labelKey: 'tagContainsNuts' },
   { key: 'gluten_free', labelKey: 'tagGlutenFree' },
   { key: 'dairy_free', labelKey: 'tagDairyFree' },
+  { key: 'halal', labelKey: 'tagHalal' },
   { key: 'new_arrival', labelKey: 'tagNewArrival' },
   { key: 'bestseller', labelKey: 'tagBestseller' },
   { key: 'organic', labelKey: 'tagOrganic' },
@@ -65,32 +75,7 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
   { key: 'rose', labelKey: 'colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
-const DIETARY_TAGS: { key: string; labelKey: PosKey }[] = [
-  { key: 'veg', labelKey: 'tagVeg' },
-  { key: 'vegan', labelKey: 'tagVegan' },
-  { key: 'non-veg', labelKey: 'tagNonVeg' },
-  { key: 'gluten-free', labelKey: 'tagGlutenFree' },
-  { key: 'halal', labelKey: 'tagHalal' },
-  { key: 'dairy-free', labelKey: 'tagDairyFree' },
-];
-
 const VARIANT_CELL = 'w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none';
-
-type VariantRow = {
-  /** Existing server-side id; null for a row the merchant just added. */
-  id: string | null;
-  name: string;
-  price: string;
-  online_price: string;
-  sku: string;
-  barcode: string;
-  stock_quantity: string;
-  is_active: boolean;
-};
-
-const EMPTY_VARIANT_ROW: Omit<VariantRow, 'id'> = {
-  name: '', price: '', online_price: '', sku: '', barcode: '', stock_quantity: '0', is_active: true,
-};
 
 type TabType = 'products' | 'categories' | 'addons';
 
@@ -138,9 +123,8 @@ export default function ProductsPage() {
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
-    dietary_tags: [] as string[],
     has_variants: false,
-    variants: [] as VariantRow[],
+    variants: [] as ProductVariantRow[],
     addon_group_ids: [] as string[],
     image_url: null as string | null,
   });
@@ -292,7 +276,7 @@ export default function ProductsPage() {
       inventory_product_id: '', inventory_deduction_quantity: '1',
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
-      tags: [], customTag: '', dietary_tags: [], has_variants: false, variants: [],
+      tags: [], customTag: '', has_variants: false, variants: [],
       addon_group_ids: [], image_url: null,
     });
     setImageTouched(false);
@@ -321,16 +305,7 @@ export default function ProductsPage() {
       }
     }
     if (requestId !== editRequestId.current) return;
-    const variantRows: VariantRow[] = (product.variants ?? []).map((variant) => ({
-      id: variant.id,
-      name: variant.name,
-      price: String(variant.price),
-      online_price: variant.online_price === null || variant.online_price === undefined ? '' : String(variant.online_price),
-      sku: variant.sku || '',
-      barcode: variant.barcode || '',
-      stock_quantity: String(variant.stock_quantity ?? 0),
-      is_active: variant.is_active,
-    }));
+    const variantRows = toVariantRows(product.variants);
     setProductInactiveAddonGroups(inactiveGroups);
     setEditingProduct(product);
     setForm({
@@ -355,7 +330,6 @@ export default function ProductsPage() {
       is_active: product.is_active,
       tags: product.tags || [],
       customTag: '',
-      dietary_tags: product.dietary_tags ?? [],
       has_variants: variantRows.length > 0,
       variants: variantRows,
       addon_group_ids: addonGroupIds,
@@ -367,28 +341,51 @@ export default function ProductsPage() {
   const addVariantRow = () => setForm((prev) => ({
     ...prev,
     has_variants: true,
-    variants: [...prev.variants, { id: null, ...EMPTY_VARIANT_ROW }],
+    variants: [...prev.variants, newVariantRow()],
   }));
 
-  const updateVariantRow = (idx: number, patch: Partial<VariantRow>) => setForm((prev) => ({
+  const updateVariantRow = (idx: number, patch: Partial<ProductVariantRow>) => setForm((prev) => ({
     ...prev,
     variants: prev.variants.map((row, i) => (i === idx ? { ...row, ...patch } : row)),
   }));
 
-  // Removed rows are simply left out of the payload; the server soft-deactivates
-  // them so historical order items keep resolving their variant.
-  const removeVariantRow = (idx: number) => setForm((prev) => ({
+  const shiftVariantRow = (idx: number, offset: -1 | 1) => setForm((prev) => ({
     ...prev,
-    variants: prev.variants.filter((_, i) => i !== idx),
+    variants: moveVariantRow(prev.variants, idx, offset),
   }));
 
-  const moveVariantRow = (idx: number, offset: -1 | 1) => setForm((prev) => {
-    const target = idx + offset;
-    if (target < 0 || target >= prev.variants.length) return prev;
-    const next = [...prev.variants];
-    [next[idx], next[target]] = [next[target], next[idx]];
-    return { ...prev, variants: next };
-  });
+  const dropVariantRow = (idx: number) => setForm((prev) => ({
+    ...prev,
+    variants: removeVariantRow(prev.variants, idx),
+  }));
+
+  // Deactivated variants drop out of the next GET, so the only way back is a
+  // row the merchant retypes. Make the one-way door explicit before taking it.
+  const toggleVariantActive = async (idx: number, isActive: boolean) => {
+    if (isActive) {
+      updateVariantRow(idx, { is_active: true });
+      return;
+    }
+    if (await confirm(t('variantDeactivateConfirm'), { destructive: true, confirmLabel: tCommon('yes') })) {
+      updateVariantRow(idx, { is_active: false });
+    } else {
+      // Re-render so the controlled checkbox snaps back to the declined value.
+      setForm((prev) => ({ ...prev }));
+    }
+  };
+
+  const toggleHasVariants = async (hasVariants: boolean) => {
+    if (hasVariants) {
+      setForm((prev) => ({ ...prev, has_variants: true }));
+      return;
+    }
+    if (!await confirm(t('variantRemoveAllConfirm'), { destructive: true, confirmLabel: tCommon('yes') })) {
+      // Re-render so the controlled switch snaps back to the declined value.
+      setForm((prev) => ({ ...prev }));
+      return;
+    }
+    setForm((prev) => ({ ...prev, has_variants: false }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -399,7 +396,7 @@ export default function ProductsPage() {
         return;
       }
     }
-    if (form.has_variants && form.variants.some((row) => row.name.trim() === '' || row.price === '' || !Number.isFinite(Number(row.price)))) {
+    if (form.has_variants && hasInvalidVariantRow(form.variants)) {
       toast.error(t('variantRowInvalid'));
       return;
     }
@@ -431,20 +428,7 @@ export default function ProductsPage() {
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
         tags: form.tags.length > 0 ? form.tags : null,
-        dietary_tags: form.dietary_tags.length > 0 ? form.dietary_tags : null,
-        variants: form.has_variants
-          ? form.variants.map((variant, index) => ({
-            ...(variant.id ? { id: variant.id } : {}),
-            name: variant.name.trim(),
-            price: roundCurrencyValue(Number(variant.price), unitAdapter.maxDecimals),
-            online_price: variant.online_price === '' ? null : roundCurrencyValue(Number(variant.online_price), unitAdapter.maxDecimals),
-            sku: variant.sku.trim() || null,
-            barcode: variant.barcode.trim() || null,
-            stock_quantity: Math.max(0, Number(variant.stock_quantity) || 0),
-            is_active: variant.is_active,
-            sort_order: index,
-          }))
-          : [],
+        variants: buildVariantsPayload(form.has_variants ? form.variants : [], unitAdapter.maxDecimals),
         addon_group_ids: form.addon_group_ids,
       };
 
@@ -463,8 +447,11 @@ export default function ProductsPage() {
       }
       resetForm();
       fetchData();
-    } catch {
-      toast.error(t('failedToSave'));
+    } catch (err: unknown) {
+      const message = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(message || t('failedToSave'));
     }
   };
 
@@ -984,7 +971,7 @@ export default function ProductsPage() {
                 <input
                   type="checkbox"
                   checked={form.has_variants}
-                  onChange={(e) => setForm({ ...form, has_variants: e.target.checked })}
+                  onChange={(e) => toggleHasVariants(e.target.checked)}
                   className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                 />
                 <span className="text-sm text-foreground">{t('variantToggle')}</span>
@@ -1037,29 +1024,29 @@ export default function ProductsPage() {
                                 className={`${VARIANT_CELL} font-mono`} />
                             </td>
                             <td className="py-1 pe-2">
-                              <input type="number" min="0" step="any" value={row.stock_quantity} aria-label={t('columnStock')}
+                              <input type="number" min="0" step="any" required value={row.stock_quantity} aria-label={t('columnStock')}
                                 onChange={(e) => updateVariantRow(idx, { stock_quantity: e.target.value })}
                                 className={VARIANT_CELL} />
                             </td>
                             <td className="py-1 pe-2 text-center">
                               <input type="checkbox" checked={row.is_active} aria-label={tCommon('active')}
-                                onChange={(e) => updateVariantRow(idx, { is_active: e.target.checked })}
+                                onChange={(e) => toggleVariantActive(idx, e.target.checked)}
                                 className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
                             </td>
                             <td className="py-1">
                               <div className="flex items-center justify-end gap-1">
                                 <button type="button" title={t('variantMoveUp')} aria-label={t('variantMoveUp')} disabled={idx === 0}
-                                  onClick={() => moveVariantRow(idx, -1)}
+                                  onClick={() => shiftVariantRow(idx, -1)}
                                   className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
                                   <ChevronUp size={16} />
                                 </button>
                                 <button type="button" title={t('variantMoveDown')} aria-label={t('variantMoveDown')} disabled={idx === form.variants.length - 1}
-                                  onClick={() => moveVariantRow(idx, 1)}
+                                  onClick={() => shiftVariantRow(idx, 1)}
                                   className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
                                   <ChevronDown size={16} />
                                 </button>
                                 <button type="button" title={tCommon('remove')} aria-label={tCommon('remove')}
-                                  onClick={() => removeVariantRow(idx)}
+                                  onClick={() => dropVariantRow(idx)}
                                   className="p-1 text-gray-400 hover:text-red-500">
                                   <X size={16} />
                                 </button>
@@ -1178,34 +1165,6 @@ export default function ProductsPage() {
                   >
                     {tCommon('add')}
                   </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">{t('dietaryTagsLabel')}</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {DIETARY_TAGS.map((tag) => {
-                    const selected = form.dietary_tags.includes(tag.key);
-                    return (
-                      <button
-                        key={tag.key}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => setForm((prev) => ({
-                          ...prev,
-                          dietary_tags: selected
-                            ? prev.dietary_tags.filter((value) => value !== tag.key)
-                            : [...prev.dietary_tags, tag.key],
-                        }))}
-                        className={`px-2 py-1 text-xs rounded-lg border transition-colors ${
-                          selected
-                            ? 'border-brand bg-brand/10 text-brand font-medium'
-                            : 'border-border text-muted-foreground hover:border-brand hover:text-brand'
-                        }`}
-                      >
-                        {tPos(tag.labelKey)}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
               {isRestaurant && productAddonGroupOptions.length > 0 && (

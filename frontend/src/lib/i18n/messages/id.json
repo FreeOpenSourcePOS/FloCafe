@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Pindahkan ke atas",
     "variantOnlinePrice": "Harga online",
     "variantRowInvalid": "Setiap varian memerlukan nama dan harga.",
-    "variantToggle": "Produk ini memiliki varian (mis. Ukuran, Adonan, Rasa)"
+    "variantToggle": "Produk ini memiliki varian (mis. Ukuran, Adonan, Rasa)",
+    "variantDeactivateConfirm": "Varian ini akan dinonaktifkan saat disimpan dan tidak dapat dipulihkan dari layar ini.",
+    "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya."
   },
   "receipt": {
     "amount": "Jumlah",

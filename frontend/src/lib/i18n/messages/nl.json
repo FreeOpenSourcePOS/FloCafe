@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Omhoog verplaatsen",
     "variantOnlinePrice": "Onlineprijs",
     "variantRowInvalid": "Elke variant heeft een naam en prijs nodig.",
-    "variantToggle": "Dit product heeft varianten (bijv. formaat, korst, smaak)"
+    "variantToggle": "Dit product heeft varianten (bijv. formaat, korst, smaak)",
+    "variantDeactivateConfirm": "Deze variant wordt bij opslaan gedeactiveerd en kan vanaf dit scherm niet worden hersteld.",
+    "variantRemoveAllConfirm": "Als u dit uitschakelt, worden alle varianten van dit product gedeactiveerd. Eerdere bestellingen behouden ze."
   },
   "receipt": {
     "amount": "Bedrag",

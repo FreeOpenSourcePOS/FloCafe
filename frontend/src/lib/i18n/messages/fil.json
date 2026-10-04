@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Ilipat pataas",
     "variantOnlinePrice": "Presyo online",
     "variantRowInvalid": "Kailangan ng bawat variant ng pangalan at presyo.",
-    "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)"
+    "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)",
+    "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maaibalik mula sa screen na ito.",
+    "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order."
   },
   "receipt": {
     "amount": "Halaga",

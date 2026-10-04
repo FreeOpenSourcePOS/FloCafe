@@ -1231,7 +1231,9 @@
     "variantMoveUp": "上へ移動",
     "variantOnlinePrice": "オンライン価格",
     "variantRowInvalid": "各バリアントには名前と価格が必要です。",
-    "variantToggle": "この商品にはバリアントがあります（例：サイズ、生地、フレーバー）"
+    "variantToggle": "この商品にはバリアントがあります（例：サイズ、生地、フレーバー）",
+    "variantDeactivateConfirm": "保存するとこのバリアントは無効になり、この画面から復元できません。",
+    "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。"
   },
   "receipt": {
     "amount": "金額",

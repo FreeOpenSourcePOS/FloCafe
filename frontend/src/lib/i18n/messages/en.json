@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Move up",
     "variantOnlinePrice": "Online Price",
     "variantRowInvalid": "Every variant needs a name and a price.",
-    "variantToggle": "This product has variants (e.g. Size, Crust, Flavor)"
+    "variantToggle": "This product has variants (e.g. Size, Crust, Flavor)",
+    "variantDeactivateConfirm": "This variant is deactivated on save and cannot be restored from this screen.",
+    "variantRemoveAllConfirm": "Turning this off deactivates every variant of this product. Historical orders keep them."
   },
   "receipt": {
     "amount": "Amount",

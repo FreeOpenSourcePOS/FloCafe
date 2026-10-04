@@ -1231,7 +1231,9 @@
     "variantMoveUp": "위로 이동",
     "variantOnlinePrice": "온라인 가격",
     "variantRowInvalid": "모든 옵션에는 이름과 가격이 필요합니다.",
-    "variantToggle": "이 상품에는 옵션이 있습니다 (예: 사이즈, 크러스트, 맛)"
+    "variantToggle": "이 상품에는 옵션이 있습니다 (예: 사이즈, 크러스트, 맛)",
+    "variantDeactivateConfirm": "저장하면 이 옵션이 비활성화되며 이 화면에서 복원할 수 없습니다.",
+    "variantRemoveAllConfirm": "끄면 이 상품의 모든 옵션이 비활성화됩니다. 기존 주문에는 그대로 남습니다."
   },
   "receipt": {
     "amount": "금액",

@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Lëviz lart",
     "variantOnlinePrice": "Çmimi online",
     "variantRowInvalid": "Çdo variant duhet të ketë emër dhe çmim.",
-    "variantToggle": "Ky produkt ka variante (p.sh. madhësi, kore, shije)"
+    "variantToggle": "Ky produkt ka variante (p.sh. madhësi, kore, shije)",
+    "variantDeactivateConfirm": "Ky variant do të çaktivizohet kur ruhet dhe nuk mund të rikthehet nga ky ekran.",
+    "variantRemoveAllConfirm": "Nëse e çaktivizoni, do të çaktivizohen të gjitha variantet e këtij produkti. Porositë e vjetra i ruajnë."
   },
   "receipt": {
     "amount": "Shuma",

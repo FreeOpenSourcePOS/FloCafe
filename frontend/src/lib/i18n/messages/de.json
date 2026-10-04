@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Nach oben verschieben",
     "variantOnlinePrice": "Online-Preis",
     "variantRowInvalid": "Jede Variante benötigt einen Namen und einen Preis.",
-    "variantToggle": "Dieses Produkt hat Varianten (z. B. Größe, Belag, Geschmack)"
+    "variantToggle": "Dieses Produkt hat Varianten (z. B. Größe, Belag, Geschmack)",
+    "variantDeactivateConfirm": "Diese Variante wird beim Speichern deaktiviert und kann auf diesem Bildschirm nicht wiederhergestellt werden.",
+    "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie."
   },
   "receipt": {
     "amount": "Betrag",

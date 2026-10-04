@@ -1231,7 +1231,9 @@
     "variantMoveUp": "Yukarı taşı",
     "variantOnlinePrice": "Çevrimiçi fiyat",
     "variantRowInvalid": "Her varyantın adı ve fiyatı olmalıdır.",
-    "variantToggle": "Bu ürünün varyantları var (örn. Boyut, Hamur, Tat)"
+    "variantToggle": "Bu ürünün varyantları var (örn. Boyut, Hamur, Tat)",
+    "variantDeactivateConfirm": "Bu varyant kaydedildiğinde devre dışı bırakılır ve bu ekrandan geri alınamaz.",
+    "variantRemoveAllConfirm": "Bunu kapatırsanız bu ürünün tüm varyantları devre dışı bırakılır. Eski siparişler korunur."
   },
   "receipt": {
     "amount": "Tutar",

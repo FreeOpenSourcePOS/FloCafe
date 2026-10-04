@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD, readOrdersLayout, setLanguage } from './helpers/test-auth';
+import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setLanguage } from './helpers/test-auth';
 
 /**
  * Orders master/detail split view (#639) — DEFAULT layout coverage.
@@ -86,6 +86,65 @@ test.describe('orders master/detail is the default layout', () => {
     await expect(page.getByRole('button', { name: /Checkout|Take Payment/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add Item' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Link Customer' })).toBeVisible();
+  });
+
+  test('the detail pane carries applied charges and the pre-bill print action', async ({ page }) => {
+    const headers = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+    const chargeName = 'E2E Detail Fee';
+    const originalCharges = await page.request.get(`${BASE}/api/settings/charges`, { headers });
+    expect(originalCharges.ok()).toBeTruthy();
+    const restoreCharges = (await originalCharges.json()).charges as unknown[];
+
+    try {
+      // An auto-applied charge is exactly what the detail pane has to account
+      // for, otherwise staff cannot explain the total they are about to collect.
+      const charges = await page.request.put(`${BASE}/api/settings/charges`, {
+        headers,
+        data: {
+          charges: [{
+            id: 'e2e_detail_charge',
+            name: chargeName,
+            type: 'fixed',
+            value: 3,
+            calculation_basis: 'gross',
+            order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+            is_optional: false,
+            is_default_active: true,
+            is_active: true,
+          }],
+        },
+      });
+      expect(charges.ok()).toBeTruthy();
+
+      // Dine-in and bill-less: the Print action has to generate the bill rather
+      // than wait for checkout.
+      const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: { type: 'dine_in', items: [{ product_id: 'e2e-product', quantity: 1 }] },
+      });
+      expect(orderResponse.status()).toBe(201);
+      const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+      await login(page);
+      await page.goto(`${BASE}/orders`);
+
+      const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+      await expect(masterRow).toBeVisible();
+      await masterRow.click();
+
+      await expect(page.getByText(chargeName, { exact: true })).toBeVisible();
+
+      const printAction = page.getByTitle('Print');
+      await expect(printAction).toBeVisible();
+      await printAction.click();
+      await expect(page.getByRole('heading', { name: 'Print Receipt' })).toBeVisible();
+    } finally {
+      const restored = await page.request.put(`${BASE}/api/settings/charges`, {
+        headers,
+        data: { charges: restoreCharges },
+      });
+      expect(restored.ok()).toBeTruthy();
+    }
   });
 
   test('below the md breakpoint the detail pane takes over and back returns to the list', async ({ page }) => {

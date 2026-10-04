@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
+import { receiptChargeLines } from '@/lib/charges';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -55,6 +56,7 @@ export interface OrderDetailPanelProps {
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
+  onPrintOrder?: (order: Order) => void;
   onPrintDeliverySlip?: (order: Order) => void;
   onSendWhatsApp: (order: Order) => void;
   onLinkCustomer: (orderId: number) => void;
@@ -93,6 +95,7 @@ function OrderDetailContent({
   onConvertToTakeaway,
   onCancelOrder,
   onPrint,
+  onPrintOrder,
   onPrintDeliverySlip,
   onSendWhatsApp,
   onLinkCustomer,
@@ -154,6 +157,8 @@ function OrderDetailContent({
   const deliveryCharge = bill ? Number(bill.delivery_charge || 0) : Number(order.delivery_charge || 0);
   const serviceCharge = bill ? Number(bill.service_charge || 0) : Number(order.service_charge || 0);
   const packagingCharge = bill ? Number(bill.packaging_charge || 0) : Number(order.packaging_charge || 0);
+  const customCharges = receiptChargeLines(bill ? bill.charges_breakdown : order.charges_breakdown)
+    .filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
 
   const statusBadgeInfo = orderStatusBadge[order.status];
   const orderPrints = bill?.id ? printHistory[bill.id] || [] : [];
@@ -200,16 +205,21 @@ function OrderDetailContent({
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {bill && (
+            {(bill || (onPrintOrder && order.type === 'dine_in' && order.status !== 'cancelled')) && (
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => onPrint(bill.id)}
-                disabled={printingBillId === bill.id}
+                onClick={() => {
+                  if (bill) onPrint(bill.id);
+                  else if (onPrintOrder) onPrintOrder(order);
+                }}
+                disabled={(bill && printingBillId === bill.id) || generatingBillId === order.id}
                 className="size-9 rounded-lg border-border/70 text-muted-foreground hover:text-foreground"
                 title={printCount > 0 ? tCommon('reprint') : tCommon('print')}
               >
-                {printingBillId === bill.id ? <Loader2 size={16} className="animate-spin" /> : <Printer size={17} />}
+                {(bill && printingBillId === bill.id) || generatingBillId === order.id
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : <Printer size={17} />}
               </Button>
             )}
             <DropdownMenu>
@@ -536,6 +546,12 @@ function OrderDetailContent({
                 <span className="font-medium text-foreground">{fmt(packagingCharge)}</span>
               </div>
             )}
+            {customCharges.map((charge) => (
+              <div key={charge.id} className="flex justify-between text-muted-foreground">
+                <span>{charge.name}</span>
+                <span className="font-medium text-foreground">{fmt(charge.amount)}</span>
+              </div>
+            ))}
             <div className="flex justify-between text-muted-foreground">
               <span>{tCommon('tax')}</span>
               <span className="font-medium text-foreground">{tax > 0 ? fmt(tax) : '-'}</span>

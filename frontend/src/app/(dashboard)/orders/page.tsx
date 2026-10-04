@@ -1114,6 +1114,7 @@ export default function OrdersPage() {
               onConvertToTakeaway={handleConvertToTakeaway}
               onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
               onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onPrintOrder={tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined}
               onPrintDeliverySlip={handlePrintDeliverySlip}
               onSendWhatsApp={handleSendViaFlo}
               onLinkCustomer={(orderId) => {

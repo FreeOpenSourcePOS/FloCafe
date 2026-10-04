@@ -864,7 +864,8 @@
     "addCharge": "เพิ่ม",
     "removeCharge": "นำออก",
     "chargesTotal": "ค่าธรรมเนียมรวม",
-    "chargeUpdateFailed": "ไม่สามารถอัปเดตค่าธรรมเนียมได้"
+    "chargeUpdateFailed": "ไม่สามารถอัปเดตค่าธรรมเนียมได้",
+    "tagHalal": "ฮาลาล"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -917,7 +918,10 @@
     "templateFallback": "เทมเพลตบิลที่เลือกไม่รองรับวิธีพิมพ์นี้ จึงใช้รูปแบบใบเสร็จที่มาพร้อมระบบแทน"
   },
   "print": {
-    "menu": {"title": "เมนู", "totalItems": "จำนวนรายการทั้งหมด"},
+    "menu": {
+      "title": "เมนู",
+      "totalItems": "จำนวนรายการทั้งหมด"
+    },
     "taxInvoiceTitle": "ใบกำกับภาษี",
     "invoiceTitle": "ใบแจ้งหนี้",
     "invoiceNumber": "เลขที่ใบแจ้งหนี้#:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "เครื่องพิมพ์",
     "systemBrowserPrint": "ระบบ / พิมพ์ผ่านเบราว์เซอร์",
     "menuPrintFailed": "พิมพ์เมนูไม่สำเร็จ",
-    "menuPopupBlocked": "เบราว์เซอร์บล็อกหน้าต่างการพิมพ์ กรุณาอนุญาต pop-up สำหรับเว็บไซต์นี้แล้วลองใหม่อีกครั้ง"
+    "menuPopupBlocked": "เบราว์เซอร์บล็อกหน้าต่างการพิมพ์ กรุณาอนุญาต pop-up สำหรับเว็บไซต์นี้แล้วลองใหม่อีกครั้ง",
+    "dietaryTagsLabel": "แท็กอาหาร",
+    "variantGovernedHint": "ราคาและจำนวนคงเหลือถูกกำหนดโดยตัวเลือกด้านล่าง",
+    "variantMoveDown": "เลื่อนลง",
+    "variantMoveUp": "เลื่อนขึ้น",
+    "variantOnlinePrice": "ราคาออนไลน์",
+    "variantRowInvalid": "ทุกตัวเลือกต้องมีชื่อและราคา",
+    "variantToggle": "สินค้านี้มีตัวเลือก (เช่น ขนาด ทอ รสชาติ)"
   },
   "receipt": {
     "amount": "จำนวนเงิน",

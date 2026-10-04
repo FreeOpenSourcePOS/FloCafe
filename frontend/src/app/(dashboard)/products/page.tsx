@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer, ChevronUp, ChevronDown } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -65,6 +65,33 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
   { key: 'rose', labelKey: 'colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
+const DIETARY_TAGS: { key: string; labelKey: PosKey }[] = [
+  { key: 'veg', labelKey: 'tagVeg' },
+  { key: 'vegan', labelKey: 'tagVegan' },
+  { key: 'non-veg', labelKey: 'tagNonVeg' },
+  { key: 'gluten-free', labelKey: 'tagGlutenFree' },
+  { key: 'halal', labelKey: 'tagHalal' },
+  { key: 'dairy-free', labelKey: 'tagDairyFree' },
+];
+
+const VARIANT_CELL = 'w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none';
+
+type VariantRow = {
+  /** Existing server-side id; null for a row the merchant just added. */
+  id: string | null;
+  name: string;
+  price: string;
+  online_price: string;
+  sku: string;
+  barcode: string;
+  stock_quantity: string;
+  is_active: boolean;
+};
+
+const EMPTY_VARIANT_ROW: Omit<VariantRow, 'id'> = {
+  name: '', price: '', online_price: '', sku: '', barcode: '', stock_quantity: '0', is_active: true,
+};
+
 type TabType = 'products' | 'categories' | 'addons';
 
 function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
@@ -111,6 +138,9 @@ export default function ProductsPage() {
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
+    dietary_tags: [] as string[],
+    has_variants: false,
+    variants: [] as VariantRow[],
     addon_group_ids: [] as string[],
     image_url: null as string | null,
   });
@@ -262,7 +292,8 @@ export default function ProductsPage() {
       inventory_product_id: '', inventory_deduction_quantity: '1',
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
-      tags: [], customTag: '', addon_group_ids: [], image_url: null,
+      tags: [], customTag: '', dietary_tags: [], has_variants: false, variants: [],
+      addon_group_ids: [], image_url: null,
     });
     setImageTouched(false);
     setEditingProduct(null);
@@ -290,6 +321,16 @@ export default function ProductsPage() {
       }
     }
     if (requestId !== editRequestId.current) return;
+    const variantRows: VariantRow[] = (product.variants ?? []).map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      price: String(variant.price),
+      online_price: variant.online_price === null || variant.online_price === undefined ? '' : String(variant.online_price),
+      sku: variant.sku || '',
+      barcode: variant.barcode || '',
+      stock_quantity: String(variant.stock_quantity ?? 0),
+      is_active: variant.is_active,
+    }));
     setProductInactiveAddonGroups(inactiveGroups);
     setEditingProduct(product);
     setForm({
@@ -314,11 +355,40 @@ export default function ProductsPage() {
       is_active: product.is_active,
       tags: product.tags || [],
       customTag: '',
+      dietary_tags: product.dietary_tags ?? [],
+      has_variants: variantRows.length > 0,
+      variants: variantRows,
       addon_group_ids: addonGroupIds,
       image_url: product.has_image ? 'EXISTING' : null,
     });
     setShowForm(true);
   };
+
+  const addVariantRow = () => setForm((prev) => ({
+    ...prev,
+    has_variants: true,
+    variants: [...prev.variants, { id: null, ...EMPTY_VARIANT_ROW }],
+  }));
+
+  const updateVariantRow = (idx: number, patch: Partial<VariantRow>) => setForm((prev) => ({
+    ...prev,
+    variants: prev.variants.map((row, i) => (i === idx ? { ...row, ...patch } : row)),
+  }));
+
+  // Removed rows are simply left out of the payload; the server soft-deactivates
+  // them so historical order items keep resolving their variant.
+  const removeVariantRow = (idx: number) => setForm((prev) => ({
+    ...prev,
+    variants: prev.variants.filter((_, i) => i !== idx),
+  }));
+
+  const moveVariantRow = (idx: number, offset: -1 | 1) => setForm((prev) => {
+    const target = idx + offset;
+    if (target < 0 || target >= prev.variants.length) return prev;
+    const next = [...prev.variants];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    return { ...prev, variants: next };
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -328,6 +398,10 @@ export default function ProductsPage() {
         toast.error(t('invalidCashbackRate'));
         return;
       }
+    }
+    if (form.has_variants && form.variants.some((row) => row.name.trim() === '' || row.price === '' || !Number.isFinite(Number(row.price)))) {
+      toast.error(t('variantRowInvalid'));
+      return;
     }
     try {
       const cbPercentVal: number | null = form.cb_percent === '' ? null : Number(form.cb_percent);
@@ -357,6 +431,20 @@ export default function ProductsPage() {
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
         tags: form.tags.length > 0 ? form.tags : null,
+        dietary_tags: form.dietary_tags.length > 0 ? form.dietary_tags : null,
+        variants: form.has_variants
+          ? form.variants.map((variant, index) => ({
+            ...(variant.id ? { id: variant.id } : {}),
+            name: variant.name.trim(),
+            price: roundCurrencyValue(Number(variant.price), unitAdapter.maxDecimals),
+            online_price: variant.online_price === '' ? null : roundCurrencyValue(Number(variant.online_price), unitAdapter.maxDecimals),
+            sku: variant.sku.trim() || null,
+            barcode: variant.barcode.trim() || null,
+            stock_quantity: Math.max(0, Number(variant.stock_quantity) || 0),
+            is_active: variant.is_active,
+            sort_order: index,
+          }))
+          : [],
         addon_group_ids: form.addon_group_ids,
       };
 
@@ -883,6 +971,7 @@ export default function ProductsPage() {
                   <CurrencyAmountInput value={form.price === '' ? '' : Number(form.price)} format={amountFormat}
                     onValueChange={(v) => setForm({ ...form, price: v === '' ? '' : String(v) })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                  {form.has_variants && <p className="text-xs text-muted-foreground mt-1">{t('variantGovernedHint')}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCostPrice')}</label>
@@ -891,6 +980,98 @@ export default function ProductsPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.has_variants}
+                  onChange={(e) => setForm({ ...form, has_variants: e.target.checked })}
+                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                />
+                <span className="text-sm text-foreground">{t('variantToggle')}</span>
+              </label>
+              {form.has_variants && (
+                <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <button type="button" onClick={addVariantRow} className="text-xs text-brand hover:underline">{t('addButton')}</button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead>
+                        <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
+                          <th className="text-start py-1 pe-2">{t('columnPrice')}</th>
+                          <th className="text-start py-1 pe-2">{t('variantOnlinePrice')}</th>
+                          <th className="text-start py-1 pe-2">{t('fieldSku')}</th>
+                          <th className="text-start py-1 pe-2">{t('fieldBarcode')}</th>
+                          <th className="text-start py-1 pe-2">{t('columnStock')}</th>
+                          <th className="text-center py-1 pe-2">{tCommon('active')}</th>
+                          <th aria-hidden="true" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {form.variants.map((row, idx) => (
+                          <tr key={row.id ?? `new-${idx}`}>
+                            <td className="py-1 pe-2">
+                              <input type="text" value={row.name} required aria-label={t('nameLabel')} placeholder={tCommon('namePlaceholder')}
+                                onChange={(e) => updateVariantRow(idx, { name: e.target.value })}
+                                className={VARIANT_CELL} />
+                            </td>
+                            <td className="py-1 pe-2">
+                              <CurrencyAmountInput value={row.price === '' ? '' : Number(row.price)} format={amountFormat} required aria-label={t('columnPrice')}
+                                onValueChange={(v) => updateVariantRow(idx, { price: v === '' ? '' : String(v) })}
+                                className={VARIANT_CELL} />
+                            </td>
+                            <td className="py-1 pe-2">
+                              <CurrencyAmountInput value={row.online_price === '' ? '' : Number(row.online_price)} format={amountFormat} aria-label={t('variantOnlinePrice')}
+                                onValueChange={(v) => updateVariantRow(idx, { online_price: v === '' ? '' : String(v) })}
+                                className={VARIANT_CELL} />
+                            </td>
+                            <td className="py-1 pe-2">
+                              <input type="text" value={row.sku} aria-label={t('fieldSku')}
+                                onChange={(e) => updateVariantRow(idx, { sku: e.target.value })}
+                                className={VARIANT_CELL} />
+                            </td>
+                            <td className="py-1 pe-2">
+                              <input type="text" value={row.barcode} aria-label={t('fieldBarcode')} placeholder={t('fieldBarcodePlaceholder')}
+                                onChange={(e) => updateVariantRow(idx, { barcode: e.target.value })}
+                                className={`${VARIANT_CELL} font-mono`} />
+                            </td>
+                            <td className="py-1 pe-2">
+                              <input type="number" min="0" step="any" value={row.stock_quantity} aria-label={t('columnStock')}
+                                onChange={(e) => updateVariantRow(idx, { stock_quantity: e.target.value })}
+                                className={VARIANT_CELL} />
+                            </td>
+                            <td className="py-1 pe-2 text-center">
+                              <input type="checkbox" checked={row.is_active} aria-label={tCommon('active')}
+                                onChange={(e) => updateVariantRow(idx, { is_active: e.target.checked })}
+                                className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                            </td>
+                            <td className="py-1">
+                              <div className="flex items-center justify-end gap-1">
+                                <button type="button" title={t('variantMoveUp')} aria-label={t('variantMoveUp')} disabled={idx === 0}
+                                  onClick={() => moveVariantRow(idx, -1)}
+                                  className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
+                                  <ChevronUp size={16} />
+                                </button>
+                                <button type="button" title={t('variantMoveDown')} aria-label={t('variantMoveDown')} disabled={idx === form.variants.length - 1}
+                                  onClick={() => moveVariantRow(idx, 1)}
+                                  className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
+                                  <ChevronDown size={16} />
+                                </button>
+                                <button type="button" title={tCommon('remove')} aria-label={tCommon('remove')}
+                                  onClick={() => removeVariantRow(idx)}
+                                  className="p-1 text-gray-400 hover:text-red-500">
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
               {loyaltyEnabled && (
                 <div className="bg-muted p-4 rounded-xl space-y-2">
                   <label className="block text-sm font-medium text-foreground">{t('cashbackLabel')}</label>
@@ -999,6 +1180,34 @@ export default function ProductsPage() {
                   </button>
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('dietaryTagsLabel')}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {DIETARY_TAGS.map((tag) => {
+                    const selected = form.dietary_tags.includes(tag.key);
+                    return (
+                      <button
+                        key={tag.key}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setForm((prev) => ({
+                          ...prev,
+                          dietary_tags: selected
+                            ? prev.dietary_tags.filter((value) => value !== tag.key)
+                            : [...prev.dietary_tags, tag.key],
+                        }))}
+                        className={`px-2 py-1 text-xs rounded-lg border transition-colors ${
+                          selected
+                            ? 'border-brand bg-brand/10 text-brand font-medium'
+                            : 'border-border text-muted-foreground hover:border-brand hover:text-brand'
+                        }`}
+                      >
+                        {tPos(tag.labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {isRestaurant && productAddonGroupOptions.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
@@ -1054,6 +1263,7 @@ export default function ProductsPage() {
                     <label className="block text-sm font-medium text-foreground mb-1">{t('fieldStock')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="number" min="0" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                    {form.has_variants && <p className="text-xs text-muted-foreground mt-1">{t('variantGovernedHint')}</p>}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">{t('fieldLowStockThreshold')}</label>

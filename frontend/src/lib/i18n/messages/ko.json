@@ -864,7 +864,8 @@
     "addCharge": "추가",
     "removeCharge": "제거",
     "chargesTotal": "수수료 합계",
-    "chargeUpdateFailed": "수수료를 업데이트할 수 없습니다"
+    "chargeUpdateFailed": "수수료를 업데이트할 수 없습니다",
+    "tagHalal": "할랄"
   },
   "printTest": {
     "amt": "금액",
@@ -917,7 +918,10 @@
     "templateFallback": "선택한 청구서 템플릿은 이 인쇄 경로에서 지원되지 않아 기본 영수증 레이아웃을 사용했습니다."
   },
   "print": {
-    "menu": {"title": "메뉴", "totalItems": "총 항목"},
+    "menu": {
+      "title": "메뉴",
+      "totalItems": "총 항목"
+    },
     "taxInvoiceTitle": "세금 인보이스",
     "invoiceTitle": "인보이스",
     "invoiceNumber": "인보이스 #:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "프린터",
     "systemBrowserPrint": "시스템 / 브라우저 인쇄",
     "menuPrintFailed": "메뉴를 인쇄하지 못했습니다",
-    "menuPopupBlocked": "브라우저가 인쇄 창을 차단했습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."
+    "menuPopupBlocked": "브라우저가 인쇄 창을 차단했습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요.",
+    "dietaryTagsLabel": "식이 태그",
+    "variantGovernedHint": "가격과 재고는 아래 옵션에 따라 결정됩니다.",
+    "variantMoveDown": "아래로 이동",
+    "variantMoveUp": "위로 이동",
+    "variantOnlinePrice": "온라인 가격",
+    "variantRowInvalid": "모든 옵션에는 이름과 가격이 필요합니다.",
+    "variantToggle": "이 상품에는 옵션이 있습니다 (예: 사이즈, 크러스트, 맛)"
   },
   "receipt": {
     "amount": "금액",

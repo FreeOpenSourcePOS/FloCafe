@@ -864,7 +864,8 @@
     "addCharge": "थप्नुहोस्",
     "removeCharge": "हटाउनुहोस्",
     "chargesTotal": "कुल शुल्क",
-    "chargeUpdateFailed": "शुल्क अद्यावधिक गर्न सकिएन"
+    "chargeUpdateFailed": "शुल्क अद्यावधिक गर्न सकिएन",
+    "tagHalal": "हलाल"
   },
   "printTest": {
     "amt": "रकम",
@@ -917,7 +918,10 @@
     "templateFallback": "चयन गरिएको बिल टेम्प्लेट यस मुद्रण मार्गमा समर्थित छैन, त्यसैले बिल्ट-इन रसिद लेआउट प्रयोग गरिएको थियो।"
   },
   "print": {
-    "menu": {"title": "मेनु", "totalItems": "कुल वस्तुहरू"},
+    "menu": {
+      "title": "मेनु",
+      "totalItems": "कुल वस्तुहरू"
+    },
     "taxInvoiceTitle": "कर इनभ्वाइस",
     "invoiceTitle": "इनभ्वाइस",
     "invoiceNumber": "बिल #:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "प्रिन्टर",
     "systemBrowserPrint": "सिस्टम / ब्राउजर प्रिन्ट",
     "menuPrintFailed": "मेनु प्रिन्ट गर्न सकिएन",
-    "menuPopupBlocked": "तपाईंको ब्राउजरले प्रिन्ट विन्डो ब्लक गर्यो। यस साइटका लागि पप-अप अनुमति दिनुहोस् र पुनः प्रयास गर्नुहोस्।"
+    "menuPopupBlocked": "तपाईंको ब्राउजरले प्रिन्ट विन्डो ब्लक गर्यो। यस साइटका लागि पप-अप अनुमति दिनुहोस् र पुनः प्रयास गर्नुहोस्।",
+    "dietaryTagsLabel": "खाद्य ट्याग",
+    "variantGovernedHint": "मूल्य र स्टक तलका भेरिभेरियन्टहरूले निर्धारण गर्छन्।",
+    "variantMoveDown": "तल लैजानुहोस्",
+    "variantMoveUp": "माथि लैजानुहोस्",
+    "variantOnlinePrice": "अनलाइन मूल्य",
+    "variantRowInvalid": "हरेक भेरिभेरियन्टको नाम र मूल्य आवश्यक छ।",
+    "variantToggle": "यो उत्पादनमा भेरिभेरियन्टहरू छन् (जस्तै: आकार, क्रस्ट, स्वाद)"
   },
   "receipt": {
     "amount": "रकम",

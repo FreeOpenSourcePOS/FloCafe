@@ -864,7 +864,8 @@
     "addCharge": "Añadir",
     "removeCharge": "Quitar",
     "chargesTotal": "Total de cargos",
-    "chargeUpdateFailed": "No se pudo actualizar el cargo"
+    "chargeUpdateFailed": "No se pudo actualizar el cargo",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Total",
@@ -917,7 +918,10 @@
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
   "print": {
-    "menu": {"title": "Menú", "totalItems": "Total de artículos"},
+    "menu": {
+      "title": "Menú",
+      "totalItems": "Total de artículos"
+    },
     "taxInvoiceTitle": "FACTURA CON IMPUESTOS",
     "invoiceTitle": "FACTURA",
     "invoiceNumber": "Factura N.º:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "Impresora",
     "systemBrowserPrint": "Sistema / impresión del navegador",
     "menuPrintFailed": "No se pudo imprimir el menú",
-    "menuPopupBlocked": "Tu navegador bloqueó la ventana de impresión. Permite las ventanas emergentes para este sitio e inténtalo de nuevo."
+    "menuPopupBlocked": "Tu navegador bloqueó la ventana de impresión. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.",
+    "dietaryTagsLabel": "Etiquetas dietéticas",
+    "variantGovernedHint": "El precio y el stock los determinan las variantes de abajo.",
+    "variantMoveDown": "Mover abajo",
+    "variantMoveUp": "Mover arriba",
+    "variantOnlinePrice": "Precio online",
+    "variantRowInvalid": "Cada variante necesita un nombre y un precio.",
+    "variantToggle": "Este producto tiene variantes (p. ej. tamaño, masa, sabor)"
   },
   "receipt": {
     "amount": "Monto",

@@ -864,7 +864,8 @@
     "addCharge": "Add",
     "removeCharge": "Remove",
     "chargesTotal": "Charges total",
-    "chargeUpdateFailed": "Could not update the charge"
+    "chargeUpdateFailed": "Could not update the charge",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Amt",
@@ -917,7 +918,10 @@
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
-    "menu": {"title": "Menu", "totalItems": "Total items"},
+    "menu": {
+      "title": "Menu",
+      "totalItems": "Total items"
+    },
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE",
     "invoiceNumber": "Invoice #:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "Printer",
     "systemBrowserPrint": "System / Browser Print",
     "menuPrintFailed": "Could not print the menu",
-    "menuPopupBlocked": "Your browser blocked the print window. Allow pop-ups for this site and try again."
+    "menuPopupBlocked": "Your browser blocked the print window. Allow pop-ups for this site and try again.",
+    "dietaryTagsLabel": "Dietary Tags",
+    "variantGovernedHint": "Price and stock are governed by the variants below.",
+    "variantMoveDown": "Move down",
+    "variantMoveUp": "Move up",
+    "variantOnlinePrice": "Online Price",
+    "variantRowInvalid": "Every variant needs a name and a price.",
+    "variantToggle": "This product has variants (e.g. Size, Crust, Flavor)"
   },
   "receipt": {
     "amount": "Amount",

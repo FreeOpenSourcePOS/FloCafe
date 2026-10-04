@@ -864,7 +864,8 @@
     "addCharge": "إضافة",
     "removeCharge": "إزالة",
     "chargesTotal": "إجمالي الرسوم",
-    "chargeUpdateFailed": "تعذر تحديث الرسم"
+    "chargeUpdateFailed": "تعذر تحديث الرسم",
+    "tagHalal": "حلال"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -917,7 +918,10 @@
     "templateFallback": "قالب الفاتورة المحدد غير مدعوم في مسار الطباعة هذا، لذا تم استخدام تخطيط الإيصال المدمج."
   },
   "print": {
-    "menu": {"title": "القائمة", "totalItems": "إجمالي الأصناف"},
+    "menu": {
+      "title": "القائمة",
+      "totalItems": "إجمالي الأصناف"
+    },
     "taxInvoiceTitle": "فاتورة ضريبية",
     "invoiceTitle": "الفاتورة",
     "invoiceNumber": "رقم الفاتورة:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "الطابعة",
     "systemBrowserPrint": "النظام / الطباعة عبر المتصفح",
     "menuPrintFailed": "تعذرت طباعة القائمة",
-    "menuPopupBlocked": "قام متصفحك بحجب نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة."
+    "menuPopupBlocked": "قام متصفحك بحجب نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة.",
+    "dietaryTagsLabel": "الوسوم الغذائية",
+    "variantGovernedHint": "السعر والمخزون يحددهما الخيارات أدناه.",
+    "variantMoveDown": "تحريك لأسفل",
+    "variantMoveUp": "تحريك لأعلى",
+    "variantOnlinePrice": "سعر البيع عبر الإنترنت",
+    "variantRowInvalid": "كل خيار يحتاج إلى اسم وسعر.",
+    "variantToggle": "هذا المنتج له خيارات (مثل: الحجم، نوع العجينة، النكهة)"
   },
   "receipt": {
     "amount": "المبلغ",

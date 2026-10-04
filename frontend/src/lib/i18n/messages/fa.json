@@ -864,7 +864,8 @@
     "addCharge": "افزودن",
     "removeCharge": "حذف",
     "chargesTotal": "جمع کل هزینه‌ها",
-    "chargeUpdateFailed": "به‌روزرسانی هزینه ممکن نشد"
+    "chargeUpdateFailed": "به‌روزرسانی هزینه ممکن نشد",
+    "tagHalal": "حلال"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -917,7 +918,10 @@
     "templateFallback": "قالب صورت‌حساب انتخاب‌شده در این مسیر چاپ پشتیبانی نمی‌شود؛ از طرح رسید داخلی استفاده شد."
   },
   "print": {
-    "menu": {"title": "منو", "totalItems": "تعداد اقلام"},
+    "menu": {
+      "title": "منو",
+      "totalItems": "تعداد اقلام"
+    },
     "taxInvoiceTitle": "صورتحساب مالیاتی",
     "invoiceTitle": "صورتحساب",
     "invoiceNumber": "شماره صورتحساب:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "چاپگر",
     "systemBrowserPrint": "سیستم / چاپ مرورگر",
     "menuPrintFailed": "چاپ منو انجام نشد",
-    "menuPopupBlocked": "مرورگر شما پنجره چاپ را مسدود کرد. برای این سایت اجازه پنجره‌های بازشو بدهید و دوباره تلاش کنید."
+    "menuPopupBlocked": "مرورگر شما پنجره چاپ را مسدود کرد. برای این سایت اجازه پنجره‌های بازشو بدهید و دوباره تلاش کنید.",
+    "dietaryTagsLabel": "برچسب‌های غذایی",
+    "variantGovernedHint": "قیمت و موجودی توسط گزینه‌های زیر تعیین می‌شود.",
+    "variantMoveDown": "انتقال به پایین",
+    "variantMoveUp": "انتقال به بالا",
+    "variantOnlinePrice": "قیمت آنلاین",
+    "variantRowInvalid": "هر گزینه به نام و قیمت نیاز دارد.",
+    "variantToggle": "این محصول گزینه‌هایی دارد (مانند: اندازه، خمیر، طعم)"
   },
   "receipt": {
     "amount": "مبلغ",

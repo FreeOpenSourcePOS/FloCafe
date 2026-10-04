@@ -864,7 +864,8 @@
     "addCharge": "Ekle",
     "removeCharge": "Kaldır",
     "chargesTotal": "Toplam ücretler",
-    "chargeUpdateFailed": "Ücret güncellenemedi"
+    "chargeUpdateFailed": "Ücret güncellenemedi",
+    "tagHalal": "Helal"
   },
   "printTest": {
     "amt": "Tutar",
@@ -917,7 +918,10 @@
     "templateFallback": "Seçilen fiş şablonu bu yazdırma yolunda desteklenmediği için dahili fiş düzeni kullanıldı."
   },
   "print": {
-    "menu": {"title": "Menü", "totalItems": "Toplam ürün"},
+    "menu": {
+      "title": "Menü",
+      "totalItems": "Toplam ürün"
+    },
     "taxInvoiceTitle": "VERGİ FATURASI",
     "invoiceTitle": "FATURA / FİŞ",
     "invoiceNumber": "Fatura No:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "Yazıcı",
     "systemBrowserPrint": "Sistem / Tarayıcı Yazdırma",
     "menuPrintFailed": "Menü yazdırılamadı",
-    "menuPopupBlocked": "Tarayıcınız yazdırma penceresini engelledi. Bu site için açılır pencerelere izin verin ve yeniden deneyin."
+    "menuPopupBlocked": "Tarayıcınız yazdırma penceresini engelledi. Bu site için açılır pencerelere izin verin ve yeniden deneyin.",
+    "dietaryTagsLabel": "Diyet etiketleri",
+    "variantGovernedHint": "Fiyat ve stok aşağıdaki varyantlar tarafından belirlenir.",
+    "variantMoveDown": "Aşağı taşı",
+    "variantMoveUp": "Yukarı taşı",
+    "variantOnlinePrice": "Çevrimiçi fiyat",
+    "variantRowInvalid": "Her varyantın adı ve fiyatı olmalıdır.",
+    "variantToggle": "Bu ürünün varyantları var (örn. Boyut, Hamur, Tat)"
   },
   "receipt": {
     "amount": "Tutar",

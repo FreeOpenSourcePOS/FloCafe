@@ -864,7 +864,8 @@
     "addCharge": "Shto",
     "removeCharge": "Hiq",
     "chargesTotal": "Totali i ngarkesave",
-    "chargeUpdateFailed": "Nuk mund të përditësohej ngarkesa"
+    "chargeUpdateFailed": "Nuk mund të përditësohej ngarkesa",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Shuma",
@@ -917,7 +918,10 @@
     "templateFallback": "Shablloni i zgjedhur i dëftesës nuk mbështetet në këtë shteg printimi, prandaj u përdor paraqitja e integruar e dëftesës."
   },
   "print": {
-    "menu": {"title": "Menyja", "totalItems": "Artikuj gjithsej"},
+    "menu": {
+      "title": "Menyja",
+      "totalItems": "Artikuj gjithsej"
+    },
     "taxInvoiceTitle": "FATURË TATIMORE",
     "invoiceTitle": "FATURË",
     "invoiceNumber": "Fatura nr.:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "Printeri",
     "systemBrowserPrint": "Sistemi / printimi në shfletues",
     "menuPrintFailed": "Printimi i menusë dështoi",
-    "menuPopupBlocked": "Shfletuesi juaj bllokuar dritaren e printimit. Lejooni pop-up-et për këtë faqe dhe provoni përsëri."
+    "menuPopupBlocked": "Shfletuesi juaj bllokuar dritaren e printimit. Lejooni pop-up-et për këtë faqe dhe provoni përsëri.",
+    "dietaryTagsLabel": "Etiketa dietetike",
+    "variantGovernedHint": "Çmimi dhe stoku përcaktohen nga variantet më poshtë.",
+    "variantMoveDown": "Lëviz poshtë",
+    "variantMoveUp": "Lëviz lart",
+    "variantOnlinePrice": "Çmimi online",
+    "variantRowInvalid": "Çdo variant duhet të ketë emër dhe çmim.",
+    "variantToggle": "Ky produkt ka variante (p.sh. madhësi, kore, shije)"
   },
   "receipt": {
     "amount": "Shuma",

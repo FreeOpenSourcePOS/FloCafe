@@ -864,7 +864,8 @@
     "addCharge": "जोड़ें",
     "removeCharge": "हटाएँ",
     "chargesTotal": "शुल्कों का योग",
-    "chargeUpdateFailed": "शुल्क अपडेट नहीं हो सका"
+    "chargeUpdateFailed": "शुल्क अपडेट नहीं हो सका",
+    "tagHalal": "हलाल"
   },
   "printTest": {
     "amt": "राशि",
@@ -917,7 +918,10 @@
     "templateFallback": "इस प्रिंट पथ पर चयनित बिल टेम्पलेट समर्थित नहीं है, इसलिए अंतर्निहित रसीद लेआउट का उपयोग किया गया था।"
   },
   "print": {
-    "menu": {"title": "मेनू", "totalItems": "कुल आइटम"},
+    "menu": {
+      "title": "मेनू",
+      "totalItems": "कुल आइटम"
+    },
     "taxInvoiceTitle": "कर चालान",
     "invoiceTitle": "चालान",
     "invoiceNumber": "चालान #:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "प्रिंटर",
     "systemBrowserPrint": "सिस्टम / ब्राउज़र प्रिंट",
     "menuPrintFailed": "मेनू प्रिंट नहीं हो सका",
-    "menuPopupBlocked": "आपके ब्राउज़र ने प्रिंट विंडो ब्लॉक कर दी। इस साइट के लिए पॉप-अप की अनुमति दें और पुनः प्रयास करें।"
+    "menuPopupBlocked": "आपके ब्राउज़र ने प्रिंट विंडो ब्लॉक कर दी। इस साइट के लिए पॉप-अप की अनुमति दें और पुनः प्रयास करें।",
+    "dietaryTagsLabel": "आहार टैग",
+    "variantGovernedHint": "मूल्य और स्टॉक नीचे दिए गए वेरिएंट से तय होते हैं।",
+    "variantMoveDown": "नीचे ले जाएँ",
+    "variantMoveUp": "ऊपर ले जाएँ",
+    "variantOnlinePrice": "ऑनलाइन मूल्य",
+    "variantRowInvalid": "हर वेरिएंट के लिए नाम और मूल्य आवश्यक है।",
+    "variantToggle": "इस उत्पाद में वेरिएंट हैं (जैसे: आकार, क्रस्ट, स्वाद)"
   },
   "receipt": {
     "amount": "रकम",

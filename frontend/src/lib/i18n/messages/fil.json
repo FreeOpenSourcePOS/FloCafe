@@ -864,7 +864,8 @@
     "addCharge": "Idagdag",
     "removeCharge": "Alisin",
     "chargesTotal": "Kabuuang bayarin",
-    "chargeUpdateFailed": "Hindi ma-update ang bayarin"
+    "chargeUpdateFailed": "Hindi ma-update ang bayarin",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Halaga",
@@ -917,7 +918,10 @@
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {
-    "menu": {"title": "Listahan ng pagkain", "totalItems": "Kabuuang item"},
+    "menu": {
+      "title": "Listahan ng pagkain",
+      "totalItems": "Kabuuang item"
+    },
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE / BILL",
     "invoiceNumber": "Invoice No:",
@@ -1220,7 +1224,14 @@
     "printerDestination": "Lokasyon ng printer",
     "systemBrowserPrint": "System / Pag-print sa Browser",
     "menuPrintFailed": "Hindi na-print ang menu",
-    "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli."
+    "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli.",
+    "dietaryTagsLabel": "Mga Dietary Tag",
+    "variantGovernedHint": "Itinutoy ng mga variant sa ibaba ang presyo at stock.",
+    "variantMoveDown": "Ilipat pababa",
+    "variantMoveUp": "Ilipat pataas",
+    "variantOnlinePrice": "Presyo online",
+    "variantRowInvalid": "Kailangan ng bawat variant ng pangalan at presyo.",
+    "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)"
   },
   "receipt": {
     "amount": "Halaga",

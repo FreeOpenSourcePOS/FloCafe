@@ -172,6 +172,30 @@ async function run() {
     calendar: 'persian' as const,
   };
 
+  console.log('Test Suite: Browser receipts show itemised engine charges once');
+  {
+    const html = generateBillHtml({
+      ...testIranBill,
+      service_charge: 9,
+      packaging_charge: 4,
+      charges_breakdown: JSON.stringify([
+        { id: 'service_charge', name: 'Merchant Service Fee', type: 'percentage', rate: 10, amount: 9, calculation_basis: 'net', waived: false },
+        { id: 'packaging_charge', name: 'Box Fee', type: 'fixed', amount: 4, calculation_basis: 'gross', waived: false },
+        { id: 'late_night', name: 'Late Night Fee', type: 'fixed', amount: 7, calculation_basis: 'gross', waived: false },
+        { id: 'waived_fee', name: 'Waived Fee', type: 'fixed', amount: 0, calculation_basis: 'gross', waived: true },
+      ]),
+    }, baseIranTenant, { language: 'en' });
+
+    assert('Browser receipt includes merchant-named and non-standard engine fees',
+      html.includes('<td>Merchant Service Fee</td>')
+      && html.includes('<td>Box Fee</td>')
+      && html.includes('<td>Late Night Fee</td>'));
+    assert('Itemised standard charges replace the duplicate legacy rows',
+      !html.includes('<td>Service Charge</td>')
+      && !html.includes('<td>Packaging</td>'));
+    assert('Waived zero-amount charges stay off the receipt', !html.includes('<td>Waived Fee</td>'));
+  }
+
   console.log('Test Suite 1: Persian (fa) RTL Document Flow & Structure');
   {
     const html = generateBillHtml(testIranBill, baseIranTenant, {

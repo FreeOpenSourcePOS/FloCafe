@@ -192,9 +192,15 @@ async function run() {
     clearSettings('country_confirmed_at', 'onboarding_completed');
     // Suppresses the post-registration welcome email so this test exercises the
     // register call and nothing else.
-    setSettings({ country: 'IN', cloud_sync_enabled: '1', cloud_verification_welcome_requested: '1' });
+    setSettings({
+      country: 'IN',
+      currency: ' usd ',
+      cloud_sync_enabled: '1',
+      cloud_verification_welcome_requested: '1',
+    });
     await cloudSync.register();
     assertEqual(body?.business?.country, null, 'an unconfirmed install registers without a country');
+    assertEqual(body?.business?.currency, 'USD', 'registration normalizes the configured currency to an ISO code');
     assertEqual(body?.business?.country_source, 'default', 'the payload says the value is a default');
     assertEqual(body?.run_mode, 'packaged', 'the payload reports how the install is running');
     assert(
@@ -214,6 +220,30 @@ async function run() {
     await cloudSync.register();
     assertEqual(body?.business?.country, 'DO', 'a confirmed country is registered');
     assertEqual(body?.business?.country_source, 'user', 'the payload says a human chose it');
+
+    setSettings({ currency: '$' });
+    body = null;
+    await cloudSync.register();
+    assert(
+      !Object.prototype.hasOwnProperty.call(body?.business ?? {}, 'currency'),
+      'a currency symbol is omitted from registration',
+    );
+
+    setSettings({ currency: 'ZZZ' });
+    body = null;
+    await cloudSync.register();
+    assert(
+      !Object.prototype.hasOwnProperty.call(body?.business ?? {}, 'currency'),
+      'an unsupported currency code is omitted from registration',
+    );
+
+    clearSettings('currency');
+    body = null;
+    await cloudSync.register();
+    assert(
+      !Object.prototype.hasOwnProperty.call(body?.business ?? {}, 'currency'),
+      'a missing currency is omitted instead of being guessed from country or locale',
+    );
 
     // The shared assertion helpers tally failures instead of throwing, so a
     // test that never reads the tally always reports success.

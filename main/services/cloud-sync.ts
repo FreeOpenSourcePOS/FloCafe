@@ -11,6 +11,7 @@ import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIden
 import { classClauseSummary, deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
+import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -644,6 +645,7 @@ export class CloudSyncService {
     ).get() as { name?: string } | undefined;
     // Use country provenance to avoid reporting seeded default country values.
     const provenance = readCountryProvenance();
+    const currency = normalizeSupportedCurrencyCode(settings.currency);
     const body = {
       pos_hash: posHash,
       device_secret_hash: sha256Hex(deviceSecret),
@@ -661,12 +663,12 @@ export class CloudSyncService {
         phone: settings.business_phone || settings.phone || '',
         instagram_handle: settings.instagram_handle || '',
         country: provenance.country,
+        ...(currency ? { currency } : {}),
         country_source: provenance.countrySource,
         os_country: provenance.osCountry,
         os_locale: provenance.osLocale,
         os_timezone: provenance.osTimezone,
         timezone: settings.timezone || '',
-        currency: settings.currency || '',
         address: settings.business_address || '',
       },
       requested_at: new Date().toISOString(),

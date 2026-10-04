@@ -32,6 +32,7 @@ import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { printerService } from '@/lib/printer/PrinterService';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
 import { AI_HELP_PROVIDERS, copyPrinterDiagnostic } from '@/lib/printer/ai-help';
@@ -447,12 +448,14 @@ export default function POSPage() {
     return data.bill as Bill;
   };
 
-  const printBillForTenant = async (bill: Bill, force = false) => {
-    if (!currentTenant) return;
-    if (!force && !autoPrintBill) return;
+  const printBillForTenant = async (bill: Bill, force = false, reservedWindow?: Window | null) => {
+    if (!currentTenant || (!force && !autoPrintBill)) {
+      if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+      return;
+    }
 
     try {
-      const printWarnings = await printBill(bill, currentTenant);
+      const printWarnings = await printBill(bill, currentTenant, undefined, reservedWindow);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
@@ -664,6 +667,8 @@ export default function POSPage() {
           online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
+          waived_charge_ids: Array.from(cart.waivedChargeIds),
+          opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: cart.items.map((item) => ({
             product_id: item.product.id,
             quantity: item.quantity,
@@ -744,6 +749,8 @@ export default function POSPage() {
       online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
       external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
+      waived_charge_ids: Array.from(cart.waivedChargeIds),
+      opted_in_charge_ids: Array.from(cart.optedInChargeIds),
     });
     let storedAttempt: PrepaidAttempt | null;
     try {
@@ -828,6 +835,8 @@ export default function POSPage() {
           online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
+          waived_charge_ids: Array.from(cart.waivedChargeIds),
+          opted_in_charge_ids: Array.from(cart.optedInChargeIds),
           items: orderItems,
         }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;
@@ -1277,6 +1286,19 @@ export default function POSPage() {
           cartItemCount={cart.itemCount()}
           onClose={() => setCheckoutTable(null)}
           onAddItems={handleAddItemsToOrder}
+          onPrintBill={async (bill, reservedWindow) => {
+            await printBillForTenant(bill, true, reservedWindow);
+          }}
+          reservePrintWindow={() => {
+            const printer = usePrinterStore.getState();
+            const expectedBrowserPrint = printer.printMethod === 'browser'
+              || (printer.printMethod === 'escpos'
+                && !printer.hardwarePrinter
+                && !printerService.isConnected
+                && printer.status !== 'connecting');
+            return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
+          }}
+          canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
           onPayment={(bill, overridePin) => { setCheckoutTable(null); setPaymentBill(bill); setCheckoutOverridePin(overridePin); }}
           onAddCartToOrder={handleAddCartToOrder}
         />

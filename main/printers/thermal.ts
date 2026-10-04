@@ -23,6 +23,7 @@ import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel } from '../print/print-labels.generated';
+import { receiptChargeLines } from '../../shared/charges';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -1724,6 +1725,12 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
+/** Template charge-row ids are camelCase; the engine breakdown stores snake_case ids. */
+const TEMPLATE_ROW_TO_CHARGE_ID: Partial<Record<TemplateChargeRowId, string>> = {
+  serviceCharge: 'service_charge',
+  packagingCharge: 'packaging_charge',
+};
+
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
@@ -1823,6 +1830,10 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   // chargeRows capability declaration preserves stable country/legal row order.
+  // When the bill carries an engine breakdown it is the itemised source of truth,
+  // so the standard rows it already covers are not repeated below.
+  const itemisedCharges = receiptChargeLines(bill.charges_breakdown);
+  const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
   const chargeAmounts: Record<TemplateChargeRowId, number> = {
     serviceCharge: Number(bill.service_charge) || 0,
     deliveryCharge: Number(bill.delivery_charge) || 0,
@@ -1831,8 +1842,15 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   for (const row of declaredTemplateChargeRows(payload?.totals?.chargeRows)) {
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
+    const chargeId = TEMPLATE_ROW_TO_CHARGE_ID[row] ?? row;
+    if (itemisedIds.has(chargeId)) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
     pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+  }
+  // Merchant-named surcharges have no catalog label; the configured name is the
+  // label, so only the amount needs formatting.
+  for (const charge of itemisedCharges) {
+    pushFinancialLines(financialRows(charge.name, formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence: template literal wins, then labels map, then localized catalog.

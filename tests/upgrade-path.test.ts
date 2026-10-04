@@ -99,20 +99,65 @@ function main() {
   console.log('='.repeat(60));
 
   const {
-    initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, buildIdealSchemaDb,
+    initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, buildIdealSchemaDb, MIGRATIONS,
   } = require('../main/db');
   const { runHealthCheck } = require('../main/services/schema-health');
 
   // ── The real chain, against a real old install, must not throw ──────────
+  const migration99 = MIGRATIONS[MIGRATIONS.length - 1];
+  assert.equal(migration99?.version, 99, 'the final migration adds charge snapshots');
+  MIGRATIONS.pop();
   try {
-    initDatabase();
-  } catch (error: any) {
-    if (isNativeAbiMismatch(error)) {
-      console.log('   ⚠ Skipping: better-sqlite3 is not built for this shell Node ABI.');
-      process.exit(77);
+    try {
+      initDatabase();
+    } catch (error: any) {
+      if (isNativeAbiMismatch(error)) {
+        console.log('   ⚠ Skipping: better-sqlite3 is not built for this shell Node ABI.');
+        process.exit(77);
+      }
+      throw new Error(`migrating a real old install (v1.5.0 era) crashed: ${error.message}`);
     }
-    throw new Error(`migrating a real old install (v1.5.0 era) crashed: ${error.message}`);
+    assert.equal(getCurrentSchemaVersion(), 98, 'the old install reaches v98 before the charge snapshot migration');
+    const beforeChargeSnapshot = getDatabase();
+    const orderColumns = beforeChargeSnapshot.prepare('PRAGMA table_info(orders)').all().map((column: any) => column.name);
+    const billColumns = beforeChargeSnapshot.prepare('PRAGMA table_info(bills)').all().map((column: any) => column.name);
+    assert.equal(orderColumns.includes('charges_breakdown'), false, 'v98 orders do not yet have charge snapshots');
+    assert.equal(billColumns.includes('charges_breakdown'), false, 'v98 bills do not yet have charge snapshots');
+
+    const legacyTotal = 120;
+    beforeChargeSnapshot.prepare(`
+      UPDATE orders SET service_charge = 12, packaging_charge = 3, total = ? WHERE id = ?
+    `).run(legacyTotal, legacyOrder.lastInsertRowid);
+    const paymentDetails = JSON.parse((beforeChargeSnapshot.prepare(
+      `SELECT payment_details FROM bills WHERE id = ?`,
+    ).get(legacyBill.lastInsertRowid) as { payment_details: string }).payment_details);
+    paymentDetails.amount = legacyTotal;
+    beforeChargeSnapshot.prepare(`
+      UPDATE bills
+      SET service_charge = 12, packaging_charge = 3, total = ?, payment_details = ?
+      WHERE id = ?
+    `).run(legacyTotal, JSON.stringify(paymentDetails), legacyBill.lastInsertRowid);
+
+    const existingChargeSetting = JSON.stringify([{
+      id: 'upgrade-fee',
+      name: 'Upgrade fee',
+      type: 'fixed',
+      value: 4,
+      calculation_basis: 'gross',
+      order_types: ['dine_in'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    }]);
+    beforeChargeSnapshot.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', ?, '2026-08-01 12:00:00')
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(existingChargeSetting);
+  } finally {
+    closeDatabase();
+    MIGRATIONS.push(migration99);
   }
+  initDatabase();
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
 
   const db = getDatabase();
@@ -268,10 +313,12 @@ function main() {
   assert.deepEqual(legacyTax.tax_breakdown, []);
   console.log('   ✓ an upgraded product with stale legacy tax_type/tax_rate charges no tax until categorized');
   const preservedOrder = db.prepare(`
-    SELECT tax_amount, tax_breakdown, tax_snapshot FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
+    SELECT tax_amount, tax_breakdown, tax_snapshot, service_charge, packaging_charge, total, charges_breakdown
+    FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
   `).get() as any;
   const preservedBill = db.prepare(`
-    SELECT tax_amount, tax_breakdown, tax_snapshot FROM bills WHERE bill_number = 'INV-LEGACY-TAX'
+    SELECT tax_amount, tax_breakdown, tax_snapshot, service_charge, packaging_charge, total, charges_breakdown
+    FROM bills WHERE bill_number = 'INV-LEGACY-TAX'
   `).get() as any;
   assert.deepEqual(
     { tax_amount: preservedOrder.tax_amount, tax_breakdown: preservedOrder.tax_breakdown },
@@ -283,6 +330,37 @@ function main() {
   );
   assert.equal(preservedOrder.tax_snapshot, null);
   assert.equal(preservedBill.tax_snapshot, null);
+  for (const [row, name] of [[preservedOrder, 'order'], [preservedBill, 'bill']] as const) {
+    assert.deepEqual(
+      {
+        service_charge: row.service_charge,
+        packaging_charge: row.packaging_charge,
+        total: row.total,
+        charges_breakdown: row.charges_breakdown,
+      },
+      { service_charge: 12, packaging_charge: 3, total: 120, charges_breakdown: null },
+      `v99 preserves the legacy ${name} total and manual charge columns`,
+    );
+  }
+  const preservedChargeSetting = db.prepare(
+    `SELECT value FROM settings WHERE key = 'custom_charges'`,
+  ).get() as { value: string };
+  assert.deepEqual(
+    JSON.parse(preservedChargeSetting.value),
+    [{
+      id: 'upgrade-fee',
+      name: 'Upgrade fee',
+      type: 'fixed',
+      value: 4,
+      calculation_basis: 'gross',
+      order_types: ['dine_in'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    }],
+    'v99 preserves an existing configured charge',
+  );
+  console.log('   ✓ v99 preserves legacy order/bill totals, manual charge columns, and configured charge settings');
   console.log('   ✓ existing products, orders, bills, and legacy tax breakdowns are preserved');
 
   // ── The migrated old install must match the ideal (fresh) schema exactly ─

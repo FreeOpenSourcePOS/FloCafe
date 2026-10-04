@@ -5555,6 +5555,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 101,
+    name: 'add_variant_id_to_inventory_movements',
+    up: () => {
+      if (!getColumns(db, 'inventory_movements').includes('variant_id')) {
+        db.exec(`ALTER TABLE inventory_movements ADD COLUMN variant_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -38,10 +38,12 @@ function main() {
   const db = getDatabase();
 
   // ── The migration is registered and applied on a fresh install ──────────
-  const tail = MIGRATIONS[MIGRATIONS.length - 1];
-  assert.equal(tail.version, LATEST_VERSION, 'the registry tail is the product variants migration');
-  assert.equal(tail.name, 'add_product_variants_table', 'the migration is named add_product_variants_table');
-  assert.equal(getCurrentSchemaVersion(), LATEST_VERSION, 'a fresh install reaches the product variants schema version');
+  const variantsMigration = MIGRATIONS.find((migration: any) => migration.version === LATEST_VERSION);
+  assert.ok(variantsMigration, 'the product variants migration is registered');
+  assert.equal(variantsMigration.name, 'add_product_variants_table', 'the migration is named add_product_variants_table');
+  const tailVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
+  assert.ok(tailVersion >= LATEST_VERSION, 'the product variants migration is not orphaned behind the registry tail');
+  assert.equal(getCurrentSchemaVersion(), tailVersion, 'a fresh install reaches the last registry version');
 
   assert.ok(
     db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'product_variants'").get(),

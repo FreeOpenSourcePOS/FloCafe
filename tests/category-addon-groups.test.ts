@@ -66,10 +66,11 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    // The tail is whatever the registry currently ends at; this test follows it
-    // so a new migration does not fail an unrelated suite.
-    assert.equal(MIGRATIONS[MIGRATIONS.length - 1].version, 100, 'the newest registry migration is 100');
-    assert.equal(getCurrentSchemaVersion(), 100, 'fresh database applies migration 100');
+    // This suite pins the category add-on group migration it covers, not the
+    // registry tail: the tail moves with every new feature, so pinning it here
+    // would fail an unrelated suite on someone else's migration.
+    assert.ok(MIGRATIONS[MIGRATIONS.length - 1].version >= 98, 'the category add-on group migration is registered');
+    assert.ok(getCurrentSchemaVersion() >= 98, 'fresh database applies the category add-on group migration');
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get());
     db.exec('DROP TABLE category_addon_groups');
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'category_addon_groups'").get(), undefined);

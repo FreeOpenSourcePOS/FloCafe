@@ -248,8 +248,20 @@ export function loadProductRelationsBatch(db: any, products: any[]) {
     }
   }
 
-  // 7. Assemble results
-  const result = new Map<string, { category: any; addon_groups: any[]; addon_group_ids: string[] }>();
+  // 7. Load active variants for these products in one query
+  const variantRows = db.prepare(
+    `SELECT * FROM product_variants WHERE product_id IN (${placeholders}) AND is_active = 1
+     ORDER BY product_id, sort_order, name`
+  ).all(...productIds);
+  const variantsByProduct = new Map<string, Record<string, unknown>[]>();
+  for (const variant of variantRows) {
+    const list = variantsByProduct.get(variant.product_id) || [];
+    list.push(variant);
+    variantsByProduct.set(variant.product_id, list);
+  }
+
+  // 8. Assemble results
+  const result = new Map<string, { category: any; addon_groups: any[]; addon_group_ids: string[]; variants: Record<string, unknown>[] }>();
   for (const p of products) {
     const category = p.category_id ? categoryMap.get(p.category_id) || null : null;
 
@@ -262,7 +274,7 @@ export function loadProductRelationsBatch(db: any, products: any[]) {
       .filter((group) => effectiveGroupIds.has(group.id))
       .map((group) => ({ ...group, addons: addonMap.get(group.id) || [] }));
 
-    result.set(p.id, { category, addon_groups, addon_group_ids });
+    result.set(p.id, { category, addon_groups, addon_group_ids, variants: variantsByProduct.get(p.id) || [] });
   }
 
   return result;
@@ -312,6 +324,15 @@ function serializeAddonGroup(group: any): any {
   };
 }
 
+function serializeVariant(variant: Record<string, unknown>): Record<string, unknown> {
+  if (!variant) return variant;
+  return {
+    ...variant,
+    track_inventory: toBoolean(variant.track_inventory),
+    is_active: toBoolean(variant.is_active),
+  };
+}
+
 function serializeProduct(product: any): any {
   if (!product) return product;
   return {
@@ -320,8 +341,10 @@ function serializeProduct(product: any): any {
     track_inventory: toBoolean(product.track_inventory),
     allow_fractional_quantity: toBoolean(product.allow_fractional_quantity),
     has_image: toBoolean(product.has_image),
+    dietary_tags: parseTags(product.dietary_tags),
     category: serializeCategory(product.category),
     addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
+    variants: Array.isArray(product.variants) ? product.variants.map(serializeVariant) : product.variants ?? null,
   };
 }
 
@@ -489,6 +512,299 @@ function normalizeRequiredName(raw: unknown): string | null {
   return trimmed || null;
 }
 
+const MAX_DIETARY_TAGS = 32;
+
+function normalizeDietaryTags(raw: unknown): { tags?: string[] | null; error?: string } {
+  if (raw === undefined) return {};
+  if (raw === null) return { tags: null };
+  if (!Array.isArray(raw) || raw.length > MAX_DIETARY_TAGS) {
+    return { error: `dietary_tags must be an array of at most ${MAX_DIETARY_TAGS} strings or null` };
+  }
+  const tags: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') return { error: 'dietary_tags must contain only strings' };
+    const trimmed = entry.trim();
+    if (trimmed.length === 0 || trimmed.length > 32) {
+      return { error: 'dietary_tags entries must be non-empty strings of at most 32 characters' };
+    }
+    if (!tags.includes(trimmed)) tags.push(trimmed);
+  }
+  return { tags };
+}
+
+type NormalizedVariant = {
+  id: string | null;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  price: number;
+  online_price: number | null;
+  cost_price: number | null;
+  track_inventory: number;
+  stock_quantity: number | null;
+  low_stock_threshold: number | null;
+  inventory_product_id: string | null;
+  inventory_deduction_quantity: number | null;
+  is_active: number;
+  sort_order: number;
+};
+
+function normalizeOptionalAmount(value: unknown, field: string): { value?: number | null; error?: string } {
+  if (value === undefined) return {};
+  if (value === null) return { value: null };
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return { error: `${field} must be a non-negative finite number or null` };
+  }
+  return { value };
+}
+
+/**
+ * Validates the client variant array and normalizes it for writing.
+ * `productId` is set on update so an existing variant can only be edited
+ * through the product that owns it.
+ */
+function normalizeVariants(
+  db: ReturnType<typeof getDatabase>,
+  raw: unknown,
+  productId?: string,
+): { variants?: NormalizedVariant[]; error?: string } {
+  if (!Array.isArray(raw)) {
+    return { error: 'variants must be an array' };
+  }
+
+  const variants: NormalizedVariant[] = [];
+  const seenIds = new Set<string>();
+  for (const [index, entry] of raw.entries()) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { error: `variants[${index}] must be an object` };
+    }
+    const candidate = entry as Record<string, unknown>;
+    const name = normalizeRequiredName(candidate.name);
+    if (!name) return { error: `variants[${index}].name is required` };
+
+    if (typeof candidate.price !== 'number' || !Number.isFinite(candidate.price) || candidate.price < 0) {
+      return { error: `variants[${index}].price must be a non-negative finite number` };
+    }
+
+    let id: string | null = null;
+    if (candidate.id !== undefined && candidate.id !== null) {
+      if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0) {
+        return { error: `variants[${index}].id must be a variant id string` };
+      }
+      id = candidate.id.trim();
+      if (seenIds.has(id)) return { error: `variants[${index}].id is duplicated in the request` };
+      seenIds.add(id);
+      const owner = db.prepare('SELECT product_id FROM product_variants WHERE id = ?').get(id) as { product_id: string } | undefined;
+      if (!owner || owner.product_id !== productId) {
+        return { error: `variants[${index}].id does not belong to this product` };
+      }
+    }
+
+    if (candidate.track_inventory !== undefined && typeof candidate.track_inventory !== 'boolean') {
+      return { error: `variants[${index}].track_inventory must be a boolean` };
+    }
+    if (candidate.is_active !== undefined && typeof candidate.is_active !== 'boolean') {
+      return { error: `variants[${index}].is_active must be a boolean` };
+    }
+    if (candidate.sort_order !== undefined) {
+      const sortOrder = candidate.sort_order as number;
+      if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) {
+        return { error: `variants[${index}].sort_order must be a non-negative integer` };
+      }
+    }
+
+    const onlinePrice = normalizeOptionalAmount(candidate.online_price, `variants[${index}].online_price`);
+    if (onlinePrice.error) return { error: onlinePrice.error };
+    const costPrice = normalizeOptionalAmount(candidate.cost_price, `variants[${index}].cost_price`);
+    if (costPrice.error) return { error: costPrice.error };
+    const stockQuantity = normalizeOptionalAmount(candidate.stock_quantity, `variants[${index}].stock_quantity`);
+    if (stockQuantity.error) return { error: stockQuantity.error };
+    const lowStockThreshold = normalizeOptionalAmount(candidate.low_stock_threshold, `variants[${index}].low_stock_threshold`);
+    if (lowStockThreshold.error) return { error: lowStockThreshold.error };
+
+    const rawRecipeLink = candidate.inventory_product_id;
+    let inventoryProductId: string | null = null;
+    if (rawRecipeLink !== undefined && rawRecipeLink !== null && rawRecipeLink !== '') {
+      if (typeof rawRecipeLink !== 'string') {
+        return { error: `variants[${index}].inventory_product_id must be a product id string or null` };
+      }
+      const recipeTarget = db.prepare('SELECT id FROM products WHERE id = ? AND deleted_at IS NULL').get(rawRecipeLink);
+      if (!recipeTarget) {
+        return { error: `variants[${index}].inventory_product_id must reference an existing product` };
+      }
+      if (productId && rawRecipeLink === productId) {
+        return { error: `variants[${index}].inventory_product_id cannot reference the product itself` };
+      }
+      inventoryProductId = rawRecipeLink;
+    }
+
+    let inventoryDeductionQuantity: number | null = null;
+    if (candidate.inventory_deduction_quantity !== undefined && candidate.inventory_deduction_quantity !== null) {
+      if (typeof candidate.inventory_deduction_quantity !== 'number'
+        || !Number.isFinite(candidate.inventory_deduction_quantity)
+        || candidate.inventory_deduction_quantity <= 0) {
+        return { error: `variants[${index}].inventory_deduction_quantity must be a positive finite number` };
+      }
+      inventoryDeductionQuantity = candidate.inventory_deduction_quantity;
+    }
+    if (inventoryProductId && inventoryDeductionQuantity === null) inventoryDeductionQuantity = 1;
+
+    variants.push({
+      id,
+      name,
+      sku: normalizeNullableString(candidate.sku),
+      barcode: normalizeBarcode(candidate.barcode),
+      price: candidate.price,
+      online_price: onlinePrice.value ?? null,
+      cost_price: costPrice.value ?? null,
+      track_inventory: candidate.track_inventory === true ? 1 : 0,
+      stock_quantity: stockQuantity.value ?? null,
+      low_stock_threshold: lowStockThreshold.value ?? null,
+      inventory_product_id: inventoryProductId,
+      inventory_deduction_quantity: inventoryDeductionQuantity,
+      is_active: candidate.is_active === false ? 0 : 1,
+      sort_order: typeof candidate.sort_order === 'number' ? candidate.sort_order : index,
+    });
+  }
+
+  return { variants };
+}
+
+/**
+ * A scanned barcode must resolve to exactly one sellable thing: one product or
+ * one active variant. The product's own barcode may never equal a live variant
+ * barcode, while a payload variant may keep a barcode it already holds.
+ * `retainedVariantIds` are the variants that stay active after this write;
+ * a variant the write deactivates releases its barcode for reuse.
+ */
+function validateCatalogBarcodes(
+  db: ReturnType<typeof getDatabase>,
+  productId: string | null,
+  retainedVariantIds: string[],
+  productBarcode: string | null,
+  variantBarcodes: (string | null)[],
+): string | null {
+  const present = variantBarcodes.filter((barcode): barcode is string => !!barcode);
+  const duplicateMessage = 'A barcode may be used only once across a product and its variants';
+  if (productBarcode && present.includes(productBarcode)) return duplicateMessage;
+  if (new Set(present).size !== present.length) return duplicateMessage;
+
+  const retainedClause = retainedVariantIds.length > 0
+    ? `AND NOT (v.product_id = ? AND v.id IN (${retainedVariantIds.map(() => '?').join(',')}))`
+    : '';
+  const retainedParams = retainedVariantIds.length > 0 ? [productId, ...retainedVariantIds] : [];
+  const findConflict = (barcode: string, ignoreRetainedVariants: boolean): 'product' | 'variant' | null => {
+    if (db.prepare(
+      `SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND (? IS NULL OR id != ?)`,
+    ).get(barcode, productId, productId)) return 'product';
+    if (db.prepare(
+      `SELECT v.id FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       WHERE v.barcode = ? AND v.is_active = 1 AND p.deleted_at IS NULL
+         ${ignoreRetainedVariants ? retainedClause : ''}`,
+    ).get(barcode, ...(ignoreRetainedVariants ? retainedParams : []))) return 'variant';
+    return null;
+  };
+  const conflictMessage = (holder: 'product' | 'variant') =>
+    holder === 'variant'
+      ? 'A product variant already uses this barcode'
+      : 'Another product already uses this barcode';
+
+  if (productBarcode) {
+    const holder = findConflict(productBarcode, false);
+    if (holder) return conflictMessage(holder);
+  }
+  for (const barcode of present) {
+    const holder = findConflict(barcode, true);
+    if (holder) return conflictMessage(holder);
+  }
+  return null;
+}
+
+function activeVariantIds(db: ReturnType<typeof getDatabase>, productId: string): string[] {
+  return (db.prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1').all(productId) as { id: string }[])
+    .map((row) => row.id);
+}
+
+/**
+ * Writes the client's variant list: upserts each entry, then soft-deactivates
+ * the active variants the client omitted so historical order lines keep their
+ * reference. Callers provide the transaction boundary.
+ */
+function writeProductVariants(
+  db: ReturnType<typeof getDatabase>,
+  productId: string,
+  variants: NormalizedVariant[],
+  actorUserId: string,
+  reason: string,
+): void {
+  const timestamp = now();
+  const insertVariant = db.prepare(`
+    INSERT INTO product_variants (
+      id, product_id, name, sku, barcode, price, online_price, cost_price,
+      track_inventory, stock_quantity, low_stock_threshold, inventory_product_id,
+      inventory_deduction_quantity, is_active, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updateVariant = db.prepare(`
+    UPDATE product_variants SET
+      name = ?, sku = ?, barcode = ?, price = ?, online_price = ?, cost_price = ?,
+      track_inventory = ?, low_stock_threshold = ?, inventory_product_id = ?,
+      inventory_deduction_quantity = ?, is_active = ?, sort_order = ?, updated_at = ?
+    WHERE id = ? AND product_id = ?
+  `);
+
+  const retainedIds: string[] = [];
+  for (const variant of variants) {
+    const variantId = variant.id ?? generateShortId('product_variants');
+    if (variant.id) {
+      updateVariant.run(
+        variant.name, variant.sku, variant.barcode, variant.price, variant.online_price, variant.cost_price,
+        variant.track_inventory, variant.low_stock_threshold, variant.inventory_product_id,
+        variant.inventory_deduction_quantity, variant.is_active, variant.sort_order, timestamp,
+        variantId, productId,
+      );
+    } else {
+      insertVariant.run(
+        variantId, productId, variant.name, variant.sku, variant.barcode, variant.price,
+        variant.online_price, variant.cost_price, variant.track_inventory, variant.low_stock_threshold,
+        variant.inventory_product_id, variant.inventory_deduction_quantity, variant.is_active,
+        variant.sort_order, timestamp, timestamp,
+      );
+    }
+    retainedIds.push(variantId);
+
+    if (variant.stock_quantity !== null) {
+      const current = db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
+        .get(variantId) as { stock_quantity?: number } | undefined;
+      const quantityDelta = variant.stock_quantity - Number(current?.stock_quantity ?? 0);
+      if (quantityDelta !== 0) {
+        adjustProductStock(db, {
+          productId,
+          variantId,
+          quantityDelta,
+          movementType: 'adjustment',
+          referenceType: 'manual_adjustment',
+          referenceId: variantId,
+          reason,
+          actorUserId,
+        });
+      }
+    }
+  }
+
+  if (retainedIds.length > 0) {
+    const placeholders = retainedIds.map(() => '?').join(',');
+    db.prepare(
+      `UPDATE product_variants SET is_active = 0, updated_at = ?
+       WHERE product_id = ? AND is_active = 1 AND id NOT IN (${placeholders})`,
+    ).run(timestamp, productId, ...retainedIds);
+  } else {
+    db.prepare('UPDATE product_variants SET is_active = 0, updated_at = ? WHERE product_id = ? AND is_active = 1')
+      .run(timestamp, productId);
+  }
+}
+
 function validateCategoryId(db: any, categoryId: unknown): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'category_id must be a string or null';
@@ -543,7 +859,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
       p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
       p.inventory_product_id, p.inventory_deduction_quantity,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
+      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.dietary_tags, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -583,13 +899,14 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const relations = loadProductRelationsBatch(db, products as any[]);
 
     const productsWithRelations = (products as any[]).map((product: any) => {
-      const rel = relations.get(product.id) || { category: null, addon_groups: [], addon_group_ids: [] };
+      const rel = relations.get(product.id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
       return serializeProduct({
         ...product,
         tags: parseTags(product.tags),
         category: rel.category,
         addon_groups: rel.addon_groups,
         addon_group_ids: rel.addon_group_ids,
+        variants: rel.variants,
       });
     });
 
@@ -665,7 +982,7 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
 
     // Single-product query — still batch-style for consistency
     const relations = loadProductRelationsBatch(db, [product as any]);
-    const rel = relations.get((product as any).id) || { category: null, addon_groups: [], addon_group_ids: [] };
+    const rel = relations.get((product as any).id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
 
     res.json({ product: serializeProduct({
       ...(product as any),
@@ -673,6 +990,7 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
       category: rel.category,
       addon_groups: rel.addon_groups,
       addon_group_ids: rel.addon_group_ids,
+      variants: rel.variants,
     }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -815,7 +1133,8 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       sale_unit, allow_fractional_quantity, weight_precision,
       inventory_product_id, inventory_deduction_quantity,
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids, reason
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, dietary_tags,
+      variants, addon_group_ids, reason
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
@@ -856,15 +1175,25 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       return res.status(400).json({ error: categoryError });
     }
 
-    // A barcode scan must resolve to exactly one product — unlike sku, which
-    // is informational only, a duplicate barcode would make scanning ambiguous.
-    if (normalizedBarcode) {
-      const clash = db.prepare(
-        'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL'
-      ).get(normalizedBarcode);
-      if (clash) {
-        return res.status(400).json({ error: 'Another product already uses this barcode' });
-      }
+    // validateCatalogBarcodes also rejects a barcode another product already
+    // uses: a scan must resolve to exactly one sellable thing.
+    const dietaryTagValidation = normalizeDietaryTags(dietary_tags);
+    if (dietaryTagValidation.error) {
+      return res.status(400).json({ error: dietaryTagValidation.error });
+    }
+    const normalizedVariants = variants === undefined ? undefined : normalizeVariants(db, variants);
+    if (normalizedVariants?.error) {
+      return res.status(400).json({ error: normalizedVariants.error });
+    }
+    const barcodeError = validateCatalogBarcodes(
+      db,
+      null,
+      [],
+      normalizedBarcode,
+      (normalizedVariants?.variants || []).map((variant) => variant.barcode),
+    );
+    if (barcodeError) {
+      return res.status(400).json({ error: barcodeError });
     }
 
     const id = generateShortId('products');
@@ -884,8 +1213,8 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
           sale_unit, allow_fractional_quantity, weight_precision,
           inventory_product_id, inventory_deduction_quantity,
           tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
-          is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          is_active, image_url, sort_order, cb_percent, tags, dietary_tags, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
         normalizeSaleUnit(sale_unit), allow_fractional_quantity ? 1 : 0, weight_precision ?? 3,
@@ -899,6 +1228,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
         track_inventory ? 1 : 0, 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
+        dietaryTagValidation.tags === undefined ? null : JSON.stringify(dietaryTagValidation.tags),
         now(), now()
       );
 
@@ -920,11 +1250,22 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
           actorUserId,
         });
       }
+
+      if (normalizedVariants) {
+        writeProductVariants(
+          db,
+          id,
+          normalizedVariants.variants || [],
+          actorUserId,
+          stockReason(reason, 'Variant opening balance'),
+        );
+      }
     });
     insertProduct();
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    res.status(201).json({ product: serializeProduct(product) });
+    const created = loadProductRelationsBatch(db, [product]).get(id);
+    res.status(201).json({ product: serializeProduct({ ...(product as Record<string, unknown>), variants: created?.variants || [] }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -949,7 +1290,8 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       sale_unit, allow_fractional_quantity, weight_precision,
       inventory_product_id, inventory_deduction_quantity,
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, dietary_tags, variants,
+      addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const hasName = hasOwn(req.body, 'name');
@@ -993,13 +1335,32 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       }
     }
 
-    if (normalizedBarcode) {
-      const clash = db.prepare(
-        'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND id != ?'
-      ).get(normalizedBarcode, req.params.id);
-      if (clash) {
-        return res.status(400).json({ error: 'Another product already uses this barcode' });
-      }
+    const dietaryTagValidation = normalizeDietaryTags(dietary_tags);
+    if (dietaryTagValidation.error) {
+      return res.status(400).json({ error: dietaryTagValidation.error });
+    }
+    const normalizedVariants = hasOwn(req.body, 'variants')
+      ? normalizeVariants(db, variants, String(req.params.id))
+      : {};
+    if (normalizedVariants.error) {
+      return res.status(400).json({ error: normalizedVariants.error });
+    }
+    // A barcode held by a variant this write deactivates becomes free; one held
+    // by a variant that stays active is still a conflict.
+    const retainedVariantIds = hasOwn(req.body, 'variants')
+      ? (normalizedVariants.variants || [])
+        .filter((variant) => variant.is_active === 1 && variant.id)
+        .map((variant) => variant.id as string)
+      : activeVariantIds(db, String(req.params.id));
+    const barcodeError = validateCatalogBarcodes(
+      db,
+      String(req.params.id),
+      retainedVariantIds,
+      hasOwn(req.body, 'barcode') ? normalizedBarcode : null,
+      (normalizedVariants.variants || []).map((variant) => variant.barcode),
+    );
+    if (barcodeError) {
+      return res.status(400).json({ error: barcodeError });
     }
 
     // Detect whether client explicitly sent image_url (even as null/undefined)
@@ -1013,6 +1374,8 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     const hasDescription = hasOwn(req.body, 'description');
     const hasCostPrice = hasOwn(req.body, 'cost_price');
     const hasTags = hasOwn(req.body, 'tags');
+    const hasVariants = hasOwn(req.body, 'variants');
+    const hasDietaryTags = hasOwn(req.body, 'dietary_tags');
     const hasSaleUnit = hasOwn(req.body, 'sale_unit');
     const hasAllowFractionalQuantity = hasOwn(req.body, 'allow_fractional_quantity');
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
@@ -1067,6 +1430,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
           sort_order = COALESCE(@sort_order, sort_order),
           cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
           tags = CASE WHEN @has_tags = 1 THEN @tags ELSE tags END,
+          dietary_tags = CASE WHEN @has_dietary_tags = 1 THEN @dietary_tags ELSE dietary_tags END,
           updated_at = @updated_at
         WHERE id = @id
       `).run({
@@ -1106,6 +1470,10 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         cb_percent: hasCbPercent ? cb_percent : null,
         has_tags: hasTags ? 1 : 0,
         tags: hasTags ? JSON.stringify(tags || []) : null,
+        has_dietary_tags: hasDietaryTags ? 1 : 0,
+        dietary_tags: hasDietaryTags && dietaryTagValidation.tags !== null
+          ? JSON.stringify(dietaryTagValidation.tags)
+          : null,
         updated_at: now(),
         id: req.params.id
       });
@@ -1136,11 +1504,21 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
           });
         }
       }
+      if (hasVariants) {
+        writeProductVariants(
+          db,
+          String(req.params.id),
+          normalizedVariants.variants || [],
+          actorUserId,
+          stockAdjustmentReason,
+        );
+      }
     });
     updateProduct();
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
-    res.json({ product: serializeProduct(updated) });
+    const relations = loadProductRelationsBatch(db, [updated]).get(String(req.params.id));
+    res.json({ product: serializeProduct({ ...(updated as Record<string, unknown>), variants: relations?.variants || [] }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;

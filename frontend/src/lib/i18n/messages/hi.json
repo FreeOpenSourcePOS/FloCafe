@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 रद्द आइटम · देखने के लिए टैप करें} other {# रद्द आइटम · देखने के लिए टैप करें}}",
     "voidingItem": "रद्द किया जा रहा है...",
     "walkInCustomer": "वॉक-इन ग्राहक",
-    "whatsappFailed": "WhatsApp खोलने में विफल"
+    "whatsappFailed": "WhatsApp खोलने में विफल",
+    "selectOrderPlaceholder": "विवरण देखने के लिए बाईं ओर से एक ऑर्डर चुनें।",
+    "itemCount": "{count, plural, one {1 आइटम} other {# आइटम}}"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "यह स्क्रीन इस डिवाइस की हाल की समस्याएँ आसान भाषा में दिखाती है। स्वचालित भेजना चालू है, इसलिए दर्ज की गई समस्याएँ आपके FloCafe क्लाउड खाते में भेजी जा सकती हैं।",
     "diagnosticsLocalOnlyHintPending": "यह स्क्रीन इस डिवाइस की हाल की समस्याएँ आसान भाषा में दिखाती है।",
     "requireKitchenDeliveredToggle": "बिल से पहले रसोई से परोसना अनिवार्य करें",
-    "requireKitchenDeliveredHint": "जब तक रसोई के सभी आइटम परोसे गए के रूप में चिह्नित न हों, तब तक पोस्टपेड बिल का भुगतान रोकें। KDS बंद होने पर यह जाँच अपने आप छोड़ दी जाएगी।"
+    "requireKitchenDeliveredHint": "जब तक रसोई के सभी आइटम परोसे गए के रूप में चिह्नित न हों, तब तक पोस्टपेड बिल का भुगतान रोकें। KDS बंद होने पर यह जाँच अपने आप छोड़ दी जाएगी।",
+    "ordersLayoutTitle": "ऑर्डर स्क्रीन लेआउट",
+    "ordersLayoutSplit": "मास्टर / डिटेल (स्प्लिट व्यू)",
+    "ordersLayoutSplitHint": "बाईं ओर संक्षिप्त ऑर्डर सूची और दाईं ओर ऑर्डर का पूरा विवरण।",
+    "ordersLayoutCards": "कार्ड ग्रिड",
+    "ordersLayoutCardsHint": "स्वतंत्र ऑर्डर कार्ड्स का क्लासिक ग्रिड।"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",

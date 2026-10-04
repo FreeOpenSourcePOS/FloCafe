@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {มีสินค้าที่ยกเลิก 1 รายการ · แตะเพื่อดู} other {มีสินค้าที่ยกเลิก # รายการ · แตะเพื่อดู}}",
     "voidingItem": "กำลังยกเลิกสินค้า...",
     "walkInCustomer": "ลูกค้าไม่นัด",
-    "whatsappFailed": "เปิด WhatsApp ไม่สำเร็จ"
+    "whatsappFailed": "เปิด WhatsApp ไม่สำเร็จ",
+    "selectOrderPlaceholder": "เลือกคำสั่งซื้อทางซ้ายเพื่อดูรายละเอียด",
+    "itemCount": "{count, plural, one {# รายการ} other {# รายการ}}"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "หน้าจอนี้แสดงปัญหาล่าสุดบนอุปกรณ์นี้ในภาษาที่เข้าใจง่าย",
     "printing": "การพิมพ์",
     "requireKitchenDeliveredToggle": "กำหนดให้ครัวส่งอาหารก่อนชำระเงิน",
-    "requireKitchenDeliveredHint": "ป้องกันการชำระบิลแบบจ่ายภายหลังจนกว่ารายการทั้งหมดจะถูกทำเครื่องหมายว่าเสิร์ฟแล้ว หากปิด KDS ระบบจะข้ามการตรวจสอบนี้โดยอัตโนมัติ"
+    "requireKitchenDeliveredHint": "ป้องกันการชำระบิลแบบจ่ายภายหลังจนกว่ารายการทั้งหมดจะถูกทำเครื่องหมายว่าเสิร์ฟแล้ว หากปิด KDS ระบบจะข้ามการตรวจสอบนี้โดยอัตโนมัติ",
+    "ordersLayoutTitle": "เลย์เอาต์หน้าคำสั่งซื้อ",
+    "ordersLayoutSplit": "รายการ / รายละเอียด (มุมมองแบบแยก)",
+    "ordersLayoutSplitHint": "รายการคำสั่งซื้อแบบกระชับทางซ้าย และรายละเอียดคำสั่งซื้อทั้งหมดทางขวา",
+    "ordersLayoutCards": "ตารางการ์ด",
+    "ordersLayoutCardsHint": "ตารางการ์ดคำสั่งซื้อแยกแบบดั้งเดิม"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",

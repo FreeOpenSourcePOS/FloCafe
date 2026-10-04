@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 artikull i anuluar - prekni për ta parë} other {# artikuj të anuluar - prekni për t’i parë}}",
     "voidingItem": "Duke anuluar artikullin...",
     "walkInCustomer": "Klient pa rezervim",
-    "whatsappFailed": "Hapja e WhatsApp dështoi"
+    "whatsappFailed": "Hapja e WhatsApp dështoi",
+    "selectOrderPlaceholder": "Zgjidhni një porosi në të majtë për të parë detajet.",
+    "itemCount": "{count, plural, one {1 artikull} other {# artikuj}}"
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë. Dërgimi automatik është i ndezur, prandaj problemet e regjistruara mund të dërgohen në llogarinë tuaj FloCafe cloud.",
     "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë.",
     "requireKitchenDeliveredToggle": "Kërko dorëzimin nga kuzhina para faturimit",
-    "requireKitchenDeliveredHint": "Pengon shlyerjen e faturave me pagesë të mëvonshme derisa të gjitha artikujt të shënohen si të servirur nga kuzhina. Kontrolli anashkalohet automatikisht kur KDS është çaktivizuar."
+    "requireKitchenDeliveredHint": "Pengon shlyerjen e faturave me pagesë të mëvonshme derisa të gjitha artikujt të shënohen si të servirur nga kuzhina. Kontrolli anashkalohet automatikisht kur KDS është çaktivizuar.",
+    "ordersLayoutTitle": "Paraqitja e ekranit të porosive",
+    "ordersLayoutSplit": "Master / Detaje (pamje e ndarur)",
+    "ordersLayoutSplitHint": "Listë e kompaktuar e porosive në të majtë dhe detajet e plota të porosisë në të djathtë.",
+    "ordersLayoutCards": "Rrjetë kartash",
+    "ordersLayoutCardsHint": "Rrjetë klasike e kartave të veçanta të porosive."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

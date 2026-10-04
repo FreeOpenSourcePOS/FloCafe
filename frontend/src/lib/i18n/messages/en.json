@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 voided item · Tap to view} other {# voided items · Tap to view}}",
     "voidingItem": "Voiding...",
     "walkInCustomer": "Walk-in Customer",
-    "whatsappFailed": "Failed to open WhatsApp"
+    "whatsappFailed": "Failed to open WhatsApp",
+    "selectOrderPlaceholder": "Select an order on the left to view details.",
+    "itemCount": "{count, plural, one {1 item} other {# items}}"
   },
   "pos": {
     "addCustomer": "Add Customer",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "This screen shows recent problems on this device in plain language.",
     "printing": "Printing",
     "requireKitchenDeliveredToggle": "Require kitchen delivery before billing",
-    "requireKitchenDeliveredHint": "Prevent settling postpaid bills until all items are marked served in the kitchen. Bypassed automatically if KDS is disabled."
+    "requireKitchenDeliveredHint": "Prevent settling postpaid bills until all items are marked served in the kitchen. Bypassed automatically if KDS is disabled.",
+    "ordersLayoutTitle": "Orders Screen Layout",
+    "ordersLayoutSplit": "Master / Detail (Split View)",
+    "ordersLayoutSplitHint": "Compact order list on the left with full order details on the right.",
+    "ordersLayoutCards": "Cards Grid",
+    "ordersLayoutCardsHint": "Classic grid of standalone order cards."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 منسوخ آئٹم · دیکھنے کے لیے ٹیپ کریں} other {# منسوخ آئٹمز · دیکھنے کے لیے ٹیپ کریں}}",
     "voidingItem": "منسوخ کیا جا رہا ہے...",
     "walkInCustomer": "بغیر بکنگ گاہک",
-    "whatsappFailed": "WhatsApp نہیں کھل سکا"
+    "whatsappFailed": "WhatsApp نہیں کھل سکا",
+    "selectOrderPlaceholder": "تفصیلات دیکھنے کے لیے بائیں طرف سے آرڈر منتخب کریں۔",
+    "itemCount": "{count, plural, one {1 آئٹم} other {# آئٹم}}"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "یہ اسکرین اس ڈیوائس پر حالیہ مسائل آسان زبان میں دکھاتی ہے۔",
     "printing": "پرنٹنگ",
     "requireKitchenDeliveredToggle": "بل بنانے سے پہلے باورچی خانے سے ترسیل لازمی کریں",
-    "requireKitchenDeliveredHint": "جب تک باورچی خانے کے تمام آئٹمز کو پیش کیا گیا نشان زد نہ کیا جائے، ادھار بل کی ادائیگی روکے رکھیں۔ KDS بند ہونے پر یہ جانچ خود بخود چھوڑ دی جائے گی۔"
+    "requireKitchenDeliveredHint": "جب تک باورچی خانے کے تمام آئٹمز کو پیش کیا گیا نشان زد نہ کیا جائے، ادھار بل کی ادائیگی روکے رکھیں۔ KDS بند ہونے پر یہ جانچ خود بخود چھوڑ دی جائے گی۔",
+    "ordersLayoutTitle": "آرڈر اسکرین لے آؤٹ",
+    "ordersLayoutSplit": "ماسٹر / تفصیل (تقسیم شدہ ویو)",
+    "ordersLayoutSplitHint": "بائیں طرف مختصر آرڈر فہرست اور دائیں طرف آرڈر کی مکمل تفصیلات۔",
+    "ordersLayoutCards": "کارڈ گرڈ",
+    "ordersLayoutCardsHint": "الگ آرڈر کارڈز کا کلاسیکی گرڈ۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

@@ -1,6 +1,25 @@
 import { test, expect } from '@playwright/test';
-import { setLanguage } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
+import {
+  setLanguage,
+  readOrdersLayout,
+  setOrdersLayout,
+  type E2EOrdersLayout,
+} from './helpers/test-auth';
+
+// #639 made the Orders screen default to the master/detail split view, so this
+// spec pins the classic cards grid before driving OrderCard affordances. The
+// evidence for why lives in frontend/e2e/orders-master-detail.spec.ts.
+let ordersLayoutBefore: E2EOrdersLayout = 'split';
+
+test.beforeEach(async ({ page }) => {
+  ordersLayoutBefore = await readOrdersLayout(page);
+  await setOrdersLayout(page, 'cards');
+});
+
+test.afterEach(async ({ page }) => {
+  await setOrdersLayout(page, ordersLayoutBefore);
+});
 
 test('payment can retry without a manager PIN after kitchen delivery completes', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);

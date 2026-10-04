@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 món đã hủy · Chạm để xem} other {# món đã hủy · Chạm để xem}}",
     "voidingItem": "Đang hủy món...",
     "walkInCustomer": "Khách vãng lai",
-    "whatsappFailed": "Không thể mở WhatsApp"
+    "whatsappFailed": "Không thể mở WhatsApp",
+    "selectOrderPlaceholder": "Chọn một đơn hàng ở bên trái để xem chi tiết.",
+    "itemCount": "{count, plural, one {# món} other {# món}}"
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Đã bật gửi tự động, nên các sự cố đã ghi nhận có thể được gửi tới tài khoản FloCafe cloud của bạn.",
     "diagnosticsLocalOnlyHintPending": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu.",
     "requireKitchenDeliveredToggle": "Yêu cầu bếp giao món trước khi thanh toán",
-    "requireKitchenDeliveredHint": "Ngăn thanh toán hóa đơn trả sau cho đến khi tất cả món được đánh dấu đã phục vụ. Tự động bỏ qua nếu KDS bị tắt."
+    "requireKitchenDeliveredHint": "Ngăn thanh toán hóa đơn trả sau cho đến khi tất cả món được đánh dấu đã phục vụ. Tự động bỏ qua nếu KDS bị tắt.",
+    "ordersLayoutTitle": "Bố cục màn hình đơn hàng",
+    "ordersLayoutSplit": "Danh sách / Chi tiết (chế độ chia đôi)",
+    "ordersLayoutSplitHint": "Danh sách đơn hàng gọn nhẹ bên trái và chi tiết đầy đủ bên phải.",
+    "ordersLayoutCards": "Lưới thẻ",
+    "ordersLayoutCardsHint": "Lưới thẻ đơn hàng độc lập theo kiểu cổ điển."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

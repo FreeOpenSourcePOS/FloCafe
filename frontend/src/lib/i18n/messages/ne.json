@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {१ रद्द वस्तु · हेर्न ट्याप गर्नुहोस्} other {# रद्द वस्तुहरू · हेर्न ट्याप गर्नुहोस्}}",
     "voidingItem": "रद्द गरिँदै...",
     "walkInCustomer": "वाक-इन ग्राहक",
-    "whatsappFailed": "WhatsApp खोल्न असफल भयो"
+    "whatsappFailed": "WhatsApp खोल्न असफल भयो",
+    "selectOrderPlaceholder": "विवरण हेर्न बायाँताटबाट एउटा आदेश छान्नुहोस्।",
+    "itemCount": "{count, plural, one {१ वस्तु} other {# वस्तु}}"
   },
   "pos": {
     "addCustomer": "ग्राहक थप्नुहोस्",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintTransmitting": "यो स्क्रिनले यस यन्त्रमा भएका हालका समस्याहरू सरल भाषामा देखाउँछ। स्वतः पठाउने सक्षम छ, त्यसैले दर्ता गरिएका समस्याहरू तपाईंको FloCafe क्लाउड खातामा पठाउन सकिन्छन्।",
     "diagnosticsLocalOnlyHintPending": "यो स्क्रिनले यस यन्त्रमा भएका हालका समस्याहरू सरल भाषामा देखाउँछ।",
     "requireKitchenDeliveredToggle": "बिल गर्नुअघि भान्साबाट खाना पुगेको हुनुपर्ने",
-    "requireKitchenDeliveredHint": "भान्साका सबै परिकार पस्किएको भनी चिन्हित नभएसम्म उधारो बिलको भुक्तानी रोक्छ। KDS बन्द हुँदा यो जाँच स्वतः छोडिन्छ।"
+    "requireKitchenDeliveredHint": "भान्साका सबै परिकार पस्किएको भनी चिन्हित नभएसम्म उधारो बिलको भुक्तानी रोक्छ। KDS बन्द हुँदा यो जाँच स्वतः छोडिन्छ।",
+    "ordersLayoutTitle": "आदेश स्क्रिन लेआउट",
+    "ordersLayoutSplit": "मास्टर / विवरण (विभाजित दृश्य)",
+    "ordersLayoutSplitHint": "बायाँताट संक्षिप्त आदेश सूची र दायाँताट आदेशको पूरा विवरण।",
+    "ordersLayoutCards": "कार्ड ग्रिड",
+    "ordersLayoutCardsHint": "स्वतन्त्र आदेश कार्डहरूको पारम्परिक ग्रिड।"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

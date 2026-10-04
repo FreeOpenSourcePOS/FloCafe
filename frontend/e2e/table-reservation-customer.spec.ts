@@ -1,6 +1,27 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
+import {
+  E2E_PASSWORD,
+  getE2eToken,
+  readOrdersLayout,
+  setLanguage,
+  setOrdersLayout,
+  type E2EOrdersLayout,
+} from './helpers/test-auth';
+
+// #639 made the Orders screen default to the master/detail split view, so this
+// spec pins the classic cards grid before driving OrderCard affordances. The
+// evidence for why lives in frontend/e2e/orders-master-detail.spec.ts.
+let ordersLayoutBefore: E2EOrdersLayout = 'split';
+
+test.beforeEach(async ({ page }) => {
+  ordersLayoutBefore = await readOrdersLayout(page);
+  await setOrdersLayout(page, 'cards');
+});
+
+test.afterEach(async ({ page }) => {
+  await setOrdersLayout(page, ordersLayoutBefore);
+});
 
 test('reserved customer is searchable, shown after reload, and linked to the dine-in order', async ({ page }) => {
   test.setTimeout(90_000);

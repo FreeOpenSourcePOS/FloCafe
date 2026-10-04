@@ -104,7 +104,14 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   calendar: 'locale',
   // Returns 'system' if not yet explicitly saved by the user.
   theme_mode: 'system',
+  // Orders screen layout (#639): master/detail split view is the default.
+  orders_layout: 'split',
 };
+
+/** Single authority for the orders_layout enum; both write transports gate on it. */
+export function isOrdersLayout(value: unknown): value is 'split' | 'cards' {
+  return value === 'split' || value === 'cards';
+}
 
 function maskSetting(key: string, value: string): string {
   if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
@@ -899,6 +906,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
   'theme_mode',
+  'orders_layout',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
@@ -1090,6 +1098,9 @@ router.put('/:key', settingsWriteRateLimit, requirePermission('settings.manage')
     }
     if (req.params.key === 'theme_mode' && !isThemeMode(value)) {
       return res.status(400).json({ error: 'Invalid theme_mode value' });
+    }
+    if (req.params.key === 'orders_layout' && !isOrdersLayout(value)) {
+      return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
     }
     let valueToPersist: unknown = value;
     if (req.params.key === 'currency') {

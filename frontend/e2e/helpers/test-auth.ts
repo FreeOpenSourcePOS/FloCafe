@@ -34,6 +34,63 @@ export function getE2eToken(
   return `${header}.${payload}.${signature}`;
 }
 
+export type E2EOrdersLayout = 'split' | 'cards';
+
+/**
+ * Reads the tenant's Orders screen layout (`orders_layout`).
+ *
+ * Returns the backend default ('split') when the tenant never chose one, so a
+ * caller can capture "what this tenant had before I pinned it" and put it back.
+ */
+export async function readOrdersLayout(
+  page: Page,
+  base = E2E_BASE_URL,
+): Promise<E2EOrdersLayout> {
+  const token =
+    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||
+    getE2eToken();
+  const res = await page.request.get(`${base}/api/settings/orders_layout`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(
+    res.ok(),
+    `reading orders_layout on ${base} must succeed (got status ${res.status()})`,
+  ).toBeTruthy();
+  const { value } = (await res.json()).setting as { value: string };
+  return value === 'cards' ? 'cards' : 'split';
+}
+
+/**
+ * Pins the Orders screen layout for the spec that calls it.
+ *
+ * `orders_layout` defaults to 'split' — the master/detail screen introduced in
+ * #639 — and the card-grid specs predate that default, so they declare the mode
+ * they drive rather than inheriting whatever the default happens to be. The
+ * Orders page reads the setting on mount, so pin it BEFORE the first
+ * `goto('/orders')`.
+ *
+ * The e2e server shares one database across the whole suite, so every pin must
+ * be undone with `test.afterEach`. See frontend/e2e/orders-master-detail.spec.ts
+ * for the split-default coverage that runs when no pin is applied.
+ */
+export async function setOrdersLayout(
+  page: Page,
+  value: E2EOrdersLayout,
+  base = E2E_BASE_URL,
+): Promise<void> {
+  const token =
+    (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||
+    getE2eToken();
+  const res = await page.request.put(`${base}/api/settings/orders_layout`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value },
+  });
+  expect(
+    res.ok(),
+    `setting orders_layout=${value} on ${base} must succeed (got status ${res.status()})`,
+  ).toBeTruthy();
+}
+
 /**
  * Sets the active tenant language on both backend API and frontend local storage,
  * asserting that the API update succeeds. Guarantees that teardown never silently

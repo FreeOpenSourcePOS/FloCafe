@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, other {취소된 메뉴 #건 · 탭하여 보기}}",
     "voidingItem": "취소 중...",
     "walkInCustomer": "방문 고객",
-    "whatsappFailed": "WhatsApp을 열지 못했습니다"
+    "whatsappFailed": "WhatsApp을 열지 못했습니다",
+    "selectOrderPlaceholder": "상세 정보를 보려면 왼쪽에서 주문을 선택하세요.",
+    "itemCount": "{count, plural, other {#개}}"
   },
   "pos": {
     "addCustomer": "고객 추가",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "이 화면은 이 기기에서 발생한 최근 문제를 쉬운 말로 보여줍니다.",
     "printing": "인쇄",
     "requireKitchenDeliveredToggle": "결제 전에 주방 음식 제공을 확인",
-    "requireKitchenDeliveredHint": "주방의 모든 항목이 제공 완료로 표시될 때까지 후불 결제를 막습니다. KDS가 꺼져 있으면 이 확인을 자동으로 건너뜁니다."
+    "requireKitchenDeliveredHint": "주방의 모든 항목이 제공 완료로 표시될 때까지 후불 결제를 막습니다. KDS가 꺼져 있으면 이 확인을 자동으로 건너뜁니다.",
+    "ordersLayoutTitle": "주문 화면 레이아웃",
+    "ordersLayoutSplit": "마스터 / 상세(분할 보기)",
+    "ordersLayoutSplitHint": "왼쪽에 간결한 주문 목록, 오른쪽에 주문 상세를 표시합니다.",
+    "ordersLayoutCards": "카드 그리드",
+    "ordersLayoutCardsHint": "독립적인 주문 카드의 기존 그리드 방식입니다."
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

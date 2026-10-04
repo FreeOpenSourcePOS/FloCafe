@@ -18,6 +18,7 @@ import {
   registerRendererDocument,
 } from './window-readiness';
 import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
+import { isOrdersLayout } from './routes/settings';
 import { googleDrive } from './services/google-drive';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
@@ -37,6 +38,7 @@ const LOG_LINE_TIMESTAMP_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
 // permission-gated on the HTTP API and must stay there.
 const ALLOWED_IPC_KEYS = new Set([
   'theme_mode',
+  'orders_layout',
 ]);
 
 const SENSITIVE_SETTING_KEYS = new Set([
@@ -442,6 +444,9 @@ export function registerIpcHandlers(
       }
       if (key === 'theme_mode' && !isThemeMode(value)) {
         return { success: false, error: 'Invalid theme_mode value' };
+      }
+      if (key === 'orders_layout' && !isOrdersLayout(value)) {
+        return { success: false, error: 'orders_layout must be "split" or "cards"' };
       }
       const db = getDatabase();
       db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')

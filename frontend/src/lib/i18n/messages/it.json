@@ -636,7 +636,9 @@
     "voidedItemsCount": "{count, plural, one {1 articolo annullato · Tocca per visualizzare} other {# articoli annullati · Tocca per visualizzare}}",
     "voidingItem": "Annullamento...",
     "walkInCustomer": "Cliente senza prenotazione",
-    "whatsappFailed": "Impossibile aprire WhatsApp"
+    "whatsappFailed": "Impossibile aprire WhatsApp",
+    "selectOrderPlaceholder": "Seleziona un ordine a sinistra per visualizzare i dettagli.",
+    "itemCount": "{count, plural, one {1 articolo} other {# articoli}}"
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",
@@ -2071,7 +2073,12 @@
     "diagnosticsLocalOnlyHintPending": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo.",
     "printing": "Stampa",
     "requireKitchenDeliveredToggle": "Richiedi la consegna dalla cucina prima della fatturazione",
-    "requireKitchenDeliveredHint": "Impedisce il saldo dei conti postpagati finché tutti gli articoli non risultano serviti dalla cucina. Il controllo viene ignorato automaticamente se il KDS è disattivato."
+    "requireKitchenDeliveredHint": "Impedisce il saldo dei conti postpagati finché tutti gli articoli non risultano serviti dalla cucina. Il controllo viene ignorato automaticamente se il KDS è disattivato.",
+    "ordersLayoutTitle": "Layout della schermata ordini",
+    "ordersLayoutSplit": "Master / Dettaglio (vista divisa)",
+    "ordersLayoutSplitHint": "Elenco compatto degli ordini a sinistra e dettagli completi dell’ordine a destra.",
+    "ordersLayoutCards": "Griglia di schede",
+    "ordersLayoutCardsHint": "Griglia classica di schede ordine autonome."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

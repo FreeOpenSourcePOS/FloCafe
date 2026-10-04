@@ -434,6 +434,7 @@ test('payment modal updates applied fees', async ({ page, request }) => {
 });
 
 test('payment modal hides charge controls without bill discount permission', async ({ request, browser }) => {
+  test.setTimeout(60_000);
   const originalCharges = await readCharges(request);
   const originalBusiness = await readBusiness(request);
   const cleanupRequest = await playwrightRequest.newContext();

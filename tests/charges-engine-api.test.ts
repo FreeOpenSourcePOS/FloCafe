@@ -24,6 +24,7 @@ Module._load = function (request: string) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
+  installAndActivateTestTaxPack,
   api, assertEqualOrThrow, assertOrThrow, getResults, closeDatabase, getDatabase,
 } = require('./helpers/test-setup');
 
@@ -31,6 +32,7 @@ const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
 const { escPosToText, formatReceipt } = require('../main/printers/thermal');
+const flatRateTaxPack = require('./fixtures/synthetic-flat-rate-pack.json');
 
 const SERVICE_CHARGE = {
   id: 'service_charge',
@@ -325,6 +327,9 @@ async function main() {
     console.log('\n6. A waiver is refused once the check has been split');
     setCurrency('USD', 'US');
     setSetting('split_checks_enabled', 'true');
+    const previousTaxesEnabled = (db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get() as any)?.value || 'false';
+    installAndActivateTestTaxPack(db, { ...flatRateTaxPack, id: 'charges-api-us-tax', country: 'US', currency: 'USD' });
+    db.prepare("UPDATE products SET tax_category_id = 'standard', tax_behavior = 'exclusive' WHERE id = 'prod-charges'").run();
     await putCharges([SERVICE_CHARGE, LATE_NIGHT]);
     const splitOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -345,6 +350,27 @@ async function main() {
       headers: authHeader,
     });
     assertEqualOrThrow(splitRes.status, 201, 'the check split into two guest checks');
+    const splitBillRows = splitRes.data.bills.map((bill: { id: number }) => (
+      db.prepare('SELECT total, subtotal, discount_amount, tax_amount, delivery_charge, packaging_charge, service_charge, round_off, charges_breakdown FROM bills WHERE id = ?').get(bill.id) as any
+    ));
+    assertEqualOrThrow(
+      Number(splitBillRows.reduce((sum: number, bill: any) => sum + bill.total, 0).toFixed(2)),
+      splitBill.data.bill.total,
+      'exclusive-tax split totals preserve the parent total including custom charges',
+    );
+    assertEqualOrThrow(
+      Number(splitBillRows.reduce((sum: number, bill: any) => sum + JSON.parse(bill.charges_breakdown).find((charge: any) => charge.id === 'late_night').amount, 0).toFixed(2)),
+      7,
+      'exclusive-tax split breakdown allocates the full non-standard fee',
+    );
+    splitBillRows.forEach((bill: any) => {
+      const customFee = JSON.parse(bill.charges_breakdown).find((charge: any) => charge.id === 'late_night').amount;
+      const composedChildTotal = Number((
+        bill.subtotal - bill.discount_amount + bill.tax_amount + bill.delivery_charge
+        + bill.packaging_charge + bill.service_charge + bill.round_off + customFee
+      ).toFixed(2));
+      assertEqualOrThrow(bill.total, composedChildTotal, 'each exclusive-tax split total includes its allocated non-standard fee');
+    });
     const sibling = splitRes.data.bills[1];
     const splitWaiver = await api(baseUrl, `/api/bills/${sibling.id}/charges`, {
       method: 'PATCH', body: { charge_id: 'service_charge', waived: true }, headers: authHeader,
@@ -359,6 +385,57 @@ async function main() {
       'a split check carries its proportional share of the service charge (10% of its 100 share)',
     );
     assertEqualOrThrow(siblingRow.service_charge, 10, 'the split service_charge column matches its allocated share');
+
+    const cancelledSplitItem = await api(baseUrl, `/api/orders/${splitOrder.data.order.id}/items/${firstItem.id}/cancel`, {
+      method: 'PATCH', body: {}, headers: authHeader,
+    });
+    assertEqualOrThrow(cancelledSplitItem.status, 200, 'an unpaid split order item can be cancelled');
+    const syncedSplitRows = db.prepare('SELECT total, charges_breakdown FROM bills WHERE order_id = ? ORDER BY id').all(splitOrder.data.order.id) as any[];
+    const syncedSplitOrder = db.prepare('SELECT total FROM orders WHERE id = ?').get(splitOrder.data.order.id) as any;
+    assertEqualOrThrow(
+      Number(syncedSplitRows.reduce((sum, bill) => sum + bill.total, 0).toFixed(2)),
+      syncedSplitOrder.total,
+      'unpaid split synchronization preserves the updated parent total',
+    );
+    assertEqualOrThrow(
+      Number(syncedSplitRows.reduce((sum, bill) => sum + JSON.parse(bill.charges_breakdown).find((charge: any) => charge.id === 'late_night').amount, 0).toFixed(2)),
+      7,
+      'unpaid split synchronization allocates the custom fee exactly once',
+    );
+
+    db.prepare("UPDATE products SET tax_behavior = 'inclusive' WHERE id = 'prod-charges'").run();
+    const inclusiveSplitOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', items: [{ product_id: 'prod-charges', quantity: 1 }, { product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    const inclusiveSplitBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: inclusiveSplitOrder.data.order.id }, headers: authHeader,
+    });
+    const inclusiveItems = inclusiveSplitOrder.data.order.items;
+    const inclusiveSplit = await api(baseUrl, `/api/bills/${inclusiveSplitBill.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Inclusive Guest 1', items: [{ order_item_id: inclusiveItems[0].id, quantity: 1 }] },
+        { label: 'Inclusive Guest 2', items: [{ order_item_id: inclusiveItems[1].id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(inclusiveSplit.status, 201, 'inclusive-tax split with a custom fee succeeds');
+    const inclusiveSplitRows = db.prepare('SELECT total, charges_breakdown FROM bills WHERE order_id = ? ORDER BY id').all(inclusiveSplitOrder.data.order.id) as any[];
+    assertEqualOrThrow(
+      Number(inclusiveSplitRows.reduce((sum, bill) => sum + bill.total, 0).toFixed(2)),
+      inclusiveSplitBill.data.bill.total,
+      'inclusive-tax split totals preserve the parent amount including custom charges',
+    );
+    assertEqualOrThrow(
+      Number(inclusiveSplitRows.reduce((sum, bill) => sum + JSON.parse(bill.charges_breakdown).find((charge: any) => charge.id === 'late_night').amount, 0).toFixed(2)),
+      7,
+      'inclusive-tax split breakdown allocates the full non-standard fee',
+    );
+
+    db.prepare("UPDATE products SET tax_category_id = NULL, tax_behavior = 'exempt' WHERE id = 'prod-charges'").run();
+    setSetting('taxes_enabled', previousTaxesEnabled);
 
     console.log('\n7. A zero-decimal currency never persists a fractional subunit');
     setCurrency('JPY', 'JP');
@@ -494,6 +571,23 @@ async function main() {
     assertEqualOrThrow(manual.data.order.total, 114, 'the total still includes the manual columns');
     const manualBreakdown = JSON.parse(manual.data.order.charges_breakdown);
     assertEqualOrThrow(manualBreakdown.some((charge: any) => charge.id === 'service_charge'), false, 'the manual column is not faked as an engine charge');
+
+    await putCharges([]);
+    const legacyManual = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', service_charge: 4, packaging_charge: 3, items: [{ product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyManual.status, 201, 'a legacy order with manual standard columns is created');
+    assertEqualOrThrow(legacyManual.data.order.charges_breakdown, null, 'the legacy manual order has no engine snapshot');
+    await putCharges([{ ...SERVICE_CHARGE, type: 'fixed', value: 5, is_optional: true, is_default_active: false }]);
+    const legacyManualAppend = await api(baseUrl, `/api/orders/${legacyManual.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(legacyManualAppend.status, 200, 'the legacy order recomputes with an unapplied default-off fee definition');
+    assertEqualOrThrow(legacyManualAppend.data.order.service_charge, 4, 'an unapplied default-off definition preserves the legacy service column');
+    assertEqualOrThrow(legacyManualAppend.data.order.packaging_charge, 3, 'the legacy packaging column also survives');
+    assertEqualOrThrow(legacyManualAppend.data.order.total, 207, 'the legacy manual amounts remain in the recomputed total');
 
     console.log('\n12. Cart charge decisions survive order creation');
     await putCharges([

@@ -25,7 +25,7 @@ export const useChargesStore = create<ChargesState>((set) => ({
     } catch {
       // A charges read failure must not take the POS down; the cart simply shows
       // no engine charges and the backend stays authoritative on the total.
-      set({ charges: [], loading: false, error: 'charges_unavailable' });
+      set({ loading: false, error: 'charges_unavailable' });
     }
   },
 

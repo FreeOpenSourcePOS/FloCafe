@@ -119,8 +119,10 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
 
   const columns = toStandardChargeColumns(charges, getCurrencyFractionDigits(currency));
   const ownsStandardColumn = (id: string) => charges.some((charge) => charge.id === id)
+    || existing.some((charge) => charge.id === id)
     || definitions.some((definition) => definition.id === id
       && definition.is_active
+      && definition.is_default_active
       && definition.order_types.includes(orderType as ChargeOrderType));
   const configured = retainedCharges.length > 0 || definitions.some(
     (definition) => definition.is_active

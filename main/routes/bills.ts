@@ -35,6 +35,7 @@ import {
   resolveOrderCharges,
   serializeAppliedCharges,
   toStandardChargeColumns,
+  type AppliedCharge,
   type ChargeOrderType,
 } from '../services/charges';
 
@@ -1025,6 +1026,7 @@ export function allocateTaxSnapshots(
 function composeSplitTotals(
   allocations: Record<string, number[]>,
   exclusiveTaxMinors: number[],
+  otherChargeTotals: number[],
   minorFactor: number = 100,
   decimals: number = 2,
 ): number[] {
@@ -1040,8 +1042,25 @@ function composeSplitTotals(
     + deliveryCharge[index]
     + packagingCharge[index]
     + serviceCharge[index]
+    + otherChargeTotals[index]
     + roundOff[index]
   ).toFixed(decimals)));
+}
+
+function getAllocatedOtherChargeTotals(
+  charges: AppliedCharge[],
+  allocatedChargeMinors: number[][],
+  checkCount: number,
+  minorFactor: number,
+  decimals: number,
+): number[] {
+  return Array.from({ length: checkCount }, (_, checkIndex) => toStandardChargeColumns(
+    charges.map((charge, chargeIndex) => ({
+      ...charge,
+      amount: allocatedChargeMinors[chargeIndex][checkIndex] / minorFactor,
+    })),
+    decimals,
+  ).other_charges);
 }
 
 function allocateTaxBreakdown(
@@ -1551,6 +1570,13 @@ export function syncUnpaidBillsForOrder(
   const sourceCharges = parseAppliedCharges(source.chargesBreakdown);
   const allocatedChargeMinors = sourceCharges.map((charge) =>
     allocateMinorUnits(Math.round(charge.amount * minorFactor), weights));
+  const allocatedOtherChargeTotals = getAllocatedOtherChargeTotals(
+    sourceCharges,
+    allocatedChargeMinors,
+    weights.length,
+    minorFactor,
+    decimals,
+  );
   const chargesBreakdownByBill = sourceCharges.length === 0
     ? []
     : weights.map((_, billIndex) => JSON.stringify(sourceCharges.map((charge, chargeIndex) => ({
@@ -1576,7 +1602,7 @@ export function syncUnpaidBillsForOrder(
   const taxMinors = resolvedTax.taxMinors;
   if (resolvedTax.exclusiveTaxMinors) {
     allocations.taxAmount = taxMinors.map((minor) => minor / minorFactor);
-    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
+    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, allocatedOtherChargeTotals, minorFactor, decimals);
   }
   const sourceItems = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const breakdowns = allocateTaxBreakdown(
@@ -1684,6 +1710,17 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         allocations[field] = allocatedMinors.map((minor) => minor / minorFactor);
       }
 
+      const splitSourceCharges = parseAppliedCharges(txnSource.charges_breakdown);
+      const splitChargeMinors = splitSourceCharges.map((charge) =>
+        allocateMinorUnits(Math.round(charge.amount * minorFactor), weights));
+      const allocatedOtherChargeTotals = getAllocatedOtherChargeTotals(
+        splitSourceCharges,
+        splitChargeMinors,
+        weights.length,
+        minorFactor,
+        decimals,
+      );
+
       const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * minorFactor));
       const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
       const snapshotItems = txnSnapshotItems.filter((item) => hasSnapshotLines(item.tax_snapshot));
@@ -1724,7 +1761,7 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const resolvedTaxMinors = resolvedTax.taxMinors;
       if (resolvedTax.exclusiveTaxMinors) {
         allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / minorFactor);
-        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
+        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, allocatedOtherChargeTotals, minorFactor, decimals);
       }
       const resolvedTaxBreakdowns = allocateTaxBreakdown(
         txnSource.tax_breakdown,
@@ -1743,14 +1780,11 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
 
       // Each guest check carries its weighted share of the itemised engine
       // charges, matching how the charge columns were allocated above.
-      const splitSourceCharges = parseAppliedCharges(txnSource.charges_breakdown);
-      const splitChargeMinors = splitSourceCharges.map((charge) =>
-        allocateMinorUnits(Math.round(charge.amount * getCurrencyMinorUnitFactor(getTenantCurrency())), weights));
       const splitChargesJson = splitSourceCharges.length === 0
         ? []
         : weights.map((_, billIndex) => JSON.stringify(splitSourceCharges.map((charge, chargeIndex) => ({
           ...charge,
-          amount: splitChargeMinors[chargeIndex][billIndex] / getCurrencyMinorUnitFactor(getTenantCurrency()),
+          amount: splitChargeMinors[chargeIndex][billIndex] / minorFactor,
         }))));
 
       const billIds: number[] = [];

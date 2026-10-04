@@ -503,7 +503,10 @@ test('payment modal hides charge controls without bill discount permission', asy
     await serverPage.goto(`${BASE}/orders`);
     await serverPage.getByPlaceholder(/search/i).first().fill(order.order_number);
     await expect(serverPage.getByText(`#${order.order_number}`)).toBeVisible();
-    await serverPage.getByRole('button', { name: 'Checkout', exact: true }).click();
+    const staffOrderCard = serverPage.locator('div.bg-card.rounded-xl.border.flex.flex-col')
+      .filter({ hasText: `#${order.order_number}` });
+    await expect(staffOrderCard).toHaveCount(1);
+    await staffOrderCard.getByRole('button', { name: 'Checkout', exact: true }).click();
     await expect(serverPage.getByRole('heading', { name: 'Payment' })).toBeVisible();
     const readOnlyCharges = serverPage.getByTestId('payment-charges');
     await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();

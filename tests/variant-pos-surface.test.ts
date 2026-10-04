@@ -27,9 +27,11 @@ const zustandPath = frontendRequire.resolve('zustand');
 moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   const resolvedRequest = request === 'zustand'
     ? zustandPath
-    : request.startsWith('@/')
-      ? path.resolve(ROOT, 'frontend/src', request.slice(2))
-      : request;
+    : request === '@countries'
+      ? path.resolve(ROOT, 'main/countries.ts')
+      : request.startsWith('@/')
+        ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+        : request;
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 

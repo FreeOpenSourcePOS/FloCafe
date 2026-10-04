@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে} other {রান্নাঘরে এখনও #টি আইটেম প্রস্তুত হচ্ছে}}",
     "kitchenDeliveryOverridePrompt": "রান্নাঘরের আইটেম এখনও পরিবেশন করা হয়নি। বিল অনুমোদন করতে ম্যানেজারের PIN দিন।",
     "kitchenDeliveryOverrideSuccess": "পরিবেশন না হওয়া আইটেমের জন্য ম্যানেজারের অনুমোদন গ্রহণ করা হয়েছে।",
-    "kitchenDeliveryOverrideInvalid": "ম্যানেজারের PIN সঠিক নয়। আবার চেষ্টা করুন।"
+    "kitchenDeliveryOverrideInvalid": "ম্যানেজারের PIN সঠিক নয়। আবার চেষ্টা করুন।",
+    "waiveCharge": "মওকুফ",
+    "applyCharge": "প্রয়োগ",
+    "addCharge": "যোগ করুন",
+    "removeCharge": "সরান",
+    "chargesTotal": "মোট ফি",
+    "chargeUpdateFailed": "ফি আপডেট করা যায়নি"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -911,6 +917,7 @@
     "templateFallback": "নির্বাচিত বিল টেমপ্লেট এই মুদ্রণ পথে সমর্থিত নয়, তাই অন্তর্নির্মিত রসিদ বিন্যাস ব্যবহার করা হয়েছিল।"
   },
   "print": {
+    "menu": {"title": "মেনু", "totalItems": "মোট আইটেম"},
     "taxInvoiceTitle": "কর ইনভয়েস",
     "invoiceTitle": "বিল",
     "invoiceNumber": "চালান #:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "বিবরণ অন্তর্ভুক্ত করুন",
+    "includeModifiers": "বিকল্প অন্তর্ভুক্ত করুন",
     "addAddon": "অ্যাড-অন যোগ করুন",
     "addAddonGroup": "অ্যাড-অন গ্রুপ যোগ করুন",
     "addAddonGroupForm": "অ্যাড-অন গ্রুপ যোগ করুন",
@@ -1200,7 +1209,18 @@
     "update": "আপডেট",
     "updateProduct": "পণ্য আপডেট করুন",
     "updated": "পণ্য আপডেট করা হয়েছে",
-    "uploadCsv": "CSV আপলোড করুন"
+    "uploadCsv": "CSV আপলোড করুন",
+    "printMenu": "মেনু প্রিন্ট করুন",
+    "printMenuDescription": "মুদ্রিত মেনুতে কোন পণ্য থাকবে তা বেছে নিন।",
+    "includeInactiveItems": "নিষ্ক্রিয় পণ্য অন্তর্ভুক্ত করুন",
+    "includeOutOfStockItems": "স্টক-শেষ পণ্য অন্তর্ভুক্ত করুন",
+    "includeHiddenItems": "লুকানো পণ্য অন্তর্ভুক্ত করুন",
+    "menuPrintedSuccess": "মেনু সফলভাবে প্রিন্ট হয়েছে",
+    "noProductsToPrint": "নির্বাচিত শর্তে কোনো পণ্য নেই",
+    "printerDestination": "প্রিন্টার",
+    "systemBrowserPrint": "সিস্টেম / ব্রাউজার প্রিন্ট",
+    "menuPrintFailed": "মেনু প্রিন্ট করা যায়নি",
+    "menuPopupBlocked": "আপনার ব্রাউজার প্রিন্ট উইন্ডো ব্লক করেছে। এই সাইটের জন্য পপ-আপ অনুমতি দিন এবং আবার চেষ্টা করুন।"
   },
   "receipt": {
     "amount": "পরিমাণ",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "মাস্টার / ডিটেইল (স্প্লিট ভিউ)",
     "ordersLayoutSplitHint": "বাম দিকে কমপ্যাক্ট অর্ডার তালিকা, ডান দিকে সম্পূর্ণ অর্ডারের বিবরণ।",
     "ordersLayoutCards": "কার্ড গ্রিড",
-    "ordersLayoutCardsHint": "আলাদা অর্ডার কার্ডের ক্লাসিক গ্রিড।"
+    "ordersLayoutCardsHint": "আলাদা অর্ডার কার্ডের ক্লাসিক গ্রিড।",
+    "chargesAndSurcharges": "ফি ও অতিরিক্ত ফি",
+    "chargesAndSurchargesHint": "সার্ভিস ফি, প্যাকেজিং ফি ও অতিরিক্ত ফি যা অর্ডারে স্বয়ংক্রিয়ভাবে প্রয়োগ হয়।",
+    "noChargesConfigured": "এখনও কোনো ফি কনফিগার করা হয়নি।",
+    "addCharge": "ফি যোগ করুন",
+    "deleteChargeConfirm": "{name} মুছবেন? ইতিমধ্যে বিল করা অর্ডারগুলো তাদের নথিভুক্ত ফি ধরে রাখে।",
+    "chargesSaved": "ফি সংরক্ষিত",
+    "chargesSaveFailed": "ফি সংরক্ষণ করা যায়নি",
+    "chargeName": "নাম",
+    "chargeId": "আইডি",
+    "chargeIdHint": "ছোট ইংরেজি অক্ষর, সংখ্যা, ড্যাশ বা আন্ডারস্কোর। service_charge ও packaging_charge বিদ্যমান রিপোর্ট কলাম পূরণ করে।",
+    "chargeType": "ধরন",
+    "chargeTypePercentage": "শতাংশ",
+    "chargeTypeFixed": "নির্দিষ্ট পরিমাণ",
+    "chargeValue": "মান",
+    "chargeBasis": "যার ভিত্তিতে",
+    "chargeBasisNet": "নিট (ছাড়ের পর)",
+    "chargeBasisGross": "মোট (ছাড়ের আগে)",
+    "chargeOrderTypes": "যে অর্ডার ধরনে প্রযোজ্য",
+    "chargeWaivable": "ক্যাশিয়ার ক্ষমা করতে পারেন",
+    "chargeAutoApply": "স্বয়ংক্রিয়ভাবে প্রয়োগ করুন",
+    "chargePercentValue": "অর্ডারের {value}%",
+    "chargeFixedValue": "প্রতি অর্ডার {value}",
+    "chargeOptionalApply": "চাওয়ামাত্র যোগ করা হয়"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

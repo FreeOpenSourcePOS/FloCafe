@@ -41,6 +41,13 @@ const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
 
+/** Keep catalog text from being interpreted as an ESC/POS line token. */
+export function safePrinterText(text: string): string {
+  return String(text ?? '')
+    .replace(ESCPOS_TEXT_CONTROL_RE, '')
+    .replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replace(/\{/g, '{ ').replace(/\}/g, ' }'));
+}
+
 function hasArabicScript(text: string): boolean {
   return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
 }

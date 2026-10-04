@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {На кухне ещё готовятся блюда: #} other {На кухне ещё готовятся блюда: #}}",
     "kitchenDeliveryOverridePrompt": "Блюда с кухни ещё не поданы. Введите PIN-код менеджера, чтобы разрешить оплату.",
     "kitchenDeliveryOverrideSuccess": "Разрешение менеджера на оплату неподанных блюд принято.",
-    "kitchenDeliveryOverrideInvalid": "Неверный PIN-код менеджера. Попробуйте ещё раз."
+    "kitchenDeliveryOverrideInvalid": "Неверный PIN-код менеджера. Попробуйте ещё раз.",
+    "waiveCharge": "Списать",
+    "applyCharge": "Применить",
+    "addCharge": "Добавить",
+    "removeCharge": "Убрать",
+    "chargesTotal": "Итого сборы",
+    "chargeUpdateFailed": "Не удалось обновить сбор"
   },
   "printTest": {
     "amt": "Сумма",
@@ -911,6 +917,7 @@
     "templateFallback": "Выбранный шаблон счета не поддерживается в этом пути печати, поэтому использовался встроенный макет квитанции."
   },
   "print": {
+    "menu": {"title": "Меню", "totalItems": "Всего позиций"},
     "taxInvoiceTitle": "НАЛОГОВЫЙ СЧЁТ",
     "invoiceTitle": "СЧЁТ",
     "invoiceNumber": "Счёт №:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Включить описания",
+    "includeModifiers": "Включить модификаторы",
     "addAddon": "Добавить дополнение",
     "addAddonGroup": "Добавить группу дополнений",
     "addAddonGroupForm": "Добавить группу дополнений",
@@ -1200,7 +1209,18 @@
     "update": "Обновить",
     "updateProduct": "Обновить товар",
     "updated": "Товар обновлён",
-    "uploadCsv": "Загрузить CSV"
+    "uploadCsv": "Загрузить CSV",
+    "printMenu": "Печать меню",
+    "printMenuDescription": "Выберите товары для печатного меню.",
+    "includeInactiveItems": "Включить неактивные товары",
+    "includeOutOfStockItems": "Включить товары без остатка",
+    "includeHiddenItems": "Включить скрытые товары",
+    "menuPrintedSuccess": "Меню успешно напечатано",
+    "noProductsToPrint": "Нет товаров, соответствующих выбранным условиям",
+    "printerDestination": "Принтер",
+    "systemBrowserPrint": "Система / печать в браузере",
+    "menuPrintFailed": "Не удалось напечатать меню",
+    "menuPopupBlocked": "Браузер заблокировал окно печати. Разрешите всплывающие окна для этого сайта и повторите попытку."
   },
   "receipt": {
     "amount": "Сумма",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Список / Подробности (разделённый вид)",
     "ordersLayoutSplitHint": "Компактный список заказов слева и полные детали заказа справа.",
     "ordersLayoutCards": "Сетка карточек",
-    "ordersLayoutCardsHint": "Классическая сетка отдельных карточек заказа."
+    "ordersLayoutCardsHint": "Классическая сетка отдельных карточек заказа.",
+    "chargesAndSurcharges": "Сборы и надбавки",
+    "chargesAndSurchargesHint": "Сбор за обслуживание, упаковка и надбавки, автоматически применяемые к заказам.",
+    "noChargesConfigured": "Сборы пока не настроены.",
+    "addCharge": "Добавить сбор",
+    "deleteChargeConfirm": "Удалить {name}? Уже выставленные счета сохранят записанные сборы.",
+    "chargesSaved": "Сборы сохранены",
+    "chargesSaveFailed": "Не удалось сохранить сборы",
+    "chargeName": "Название",
+    "chargeId": "Идентификатор",
+    "chargeIdHint": "Строчные буквы, цифры, дефис или подчёркивание. service_charge и packaging_charge заполняют существующие колонки отчётов.",
+    "chargeType": "Тип",
+    "chargeTypePercentage": "Процент",
+    "chargeTypeFixed": "Фиксированная сумма",
+    "chargeValue": "Значение",
+    "chargeBasis": "База расчёта",
+    "chargeBasisNet": "Нетто (после скидки)",
+    "chargeBasisGross": "Брутто (до скидки)",
+    "chargeOrderTypes": "Применяется к типам заказов",
+    "chargeWaivable": "Кассир может списать",
+    "chargeAutoApply": "Применять автоматически",
+    "chargePercentValue": "{value}% от заказа",
+    "chargeFixedValue": "{value} за заказ",
+    "chargeOptionalApply": "Добавляется по запросу"
   },
   "setup": {
     "alreadyCompleted": "Настройка этой установки уже завершена. Перенаправление на вход…",

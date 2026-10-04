@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServerBillPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
+import { loadProductRelationsBatch } from './products';
 import { randomUUID } from 'node:crypto';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText, printMenuDocument } from '../printers/thermal';
 import { buildDeliverySlipPrintData, type DeliverySlipOrderRow } from '../printers/document-delivery-slip';
+import { buildMenuDocument } from '../printers/document-menu';
+import { detectPrintLanguageDirection } from '../printers/document-classic';
 import type { DeliverySlipPaymentBill } from '../../shared/print';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
@@ -16,7 +19,7 @@ import {
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
 import { requirePermission } from '../services/authorization';
-import { getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
+import { formatCurrencyForTenant, formatDateForTenant, getCountryByCode, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency, RegionalNotConfiguredError } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -348,6 +351,139 @@ router.post('/:id/test', requirePermission('printers.manage'), asyncHandler(asyn
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+}));
+
+// POST /api/printers/print-menu — print a filtered catalog using the configured printer.
+router.post('/print-menu', requirePermission('catalog.view'), requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be an object' });
+    }
+    const body = req.body;
+    for (const key of ['includeInactive', 'includeOutOfStock', 'includeHidden', 'includeDescriptions', 'includeModifiers'] as const) {
+      if (body[key] !== undefined && typeof body[key] !== 'boolean') {
+        return res.status(400).json({ error: `${key} must be a boolean` });
+      }
+    }
+    if (body.paperWidth !== undefined && body.paperWidth !== 58 && body.paperWidth !== 80) {
+      return res.status(400).json({ error: 'paperWidth must be 58 or 80' });
+    }
+
+    const db = getDatabase();
+    const categories = (db.prepare(`
+      SELECT id, name, is_active, sort_order
+      FROM categories
+      WHERE deleted_at IS NULL
+      ORDER BY sort_order, name
+    `).all() as Array<{
+      id: string | number;
+      name: string | null;
+      is_active: number;
+      sort_order: number | null;
+    }>).map((category) => ({
+      id: String(category.id),
+      name: String(category.name ?? ''),
+      isActive: category.is_active === 1,
+      sortOrder: Number(category.sort_order) || 0,
+    }));
+    const productRows = db.prepare(`
+      SELECT p.id, p.description, p.category_id, p.name, p.price, p.is_active, p.track_inventory, p.stock_quantity, p.sort_order
+      FROM products p
+      WHERE p.deleted_at IS NULL
+      ORDER BY p.sort_order, p.name
+    `).all() as Array<{
+      id: string;
+      description: string | null;
+      category_id: string | number | null;
+      name: string | null;
+      price: number | null;
+      is_active: number;
+      track_inventory: number;
+      stock_quantity: number | null;
+      sort_order: number | null;
+    }>;
+    const relations = body.includeModifiers ? loadProductRelationsBatch(db, productRows) : new Map();
+    const products = productRows.map((product) => ({
+      description: product.description,
+      modifiers: (relations.get(product.id)?.addon_groups || []).map((group: { name: string; addons: { name: string; price: number }[] }) => ({
+        name: group.name,
+        options: group.addons.map((addon) => ({ name: addon.name, price: addon.price })),
+      })),
+      categoryId: typeof product.category_id === 'string' ? product.category_id : null,
+      name: String(product.name ?? ''),
+      price: Number(product.price),
+      isActive: product.is_active === 1,
+      trackInventory: product.track_inventory === 1,
+      stockQuantity: Number(product.stock_quantity) || 0,
+      sortOrder: Number(product.sort_order) || 0,
+    }));
+    const settings = Object.fromEntries(
+      (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
+        .map((row) => [row.key, row.value]),
+    ) as Record<string, string>;
+    const regional = resolveRegionalSnapshot(settings);
+    const menu = buildMenuDocument(categories, products, {
+      includeInactive: body.includeInactive,
+      includeOutOfStock: body.includeOutOfStock,
+      includeHidden: body.includeHidden,
+      includeDescriptions: body.includeDescriptions,
+      includeModifiers: body.includeModifiers,
+      businessName: settings.business_name || 'Store',
+      printedAt: formatDateForTenant(new Date(), regional.country, regional.timezone, regional.preferences, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }),
+      baseDirection: detectPrintLanguageDirection(settings.language || 'en'),
+      formatPrice: (price) => formatCurrencyForTenant(price, regional.country, regional.currency, regional.preferences),
+    });
+    if (menu.itemCount === 0) {
+      return res.status(422).json({ error: 'No products match the selected criteria', code: 'no_products_to_print' });
+    }
+
+    const defaultPrinter = db.prepare(`
+      SELECT * FROM printers
+      WHERE is_default = 1
+      ORDER BY name
+      LIMIT 1
+    `).get() as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    const printer = (defaultPrinter || db.prepare(`
+      SELECT * FROM printers
+      WHERE connection_type != 'webusb'
+      ORDER BY name
+      LIMIT 1
+    `).get() || db.prepare(`
+      SELECT * FROM printers
+      WHERE connection_type = 'webusb'
+      ORDER BY name
+      LIMIT 1
+    `).get()) as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    if (!printer) {
+      return res.status(400).json({ error: 'No default printer configured', code: 'printer_not_configured' });
+    }
+    const targetPrinter = body.paperWidth === undefined
+      ? printer
+      : { ...printer, paper_width: body.paperWidth === 58 ? 'cols-32' : 'cols-42' };
+    const result = await printMenuDocument(menu, getHttpRequestSignal(req), targetPrinter, settings.language || 'en');
+    if (!result.ok) {
+      return res.status(502).json({ error: result.detail || 'Menu print failed', detail: result.detail, warnings: result.warnings });
+    }
+    if (result.connection_type === 'webusb') {
+      return res.json({
+        success: true,
+        webusb: true,
+        bytes: Array.from(result.bytes || []),
+        printerName: printer.name,
+        warnings: result.warnings || [],
+      });
+    }
+    return res.json({ success: true, printerName: printer.name, warnings: result.warnings || [] });
+  } catch (error) {
+    if (error instanceof RegionalNotConfiguredError) {
+      return res.status(409).json({ error: 'regional_not_configured' });
+    }
+    console.error('[Print Menu] Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }));
 

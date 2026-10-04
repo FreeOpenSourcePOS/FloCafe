@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# مورد هنوز در آشپزخانه در حال آماده‌سازی است} other {# مورد هنوز در آشپزخانه در حال آماده‌سازی است}}",
     "kitchenDeliveryOverridePrompt": "اقلام آشپزخانه هنوز تحویل نشده‌اند. برای تأیید صورتحساب، رمز مدیر را وارد کنید.",
     "kitchenDeliveryOverrideSuccess": "تأیید مدیر برای اقلام تحویل‌نشده پذیرفته شد.",
-    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید."
+    "kitchenDeliveryOverrideInvalid": "رمز مدیر نامعتبر است. دوباره تلاش کنید.",
+    "waiveCharge": "بخشش",
+    "applyCharge": "اعمال",
+    "addCharge": "افزودن",
+    "removeCharge": "حذف",
+    "chargesTotal": "جمع کل هزینه‌ها",
+    "chargeUpdateFailed": "به‌روزرسانی هزینه ممکن نشد"
   },
   "printTest": {
     "amt": "مبلغ",
@@ -911,6 +917,7 @@
     "templateFallback": "قالب صورت‌حساب انتخاب‌شده در این مسیر چاپ پشتیبانی نمی‌شود؛ از طرح رسید داخلی استفاده شد."
   },
   "print": {
+    "menu": {"title": "منو", "totalItems": "تعداد اقلام"},
     "taxInvoiceTitle": "صورتحساب مالیاتی",
     "invoiceTitle": "صورتحساب",
     "invoiceNumber": "شماره صورتحساب:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "شامل توضیحات",
+    "includeModifiers": "شامل افزودنی‌ها",
     "addAddon": "افزودن افزودنی",
     "addAddonGroup": "افزودن گروه افزودنی",
     "addAddonGroupForm": "افزودن گروه افزودنی",
@@ -1200,7 +1209,18 @@
     "update": "به‌روزرسانی",
     "updateProduct": "به‌روزرسانی کالا",
     "updated": "کالا به‌روزرسانی شد",
-    "uploadCsv": "بارگذاری CSV"
+    "uploadCsv": "بارگذاری CSV",
+    "printMenu": "چاپ منو",
+    "printMenuDescription": "انتخاب کنید کدام کالاها در منوی چاپی باشند.",
+    "includeInactiveItems": "شامل کردن کالاهای غیرفعال",
+    "includeOutOfStockItems": "شامل کردن کالاهای ناموجود",
+    "includeHiddenItems": "شامل کردن کالاهای پنهان",
+    "menuPrintedSuccess": "منو با موفقیت چاپ شد",
+    "noProductsToPrint": "هیچ محصولی با معیارهای انتخاب‌شده مطابقت ندارد",
+    "printerDestination": "چاپگر",
+    "systemBrowserPrint": "سیستم / چاپ مرورگر",
+    "menuPrintFailed": "چاپ منو انجام نشد",
+    "menuPopupBlocked": "مرورگر شما پنجره چاپ را مسدود کرد. برای این سایت اجازه پنجره‌های بازشو بدهید و دوباره تلاش کنید."
   },
   "receipt": {
     "amount": "مبلغ",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "اصلی / جزئی (نمایش دو ستونه)",
     "ordersLayoutSplitHint": "فهرست فشرده سفارش‌ها در سمت چپ و جزئیات کامل سفارش در سمت راست.",
     "ordersLayoutCards": "شبکه کارت‌ها",
-    "ordersLayoutCardsHint": "شبکه کلاسیک کارت‌های مستقل سفارش."
+    "ordersLayoutCardsHint": "شبکه کلاسیک کارت‌های مستقل سفارش.",
+    "chargesAndSurcharges": "هزینه‌ها و اضافه‌بهاها",
+    "chargesAndSurchargesHint": "هزینه سرویس، هزینه بسته‌بندی و اضافه‌بهاهایی که به‌صورت خودکار روی سفارش‌ها اعمال می‌شود.",
+    "noChargesConfigured": "هنوز هیچ هزینه‌ای تنظیم نشده است.",
+    "addCharge": "افزودن هزینه",
+    "deleteChargeConfirm": "{name} حذف شود؟ سفارش‌های صورتحساب‌شده هزینه‌های ثبت‌شده خود را نگه می‌دارند.",
+    "chargesSaved": "هزینه‌ها ذخیره شد",
+    "chargesSaveFailed": "ذخیره هزینه‌ها ممکن نشد",
+    "chargeName": "نام",
+    "chargeId": "شناسه",
+    "chargeIdHint": "حروف کوچک انگلیسی، رقم، خط تیره یا زیرخط. service_charge و packaging_charge ستون‌های گزارش موجود را پر می‌کنند.",
+    "chargeType": "نوع",
+    "chargeTypePercentage": "درصدی",
+    "chargeTypeFixed": "مبلغ ثابت",
+    "chargeValue": "مقدار",
+    "chargeBasis": "محاسبه بر اساس",
+    "chargeBasisNet": "خالص (پس از تخفیف)",
+    "chargeBasisGross": "ناخالص (پیش از تخفیف)",
+    "chargeOrderTypes": "اعمال بر این نوع سفارش‌ها",
+    "chargeWaivable": "صندوقدار می‌تواند ببخشد",
+    "chargeAutoApply": "اعمال خودکار",
+    "chargePercentValue": "{value} درصد سفارش",
+    "chargeFixedValue": "{value} برای هر سفارش",
+    "chargeOptionalApply": "در صورت درخواست افزوده می‌شود"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

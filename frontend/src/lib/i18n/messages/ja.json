@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {キッチンで準備中の商品が # 件あります} other {キッチンで準備中の商品が # 件あります}}",
     "kitchenDeliveryOverridePrompt": "キッチンの商品はまだ提供されていません。会計を承認するにはマネージャー PIN を入力してください。",
     "kitchenDeliveryOverrideSuccess": "未提供の商品に対するマネージャーの承認を受け付けました。",
-    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。"
+    "kitchenDeliveryOverrideInvalid": "マネージャー PIN が正しくありません。もう一度お試しください。",
+    "waiveCharge": "免除",
+    "applyCharge": "適用",
+    "addCharge": "追加",
+    "removeCharge": "削除",
+    "chargesTotal": "料金合計",
+    "chargeUpdateFailed": "料金を更新できませんでした"
   },
   "printTest": {
     "amt": "金額",
@@ -911,6 +917,7 @@
     "templateFallback": "選択した請求書テンプレートはこの印刷経路に対応していないため、内蔵レシートレイアウトを使用しました。"
   },
   "print": {
+    "menu": {"title": "メニュー", "totalItems": "商品数"},
     "taxInvoiceTitle": "税務請求書",
     "invoiceTitle": "請求書",
     "invoiceNumber": "請求書番号：",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "説明を含める",
+    "includeModifiers": "オプションを含める",
     "addAddon": "追加項目を追加",
     "addAddonGroup": "追加項目グループを追加",
     "addAddonGroupForm": "追加項目グループを追加",
@@ -1200,7 +1209,18 @@
     "update": "更新",
     "updateProduct": "商品を更新",
     "updated": "商品を更新しました",
-    "uploadCsv": "CSVをアップロード"
+    "uploadCsv": "CSVをアップロード",
+    "printMenu": "メニューを印刷",
+    "printMenuDescription": "印刷するメニューに含める商品を選択します。",
+    "includeInactiveItems": "非アクティブな商品を含める",
+    "includeOutOfStockItems": "在庫切れの商品を含める",
+    "includeHiddenItems": "非表示の商品を含める",
+    "menuPrintedSuccess": "メニューを印刷しました",
+    "noProductsToPrint": "選択した条件に一致する商品がありません",
+    "printerDestination": "プリンター",
+    "systemBrowserPrint": "システム / ブラウザー印刷",
+    "menuPrintFailed": "メニューを印刷できませんでした",
+    "menuPopupBlocked": "ブラウザーが印刷ウィンドウをブロックしました。このサイトのポップアップを許可してから、もう一度お試しください。"
   },
   "receipt": {
     "amount": "金額",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "マスター / 詳細（分割表示）",
     "ordersLayoutSplitHint": "左にコンパクトな注文一覧、右に注文の詳細全体を表示します。",
     "ordersLayoutCards": "カードグリッド",
-    "ordersLayoutCardsHint": "独立した注文カードの従来型グリッドです。"
+    "ordersLayoutCardsHint": "独立した注文カードの従来型グリッドです。",
+    "chargesAndSurcharges": "料金と追加料金",
+    "chargesAndSurchargesHint": "サービス料、包装料、および注文に自動適用される追加料金です。",
+    "noChargesConfigured": "料金はまだ設定されていません。",
+    "addCharge": "料金を追加",
+    "deleteChargeConfirm": "{name} を削除しますか？ 既に請求済みの注文には記録された料金が保持されます。",
+    "chargesSaved": "料金を保存しました",
+    "chargesSaveFailed": "料金を保存できませんでした",
+    "chargeName": "名称",
+    "chargeId": "料金 ID",
+    "chargeIdHint": "小文字の英数字、ハイフン、アンダースコア。service_charge と packaging_charge は既存のレポート列に反映されます。",
+    "chargeType": "種類",
+    "chargeTypePercentage": "パーセント",
+    "chargeTypeFixed": "固定額",
+    "chargeValue": "値",
+    "chargeBasis": "計算根拠",
+    "chargeBasisNet": "正味（割引後）",
+    "chargeBasisGross": "総額（割引前）",
+    "chargeOrderTypes": "対象の注文タイプ",
+    "chargeWaivable": "レジ係が免除できる",
+    "chargeAutoApply": "自動適用する",
+    "chargePercentValue": "注文額の {value}%",
+    "chargeFixedValue": "1 注文あたり {value}",
+    "chargeOptionalApply": "要求されたときに追加"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

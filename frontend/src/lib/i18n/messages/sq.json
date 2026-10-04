@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# artikuj po përgatiten ende në kuzhinë} other {# artikuj po përgatiten ende në kuzhinë}}",
     "kitchenDeliveryOverridePrompt": "Artikujt e kuzhinës nuk janë dorëzuar ende. Fut PIN-in e menaxherit për të autorizuar faturimin.",
     "kitchenDeliveryOverrideSuccess": "U pranua miratimi i menaxherit për artikujt e padërguar.",
-    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish."
+    "kitchenDeliveryOverrideInvalid": "PIN-i i menaxherit është i pasaktë. Provo sërish.",
+    "waiveCharge": "Përjashto",
+    "applyCharge": "Apliko",
+    "addCharge": "Shto",
+    "removeCharge": "Hiq",
+    "chargesTotal": "Totali i ngarkesave",
+    "chargeUpdateFailed": "Nuk mund të përditësohej ngarkesa"
   },
   "printTest": {
     "amt": "Shuma",
@@ -911,6 +917,7 @@
     "templateFallback": "Shablloni i zgjedhur i dëftesës nuk mbështetet në këtë shteg printimi, prandaj u përdor paraqitja e integruar e dëftesës."
   },
   "print": {
+    "menu": {"title": "Menyja", "totalItems": "Artikuj gjithsej"},
     "taxInvoiceTitle": "FATURË TATIMORE",
     "invoiceTitle": "FATURË",
     "invoiceNumber": "Fatura nr.:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Përfshi përshkrimet",
+    "includeModifiers": "Përfshi opsionet",
     "addAddon": "Shto Shtesë",
     "addAddonGroup": "Shto grupin shtesë",
     "addAddonGroupForm": "Shto grupin shtesë",
@@ -1200,7 +1209,18 @@
     "update": "Përditëso",
     "updateProduct": "Përditëso produktin",
     "updated": "Produkti u përditësua",
-    "uploadCsv": "Ngarko CSV"
+    "uploadCsv": "Ngarko CSV",
+    "printMenu": "Printo menunë",
+    "printMenuDescription": "Zgjidhni produktet që do të përfshihen në menunë e printuar.",
+    "includeInactiveItems": "Përfshi produktet joaktive",
+    "includeOutOfStockItems": "Përfshi produktet pa stok",
+    "includeHiddenItems": "Përfshi produktet e fshehura",
+    "menuPrintedSuccess": "Menuja u printua me sukses",
+    "noProductsToPrint": "Asnjë produkt nuk përputhet me kriteret e zgjedhura",
+    "printerDestination": "Printeri",
+    "systemBrowserPrint": "Sistemi / printimi në shfletues",
+    "menuPrintFailed": "Printimi i menusë dështoi",
+    "menuPopupBlocked": "Shfletuesi juaj bllokuar dritaren e printimit. Lejooni pop-up-et për këtë faqe dhe provoni përsëri."
   },
   "receipt": {
     "amount": "Shuma",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Master / Detaje (pamje e ndarur)",
     "ordersLayoutSplitHint": "Listë e kompaktuar e porosive në të majtë dhe detajet e plota të porosisë në të djathtë.",
     "ordersLayoutCards": "Rrjetë kartash",
-    "ordersLayoutCardsHint": "Rrjetë klasike e kartave të veçanta të porosive."
+    "ordersLayoutCardsHint": "Rrjetë klasike e kartave të veçanta të porosive.",
+    "chargesAndSurcharges": "Ngarkesa dhe mbi-ngarkesa",
+    "chargesAndSurchargesHint": "Ngarkesa shërbimi, tarifa paketimi dhe mbi-ngarkesa të aplikuar automatikisht por urdherat.",
+    "noChargesConfigured": "Nuk janë konfiguruar ende ngarkesa.",
+    "addCharge": "Shto ngarkesë",
+    "deleteChargeConfirm": "Të hiqet {name}? Urdherat e zbilluara ruajnë ngarkesat e regjistruara.",
+    "chargesSaved": "Ngarkesat u ruajtën",
+    "chargesSaveFailed": "Ngarkesat nuk mund të ruheshin",
+    "chargeName": "Emri",
+    "chargeId": "ID e ngarkesës",
+    "chargeIdHint": "Shkronja të vogla, shifra, vijë ose vijë e nënvizës. service_charge dhe packaging_charge furnizojnë kolonat ekzistuese të raporteve.",
+    "chargeType": "Lloji",
+    "chargeTypePercentage": "Përqindje",
+    "chargeTypeFixed": "Shumë fikse",
+    "chargeValue": "Vlera",
+    "chargeBasis": "Llogaritur mbi",
+    "chargeBasisNet": "Neto (pas zbritjes)",
+    "chargeBasisGross": "Bruto (para zbritjes)",
+    "chargeOrderTypes": "Zbatohet për llojet e urdhereve",
+    "chargeWaivable": "Kasiieri mund ta përjashtojë",
+    "chargeAutoApply": "Apliko automatikisht",
+    "chargePercentValue": "{value}% e urdherit",
+    "chargeFixedValue": "{value} për urdhër",
+    "chargeOptionalApply": "Shtuar me kërkesë"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

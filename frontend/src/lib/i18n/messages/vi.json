@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Còn # món đang được chuẩn bị trong bếp} other {Còn # món đang được chuẩn bị trong bếp}}",
     "kitchenDeliveryOverridePrompt": "Món ăn từ bếp chưa được giao. Nhập mã PIN quản lý để cho phép thanh toán.",
     "kitchenDeliveryOverrideSuccess": "Đã chấp nhận quyền duyệt của quản lý cho các món chưa giao.",
-    "kitchenDeliveryOverrideInvalid": "Mã PIN quản lý không hợp lệ. Vui lòng thử lại."
+    "kitchenDeliveryOverrideInvalid": "Mã PIN quản lý không hợp lệ. Vui lòng thử lại.",
+    "waiveCharge": "Miễn",
+    "applyCharge": "Áp dụng",
+    "addCharge": "Thêm",
+    "removeCharge": "Bỏ",
+    "chargesTotal": "Tổng phí",
+    "chargeUpdateFailed": "Không thể cập nhật khoản phí"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -911,6 +917,7 @@
     "templateFallback": "Mẫu hóa đơn đã chọn không được hỗ trợ trên đường dẫn in này, nên đã dùng bố cục biên nhận tích hợp."
   },
   "print": {
+    "menu": {"title": "Thực đơn", "totalItems": "Tổng số món"},
     "taxInvoiceTitle": "HÓA ĐƠN THUẾ",
     "invoiceTitle": "HÓA ĐƠN",
     "invoiceNumber": "Số hóa đơn:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Bao gồm mô tả",
+    "includeModifiers": "Bao gồm tùy chọn",
     "addAddon": "Thêm tuỳ chọn",
     "addAddonGroup": "Thêm nhóm tuỳ chọn",
     "addAddonGroupForm": "Thêm nhóm tuỳ chọn",
@@ -1200,7 +1209,18 @@
     "update": "Cập nhật",
     "updateProduct": "Cập nhật sản phẩm",
     "updated": "Đã cập nhật sản phẩm",
-    "uploadCsv": "Tải lên CSV"
+    "uploadCsv": "Tải lên CSV",
+    "printMenu": "In menu",
+    "printMenuDescription": "Chọn sản phẩm cần đưa vào menu in.",
+    "includeInactiveItems": "Bao gồm sản phẩm không hoạt động",
+    "includeOutOfStockItems": "Bao gồm sản phẩm hết hàng",
+    "includeHiddenItems": "Bao gồm sản phẩm bị ẩn",
+    "menuPrintedSuccess": "Đã in menu thành công",
+    "noProductsToPrint": "Không có sản phẩm nào phù hợp với tiêu chí đã chọn",
+    "printerDestination": "Máy in",
+    "systemBrowserPrint": "Hệ thống / In bằng trình duyệt",
+    "menuPrintFailed": "Không thể in menu",
+    "menuPopupBlocked": "Trình duyệt của bạn đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi thử lại."
   },
   "receipt": {
     "amount": "Số tiền",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Danh sách / Chi tiết (chế độ chia đôi)",
     "ordersLayoutSplitHint": "Danh sách đơn hàng gọn nhẹ bên trái và chi tiết đầy đủ bên phải.",
     "ordersLayoutCards": "Lưới thẻ",
-    "ordersLayoutCardsHint": "Lưới thẻ đơn hàng độc lập theo kiểu cổ điển."
+    "ordersLayoutCardsHint": "Lưới thẻ đơn hàng độc lập theo kiểu cổ điển.",
+    "chargesAndSurcharges": "Phí và phí bổ sung",
+    "chargesAndSurchargesHint": "Phí dịch vụ, phí đóng gói và các khoản phụ thu được áp dụng tự động cho đơn hàng.",
+    "noChargesConfigured": "Chưa cấu hình khoản phí nào.",
+    "addCharge": "Thêm phí",
+    "deleteChargeConfirm": "Xóa {name}? Các đơn đã xuất hóa đơn vẫn giữ khoản phí đã ghi nhận.",
+    "chargesSaved": "Đã lưu phí",
+    "chargesSaveFailed": "Không thể lưu phí",
+    "chargeName": "Tên",
+    "chargeId": "Mã",
+    "chargeIdHint": "Chữ thường, chữ số, dấu gạch ngang hoặc gạch dưới. service_charge và packaging_charge điền vào các cột báo cáo hiện có.",
+    "chargeType": "Loại",
+    "chargeTypePercentage": "Phần trăm",
+    "chargeTypeFixed": "Số tiền cố định",
+    "chargeValue": "Giá trị",
+    "chargeBasis": "Tính trên",
+    "chargeBasisNet": "Thực (sau chiết khấu)",
+    "chargeBasisGross": "Gộp (trước chiết khấu)",
+    "chargeOrderTypes": "Áp dụng cho loại đơn hàng",
+    "chargeWaivable": "Thu ngân có thể miễn",
+    "chargeAutoApply": "Tự động áp dụng",
+    "chargePercentValue": "{value}% đơn hàng",
+    "chargeFixedValue": "{value} mỗi đơn hàng",
+    "chargeOptionalApply": "Thêm theo yêu cầu"
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

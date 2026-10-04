@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {भान्सामा अझै # परिकार तयार हुँदैछन्} other {भान्सामा अझै # परिकार तयार हुँदैछन्}}",
     "kitchenDeliveryOverridePrompt": "भान्साका परिकार अझै पुगेका छैनन्। बिल स्वीकृत गर्न म्यानेजरको PIN हाल्नुहोस्।",
     "kitchenDeliveryOverrideSuccess": "नपुगेका परिकारका लागि म्यानेजरको स्वीकृति स्वीकार गरियो।",
-    "kitchenDeliveryOverrideInvalid": "म्यानेजरको PIN मिलेन। फेरि प्रयास गर्नुहोस्।"
+    "kitchenDeliveryOverrideInvalid": "म्यानेजरको PIN मिलेन। फेरि प्रयास गर्नुहोस्।",
+    "waiveCharge": "माफ",
+    "applyCharge": "लागू",
+    "addCharge": "थप्नुहोस्",
+    "removeCharge": "हटाउनुहोस्",
+    "chargesTotal": "कुल शुल्क",
+    "chargeUpdateFailed": "शुल्क अद्यावधिक गर्न सकिएन"
   },
   "printTest": {
     "amt": "रकम",
@@ -911,6 +917,7 @@
     "templateFallback": "चयन गरिएको बिल टेम्प्लेट यस मुद्रण मार्गमा समर्थित छैन, त्यसैले बिल्ट-इन रसिद लेआउट प्रयोग गरिएको थियो।"
   },
   "print": {
+    "menu": {"title": "मेनु", "totalItems": "कुल वस्तुहरू"},
     "taxInvoiceTitle": "कर इनभ्वाइस",
     "invoiceTitle": "इनभ्वाइस",
     "invoiceNumber": "बिल #:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "विवरण समावेश गर्नुहोस्",
+    "includeModifiers": "विकल्पहरू समावेश गर्नुहोस्",
     "addAddon": "एडअन थप्नुहोस्",
     "addAddonGroup": "एडअन समूह थप्नुहोस्",
     "addAddonGroupForm": "एडअन समूह थप्नुहोस्",
@@ -1200,7 +1209,18 @@
     "update": "अपडेट गर्नुहोस्",
     "updateProduct": "उत्पादन अपडेट गर्नुहोस्",
     "updated": "उत्पादन अपडेट गरियो",
-    "uploadCsv": "CSV अपलोड गर्नुहोस्"
+    "uploadCsv": "CSV अपलोड गर्नुहोस्",
+    "printMenu": "मेनु प्रिन्ट गर्नुहोस्",
+    "printMenuDescription": "प्रिन्ट हुने मेनुमा कुन उत्पादन समावेश गर्ने छान्नुहोस्।",
+    "includeInactiveItems": "निष्क्रिय उत्पादन समावेश गर्नुहोस्",
+    "includeOutOfStockItems": "स्टकमा नभएका उत्पादन समावेश गर्नुहोस्",
+    "includeHiddenItems": "लुकेका उत्पादन समावेश गर्नुहोस्",
+    "menuPrintedSuccess": "मेनु सफलतापूर्वक प्रिन्ट भयो",
+    "noProductsToPrint": "चयन गरिएका मापदण्डसँग मिल्ने उत्पादन छैन",
+    "printerDestination": "प्रिन्टर",
+    "systemBrowserPrint": "सिस्टम / ब्राउजर प्रिन्ट",
+    "menuPrintFailed": "मेनु प्रिन्ट गर्न सकिएन",
+    "menuPopupBlocked": "तपाईंको ब्राउजरले प्रिन्ट विन्डो ब्लक गर्यो। यस साइटका लागि पप-अप अनुमति दिनुहोस् र पुनः प्रयास गर्नुहोस्।"
   },
   "receipt": {
     "amount": "रकम",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "मास्टर / विवरण (विभाजित दृश्य)",
     "ordersLayoutSplitHint": "बायाँताट संक्षिप्त आदेश सूची र दायाँताट आदेशको पूरा विवरण।",
     "ordersLayoutCards": "कार्ड ग्रिड",
-    "ordersLayoutCardsHint": "स्वतन्त्र आदेश कार्डहरूको पारम्परिक ग्रिड।"
+    "ordersLayoutCardsHint": "स्वतन्त्र आदेश कार्डहरूको पारम्परिक ग्रिड।",
+    "chargesAndSurcharges": "शुल्क र अतिरिक्त शुल्क",
+    "chargesAndSurchargesHint": "सेवा शुल्क, प्याकेजिङ शुल्क र अतिरिक्त शुल्क जुन अर्डरमा स्वतः लागू हुन्छन्।",
+    "noChargesConfigured": "अझै कुनै शुल्क कन्फिगर गरिएको छैन।",
+    "addCharge": "शुल्क थप्नुहोस्",
+    "deleteChargeConfirm": "{name} मेट्ने? पहिले बिल भइसकेका अर्डरले दर्ता गरिएका शुल्क कायम राख्छन्।",
+    "chargesSaved": "शुल्क सुरक्षित भयो",
+    "chargesSaveFailed": "शुल्क सुरक्षित गर्न सकिएन",
+    "chargeName": "नाम",
+    "chargeId": "आईडी",
+    "chargeIdHint": "सानो अंग्रेजी अक्षर, अङ्क, हाइफन वा अन्डरस्कोर। service_charge र packaging_charge ले विद्यमान प्रतिवेदन स्तम्भहरू भर्छन्।",
+    "chargeType": "प्रकार",
+    "chargeTypePercentage": "प्रतिशत",
+    "chargeTypeFixed": "निश्चित राशि",
+    "chargeValue": "मान",
+    "chargeBasis": "आधार",
+    "chargeBasisNet": "खुद (छूटपछि)",
+    "chargeBasisGross": "जम्मा (छूटअघि)",
+    "chargeOrderTypes": "यी अर्डर प्रकारमा लागू",
+    "chargeWaivable": "क्यासियरले छूट दिन सक्छ",
+    "chargeAutoApply": "स्वतः लागू गर्नुहोस्",
+    "chargePercentValue": "अर्डरको {value}%",
+    "chargeFixedValue": "प्रति अर्डर {value}",
+    "chargeOptionalApply": "अनुरोधमा थपिन्छ"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

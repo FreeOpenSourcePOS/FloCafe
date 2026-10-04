@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {주방에서 아직 준비 중인 항목이 #개 있습니다} other {주방에서 아직 준비 중인 항목이 #개 있습니다}}",
     "kitchenDeliveryOverridePrompt": "주방 음식이 아직 제공되지 않았습니다. 결제를 승인하려면 관리자 PIN을 입력하세요.",
     "kitchenDeliveryOverrideSuccess": "미제공 항목에 대한 관리자 승인이 처리되었습니다.",
-    "kitchenDeliveryOverrideInvalid": "관리자 PIN이 올바르지 않습니다. 다시 시도하세요."
+    "kitchenDeliveryOverrideInvalid": "관리자 PIN이 올바르지 않습니다. 다시 시도하세요.",
+    "waiveCharge": "면제",
+    "applyCharge": "적용",
+    "addCharge": "추가",
+    "removeCharge": "제거",
+    "chargesTotal": "수수료 합계",
+    "chargeUpdateFailed": "수수료를 업데이트할 수 없습니다"
   },
   "printTest": {
     "amt": "금액",
@@ -911,6 +917,7 @@
     "templateFallback": "선택한 청구서 템플릿은 이 인쇄 경로에서 지원되지 않아 기본 영수증 레이아웃을 사용했습니다."
   },
   "print": {
+    "menu": {"title": "메뉴", "totalItems": "총 항목"},
     "taxInvoiceTitle": "세금 인보이스",
     "invoiceTitle": "인보이스",
     "invoiceNumber": "인보이스 #:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "설명 포함",
+    "includeModifiers": "옵션 포함",
     "addAddon": "추가 옵션 추가",
     "addAddonGroup": "추가 옵션 그룹 추가",
     "addAddonGroupForm": "추가 옵션 그룹 추가",
@@ -1200,7 +1209,18 @@
     "update": "업데이트",
     "updateProduct": "상품 업데이트",
     "updated": "상품이 업데이트되었습니다",
-    "uploadCsv": "CSV 업로드"
+    "uploadCsv": "CSV 업로드",
+    "printMenu": "메뉴 인쇄",
+    "printMenuDescription": "인쇄할 메뉴에 포함할 상품을 선택하세요.",
+    "includeInactiveItems": "비활성 상품 포함",
+    "includeOutOfStockItems": "품절 상품 포함",
+    "includeHiddenItems": "숨겨진 상품 포함",
+    "menuPrintedSuccess": "메뉴를 인쇄했습니다",
+    "noProductsToPrint": "선택한 조건에 맞는 상품이 없습니다",
+    "printerDestination": "프린터",
+    "systemBrowserPrint": "시스템 / 브라우저 인쇄",
+    "menuPrintFailed": "메뉴를 인쇄하지 못했습니다",
+    "menuPopupBlocked": "브라우저가 인쇄 창을 차단했습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도하세요."
   },
   "receipt": {
     "amount": "금액",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "마스터 / 상세(분할 보기)",
     "ordersLayoutSplitHint": "왼쪽에 간결한 주문 목록, 오른쪽에 주문 상세를 표시합니다.",
     "ordersLayoutCards": "카드 그리드",
-    "ordersLayoutCardsHint": "독립적인 주문 카드의 기존 그리드 방식입니다."
+    "ordersLayoutCardsHint": "독립적인 주문 카드의 기존 그리드 방식입니다.",
+    "chargesAndSurcharges": "수수료 및 추가 요금",
+    "chargesAndSurchargesHint": "서비스 요금, 포장비 및 주문에 자동으로 적용되는 추가 요금입니다.",
+    "noChargesConfigured": "아직 설정된 수수료가 없습니다.",
+    "addCharge": "수수료 추가",
+    "deleteChargeConfirm": "{name}을 삭제할까요? 이미 청구된 주문에는 기록된 수수료가 유지됩니다.",
+    "chargesSaved": "수수료가 저장되었습니다",
+    "chargesSaveFailed": "수수료를 저장하지 못했습니다",
+    "chargeName": "이름",
+    "chargeId": "수수료 ID",
+    "chargeIdHint": "소문자 영문, 숫자, 하이픈 또는 밑줄. service_charge와 packaging_charge는 기존 보고서 열을 채웁니다.",
+    "chargeType": "유형",
+    "chargeTypePercentage": "백분율",
+    "chargeTypeFixed": "고정 금액",
+    "chargeValue": "값",
+    "chargeBasis": "계산 기준",
+    "chargeBasisNet": "순액(할인 후)",
+    "chargeBasisGross": "총액(할인 전)",
+    "chargeOrderTypes": "적용 주문 유형",
+    "chargeWaivable": "캐셔가 면제할 수 있음",
+    "chargeAutoApply": "자동 적용",
+    "chargePercentValue": "주문 금액의 {value}%",
+    "chargeFixedValue": "주문당 {value}",
+    "chargeOptionalApply": "요청 시 추가"
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

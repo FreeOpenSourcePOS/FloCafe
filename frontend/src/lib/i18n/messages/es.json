@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {Hay # artículo(s) aún en preparación en la cocina} other {Hay # artículo(s) aún en preparación en la cocina}}",
     "kitchenDeliveryOverridePrompt": "Los artículos de cocina aún no se han entregado. Introduce el PIN de gerente para autorizar el cobro.",
     "kitchenDeliveryOverrideSuccess": "Se aceptó la autorización del gerente para los artículos sin entregar.",
-    "kitchenDeliveryOverrideInvalid": "El PIN de gerente no es válido. Inténtalo de nuevo."
+    "kitchenDeliveryOverrideInvalid": "El PIN de gerente no es válido. Inténtalo de nuevo.",
+    "waiveCharge": "Eximir",
+    "applyCharge": "Aplicar",
+    "addCharge": "Añadir",
+    "removeCharge": "Quitar",
+    "chargesTotal": "Total de cargos",
+    "chargeUpdateFailed": "No se pudo actualizar el cargo"
   },
   "printTest": {
     "amt": "Total",
@@ -911,6 +917,7 @@
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
   "print": {
+    "menu": {"title": "Menú", "totalItems": "Total de artículos"},
     "taxInvoiceTitle": "FACTURA CON IMPUESTOS",
     "invoiceTitle": "FACTURA",
     "invoiceNumber": "Factura N.º:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Incluir descripciones",
+    "includeModifiers": "Incluir modificadores",
     "addAddon": "Agregar adicional",
     "addAddonGroup": "Agregar grupo de adicionales",
     "addAddonGroupForm": "Agregar grupo de adicionales",
@@ -1200,7 +1209,18 @@
     "update": "Actualizar",
     "updateProduct": "Actualizar producto",
     "updated": "Producto actualizado",
-    "uploadCsv": "Subir CSV"
+    "uploadCsv": "Subir CSV",
+    "printMenu": "Imprimir menú",
+    "printMenuDescription": "Configura qué productos incluir en el menú impreso.",
+    "includeInactiveItems": "Incluir productos inactivos",
+    "includeOutOfStockItems": "Incluir productos agotados",
+    "includeHiddenItems": "Incluir productos ocultos",
+    "menuPrintedSuccess": "Menú impreso correctamente",
+    "noProductsToPrint": "Ningún producto coincide con los criterios seleccionados",
+    "printerDestination": "Impresora",
+    "systemBrowserPrint": "Sistema / impresión del navegador",
+    "menuPrintFailed": "No se pudo imprimir el menú",
+    "menuPopupBlocked": "Tu navegador bloqueó la ventana de impresión. Permite las ventanas emergentes para este sitio e inténtalo de nuevo."
   },
   "receipt": {
     "amount": "Monto",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Maestro / Detalle (vista dividida)",
     "ordersLayoutSplitHint": "Lista de pedidos compacta a la izquierda y detalles completos del pedido a la derecha.",
     "ordersLayoutCards": "Cuadrícula de tarjetas",
-    "ordersLayoutCardsHint": "Cuadrícula clásica de tarjetas de pedido independientes."
+    "ordersLayoutCardsHint": "Cuadrícula clásica de tarjetas de pedido independientes.",
+    "chargesAndSurcharges": "Cargos y recargos",
+    "chargesAndSurchargesHint": "Cargo por servicio, cargo por embalaje y recargos aplicados automáticamente a los pedidos.",
+    "noChargesConfigured": "Aún no hay cargos configurados.",
+    "addCharge": "Añadir cargo",
+    "deleteChargeConfirm": "¿Eliminar {name}? Los pedidos ya facturados conservan los cargos registrados.",
+    "chargesSaved": "Cargos guardados",
+    "chargesSaveFailed": "No se pudieron guardar los cargos",
+    "chargeName": "Nombre",
+    "chargeId": "ID del cargo",
+    "chargeIdHint": "Letras minúsculas, dígitos, guion o guion bajo. service_charge y packaging_charge alimentan las columnas de informe existentes.",
+    "chargeType": "Tipo",
+    "chargeTypePercentage": "Porcentaje",
+    "chargeTypeFixed": "Importe fijo",
+    "chargeValue": "Valor",
+    "chargeBasis": "Calculado sobre",
+    "chargeBasisNet": "Neto (tras descuento)",
+    "chargeBasisGross": "Bruto (antes del descuento)",
+    "chargeOrderTypes": "Se aplica a tipos de pedido",
+    "chargeWaivable": "El cajero puede eximirlo",
+    "chargeAutoApply": "Aplicar automáticamente",
+    "chargePercentValue": "{value}% del pedido",
+    "chargeFixedValue": "{value} por pedido",
+    "chargeOptionalApply": "Añadido bajo solicitud"
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

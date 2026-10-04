@@ -99,11 +99,15 @@ interface TaxEngineInput {
 }
 ```
 
-Two things follow from that shape and are worth stating because they are easy to assume otherwise.
+`TaxEngineInput` has no separate `charges` array. Its `lines` cover products, add-ons, and the
+standard `packaging`, `delivery`, and `service_charge` kinds. Applied custom-fee snapshots in
+`charges_breakdown` contribute to order and bill totals but are not converted into tax-engine
+lines. A custom charge's `tax_category_id`, when present, is stored metadata and does not
+affect tax calculation. The configured charge-tax adapter calculates tax for the standard charge
+columns when their tax categories are configured.
 
-**There is no `charges` array.** Everything billed is a `lines` entry with a `kind` of `product`,
-`addon`, `packaging`, `delivery`, or `service_charge`. Step 6 of category resolution looks up
-`defaultCategories[line.kind]`, which is why the pack declares a default for each of those kinds.
+Step 6 of category resolution looks up `defaultCategories[line.kind]`, which is why the pack
+declares a default for each supported tax-line kind.
 
 **There is no `activePackVersion` field.** The version being applied is `pack.version`, and the
 version's identity string is the caller's to track, not the engine's.

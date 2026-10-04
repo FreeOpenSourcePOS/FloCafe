@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useEffect } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
@@ -16,6 +17,9 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
+import { calculateAppliedCharges } from '@/lib/charges';
+import { chargesForOrderType, useChargesStore } from '@/store/charges';
+import { getCurrencyFractionDigits } from '@countries';
 
 interface Props {
   tables: Table[];
@@ -139,6 +143,33 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
+
+  const charges = useChargesStore((s) => s.charges);
+  const loadCharges = useChargesStore((s) => s.load);
+  useEffect(() => {
+    void loadCharges();
+  }, [loadCharges]);
+
+  // Preview only: the backend recomputes and persists the authoritative amounts.
+  const applicableCharges = chargesForOrderType(charges, cart.orderType);
+  const appliedCharges = calculateAppliedCharges({
+    definitions: applicableCharges,
+    orderType: cart.orderType,
+    subtotal: cart.subtotal(),
+    discountAmount: 0,
+    waivedIds: cart.waivedChargeIds,
+    optedInIds: cart.optedInChargeIds,
+    currencyDecimals: getCurrencyFractionDigits(currentTenant?.currency || ''),
+  });
+  const chargeTotal = appliedCharges.reduce(
+    (sum, charge) => sum + (charge.waived ? 0 : charge.amount),
+    0,
+  );
+  // A charge the merchant left off by default is never applied until the cashier
+  // adds it, so it has to be listed here or there is no way to add it.
+  const addableCharges = applicableCharges.filter(
+    (charge) => !charge.is_default_active && !cart.optedInChargeIds.has(charge.id),
+  );
 
   const handleHold = async () => {
     if (!cart.tableId) {
@@ -343,6 +374,64 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             {fmt(cart.subtotal())}
           </span>
         </div>
+        {(appliedCharges.length > 0 || addableCharges.length > 0) && (
+          <div className="mb-4 space-y-1" data-testid="cart-charges">
+            {appliedCharges.map((charge) => {
+              const definition = applicableCharges.find((c) => c.id === charge.id);
+              const isOptional = definition?.is_optional ?? false;
+              return (
+                <div key={charge.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className={charge.waived ? 'text-muted-foreground line-through' : 'text-muted-foreground'}>
+                    {charge.name}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className={charge.waived ? 'text-muted-foreground line-through' : 'font-medium'}>
+                      {fmt(charge.amount)}
+                    </span>
+                    {isOptional && (
+                      <button
+                        type="button"
+                        onClick={() => cart.toggleWaiveCharge(charge.id)}
+                        aria-pressed={charge.waived}
+                        className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                      >
+                        {charge.waived ? t('applyCharge') : t('waiveCharge')}
+                      </button>
+                    )}
+                    {!definition?.is_default_active && (
+                      <button
+                        type="button"
+                        onClick={() => cart.toggleOptedInCharge(charge.id)}
+                        aria-pressed={!cart.optedInChargeIds.has(charge.id)}
+                        className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                      >
+                        {cart.optedInChargeIds.has(charge.id) ? t('removeCharge') : t('addCharge')}
+                      </button>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            {addableCharges.map((charge) => (
+              <div key={charge.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="text-muted-foreground">{charge.name}</span>
+                <button
+                  type="button"
+                  onClick={() => cart.toggleOptedInCharge(charge.id)}
+                  className="text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground"
+                >
+                  {t('addCharge')}
+                </button>
+              </div>
+            ))}
+            {appliedCharges.length > 0 && (
+              <div className="flex justify-between text-sm font-medium">
+                <span>{t('chargesTotal')}</span>
+                <span>{fmt(chargeTotal)}</span>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex gap-2">
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">

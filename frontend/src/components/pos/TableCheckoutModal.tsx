@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users } from 'lucide-react';
+import { X, ShoppingCart, Users, Printer, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -17,6 +17,9 @@ interface Props {
   cartItemCount: number;
   onClose: () => void;
   onAddItems: (table: Table, order: Order) => void;
+  onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void>;
+  reservePrintWindow?: () => Window | null | undefined;
+  canGenerateBill: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
 }
@@ -27,10 +30,14 @@ export default function TableCheckoutModal({
   cartItemCount,
   onClose,
   onAddItems,
+  onPrintBill,
+  reservePrintWindow,
+  canGenerateBill,
   onPayment,
   onAddCartToOrder
 }: Props) {
   const t = useTranslations('pos');
+  const tReceipt = useTranslations('receipt');
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -44,6 +51,7 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  const [printingBill, setPrintingBill] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,6 +95,47 @@ export default function TableCheckoutModal({
       toast.error(t('generateBillFailed'));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handlePrintBill = async () => {
+    if (!order || !onPrintBill) return;
+    const reservedWindow = reservePrintWindow?.();
+    let windowTransferred = false;
+    setPrintingBill(true);
+    try {
+      let currentOrder: Order;
+      try {
+        const { data } = await api.get(`/orders/${order.id}`);
+        currentOrder = data.order as Order;
+      } catch {
+        toast.error(t('loadOrderFailed'));
+        return;
+      }
+      setOrder(currentOrder);
+      if (currentOrder.bill?.split_group_id || currentOrder.bills?.some((bill) => bill.split_group_id)) return;
+
+      let targetBill = currentOrder.bill;
+      if (!targetBill) {
+        if (!canGenerateBill) return;
+        const { data } = await api.post('/bills/generate', { order_id: currentOrder.id });
+        targetBill = data.bill;
+        setOrder({ ...currentOrder, bill: targetBill });
+      }
+      if (targetBill?.split_group_id) {
+        const { data } = await api.get(`/orders/${currentOrder.id}`);
+        setOrder(data.order as Order);
+        return;
+      }
+      if (targetBill) {
+        windowTransferred = true;
+        await onPrintBill({ ...targetBill, order: targetBill.order ?? currentOrder }, reservedWindow);
+      }
+    } catch {
+      toast.error(t('generateBillFailed'));
+    } finally {
+      if (!windowTransferred && reservedWindow && !reservedWindow.closed) reservedWindow.close();
+      setPrintingBill(false);
     }
   };
 
@@ -229,11 +278,26 @@ export default function TableCheckoutModal({
             </div>
           ) : splitBills.length === 0 ? (
             // Cart empty - show both options
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => onAddItems(table, order)}>
+            <div className={`grid ${order.bill || canGenerateBill ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+              <Button variant="outline" onClick={() => onAddItems(table, order)} disabled={generating || printingBill}>
                 {t('addItems')}
               </Button>
-              <Button onClick={handleCheckout} disabled={generating}>
+              {(order.bill || canGenerateBill) && (
+                <Button
+                  variant="outline"
+                  onClick={handlePrintBill}
+                  disabled={generating || printingBill}
+                  className="font-medium"
+                >
+                  {printingBill ? (
+                    <Loader2 size={15} className="animate-spin me-1.5" />
+                  ) : (
+                    <Printer size={15} className="me-1.5" />
+                  )}
+                  {tReceipt('printBill')}
+                </Button>
+              )}
+              <Button onClick={handleCheckout} disabled={generating || printingBill}>
                 {generating ? t('generating') : t('checkout')}
               </Button>
             </div>

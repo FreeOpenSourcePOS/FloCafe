@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {廚房仍有 # 道餐點正在準備} other {廚房仍有 # 道餐點正在準備}}",
     "kitchenDeliveryOverridePrompt": "廚房餐點尚未送達。請輸入經理 PIN 以授權結帳。",
     "kitchenDeliveryOverrideSuccess": "已接受經理對未送達餐點的授權。",
-    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。"
+    "kitchenDeliveryOverrideInvalid": "經理 PIN 無效，請再試一次。",
+    "waiveCharge": "免除",
+    "applyCharge": "套用",
+    "addCharge": "新增",
+    "removeCharge": "移除",
+    "chargesTotal": "費用合計",
+    "chargeUpdateFailed": "無法更新費用"
   },
   "printTest": {
     "amt": "金額",
@@ -911,6 +917,7 @@
     "templateFallback": "所選帳單模板不支援此列印路徑，已使用內建收據版式。"
   },
   "print": {
+    "menu": {"title": "菜單", "totalItems": "商品總數"},
     "taxInvoiceTitle": "稅務發票",
     "invoiceTitle": "發票",
     "invoiceNumber": "發票號：",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "包含描述",
+    "includeModifiers": "包含選項",
     "addAddon": "新增加購",
     "addAddonGroup": "新增加購分組",
     "addAddonGroupForm": "新增加購分組",
@@ -1200,7 +1209,18 @@
     "update": "更新",
     "updateProduct": "更新商品",
     "updated": "商品已更新",
-    "uploadCsv": "上傳 CSV"
+    "uploadCsv": "上傳 CSV",
+    "printMenu": "列印菜單",
+    "printMenuDescription": "選擇要列入列印菜單的商品。",
+    "includeInactiveItems": "包含未啟用的商品",
+    "includeOutOfStockItems": "包含缺貨商品",
+    "includeHiddenItems": "包含隱藏商品",
+    "menuPrintedSuccess": "菜單列印成功",
+    "noProductsToPrint": "沒有符合所選條件的商品",
+    "printerDestination": "印表機",
+    "systemBrowserPrint": "系統 / 瀏覽器列印",
+    "menuPrintFailed": "無法列印菜單",
+    "menuPopupBlocked": "您的瀏覽器封鎖了列印視窗。請允許此網站顯示彈出視窗，然後再試一次。"
   },
   "receipt": {
     "amount": "金額",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "主從檢視（分割顯示）",
     "ordersLayoutSplitHint": "左側為精簡的訂單清單，右側為完整的訂單詳情。",
     "ordersLayoutCards": "卡片格狀版面",
-    "ordersLayoutCardsHint": "由獨立訂單卡片組成的傳統格狀版面。"
+    "ordersLayoutCardsHint": "由獨立訂單卡片組成的傳統格狀版面。",
+    "chargesAndSurcharges": "費用與附加費",
+    "chargesAndSurchargesHint": "服務費、包裝費以及自動套用於訂單的附加費。",
+    "noChargesConfigured": "尚未設定任何費用。",
+    "addCharge": "新增費用",
+    "deleteChargeConfirm": "刪除 {name}？已開立的訂單會保留其已記錄的收費。",
+    "chargesSaved": "費用已儲存",
+    "chargesSaveFailed": "無法儲存費用",
+    "chargeName": "名稱",
+    "chargeId": "識別碼",
+    "chargeIdHint": "小寫字母、數字、連字號或底線。service_charge 與 packaging_charge 會寫入既有的報表欄位。",
+    "chargeType": "類型",
+    "chargeTypePercentage": "百分比",
+    "chargeTypeFixed": "固定金額",
+    "chargeValue": "數值",
+    "chargeBasis": "計算依據",
+    "chargeBasisNet": "淨額（折扣後）",
+    "chargeBasisGross": "總額（折扣前）",
+    "chargeOrderTypes": "適用的訂單類型",
+    "chargeWaivable": "收銀員可免除",
+    "chargeAutoApply": "自動套用",
+    "chargePercentValue": "訂單金額的 {value}%",
+    "chargeFixedValue": "每單 {value}",
+    "chargeOptionalApply": "依需求新增"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

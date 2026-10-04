@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# item still being prepared in the kitchen} other {# items still being prepared in the kitchen}}",
     "kitchenDeliveryOverridePrompt": "Kitchen items are not yet delivered. Enter Manager PIN to authorize billing.",
     "kitchenDeliveryOverrideSuccess": "Manager override accepted for undelivered items.",
-    "kitchenDeliveryOverrideInvalid": "Invalid Manager PIN. Please try again."
+    "kitchenDeliveryOverrideInvalid": "Invalid Manager PIN. Please try again.",
+    "waiveCharge": "Waive",
+    "applyCharge": "Apply",
+    "addCharge": "Add",
+    "removeCharge": "Remove",
+    "chargesTotal": "Charges total",
+    "chargeUpdateFailed": "Could not update the charge"
   },
   "printTest": {
     "amt": "Amt",
@@ -911,6 +917,7 @@
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
+    "menu": {"title": "Menu", "totalItems": "Total items"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE",
     "invoiceNumber": "Invoice #:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Include descriptions",
+    "includeModifiers": "Include modifiers",
     "addAddon": "Add Addon",
     "addAddonGroup": "Add Addon Group",
     "addAddonGroupForm": "Add Addon Group",
@@ -1200,7 +1209,18 @@
     "update": "Update",
     "updateProduct": "Update Product",
     "updated": "Product updated",
-    "uploadCsv": "Upload CSV"
+    "uploadCsv": "Upload CSV",
+    "printMenu": "Print Menu",
+    "printMenuDescription": "Configure items to include on the printed menu roll.",
+    "includeInactiveItems": "Include inactive items",
+    "includeOutOfStockItems": "Include out-of-stock items",
+    "includeHiddenItems": "Include hidden items",
+    "menuPrintedSuccess": "Menu printed successfully",
+    "noProductsToPrint": "No products match the selected criteria",
+    "printerDestination": "Printer",
+    "systemBrowserPrint": "System / Browser Print",
+    "menuPrintFailed": "Could not print the menu",
+    "menuPopupBlocked": "Your browser blocked the print window. Allow pop-ups for this site and try again."
   },
   "receipt": {
     "amount": "Amount",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Master / Detail (Split View)",
     "ordersLayoutSplitHint": "Compact order list on the left with full order details on the right.",
     "ordersLayoutCards": "Cards Grid",
-    "ordersLayoutCardsHint": "Classic grid of standalone order cards."
+    "ordersLayoutCardsHint": "Classic grid of standalone order cards.",
+    "chargesAndSurcharges": "Charges & Surcharges",
+    "chargesAndSurchargesHint": "Service charges, packaging fees and surcharges applied to orders automatically.",
+    "noChargesConfigured": "No charges configured yet.",
+    "addCharge": "Add Charge",
+    "deleteChargeConfirm": "Delete {name}? Orders already billed keep the charges recorded on them.",
+    "chargesSaved": "Charges saved",
+    "chargesSaveFailed": "Could not save charges",
+    "chargeName": "Name",
+    "chargeId": "Charge ID",
+    "chargeIdHint": "Lowercase letters, digits, dash or underscore. service_charge and packaging_charge feed the existing report columns.",
+    "chargeType": "Type",
+    "chargeTypePercentage": "Percentage",
+    "chargeTypeFixed": "Fixed amount",
+    "chargeValue": "Value",
+    "chargeBasis": "Calculated on",
+    "chargeBasisNet": "Net (after discount)",
+    "chargeBasisGross": "Gross (before discount)",
+    "chargeOrderTypes": "Applies to order types",
+    "chargeWaivable": "Cashier can waive",
+    "chargeAutoApply": "Apply automatically",
+    "chargePercentValue": "{value}% of the order",
+    "chargeFixedValue": "{value} per order",
+    "chargeOptionalApply": "Added on request"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

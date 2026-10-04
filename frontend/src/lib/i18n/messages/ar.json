@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# صنفًا ما زال قيد التحضير في المطبخ} other {# صنفًا ما زال قيد التحضير في المطبخ}}",
     "kitchenDeliveryOverridePrompt": "لم تُسلَّم أصناف المطبخ بعد. أدخل الرقم السري للمدير للسماح بالفوترة.",
     "kitchenDeliveryOverrideSuccess": "تم قبول تجاوز المدير للأصناف غير المسلّمة.",
-    "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى."
+    "kitchenDeliveryOverrideInvalid": "الرقم السري للمدير غير صحيح. حاول مرة أخرى.",
+    "waiveCharge": "إعفاء",
+    "applyCharge": "تطبيق",
+    "addCharge": "إضافة",
+    "removeCharge": "إزالة",
+    "chargesTotal": "إجمالي الرسوم",
+    "chargeUpdateFailed": "تعذر تحديث الرسم"
   },
   "printTest": {
     "amt": "المبلغ",
@@ -911,6 +917,7 @@
     "templateFallback": "قالب الفاتورة المحدد غير مدعوم في مسار الطباعة هذا، لذا تم استخدام تخطيط الإيصال المدمج."
   },
   "print": {
+    "menu": {"title": "القائمة", "totalItems": "إجمالي الأصناف"},
     "taxInvoiceTitle": "فاتورة ضريبية",
     "invoiceTitle": "الفاتورة",
     "invoiceNumber": "رقم الفاتورة:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "تضمين الأوصاف",
+    "includeModifiers": "تضمين الإضافات",
     "addAddon": "إضافة ملحق",
     "addAddonGroup": "إضافة مجموعة إضافات",
     "addAddonGroupForm": "إضافة مجموعة إضافات",
@@ -1200,7 +1209,18 @@
     "update": "تحديث",
     "updateProduct": "تحديث المنتج",
     "updated": "تم تحديث المنتج",
-    "uploadCsv": "تحميل ملف CSV"
+    "uploadCsv": "تحميل ملف CSV",
+    "printMenu": "طباعة القائمة",
+    "printMenuDescription": "إعداد العناصر التي تريد تضمينها في قائمة الطعام المطبوعة.",
+    "includeInactiveItems": "تضمين العناصر غير النشطة",
+    "includeOutOfStockItems": "تضمين العناصر غير المتوفرة",
+    "includeHiddenItems": "تضمين العناصر المخفية",
+    "menuPrintedSuccess": "تمت طباعة القائمة بنجاح",
+    "noProductsToPrint": "لا توجد منتجات تطابق الخيارات المحددة",
+    "printerDestination": "الطابعة",
+    "systemBrowserPrint": "النظام / الطباعة عبر المتصفح",
+    "menuPrintFailed": "تعذرت طباعة القائمة",
+    "menuPopupBlocked": "قام متصفحك بحجب نافذة الطباعة. اسمح بالنوافذ المنبثقة لهذا الموقع ثم أعد المحاولة."
   },
   "receipt": {
     "amount": "المبلغ",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "الرئيسي / التفصيلي (عرض مقسوم)",
     "ordersLayoutSplitHint": "قائمة طلبات مضغوطة على اليسار مع تفاصيل الطلب الكاملة على اليمين.",
     "ordersLayoutCards": "شبكة البطاقات",
-    "ordersLayoutCardsHint": "شبكة كلاسيكية من بطاقات الطلبات المستقلة."
+    "ordersLayoutCardsHint": "شبكة كلاسيكية من بطاقات الطلبات المستقلة.",
+    "chargesAndSurcharges": "الرسوم والضرائب الإضافية",
+    "chargesAndSurchargesHint": "رسوم الخدمة ورسوم التغليف والرسوم الإضافية التي تُطبَّق تلقائيًا على الطلبات.",
+    "noChargesConfigured": "لم يتم إعداد أي رسوم بعد.",
+    "addCharge": "إضافة رسم",
+    "deleteChargeConfirm": "هل تريد حذف {name}؟ تحتفظ الطلبات التي تم فوترتها بالرسوم المسجلة.",
+    "chargesSaved": "تم حفظ الرسوم",
+    "chargesSaveFailed": "تعذر حفظ الرسوم",
+    "chargeName": "الاسم",
+    "chargeId": "المعرف",
+    "chargeIdHint": "أحرف إنجليزية صغيرة وأرقام وشرطة أو شرطة سفلية. يستخدم service_charge وpackaging_charge أعمدة التقارير الحالية.",
+    "chargeType": "النوع",
+    "chargeTypePercentage": "نسبة مئوية",
+    "chargeTypeFixed": "مبلغ ثابت",
+    "chargeValue": "القيمة",
+    "chargeBasis": "يُحتسب على",
+    "chargeBasisNet": "الصافي (بعد الخصم)",
+    "chargeBasisGross": "الإجمالي (قبل الخصم)",
+    "chargeOrderTypes": "يُطبَّق على أنواع الطلبات",
+    "chargeWaivable": "يمكن للكاشير الإعفاء منه",
+    "chargeAutoApply": "تطبيق تلقائي",
+    "chargePercentValue": "{value}% من الطلب",
+    "chargeFixedValue": "{value} لكل طلب",
+    "chargeOptionalApply": "يُضاف عند الطلب"
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

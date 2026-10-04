@@ -75,6 +75,8 @@ const LANGUAGES = readCanonicalLanguages();
  * paths under the `print.` prefix.
  */
 const PRINT_NAMESPACE_KEYS = [
+  'print.menu.title',
+  'print.menu.totalItems',
   'print.taxInvoiceTitle',
   'print.invoiceTitle',
   'print.invoiceNumber',

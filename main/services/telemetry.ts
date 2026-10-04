@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
 import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
+import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
@@ -127,6 +128,7 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
     // Report only user-confirmed country so FloAdmin IP geolocation fallback can operate.
     const provenance = readCountryProvenance();
     const country = provenance.country ?? undefined;
+    const currency = normalizeSupportedCurrencyCode(getSettingValue('currency')) ?? undefined;
     const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -139,6 +141,7 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
         run_mode: getRunMode(),
         install_source: getInstallSource(),
         ...(country ? { country } : {}),
+        ...(currency ? { currency } : {}),
         ...(payload ? { payload } : {}),
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

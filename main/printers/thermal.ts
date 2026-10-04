@@ -23,6 +23,7 @@ import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel } from '../print/print-labels.generated';
+import { receiptChargeLines } from '../../shared/charges';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -39,6 +40,7 @@ import {
   type DeliverySlipItemRow,
   type DeliverySlipOrderRow,
 } from './document-delivery-slip';
+import { renderMenuViaDocument, type MenuDocument } from './document-menu';
 import type { DeliverySlipAddressSource } from '../../shared/print';
 import {
   isThermalTextRepresentable,
@@ -1295,6 +1297,62 @@ function getPrinterConfig(): any {
   ).get();
 }
 
+export async function printMenuDocument(
+  document: MenuDocument,
+  signal?: AbortSignal,
+  targetPrinter?: unknown,
+  language = 'en',
+): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
+  try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = targetPrinter || getPrinterConfig();
+    if (!printer) return { ok: false, detail: 'No printer configured' };
+
+    const { profile, columns, capabilities } = resolvePrinterContext(printer);
+    let rendered = renderMenuViaDocument(document, {
+      columns,
+      language,
+      arabicShaping: capabilities.shaping.arabic,
+      cutMode: profile.cutMode,
+      capabilities,
+    });
+    if (rasterCapabilityEnabled(capabilities)) {
+      const rasterized = await rasterizeDocumentLines(rendered.lines, rendered.warnings, {
+        useUnicode: false,
+        cutMode: profile.cutMode,
+        arabicShaping: capabilities.shaping.arabic,
+        columns,
+        language,
+        capabilities,
+        requestPrefix: 'menu',
+      });
+      if (rasterized.rasterFailed) {
+        return { ok: false, detail: 'Menu raster rendering failed', warnings: rasterized.warnings };
+      }
+      rendered = { ...rendered, data: rasterized.data, warnings: rasterized.warnings };
+    }
+    if (rendered.warnings.length > 0) {
+      return { ok: false, detail: 'Menu text is not supported by the selected printer', warnings: rendered.warnings };
+    }
+
+    if (printer.connection_type === 'webusb') {
+      return { ok: true, bytes: rendered.data, connection_type: 'webusb', ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}) };
+    }
+
+    const result = await dispatchPrint(printer, rendered.data, signal);
+    return {
+      ...result,
+      bytes: rendered.data,
+      connection_type: printer.connection_type,
+      ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}),
+    };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error('[Printer] Menu print failed:', detail);
+    return { ok: false, detail };
+  }
+}
+
 export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): {
   printer: any;
   data: Buffer;
@@ -1667,6 +1725,12 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
+/** Template charge-row ids are camelCase; the engine breakdown stores snake_case ids. */
+const TEMPLATE_ROW_TO_CHARGE_ID: Partial<Record<TemplateChargeRowId, string>> = {
+  serviceCharge: 'service_charge',
+  packagingCharge: 'packaging_charge',
+};
+
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
@@ -1766,6 +1830,10 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   // chargeRows capability declaration preserves stable country/legal row order.
+  // When the bill carries an engine breakdown it is the itemised source of truth,
+  // so the standard rows it already covers are not repeated below.
+  const itemisedCharges = receiptChargeLines(bill.charges_breakdown);
+  const itemisedIds = new Set(itemisedCharges.map((charge) => charge.id));
   const chargeAmounts: Record<TemplateChargeRowId, number> = {
     serviceCharge: Number(bill.service_charge) || 0,
     deliveryCharge: Number(bill.delivery_charge) || 0,
@@ -1774,8 +1842,15 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   for (const row of declaredTemplateChargeRows(payload?.totals?.chargeRows)) {
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
+    const chargeId = TEMPLATE_ROW_TO_CHARGE_ID[row] ?? row;
+    if (itemisedIds.has(chargeId)) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
     pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+  }
+  // Merchant-named surcharges have no catalog label; the configured name is the
+  // label, so only the amount needs formatting.
+  for (const charge of itemisedCharges) {
+    pushFinancialLines(financialRows(charge.name, formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence: template literal wins, then labels map, then localized catalog.

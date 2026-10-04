@@ -5,11 +5,12 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
+import dynamic from 'next/dynamic';
 import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
 import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -22,6 +23,10 @@ import { tenantCan } from '@/lib/permissions';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
+
+// Loaded on demand: the menu printer pulls the thermal print kernel in, which the
+// catalog page has no use for until the merchant opens the dialog.
+const PrintMenuModal = dynamic(() => import('@/components/products/PrintMenuModal'), { ssr: false });
 
 const PRESET_TAGS: { key: string; labelKey: PosKey }[] = [
   { key: 'veg', labelKey: 'tagVeg' },
@@ -112,6 +117,7 @@ export default function ProductsPage() {
   const [imageTouched, setImageTouched] = useState(false);
 
   const [showCsvModal, setShowCsvModal] = useState(false);
+  const [showPrintMenuModal, setShowPrintMenuModal] = useState(false);
   const [csvType, setCsvType] = useState<'categories' | 'products' | 'addons'>('categories');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvResult, setCsvResult] = useState<Record<string, unknown> | null>(null);
@@ -586,6 +592,9 @@ export default function ProductsPage() {
             )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
+            </Button>
+            <Button variant="outline" onClick={() => setShowPrintMenuModal(true)}>
+              <Printer size={16} className="me-1" /> {t('printMenu')}
             </Button>
             <Button onClick={openCreate}>
               <Plus size={16} className="me-1" /> {t('addProduct')}
@@ -1490,6 +1499,7 @@ export default function ProductsPage() {
           </div>
         </div>
       )}
+      <PrintMenuModal open={showPrintMenuModal} onOpenChange={setShowPrintMenuModal} />
       {ConfirmDialog}
     </div>
   );

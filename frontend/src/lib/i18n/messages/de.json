@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# Artikel werden noch in der Küche zubereitet} other {# Artikel werden noch in der Küche zubereitet}}",
     "kitchenDeliveryOverridePrompt": "Küchenartikel wurden noch nicht serviert. PIN der Leitung eingeben, um die Abrechnung freizugeben.",
     "kitchenDeliveryOverrideSuccess": "Freigabe durch die Leitung für noch nicht servierte Artikel akzeptiert.",
-    "kitchenDeliveryOverrideInvalid": "Ungültige Manager-PIN. Bitte erneut versuchen."
+    "kitchenDeliveryOverrideInvalid": "Ungültige Manager-PIN. Bitte erneut versuchen.",
+    "waiveCharge": "Erlassen",
+    "applyCharge": "Anwenden",
+    "addCharge": "Hinzufügen",
+    "removeCharge": "Entfernen",
+    "chargesTotal": "Gebühren gesamt",
+    "chargeUpdateFailed": "Gebühr konnte nicht aktualisiert werden"
   },
   "printTest": {
     "amt": "Betrag",
@@ -911,6 +917,7 @@
     "templateFallback": "Die gewählte Druckvorlage wird auf diesem Pfad nicht unterstützt. Das integrierte Standard-Layout wurde verwendet."
   },
   "print": {
+    "menu": {"title": "Menü", "totalItems": "Artikel insgesamt"},
     "taxInvoiceTitle": "STEUERRECHNUNG",
     "invoiceTitle": "Rechnung",
     "invoiceNumber": "Rechnung Nr.",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Beschreibungen einschließen",
+    "includeModifiers": "Zusätze einschließen",
     "addAddon": "Zusatz hinzufügen",
     "addAddonGroup": "Zusatzgruppe hinzufügen",
     "addAddonGroupForm": "Zusatzgruppe hinzufügen",
@@ -1200,7 +1209,18 @@
     "update": "Aktualisieren",
     "updateProduct": "Produkt aktualisieren",
     "updated": "Produkt aktualisiert",
-    "uploadCsv": "CSV hochladen"
+    "uploadCsv": "CSV hochladen",
+    "printMenu": "Menü drucken",
+    "printMenuDescription": "Legen Sie fest, welche Artikel auf dem gedruckten Menü erscheinen.",
+    "includeInactiveItems": "Inaktive Artikel einbeziehen",
+    "includeOutOfStockItems": "Nicht vorrätige Artikel einbeziehen",
+    "includeHiddenItems": "Ausgeblendete Artikel einbeziehen",
+    "menuPrintedSuccess": "Menü erfolgreich gedruckt",
+    "noProductsToPrint": "Keine Produkte entsprechen den ausgewählten Kriterien",
+    "printerDestination": "Drucker",
+    "systemBrowserPrint": "System / Browserdruck",
+    "menuPrintFailed": "Menü konnte nicht gedruckt werden",
+    "menuPopupBlocked": "Ihr Browser hat das Druckfenster blockiert. Erlauben Sie Pop-ups für diese Seite und versuchen Sie es erneut."
   },
   "receipt": {
     "amount": "Betrag",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Master / Detail (geteilte Ansicht)",
     "ordersLayoutSplitHint": "Kompakte Bestellliste links, vollständige Bestelldetails rechts.",
     "ordersLayoutCards": "Kartenraster",
-    "ordersLayoutCardsHint": "Klassisches Raster aus eigenständigen Bestellkarten."
+    "ordersLayoutCardsHint": "Klassisches Raster aus eigenständigen Bestellkarten.",
+    "chargesAndSurcharges": "Gebühren und Zuschläge",
+    "chargesAndSurchargesHint": "Servicegebühren, Verpackungsgebühren und Zuschläge, die automatisch auf Bestellungen angewendet werden.",
+    "noChargesConfigured": "Noch keine Gebühren konfiguriert.",
+    "addCharge": "Gebühr hinzufügen",
+    "deleteChargeConfirm": "{name} löschen? Bereits abgerechnete Bestellungen behalten ihre erfassten Gebühren.",
+    "chargesSaved": "Gebühren gespeichert",
+    "chargesSaveFailed": "Gebühren konnten nicht gespeichert werden",
+    "chargeName": "Bezeichnung",
+    "chargeId": "Gebühren-ID",
+    "chargeIdHint": "Kleinbuchstaben, Ziffern, Bindestrich oder Unterstrich. service_charge und packaging_charge speisen die bestehenden Berichtsspalten.",
+    "chargeType": "Typ",
+    "chargeTypePercentage": "Prozent",
+    "chargeTypeFixed": "Fester Betrag",
+    "chargeValue": "Wert",
+    "chargeBasis": "Berechnet auf",
+    "chargeBasisNet": "Netto (nach Rabatt)",
+    "chargeBasisGross": "Brutto (vor Rabatt)",
+    "chargeOrderTypes": "Gilt für Bestellarten",
+    "chargeWaivable": "Kassierer darf erlassen",
+    "chargeAutoApply": "Automatisch anwenden",
+    "chargePercentValue": "{value}% der Bestellung",
+    "chargeFixedValue": "{value} pro Bestellung",
+    "chargeOptionalApply": "Auf Anfrage hinzugefügt"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

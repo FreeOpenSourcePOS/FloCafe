@@ -858,7 +858,13 @@
     "kitchenItemsPendingWarning": "{count, plural, one {# item pa ang inihahanda sa kusina} other {# item pa ang inihahanda sa kusina}}",
     "kitchenDeliveryOverridePrompt": "Hindi pa naihahatid ang mga item mula sa kusina. Ilagay ang PIN ng manager para pahintulutan ang paniningil.",
     "kitchenDeliveryOverrideSuccess": "Tinanggap ang pahintulot ng manager para sa mga hindi pa naihahatid na item.",
-    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli."
+    "kitchenDeliveryOverrideInvalid": "Mali ang PIN ng manager. Subukan muli.",
+    "waiveCharge": "I-exempt",
+    "applyCharge": "Ilapat",
+    "addCharge": "Idagdag",
+    "removeCharge": "Alisin",
+    "chargesTotal": "Kabuuang bayarin",
+    "chargeUpdateFailed": "Hindi ma-update ang bayarin"
   },
   "printTest": {
     "amt": "Halaga",
@@ -911,6 +917,7 @@
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {
+    "menu": {"title": "Listahan ng pagkain", "totalItems": "Kabuuang item"},
     "taxInvoiceTitle": "TAX INVOICE",
     "invoiceTitle": "INVOICE / BILL",
     "invoiceNumber": "Invoice No:",
@@ -988,6 +995,8 @@
     }
   },
   "products": {
+    "includeDescriptions": "Isama ang mga paglalarawan",
+    "includeModifiers": "Isama ang mga opsyon",
     "addAddon": "Magdagdag ng Addon",
     "addAddonGroup": "Magdagdag ng Grupo ng Addon",
     "addAddonGroupForm": "Magdagdag ng Grupo ng Addon",
@@ -1200,7 +1209,18 @@
     "update": "I-update",
     "updateProduct": "I-update ang Produkto",
     "updated": "Na-update ang produkto",
-    "uploadCsv": "Mag-upload ng CSV"
+    "uploadCsv": "Mag-upload ng CSV",
+    "printMenu": "I-print ang Menu",
+    "printMenuDescription": "Piliin kung aling mga produkto ang isasama sa naka-print na menu.",
+    "includeInactiveItems": "Isama ang mga hindi aktibong produkto",
+    "includeOutOfStockItems": "Isama ang mga ubos na produkto",
+    "includeHiddenItems": "Isama ang mga nakatagong produkto",
+    "menuPrintedSuccess": "Matagumpay na na-print ang menu",
+    "noProductsToPrint": "Walang produktong tumutugma sa mga napiling pamantayan",
+    "printerDestination": "Lokasyon ng printer",
+    "systemBrowserPrint": "System / Pag-print sa Browser",
+    "menuPrintFailed": "Hindi na-print ang menu",
+    "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli."
   },
   "receipt": {
     "amount": "Halaga",
@@ -2078,7 +2098,30 @@
     "ordersLayoutSplit": "Master / Detalye (Split View)",
     "ordersLayoutSplitHint": "Compact na listahan ng order sa kaliwa at buong detalye ng order sa kanan.",
     "ordersLayoutCards": "Card Grid",
-    "ordersLayoutCardsHint": "Klasikong grid ng hiwalay na card ng order."
+    "ordersLayoutCardsHint": "Klasikong grid ng hiwalay na card ng order.",
+    "chargesAndSurcharges": "Mga bayarin at surcharge",
+    "chargesAndSurchargesHint": "Bayarin sa serbisyo, bayarin sa packaging at surcharge na awtomatikong nalalapat sa mga order.",
+    "noChargesConfigured": "Wala pang naka-configure na bayarin.",
+    "addCharge": "Magdagdag ng bayarin",
+    "deleteChargeConfirm": "Burahin ang {name}? Ang mga nai-bill na order ay pinapanatili ang mga bayaring nakatala.",
+    "chargesSaved": "Nai-save ang mga bayarin",
+    "chargesSaveFailed": "Hindi ma-save ang mga bayarin",
+    "chargeName": "Pangalan",
+    "chargeId": "ID ng bayarin",
+    "chargeIdHint": "Maliit na titik, numero, dash o underscore. Ang service_charge at packaging_charge ay pumupun sa umiiral na mga column ng ulat.",
+    "chargeType": "Uri",
+    "chargeTypePercentage": "Porsyento",
+    "chargeTypeFixed": "Halagang nakapirming",
+    "chargeValue": "Halaga",
+    "chargeBasis": "Kinakalkula sa",
+    "chargeBasisNet": "Neto (pagkatapos ng diswento)",
+    "chargeBasisGross": "Bruto (bago ang diswento)",
+    "chargeOrderTypes": "Nag-aangkop sa mga uri ng order",
+    "chargeWaivable": "Maaaring i-waive ng cashier",
+    "chargeAutoApply": "Awtomatikong ilapat",
+    "chargePercentValue": "{value}% ng order",
+    "chargeFixedValue": "{value} kada order",
+    "chargeOptionalApply": "Idinadagdag kapag hiniling"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

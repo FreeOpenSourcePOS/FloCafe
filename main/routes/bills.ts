@@ -24,9 +24,47 @@ import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionFor
 import {
   getActiveCountryPack,
   scaleTaxSnapshots,
+  type Customer,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import {
+  chargeIdsAfterToggle,
+  getChargeDefinitions,
+  parseAppliedCharges,
+  resolveOrderCharges,
+  serializeAppliedCharges,
+  toStandardChargeColumns,
+  type AppliedCharge,
+  type ChargeOrderType,
+} from '../services/charges';
+
+/** Rows the charges endpoint reads; the charge columns it projects onto. */
+interface ChargeBillRow {
+  id: number | string;
+  order_id: number | string;
+  split_group_id: string | null;
+  payment_status: string;
+  paid_amount: number | null;
+  charges_breakdown: string | null;
+}
+
+interface ChargeOrderRow {
+  status: string;
+  id: number | string;
+  customer_id: string | null;
+  /** Validated on order create, so the stored value is one of the four types. */
+  type: ChargeOrderType;
+  subtotal: number | null;
+  tax_amount: number | null;
+  tax_breakdown: string | null;
+  tax_snapshot: string | null;
+  discount_amount: number | null;
+  delivery_charge: number | null;
+  service_charge: number | null;
+  packaging_charge: number | null;
+  charges_breakdown: string | null;
+}
 import { sendEvent } from '../services/telemetry';
 import {
   getCurrencyFractionDigits,
@@ -595,6 +633,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
             existingBill.discount_amount !== orderDiscountAmt ||
             existingBill.subtotal        !== orderSubtotal    ||
             existingBill.service_charge  !== orderService     ||
+            existingBill.charges_breakdown !== (order.charges_breakdown ?? null) ||
             existingBill.total           !== roundedOrderTotal
           );
 
@@ -613,6 +652,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
                 delivery_charge= ?,
                 packaging_charge= ?,
                 service_charge = ?,
+                charges_breakdown = ?,
                 round_off      = ?,
                 total          = ?,
                 balance        = ?,
@@ -621,7 +661,7 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
           `).run(
             orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
             orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
-            orderDelivery, orderPackaging, orderService, orderRoundOff,
+            orderDelivery, orderPackaging, orderService, order.charges_breakdown ?? null, orderRoundOff,
             roundedOrderTotal, newBalance, now(),
             existingBill.id
           );
@@ -648,12 +688,12 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
           discount_amount, discount_type, discount_value, discount_reason,
-          delivery_charge, packaging_charge, service_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+          delivery_charge, packaging_charge, service_charge, charges_breakdown, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
       `).run(
         billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown, order.tax_snapshot,
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
-        deliveryCharge, packagingCharge, serviceCharge, roundOff, total, 0, total, now(), now()
+        deliveryCharge, packagingCharge, serviceCharge, order.charges_breakdown ?? null, roundOff, total, 0, total, now(), now()
       );
 
       const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
@@ -987,6 +1027,7 @@ export function allocateTaxSnapshots(
 function composeSplitTotals(
   allocations: Record<string, number[]>,
   exclusiveTaxMinors: number[],
+  otherChargeTotals: number[],
   minorFactor: number = 100,
   decimals: number = 2,
 ): number[] {
@@ -1002,8 +1043,25 @@ function composeSplitTotals(
     + deliveryCharge[index]
     + packagingCharge[index]
     + serviceCharge[index]
+    + otherChargeTotals[index]
     + roundOff[index]
   ).toFixed(decimals)));
+}
+
+function getAllocatedOtherChargeTotals(
+  charges: AppliedCharge[],
+  allocatedChargeMinors: number[][],
+  checkCount: number,
+  minorFactor: number,
+  decimals: number,
+): number[] {
+  return Array.from({ length: checkCount }, (_, checkIndex) => toStandardChargeColumns(
+    charges.map((charge, chargeIndex) => ({
+      ...charge,
+      amount: allocatedChargeMinors[chargeIndex][checkIndex] / minorFactor,
+    })),
+    decimals,
+  ).other_charges);
 }
 
 function allocateTaxBreakdown(
@@ -1147,6 +1205,8 @@ interface OrderBillSyncValues {
   deliveryCharge: number;
   packagingCharge: number;
   serviceCharge: number;
+  /** Itemised engine charges; null leaves any bill breakdown untouched. */
+  chargesBreakdown?: string | null;
   total: number;
 }
 
@@ -1461,14 +1521,15 @@ export function syncUnpaidBillsForOrder(
   if (!splitBills) {
     const update = db.prepare(`
       UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
-        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, updated_at = ?
+        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?,
+        charges_breakdown = COALESCE(?, charges_breakdown), round_off = ?, updated_at = ?
       WHERE id = ?
     `);
     for (const bill of unpaidBills) {
       update.run(
         source.subtotal, billTotal, Math.max(0, billTotal - Number(bill.paid_amount || 0)), source.taxAmount,
         source.taxBreakdown, source.taxSnapshot, source.discountAmount, source.deliveryCharge,
-        source.packagingCharge, source.serviceCharge, billRoundOff, now(), bill.id,
+        source.packagingCharge, source.serviceCharge, source.chargesBreakdown ?? null, billRoundOff, now(), bill.id,
       );
     }
     return;
@@ -1505,6 +1566,24 @@ export function syncUnpaidBillsForOrder(
       .map((minor) => minor / minorFactor),
   ])) as Record<keyof typeof fields, number[]>;
   const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * minorFactor));
+  // Each guest check carries its own weighted share of the itemised engine
+  // charges, so a split receipt shows the fees that belong to it, not the full set.
+  const sourceCharges = parseAppliedCharges(source.chargesBreakdown);
+  const allocatedChargeMinors = sourceCharges.map((charge) =>
+    allocateMinorUnits(Math.round(charge.amount * minorFactor), weights));
+  const allocatedOtherChargeTotals = getAllocatedOtherChargeTotals(
+    sourceCharges,
+    allocatedChargeMinors,
+    weights.length,
+    minorFactor,
+    decimals,
+  );
+  const chargesBreakdownByBill = sourceCharges.length === 0
+    ? []
+    : weights.map((_, billIndex) => JSON.stringify(sourceCharges.map((charge, chargeIndex) => ({
+      ...charge,
+      amount: allocatedChargeMinors[chargeIndex][billIndex] / minorFactor,
+    }))));
   const snapshotAllocation = allocateTaxSnapshotsWithTax(source.taxSnapshot, weights, snapshotWeights, snapshotExclusions, minorFactor);
   const sourceTaxMinor = Math.round(Number(source.taxAmount || 0) * minorFactor);
   const legacyAllocation = allocateLegacyTaxContribution(
@@ -1524,7 +1603,7 @@ export function syncUnpaidBillsForOrder(
   const taxMinors = resolvedTax.taxMinors;
   if (resolvedTax.exclusiveTaxMinors) {
     allocations.taxAmount = taxMinors.map((minor) => minor / minorFactor);
-    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
+    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, allocatedOtherChargeTotals, minorFactor, decimals);
   }
   const sourceItems = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const breakdowns = allocateTaxBreakdown(
@@ -1541,7 +1620,8 @@ export function syncUnpaidBillsForOrder(
   const snapshots = snapshotAllocation.snapshots;
   const update = db.prepare(`
     UPDATE bills SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
-      delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ?
+      delivery_charge = ?, packaging_charge = ?, service_charge = ?, charges_breakdown = ?, round_off = ?,
+      total = ?, balance = ?, updated_at = ?
     WHERE id = ?
   `);
 
@@ -1553,6 +1633,7 @@ export function syncUnpaidBillsForOrder(
     update.run(
       allocations.subtotal[index], allocations.taxAmount[index], breakdowns[index], snapshots[index],
       allocations.discountAmount[index], allocations.deliveryCharge[index], allocations.packagingCharge[index], allocations.serviceCharge[index],
+      chargesBreakdownByBill[index] ?? null,
       allocations.roundOff[index], total, balance, now(), bill.id,
     );
     if (total <= 0 && balance <= 0) {
@@ -1630,6 +1711,17 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         allocations[field] = allocatedMinors.map((minor) => minor / minorFactor);
       }
 
+      const splitSourceCharges = parseAppliedCharges(txnSource.charges_breakdown);
+      const splitChargeMinors = splitSourceCharges.map((charge) =>
+        allocateMinorUnits(Math.round(charge.amount * minorFactor), weights));
+      const allocatedOtherChargeTotals = getAllocatedOtherChargeTotals(
+        splitSourceCharges,
+        splitChargeMinors,
+        weights.length,
+        minorFactor,
+        decimals,
+      );
+
       const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * minorFactor));
       const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
       const snapshotItems = txnSnapshotItems.filter((item) => hasSnapshotLines(item.tax_snapshot));
@@ -1670,7 +1762,7 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const resolvedTaxMinors = resolvedTax.taxMinors;
       if (resolvedTax.exclusiveTaxMinors) {
         allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / minorFactor);
-        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
+        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, allocatedOtherChargeTotals, minorFactor, decimals);
       }
       const resolvedTaxBreakdowns = allocateTaxBreakdown(
         txnSource.tax_breakdown,
@@ -1687,24 +1779,33 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       );
       const checkTaxSnapshots = snapshotAllocation.snapshots;
 
+      // Each guest check carries its weighted share of the itemised engine
+      // charges, matching how the charge columns were allocated above.
+      const splitChargesJson = splitSourceCharges.length === 0
+        ? []
+        : weights.map((_, billIndex) => JSON.stringify(splitSourceCharges.map((charge, chargeIndex) => ({
+          ...charge,
+          amount: splitChargeMinors[chargeIndex][billIndex] / minorFactor,
+        }))));
+
       const billIds: number[] = [];
       txnNormalized.forEach((check, index) => {
         let billId: number;
         const splitBk = resolvedTaxBreakdowns[index];
         const splitSnapshot = checkTaxSnapshots[index];
         if (index === 0) {
-          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
+          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?, charges_breakdown = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
+            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], splitChargesJson[index] ?? null, allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
           const inserted = db.prepare(`
             INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
               discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge,
-              service_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label,
+              service_charge, charges_breakdown, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label,
               created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)
           `)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], splitChargesJson[index] ?? null, allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);
@@ -2244,6 +2345,10 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    if (order.status === 'cancelled') {
+      return res.status(409).json({ error: 'Discounts cannot be changed on a cancelled order' });
+    }
+
     // Check if approval is required
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
     if (requiresApproval && value > 0) {
@@ -2331,6 +2436,20 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     const customer = bill.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
       : null;
+    const resolvedCharges = resolveOrderCharges({
+      definitions: getChargeDefinitions(),
+      orderType: order.type,
+      subtotal: totals.subtotal,
+      discountAmount,
+      currency,
+      existingBreakdown: bill.charges_breakdown ?? order.charges_breakdown,
+    });
+    const appliedCharges = resolvedCharges.configured ? resolvedCharges.charges : undefined;
+    const serviceCharge = resolvedCharges.ownsServiceChargeColumn ? resolvedCharges.columns.service_charge : Number(bill.service_charge) || 0;
+    const packagingCharge = resolvedCharges.ownsPackagingChargeColumn ? resolvedCharges.columns.packaging_charge : Number(bill.packaging_charge) || 0;
+    const chargesBreakdown = resolvedCharges.configured
+      ? serializeAppliedCharges(resolvedCharges.charges)
+      : bill.charges_breakdown ?? order.charges_breakdown ?? null;
     // The bill is the settlement boundary: it rounds the tax even with no discount
     // applied, which is why this site passes 'always'. Payable rounding is applied
     // once, below, to the bill total only.
@@ -2338,14 +2457,15 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       tenantInfo,
       chargeContext: {
         ...order,
-        packaging_charge: bill.packaging_charge || 0,
+        packaging_charge: packagingCharge,
         delivery_charge: bill.delivery_charge || 0,
-        service_charge: bill.service_charge || 0,
+        service_charge: serviceCharge,
       },
       customer,
       totals,
       discountAmount,
       taxScaling: 'always',
+      appliedCharges,
     });
     const taxBreakdownJson = JSON.stringify(taxRollup.breakdowns);
     const pack = getActiveCountryPack(tenantInfo.country);
@@ -2356,12 +2476,14 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
           total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
       `).run(
         totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
-        taxRollup.snapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
+        taxRollup.snapshotJson, serviceCharge, packagingCharge, chargesBreakdown,
+        newTotal, newRoundOff, newBalance, now(), req.params.id,
       );
 
       // orders.total stays the exact, unrounded amount — only the bill (the
@@ -2369,12 +2491,14 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       db.prepare(`
         UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
           total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
       `).run(
         totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
-        taxRollup.snapshotJson, exactTotal, 0, now(), bill.order_id,
+        taxRollup.snapshotJson, serviceCharge, packagingCharge, chargesBreakdown,
+        exactTotal, 0, now(), bill.order_id,
       );
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
@@ -2386,6 +2510,155 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill discount failed:', error);
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+  }
+});
+
+/**
+ * Cashier waiver / opt-in toggle for one charge on an unpaid, unsplit bill.
+ *
+ * The waiver is persisted as an explicit `waived` flag rather than being
+ * inferred from a zero amount, so an audit can tell a waived fee apart from a
+ * fee configured at zero. Split checks are refused: their charges are already
+ * allocated proportionally, so mutating one sibling would silently desync the
+ * others.
+ */
+router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+  try {
+    const chargeId = String((req.body || {}).charge_id || '').trim().toLowerCase();
+    if (!chargeId) {
+      return res.status(400).json({ error: 'charge_id is required' });
+    }
+
+    const db = getDatabase();
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as ChargeBillRow | undefined;
+    if (!bill) {
+      return res.status(404).json({ error: 'Bill not found' });
+    }
+    if (bill.split_group_id) {
+      return res.status(409).json({ error: 'Charges on a split check cannot be changed' });
+    }
+    if (bill.payment_status === 'paid' || Number(bill.paid_amount || 0) > 0) {
+      return res.status(409).json({ error: 'Charges cannot be changed on a paid bill' });
+    }
+    if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+      return res.status(409).json({ error: 'Charges cannot be changed on a refunded bill' });
+    }
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as ChargeOrderRow | undefined;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(409).json({ error: 'Charges cannot be changed on a cancelled order' });
+    }
+
+    const definitions = getChargeDefinitions();
+    const definition = definitions.find((candidate) => candidate.id === chargeId);
+    if (!definition || !definition.is_active) {
+      return res.status(404).json({ error: 'Charge not found' });
+    }
+    if (!definition.order_types.includes(order.type)) {
+      return res.status(409).json({ error: 'Charge does not apply to this order type' });
+    }
+
+    const waivedRequested = (req.body || {}).waived;
+    const appliedRequested = (req.body || {}).applied;
+    if (waivedRequested === undefined && appliedRequested === undefined) {
+      return res.status(400).json({ error: 'waived or applied is required' });
+    }
+    if (waivedRequested !== undefined && typeof waivedRequested !== 'boolean') {
+      return res.status(400).json({ error: 'waived must be a boolean' });
+    }
+    if (appliedRequested !== undefined && typeof appliedRequested !== 'boolean') {
+      return res.status(400).json({ error: 'applied must be a boolean' });
+    }
+    if (waivedRequested === true && !definition.is_optional) {
+      return res.status(400).json({ error: 'This charge cannot be waived' });
+    }
+    if (appliedRequested === false && definition.is_default_active) {
+      return res.status(400).json({ error: 'This charge is applied automatically' });
+    }
+
+    const existingBreakdown = bill.charges_breakdown ?? order.charges_breakdown;
+    const toggleIds = chargeIdsAfterToggle({ existingBreakdown, definitions, toggle: { chargeId, waived: waivedRequested as boolean | undefined, applied: appliedRequested as boolean | undefined } });
+    const resolved = resolveOrderCharges({
+      definitions,
+      orderType: order.type,
+      subtotal: order.subtotal || 0,
+      discountAmount: order.discount_amount || 0,
+      currency: getTenantCurrency(),
+      existingBreakdown,
+      waivedIds: toggleIds.waivedIds,
+      optedInIds: toggleIds.optedInIds,
+    });
+    const nextCharges = resolved.charges;
+    const decimals = getCurrencyFractionDigits(getTenantCurrency());
+    const rawColumns = toStandardChargeColumns(nextCharges, decimals);
+    const serviceCharge = resolved.ownsServiceChargeColumn ? rawColumns.service_charge : Number(order.service_charge || 0);
+    const packagingCharge = resolved.ownsPackagingChargeColumn ? rawColumns.packaging_charge : Number(order.packaging_charge || 0);
+    const chargesJson = serializeAppliedCharges(nextCharges);
+
+    const updated = withTxn(() => {
+      const totals = calculateOrderTotals(db, order.id);
+      const customer = order.customer_id
+        ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as Customer | null
+        : null;
+      const { taxRollup, total } = recomputeOrderTotals({
+        tenantInfo: {
+          country: getSettingValue('country') || '',
+          business_type: getSettingValue('business_type') || 'restaurant',
+          state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+        },
+        chargeContext: { ...order, service_charge: serviceCharge, packaging_charge: packagingCharge },
+        customer,
+        totals,
+        discountAmount: order.discount_amount || 0,
+        taxScaling: 'when-discounted',
+        appliedCharges: nextCharges,
+      });
+
+      // The order owns the authoritative breakdown; a bill that never carried one
+      // inherits it so the two cannot disagree.
+      db.prepare(`
+        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, total = ?, updated_at = ? WHERE id = ?
+      `).run(
+        totals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson,
+        order.discount_amount || 0, serviceCharge, packagingCharge, chargesJson, total, now(), order.id,
+      );
+
+      recordOrderAudit(db, {
+        orderId: String(order.id),
+        actorUserId: String((req as Request & { user?: { userId?: string } }).user?.userId || ''),
+        action: 'order_charge_updated',
+        details: { charge_id: chargeId, waived: waivedRequested, applied: appliedRequested },
+      });
+
+      syncUnpaidBillsForOrder(db, order.id, {
+        subtotal: totals.subtotal,
+        taxAmount: taxRollup.taxAmount,
+        taxBreakdown: JSON.stringify(taxRollup.breakdowns),
+        taxSnapshot: taxRollup.snapshotJson,
+        discountAmount: order.discount_amount || 0,
+        deliveryCharge: order.delivery_charge || 0,
+        packagingCharge,
+        serviceCharge,
+        chargesBreakdown: chargesJson,
+        total,
+      }, getSettingValue('country') || '');
+
+      return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id));
+    });
+
+    notifyOrderUpdated();
+    res.json({ bill: updated });
+  } catch (error) {
+    const statusCode = (error as { statusCode?: number }).statusCode || 500;
+    console.error('[API] Bill charge update failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : (error as Error).message });
   }
 });
 

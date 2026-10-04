@@ -16,6 +16,7 @@ import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import { buildAppliedCharges, ChargeValidationError, serializeAppliedCharges } from '../services/charges';
 import { adjustProductStock, resolveInventoryDeduction, InventoryProductLike } from '../services/inventory';
+import { loadProductVariant, resolveOrderItemVariant, variantUnitPrice, type ProductVariant } from '../services/product-variants';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
@@ -171,73 +172,7 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
     .run(JSON.stringify(counts), now(), customerId);
 }
 
-interface OrderItemVariant {
-  id: string;
-  product_id: string;
-  name: string;
-  sku: string | null;
-  price: number;
-  online_price: number | null;
-  track_inventory: number;
-  inventory_product_id: string | null;
-  inventory_deduction_quantity: number | null;
-  is_active: number;
-}
-
-const ORDER_ITEM_VARIANT_COLUMNS = 'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, is_active';
-
-function loadOrderItemVariant(db: ReturnType<typeof getDatabase>, variantId: string): OrderItemVariant | undefined {
-  return db.prepare(`SELECT ${ORDER_ITEM_VARIANT_COLUMNS} FROM product_variants WHERE id = ?`).get(variantId) as OrderItemVariant | undefined;
-}
-
-/**
- * Resolves the catalog variant an order item names. A missing, foreign, or
- * inactive variant is rejected rather than silently sold at the base price,
- * and the client never chooses the price: online orders use the variant's
- * platform price when it has one, every other order uses its sellable price.
- */
-function resolveOrderItemVariant(
-  db: ReturnType<typeof getDatabase>,
-  product: { id: string; name?: string },
-  item: { variant_id?: unknown },
-  isOnlineOrder: boolean,
-): OrderItemVariant | null {
-  const supplied = item.variant_id;
-  if (supplied !== undefined && supplied !== null && typeof supplied !== 'string') {
-    throw Object.assign(new Error('variant_id must be a string'), { statusCode: 400 });
-  }
-  const variantId = typeof supplied === 'string' ? supplied.trim() : '';
-  if (!variantId) {
-    const hasVariants = db.prepare('SELECT 1 FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1').get(product.id);
-    if (hasVariants) {
-      throw Object.assign(new Error(`A variant must be selected for ${product.name || product.id}`), { statusCode: 400 });
-    }
-    return null;
-  }
-
-  const variant = loadOrderItemVariant(db, variantId);
-  if (!variant) {
-    throw Object.assign(new Error(`Variant ${variantId} was not found`), { statusCode: 400 });
-  }
-  if (variant.product_id !== product.id) {
-    throw Object.assign(new Error(`Variant "${variant.name}" is not an option for ${product.name || product.id}`), { statusCode: 400 });
-  }
-  if (Number(variant.is_active) !== 1) {
-    throw Object.assign(new Error(`Variant "${variant.name}" is not available`), { statusCode: 400 });
-  }
-  return variant;
-}
-
-/** Backend-authoritative sell price for a variant; online orders may carry a platform price. */
-function variantUnitPrice(variant: OrderItemVariant, isOnlineOrder: boolean): number {
-  const platformPrice = variant.online_price;
-  if (isOnlineOrder && platformPrice !== null && platformPrice !== undefined) {
-    return Number(platformPrice);
-  }
-  return Number(variant.price);
-}
-
-function variantSelectionSnapshot(variant: OrderItemVariant): string {
+function variantSelectionSnapshot(variant: ProductVariant): string {
   return JSON.stringify({ id: variant.id, name: variant.name, price: Number(variant.price), sku: variant.sku });
 }
 
@@ -251,7 +186,7 @@ function orderItemInventoryTarget(
   item: { product_id: string; variant_id?: string | null; quantity?: number; inventory_product_id?: string | null },
 ): { productId: string; variantId: string | null } | null {
   if (item.variant_id) {
-    const variant = loadOrderItemVariant(db, String(item.variant_id));
+    const variant = loadProductVariant(db, String(item.variant_id));
     const product = db.prepare('SELECT id, track_inventory, inventory_product_id, inventory_deduction_quantity FROM products WHERE id = ?').get(item.product_id) as InventoryProductLike | undefined;
     const deduction = variant && product ? resolveInventoryDeduction(product, Number(item.quantity) || 0, variant) : null;
     if (deduction) return { productId: deduction.productId, variantId: deduction.variantId ?? null };

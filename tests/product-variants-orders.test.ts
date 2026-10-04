@@ -74,10 +74,18 @@ async function main() {
   insertVariant(db, { id: 'var-pizza-retired', product_id: 'prod-pizza', name: 'Retired slice', price: 800, is_active: 0 });
 
   const app = createApp({ '/api/orders': orderRoutes });
+  // The prepaid checkout modal prices the cart through this endpoint before the
+  // order exists, so the suite exercises the same handler main/routes mounts.
+  app.post('/api/tax/preview', async (req: any, res: any) => {
+    const { calculateTaxPreview } = require('../main/services/tax');
+    await calculateTaxPreview(req, res);
+  });
   const { baseUrl, server } = await startServer(app);
 
   const createOrder = (body: Record<string, unknown>, headers = owner.authHeader) =>
     api(baseUrl, '/api/orders', { method: 'POST', headers, body });
+  const previewBasket = (body: Record<string, unknown>) =>
+    api(baseUrl, '/api/tax/preview', { method: 'POST', headers: owner.authHeader, body });
   const addItems = (orderId: string | number, items: unknown[], headers = owner.authHeader) =>
     api(baseUrl, `/api/orders/${orderId}/items`, { method: 'POST', headers, body: { items } });
   const itemOf = (orderId: string | number) =>
@@ -240,6 +248,38 @@ async function main() {
       const response = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-small', quantity: 1 }] });
       assert.equal(response.status, 201, 'the remaining active variant is still sellable');
       db.prepare('UPDATE product_variants SET is_active = 1 WHERE id = ?').run('var-large');
+    }
+
+    // ── The prepaid preview and the order it becomes cannot disagree ───────
+    {
+      const quoted = await previewBasket({ items: [{ product_id: 'prod-cappuccino', variant_id: 'var-large', quantity: 2, addons: [] }] });
+      assert.equal(quoted.status, 200, `a variant basket is previewable (${JSON.stringify(quoted.data)})`);
+      assert.equal(quoted.data.items[0].unit_price, 500, 'the preview is priced from the variant, not the parent product');
+
+      const charged = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-large', quantity: 2 }] });
+      assert.equal(charged.status, 201, 'the previewed basket can be ordered');
+      assert.equal(quoted.data.summary.subtotal, charged.data.order.subtotal, 'the previewed subtotal is the charged subtotal');
+      assert.equal(quoted.data.summary.tax_amount, charged.data.order.tax_amount, 'the previewed tax is the charged tax');
+      assert.equal(quoted.data.summary.total, charged.data.order.total, 'the previewed total is the charged total');
+    }
+    {
+      const onlineBasket = { items: [{ product_id: 'prod-cappuccino', variant_id: 'var-large', quantity: 1, addons: [] }] };
+      const quoted = await previewBasket({ ...onlineBasket, online_platform: 'zomato' });
+      const charged = await createOrder({ type: 'takeaway', online_platform: 'zomato', items: onlineBasket.items });
+      assert.equal(quoted.data.items[0].unit_price, 550, 'an online preview uses the variant platform price');
+      assert.equal(quoted.data.summary.total, charged.data.order.total, 'an online preview matches the online order total');
+    }
+    {
+      const quote = await previewBasket({ items: [{ product_id: 'prod-cappuccino', quantity: 1, addons: [] }] });
+      const order = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', quantity: 1 }] });
+      assert.equal(quote.status, 400, 'a preview of a variant product without a variant is refused');
+      assert.equal(order.status, 400, 'the same basket is refused by the order');
+      assert.equal(quote.data.error, order.data.error, 'both surfaces refuse identically');
+
+      const inactive = await previewBasket({ items: [{ product_id: 'prod-cappuccino', variant_id: 'var-retired', quantity: 1, addons: [] }] });
+      assert.equal(inactive.status, 400, 'a preview with an inactive variant is refused');
+      const inactiveOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-retired', quantity: 1 }] });
+      assert.equal(inactive.data.error, inactiveOrder.data.error, 'both surfaces refuse an inactive variant identically');
     }
 
     console.log('\n✅ Product variant order tests passed');

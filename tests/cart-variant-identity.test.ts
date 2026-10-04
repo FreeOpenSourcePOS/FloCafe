@@ -27,6 +27,20 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
 
 const { generateCartItemId, normalizeCartItems } = require('../frontend/src/lib/cart-identity');
 const { useCartStore } = require('../frontend/src/store/cart');
+const { resolveScannedProduct } = require('../frontend/src/lib/scale-barcode');
+
+function addon(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    addon_group_id: 'group-1',
+    name: 'Extra',
+    price: 10,
+    quantity: 1,
+    is_active: true,
+    sort_order: 1,
+    ...overrides,
+  };
+}
 
 function variant(id: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -100,6 +114,22 @@ assert.notEqual(
   'an unselected variant is distinct from a selected one',
 );
 
+// Identity covers { productId, variantId, addons, specialInstructions }.
+const shot = addon('addon-shot');
+const oat = addon('addon-oat');
+
+assert.equal(
+  generateCartItemId('prod-1', 'var-large', [shot, oat], ''),
+  generateCartItemId('prod-1', 'var-large', [oat, shot], ''),
+  'the same variant with the same add-ons in a different order shares one cart identity',
+);
+
+assert.notEqual(
+  generateCartItemId('prod-1', 'var-large', [shot], ''),
+  generateCartItemId('prod-1', 'var-large', [shot, oat], ''),
+  'the same variant with different add-ons keeps distinct cart identities',
+);
+
 // Merge through the real store: same product, variant, add-ons, instructions.
 const cart = () => useCartStore.getState();
 cart().clearCart();
@@ -164,5 +194,38 @@ assert.deepEqual(
   [['var-large', 3], ['var-small', 4]],
   'normalizeCartItems groups and totals lines per variant',
 );
+
+// Lines differing only in add-ons stay separate through the reload path.
+cart().loadItems([
+  { id: 'stale-a', product: coffee, quantity: 1, addons: [shot], special_instructions: '', variant: large },
+  { id: 'stale-b', product: coffee, quantity: 2, addons: [oat], special_instructions: '', variant: large },
+], null, null, 1);
+const rescan = cart().items;
+assert.equal(rescan.length, 2, 'lines differing only in add-ons stay separate after a reload');
+assert.deepEqual(
+  rescan.map((item: any) => [item.variant?.id, item.addons.map((a: any) => a.id)]),
+  [['var-large', ['addon-shot']], ['var-large', ['addon-oat']]],
+  'each reloaded line keeps its own variant and add-ons',
+);
+assert.deepEqual(
+  rescan.map((item: any) => item.quantity),
+  [1, 2],
+  'reload keeps the per-add-on line quantities separate instead of summing them',
+);
+
+// A scanned active variant barcode lands straight in the cart with that variant.
+const scannedProduct = product({
+  id: 'prod-scan',
+  barcode: 'PROD-SCAN',
+  variants: [variant('var-scan-m', { product_id: 'prod-scan', barcode: 'VAR-M' })],
+});
+const scan = resolveScannedProduct('VAR-M', [scannedProduct]);
+assert.ok(scan?.variant, 'a scanned active variant barcode resolves to that variant');
+cart().clearCart();
+cart().addItem(scan.product, 1, [], '', scan.variant);
+const scanned = cart().items;
+assert.equal(scanned.length, 1, 'a scanned variant barcode lands a single line in the cart');
+assert.equal(scanned[0].variant?.id, 'var-scan-m', 'the scanned line carries the scanned variant');
+assert.equal(scanned[0].quantity, 1, 'the scanned line is added at quantity 1');
 
 console.log('✓ cart variant identity and cart store checks passed');

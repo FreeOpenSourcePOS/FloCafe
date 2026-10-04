@@ -149,7 +149,7 @@ assert.equal(resolveScannedProduct('2156789012507', products), null, 'non-fracti
 
 const largeVariant = {
   id: 'var-large',
-  product_id: 'prod-mango',
+  product_id: 'prod-each',
   name: 'Large',
   sku: null,
   barcode: 'VAR-1',

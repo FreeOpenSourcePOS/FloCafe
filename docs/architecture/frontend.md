@@ -331,7 +331,7 @@ hook because it carries the transport:
 | Store | Holds | Persistence |
 | --- | --- | --- |
 | [`auth.ts`](../../frontend/src/store/auth.ts) | `user`, `token`, `tenants`, `currentTenant`, `loading`, and the locales that failed to warm at bootstrap | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable |
-| [`cart.ts`](../../frontend/src/store/cart.ts) | cart items with their addons and instructions, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors | none |
+| [`cart.ts`](../../frontend/src/store/cart.ts) | cart items with their addons, instructions and selected product variant, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors | none |
 | [`held-orders.ts`](../../frontend/src/store/held-orders.ts) | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders` | none |
 | [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy | `persist` under the `pos-settings` key, version 4, with backend-synced fields excluded by `partialize` |
 | [`theme.ts`](../../frontend/src/store/theme.ts) | `mode` and whether this session made an explicit choice | none; `useThemeModeToggle` writes through the API and rolls the store back when the write fails |

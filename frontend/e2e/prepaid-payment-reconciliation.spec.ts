@@ -446,6 +446,7 @@ test('payment modal hides charge controls without bill discount permission', asy
   let orderNumber: string | undefined;
   const testStartedAt = Date.now();
   const requestStartedAt = new WeakMap<Request, number>();
+  let restrictedSettingsReads = 0;
   const apiEvents: Array<{ label: string; method: string; status: number | 'network_error'; elapsedMs: number }> = [];
   const stages: Array<{ stage: string; phase: 'start' | 'complete'; elapsedMs: number }> = [];
   const appendApiEvent = (event: (typeof apiEvents)[number]) => {
@@ -527,6 +528,8 @@ test('payment modal hides charge controls without bill discount permission', asy
       await route.fulfill({ response });
     });
     serverPage.on('request', (browserRequest) => {
+      const pathname = new URL(browserRequest.url()).pathname;
+      if (pathname === '/api/settings/business' || pathname === '/api/settings/kds_enabled') restrictedSettingsReads++;
       if (safeApiLabel(browserRequest)) requestStartedAt.set(browserRequest, Date.now());
     });
     serverPage.on('response', (response) => {
@@ -586,6 +589,8 @@ test('payment modal hides charge controls without bill discount permission', asy
       markStage('payment_heading_visible', 'start');
       await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 10000 });
       markStage('payment_heading_visible', 'complete');
+      // Orders reads each setting once; Sidebar must not repeat denied reads after auth refresh.
+      expect(restrictedSettingsReads).toBeLessThanOrEqual(2);
     });
     await test.step('staff sees charge details without mutation controls', async () => {
       markStage('staff_readonly_charge_assertions', 'start');

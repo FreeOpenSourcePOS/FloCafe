@@ -3666,7 +3666,7 @@ export default function SettingsPage() {
 
             <KdsDefaultViewCard />
 
-            <ChargesSettingsCard />
+            <ChargesSettingsCard canManage={isAdmin} />
 
             <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
               <strong>{t('howItWorks')}</strong> {t('howItWorksBody')}

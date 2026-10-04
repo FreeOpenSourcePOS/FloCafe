@@ -101,6 +101,7 @@ function testValidation() {
   expectRejection([definition({ value: -1 })], 'a negative value');
   expectRejection([definition({ value: MAX_PERCENTAGE + 1 })], 'a percentage above 100');
   expectRejection([definition({ value: 'abc' })], 'a non-numeric value');
+  expectRejection([definition({ type: 'fixed', value: Number.MAX_VALUE })], 'a fixed amount outside currency precision');
   expectRejection([definition(), definition()], 'duplicate charge ids');
   expectRejection({ charges: [] }, 'a non-array payload');
   expectRejection([definition({ id: 'a'.repeat(65) })], 'an oversized charge id');
@@ -117,6 +118,70 @@ function testValidation() {
     parseStoredChargeDefinitions('{not json'),
     [],
     'malformed stored charges read as no charges rather than throwing',
+  );
+}
+
+function testOverflowGuards() {
+  let calculationRejected = false;
+  try {
+    calculateAppliedCharges({
+      definitions: [{ ...definition({ type: 'fixed', value: Number.MAX_VALUE }) } as any],
+      orderType: 'dine_in',
+      subtotal: 100,
+      discountAmount: 0,
+      currencyDecimals: USD,
+    });
+  } catch (error) {
+    calculationRejected = error instanceof ChargeValidationError;
+  }
+  assertOrThrow(calculationRejected, 'calculation rejects a fixed amount that overflows scaled minor units');
+
+  const largestUsdAmount = Number.MAX_SAFE_INTEGER / 100;
+  const largeCharges = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([
+      definition({ id: 'large_a', type: 'fixed', value: largestUsdAmount }),
+      definition({ id: 'large_b', type: 'fixed', value: largestUsdAmount }),
+    ], USD),
+    orderType: 'dine_in',
+    subtotal: 0,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  let aggregateRejected = false;
+  try {
+    toStandardChargeColumns(largeCharges, USD);
+  } catch (error) {
+    aggregateRejected = error instanceof ChargeValidationError;
+  }
+  assertOrThrow(aggregateRejected, 'combined charge minor units must remain a safe integer');
+
+  const largePercentage = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([definition({ value: 10.1 })], USD),
+    orderType: 'dine_in',
+    subtotal: largestUsdAmount,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertEqualOrThrow(
+    largePercentage[0].amount,
+    Number((BigInt(Number.MAX_SAFE_INTEGER) * 101n + 500n) / 1000n) / 100,
+    'an unsafe 10.1 percent product still yields an accurately rounded safe result',
+  );
+
+  const zeroAndFullPercentage = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([
+      definition({ id: 'zero_fee', value: 0 }),
+      definition({ id: 'full_fee', value: 100 }),
+    ], USD),
+    orderType: 'dine_in',
+    subtotal: 12.34,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertDeepEqualOrThrow(
+    zeroAndFullPercentage.map((charge: any) => charge.amount),
+    [0, 12.34],
+    'zero and 100 percent retain currency rounding at ordinary amounts',
   );
 }
 
@@ -339,6 +404,7 @@ function testParsing() {
 function main() {
   resetCounters();
   testValidation();
+  testOverflowGuards();
   testBasisAndTypes();
   testCurrencyPrecision();
   testWaiverState();

@@ -102,7 +102,7 @@ interface TaxEngineInput {
 `TaxEngineInput` has no separate `charges` array. Its `lines` cover products, add-ons, and the
 standard `packaging`, `delivery`, and `service_charge` kinds. Applied custom-fee snapshots in
 `charges_breakdown` contribute to order and bill totals but are not converted into tax-engine
-lines. A custom charge's `tax_category_id`, when present, is stored metadata and does not currently
+lines. A custom charge's `tax_category_id`, when present, is stored metadata and does not
 affect tax calculation. The configured charge-tax adapter calculates tax for the standard charge
 columns when their tax categories are configured.
 

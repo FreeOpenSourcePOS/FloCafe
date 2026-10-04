@@ -49,7 +49,7 @@ function toForm(charge: ChargeDefinition): ChargeForm {
   };
 }
 
-function toDefinition(form: ChargeForm): ChargeDefinition {
+function toDefinition(form: ChargeForm, existing?: ChargeDefinition): ChargeDefinition {
   // A blank id falls back to the name so the form never submits an empty id.
   const rawId = (form.id.trim() || form.name).trim();
   return {
@@ -61,12 +61,12 @@ function toDefinition(form: ChargeForm): ChargeDefinition {
     order_types: form.order_types,
     is_optional: form.is_optional,
     is_default_active: form.is_default_active,
-    tax_category_id: null,
-    is_active: true,
+    tax_category_id: existing?.tax_category_id ?? null,
+    is_active: existing?.is_active ?? true,
   };
 }
 
-export function ChargesSettingsCard() {
+export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
   const t = useTranslations('settings');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -108,7 +108,8 @@ export function ChargesSettingsCard() {
 
   const submitForm = async () => {
     if (!editing) return;
-    const definition = toDefinition(editing);
+    const existing = editingOriginalId ? charges.find((charge) => charge.id === editingOriginalId) : undefined;
+    const definition = toDefinition(editing, existing);
     // Editing replaces the row it came from, so renaming the id renames that
     // charge instead of adding a second one beside it.
     const targetId = editingOriginalId && charges.some((charge) => charge.id === editingOriginalId)
@@ -142,9 +143,11 @@ export function ChargesSettingsCard() {
           <Percent size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('chargesAndSurcharges')}</h2>
         </div>
-        <Button size="sm" onClick={() => { setEditing(emptyForm()); setEditingOriginalId(null); }}>
-          <Plus size={14} className="me-1" /> {t('addCharge')}
-        </Button>
+        {canManage && (
+          <Button size="sm" onClick={() => { setEditing(emptyForm()); setEditingOriginalId(null); }}>
+            <Plus size={14} className="me-1" /> {t('addCharge')}
+          </Button>
+        )}
       </div>
       <p className="text-sm text-muted-foreground mb-4">{t('chargesAndSurchargesHint')}</p>
 
@@ -168,14 +171,16 @@ export function ChargesSettingsCard() {
                   {!charge.is_default_active ? ` · ${t('chargeOptionalApply')}` : ''}
                 </p>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <Button size="sm" variant="ghost" aria-label={tCommon('edit')} onClick={() => { setEditing(toForm(charge)); setEditingOriginalId(charge.id); }}>
-                  <Pencil size={14} />
-                </Button>
-                <Button size="sm" variant="ghost" aria-label={tCommon('delete')} onClick={() => void removeCharge(charge)}>
-                  <Trash2 size={14} />
-                </Button>
-              </div>
+              {canManage && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" aria-label={tCommon('edit')} onClick={() => { setEditing(toForm(charge)); setEditingOriginalId(charge.id); }}>
+                    <Pencil size={14} />
+                  </Button>
+                  <Button size="sm" variant="ghost" aria-label={tCommon('delete')} onClick={() => void removeCharge(charge)}>
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>

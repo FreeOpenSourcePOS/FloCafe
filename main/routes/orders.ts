@@ -14,7 +14,7 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
-import { buildAppliedCharges, serializeAppliedCharges } from '../services/charges';
+import { buildAppliedCharges, ChargeValidationError, serializeAppliedCharges } from '../services/charges';
 import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
@@ -59,16 +59,21 @@ function resolveEngineCharges(order: EngineChargeOrderRow, subtotal: number, dis
     discountAmount,
     existingBreakdown: order?.charges_breakdown,
   });
-  if (!resolved.configured) return null;
-  const engineOwns = (id: string) => resolved.charges.some((charge) => charge.id === id);
+  if (!resolved.configured && !resolved.ownsServiceChargeColumn && !resolved.ownsPackagingChargeColumn) return null;
+  const chargeColumnOverrides: { service_charge?: number; packaging_charge?: number } = {};
+  if (resolved.ownsServiceChargeColumn) chargeColumnOverrides.service_charge = resolved.columns.service_charge;
+  if (resolved.ownsPackagingChargeColumn) chargeColumnOverrides.packaging_charge = resolved.columns.packaging_charge;
   return {
     appliedCharges: resolved.charges,
-    // The engine owns a standard column only when it produced a charge with that
-    // id; otherwise the amount already on the row stands.
+    ownsServiceChargeColumn: resolved.ownsServiceChargeColumn,
+    ownsPackagingChargeColumn: resolved.ownsPackagingChargeColumn,
+    chargeColumnOverrides,
+    // Applicable definitions and retained snapshots own their standard column;
+    // unmatched legacy amounts stay on the row.
     columns: {
       ...resolved.columns,
-      service_charge: engineOwns('service_charge') ? resolved.columns.service_charge : Number(order?.service_charge || 0),
-      packaging_charge: engineOwns('packaging_charge') ? resolved.columns.packaging_charge : Number(order?.packaging_charge || 0),
+      service_charge: resolved.ownsServiceChargeColumn ? resolved.columns.service_charge : Number(order?.service_charge || 0),
+      packaging_charge: resolved.ownsPackagingChargeColumn ? resolved.columns.packaging_charge : Number(order?.packaging_charge || 0),
     },
     chargesJson: serializeAppliedCharges(resolved.charges),
   };
@@ -754,8 +759,8 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 
       // Unified charges & fees engine. Charges the merchant configured for this
       // order type are applied here and the standard ids are projected onto the
-      // dedicated columns. The engine owns a column only for an id it actually
-      // produced, so a manually entered charge survives when no rule names it.
+      // dedicated columns. Manually entered amounts survive when no configured
+      // or retained charge owns the corresponding standard column.
       const resolvedCharges = buildAppliedCharges({
         currency,
         orderType: type,
@@ -764,10 +769,9 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         waivedIds: waivedChargeIds,
         optedInIds: optedInChargeIds,
       });
-      const engineOwns = (id: string) => resolvedCharges.charges.some((charge) => charge.id === id);
       const engineColumns = resolvedCharges.configured ? resolvedCharges.columns : null;
-      const appliedServiceCharge = engineOwns('service_charge') ? resolvedCharges.columns.service_charge : serviceCharge;
-      const appliedPackagingCharge = engineOwns('packaging_charge') ? resolvedCharges.columns.packaging_charge : pkgCharge;
+      const appliedServiceCharge = resolvedCharges.ownsServiceChargeColumn ? resolvedCharges.columns.service_charge : serviceCharge;
+      const appliedPackagingCharge = resolvedCharges.ownsPackagingChargeColumn ? resolvedCharges.columns.packaging_charge : pkgCharge;
       const otherCharges = engineColumns ? engineColumns.other_charges : 0;
       const appliedChargeContext: typeof chargeContext = {
         ...chargeContext,
@@ -788,6 +792,9 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const preRoundTotal = subtotal + taxRollup.exclusiveTaxAmount
         + delCharge + appliedPackagingCharge + appliedServiceCharge + otherCharges;
       const total = Number(preRoundTotal.toFixed(decimals));
+      if (!Number.isSafeInteger(Math.round(total * minorFactor))) {
+        throw new ChargeValidationError('Order total exceeds the supported currency precision');
+      }
       const roundOff = 0;
 
       db.prepare(`
@@ -1033,6 +1040,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
         appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
       });
 
       const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (currentOrder.service_charge || 0);
@@ -1056,8 +1064,8 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         const pack = getActiveCountryPack(tenantInfo.country);
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
+        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
@@ -1372,6 +1380,7 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requirePermission(
         discountAmount,
         taxScaling: 'when-discounted',
         appliedCharges: engineCharges ? engineCharges.appliedCharges : [],
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
       });
 
       db.prepare(`
@@ -1548,6 +1557,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         discountAmount,
         taxScaling: 'when-discounted',
         appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
       });
 
       const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (currentOrder.service_charge || 0);
@@ -1767,6 +1777,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
         discountAmount: newOrderDiscount,
         taxScaling: 'when-discounted',
         appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
       });
 
       const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);
@@ -1785,8 +1796,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
         const pack = getActiveCountryPack(tenantInfo.country);
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(orderTotals.subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
+        db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+          .run(orderTotals.subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, {
@@ -1992,6 +2003,12 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         : null;
       // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
       const engineCharges = resolveEngineCharges(order, subtotal, newDiscountAmount);
+      const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
+      const chargeColumnOverrides = engineCharges && orderCancelled ? {
+        ...(engineCharges.ownsServiceChargeColumn ? { service_charge: 0 } : {}),
+        ...(engineCharges.ownsPackagingChargeColumn ? { packaging_charge: 0 } : {}),
+      } : engineCharges?.chargeColumnOverrides;
+      const syncedCharges = orderCancelled && engineCharges ? [] : engineCharges?.appliedCharges;
       const { taxRollup, total, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
@@ -1999,15 +2016,19 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         totals: orderTotals,
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
-        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        appliedCharges: syncedCharges ?? null,
+        chargeColumnOverrides,
       });
 
-      const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);
-      const syncedPackagingCharge = engineCharges ? engineCharges.columns.packaging_charge : (order.packaging_charge || 0);
-      const syncedChargesJson = engineCharges ? engineCharges.chargesJson : (order.charges_breakdown ?? null);
+      const syncedServiceCharge = orderCancelled && engineCharges?.ownsServiceChargeColumn
+        ? 0
+        : engineCharges?.columns.service_charge ?? (order.service_charge || 0);
+      const syncedPackagingCharge = orderCancelled && engineCharges?.ownsPackagingChargeColumn
+        ? 0
+        : engineCharges?.columns.packaging_charge ?? (order.packaging_charge || 0);
+      const syncedChargesJson = orderCancelled && engineCharges ? '[]' : (engineCharges ? engineCharges.chargesJson : (order.charges_breakdown ?? null));
 
       // Cancelling the last active item marks the entire order cancelled and frees table.
-      const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
 
       if (orderCancelled) {
         db.prepare(`
@@ -2183,6 +2204,7 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         discountAmount: newDiscountAmount,
         taxScaling: 'when-discounted',
         appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
       });
 
       const syncedServiceCharge = engineCharges ? engineCharges.columns.service_charge : (order.service_charge || 0);

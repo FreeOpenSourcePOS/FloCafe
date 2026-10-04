@@ -2406,10 +2406,8 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       existingBreakdown: bill.charges_breakdown ?? order.charges_breakdown,
     });
     const appliedCharges = resolvedCharges.configured ? resolvedCharges.charges : undefined;
-    const ownsServiceCharge = appliedCharges?.some((charge) => charge.id === 'service_charge') ?? false;
-    const ownsPackagingCharge = appliedCharges?.some((charge) => charge.id === 'packaging_charge') ?? false;
-    const serviceCharge = ownsServiceCharge ? resolvedCharges.columns.service_charge : Number(bill.service_charge) || 0;
-    const packagingCharge = ownsPackagingCharge ? resolvedCharges.columns.packaging_charge : Number(bill.packaging_charge) || 0;
+    const serviceCharge = resolvedCharges.ownsServiceChargeColumn ? resolvedCharges.columns.service_charge : Number(bill.service_charge) || 0;
+    const packagingCharge = resolvedCharges.ownsPackagingChargeColumn ? resolvedCharges.columns.packaging_charge : Number(bill.packaging_charge) || 0;
     const chargesBreakdown = resolvedCharges.configured
       ? serializeAppliedCharges(resolvedCharges.charges)
       : bill.charges_breakdown ?? order.charges_breakdown ?? null;
@@ -2554,9 +2552,8 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
     const nextCharges = resolved.charges;
     const decimals = getCurrencyFractionDigits(getTenantCurrency());
     const rawColumns = toStandardChargeColumns(nextCharges, decimals);
-    const engineOwns = (id: string) => nextCharges.some((charge) => charge.id === id);
-    const serviceCharge = engineOwns('service_charge') ? rawColumns.service_charge : Number(order.service_charge || 0);
-    const packagingCharge = engineOwns('packaging_charge') ? rawColumns.packaging_charge : Number(order.packaging_charge || 0);
+    const serviceCharge = resolved.ownsServiceChargeColumn ? rawColumns.service_charge : Number(order.service_charge || 0);
+    const packagingCharge = resolved.ownsPackagingChargeColumn ? rawColumns.packaging_charge : Number(order.packaging_charge || 0);
     const chargesJson = serializeAppliedCharges(nextCharges);
 
     const updated = withTxn(() => {

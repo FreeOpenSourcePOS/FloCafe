@@ -10,7 +10,7 @@ import {
   type TenantInfo,
 } from './tax';
 import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
-import { toStandardChargeColumns, type AppliedCharge } from '../../shared/charges';
+import { ChargeValidationError, toStandardChargeColumns, type AppliedCharge } from '../../shared/charges';
 
 type Database = ReturnType<typeof getDatabase>;
 type OrderItemRow = {
@@ -85,6 +85,8 @@ export type RecomputeOrderTotalsInput = {
    * nothing is dropped from what the customer owes.
    */
   appliedCharges?: AppliedCharge[] | null;
+  /** Standard columns resolved from current definitions and retained snapshots. */
+  chargeColumnOverrides?: { service_charge?: number; packaging_charge?: number };
 };
 
 export interface RecomputedOrderTotals {
@@ -129,8 +131,10 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
   const otherCharges = chargeColumns ? chargeColumns.other_charges : 0;
   const effectiveChargeContext: ChargeTaxContext = {
     ...chargeContext,
-    packaging_charge: engineOwns('packaging_charge') ? chargeColumns!.packaging_charge : chargeContext.packaging_charge,
-    service_charge: engineOwns('service_charge') ? chargeColumns!.service_charge : chargeContext.service_charge,
+    packaging_charge: input.chargeColumnOverrides?.packaging_charge
+      ?? (engineOwns('packaging_charge') ? chargeColumns!.packaging_charge : chargeContext.packaging_charge),
+    service_charge: input.chargeColumnOverrides?.service_charge
+      ?? (engineOwns('service_charge') ? chargeColumns!.service_charge : chargeContext.service_charge),
   };
   const subtotal = totals.subtotal;
   // The discount can never exceed the subtotal it is deducted from, so a
@@ -162,6 +166,10 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     + Number(effectiveChargeContext.packaging_charge || 0)
     + Number(effectiveChargeContext.service_charge || 0)
     + otherCharges;
+  const total = Number(preRoundTotal.toFixed(decimals));
+  if (!Number.isSafeInteger(Math.round(total * minorFactor))) {
+    throw new ChargeValidationError('Order total exceeds the supported currency precision');
+  }
   return {
     subtotal,
     discountedSubtotal,
@@ -169,7 +177,7 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
     taxAmount,
     exclusiveTaxAmount,
     taxRollup,
-    total: Number(preRoundTotal.toFixed(decimals)),
+    total,
     roundOff: 0,
     appliedCharges: hasAppliedCharges ? appliedCharges : null,
     chargeColumns: chargeColumns

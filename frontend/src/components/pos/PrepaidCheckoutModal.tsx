@@ -438,6 +438,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} theme="light" />
               {preview.charges.map((charge) => {
                 const definition = applicableCharges.find((candidate) => candidate.id === charge.id);
+                const optedIn = cart.optedInChargeIds.has(charge.id);
                 return (
                   <div key={charge.id} data-testid={`prepaid-charge-${charge.id}`} className="flex justify-between items-center gap-2 text-muted-foreground">
                     <span className={charge.waived ? 'line-through' : undefined}>{charge.name}</span>
@@ -453,11 +454,11 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                           {charge.waived ? t('applyCharge') : t('waiveCharge')}
                         </button>
                       )}
-                      {definition && !definition.is_default_active && (
+                      {definition && !definition.is_default_active && optedIn && (
                         <button
                           type="button"
                           onClick={() => cart.toggleOptedInCharge(charge.id)}
-                          aria-pressed={!cart.optedInChargeIds.has(charge.id)}
+                          aria-pressed={optedIn}
                           className="text-xs px-2 py-0.5 rounded border border-border hover:text-foreground"
                         >
                           {t('removeCharge')}

@@ -2,7 +2,7 @@ import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, resolveTenantCurrency, type TaxIdFormat } from '../countries';
-import { buildAppliedCharges, VALID_CHARGE_ORDER_TYPES, type AppliedCharge } from './charges';
+import { buildAppliedCharges, ChargeValidationError, VALID_CHARGE_ORDER_TYPES, type AppliedCharge } from './charges';
 
 export interface TenantInfo {
   country: string;
@@ -833,9 +833,8 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         waivedIds: waived_charge_ids ?? [],
         optedInIds: opted_in_charge_ids ?? [],
       });
-      const engineOwns = (id: string) => resolvedCharges.charges.some((charge) => charge.id === id);
-      if (engineOwns('packaging_charge')) packaging = resolvedCharges.columns.packaging_charge;
-      if (engineOwns('service_charge')) service = resolvedCharges.columns.service_charge;
+      if (resolvedCharges.ownsPackagingChargeColumn) packaging = resolvedCharges.columns.packaging_charge;
+      if (resolvedCharges.ownsServiceChargeColumn) service = resolvedCharges.columns.service_charge;
       appliedCharges = resolvedCharges.charges;
       if (resolvedCharges.configured) otherCharges = new Decimal(resolvedCharges.columns.other_charges);
     }
@@ -883,6 +882,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       .toNumber();
     const pack = getActiveCountryPack(tenantInfo.country);
     const { total, adjustment: roundOff } = applyPayableRounding(exactTotal, pack, currency);
+    if (!Number.isSafeInteger(Math.round(total * minorFactor))) {
+      throw new ChargeValidationError('Order total exceeds the supported currency precision');
+    }
 
     res.json({
       items: itemResults,

@@ -144,6 +144,7 @@ async function main() {
       ['an unknown order type', { ...SERVICE_CHARGE, id: 'bad3', order_types: ['bar'] }],
       ['a non-slug id', { ...SERVICE_CHARGE, id: 'Bad Id' }],
       ['an unsupported type', { ...SERVICE_CHARGE, id: 'bad4', type: 'per_order' }],
+      ['a fixed amount outside the supported currency precision', { ...LATE_NIGHT, id: 'bad5', value: Number.MAX_VALUE }],
     ] as const) {
       const res = await putCharges([charge]);
       assertEqualOrThrow(res.status, 400, `rejects ${label}`);
@@ -153,6 +154,35 @@ async function main() {
       2,
       'no rejected write partially replaced the stored list',
     );
+
+    const largestUsdAmount = Number.MAX_SAFE_INTEGER / 100;
+    const overflowDefinitions = ['large_a', 'large_b'].map((id) => ({
+      id,
+      name: id,
+      type: 'fixed',
+      value: largestUsdAmount,
+      calculation_basis: 'gross',
+      order_types: ['dine_in'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    }));
+    assertEqualOrThrow((await putCharges(overflowDefinitions)).status, 200, 'individually safe large fees are accepted');
+    const beforeOverflowOrderCount = (db.prepare('SELECT COUNT(*) AS count FROM orders').get() as any).count;
+    const beforeOverflowItemCount = (db.prepare('SELECT COUNT(*) AS count FROM order_items').get() as any).count;
+    const overflowOrder = await createOrder('dine_in');
+    assertEqualOrThrow(overflowOrder.status, 400, 'combined unsafe charge totals return a client error');
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM orders').get() as any).count,
+      beforeOverflowOrderCount,
+      'a rejected total rolls back its order insert',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM order_items').get() as any).count,
+      beforeOverflowItemCount,
+      'a rejected total rolls back its item insert',
+    );
+    assertEqualOrThrow((await putCharges([SERVICE_CHARGE, LATE_NIGHT])).status, 200, 'valid charges are restored after overflow');
 
     console.log('\n2. Order create applies charges and maps the standard id onto its column');
     const order = await createOrder('dine_in');
@@ -402,6 +432,55 @@ async function main() {
     const orderAfterRemove = getDatabase().prepare('SELECT charges_breakdown FROM orders WHERE id = ?').get(removeOrder.data.order.id) as any;
     assertEqualOrThrow(orderAfterRemove.charges_breakdown, '[]', 'the order breakdown is emptied too');
 
+    console.log('\n10a. Removing a standard opted-in charge clears its legacy column');
+    await putCharges([{ ...SERVICE_CHARGE, type: 'fixed', value: 5, is_optional: false, is_default_active: false }]);
+    const standardRemoveOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'dine_in', opted_in_charge_ids: ['service_charge'], items: [{ product_id: 'prod-charges', quantity: 1 }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(standardRemoveOrder.status, 201, 'the opted-in standard charge is applied');
+    assertEqualOrThrow(standardRemoveOrder.data.order.service_charge, 5, 'the standard column stores the engine charge');
+    const standardRemoveBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: standardRemoveOrder.data.order.id }, headers: authHeader,
+    });
+    const standardRemoved = await api(baseUrl, `/api/bills/${standardRemoveBill.data.bill.id}/charges`, {
+      method: 'PATCH', body: { charge_id: 'service_charge', applied: false }, headers: authHeader,
+    });
+    assertEqualOrThrow(standardRemoved.status, 200, 'the standard charge is removed');
+    assertEqualOrThrow(standardRemoved.data.bill.service_charge, 0, 'the removed standard charge does not return from its legacy column');
+    assertEqualOrThrow(standardRemoved.data.bill.total, 100, 'the removed standard charge is excluded from the bill total');
+    const afterStandardRemoveAppend = await api(baseUrl, `/api/orders/${standardRemoveOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(afterStandardRemoveAppend.status, 200, 'the order recomputes after removing the standard charge');
+    assertEqualOrThrow(afterStandardRemoveAppend.data.order.service_charge, 0, 'an item append does not resurrect the removed charge');
+    assertEqualOrThrow(afterStandardRemoveAppend.data.order.total, 200, 'an item append totals without the removed charge');
+    const afterStandardRemoveDiscount = await api(baseUrl, `/api/orders/${standardRemoveOrder.data.order.id}/discount`, {
+      method: 'PATCH', body: { discount_type: 'percentage', discount_value: 10 }, headers: authHeader,
+    });
+    assertEqualOrThrow(afterStandardRemoveDiscount.status, 200, 'the order can be discounted after removing the standard charge');
+    assertEqualOrThrow(afterStandardRemoveDiscount.data.order.service_charge, 0, 'a discount recompute does not resurrect the removed charge');
+    assertEqualOrThrow(afterStandardRemoveDiscount.data.order.total, 180, 'the discount total excludes the removed charge');
+
+    console.log('\n10b. Cancelling the last item clears engine-owned fixed charges');
+    await putCharges([{ ...SERVICE_CHARGE, type: 'fixed', value: 5, is_optional: false }]);
+    const cancelFeeOrder = await createOrder('dine_in');
+    const cancelFeeBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: cancelFeeOrder.data.order.id }, headers: authHeader,
+    });
+    const cancelledFeeOrder = await api(baseUrl, `/api/orders/${cancelFeeOrder.data.order.id}/items/${cancelFeeOrder.data.order.items[0].id}/cancel`, {
+      method: 'PATCH', body: {}, headers: authHeader,
+    });
+    assertEqualOrThrow(cancelledFeeOrder.status, 200, 'the last item is cancelled');
+    assertEqualOrThrow(cancelledFeeOrder.data.order.status, 'cancelled', 'the order is marked cancelled');
+    assertEqualOrThrow(cancelledFeeOrder.data.order.service_charge, 0, 'the cancelled order clears its engine-owned standard fee');
+    assertEqualOrThrow(cancelledFeeOrder.data.order.charges_breakdown, '[]', 'the cancelled order has no collectible charge snapshots');
+    assertEqualOrThrow(cancelledFeeOrder.data.order.total, 0, 'the cancelled order total is zero');
+    const cancelledFeeBillRow = db.prepare('SELECT total, service_charge, charges_breakdown FROM bills WHERE id = ?').get(cancelFeeBill.data.bill.id) as any;
+    assertEqualOrThrow(cancelledFeeBillRow.total, 0, 'the unpaid bill total is zero after cancellation');
+    assertEqualOrThrow(cancelledFeeBillRow.service_charge, 0, 'the unpaid bill clears the engine-owned fee');
+
     console.log('\n11. Order create keeps a manual charge column the engine has no rule for');
     await putCharges([{ ...LATE_NIGHT, id: 'late_night', order_types: ['dine_in'] }]);
     const manual = await api(baseUrl, '/api/orders', {
@@ -438,6 +517,26 @@ async function main() {
     assertEqualOrThrow(decided.find((c: any) => c.id === 'nightly').amount, 7, 'the opted-in charge the cashier added is applied');
     assertEqualOrThrow(withDecisions.data.order.service_charge, 0, 'the waived column is cleared');
     assertEqualOrThrow(withDecisions.data.order.total, 107, 'the total reflects the waiver and the opt-in');
+    await putCharges([{ ...LATE_NIGHT, id: 'waived_opt_in', is_optional: true, is_default_active: false }]);
+    const waivedOptInOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        waived_charge_ids: ['waived_opt_in'],
+        opted_in_charge_ids: ['waived_opt_in'],
+        items: [{ product_id: 'prod-charges', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(waivedOptInOrder.status, 201, 'a waived optional opt-in is recorded');
+    const waivedOptInAppend = await api(baseUrl, `/api/orders/${waivedOptInOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(waivedOptInAppend.status, 200, 'the waived optional opt-in order recomputes');
+    const waivedOptInSnapshot = JSON.parse(waivedOptInAppend.data.order.charges_breakdown)
+      .find((charge: any) => charge.id === 'waived_opt_in');
+    assertEqualOrThrow(waivedOptInSnapshot?.waived, true, 'a recompute preserves the waived opt-in decision');
+    assertEqualOrThrow(waivedOptInSnapshot?.amount, 0, 'the waived opt-in remains zero after a recompute');
     const badIds = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: { type: 'dine_in', waived_charge_ids: 'service_charge', items: [{ product_id: 'prod-charges', quantity: 1 }] },
@@ -505,6 +604,44 @@ async function main() {
     const discountedOrderRow = db.prepare('SELECT total, charges_breakdown FROM orders WHERE id = ?').get(discountedOrder.data.order.id) as any;
     assertEqualOrThrow(discountedOrderRow.total, 106, 'order exact total agrees with the discounted bill');
     assertEqualOrThrow(JSON.parse(discountedOrderRow.charges_breakdown).find((charge: any) => charge.id === 'late_night')?.amount, 7, 'order and bill share the same charge breakdown');
+
+    console.log('\n16. Packaging columns stay in sync through item and bill discounts');
+    await putCharges([{
+      id: 'packaging_charge',
+      name: 'Net Packaging',
+      type: 'percentage',
+      value: 10,
+      calculation_basis: 'net',
+      order_types: ['dine_in'],
+      is_optional: false,
+      is_default_active: true,
+      is_active: true,
+    }]);
+    const packagingOrder = await createOrder('dine_in');
+    const packagingBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: packagingOrder.data.order.id }, headers: authHeader,
+    });
+    assertEqualOrThrow(packagingBill.data.bill.packaging_charge, 10, 'the initial bill has its packaging fee');
+    const packagingAppend = await api(baseUrl, `/api/orders/${packagingOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
+    });
+    assertEqualOrThrow(packagingAppend.status, 200, 'a second item is added');
+    assertEqualOrThrow(packagingAppend.data.order.packaging_charge, 20, 'the order packaging fee follows the new subtotal');
+    let packagingBillRow = db.prepare('SELECT packaging_charge FROM bills WHERE id = ?').get(packagingBill.data.bill.id) as any;
+    assertEqualOrThrow(packagingBillRow.packaging_charge, 20, 'the unpaid bill packaging fee follows the new subtotal');
+    const itemDiscount = await api(baseUrl, `/api/orders/${packagingOrder.data.order.id}/items/${packagingOrder.data.order.items[0].id}/discount`, {
+      method: 'PATCH', body: { discount_type: 'percentage', discount_value: 10 }, headers: authHeader,
+    });
+    assertEqualOrThrow(itemDiscount.status, 200, 'an item discount recalculates the packaging fee');
+    packagingBillRow = db.prepare('SELECT packaging_charge FROM bills WHERE id = ?').get(packagingBill.data.bill.id) as any;
+    assertEqualOrThrow(packagingBillRow.packaging_charge, 19, 'the unpaid bill packaging fee follows an item discount');
+    const packagingBillDiscount = await api(baseUrl, `/api/bills/${packagingBill.data.bill.id}/applyDiscount`, {
+      method: 'POST', body: { type: 'percentage', value: 10, reason: 'packaging charge sync test' }, headers: authHeader,
+    });
+    assertEqualOrThrow(packagingBillDiscount.status, 200, 'a bill discount recalculates packaging');
+    assertEqualOrThrow(packagingBillDiscount.data.bill.packaging_charge, 17.1, 'the bill packaging fee uses the discounted net subtotal');
+    const packagingOrderRow = db.prepare('SELECT packaging_charge FROM orders WHERE id = ?').get(packagingOrder.data.order.id) as any;
+    assertEqualOrThrow(packagingOrderRow.packaging_charge, 17.1, 'the order packaging column matches the discounted bill');
   } finally {
     await new Promise((resolve) => server.close(resolve));
     closeDatabase();

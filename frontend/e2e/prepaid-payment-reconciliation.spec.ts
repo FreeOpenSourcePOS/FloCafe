@@ -1,8 +1,43 @@
-import { test, expect, type APIRequestContext, type Route } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type APIRequestContext, type Route } from '@playwright/test';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+const paymentModalCharges = [
+  {
+    id: 'service_charge',
+    name: 'Payment Service Fee',
+    type: 'fixed',
+    value: 5,
+    calculation_basis: 'gross',
+    order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+    is_optional: true,
+    is_default_active: true,
+    is_active: true,
+  },
+  {
+    id: 'payment_addon',
+    name: 'Payment Add-on Fee',
+    type: 'fixed',
+    value: 7,
+    calculation_basis: 'gross',
+    order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+    is_optional: false,
+    is_default_active: false,
+    is_active: true,
+  },
+  {
+    id: 'payment_required',
+    name: 'Payment Required Fee',
+    type: 'fixed',
+    value: 2,
+    calculation_basis: 'gross',
+    order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+    is_optional: false,
+    is_default_active: true,
+    is_active: true,
+  },
+];
 
 async function readCharges(request: APIRequestContext): Promise<unknown[]> {
   const response = await request.get(`${BASE}/api/settings/charges`, { headers: managerHeaders });
@@ -109,6 +144,9 @@ test('prepaid checkout never reports success when the payment response is partia
 
 test('prepaid checkout fee choices use fresh quotes and fail closed when a quote fails', async ({ page, request }) => {
   const originalCharges = await readCharges(request);
+  const originalBusiness = await readBusiness(request);
+  const cleanupRequest = await playwrightRequest.newContext();
+  let primaryFailure = false;
   const configuredCharges = [
     {
       id: 'service_charge',
@@ -146,6 +184,11 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
   ];
 
   try {
+    const businessResponse = await request.put(`${BASE}/api/settings/business`, {
+      headers: managerHeaders,
+      data: { ...originalBusiness, billing_type: 'prepaid' },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
     await writeCharges(request, configuredCharges);
     await page.goto(`${BASE}/auth/login`);
     await page.locator('#email').fill('manager@flo.local');
@@ -220,59 +263,39 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
     expect(submittedOrders).toBe(0);
     expect(submittedPayments).toBe(0);
     await expect(summary).toHaveCount(0);
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
   } finally {
-    await writeCharges(request, originalCharges);
+    const cleanupFailures: unknown[] = [];
+    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
+        headers: managerHeaders,
+        data: originalBusiness,
+      });
+      expect(restoredBusiness.ok()).toBeTruthy();
+    } catch (error) { cleanupFailures.push(error); }
+    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    if (cleanupFailures.length) {
+      if (primaryFailure) console.error('Prepaid checkout cleanup failed after the test error:', cleanupFailures);
+      else throw cleanupFailures[0];
+    }
   }
 });
 
-test('payment modal updates applied fees and hides fee controls without bill-discount permission', async ({ page, request, browser }) => {
+test('payment modal updates applied fees', async ({ page, request }) => {
   const originalCharges = await readCharges(request);
   const originalBusiness = await readBusiness(request);
-  const ownerHeaders = { Authorization: `Bearer ${getE2eToken()}` };
-  let originalServerOverrides: Array<{ permission_id: string; effect: string }> | undefined;
-  let serverPermissionsChanged = false;
-  const configuredCharges = [
-    {
-      id: 'service_charge',
-      name: 'Payment Service Fee',
-      type: 'fixed',
-      value: 5,
-      calculation_basis: 'gross',
-      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-      is_optional: true,
-      is_default_active: true,
-      is_active: true,
-    },
-    {
-      id: 'payment_addon',
-      name: 'Payment Add-on Fee',
-      type: 'fixed',
-      value: 7,
-      calculation_basis: 'gross',
-      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-      is_optional: false,
-      is_default_active: false,
-      is_active: true,
-    },
-    {
-      id: 'payment_required',
-      name: 'Payment Required Fee',
-      type: 'fixed',
-      value: 2,
-      calculation_basis: 'gross',
-      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-      is_optional: false,
-      is_default_active: true,
-      is_active: true,
-    },
-  ];
+  const cleanupRequest = await playwrightRequest.newContext();
+  let primaryFailure = false;
 
   try {
     await request.put(`${BASE}/api/settings/business`, {
       headers: managerHeaders,
       data: { ...originalBusiness, billing_type: 'postpaid' },
     }).then((response) => expect(response.ok()).toBeTruthy());
-    await writeCharges(request, configuredCharges);
+    await writeCharges(request, paymentModalCharges);
 
     const orderResponse = await request.post(`${BASE}/api/orders`, {
       headers: managerHeaders,
@@ -389,6 +412,65 @@ test('payment modal updates applied fees and hides fee controls without bill-dis
     expect(paymentRequestsAfterUncertainUpdate).toBe(0);
     await page.unroute(chargeRoute, losePatchResponse);
 
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
+  } finally {
+    const cleanupFailures: unknown[] = [];
+    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
+        headers: managerHeaders,
+        data: originalBusiness,
+      });
+      expect(restoredBusiness.ok()).toBeTruthy();
+    } catch (error) { cleanupFailures.push(error); }
+    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    if (cleanupFailures.length) {
+      if (primaryFailure) console.error('Payment modal cleanup failed after the test error:', cleanupFailures);
+      else throw cleanupFailures[0];
+    }
+  }
+});
+
+test('payment modal hides charge controls without bill discount permission', async ({ request, browser }) => {
+  const originalCharges = await readCharges(request);
+  const originalBusiness = await readBusiness(request);
+  const cleanupRequest = await playwrightRequest.newContext();
+  const ownerHeaders = { Authorization: `Bearer ${getE2eToken()}` };
+  let originalServerOverrides: Array<{ permission_id: string; effect: string }> | undefined;
+  let serverPermissionsChanged = false;
+  let serverContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let primaryFailure = false;
+
+  try {
+    const businessResponse = await request.put(`${BASE}/api/settings/business`, {
+      headers: managerHeaders,
+      data: { ...originalBusiness, billing_type: 'postpaid' },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    await writeCharges(request, paymentModalCharges);
+
+    const orderResponse = await request.post(`${BASE}/api/orders`, {
+      headers: managerHeaders,
+      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const { order } = await orderResponse.json();
+    const billResponse = await request.post(`${BASE}/api/bills/generate`, {
+      headers: managerHeaders,
+      data: { order_id: order.id },
+    });
+    expect(billResponse.status()).toBe(201);
+    const { bill } = await billResponse.json();
+    const addOptionalCharge = await request.patch(`${BASE}/api/bills/${bill.id}/charges`, {
+      headers: managerHeaders,
+      data: { charge_id: 'payment_addon', applied: true },
+    });
+    expect(addOptionalCharge.status()).toBe(200);
+    const appliedBill = await addOptionalCharge.json();
+    expect(JSON.parse(appliedBill.bill.charges_breakdown).some((charge: { id: string }) => charge.id === 'payment_addon')).toBe(true);
+
     const userResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
     expect(userResponse.ok()).toBeTruthy();
     const originalUser = await userResponse.json();
@@ -402,68 +484,73 @@ test('payment modal updates applied fees and hides fee controls without bill-dis
       { permission_id: 'bills.discount.apply', effect: 'deny' },
       { permission_id: 'settings.view', effect: 'deny' },
     );
-    serverPermissionsChanged = true;
     const permissionResponse = await request.put(`${BASE}/api/authorization/users/e2e-server`, {
       headers: ownerHeaders,
       data: { revision: originalUser.revision, overrides },
     });
     expect(permissionResponse.ok()).toBeTruthy();
+    serverPermissionsChanged = true;
 
-    const serverContext = await browser.newContext();
+    serverContext = await browser.newContext();
     const serverPage = await serverContext.newPage();
-    try {
-      await serverPage.goto(`${BASE}/auth/login`);
-      const serverEmail = serverPage.locator('#email');
-      await expect(serverEmail).toBeVisible({ timeout: 5000 });
-      await serverEmail.fill('server@flo.local');
-      await serverPage.locator('#password').fill(E2E_PASSWORD);
-      await serverPage.locator('button[type="submit"]').click();
-      await setLanguage(serverPage, 'en');
-      await serverPage.goto(`${BASE}/orders`);
-      await serverPage.getByPlaceholder(/search/i).first().fill(order.order_number);
-      await expect(serverPage.getByText(`#${order.order_number}`)).toBeVisible();
-      await serverPage.getByRole('button', { name: 'Checkout', exact: true }).click();
-      await expect(serverPage.getByRole('heading', { name: 'Payment' })).toBeVisible();
-      const readOnlyCharges = serverPage.getByTestId('payment-charges');
-      await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();
-      await expect(readOnlyCharges.getByText('Payment Add-on Fee')).toBeVisible();
-      await expect(readOnlyCharges.getByRole('button')).toHaveCount(0);
-      const limitedHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
-      const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, { headers: limitedHeaders });
-      expect(feeDefinitions.status()).toBe(200);
-      expect((await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id)).toContain('payment_required');
-      const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, { headers: limitedHeaders });
-      expect(settingsDenied.status()).toBe(403);
-      const forbiddenUpdate = await serverPage.request.patch(`${BASE}/api/bills/${bill.id}/charges`, {
-        headers: limitedHeaders,
-        data: { charge_id: 'service_charge', waived: true },
-      });
-      expect(forbiddenUpdate.status()).toBe(403);
-    } finally {
-      await serverContext.close();
-    }
+    await serverPage.goto(`${BASE}/auth/login`);
+    const serverEmail = serverPage.locator('#email');
+    await expect(serverEmail).toBeVisible({ timeout: 5000 });
+    await serverEmail.fill('server@flo.local');
+    await serverPage.locator('#password').fill(E2E_PASSWORD);
+    await serverPage.locator('button[type="submit"]').click();
+    await setLanguage(serverPage, 'en');
+    await serverPage.goto(`${BASE}/orders`);
+    await serverPage.getByPlaceholder(/search/i).first().fill(order.order_number);
+    await expect(serverPage.getByText(`#${order.order_number}`)).toBeVisible();
+    await serverPage.getByRole('button', { name: 'Checkout', exact: true }).click();
+    await expect(serverPage.getByRole('heading', { name: 'Payment' })).toBeVisible();
+    const readOnlyCharges = serverPage.getByTestId('payment-charges');
+    await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();
+    await expect(readOnlyCharges.getByText('Payment Add-on Fee')).toBeVisible();
+    await expect(readOnlyCharges.getByRole('button')).toHaveCount(0);
+
+    const limitedHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
+    const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, { headers: limitedHeaders });
+    expect(feeDefinitions.status()).toBe(200);
+    expect((await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id)).toContain('payment_required');
+    const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, { headers: limitedHeaders });
+    expect(settingsDenied.status()).toBe(403);
+    const forbiddenUpdate = await serverPage.request.patch(`${BASE}/api/bills/${bill.id}/charges`, {
+      headers: limitedHeaders,
+      data: { charge_id: 'service_charge', waived: true },
+    });
+    expect(forbiddenUpdate.status()).toBe(403);
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
   } finally {
-    try {
-      if (serverPermissionsChanged && originalServerOverrides) {
-        const latestResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
+    const cleanupFailures: unknown[] = [];
+    try { await serverContext?.close(); } catch (error) { cleanupFailures.push(error); }
+    if (serverPermissionsChanged && originalServerOverrides) {
+      try {
+        const latestResponse = await cleanupRequest.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
         expect(latestResponse.ok()).toBeTruthy();
         const latestUser = await latestResponse.json();
-        const restored = await request.put(`${BASE}/api/authorization/users/e2e-server`, {
+        const restored = await cleanupRequest.put(`${BASE}/api/authorization/users/e2e-server`, {
           headers: ownerHeaders,
           data: { revision: latestUser.revision, overrides: originalServerOverrides },
         });
         expect(restored.ok()).toBeTruthy();
-      }
-    } finally {
-      try {
-        await writeCharges(request, originalCharges);
-      } finally {
-        const restoredBusiness = await request.put(`${BASE}/api/settings/business`, {
-          headers: managerHeaders,
-          data: originalBusiness,
-        });
-        expect(restoredBusiness.ok()).toBeTruthy();
-      }
+      } catch (error) { cleanupFailures.push(error); }
+    }
+    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
+        headers: managerHeaders,
+        data: originalBusiness,
+      });
+      expect(restoredBusiness.ok()).toBeTruthy();
+    } catch (error) { cleanupFailures.push(error); }
+    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    if (cleanupFailures.length) {
+      if (primaryFailure) console.error('Staff payment modal cleanup failed after the test error:', cleanupFailures);
+      else throw cleanupFailures[0];
     }
   }
 });

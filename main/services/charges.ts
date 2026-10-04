@@ -49,7 +49,8 @@ export const CUSTOM_CHARGES_SETTING_KEY = 'custom_charges';
 
 /** Configured charges for the tenant; unreadable or malformed storage reads as none. */
 export function getChargeDefinitions(): ChargeDefinition[] {
-  return parseStoredChargeDefinitions(getSettingValue(CUSTOM_CHARGES_SETTING_KEY));
+  const currencyDecimals = getCurrencyFractionDigits(getSettingValue('currency') || 'USD');
+  return parseStoredChargeDefinitions(getSettingValue(CUSTOM_CHARGES_SETTING_KEY), currencyDecimals);
 }
 
 export interface ResolveOrderChargesInput {
@@ -68,6 +69,8 @@ export interface ResolveOrderChargesInput {
 export interface ResolvedOrderCharges {
   charges: AppliedCharge[];
   columns: StandardChargeColumns;
+  ownsServiceChargeColumn: boolean;
+  ownsPackagingChargeColumn: boolean;
   /**
    * True when the merchant configured a charge that matches this order. False
    * means the engine has nothing to say and the row keeps whatever charge
@@ -92,7 +95,6 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
 
   const derivedWaivedIds = existing.filter((charge) => charge.waived).map((charge) => charge.id);
   const derivedOptedInIds = existing
-    .filter((charge) => !charge.waived)
     .filter((charge) => byId.get(charge.id)?.is_default_active === false)
     .map((charge) => charge.id);
 
@@ -116,13 +118,23 @@ export function resolveOrderCharges(input: ResolveOrderChargesInput): ResolvedOr
   const charges = [...activeCharges, ...retainedCharges];
 
   const columns = toStandardChargeColumns(charges, getCurrencyFractionDigits(currency));
+  const ownsStandardColumn = (id: string) => charges.some((charge) => charge.id === id)
+    || definitions.some((definition) => definition.id === id
+      && definition.is_active
+      && definition.order_types.includes(orderType as ChargeOrderType));
   const configured = retainedCharges.length > 0 || definitions.some(
     (definition) => definition.is_active
       && (definition.is_default_active || optedInIds.includes(definition.id))
       && definition.order_types.includes(orderType as ChargeOrderType),
   );
 
-  return { charges, columns, configured };
+  return {
+    charges,
+    columns,
+    configured,
+    ownsServiceChargeColumn: ownsStandardColumn('service_charge'),
+    ownsPackagingChargeColumn: ownsStandardColumn('packaging_charge'),
+  };
 }
 
 /** Convenience wrapper that resolves charges from the tenant's stored definitions. */
@@ -161,7 +173,6 @@ export function chargeIdsAfterToggle(args: {
 
   let waivedIds = existing.filter((charge) => charge.waived).map((charge) => charge.id);
   let optedInIds = existing
-    .filter((charge) => !charge.waived)
     .filter((charge) => byId.get(charge.id)?.is_default_active === false)
     .map((charge) => charge.id);
 

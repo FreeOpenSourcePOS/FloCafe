@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now } from '../db';
+import { getDatabase, getSettingValue, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { DRIVE_RESTORE_CONFIRMATION, getGoogleDriveErrorCode, googleDrive } from '../services/google-drive';
 import { requireAnyPermission, requirePermission } from '../services/authorization';
@@ -8,7 +8,7 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import {
-  getCountryByCode, getCurrencySymbol, isValidTimeZone,
+  getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, isValidTimeZone,
   isLocalePreferenceKey, isLocalePreferenceSupported, resolveStoredLocalePreference,
   type LocalePreferenceKey,
 } from '../countries';
@@ -902,7 +902,8 @@ router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manag
     const payload = (req.body || {}).charges ?? req.body;
     let definitions;
     try {
-      definitions = normalizeChargeDefinitions(payload);
+      const currencyDecimals = getCurrencyFractionDigits(getSettingValue('currency') || 'USD');
+      definitions = normalizeChargeDefinitions(payload, currencyDecimals);
     } catch (error: unknown) {
       if (error instanceof ChargeValidationError) {
         return res.status(400).json({ error: error.message });

@@ -125,7 +125,7 @@ function normalizeOrderTypes(raw: unknown): ChargeOrderType[] {
  * Validates an untrusted payload into charge definitions. The first invalid
  * entry rejects the whole array, so a partial write never lands.
  */
-export function normalizeChargeDefinitions(raw: unknown): ChargeDefinition[] {
+export function normalizeChargeDefinitions(raw: unknown, currencyDecimals = 2): ChargeDefinition[] {
   if (typeof raw === 'string') {
     let parsed: unknown;
     try {
@@ -133,7 +133,7 @@ export function normalizeChargeDefinitions(raw: unknown): ChargeDefinition[] {
     } catch {
       throw new ChargeValidationError('Charges must be valid JSON');
     }
-    return normalizeChargeDefinitions(parsed);
+    return normalizeChargeDefinitions(parsed, currencyDecimals);
   }
   if (!Array.isArray(raw)) throw new ChargeValidationError('Charges must be an array');
   if (raw.length > MAX_CHARGE_DEFINITIONS) {
@@ -160,11 +160,14 @@ export function normalizeChargeDefinitions(raw: unknown): ChargeDefinition[] {
       throw new ChargeValidationError('Charge calculation_basis must be net or gross');
     }
 
+    const value = normalizeChargeValue(type, entry.value);
+    if (type === 'fixed') toMinorUnits(value, Math.pow(10, normalizeCurrencyDecimals(currencyDecimals)));
+
     definitions.push({
       id,
       name: normalizeChargeName(entry.name),
       type,
-      value: normalizeChargeValue(type, entry.value),
+      value,
       calculation_basis: basis,
       order_types: normalizeOrderTypes(entry.order_types),
       is_optional: entry.is_optional === true,
@@ -181,9 +184,9 @@ export function normalizeChargeDefinitions(raw: unknown): ChargeDefinition[] {
 }
 
 /** Reads a stored definitions list for calculation, discarding anything invalid. */
-export function parseStoredChargeDefinitions(raw: unknown): ChargeDefinition[] {
+export function parseStoredChargeDefinitions(raw: unknown, currencyDecimals = 2): ChargeDefinition[] {
   try {
-    return normalizeChargeDefinitions(raw);
+    return normalizeChargeDefinitions(raw, currencyDecimals);
   } catch {
     return [];
   }
@@ -215,8 +218,44 @@ export interface CalculateAppliedChargesInput {
 }
 
 function toMinorUnits(amount: number, factor: number): number {
-  if (!Number.isFinite(amount)) return 0;
-  return Math.round(amount * factor);
+  if (!Number.isFinite(amount)) {
+    throw new ChargeValidationError('Charge amount must be a finite number');
+  }
+  const minorUnits = Math.round(amount * factor);
+  if (!Number.isSafeInteger(minorUnits)) {
+    throw new ChargeValidationError('Charge amount exceeds the supported currency precision');
+  }
+  return minorUnits;
+}
+
+function addMinorUnits(total: number, amount: number): number {
+  const sum = total + amount;
+  if (!Number.isSafeInteger(sum)) {
+    throw new ChargeValidationError('Combined charge amounts exceed the supported currency precision');
+  }
+  return sum;
+}
+
+function percentageMinorUnits(basisMinor: number, percentage: number): number {
+  const product = basisMinor * percentage;
+  if (Number.isFinite(product) && Math.abs(product) <= Number.MAX_SAFE_INTEGER) {
+    return Math.round(product / 100);
+  }
+
+  const [coefficient, exponentText] = percentage.toString().toLowerCase().split('e');
+  const exponent = exponentText ? Number(exponentText) : 0;
+  const [whole, fraction = ''] = coefficient.split('.');
+  let numerator = BigInt(`${whole}${fraction}`);
+  const decimalPlaces = fraction.length - exponent;
+  const ten = BigInt(10);
+  const denominator = decimalPlaces > 0 ? ten ** BigInt(decimalPlaces) : BigInt(1);
+  if (decimalPlaces < 0) numerator *= ten ** BigInt(-decimalPlaces);
+  const divisor = denominator * BigInt(100);
+  const rounded = (BigInt(basisMinor) * numerator + divisor / BigInt(2)) / divisor;
+  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new ChargeValidationError('Charge amount exceeds the supported currency precision');
+  }
+  return Number(rounded);
 }
 
 /**
@@ -252,7 +291,7 @@ export function calculateAppliedCharges(input: CalculateAppliedChargesInput): Ap
       ? 0
       : definition.type === 'percentage'
         // Integer minor units keep the percentage exact at the tenant's precision.
-        ? Math.max(0, Math.round((basisMinor * definition.value) / 100))
+        ? percentageMinorUnits(basisMinor, definition.value)
         : Math.max(0, toMinorUnits(definition.value, factor));
 
     const charge: AppliedCharge = {
@@ -291,9 +330,9 @@ export function toStandardChargeColumns(charges: AppliedCharge[], currencyDecima
 
   for (const charge of charges) {
     const amountMinor = Math.max(0, toMinorUnits(charge.amount, factor));
-    if (charge.id === 'service_charge') serviceMinor += amountMinor;
-    else if (charge.id === 'packaging_charge') packagingMinor += amountMinor;
-    else otherMinor += amountMinor;
+    if (charge.id === 'service_charge') serviceMinor = addMinorUnits(serviceMinor, amountMinor);
+    else if (charge.id === 'packaging_charge') packagingMinor = addMinorUnits(packagingMinor, amountMinor);
+    else otherMinor = addMinorUnits(otherMinor, amountMinor);
   }
 
   return {
@@ -357,11 +396,12 @@ export function receiptChargeLines(raw: unknown): ReceiptChargeLine[] {
 }
 
 /** Total of every non-waived applied charge. */
-export function totalAppliedCharges(charges: AppliedCharge[]): number {
-  let total = 0;
+export function totalAppliedCharges(charges: AppliedCharge[], currencyDecimals = 2): number {
+  const factor = Math.pow(10, normalizeCurrencyDecimals(currencyDecimals));
+  let totalMinor = 0;
   for (const charge of charges) {
     if (charge.waived) continue;
-    total += Number.isFinite(charge.amount) ? charge.amount : 0;
+    totalMinor = addMinorUnits(totalMinor, toMinorUnits(charge.amount, factor));
   }
-  return total;
+  return totalMinor / factor;
 }

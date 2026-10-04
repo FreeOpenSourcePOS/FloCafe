@@ -50,6 +50,7 @@ interface ChargeBillRow {
 }
 
 interface ChargeOrderRow {
+  status: string;
   id: number | string;
   customer_id: string | null;
   /** Validated on order create, so the stored value is one of the four types. */
@@ -2344,6 +2345,10 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    if (order.status === 'cancelled') {
+      return res.status(409).json({ error: 'Discounts cannot be changed on a cancelled order' });
+    }
+
     // Check if approval is required
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
     if (requiresApproval && value > 0) {
@@ -2542,6 +2547,10 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as ChargeOrderRow | undefined;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (order.status === 'cancelled') {
+      return res.status(409).json({ error: 'Charges cannot be changed on a cancelled order' });
     }
 
     const definitions = getChargeDefinitions();

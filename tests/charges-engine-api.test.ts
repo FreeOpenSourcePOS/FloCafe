@@ -558,6 +558,31 @@ async function main() {
     assertEqualOrThrow(cancelledFeeBillRow.total, 0, 'the unpaid bill total is zero after cancellation');
     assertEqualOrThrow(cancelledFeeBillRow.service_charge, 0, 'the unpaid bill clears the engine-owned fee');
 
+    await putCharges([{ ...SERVICE_CHARGE, type: 'fixed', value: 7, is_optional: true }]);
+    const cancelledOptionalOrder = await createOrder('dine_in');
+    const cancelledOptionalBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: cancelledOptionalOrder.data.order.id }, headers: authHeader,
+    });
+    await api(baseUrl, `/api/orders/${cancelledOptionalOrder.data.order.id}/items/${cancelledOptionalOrder.data.order.items[0].id}/cancel`, {
+      method: 'PATCH', body: {}, headers: authHeader,
+    });
+    const cancelledToggle = await api(baseUrl, `/api/bills/${cancelledOptionalBill.data.bill.id}/charges`, {
+      method: 'PATCH', body: { charge_id: 'service_charge', waived: false }, headers: authHeader,
+    });
+    assertEqualOrThrow(cancelledToggle.status, 409, 'charges cannot be restored on a cancelled order');
+    const cancelledAfterToggle = db.prepare('SELECT total, balance, charges_breakdown FROM bills WHERE id = ?').get(cancelledOptionalBill.data.bill.id) as any;
+    assertEqualOrThrow(cancelledAfterToggle.total, 0, 'the cancelled bill stays at zero after a rejected toggle');
+    assertEqualOrThrow(cancelledAfterToggle.balance, 0, 'the cancelled bill stays without a balance');
+    assertEqualOrThrow(cancelledAfterToggle.charges_breakdown, '[]', 'the rejected toggle preserves cleared charges');
+
+    const cancelledDiscount = await api(baseUrl, `/api/bills/${cancelFeeBill.data.bill.id}/applyDiscount`, {
+      method: 'POST', body: { type: 'percentage', value: 10, reason: 'cancelled order' }, headers: authHeader,
+    });
+    assertEqualOrThrow(cancelledDiscount.status, 409, 'discounts cannot restore fees on a cancelled order');
+    const cancelledAfterDiscount = db.prepare('SELECT total, balance FROM bills WHERE id = ?').get(cancelFeeBill.data.bill.id) as any;
+    assertEqualOrThrow(cancelledAfterDiscount.total, 0, 'the cancelled bill stays at zero after a rejected discount');
+    assertEqualOrThrow(cancelledAfterDiscount.balance, 0, 'the cancelled bill balance stays zero after a rejected discount');
+
     console.log('\n11. Order create keeps a manual charge column the engine has no rule for');
     await putCharges([{ ...LATE_NIGHT, id: 'late_night', order_types: ['dine_in'] }]);
     const manual = await api(baseUrl, '/api/orders', {
@@ -716,6 +741,19 @@ async function main() {
       method: 'POST', body: { order_id: packagingOrder.data.order.id }, headers: authHeader,
     });
     assertEqualOrThrow(packagingBill.data.bill.packaging_charge, 10, 'the initial bill has its packaging fee');
+    const packagingOrderDiscount = await api(baseUrl, `/api/orders/${packagingOrder.data.order.id}/discount`, {
+      method: 'PATCH', body: { discount_type: 'percentage', discount_value: 10 }, headers: authHeader,
+    });
+    assertEqualOrThrow(packagingOrderDiscount.status, 200, 'an order discount recalculates packaging');
+    assertEqualOrThrow(packagingOrderDiscount.data.order.packaging_charge, 9, 'order packaging uses the discounted net');
+    const orderDiscountBill = db.prepare('SELECT packaging_charge, charges_breakdown, total, balance FROM bills WHERE id = ?').get(packagingBill.data.bill.id) as any;
+    assertEqualOrThrow(orderDiscountBill.packaging_charge, 9, 'bill packaging column follows the order discount');
+    assertEqualOrThrow(JSON.parse(orderDiscountBill.charges_breakdown)[0].amount, 9, 'bill breakdown agrees with its packaging column');
+    assertEqualOrThrow(orderDiscountBill.total, 99, 'bill total includes the discounted packaging');
+    assertEqualOrThrow(orderDiscountBill.balance, 99, 'bill balance agrees with the discounted total');
+    await api(baseUrl, `/api/orders/${packagingOrder.data.order.id}/discount`, {
+      method: 'PATCH', body: { discount_type: 'percentage', discount_value: 0 }, headers: authHeader,
+    });
     const packagingAppend = await api(baseUrl, `/api/orders/${packagingOrder.data.order.id}/items`, {
       method: 'POST', body: { items: [{ product_id: 'prod-charges', quantity: 1 }] }, headers: authHeader,
     });

@@ -182,6 +182,7 @@ export interface Order {
   packaging_charge?: number;
   /** Server-validated explicit per-order amount; Settings only configures tax treatment. */
   service_charge: number;
+  charges_breakdown?: string | null;
   round_off?: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;

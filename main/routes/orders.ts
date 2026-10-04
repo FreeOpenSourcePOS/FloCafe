@@ -1588,7 +1588,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         db.prepare(`
           UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
           WHERE id = ?
         `).run(
           totals.subtotal,
@@ -1597,7 +1597,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
           discount_value > 0 ? discount_value : null,
           discount_value > 0 ? (discount_reason || null) : null,
           taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance,
-          syncedServiceCharge, syncedChargesJson, billRoundOff, now(), existingBill.id
+          syncedServiceCharge, syncedPackagingCharge, syncedChargesJson, billRoundOff, now(), existingBill.id
         );
       }
 

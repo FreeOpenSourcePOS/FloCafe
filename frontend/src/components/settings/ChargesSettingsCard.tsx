@@ -53,10 +53,11 @@ function toDefinition(form: ChargeForm, existing?: ChargeDefinition): ChargeDefi
   // A blank id falls back to the name so the form never submits an empty id.
   const rawId = (form.id.trim() || form.name).trim();
   const normalizedId = rawId.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+  const id = !form.id.trim() && !/[a-z0-9]/.test(normalizedId)
+    ? `charge-${Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('')}`
+    : normalizedId;
   return {
-    id: !form.id.trim() && !/[a-z0-9]/.test(normalizedId)
-      ? `charge-${globalThis.crypto.randomUUID()}`
-      : normalizedId,
+    id,
     name: form.name.trim(),
     type: form.type,
     value: Number(form.value),

@@ -1,4 +1,4 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext, type Route } from '@playwright/test';
+import { test, expect, request as playwrightRequest, type APIRequestContext, type Page, type Request, type Route } from '@playwright/test';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
@@ -441,6 +441,31 @@ test('payment modal hides charge controls without bill discount permission', asy
   let originalServerOverrides: Array<{ permission_id: string; effect: string }> | undefined;
   let serverPermissionsChanged = false;
   let serverContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+  let serverPage: Page | undefined;
+  let orderNumber: string | undefined;
+  const testStartedAt = Date.now();
+  const requestStartedAt = new WeakMap<Request, number>();
+  const apiEvents: Array<{ label: string; method: string; status: number | 'network_error'; elapsedMs: number }> = [];
+  const stages: Array<{ stage: string; phase: 'start' | 'complete'; elapsedMs: number }> = [];
+  const appendApiEvent = (event: (typeof apiEvents)[number]) => {
+    apiEvents.push(event);
+    if (apiEvents.length > 40) apiEvents.shift();
+  };
+  const markStage = (stage: string, phase: 'start' | 'complete') => {
+    stages.push({ stage, phase, elapsedMs: Date.now() - testStartedAt });
+  };
+  const safeApiLabel = (browserRequest: Request): string | null => {
+    let url: URL;
+    try { url = new URL(browserRequest.url()); } catch { return null; }
+    if (url.origin !== new URL(BASE).origin) return null;
+    const path = url.pathname;
+    if (path === '/api/bills/generate' && browserRequest.method() === 'POST') return 'bill-generate';
+    if ((/^\/api\/bills\/[^/]+$/.test(path) || /^\/api\/bills\/order\/[^/]+$/.test(path))
+      && browserRequest.method() === 'GET') return 'bill-load';
+    if (path === '/api/tax/preview') return 'tax-preview';
+    if (path === '/api/settings/charges' && browserRequest.method() === 'GET') return 'charges-load';
+    return null;
+  };
   let primaryFailure = false;
 
   try {
@@ -457,6 +482,7 @@ test('payment modal hides charge controls without bill discount permission', asy
     });
     expect(orderResponse.status()).toBe(201);
     const { order } = await orderResponse.json();
+    orderNumber = order.order_number;
     const billResponse = await request.post(`${BASE}/api/bills/generate`, {
       headers: managerHeaders,
       data: { order_id: order.id },
@@ -492,26 +518,59 @@ test('payment modal hides charge controls without bill discount permission', asy
     serverPermissionsChanged = true;
 
     serverContext = await browser.newContext();
-    const serverPage = await serverContext.newPage();
-    await serverPage.goto(`${BASE}/auth/login`);
-    const serverEmail = serverPage.locator('#email');
-    await expect(serverEmail).toBeVisible({ timeout: 5000 });
-    await serverEmail.fill('server@flo.local');
-    await serverPage.locator('#password').fill(E2E_PASSWORD);
-    await serverPage.locator('button[type="submit"]').click();
-    await setLanguage(serverPage, 'en');
-    await serverPage.goto(`${BASE}/orders`);
-    await serverPage.getByPlaceholder(/search/i).first().fill(order.order_number);
-    await expect(serverPage.getByText(`#${order.order_number}`)).toBeVisible();
+    serverPage = await serverContext.newPage();
+    serverPage.on('request', (browserRequest) => {
+      if (safeApiLabel(browserRequest)) requestStartedAt.set(browserRequest, Date.now());
+    });
+    serverPage.on('response', (response) => {
+      const browserRequest = response.request();
+      const startedAt = requestStartedAt.get(browserRequest);
+      const label = safeApiLabel(browserRequest);
+      if (startedAt !== undefined && label) {
+        appendApiEvent({ label, method: browserRequest.method(), status: response.status(), elapsedMs: Date.now() - startedAt });
+      }
+    });
+    serverPage.on('requestfailed', (browserRequest) => {
+      const startedAt = requestStartedAt.get(browserRequest);
+      const label = safeApiLabel(browserRequest);
+      if (startedAt !== undefined && label) {
+        appendApiEvent({ label, method: browserRequest.method(), status: 'network_error', elapsedMs: Date.now() - startedAt });
+      }
+    });
+
+    await test.step('staff signs in and finds the created order', async () => {
+      markStage('staff_login_order_search', 'start');
+      await serverPage!.goto(`${BASE}/auth/login`);
+      const serverEmail = serverPage!.locator('#email');
+      await expect(serverEmail).toBeVisible({ timeout: 5000 });
+      await serverEmail.fill('server@flo.local');
+      await serverPage!.locator('#password').fill(E2E_PASSWORD);
+      await serverPage!.locator('button[type="submit"]').click();
+      await setLanguage(serverPage!, 'en');
+      await serverPage!.goto(`${BASE}/orders`);
+      await serverPage!.getByPlaceholder(/search/i).first().fill(order.order_number);
+      await expect(serverPage!.getByText(`#${order.order_number}`)).toBeVisible();
+      markStage('staff_login_order_search', 'complete');
+    });
     const staffOrderCard = serverPage.locator('div.bg-card.rounded-xl.border.flex.flex-col')
       .filter({ hasText: `#${order.order_number}` });
     await expect(staffOrderCard).toHaveCount(1);
-    await staffOrderCard.getByRole('button', { name: 'Checkout', exact: true }).click();
-    await expect(serverPage.getByRole('heading', { name: 'Payment' })).toBeVisible();
-    const readOnlyCharges = serverPage.getByTestId('payment-charges');
-    await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();
-    await expect(readOnlyCharges.getByText('Payment Add-on Fee')).toBeVisible();
-    await expect(readOnlyCharges.getByRole('button')).toHaveCount(0);
+    await test.step('staff checks out the created order and sees payment', async () => {
+      markStage('staff_checkout_click', 'start');
+      await staffOrderCard.getByRole('button', { name: 'Checkout', exact: true }).click();
+      markStage('staff_checkout_click', 'complete');
+      markStage('payment_heading_visible', 'start');
+      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible();
+      markStage('payment_heading_visible', 'complete');
+    });
+    await test.step('staff sees charge details without mutation controls', async () => {
+      markStage('staff_readonly_charge_assertions', 'start');
+      const readOnlyCharges = serverPage!.getByTestId('payment-charges');
+      await expect(readOnlyCharges.getByText('Payment Service Fee')).toBeVisible();
+      await expect(readOnlyCharges.getByText('Payment Add-on Fee')).toBeVisible();
+      await expect(readOnlyCharges.getByRole('button')).toHaveCount(0);
+      markStage('staff_readonly_charge_assertions', 'complete');
+    });
 
     const limitedHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
     const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, { headers: limitedHeaders });
@@ -526,6 +585,25 @@ test('payment modal hides charge controls without bill discount permission', asy
     expect(forbiddenUpdate.status()).toBe(403);
   } catch (error) {
     primaryFailure = true;
+    if (serverPage) {
+      try {
+        const orderCard = orderNumber
+          ? serverPage.locator('div.bg-card.rounded-xl.border.flex.flex-col').filter({ hasText: `#${orderNumber}` })
+          : null;
+        const diagnostics = {
+          elapsedMs: Date.now() - testStartedAt,
+          orderCardCount: orderCard ? await orderCard.count() : 0,
+          checkoutButtonCount: orderCard ? await orderCard.getByRole('button', { name: 'Checkout', exact: true }).count() : 0,
+          paymentHeadingVisible: await serverPage.getByRole('heading', { name: 'Payment' }).isVisible().catch(() => false),
+          dialogCount: await serverPage.getByRole('dialog').count(),
+          stages,
+          apiEvents,
+        };
+        console.error('STAFF_CHECKOUT_DIAGNOSTICS', JSON.stringify(diagnostics));
+      } catch {
+        // Keep diagnostic collection from masking the original browser failure.
+      }
+    }
     throw error;
   } finally {
     const cleanupFailures: unknown[] = [];

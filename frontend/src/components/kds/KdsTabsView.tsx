@@ -16,6 +16,7 @@ import {
 import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
@@ -129,7 +130,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.color}`} />
                         <span className={`font-bold text-base w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
                         <span className={`text-lg font-semibold flex-1 truncate ${isVoided ? 'text-gray-400 line-through' : 'text-foreground'}`}>
-                          {item.product_name}
+                          {formatItemHeading(item.product_name, item.variant_selection)}
                         </span>
                         <ChevronRight size={14} className="text-gray-400 shrink-0 rtl-flip" />
                       </div>

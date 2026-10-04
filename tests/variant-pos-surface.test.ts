@@ -35,8 +35,16 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
 
 const { buildBillPrintData } = require('../main/printers/document-classic');
 const { buildKotPrintData } = require('../main/printers/document-kot');
+const { buildDeliverySlipPrintData } = require('../main/printers/document-delivery-slip');
 const { useCartStore } = require('../frontend/src/store/cart');
 const { buildAppendItemsFingerprint } = require('../frontend/src/lib/append-attempt');
+const { cartItemToOrderItem } = require('../frontend/src/lib/cart-order-item');
+const { formatItemHeading } = require('../frontend/src/lib/printer/item-heading');
+const {
+  activeVariants,
+  isVariantSoldOut,
+  selectDefaultVariant,
+} = require('../frontend/src/lib/product-variants');
 
 function variant(overrides: Record<string, unknown> = {}) {
   return {
@@ -164,6 +172,123 @@ function receiptItem(variantSelection: unknown) {
     'a free variant prices at zero rather than falling back to the parent product price',
   );
   useCartStore.getState().clearCart();
+}
+
+// ---------------------------------------------------------------------------
+// Sold-out gating and default selection (table-driven)
+// ---------------------------------------------------------------------------
+{
+  const tracked = variant({ id: 'tracked-zero', track_inventory: true, stock_quantity: 0 });
+  const trackedStocked = variant({ id: 'tracked-stock', track_inventory: true, stock_quantity: 4 });
+  const untrackedZero = variant({ id: 'untracked-zero', track_inventory: false, stock_quantity: 0 });
+  const inactiveSoldOut = variant({ id: 'inactive', track_inventory: true, stock_quantity: 0, is_active: false });
+
+  for (const [label, input, soldOut] of [
+    ['tracked at zero', tracked, true],
+    ['untracked at zero', untrackedZero, false],
+    ['tracked with stock', trackedStocked, false],
+    ['inactive at zero', inactiveSoldOut, true],
+  ] as const) {
+    assert.equal(isVariantSoldOut(input), soldOut, `${label}: sold-out gating`);
+  }
+
+  assert.deepEqual(
+    activeVariants([tracked, inactiveSoldOut, untrackedZero]).map((v: any) => v.id),
+    ['tracked-zero', 'untracked-zero'],
+    'only active variants are offered for selection',
+  );
+
+  const lineup = [tracked, untrackedZero, trackedStocked];
+  for (const [label, variants, initialId, expected] of [
+    ['first in stock when nothing is chosen', lineup, undefined, 'untracked-zero'],
+    ['a still-sellable line variant is kept', lineup, 'tracked-stock', 'tracked-stock'],
+    ['a sold-out line variant is not kept', lineup, 'tracked-zero', 'untracked-zero'],
+    ['the only sellable variant wins', [tracked, untrackedZero], undefined, 'untracked-zero'],
+    ['every variant sold out', [tracked, variant({ id: 'z', track_inventory: true, stock_quantity: 0 })], undefined, null],
+    ['no variants at all', [], 'anything', null],
+  ] as const) {
+    const chosen = selectDefaultVariant(variants, initialId);
+    assert.equal(chosen?.id ?? null, expected, `default selection: ${label}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// One cart-item -> order-item projection
+// ---------------------------------------------------------------------------
+{
+  const baseItem = {
+    id: 'line-1',
+    product: product(),
+    quantity: 2,
+    addons: [],
+    special_instructions: 'no sugar',
+    variant: null,
+  };
+
+  const plain = cartItemToOrderItem(baseItem);
+  assert.equal(plain.product_id, 'prod-1', 'the mapper carries the product id');
+  assert.equal(plain.variant_id, null, 'a line with no variant sends a null variant_id');
+  assert.equal(plain.addons, null, 'a line with no add-ons sends null, not an empty array');
+
+  const withVariant = cartItemToOrderItem({ ...baseItem, variant: variant({ sku: 'CAP-LG' }) });
+  assert.equal(withVariant.variant_id, 'var-large', 'the mapper carries the selected variant id');
+
+  const withAddons = cartItemToOrderItem({
+    ...baseItem,
+    addons: [{ id: 'addon-1', addon_group_id: 'g1', name: 'Oat milk', price: 40, is_active: true, sort_order: 0 }],
+  });
+  assert.deepEqual(
+    withAddons.addons,
+    [{ id: 'addon-1', name: 'Oat milk', price: 40, quantity: 1 }],
+    'add-ons project to the order payload with a defaulted quantity',
+  );
+
+  assert.equal(
+    cartItemToOrderItem({ ...baseItem, special_instructions: '' }).special_instructions,
+    null,
+    'an empty instruction note sends null',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The browser print mirror agrees with the backend helper
+// ---------------------------------------------------------------------------
+{
+  for (const [label, input, expected] of [
+    ['JSON text snapshot', JSON.stringify(variant()), 'Cappuccino (Large)'],
+    ['object snapshot', variant(), 'Cappuccino (Large)'],
+    ['snapshot with a SKU', JSON.stringify(variant({ sku: 'CAP-LG' })), 'Cappuccino (Large) [CAP-LG]'],
+    ['no snapshot', undefined, 'Cappuccino'],
+    ['null snapshot', null, 'Cappuccino'],
+    ['JSON null snapshot', 'null', 'Cappuccino'],
+    ['unparseable snapshot', 'not json', 'Cappuccino'],
+    ['nameless snapshot', JSON.stringify({ id: 'var-large' }), 'Cappuccino'],
+    ['blank SKU', JSON.stringify({ name: 'Large', sku: '  ' }), 'Cappuccino (Large)'],
+  ] as const) {
+    assert.equal(formatItemHeading('Cappuccino', input), expected, `browser heading: ${label}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Courier slip heading names the variant too
+// ---------------------------------------------------------------------------
+{
+  const slipHeading = (variantSelection: unknown) =>
+    buildDeliverySlipPrintData(
+      { order_number: 'D1' },
+      [{
+        product_name: 'Cappuccino',
+        quantity: 2,
+        status: 'pending',
+        addons: [],
+        special_instructions: '',
+        ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+      }],
+      {},
+    ).items[0].productName;
+
+  assert.equal(slipHeading(JSON.stringify(variant())), 'Cappuccino (Large)', 'a delivery slip line names the variant sold');
+  assert.equal(slipHeading(undefined), 'Cappuccino', 'a delivery slip item with no variant prints exactly the product name');
 }
 
 // ---------------------------------------------------------------------------

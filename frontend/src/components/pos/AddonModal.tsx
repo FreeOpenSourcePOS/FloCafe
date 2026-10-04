@@ -8,6 +8,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
+import { activeVariants, isVariantSoldOut, selectDefaultVariant } from '@/lib/product-variants';
 import type { Product, Addon, AddonGroup, ProductVariant } from '@/lib/types';
 
 interface Props {
@@ -34,11 +35,6 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
   return grouped;
 }
 
-/** A tracked variant with no stock cannot be sold, so it is not selectable. */
-function isVariantSoldOut(variant: ProductVariant): boolean {
-  return Boolean(variant.track_inventory) && Number(variant.stock_quantity) <= 0;
-}
-
 function variantPillClassName(isSelected: boolean, soldOut: boolean): string {
   if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
   if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
@@ -57,12 +53,8 @@ export default function AddonModal({
   const [qtyDraft, setQtyDraft] = useState(() => String(initialQuantity));
   const [instructions, setInstructions] = useState(initialInstructions);
 
-  const variants = (product.variants || []).filter((variant) => variant.is_active);
-  // An edit keeps the variant already on the line; a new item starts on the
-  // first variant that can actually be sold.
-  const defaultVariant = variants.find((variant) => variant.id === initialVariant?.id && !isVariantSoldOut(variant))
-    ?? variants.find((variant) => !isVariantSoldOut(variant))
-    ?? null;
+  const variants = activeVariants(product.variants);
+  const defaultVariant = selectDefaultVariant(variants, initialVariant?.id);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(defaultVariant?.id ?? null);
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? null;
   const basePrice = Number(selectedVariant?.price ?? product.price) || 0;

@@ -10,6 +10,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, ProductVariant, Table, Bill, Order, CartItem } from '@/lib/types';
+import { cartItemToOrderItem } from '@/lib/cart-order-item';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -624,15 +625,7 @@ export default function POSPage() {
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
-        const newItems = cart.items.map((item) => ({
-          product_id: item.product.id,
-          variant_id: item.variant?.id ?? null,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        }));
+        const newItems = cart.items.map(cartItemToOrderItem);
         const specialInstructions = cart.orderNotes || undefined;
         const itemFingerprint = buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions);
         const storage = getAppendAttemptStorage();
@@ -671,15 +664,7 @@ export default function POSPage() {
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-          items: cart.items.map((item) => ({
-            product_id: item.product.id,
-            variant_id: item.variant?.id ?? null,
-            quantity: item.quantity,
-            addons: item.addons.length > 0
-              ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-              : null,
-            special_instructions: item.special_instructions || null,
-          })),
+          items: cart.items.map(cartItemToOrderItem),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
         const priorOrderAttempt = readPostpaidAttempt();
@@ -726,15 +711,7 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
-    const orderItems = cart.items.map((item) => ({
-      product_id: item.product.id,
-      variant_id: item.variant?.id ?? null,
-      quantity: item.quantity,
-      addons: item.addons.length > 0
-        ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-        : null,
-      special_instructions: item.special_instructions || null,
-    }));
+    const orderItems = cart.items.map(cartItemToOrderItem);
     const paymentLines = payments
       .filter((p) => p.amount > 0)
       .map((p) => ({
@@ -1027,15 +1004,7 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
-      const items = cart.items.map((item) => ({
-        product_id: item.product.id,
-        variant_id: item.variant?.id ?? null,
-        quantity: item.quantity,
-        addons: item.addons.length > 0
-          ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-          : null,
-        special_instructions: item.special_instructions || null,
-      }));
+      const items = cart.items.map(cartItemToOrderItem);
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();

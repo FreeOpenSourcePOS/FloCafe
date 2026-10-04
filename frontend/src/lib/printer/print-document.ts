@@ -22,6 +22,7 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@cou
 import { resolveTaxComponents } from './tax-components';
 import { shouldShowCustomerNumber } from '@print/document';
 import type { Bill, Order, OrderItem } from '@/lib/types';
+import { formatItemHeading } from './item-heading';
 
 /** Business contact facts and visibility flags for one bill print run. */
 export interface BillBusinessOptions {
@@ -154,7 +155,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       externalOrderId: String(order?.external_order_id ?? ''),
       deliveryAddress: String(order?.delivery_address ?? ''),
       items: items.map((item) => ({
-        productName: String(item?.product_name ?? ''),
+        productName: formatItemHeading(String(item?.product_name ?? ''), item?.variant_selection),
         quantity: Number(item?.quantity) || 0,
         unitPrice: Number(item?.unit_price) || 0,
         total: Number(item?.total) || 0,
@@ -312,7 +313,7 @@ export function buildFrontendKotDocument(
       customerName: firstText(order.customer?.name, orderShape.customer_name, orderShape.customerName),
     },
     items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
-      productName: String(item.product_name ?? ''),
+      productName: formatItemHeading(String(item.product_name ?? ''), item.variant_selection),
       quantity: Number(item.quantity) || 0,
       addons: parseKotAddons(item.addons).map((addon) => ({
         name: String(addon?.name ?? ''),

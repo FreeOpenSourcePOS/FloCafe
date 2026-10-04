@@ -13,6 +13,7 @@ import RefundModal from '@/components/orders/RefundModal';
 import { sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import type { Table, Product, ProductVariant, Customer, Addon } from '@/lib/types';
+import { cartItemToOrderItem } from '@/lib/cart-order-item';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
@@ -168,7 +169,7 @@ export default function OrdersPage() {
   // Add Item modal states
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<{ key: string; product_id: string; product_name: string; variant: ProductVariant | null; quantity: number; special_instructions: string; addons: Addon[] }[]>([]);
+  const [selectedItems, setSelectedItems] = useState<{ key: string; product: Product; variant: ProductVariant | null; quantity: number; special_instructions: string; addons: Addon[] }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
   const [addonPickerProduct, setAddonPickerProduct] = useState<Product | null>(null);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
@@ -806,14 +807,14 @@ export default function OrdersPage() {
       return;
     }
     setSelectedItems(prev => {
-      const existing = prev.find(i => i.product_id === product.id && !i.variant && i.addons.length === 0);
+      const existing = prev.find(i => i.product.id === product.id && !i.variant && i.addons.length === 0);
       if (existing) {
         return prev.map(i => i === existing ? { ...i, quantity: i.quantity + 1 } : i);
       }
       const key = typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID()
         : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
-      return [...prev, { key, product_id: product.id, product_name: product.name, variant: null, quantity: 1, special_instructions: '', addons: [] }];
+      return [...prev, { key, product, variant: null, quantity: 1, special_instructions: '', addons: [] }];
     });
   };
 
@@ -824,8 +825,7 @@ export default function OrdersPage() {
         : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
       return [...prev, {
         key,
-        product_id: product.id,
-        product_name: product.name,
+        product,
         variant,
         quantity,
         special_instructions: instructions,
@@ -852,15 +852,7 @@ export default function OrdersPage() {
     if (!addItemsOrder || selectedItems.length === 0) return;
     setAddingItems(true);
     try {
-      const items = selectedItems.map(i => ({
-        product_id: i.product_id,
-        variant_id: i.variant?.id ?? null,
-        quantity: i.quantity,
-        special_instructions: i.special_instructions || undefined,
-        addons: i.addons.length > 0
-          ? i.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-          : undefined,
-      }));
+      const items = selectedItems.map((i) => cartItemToOrderItem(i));
       const fingerprint = buildAppendItemsFingerprint(addItemsOrder.id, items);
       const storage = getAppendAttemptStorage();
       const attempt = getOrCreateAppendAttempt(storage, {
@@ -1599,7 +1591,7 @@ placeholder={tOrders('managerPin')}
                   <div key={item.key} className="flex items-center gap-2 bg-muted rounded-lg p-2">
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-foreground truncate block">
-                        {item.variant ? `${item.product_name} (${item.variant.name})` : item.product_name}
+                        {item.variant ? `${item.product.name} (${item.variant.name})` : item.product.name}
                       </span>
                       {item.addons.length > 0 && (
                         <span className="text-xs text-muted-foreground truncate block">

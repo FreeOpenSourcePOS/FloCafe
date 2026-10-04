@@ -181,11 +181,10 @@ export function parseVariantSelection(value: unknown): ItemVariantSelection | nu
 /** Item heading that always names the variant sold. An item without a variant
  * prints exactly its product name, so existing receipts are unchanged. */
 export function formatVariantItemHeading(productName: string, variant: ItemVariantSelection | null): string {
-  const name = String(productName ?? '');
   const variantName = String(variant?.name ?? '').trim();
-  if (!variantName) return name;
+  if (!variantName) return productName;
   const sku = String(variant?.sku ?? '').trim();
-  return `${name} (${variantName})${sku ? ` [${sku}]` : ''}`;
+  return `${productName} (${variantName})${sku ? ` [${sku}]` : ''}`;
 }
 
 function getSafeLatnLocale(locale: string | undefined): string {

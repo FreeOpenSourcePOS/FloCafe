@@ -8,6 +8,9 @@ import { isOrdersLayoutValue, useOrdersLayoutStore, type OrdersLayout } from '@/
 
 // Several screens read the preference; hydrate it from the DB once per renderer.
 let hydrationStarted = false;
+let saveGeneration = 0;
+let pendingRequest: Promise<unknown> = Promise.resolve();
+let confirmedLayout: OrdersLayout = 'split';
 
 /** Reads the persisted orders layout into the store and saves it optimistically,
  * rolling back and surfacing an error when the write fails. */
@@ -20,28 +23,36 @@ export function useOrdersLayoutPreference() {
   useEffect(() => {
     if (hydrationStarted) return;
     hydrationStarted = true;
-    void (async () => {
+    pendingRequest = pendingRequest.then(async () => {
       try {
         const { data } = await api.get('/settings/orders_layout');
         const raw = data?.setting?.value;
         // A choice made while the fetch was in flight wins over the stored row.
-        if (isOrdersLayoutValue(raw) && !useOrdersLayoutStore.getState().userSelected) setLayout(raw);
+        if (isOrdersLayoutValue(raw)) {
+          confirmedLayout = raw;
+          if (!useOrdersLayoutStore.getState().userSelected) setLayout(raw);
+        }
       } catch {
-        // Keep the built-in default.
+        hydrationStarted = false;
       }
-    })();
+    });
   }, [setLayout]);
 
   const save = useCallback(
     async (next: OrdersLayout) => {
       const previous = useOrdersLayoutStore.getState().layout;
       if (next === previous) return;
+      const generation = ++saveGeneration;
       markUserSelected();
       setLayout(next);
+      const write = pendingRequest.then(() => api.put('/settings/orders_layout', { value: next }));
+      pendingRequest = write.catch(() => {});
       try {
-        await api.put('/settings/orders_layout', { value: next });
+        await write;
+        confirmedLayout = next;
       } catch {
-        setLayout(previous);
+        if (generation !== saveGeneration) return;
+        setLayout(confirmedLayout);
         toast.error(t('saveFailed'));
       }
     },

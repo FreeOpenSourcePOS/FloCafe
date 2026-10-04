@@ -20,6 +20,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { strict as assert } from 'node:assert';
+import * as vm from 'node:vm';
+import * as ts from 'typescript';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -122,6 +124,118 @@ function readStored(key: string): string | undefined {
     .prepare('SELECT value FROM settings WHERE key = ?')
     .get(key) as { value: string } | undefined;
   return row?.value;
+}
+
+async function testPreferenceRecovery() {
+  const source = fs.readFileSync(path.join(__dirname, '../frontend/src/hooks/useOrdersLayout.ts'), 'utf8');
+  const code = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const state = {
+    layout: 'split',
+    userSelected: false,
+    setLayout: (value: string) => { state.layout = value; },
+    markUserSelected: () => { state.userSelected = true; },
+  };
+  const store = Object.assign((select: (value: typeof state) => unknown) => select(state), {
+    getState: () => state,
+  });
+  let reads = 0;
+  let failRead = true;
+  let persisted = 'cards';
+  const writes: { value: string; resolve: () => void; reject: () => void }[] = [];
+  const errors: string[] = [];
+  let completeRead: (value: unknown) => void = () => {};
+  const recoveredRead = new Promise((resolve) => { completeRead = resolve; });
+  const api = {
+    get: async () => {
+      reads++;
+      if (failRead) throw new Error('temporarily offline');
+      return recoveredRead;
+    },
+    put: (_url: string, { value }: { value: string }) => new Promise<void>((resolve, reject) => {
+      writes.push({ value, resolve: () => { persisted = value; resolve(); }, reject: () => reject(new Error('write failed')) });
+    }),
+  };
+  const module = { exports: {} as { useOrdersLayoutPreference: () => { save: (value: string) => Promise<void> } } };
+  vm.runInNewContext(code, {
+    exports: module.exports,
+    require: (name: string) => {
+      if (name === 'react') return {
+        useEffect: (effect: () => void) => effect(),
+        useCallback: (callback: unknown) => callback,
+      };
+      if (name === 'react-hot-toast') return { default: { error: (value: string) => errors.push(value) } };
+      if (name === 'use-intl') return { useTranslations: () => (key: string) => key };
+      if (name === '@/lib/api') return { default: api };
+      if (name === '@/store/orders-layout') return {
+        useOrdersLayoutStore: store,
+        isOrdersLayoutValue: (value: unknown) => value === 'split' || value === 'cards',
+      };
+      throw new Error(`Unexpected hook dependency: ${name}`);
+    },
+  });
+  const hook = module.exports.useOrdersLayoutPreference;
+  hook();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(state.layout, 'split', 'failed hydration keeps the default');
+  failRead = false;
+  const { save } = hook();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const startupSave = save('cards');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(writes.length, 0, 'startup save waits for persisted rollback baseline');
+  completeRead({ data: { setting: { value: 'cards' } } });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[0].reject();
+  await startupSave;
+  assert.equal(reads, 2, 'remount retries after a failed read');
+  assert.equal(state.layout, 'cards', 'failed startup save restores persisted choice');
+  hook();
+  assert.equal(reads, 2, 'successful hydration is shared across screens');
+
+  const older = save('split');
+  const newer = save('cards');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(writes.length, 2, 'preference writes are ordered rather than racing');
+  writes[1].reject();
+  await older;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(state.layout, 'cards', 'superseded failed save preserves newer choice');
+  writes[2].resolve();
+  await newer;
+  assert.equal(state.layout, 'cards', 'newer successful save stays selected');
+  assert.equal(state.layout, persisted, 'display matches persistence after superseded failure');
+  assert.deepEqual(writes.slice(1).map(({ value }) => value), ['split', 'cards'], 'writes follow selection order');
+  assert.equal(errors.length, 1, 'superseded failure does not report an obsolete error');
+
+  const latest = save('split');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[3].reject();
+  await latest;
+  assert.equal(state.layout, 'cards', 'latest failed save rolls back');
+  assert.deepEqual(errors, ['saveFailed', 'saveFailed'], 'latest failed save reports the error');
+
+  const firstFailed = save('split');
+  const secondFailed = save('cards');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[4].reject();
+  await firstFailed;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[5].reject();
+  await secondFailed;
+  assert.equal(state.layout, 'cards', 'overlapping failures restore the last persisted choice');
+
+  const firstSucceeded = save('split');
+  const laterFailed = save('cards');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[6].resolve();
+  await firstSucceeded;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  writes[7].reject();
+  await laterFailed;
+  assert.equal(state.layout, 'split', 'latest failure restores the earlier successful write');
+  assert.equal(state.layout, persisted, 'display matches persistence after latest failure');
 }
 
 async function main() {
@@ -248,7 +362,10 @@ async function main() {
       assert.equal(res.data?.setting?.value, 'split', 'defaults to "split"');
     }
 
-    console.log('\n6. Unknown keys are still refused by the wildcard route');
+    console.log('\n6. Preference hydration and concurrent saves recover correctly');
+    await testPreferenceRecovery();
+
+    console.log('\n7. Unknown keys are still refused by the wildcard route');
     {
       const res = await httpRequest(baseUrl, '/api/settings/not_a_setting', {
         method: 'PUT',

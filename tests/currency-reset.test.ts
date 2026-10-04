@@ -15,7 +15,7 @@ Module._load = function (request: string) {
 const assert = require('node:assert/strict');
 const express = require('express');
 const request = require('supertest');
-const { initDatabase, getDatabase, closeDatabase, now, getCurrencyResetImpact, resetDatabaseForCurrencyChange } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, now, getCurrencyResetImpact, resetDatabaseForCurrencyChange, createBackup, restoreBackup, validateInventoryLedgerDatabase } = require('../main/db');
 const { authRoutes } = require('../main/routes/auth');
 
 async function main() {
@@ -94,8 +94,11 @@ async function main() {
   assert.equal(count('product_variants'), 1, 'product variants of preserved products are preserved without orphans');
   assert.deepEqual(
     fresh.prepare("SELECT product_id, name, sku, price, stock_quantity, sort_order FROM product_variants WHERE id = 'latte-small'").get(),
-    { product_id: 'latte', name: 'Small', sku: 'LAT-S', price: 200, stock_quantity: 3, sort_order: 0 },
-    'restored variants keep their identity and stock',
+    // Stock is zeroed like the product's own stock: the reset starts an empty
+    // ledger, so restored stock would have no movement history and would fail
+    // the ledger pre-check on every later restore.
+    { product_id: 'latte', name: 'Small', sku: 'LAT-S', price: 200, stock_quantity: 0, sort_order: 0 },
+    'restored variants keep their identity and start at zero stock',
   );
   assert.deepEqual(
     fresh.prepare("SELECT category_id, inventory_product_id FROM products WHERE id = 'orphan-product'").get(),
@@ -103,6 +106,14 @@ async function main() {
     'orphaned product references are cleared',
   );
   assert.equal(fresh.prepare("SELECT id FROM addons WHERE id = 'orphan-addon'").get(), undefined, 'add-ons with missing groups are omitted');
+
+  // The reset leaves an empty ledger, so the reset store must still pass the
+  // ledger pre-check that every restore and import runs.
+  assert.equal(
+    validateInventoryLedgerDatabase(fresh),
+    null,
+    'the reset store validates against the inventory ledger pre-check',
+  );
 
   const product = fresh.prepare(`SELECT price, cost, stock_quantity, tax_type, tax_rate,
     tax_category_id, tax_behavior, cb_percent FROM products WHERE id = 'latte'`).get();
@@ -153,6 +164,21 @@ async function main() {
   assert.equal(count('products'), 2, 'post-reset setup skips demo menu seeding');
   assert.equal(fresh.prepare("SELECT value FROM settings WHERE key = 'setup_profile'").get().value, 'empty', 'post-reset setup records the effective empty profile');
   assert.equal(fresh.prepare("SELECT value FROM _flo_meta WHERE key = 'currency_reset_pending'").get(), undefined, 'setup clears the pending reset marker');
+
+  // Runs last in this file: restoreBackup replaces the live connection, so the
+  // handle the assertions above read through stops being valid afterwards.
+  const postResetBackup = await createBackup();
+  const postResetRestore = restoreBackup(postResetBackup.path, true);
+  assert.equal(
+    postResetRestore.success,
+    true,
+    `a backup taken after a currency reset still restores (got ${JSON.stringify(postResetRestore)})`,
+  );
+  assert.equal(
+    (getDatabase().prepare("SELECT COUNT(*) AS count FROM product_variants WHERE id = 'latte-small'").get() as { count: number }).count,
+    1,
+    'the variant survives the restore of the reset store',
+  );
 
   closeDatabase();
   Module._load = originalLoad;

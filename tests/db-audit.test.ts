@@ -171,6 +171,7 @@ for (const dbPath of targets) {
     { child: 'order_items', childCol: 'variant_id', parent: 'product_variants' },
     { child: 'product_variants', childCol: 'product_id', parent: 'products' },
     { child: 'product_variants', childCol: 'inventory_product_id', parent: 'products' },
+    { child: 'inventory_movements', childCol: 'variant_id', parent: 'product_variants' },
     { child: 'bills', childCol: 'order_id', parent: 'orders' },
     { child: 'bills', childCol: 'customer_id', parent: 'customers' },
     { child: 'loyalty_ledger', childCol: 'customer_id', parent: 'customers' },

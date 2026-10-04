@@ -513,10 +513,13 @@ function normalizeRequiredName(raw: unknown): string | null {
 }
 
 const MAX_DIETARY_TAGS = 32;
-// Matches the repo's other client-input caps (template labels 64, held order
-// items 100, order items 200). A menu with more than 64 sizes or flavours for a
-// single product is already past anything real, and the bound keeps the
-// per-write statement well inside SQLite's variable limit.
+// Each variant costs a bound parameter in the per-write statements (the
+// soft-deactivation id list and the barcode conflict scan), so an unbounded
+// array eventually trips SQLite's variable limit and fails the whole request
+// with a 500 instead of the 400 every other rejected payload gets. 64 matches
+// the repo's other client-input caps (template labels 64, held order items
+// 100, order items 200) and is already far past any real menu of sizes or
+// flavours.
 const MAX_PRODUCT_VARIANTS = 64;
 
 function normalizeDietaryTags(raw: unknown): { tags?: string[] | null; error?: string } {

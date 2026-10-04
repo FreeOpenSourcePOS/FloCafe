@@ -1638,12 +1638,16 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
   const categoryAddonGroups = snapshot.categoryAddonGroups.filter(
     (link) => categoryIds.has(link.category_id) && addonGroupIds.has(link.addon_group_id),
   );
-  // Variants are restored with their prices; a recipe link whose base product
-  // did not survive the reset is dropped so the restored row stays referentially valid.
+  // Variants are restored with their prices but with zeroed stock, exactly like
+  // their product: the reset starts an empty ledger, so any restored stock would
+  // have no movement history behind it and would fail the ledger pre-check on
+  // every later restore. A recipe link whose base product did not survive is
+  // dropped so the restored row stays referentially valid.
   const productVariants = snapshot.productVariants
     .filter((variant) => productIds.has(variant.product_id))
     .map((variant) => ({
       ...variant,
+      stock_quantity: 0,
       inventory_product_id: productIds.has(variant.inventory_product_id) ? variant.inventory_product_id : null,
     }));
 

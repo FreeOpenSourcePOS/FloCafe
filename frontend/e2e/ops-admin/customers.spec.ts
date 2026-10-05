@@ -166,7 +166,7 @@ test.describe('operations admin - customers', () => {
     await page.waitForTimeout(1200);
 
     await expect(page.locator('tr').filter({ hasText: customer.name })).toHaveCount(1);
-    await expect(page.getByText(new RegExp(phone.replace(/\+/g, '\\+')))).toBeVisible();
+    await expect(page.getByText(phone, { exact: true })).toBeVisible();
   });
 
   test('the owner-only phone repair reports no unmergeable conflicts among these records', async ({ page }) => {

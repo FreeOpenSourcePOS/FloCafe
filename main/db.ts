@@ -1638,15 +1638,19 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
   const categoryAddonGroups = snapshot.categoryAddonGroups.filter(
     (link) => categoryIds.has(link.category_id) && addonGroupIds.has(link.addon_group_id),
   );
-  // Variants are restored with their prices but with zeroed stock, exactly like
-  // their product: the reset starts an empty ledger, so any restored stock would
-  // have no movement history behind it and would fail the ledger pre-check on
-  // every later restore. A recipe link whose base product did not survive is
-  // dropped so the restored row stays referentially valid.
+  // Variants are reset exactly like their product: prices are zeroed because
+  // they are denominated in the old currency, and stock is zeroed because the
+  // reset starts an empty ledger, so any restored stock would have no movement
+  // history behind it and would fail the ledger pre-check on every later
+  // restore. A recipe link whose base product did not survive is dropped so the
+  // restored row stays referentially valid.
   const productVariants = snapshot.productVariants
     .filter((variant) => productIds.has(variant.product_id))
     .map((variant) => ({
       ...variant,
+      price: 0,
+      online_price: null,
+      cost_price: null,
       stock_quantity: 0,
       inventory_product_id: productIds.has(variant.inventory_product_id) ? variant.inventory_product_id : null,
     }));
@@ -5603,6 +5607,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     up: () => {
       if (!getColumns(db, 'inventory_movements').includes('variant_id')) {
         db.exec(`ALTER TABLE inventory_movements ADD COLUMN variant_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 102,
+    name: 'add_inventory_variant_id_to_order_items',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('inventory_variant_id')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN inventory_variant_id TEXT DEFAULT NULL`);
       }
     },
   },

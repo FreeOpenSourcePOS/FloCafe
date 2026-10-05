@@ -46,8 +46,8 @@ async function main() {
   db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('latte', 'milk')").run();
   db.prepare("INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES ('cat', 'milk')").run();
   db.prepare(`INSERT INTO product_variants (
-      id, product_id, name, sku, price, stock_quantity, is_active, sort_order, created_at, updated_at
-    ) VALUES ('latte-small', 'latte', 'Small', 'LAT-S', 200, 3, 1, 0, ?, ?)`).run(stamp, stamp);
+      id, product_id, name, sku, price, online_price, cost_price, stock_quantity, is_active, sort_order, created_at, updated_at
+    ) VALUES ('latte-small', 'latte', 'Small', 'LAT-S', 200, 220, 90, 3, 1, 0, ?, ?)`).run(stamp, stamp);
   db.pragma('foreign_keys = OFF');
   db.prepare(`INSERT INTO products (
       id, category_id, name, price, cost, stock_quantity, inventory_product_id,
@@ -93,12 +93,13 @@ async function main() {
   assert.equal(count('category_addon_groups'), 1, 'category add-on group relationships are preserved without orphans');
   assert.equal(count('product_variants'), 1, 'product variants of preserved products are preserved without orphans');
   assert.deepEqual(
-    fresh.prepare("SELECT product_id, name, sku, price, stock_quantity, sort_order FROM product_variants WHERE id = 'latte-small'").get(),
-    // Stock is zeroed like the product's own stock: the reset starts an empty
+    fresh.prepare("SELECT product_id, name, sku, price, online_price, cost_price, stock_quantity, sort_order FROM product_variants WHERE id = 'latte-small'").get(),
+    // Prices are zeroed like the product's own price: they are denominated in
+    // the old currency. Stock is zeroed because the reset starts an empty
     // ledger, so restored stock would have no movement history and would fail
     // the ledger pre-check on every later restore.
-    { product_id: 'latte', name: 'Small', sku: 'LAT-S', price: 200, stock_quantity: 0, sort_order: 0 },
-    'restored variants keep their identity and start at zero stock',
+    { product_id: 'latte', name: 'Small', sku: 'LAT-S', price: 0, online_price: null, cost_price: null, stock_quantity: 0, sort_order: 0 },
+    'restored variants keep their identity, zero their old-currency prices, and start at zero stock',
   );
   assert.deepEqual(
     fresh.prepare("SELECT category_id, inventory_product_id FROM products WHERE id = 'orphan-product'").get(),

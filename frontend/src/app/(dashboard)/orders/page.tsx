@@ -141,6 +141,7 @@ export default function OrdersPage() {
   const searchRef = useRef(filters.search);
   const previousSearchRef = useRef(filters.search);
   const ordersFetchIdRef = useRef(0);
+  const loadedOlderOrdersRef = useRef(false);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
@@ -254,8 +255,17 @@ export default function OrdersPage() {
       });
       if (fetchId !== ordersFetchIdRef.current) return true;
       const orders = data.orders || [];
-      setOrders((prev) => cursor === undefined ? orders : [...prev, ...orders]);
-      setNextOrdersCursor(data.nextCursor ?? null);
+      if (cursor === undefined) {
+        setOrders((prev) => {
+          const refreshedOrderIds = new Set(orders.map((order: Order) => order.id));
+          return [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))];
+        });
+        if (!loadedOlderOrdersRef.current) setNextOrdersCursor(data.nextCursor ?? null);
+      } else {
+        setOrders((prev) => [...prev, ...orders]);
+        setNextOrdersCursor(data.nextCursor ?? null);
+        loadedOlderOrdersRef.current = true;
+      }
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
         if (order.bill?.id && !fetchedBillIdsRef.current.has(order.bill.id)) {
@@ -270,7 +280,7 @@ export default function OrdersPage() {
     } finally {
       if (fetchId === ordersFetchIdRef.current) {
         if (cursor === undefined) setLoading(false);
-        else setLoadingMoreOrders(false);
+        setLoadingMoreOrders(false);
       }
     }
   };
@@ -280,7 +290,10 @@ export default function OrdersPage() {
     if (previousSearchRef.current === filters.search) return;
     previousSearchRef.current = filters.search;
     ordersFetchIdRef.current++;
+    loadedOlderOrdersRef.current = false;
+    setOrders([]);
     setNextOrdersCursor(null);
+    setLoading(true);
     setLoadingMoreOrders(false);
     const timeout = setTimeout(fetchOrders, 300);
     return () => clearTimeout(timeout);

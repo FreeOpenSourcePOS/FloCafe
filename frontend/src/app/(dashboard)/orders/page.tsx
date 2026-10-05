@@ -1655,6 +1655,7 @@ placeholder={tOrders('managerPin')}
         <AddonModal
           product={addonPickerProduct}
           currency={currency}
+          onlinePlatformSelected={Boolean(addItemsOrder?.online_platform)}
           onAdd={handleAddonPickerAdd}
           onClose={() => setAddonPickerProduct(null)}
         />

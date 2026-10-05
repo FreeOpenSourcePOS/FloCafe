@@ -27,6 +27,15 @@ const moduleApi = require('module') as {
 };
 const originalResolveFilename = moduleApi._resolveFilename;
 const zustandPath = frontendRequire.resolve('zustand');
+/** Resolve a bare specifier from the frontend install (react, use-intl, ...). */
+function resolveFrontendPackage(request: string): string | null {
+  if (request.startsWith('.') || path.isAbsolute(request) || request.startsWith('node:')) return null;
+  try {
+    return frontendRequire.resolve(request);
+  } catch {
+    return null;
+  }
+}
 moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   const resolvedRequest = request === 'zustand'
     ? zustandPath
@@ -34,7 +43,9 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
       ? path.resolve(ROOT, 'main/countries.ts')
       : request.startsWith('@/')
         ? path.resolve(ROOT, 'frontend/src', request.slice(2))
-        : request;
+        : request.startsWith('@print/')
+          ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
+          : resolveFrontendPackage(request) ?? request;
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 
@@ -225,12 +236,20 @@ function receiptItem(variantSelection: unknown) {
   const trackedStocked = variant({ id: 'tracked-stock', track_inventory: true, stock_quantity: 4 });
   const untrackedZero = variant({ id: 'untracked-zero', track_inventory: false, stock_quantity: 0 });
   const inactiveSoldOut = variant({ id: 'inactive', track_inventory: true, stock_quantity: 0, is_active: false });
+  const recipeZero = variant({
+    id: 'recipe-zero',
+    track_inventory: true,
+    stock_quantity: 0,
+    inventory_product_id: 'prod-dough',
+    inventory_deduction_quantity: 2,
+  });
 
   for (const [label, input, soldOut] of [
     ['tracked at zero', tracked, true],
     ['untracked at zero', untrackedZero, false],
     ['tracked with stock', trackedStocked, false],
     ['inactive at zero', inactiveSoldOut, true],
+    ['recipe-linked at zero own stock', recipeZero, false],
   ] as const) {
     assert.equal(isVariantSoldOut(input), soldOut, `${label}: sold-out gating`);
   }
@@ -251,6 +270,7 @@ function receiptItem(variantSelection: unknown) {
     ['a product with only optional groups', product({ addon_groups: [optionalGroup] }), untrackedZero, false],
     ['a sold-out variant', product(), tracked, true],
     ['a sold-out variant on a product with a required group', product({ addon_groups: [requiredGroup] }), tracked, true],
+    ['a recipe-linked variant at zero own stock', product(), recipeZero, false],
   ] as const) {
     assert.equal(
       scannedVariantNeedsCustomizer(product_, variant_),
@@ -266,6 +286,7 @@ function receiptItem(variantSelection: unknown) {
     ['a sold-out line variant is not kept', lineup, 'tracked-zero', 'untracked-zero'],
     ['the only sellable variant wins', [tracked, untrackedZero], undefined, 'untracked-zero'],
     ['every variant sold out', [tracked, variant({ id: 'z', track_inventory: true, stock_quantity: 0 })], undefined, null],
+    ['a recipe variant is sellable at zero own stock', [tracked, recipeZero], undefined, 'recipe-zero'],
     ['no variants at all', [], 'anything', null],
   ] as const) {
     const chosen = selectDefaultVariant(variants, initialId);
@@ -483,6 +504,110 @@ function receiptItem(variantSelection: unknown) {
     buildAppendItemsFingerprint(7, [{ ...withVariant }]),
     'an unchanged variant append keeps its fingerprint, so a retry replays the same idempotency key',
   );
+}
+
+// ---------------------------------------------------------------------------
+// Existing-order and refund surfaces name the variant sold
+// ---------------------------------------------------------------------------
+{
+  const React = frontendRequire('react');
+  const ReactDOMServer = frontendRequire('react-dom/server');
+  const { IntlProvider } = frontendRequire('use-intl');
+  const messages = require('../frontend/src/lib/i18n/messages/en.json');
+  const { OrderCard } = require('../frontend/src/components/orders/OrderCard');
+  const { OrderDetailPanel } = require('../frontend/src/components/orders/OrderDetailPanel');
+  const AddonModal = require('../frontend/src/components/pos/AddonModal').default;
+
+  // Production presentation context: the real message bundle and a no-op error
+  // sink (missing keys are not what this suite is asserting).
+  const render = (element: any) => ReactDOMServer.renderToStaticMarkup(
+    React.createElement(IntlProvider, { locale: 'en', messages, onError: () => {} }, element),
+  );
+
+  const soldVariant = { id: 'var-large', name: 'Large', price: 5.5, sku: 'CAP-LG' };
+  const orderItem = {
+    id: 1,
+    order_id: 7,
+    product_id: 'prod-1',
+    product_name: 'Cappuccino',
+    product_sku: 'CAP',
+    unit_price: 5.5,
+    quantity: 2,
+    subtotal: 11,
+    tax_amount: 0,
+    discount_amount: 0,
+    total: 11,
+    addons: [],
+    special_instructions: '',
+    status: 'pending',
+    created_at: '2026-08-21 18:42:00',
+    variant_selection: soldVariant,
+  };
+  const order = {
+    id: 7,
+    order_number: 'A1',
+    type: 'dine_in',
+    status: 'pending',
+    created_at: '2026-08-21 18:42:00',
+    items: [orderItem],
+    subtotal: 11,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 11,
+    delivery_charge: 0,
+    service_charge: 0,
+    packaging_charge: 0,
+    charges_breakdown: null,
+  };
+  const orderProps = {
+    order,
+    now: Date.now(),
+    canCancelItems: true,
+    canRestoreItems: true,
+    canRefund: true,
+    isWhatsAppReady: false,
+    printHistory: {},
+    generatingBillId: null,
+    printingBillId: null,
+    sendingWaOrderId: null,
+    cancellingOrderId: null,
+    convertingOrderId: null,
+    onCheckout: () => {},
+    onAddItems: () => {},
+    onRefund: () => {},
+    onConvertToTakeaway: () => {},
+    onCancelOrder: () => {},
+    onPrint: () => {},
+    onSendWhatsApp: () => {},
+    onLinkCustomer: () => {},
+    onCreateNewOrderForCustomer: () => {},
+  } as const;
+
+  const heading = 'Cappuccino (Large) [CAP-LG]';
+  const cardMarkup = render(React.createElement(OrderCard, orderProps));
+  assert.ok(cardMarkup.includes(heading), 'an order card line names the variant sold, not just the product');
+  assert.ok(cardMarkup.includes(`title="${heading}"`), 'the order card tooltip names the variant too');
+
+  const panelMarkup = render(React.createElement(OrderDetailPanel, orderProps));
+  assert.ok(panelMarkup.includes(heading), 'the order detail line names the variant sold');
+  assert.ok(panelMarkup.includes(`title="${heading}"`), 'the order detail tooltip names the variant too');
+
+  const variantProduct = {
+    id: 'prod-1',
+    name: 'Cappuccino',
+    price: 500,
+    is_active: true,
+    addon_groups: [],
+    variants: [variant({ price: 500, online_price: 550, track_inventory: true, stock_quantity: 4 })],
+  };
+  const addonProps = { product: variantProduct, currency: 'USD', country: 'US', onAdd: () => {}, onClose: () => {} };
+  const onlineMarkup = render(React.createElement(AddonModal, { ...addonProps, onlinePlatformSelected: true }));
+  assert.ok(onlineMarkup.includes('$550.00'), 'an online customizer quotes the platform price');
+  assert.ok(!onlineMarkup.includes('$500.00'), 'the counter price does not leak into an online quote');
+
+  const counterMarkup = render(React.createElement(AddonModal, addonProps));
+  assert.ok(counterMarkup.includes('$500.00'), 'a counter customizer quotes the counter price');
+  assert.ok(!counterMarkup.includes('$550.00'), 'the platform price does not leak into a counter quote');
 }
 
 console.log('✓ variant POS surface checks passed');

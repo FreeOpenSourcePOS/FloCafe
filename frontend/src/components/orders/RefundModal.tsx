@@ -15,6 +15,7 @@ import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { parseDbTimestamp } from '@/lib/utils';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 // Kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in main/services/refund.ts.
@@ -321,7 +322,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
                 <option value="">{t('refundSelectItemPlaceholder')}</option>
                 {eligibleItems.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.product_name} — {formatCurrency(Number(item.total))}
+                    {formatItemHeading(item.product_name, item.variant_selection)} — {formatCurrency(Number(item.total))}
                   </option>
                 ))}
               </select>

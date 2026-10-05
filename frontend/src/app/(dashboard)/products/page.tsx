@@ -346,7 +346,7 @@ export default function ProductsPage() {
 
   const updateVariantRow = (idx: number, patch: Partial<ProductVariantRow>) => setForm((prev) => ({
     ...prev,
-    variants: prev.variants.map((row, i) => (i === idx ? { ...row, ...patch } : row)),
+    variants: prev.variants.map((row, i) => (i === idx ? { ...row, ...patch, touched: true } : row)),
   }));
 
   const shiftVariantRow = (idx: number, offset: -1 | 1) => setForm((prev) => ({

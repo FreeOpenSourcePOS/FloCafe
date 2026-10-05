@@ -90,6 +90,8 @@ check('toVariantRows projects every column onto an editable row', () => {
     sku: 'CAP-LG',
     barcode: 'CAP-LG',
     stock_quantity: '12',
+    loaded_stock_quantity: '12',
+    touched: false,
     is_active: true,
     cost_price: 2.25,
     track_inventory: true,
@@ -134,10 +136,14 @@ check('toVariantRows applies the backend defaults to absent managed fields', () 
 check('a loaded row survives load -> payload unchanged', () => {
   const rows = toVariantRows([variantFixture()]);
   const [payload] = buildVariantsPayload(rows, 2);
-  const { product_id, sort_order, ...expected } = variantFixture();
+  const { product_id, stock_quantity, ...expected } = variantFixture();
   assert.equal(payload.id, 'v-1');
   assert.equal(payload.sort_order, 0);
   assert.deepEqual(payload, { id: 'v-1', ...expected, sort_order: 0 });
+  assert.ok(
+    !('stock_quantity' in payload),
+    'an untouched stock field is not resubmitted, so a sale between load and save survives',
+  );
 });
 
 // ── Payload builder ──────────────────────────────────────────────────────────
@@ -179,7 +185,63 @@ check('the payload carries exactly the fields the products API normalises', () =
     'track_inventory',
   ]);
   const [existing] = buildVariantsPayload(toVariantRows([variantFixture()]), 2);
-  assert.deepEqual(Object.keys(existing).sort(), [...Object.keys(newPayload), 'id'].sort());
+  assert.deepEqual(
+    Object.keys(existing).sort(),
+    [...Object.keys(newPayload).filter((key) => key !== 'stock_quantity'), 'id'].sort(),
+  );
+});
+
+check('an unchanged stock field is not resubmitted; a changed one is', () => {
+  const [loaded] = toVariantRows([variantFixture({ stock_quantity: 10 })]);
+
+  const [unchanged] = buildVariantsPayload([{ ...loaded, name: 'Large renamed' }], 2);
+  assert.ok(!('stock_quantity' in unchanged), 'an unrelated edit leaves the stock field out of the payload');
+
+  const [edited] = buildVariantsPayload([{ ...loaded, stock_quantity: '12' }], 2);
+  assert.equal(edited.stock_quantity, 12, 'a changed stock field is submitted as the new absolute value');
+
+  const [newRow] = buildVariantsPayload([row({ name: 'Small', price: '3', stock_quantity: '4' })], 2);
+  assert.equal(newRow.stock_quantity, 4, 'a new row submits its opening stock');
+});
+
+check('untouched inactive history stays out of the payload', () => {
+  const rows = toVariantRows([
+    variantFixture(),
+    variantFixture({ id: 'v-retired', name: 'Retired', is_active: false }),
+  ]);
+  assert.deepEqual(
+    buildVariantsPayload(rows, 2).map((entry) => entry.id),
+    ['v-1'],
+    'an untouched inactive row is not resubmitted',
+  );
+});
+
+check('an edited inactive row travels so the edit is not dropped', () => {
+  const rows = toVariantRows([
+    variantFixture(),
+    variantFixture({ id: 'v-retired', name: 'Retired', is_active: false }),
+  ]);
+  const edited = rows.map((r) => (r.id === 'v-retired' ? { ...r, name: 'Retired v2', touched: true } : r));
+  const payload = buildVariantsPayload(edited, 2);
+  assert.deepEqual(payload.map((entry) => entry.id), ['v-1', 'v-retired']);
+  assert.equal(payload[1].name, 'Retired v2');
+});
+
+check('a reactivated row travels and a skipped row keeps the order around it', () => {
+  const rows = toVariantRows([
+    variantFixture({ id: 'v-first', name: 'First' }),
+    variantFixture({ id: 'v-retired', name: 'Retired', is_active: false }),
+    variantFixture({ id: 'v-last', name: 'Last' }),
+  ]);
+  const payload = buildVariantsPayload(rows, 2);
+  assert.deepEqual(payload.map((entry) => entry.id), ['v-first', 'v-last']);
+  assert.deepEqual(payload.map((entry) => entry.sort_order), [0, 2], 'the skipped row keeps its slot');
+
+  const reactivated = rows.map((r) => (r.id === 'v-retired' ? { ...r, is_active: true } : r));
+  assert.deepEqual(
+    buildVariantsPayload(reactivated, 2).map((entry) => entry.id),
+    ['v-first', 'v-retired', 'v-last'],
+  );
 });
 
 check('a new row omits its id', () => {
@@ -240,6 +302,11 @@ check('a removed row is simply absent, so the API soft-deactivates it', () => {
   const payload = buildVariantsPayload(removeVariantRow(rows, 0), 2);
   assert.deepEqual(payload.map((entry: { id: string }) => entry.id), ['v-2']);
   assert.equal(payload[0].sort_order, 0);
+});
+
+check('drop-in rows built without the loaded snapshot still send stock', () => {
+  const [payload] = buildVariantsPayload([row({ name: 'Free sample', price: '0', stock_quantity: '0' })], 2);
+  assert.equal(payload.stock_quantity, 0, 'a row with no loaded snapshot is treated as new');
 });
 
 // ── Row editing ──────────────────────────────────────────────────────────────

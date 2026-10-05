@@ -570,6 +570,193 @@ async function main() {
       "the other product's variant row is byte-identical after the rejected write",
     );
 
+    // ── A live recipe base cannot itself be linked onward ───────────────
+    // Variant -> product -> product would chain two pools the resolver never
+    // reconciles, so the product update guard must see incoming variant links.
+    const recipeBase = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-food', name: 'Recipe Base', price: 50, track_inventory: true, stock_quantity: 20 },
+    });
+    assert.equal(recipeBase.status, 201, `a recipe base product is created (${JSON.stringify(recipeBase.data)})`);
+    const recipeBaseId = recipeBase.data.product.id;
+    const recipeBaseConsumer = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-food',
+        name: 'Recipe Base Consumer',
+        price: 100,
+        variants: [{ name: 'Linked', price: 100, inventory_product_id: recipeBaseId, inventory_deduction_quantity: 2 }],
+      },
+    });
+    assert.equal(recipeBaseConsumer.status, 201, 'a variant consumes the base ingredient');
+    const recipeBaseConsumerId = recipeBaseConsumer.data.product.id;
+    const consumerVariant = db.prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1').get(recipeBaseConsumerId) as { id: string };
+
+    const chainedBase = await api(baseUrl, `/api/products/${recipeBaseId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { inventory_product_id: recipeBaseConsumerId },
+    });
+    assert.equal(
+      chainedBase.status,
+      400,
+      `a base consumed by a live variant cannot be linked onward (${JSON.stringify(chainedBase.data)})`,
+    );
+    assert.equal(
+      (db.prepare('SELECT inventory_product_id FROM products WHERE id = ?').get(recipeBaseId) as { inventory_product_id: string | null }).inventory_product_id,
+      null,
+      'the rejected chain leaves the base unlinked',
+    );
+
+    const deactivateConsumerVariant = await api(baseUrl, `/api/products/${recipeBaseConsumerId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: [{ id: consumerVariant.id, name: 'Linked', price: 100, inventory_product_id: recipeBaseId, is_active: false }],
+      },
+    });
+    assert.equal(deactivateConsumerVariant.status, 200, 'the consuming variant is deactivated');
+    const linkReleasedBase = await api(baseUrl, `/api/products/${recipeBaseId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { inventory_product_id: recipeBaseConsumerId },
+    });
+    assert.equal(
+      linkReleasedBase.status,
+      200,
+      `a base with no live variant reference can be linked (${JSON.stringify(linkReleasedBase.data)})`,
+    );
+
+    // ── Inactive variants release their barcodes on every later save ─────
+    // The editor loads and resubmits inactive rows, so a retired row still
+    // carrying its old barcode must not block the save that keeps it retired.
+    const retiredBarcode = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Retired Barcode', price: 100, variants: [{ name: 'Old', price: 100, barcode: 'RET-1' }] },
+    });
+    assert.equal(retiredBarcode.status, 201, 'a product with a barcoded variant is created');
+    const retiredBarcodeProductId = retiredBarcode.data.product.id;
+    const retiredVariantId = retiredBarcode.data.product.variants[0].id;
+    const replacedVariant = await api(baseUrl, `/api/products/${retiredBarcodeProductId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ name: 'New', price: 120, barcode: 'RET-1' }] },
+    });
+    assert.equal(replacedVariant.status, 200, `a replacement takes the retired barcode (${JSON.stringify(replacedVariant.data)})`);
+    const replacementVariantId = (db.prepare("SELECT id FROM product_variants WHERE product_id = ? AND name = 'New'").get(retiredBarcodeProductId) as { id: string }).id;
+
+    const resubmittedRetiredRow = await api(baseUrl, `/api/products/${retiredBarcodeProductId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: [
+          { id: retiredVariantId, name: 'Old', price: 100, barcode: 'RET-1', is_active: false },
+          { id: replacementVariantId, name: 'New', price: 120, barcode: 'RET-1', is_active: true },
+        ],
+      },
+    });
+    assert.equal(
+      resubmittedRetiredRow.status,
+      200,
+      `an editor save resubmitting the retired row stays valid (${JSON.stringify(resubmittedRetiredRow.data)})`,
+    );
+    assert.equal(
+      (db.prepare('SELECT is_active FROM product_variants WHERE id = ?').get(retiredVariantId) as { is_active: number }).is_active,
+      0,
+      'the retired row stays retired through the save',
+    );
+
+    const releasedProduct = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Released Barcode', price: 100, variants: [{ name: 'Retired', price: 100, barcode: 'REL-1' }] },
+    });
+    assert.equal(releasedProduct.status, 201, 'a second barcoded product is created');
+    const releasedProductId = releasedProduct.data.product.id;
+    const releasedVariantId = releasedProduct.data.product.variants[0].id;
+    const retiredItsOnlyVariant = await api(baseUrl, `/api/products/${releasedProductId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ id: releasedVariantId, name: 'Retired', price: 100, barcode: 'REL-1', is_active: false }] },
+    });
+    assert.equal(retiredItsOnlyVariant.status, 200, 'the only variant is retired');
+    const barcodeTaker = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Barcode Taker', price: 100, barcode: 'REL-1' },
+    });
+    assert.equal(barcodeTaker.status, 201, 'another product takes the released barcode');
+
+    const unrelatedEditorSave = await api(baseUrl, `/api/products/${releasedProductId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        name: 'Released Barcode renamed',
+        variants: [{ id: releasedVariantId, name: 'Retired', price: 100, barcode: 'REL-1', is_active: false }],
+      },
+    });
+    assert.equal(
+      unrelatedEditorSave.status,
+      200,
+      `an unrelated editor save succeeds while the retired row holds a released barcode (${JSON.stringify(unrelatedEditorSave.data)})`,
+    );
+
+    // ── An editor save that omits stock leaves intervening sales alone ──
+    const omitsStock = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Stock Keeper', price: 100, variants: [{ name: 'Tracked', price: 100, track_inventory: true, stock_quantity: 10 }] },
+    });
+    assert.equal(omitsStock.status, 201, 'a tracked variant is created');
+    const omitsStockProductId = omitsStock.data.product.id;
+    const omitsStockVariantId = omitsStock.data.product.variants[0].id;
+    adjustProductStock(db, {
+      productId: omitsStockProductId,
+      variantId: omitsStockVariantId,
+      quantityDelta: -4,
+      movementType: 'sale',
+      referenceType: 'order_item',
+      referenceId: 'variant-editor-sale',
+      actorUserId: owner.userId,
+    });
+    const movementsBeforeUnrelatedEdit = (db.prepare(
+      'SELECT COUNT(*) AS count FROM inventory_movements WHERE variant_id = ?',
+    ).get(omitsStockVariantId) as { count: number }).count;
+    const unrelatedVariantEdit = await api(baseUrl, `/api/products/${omitsStockProductId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: [{
+          id: omitsStockVariantId,
+          name: 'Tracked renamed',
+          price: 110,
+          sku: null,
+          barcode: null,
+          online_price: null,
+          cost_price: null,
+          track_inventory: true,
+          low_stock_threshold: null,
+          inventory_product_id: null,
+          inventory_deduction_quantity: null,
+          is_active: true,
+        }],
+      },
+    });
+    assert.equal(unrelatedVariantEdit.status, 200, `an unrelated variant edit succeeds (${JSON.stringify(unrelatedVariantEdit.data)})`);
+    assert.equal(
+      (db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get(omitsStockVariantId) as { stock_quantity: number }).stock_quantity,
+      6,
+      'omitting stock_quantity preserves the stock a sale consumed',
+    );
+    assert.equal(
+      (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE variant_id = ?').get(omitsStockVariantId) as { count: number }).count,
+      movementsBeforeUnrelatedEdit,
+      'the omission writes no compensating ledger row',
+    );
+
     // ── Transaction atomicity ───────────────────────────────────────────
     // Force a failure inside the product transaction and prove nothing the
     // request wrote survives, including the field update that ran first.

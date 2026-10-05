@@ -655,7 +655,7 @@ Router: `main/routes/database-tools.ts`. Full path: `/api/db-tools`.
 | `GET` | `/backups` | `ROLE_ACCESS.owner` | none | - |
 | `POST` | `/backups/:fileName/delete` | `ROLE_ACCESS.owner` + Master PIN | path: `fileName` | - |
 | `GET` | `/master-pin/status` | `ROLE_ACCESS.owner` | none | - |
-| `POST` | `/master-pin/reset` | `ROLE_ACCESS.owner` | body: `pin`, `confirm_pin` | - |
+| `POST` | `/master-pin/reset` | `ROLE_ACCESS.owner` + current Master PIN when one is configured | body: `pin`, `confirm_pin`, and `master_pin` when a PIN is already configured | First-time setup requires no `master_pin`. |
 | `GET` | `/currency-reset-impact` | `ROLE_ACCESS.owner` | none | Active currency plus the invoice, order, refund, customer, product, and add-on counts the destructive warning uses. |
 | `POST` | `/currency-reset` | `ROLE_ACCESS.owner` + Master PIN | body: `currency` | Also needs `current_currency` and `confirmation_phrase` of the form `CHANGE TO <CODE>`. Creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields zeroed, and returns the backup path. The active session becomes invalid. |
 | `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | Master-PIN gated database initialization. |

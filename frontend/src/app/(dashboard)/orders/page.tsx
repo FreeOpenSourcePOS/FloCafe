@@ -145,7 +145,7 @@ export default function OrdersPage() {
   const ordersRefreshPendingRef = useRef(false);
   const ordersRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedOrdersPageCountRef = useRef(1);
-  const lastBackgroundOrdersRefreshAtRef = useRef(0);
+  const lastRateLimitedOrdersRefreshAtRef = useRef(0);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
@@ -249,15 +249,15 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async (cursor?: number, backgroundRefresh = false): Promise<boolean> => {
+  const fetchOrders = async (cursor?: number, rateLimitedRefresh = false): Promise<boolean> => {
     if (cursor === undefined && (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)) {
       ordersRefreshPendingRef.current = true;
       return true;
     }
     if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
-    if (cursor === undefined && backgroundRefresh) {
+    if (cursor === undefined && rateLimitedRefresh) {
       const now = Date.now();
-      const cooldown = 1000 - (now - lastBackgroundOrdersRefreshAtRef.current);
+      const cooldown = 1000 - (now - lastRateLimitedOrdersRefreshAtRef.current);
       if (cooldown > 0) {
         ordersRefreshPendingRef.current = true;
         if (ordersRefreshTimerRef.current === null) {
@@ -270,7 +270,7 @@ export default function OrdersPage() {
         }
         return true;
       }
-      lastBackgroundOrdersRefreshAtRef.current = now;
+      lastRateLimitedOrdersRefreshAtRef.current = now;
     } else if (cursor === undefined) {
       if (ordersRefreshTimerRef.current !== null) {
         clearTimeout(ordersRefreshTimerRef.current);
@@ -351,7 +351,7 @@ export default function OrdersPage() {
     setNextOrdersCursor(null);
     setLoading(true);
     setLoadingMoreOrders(false);
-    const timeout = setTimeout(fetchOrders, 300);
+    const timeout = setTimeout(() => fetchOrders(undefined, true), 300);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.search]);

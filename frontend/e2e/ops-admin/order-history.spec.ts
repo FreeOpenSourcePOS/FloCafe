@@ -18,7 +18,7 @@ let settled: Array<{ order_number: string; total: number; subtotal: number; cust
 let open: { order_number: string };
 let customerName: string;
 
-test.describe('operations admin - order history', () => {
+test.describe('@ci-tier2 operations admin - order history', () => {
   test.beforeAll(async ({ request }) => {
     // A customer to attach one sale to, so search-by-name and search-by-phone
     // have something real to find.

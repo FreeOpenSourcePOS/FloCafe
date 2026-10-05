@@ -48,7 +48,7 @@ async function tokenFor(request: import('@playwright/test').APIRequestContext, a
   return (await res.json()).access_token;
 }
 
-test.describe('operations admin - staff and roles', () => {
+test.describe('@ci-tier2 operations admin - staff and roles', () => {
   let server: Account;
   let cashier: Account;
   let retired: Account;

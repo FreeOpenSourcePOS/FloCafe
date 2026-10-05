@@ -41,7 +41,7 @@ test.afterAll(async ({ request }) => {
   await setApprovalPin(api, 'e2e-owner', null);
 });
 
-test.describe('operations admin - order lifecycle', () => {
+test.describe('@ci-tier2 operations admin - order lifecycle', () => {
   test('a POS order, settled in cash, matches the record it created line for line', async ({ page }) => {
     await login(page, 'owner');
     await page.goto(`${E2E_BASE_URL}/pos`);

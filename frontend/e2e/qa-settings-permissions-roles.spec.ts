@@ -66,7 +66,7 @@ const staffSelect = (page: Page) =>
 const saveMatrix = (page: Page) => matrix(page).getByRole('button', { name: 'Save', exact: true });
 const restoreMatrix = (page: Page) => matrix(page).getByRole('button', { name: 'Restore', exact: true });
 
-test.describe('Staff > Role permissions', () => {
+test.describe('@ci-tier2 Staff > Role permissions', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setLanguage(page, 'en');

@@ -56,7 +56,7 @@ async function saveAndReloadPrintersTab(page: Page): Promise<void> {
   await openPrintersTab(page);
 }
 
-test.describe('Settings > Printers', () => {
+test.describe('@ci-tier2 Settings > Printers', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setLanguage(page, 'en');

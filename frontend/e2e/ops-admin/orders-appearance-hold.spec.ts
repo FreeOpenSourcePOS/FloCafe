@@ -12,7 +12,7 @@ import { login, addToCart, ownerAuth } from './helpers';
 
 const RUN = Date.now().toString(36).slice(-4);
 
-test.describe('operations admin - orders appearance and hold', () => {
+test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
   test.beforeEach(async ({ page }) => {
     await login(page, 'owner');
   });

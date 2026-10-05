@@ -27,7 +27,7 @@ const GATE_SETTINGS = ['billing_type', 'kds_enabled', 'require_kitchen_delivered
 
 let settingsBefore: Map<string, string | undefined>;
 
-test.describe('kitchen delivery before billing', () => {
+test.describe('@ci-tier1 kitchen delivery before billing', () => {
   let fixture: UatFixture;
 
   test.beforeAll(async ({ request }) => {

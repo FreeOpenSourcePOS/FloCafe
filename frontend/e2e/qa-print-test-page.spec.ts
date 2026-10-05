@@ -47,7 +47,7 @@ async function openPrintTest(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('Printing Test Page (inspection only - never runs a job)', () => {
+test.describe('@ci-tier2 Printing Test Page (inspection only - never runs a job)', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setLanguage(page, 'en');

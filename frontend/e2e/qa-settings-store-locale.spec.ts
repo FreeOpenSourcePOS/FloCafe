@@ -65,7 +65,7 @@ async function saveAndReloadStoreTab(page: Page): Promise<void> {
   await openStoreTab(page);
 }
 
-test.describe('Settings > Store Details', () => {
+test.describe('@ci-tier2 Settings > Store Details', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setLanguage(page, 'en');

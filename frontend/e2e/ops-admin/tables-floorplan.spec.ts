@@ -35,7 +35,7 @@ function onScreen(page: import('@playwright/test').Page, text: string) {
   return page.getByText(text).filter({ visible: true }).first();
 }
 
-test.describe('operations admin - tables and floor plans', () => {
+test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
   test.afterAll(async ({ request }) => {
     // Tables are deactivated rather than deleted; leave none active behind.
     for (const id of created) {

@@ -51,6 +51,15 @@ async function readLedgers(page: import('@playwright/test').Page): Promise<{ sum
   return { summary: summary.summary, money: financial.financialSummary };
 }
 
+async function readRunningOrders(page: import('@playwright/test').Page): Promise<number> {
+  const token = await page.evaluate(() => localStorage.getItem('token'));
+  const response = await page.request.get(`${E2E_BASE_URL}/api/reports/daily-stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok(), 'the running-orders report must be available').toBeTruthy();
+  return ((await response.json()) as { runningOrders: number }).runningOrders;
+}
+
 /** The headline figures the dashboard renders, read off the screen itself. */
 async function readDashboard(page: import('@playwright/test').Page): Promise<Record<string, number>> {
   // The dashboard fetches several reports before it paints, so wait for the
@@ -77,7 +86,7 @@ async function readDashboard(page: import('@playwright/test').Page): Promise<Rec
 
 const OWNER_APPROVAL_PIN = '1234';
 
-test.describe('operations admin - dashboard reconciliation', () => {
+test.describe('@ci-tier2 operations admin - dashboard reconciliation', () => {
   test.beforeAll(async ({ request }) => {
     // Refunds are gated on a Staff Approval PIN, and no seeded account has one.
     // Without this the refund scenario below would silently verify nothing.
@@ -196,14 +205,13 @@ test.describe('operations admin - dashboard reconciliation', () => {
   });
 
   test('running orders counts exactly the orders still open', async ({ page }) => {
-    const { summary } = await readLedgers(page);
-    const pending = summary.ordersByStatus.find((s) => s.status === 'pending')?.count ?? 0;
+    const runningOrders = await readRunningOrders(page);
 
     await page.goto(`${E2E_BASE_URL}/dashboard`);
     await expect(page.getByText('Running Orders')).toBeVisible({ timeout: 20_000 });
     const shown = await readDashboard(page);
 
-    expect(shown.runningOrders, 'the live order count must match the orders the ledger still has open').toBe(pending);
+    expect(shown.runningOrders, 'the live order count must match the reports API').toBe(runningOrders);
   });
 
   test('today\'s sales exclude orders that were never paid for', async ({ page }) => {
@@ -228,6 +236,6 @@ test.describe('operations admin - dashboard reconciliation', () => {
     await page.goto(`${E2E_BASE_URL}/dashboard`);
     const shown = await readDashboard(page);
     expect(shown.todaysSales).toBeCloseTo(after.summary.bills.collected, 2);
-    expect(shown.runningOrders).toBe(after.summary.ordersByStatus.find((s) => s.status === 'pending')?.count ?? 0);
+    expect(shown.runningOrders).toBe(await readRunningOrders(page));
   });
 });

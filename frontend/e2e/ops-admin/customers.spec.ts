@@ -31,7 +31,7 @@ async function createViaApi(request: import('@playwright/test').APIRequestContex
   return customer;
 }
 
-test.describe('operations admin - customers', () => {
+test.describe('@ci-tier2 operations admin - customers', () => {
   test('a local-format phone is normalised to E.164 on the way in and on screen', async ({ page }) => {
     await login(page, 'owner');
     await page.goto(`${E2E_BASE_URL}/customers`);

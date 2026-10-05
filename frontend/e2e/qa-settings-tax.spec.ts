@@ -46,7 +46,7 @@ async function openTaxTab(page: Page): Promise<void> {
   await page.waitForLoadState('networkidle');
 }
 
-test.describe('Settings > Tax configuration', () => {
+test.describe('@ci-tier2 Settings > Tax configuration', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await setLanguage(page, 'en');

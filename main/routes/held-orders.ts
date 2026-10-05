@@ -25,9 +25,8 @@ interface HeldOrderRow {
 
 const MAX_HELD_ORDER_ITEMS = 100;
 const MAX_IDENTIFIER_LENGTH = 128;
-// A cart line id canonicalizes the whole line - product, variant, add-ons and
-// special instructions - so a variant line with add-ons reaches ~1.7 KB while
-// catalog identifiers stay at 128.
+// Cart line ids are bounded digests (frontend/src/lib/cart-identity.ts), so this
+// only guards against a client sending an oversized identifier.
 const MAX_CART_LINE_ID_LENGTH = 2048;
 
 function isRecord(value: unknown): value is Record<string, any> {

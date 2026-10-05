@@ -213,6 +213,18 @@ assert.deepEqual(
   'reload keeps the per-add-on line quantities separate instead of summing them',
 );
 
+// The canonical form grows with the line; the identity stays bounded so the
+// bounded consumers (e.g. POST /held-orders) accept any real cart line.
+const heavyAddons = Array.from({ length: 12 }, (_, index) =>
+  addon(`addon-${index}`, { name: `Side option ${index}`, price: 40 }));
+const heavyLineId = generateCartItemId('prod-heavy', 'var-heavy', heavyAddons, 'no olives '.repeat(10));
+assert.ok(heavyLineId.length <= 64, `a heavy cart line id stays bounded (${heavyLineId.length} characters)`);
+assert.notEqual(
+  heavyLineId,
+  generateCartItemId('prod-heavy', 'var-heavy', heavyAddons, 'extra cheese'),
+  'a heavy line with a different note stays distinct',
+);
+
 // A scanned active variant barcode lands straight in the cart with that variant.
 const scannedProduct = product({
   id: 'prod-scan',

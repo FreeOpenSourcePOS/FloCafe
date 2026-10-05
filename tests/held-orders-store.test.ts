@@ -96,6 +96,7 @@ const serverApi = {
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === '@/lib/api') return serverApi;
   if (request === '@/lib/cart-identity') return frontendRequire('./src/lib/cart-identity');
+  if (request === '@/lib/cart-price') return frontendRequire('./src/lib/cart-price');
   if (request === 'zustand') return originalLoad.call(this, frontendRequire.resolve('zustand'), parent, isMain);
   return originalLoad.apply(this, arguments as any);
 };

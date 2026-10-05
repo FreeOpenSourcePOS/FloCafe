@@ -141,7 +141,8 @@ export default function OrdersPage() {
   const searchRef = useRef(filters.search);
   const previousSearchRef = useRef(filters.search);
   const ordersFetchIdRef = useRef(0);
-  const loadedOlderOrdersRef = useRef(false);
+  const ordersRefreshInProgressRef = useRef(false);
+  const loadedOrdersPageCountRef = useRef(1);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
@@ -246,25 +247,47 @@ export default function OrdersPage() {
   };
 
   const fetchOrders = async (cursor?: number): Promise<boolean> => {
+    if (cursor !== undefined && ordersRefreshInProgressRef.current) return true;
     const fetchId = ++ordersFetchIdRef.current;
-    if (cursor !== undefined) setLoadingMoreOrders(true);
+    if (cursor === undefined) {
+      ordersRefreshInProgressRef.current = true;
+      setLoadingMoreOrders(true);
+    } else {
+      setLoadingMoreOrders(true);
+    }
     try {
       const search = searchRef.current.trim();
-      const { data } = await api.get('/orders', {
-        params: { per_page: 50, ...(search ? { search } : {}), ...(cursor !== undefined ? { before_id: cursor } : {}) },
-      });
-      if (fetchId !== ordersFetchIdRef.current) return true;
-      const orders = data.orders || [];
+      let orders: Order[] = [];
+      let nextCursor: number | null = null;
       if (cursor === undefined) {
-        setOrders((prev) => {
-          const refreshedOrderIds = new Set(orders.map((order: Order) => order.id));
-          return [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))];
-        });
-        if (!loadedOlderOrdersRef.current) setNextOrdersCursor(data.nextCursor ?? null);
+        let beforeCursor: number | undefined;
+        let remainingOrderCount = loadedOrdersPageCountRef.current * 50;
+        while (remainingOrderCount > 0) {
+          const perPage = Math.min(remainingOrderCount, 500);
+          const { data } = await api.get('/orders', {
+            params: { per_page: perPage, ...(search ? { search } : {}), ...(beforeCursor !== undefined ? { before_id: beforeCursor } : {}) },
+          });
+          if (fetchId !== ordersFetchIdRef.current) return true;
+          const pageOrders = data.orders || [];
+          orders.push(...pageOrders);
+          remainingOrderCount -= pageOrders.length;
+          nextCursor = data.nextCursor ?? null;
+          if (nextCursor === null || remainingOrderCount <= 0) break;
+          beforeCursor = nextCursor;
+        }
+        setOrders(orders);
+        loadedOrdersPageCountRef.current = Math.max(1, Math.ceil(orders.length / 50));
+        setNextOrdersCursor(nextCursor);
       } else {
+        const { data } = await api.get('/orders', {
+          params: { per_page: 50, ...(search ? { search } : {}), before_id: cursor },
+        });
+        if (fetchId !== ordersFetchIdRef.current) return true;
+        orders = data.orders || [];
+        nextCursor = data.nextCursor ?? null;
         setOrders((prev) => [...prev, ...orders]);
-        setNextOrdersCursor(data.nextCursor ?? null);
-        loadedOlderOrdersRef.current = true;
+        loadedOrdersPageCountRef.current++;
+        setNextOrdersCursor(nextCursor);
       }
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
@@ -279,6 +302,7 @@ export default function OrdersPage() {
       return false;
     } finally {
       if (fetchId === ordersFetchIdRef.current) {
+        if (cursor === undefined) ordersRefreshInProgressRef.current = false;
         if (cursor === undefined) setLoading(false);
         setLoadingMoreOrders(false);
       }
@@ -290,7 +314,8 @@ export default function OrdersPage() {
     if (previousSearchRef.current === filters.search) return;
     previousSearchRef.current = filters.search;
     ordersFetchIdRef.current++;
-    loadedOlderOrdersRef.current = false;
+    ordersRefreshInProgressRef.current = false;
+    loadedOrdersPageCountRef.current = 1;
     setOrders([]);
     setNextOrdersCursor(null);
     setLoading(true);

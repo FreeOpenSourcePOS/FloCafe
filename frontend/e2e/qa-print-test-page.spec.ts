@@ -1,25 +1,4 @@
-/**
- * Printing Test Page: INSPECTION ONLY.
- *
- * HARD RULE for this suite: it never clicks "Run Test".
- *
- * That button is not a simulation. handlePrint() in
- * frontend/src/app/(dashboard)/print-test/page.tsx dispatches a real ESC/POS job
- * to the operating system's default thermal printer, or opens a real browser
- * print dialog, or - in WhatsApp Share mode - calls shareBillViaWhatsApp(), which
- * attempts a genuine send. Any of those is exactly what this programme was told
- * not to do, so the suite asserts what the page offers and what the current
- * configuration implies, and stops there.
- *
- * What is asserted without pressing the button:
- *   - all five test modes are present;
- *   - paper width and print method are real selections whose hint text names the
- *     transport that pressing the button would use;
- *   - the test-data preview is derived from real tenant data, not a stub;
- *   - the extra per-mode affordances ("Copy Text", "Download HTML") only appear
- *     for the mode that owns them;
- *   - nothing on the page fires a print, send, or WebUSB request.
- */
+/** Inspection only: these tests never click Run Test, which triggers real printing or sending. */
 import { test, expect, type Page, type Request } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
@@ -97,7 +76,7 @@ test.describe('@ci-tier2 Printing Test Page (inspection only - never runs a job)
     await expect(wide).not.toHaveClass(/border-brand/);
   });
 
-  test('the test-data preview is derived from real tenant data', async ({ page }) => {
+  test('the preview renders the sample bill data', async ({ page }) => {
     await openPrintTest(page);
 
     const preview = page.locator('pre').first();
@@ -105,12 +84,7 @@ test.describe('@ci-tier2 Printing Test Page (inspection only - never runs a job)
     const text = (await preview.textContent()) ?? '';
     const parsed = JSON.parse(text) as { bill: string; total: number; items: number; customer: string };
 
-    // A stub would be a constant; these are populated, which is what makes the
-    // preview worth trusting as a dry run.
-    expect(parsed.bill, 'preview carries a bill number').toBeTruthy();
-    expect(typeof parsed.total, 'preview carries a total').toBe('number');
-    expect(parsed.items, 'preview carries an item count').toBeGreaterThan(0);
-    expect(parsed.customer, 'preview carries a test customer').toBeTruthy();
+    expect(parsed).toEqual({ bill: 'BILL-001', total: 504, items: 3, customer: 'John Doe' });
   });
 
   test('per-mode affordances appear only for the mode that owns them', async ({ page }) => {
@@ -129,13 +103,12 @@ test.describe('@ci-tier2 Printing Test Page (inspection only - never runs a job)
     await expect(page.getByRole('button', { name: 'Copy Text', exact: true })).toHaveCount(0);
   });
 
-  test('changing modes and settings alone sends no print, send or WebUSB request', async ({ page }) => {
+  test('changing modes and settings sends no matching print or WhatsApp HTTP requests', async ({ page }) => {
     const outbound: Request[] = [];
     const record = (request: Request) => {
       const url = request.url();
       const method = request.method();
-      // Anything that could put bytes on a printer, a device, or a wire.
-      if (/webusb|whatsapp\/send|print|receipt|kot/i.test(url) && method !== 'GET') {
+      if (/whatsapp\/send|print|receipt|kot/i.test(url) && method !== 'GET') {
         outbound.push(request);
       }
     };

@@ -2,20 +2,12 @@ import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, ownerAuth, overlay, openOrderOverflowMenu } from './helpers';
 
-/**
- * Tables and floor plans, driven as an administrator.
- *
- * The drag-and-drop geometry of the floor-plan canvas is already covered by the
- * repository's own floorplan-editor.spec.ts, so this suite stays on the
- * operational side: creating, renaming and reassigning tables, and the round
- * trip of a real order opened against one - which is where a table's state has
- * to agree with the order record.
- */
+/** Tests table administration, persisted floor-plan positions, and order association. */
 
 const RUN = Date.now().toString(36).slice(-4);
 const created: string[] = [];
 
-type Table = { id: string; number: string; name?: string; capacity: number; floor: string; section: string | null; status: string; is_active?: number };
+type Table = { id: string; number: string; name?: string; capacity: number; floor: string; section: string | null; status: string; is_active?: number; position_x?: number | null; position_y?: number | null };
 
 async function fetchTables(page: import('@playwright/test').Page): Promise<Table[]> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
@@ -111,6 +103,7 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
       headers,
       data: { number, capacity: 4, floor: `OpsFloor${RUN}` },
     });
+    expect(createdRes.status(), await createdRes.text()).toBe(201);
     const table = ((await createdRes.json()) as { table: Table }).table;
     created.push(table.id);
 
@@ -123,6 +116,8 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
       data: { positions: [{ id: table.id, position_x: 30, position_y: 40 }] },
     });
     expect(placed.ok(), `placing a table must succeed (got ${placed.status()})`).toBeTruthy();
+    const stored = (await fetchTables(page)).find((entry) => entry.id === table.id);
+    expect(stored).toMatchObject({ position_x: 30, position_y: 40 });
 
     await page.goto(`${E2E_BASE_URL}/tables`);
     await page.getByRole('button', { name: 'Floor plan' }).click();
@@ -148,6 +143,7 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
       headers,
       data: { number, capacity: 2, floor: `OpsFloor${RUN}` },
     });
+    expect(createdRes.status(), await createdRes.text()).toBe(201);
     const table = ((await createdRes.json()) as { table: Table }).table;
     created.push(table.id);
 
@@ -197,6 +193,7 @@ test.describe('@ci-tier2 operations admin - tables and floor plans', () => {
       headers,
       data: { number, capacity: 2, floor: `OpsFloor${RUN}` },
     });
+    expect(createdRes.status(), await createdRes.text()).toBe(201);
     const table = ((await createdRes.json()) as { table: Table }).table;
     created.push(table.id);
 

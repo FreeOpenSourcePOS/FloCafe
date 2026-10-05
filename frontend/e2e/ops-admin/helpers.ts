@@ -2,28 +2,14 @@ import { type APIRequestContext, type Page, expect } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { getE2eToken } from '../helpers/test-auth';
 
-/**
- * Backend-authoritative owner header, for fixture work that runs outside a
- * logged-in page.
- *
- * Minted per call rather than once at import: changing an account's credentials
- * revokes tokens issued before it, so a header captured at module load goes
- * stale as soon as a scenario sets or clears an approval PIN.
- */
+/** Mint a fresh owner header because credential changes revoke existing tokens. */
 export function ownerAuth() {
   return {
     Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
   };
 }
 
-/**
- * Shared plumbing for the operational back-office scenarios.
- *
- * The e2e server seeds exactly three users and one product, so each scenario
- * builds whatever else it needs through the API and removes it afterwards.
- * Assertions always pair a rendered figure with the underlying record rather
- * than trusting the screen on its own.
- */
+/** Shared API and UI helpers for operational back-office E2E scenarios. */
 
 export const PASSWORD = 'E2ePass123!';
 

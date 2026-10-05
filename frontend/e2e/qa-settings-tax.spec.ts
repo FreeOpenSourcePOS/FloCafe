@@ -1,18 +1,4 @@
-/**
- * Settings > Tax configuration.
- *
- * The tax surface is not a form: it is a mode switch (off / official pack /
- * manual rates) over a plug-in pack registry, with an advanced tools area for
- * per-target overrides. This suite walks it as an owner and covers the parts
- * that are safely changeable and reversible:
- *   - the global tax on/off switch persists and is reachable;
- *   - the active pack and its rules are real, read from the registry;
- *   - the pack audit trail records the activation the fixture performed;
- *   - a per-target tax override can be added, survives a reload, and is removed.
- *
- * It deliberately does not install, uninstall or activate a tax pack: those are
- * network-fetching and version-changing operations, not settings changes.
- */
+/** Tests persisted tax settings, pack registry data, audit history, and catalog refresh. */
 import { test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
@@ -23,11 +9,13 @@ type AuditList = { audit: Array<{ id: number; action: string; pack_id: string | 
 
 async function api<T>(page: Page, path: string, init?: { method?: string; data?: unknown }): Promise<T> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
+  const method = init?.method ?? 'GET';
   const res = await page.request.fetch(`${BASE}/api${path}`, {
-    method: init?.method ?? 'GET',
+    method,
     headers: { Authorization: `Bearer ${token}` },
     data: init?.data as never,
   });
+  expect(res.ok(), `${method} ${path} must succeed (got ${res.status()})`).toBeTruthy();
   return await res.json() as T;
 }
 
@@ -113,21 +101,35 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     await expect(page.getByRole('heading', { name: 'Advanced tax tools', exact: true })).toBeVisible();
   });
 
-  test('the tax pack audit trail records the pack activation', async ({ page }) => {
+  test('the tax pack audit history renders an entry returned by the API', async ({ page }) => {
     const audit = await api<AuditList>(page, '/tax-packs/audit?limit=100');
     expect(audit.audit.length, 'pack installs must be auditable').toBeGreaterThan(0);
     for (const entry of audit.audit) {
       expect(entry.action, 'every audit row names an action').toBeTruthy();
     }
-    expect(audit.audit.some((entry) => /install|activate|update/i.test(entry.action))).toBe(true);
+    const entry = audit.audit.find((row) => /install|activate|update/i.test(row.action));
+    expect(entry, 'the API must return an install, activation, or update entry').toBeTruthy();
+    if (!entry) return;
+    const actionLabels: Record<string, string> = {
+      install_bundled_pack: 'Bundled pack installed',
+      install_downloaded_pack: 'Downloaded pack installed',
+      activate_pack: 'Pack activated',
+      rollback_pack: 'Pack rolled back',
+      create_override: 'Override added',
+      update_override: 'Override edited',
+      reset_override: 'Override removed',
+    };
+    const expectedAction = actionLabels[entry.action] ?? entry.action;
 
-    // The panel surfaces the same history rather than a hard-coded list.
     await openTaxTab(page);
     const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
-    if (await advanced.isVisible().catch(() => false)) {
-      await advanced.click();
-    }
-    await expect(page.locator('body')).toContainText(/UAT|tax|Tax/);
+    await expect(advanced).toBeVisible();
+    await advanced.click();
+    const history = page.locator('section').filter({
+      has: page.getByRole('heading', { name: 'Audit history', exact: true }),
+    });
+    await expect(history).toBeVisible();
+    await expect(history.getByText(expectedAction, { exact: true })).toBeVisible();
   });
 
   test('the tax pack catalog is reachable without installing anything', async ({ page }) => {

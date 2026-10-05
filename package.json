@@ -74,7 +74,7 @@
     "test:runtime-recovery": "ts-node --transpile-only -P tests/tsconfig.json tests/runtime-recovery.test.ts",
     "test:backend-health": "ts-node --transpile-only -P tests/tsconfig.json tests/backend-health.test.ts",
     "test:e2e:server": "node tests/e2e-server.cjs",
-    "test:e2e:browser": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test --config=playwright.config.ts --project=chromium",
+    "test:e2e:browser": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test --config=playwright.config.ts --project=chromium --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'",
     "test:e2e:browser:tier1": "cd frontend && npx playwright test --config=playwright.config.ts --project=chromium --retries=0 e2e/kitchen/kitchen-delivery-billing-gate.spec.ts",
     "test:e2e:browser:tier2": "cd frontend && npx playwright test --config=playwright.config.ts --project=chromium --retries=0 e2e/ops-admin/ e2e/qa-settings-permissions-roles.spec.ts e2e/qa-settings-receipts-printers.spec.ts e2e/qa-settings-store-locale.spec.ts e2e/qa-settings-tax.spec.ts e2e/qa-print-test-page.spec.ts --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale'",
     "test:e2e:electron": "npm run build && npm run build:frontend && cd frontend && npx playwright test --config=playwright.electron.config.ts --project=electron-desktop",

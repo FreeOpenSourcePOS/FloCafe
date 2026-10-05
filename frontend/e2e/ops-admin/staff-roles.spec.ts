@@ -88,27 +88,30 @@ test.describe('@ci-tier2 operations admin - staff and roles', () => {
   });
 
   test('a deactivated account cannot sign in, and says why', async ({ page, request }) => {
-    const deactivation = await request.post(`${E2E_BASE_URL}/api/staff/${retired.id}/deactivate`, { headers: ownerAuth() });
-    expect(deactivation.ok(), `deactivating an account must succeed (got ${deactivation.status()})`).toBeTruthy();
+    try {
+      const deactivation = await request.post(`${E2E_BASE_URL}/api/staff/${retired.id}/deactivate`, { headers: ownerAuth() });
+      expect(deactivation.ok(), `deactivating an account must succeed (got ${deactivation.status()})`).toBeTruthy();
 
-    // Backend refuses the credential outright.
-    const api = await request.post(`${E2E_BASE_URL}/api/auth/login`, {
-      data: { email: retired.email, password: PASSWORD },
-    });
-    expect(api.status(), 'a deactivated account must not authenticate').toBe(401);
+      const api = await request.post(`${E2E_BASE_URL}/api/auth/login`, {
+        data: { email: retired.email, password: PASSWORD },
+      });
+      expect(api.status(), 'a deactivated account must not authenticate').toBe(401);
 
-    // The sign-in form surfaces the refusal instead of appearing to succeed.
-    await page.goto(`${E2E_BASE_URL}/auth/login`);
-    await page.locator('#email').fill(retired.email);
-    await page.locator('#password').fill(PASSWORD);
-    await page.locator('button[type="submit"]').click();
-    await page.waitForTimeout(3000);
-    await expect(page).toHaveURL(/\/auth\/login/);
-    await expect(page.getByText(/deactivat|inactive|not active|invalid|incorrect/i).first()).toBeVisible({ timeout: 15_000 });
-
-    // Reactivate so the account is left in the state it started in.
-    const reactivated = await request.post(`${E2E_BASE_URL}/api/staff/${retired.id}/reactivate`, { headers: ownerAuth() });
-    expect(reactivated.ok()).toBeTruthy();
+      await page.goto(`${E2E_BASE_URL}/auth/login`);
+      await page.locator('#email').fill(retired.email);
+      await page.locator('#password').fill(PASSWORD);
+      await page.locator('button[type="submit"]').click();
+      await page.waitForTimeout(3000);
+      await expect(page).toHaveURL(/\/auth\/login/);
+      await expect(page.getByText(/deactivat|inactive|not active|invalid|incorrect/i).first()).toBeVisible({ timeout: 15_000 });
+    } finally {
+      const reactivated = await request.post(`${E2E_BASE_URL}/api/staff/${retired.id}/reactivate`, { headers: ownerAuth() });
+      if (reactivated.status() === 400) {
+        expect((await reactivated.json()).error).toBe('Already active');
+      } else {
+        expect(reactivated.ok(), `reactivating an account must succeed (got ${reactivated.status()})`).toBeTruthy();
+      }
+    }
   });
 
   test('a deactivated account keeps an already-issued session out', async ({ request }) => {
@@ -117,13 +120,19 @@ test.describe('@ci-tier2 operations admin - staff and roles', () => {
     const before = await request.get(`${E2E_BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
     expect(before.ok()).toBeTruthy();
 
-    await request.post(`${E2E_BASE_URL}/api/staff/${server.id}/deactivate`, { headers: ownerAuth() });
-    const after = await request.get(`${E2E_BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-    expect(after.status(), 'a session issued before deactivation must stop working').toBe(401);
-
-    // Restore it, so the role checks that follow still have a usable account.
-    const reactivated = await request.post(`${E2E_BASE_URL}/api/staff/${server.id}/reactivate`, { headers: ownerAuth() });
-    expect(reactivated.ok()).toBeTruthy();
+    try {
+      const deactivation = await request.post(`${E2E_BASE_URL}/api/staff/${server.id}/deactivate`, { headers: ownerAuth() });
+      expect(deactivation.ok(), `deactivating an account must succeed (got ${deactivation.status()})`).toBeTruthy();
+      const after = await request.get(`${E2E_BASE_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+      expect(after.status(), 'a session issued before deactivation must stop working').toBe(401);
+    } finally {
+      const reactivated = await request.post(`${E2E_BASE_URL}/api/staff/${server.id}/reactivate`, { headers: ownerAuth() });
+      if (reactivated.status() === 400) {
+        expect((await reactivated.json()).error).toBe('Already active');
+      } else {
+        expect(reactivated.ok(), `reactivating an account must succeed (got ${reactivated.status()})`).toBeTruthy();
+      }
+    }
   });
 
   test('a server is refused every surface its role excludes', async ({ request }) => {

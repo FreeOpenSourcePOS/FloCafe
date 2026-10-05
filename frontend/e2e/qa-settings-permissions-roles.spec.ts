@@ -1,17 +1,4 @@
-/**
- * Staff > Role permissions: role defaults and per-staff exceptions.
- *
- * Drives the real matrix against the real backend (no route mocking), and covers
- * the parts of the contract that are easy to get subtly wrong:
- *   - overrides are stored per role/user, and 'inherit' means "delete the row",
- *     so restoring is not "write inherit" but "remove the override";
- *   - writes are revision-guarded, so a stale save is refused rather than
- *     silently clobbering another session;
- *   - non-configurable permissions render protected and cannot be overridden;
- *   - every accepted change lands in the permission audit log.
- *
- * Each case restores the state it changed.
- */
+/** Tests role and user permission overrides, persistence, audit, and revision checks. */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
@@ -22,11 +9,13 @@ type UserPayload = RolePayload & { user: { id: string; role: string } };
 
 async function api<T>(page: Page, path: string, init?: { method?: string; data?: unknown }): Promise<T> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
+  const method = init?.method ?? 'GET';
   const res = await page.request.fetch(`${BASE}/api${path}`, {
-    method: init?.method ?? 'GET',
+    method,
     headers: { Authorization: `Bearer ${token}` },
     data: init?.data as never,
   });
+  expect(res.ok(), `${method} ${path} must succeed (got ${res.status()})`).toBeTruthy();
   return await res.json() as T;
 }
 
@@ -64,8 +53,6 @@ const roleSelect = (page: Page) =>
 const staffSelect = (page: Page) =>
   matrix(page).locator('select').filter({ has: page.locator('option[value="e2e-server"]') }).first();
 const saveMatrix = (page: Page) => matrix(page).getByRole('button', { name: 'Save', exact: true });
-const restoreMatrix = (page: Page) => matrix(page).getByRole('button', { name: 'Restore', exact: true });
-
 test.describe('@ci-tier2 Staff > Role permissions', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
@@ -128,13 +115,33 @@ test.describe('@ci-tier2 Staff > Role permissions', () => {
 
     const ROLE = 'server';
     const USER = 'e2e-server';
-    const PERMISSION = 'orders.read';
+    const PERMISSION = 'reports.view';
 
     const roleBefore = (await api<{ roles: RolePayload[] }>(page, '/authorization/roles')).roles
       .find((entry) => entry.role === ROLE) as RolePayload;
     const userBefore = await api<UserPayload>(page, `/authorization/users/${USER}`);
+    expect(userBefore.user.role).toBe(ROLE);
 
     try {
+      await api(page, `/authorization/users/${USER}`, {
+        method: 'PUT',
+        data: {
+          revision: userBefore.revision,
+          overrides: userBefore.overrides.filter((entry) => entry.permission_id !== PERMISSION),
+        },
+      });
+      await api<{ role: RolePayload }>(page, `/authorization/roles/${ROLE}`, {
+        method: 'PUT',
+        data: {
+          revision: roleBefore.revision,
+          overrides: [
+            ...roleBefore.overrides.filter((entry) => entry.permission_id !== PERMISSION),
+            { permission_id: PERMISSION, effect: 'deny' },
+          ],
+        },
+      });
+
+      await openStaff(page);
       await matrix(page).getByRole('button', { name: 'Staff exception', exact: true }).click();
       await staffSelect(page).selectOption(USER);
       await expect(overrideSelect(page, PERMISSION)).toHaveValue('inherit');
@@ -146,15 +153,17 @@ test.describe('@ci-tier2 Staff > Role permissions', () => {
         const after = await api<UserPayload>(page, `/authorization/users/${USER}`);
         return after.overrides.find((entry) => entry.permission_id === PERMISSION)?.effect ?? 'inherit';
       }, { timeout: 20_000 }).toBe('allow');
+      const allowed = (await api<UserPayload>(page, `/authorization/users/${USER}`))
+        .permissions.find((entry) => entry.permission_id === PERMISSION);
+      expect(allowed?.allowed).toBe(true);
+      expect(allowed?.source).toBe('user_override');
 
       await openStaff(page);
       await matrix(page).getByRole('button', { name: 'Staff exception', exact: true }).click();
       await staffSelect(page).selectOption(USER);
       await expect(overrideSelect(page, PERMISSION)).toHaveValue('allow');
 
-      // "Restore" clears the staged edits; saving an empty set is what actually
-      // removes the row.
-      await restoreMatrix(page).click();
+      await overrideSelect(page, PERMISSION).selectOption('inherit');
       await expect(overrideSelect(page, PERMISSION)).toHaveValue('inherit');
       await saveMatrix(page).click();
 
@@ -162,18 +171,25 @@ test.describe('@ci-tier2 Staff > Role permissions', () => {
         const after = await api<UserPayload>(page, `/authorization/users/${USER}`);
         return after.overrides.find((entry) => entry.permission_id === PERMISSION)?.effect ?? 'inherit';
       }, { timeout: 20_000 }).toBe('inherit');
+      const inherited = (await api<UserPayload>(page, `/authorization/users/${USER}`))
+        .permissions.find((entry) => entry.permission_id === PERMISSION);
+      expect(inherited?.allowed).toBe(false);
+      expect(inherited?.source).toBe('role_override');
     } finally {
-      const current = await api<UserPayload>(page, `/authorization/users/${USER}`);
-      if (current.overrides.some((entry) => entry.permission_id === PERMISSION)) {
-        await api(page, `/authorization/users/${USER}/overrides`, {
-          method: 'DELETE',
-          data: { revision: current.revision },
+      try {
+        const currentUser = await api<UserPayload>(page, `/authorization/users/${USER}`);
+        await api(page, `/authorization/users/${USER}`, {
+          method: 'PUT',
+          data: { revision: currentUser.revision, overrides: userBefore.overrides },
+        });
+      } finally {
+        const currentRole = (await api<{ roles: RolePayload[] }>(page, '/authorization/roles')).roles
+          .find((entry) => entry.role === ROLE) as RolePayload;
+        await api(page, `/authorization/roles/${ROLE}`, {
+          method: 'PUT',
+          data: { revision: currentRole.revision, overrides: roleBefore.overrides },
         });
       }
-      const roles = (await api<{ roles: RolePayload[] }>(page, '/authorization/roles')).roles
-        .find((entry) => entry.role === ROLE) as RolePayload;
-      expect(roles.overrides).toEqual(roleBefore.overrides);
-      expect(userBefore.user.role).toBe(ROLE);
     }
   });
 
@@ -225,21 +241,25 @@ test.describe('@ci-tier2 Staff > Role permissions', () => {
       .find((entry) => entry.role === ROLE) as RolePayload;
     const alreadyOverridden = original.overrides.some((entry) => entry.permission_id === PERMISSION);
 
-    const auditHasNewEntry = async (firstIdBefore: number | undefined) => {
-      const after = await api<{ audit: Array<{ id: number; permission_id: string }> }>(
+    const auditHasNewEntry = async (maxIdBefore: number) => {
+      const after = await api<{ audit: Array<{ id: number; target_type: string; target_id: string; permission_id: string }> }>(
         page, '/authorization/audit?limit=200',
       );
       return after.audit.some((entry) =>
-        entry.permission_id === PERMISSION && entry.id !== firstIdBefore);
+        entry.id > maxIdBefore
+        && entry.target_type === 'role'
+        && entry.target_id === ROLE
+        && entry.permission_id === PERMISSION);
     };
-    const firstIdBefore = (await api<{ audit: Array<{ id: number }> }>(
+    const auditBefore = (await api<{ audit: Array<{ id: number }> }>(
       page, '/authorization/audit?limit=200',
-    )).audit[0]?.id;
+    )).audit;
+    const maxIdBefore = Math.max(0, ...auditBefore.map((entry) => entry.id));
 
     try {
       // Toggle the override in whichever direction makes a real change, so the
       // writer has something to record.
-      await api<RolePayload>(page, `/authorization/roles/${ROLE}`, {
+      await api<{ role: RolePayload }>(page, `/authorization/roles/${ROLE}`, {
         method: 'PUT',
         data: {
           revision: original.revision,
@@ -254,7 +274,7 @@ test.describe('@ci-tier2 Staff > Role permissions', () => {
         .find((entry) => entry.role === ROLE) as RolePayload;
       expect(after.overrides.some((entry) => entry.permission_id === PERMISSION)).toBe(!alreadyOverridden);
 
-      await expect.poll(() => auditHasNewEntry(firstIdBefore), { timeout: 20_000 }).toBe(true);
+      await expect.poll(() => auditHasNewEntry(maxIdBefore), { timeout: 20_000 }).toBe(true);
     } finally {
       const current = (await api<{ roles: RolePayload[] }>(page, '/authorization/roles')).roles
         .find((entry) => entry.role === ROLE) as RolePayload;

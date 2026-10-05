@@ -2,18 +2,7 @@ import { expect, APIRequestContext } from '@playwright/test';
 import { E2E_BASE_URL } from './urls';
 import { getE2eToken, E2E_PASSWORD } from './test-auth';
 
-/**
- * Idempotent catalog fixture for the kitchen-display and server-app UAT specs.
- *
- * The e2e server seeds a single variant-less "E2E Coffee". Neither the
- * kitchen-display nor the server-app scenarios can say anything about
- * variants or add-ons without a product that actually has both, so these
- * helpers create one (and the add-on group, table and chef user that go with
- * it) and reuse it on every later run.
- *
- * Everything is looked up by name before it is created, so re-running the
- * suite does not pile up duplicate catalog rows.
- */
+/** Creates and reuses the variant and add-on catalog needed by kitchen UAT specs. */
 
 export const FIXTURE_PRODUCT_NAME = 'UAT Cappuccino';
 export const FIXTURE_ADDON_GROUP_NAME = 'UAT Milk Options';
@@ -92,13 +81,22 @@ export async function restoreSettings(
   snapshot: Map<string, string | undefined>,
   base = E2E_BASE_URL,
 ): Promise<void> {
+  const defaults: Record<string, string> = {
+    billing_type: 'postpaid',
+    kds_enabled: 'true',
+    require_kitchen_delivered_before_settlement: 'false',
+  };
   for (const [key, value] of snapshot) {
-    if (value === undefined) continue;
+    const restoredValue = value ?? defaults[key];
+    if (restoredValue === undefined) {
+      throw new Error(`No default is defined to restore setting ${key}`);
+    }
     const token = getE2eToken();
-    await request.put(`${base}/api/settings/${key}`, {
+    const response = await request.put(`${base}/api/settings/${key}`, {
       headers: authHeaders(token),
-      data: { value },
+      data: { value: restoredValue },
     });
+    expect(response.ok(), `restoring setting ${key} must succeed (got ${response.status()})`).toBeTruthy();
   }
 }
 

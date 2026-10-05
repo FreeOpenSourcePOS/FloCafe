@@ -2,13 +2,7 @@ import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, addToCart, ownerAuth } from './helpers';
 
-/**
- * The Orders screen's own presentation and lifecycle controls: the appearance
- * switcher, and holding an order for a table and resuming it.
- *
- * The switcher is a tenant setting, so every pin here is undone afterwards -
- * the e2e database is shared with the rest of the suite.
- */
+/** Tests Orders layout persistence and held-order restoration. */
 
 const RUN = Date.now().toString(36).slice(-4);
 
@@ -153,6 +147,9 @@ test.describe('@ci-tier2 operations admin - orders appearance and hold', () => {
     // Back in the till, with the parked items and the same table.
     await expect(page).toHaveURL(/\/pos/);
     await page.waitForTimeout(1500);
-    await expect(page.getByText(/E2E Coffee/).first()).toBeVisible();
+    const cartItem = page.getByText('E2E Coffee', { exact: true }).last().locator('xpath=../..');
+    await expect(cartItem).toBeVisible();
+    await expect(cartItem.getByText('2', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: new RegExp(number) })).toBeVisible();
   });
 });

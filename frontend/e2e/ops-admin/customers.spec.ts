@@ -1,18 +1,14 @@
+import { randomInt } from 'node:crypto';
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, ownerAuth, fetchCustomers } from './helpers';
 
-/**
- * Customers: search, create, edit, and the phone-unification rules.
- *
- * Phone unification is the interesting surface. A phone number is the natural
- * identity for a customer, so the scenarios here check that the same person
- * typed two different ways resolves to one record rather than two, both when
- * creating and when editing, and that the rendered list agrees with the store.
- */
+/** Tests customer phone normalization, duplicate handling, editing, and search. */
 
 const RUN = Date.now().toString(36);
-const E164 = `+668${String(Date.now()).slice(-8)}`;
+const randomPhoneSuffix = () => randomInt(0, 100_000_000).toString().padStart(8, '0');
+const uniquePhone = (prefix = '+668') => `${prefix}${randomPhoneSuffix()}`;
+const E164 = uniquePhone();
 const LOCAL = `0${E164.slice(3)}`;
 
 type Customer = { id: string; name: string; phone: string | null };
@@ -61,7 +57,7 @@ test.describe('@ci-tier2 operations admin - customers', () => {
     await login(page, 'owner');
     const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
 
-    const phone = `+668${String(Date.now()).slice(-8)}`;
+    const phone = uniquePhone();
     const original = await createViaApi(page.request, `Ops Unify ${RUN}`, phone);
 
     // Same digits, different formatting and a different leading convention.
@@ -82,7 +78,7 @@ test.describe('@ci-tier2 operations admin - customers', () => {
 
   test('the create form refuses a duplicate number and leaves the list alone', async ({ page }) => {
     await login(page, 'owner');
-    const phone = `+668${String(Date.now()).slice(-8)}`;
+    const phone = uniquePhone();
     const original = await createViaApi(page.request, `Ops Dup Form ${RUN}`, phone);
 
     await page.goto(`${E2E_BASE_URL}/customers`);
@@ -110,7 +106,7 @@ test.describe('@ci-tier2 operations admin - customers', () => {
     await login(page, 'owner');
     const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
 
-    const stamp = String(Date.now()).slice(-8);
+    const stamp = randomPhoneSuffix();
     const firstPhone = `+668${stamp}`;
     const secondPhone = `+669${stamp}`;
     const first = await createViaApi(page.request, `Ops Move From ${RUN}`, firstPhone);
@@ -130,7 +126,7 @@ test.describe('@ci-tier2 operations admin - customers', () => {
 
   test('an edit in the form is saved and shown back', async ({ page }) => {
     await login(page, 'owner');
-    const phone = `+668${String(Date.now()).slice(-8)}`;
+    const phone = uniquePhone();
     const customer = await createViaApi(page.request, `Ops Edit ${RUN}`, phone);
 
     await page.goto(`${E2E_BASE_URL}/customers`);
@@ -154,7 +150,7 @@ test.describe('@ci-tier2 operations admin - customers', () => {
 
   test('search finds a customer by a fragment of their number', async ({ page }) => {
     await login(page, 'owner');
-    const phone = `+668${String(Date.now()).slice(-8)}`;
+    const phone = uniquePhone();
     const customer = await createViaApi(page.request, `Ops Search ${RUN}`, phone);
 
     await page.goto(`${E2E_BASE_URL}/customers`);

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -180,8 +181,10 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   subtotal: () => {
-    return get().items.reduce((sum, item) => {
-      const itemPrice = Number(item.variant?.price ?? item.product?.price) || 0;
+    const state = get();
+    const onlinePlatformSelected = state.orderType === 'online' && state.onlinePlatform.trim().length > 0;
+    return state.items.reduce((sum, item) => {
+      const itemPrice = cartVariantUnitPrice(item, onlinePlatformSelected);
       const itemQty = Number(item.quantity) || 1;
       const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
       return sum + (itemPrice + addonTotal) * itemQty;

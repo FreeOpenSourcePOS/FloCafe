@@ -7,11 +7,27 @@
  */
 
 import { roundCurrencyValue } from './currency-input';
-import type { ProductVariant } from '@/lib/types';
+import type { AddonGroup, ProductVariant } from '@/lib/types';
 
 /** A tracked variant with no stock cannot be sold. */
 export function isVariantSoldOut(variant: ProductVariant): boolean {
   return Boolean(variant.track_inventory) && Number(variant.stock_quantity) <= 0;
+}
+
+/**
+ * Whether a scanned variant must pass through the customizer instead of the
+ * cart: a required add-on group still needs a selection, and a sold-out
+ * variant needs the picker rather than a sale that fails at checkout.
+ */
+export function scannedVariantNeedsCustomizer(
+  product: { addon_groups?: AddonGroup[] },
+  variant: ProductVariant,
+): boolean {
+  const needsRequiredSelection = (product.addon_groups || []).some((group) => {
+    const requiredMin = group.is_required ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+    return requiredMin > 0;
+  });
+  return needsRequiredSelection || isVariantSoldOut(variant);
 }
 
 /** Active variants in display order. */

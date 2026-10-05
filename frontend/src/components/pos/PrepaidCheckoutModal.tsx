@@ -129,9 +129,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
   const chargeContext = useMemo(() => ({
     orderType: cart.orderType,
+    onlinePlatform: cart.onlinePlatform,
     waivedChargeIds: Array.from(cart.waivedChargeIds),
     optedInChargeIds: Array.from(cart.optedInChargeIds),
-  }), [cart.orderType, cart.waivedChargeIds, cart.optedInChargeIds]);
+  }), [cart.orderType, cart.onlinePlatform, cart.waivedChargeIds, cart.optedInChargeIds]);
   const applicableCharges = chargesForOrderType(charges, cart.orderType);
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !cart.optedInChargeIds.has(charge.id),

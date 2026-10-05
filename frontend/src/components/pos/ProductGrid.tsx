@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
-import type { Category, Product } from '@/lib/types';
+import type { Category, Product, ProductVariant } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
@@ -48,12 +48,14 @@ interface Props {
   setSearch: (s: string) => void;
   currency: string;
   onProductClick: (product: Product) => void;
+  /** A scanned variant goes through the cart customizer, so required add-ons and sold-out gating still apply. */
+  onScannedVariant?: (product: Product, variant: ProductVariant) => void;
   sidebarOpen?: boolean;
 }
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, sidebarOpen = true,
+  search, setSearch, onProductClick, onScannedVariant, sidebarOpen = true,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
@@ -100,8 +102,10 @@ export default function ProductGrid({
               const match = resolveScannedProduct(trimmed, products);
               if (match) {
                 if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
-                else if (match.variant) cart.addItem(match.product, 1, [], '', match.variant);
-                else onProductClick(match.product);
+                else if (match.variant) {
+                  if (onScannedVariant) onScannedVariant(match.product, match.variant);
+                  else cart.addItem(match.product, 1, [], '', match.variant);
+                } else onProductClick(match.product);
                 setSearch('');
               }
             }}

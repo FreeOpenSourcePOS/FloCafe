@@ -45,8 +45,10 @@ const { formatItemHeading } = require('../frontend/src/lib/printer/item-heading'
 const {
   activeVariants,
   isVariantSoldOut,
+  scannedVariantNeedsCustomizer,
   selectDefaultVariant,
 } = require('../frontend/src/lib/product-variants');
+const { cartVariantUnitPrice } = require('../frontend/src/lib/cart-price');
 
 function variant(overrides: Record<string, unknown> = {}) {
   return {
@@ -177,6 +179,42 @@ function receiptItem(variantSelection: unknown) {
 }
 
 // ---------------------------------------------------------------------------
+// An online platform quotes the variant platform price, as the order does
+// ---------------------------------------------------------------------------
+{
+  const cart = useCartStore.getState();
+  cart.clearCart();
+  cart.addItem(product(), 2, [], '', variant({ online_price: 6.25 }));
+  cart.setOrderType('online');
+  cart.setOnlinePlatform('zomato');
+  assert.equal(
+    useCartStore.getState().subtotal(),
+    2 * 6.25,
+    'an online cart with a platform subtotals at the variant platform price',
+  );
+
+  cart.setOnlinePlatform('   ');
+  assert.equal(
+    useCartStore.getState().subtotal(),
+    2 * 5.5,
+    'a blank online platform falls back to the counter price, like the order',
+  );
+
+  cart.setOnlinePlatform('zomato');
+  assert.equal(
+    cartVariantUnitPrice({ variant: variant({ online_price: null }), product: product() }, true),
+    5.5,
+    'a variant with no platform price keeps its counter price',
+  );
+  assert.equal(
+    cartVariantUnitPrice({ variant: variant({ online_price: 0 }), product: product() }, true),
+    0,
+    'a zero platform price is quoted as zero, not as the counter price',
+  );
+  useCartStore.getState().clearCart();
+}
+
+// ---------------------------------------------------------------------------
 // Sold-out gating and default selection (table-driven)
 // ---------------------------------------------------------------------------
 {
@@ -199,6 +237,24 @@ function receiptItem(variantSelection: unknown) {
     ['tracked-zero', 'untracked-zero'],
     'only active variants are offered for selection',
   );
+
+  // A scanned variant goes straight to the cart only when nothing about it
+  // needs the customizer; otherwise the cashier picks there.
+  const requiredGroup = { id: 'g-size', name: 'Size', is_required: true, min_selection: 1, max_selection: 1, sort_order: 0, is_active: true };
+  const optionalGroup = { id: 'g-note', name: 'Extras', is_required: false, min_selection: 0, max_selection: 3, sort_order: 1, is_active: true };
+  for (const [label, product_, variant_, expected] of [
+    ['a plain variant', product(), untrackedZero, false],
+    ['a product with a required group', product({ addon_groups: [requiredGroup] }), untrackedZero, true],
+    ['a product with only optional groups', product({ addon_groups: [optionalGroup] }), untrackedZero, false],
+    ['a sold-out variant', product(), tracked, true],
+    ['a sold-out variant on a product with a required group', product({ addon_groups: [requiredGroup] }), tracked, true],
+  ] as const) {
+    assert.equal(
+      scannedVariantNeedsCustomizer(product_, variant_),
+      expected,
+      `scanned variant routing: ${label}`,
+    );
+  }
 
   const lineup = [tracked, untrackedZero, trackedStocked];
   for (const [label, variants, initialId, expected] of [

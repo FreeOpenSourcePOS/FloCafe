@@ -22,6 +22,8 @@ export interface TaxPreview {
 
 export interface TaxPreviewChargeContext {
   orderType: CartOrderType;
+  /** The platform text as typed; blank means the quote is a counter quote. */
+  onlinePlatform: string;
   waivedChargeIds: string[];
   optedInChargeIds: string[];
 }
@@ -71,6 +73,12 @@ export function useTaxPreview(
     discount_value: discount?.value,
     ...(chargeContext ? {
       order_type: chargeContext.orderType,
+      // The backend prices an online quote from variant.online_price, so the
+      // platform travels with the quote or the shown total can disagree with
+      // the created order.
+      online_platform: chargeContext.orderType === 'online' && chargeContext.onlinePlatform.trim().length > 0
+        ? chargeContext.onlinePlatform
+        : undefined,
       waived_charge_ids: chargeContext.waivedChargeIds,
       opted_in_charge_ids: chargeContext.optedInChargeIds,
     } : {}),

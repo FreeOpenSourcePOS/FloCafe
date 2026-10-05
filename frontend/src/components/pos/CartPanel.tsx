@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
@@ -329,7 +330,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
-                    {fmt(Number(item.variant?.price ?? item.product.price))}
+                    {fmt(cartVariantUnitPrice(item, cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0))}
                   </p>
                   <div className="flex items-center gap-1.5">
                     {onEditItem && (

@@ -15,6 +15,7 @@ import {
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
+import { formatItemHeading } from './item-heading';
 
 export interface KotOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -126,7 +127,7 @@ export function buildKotBytes(
     hasItems = true;
 
     // Item name with quantity
-    const qtyName = `${item.quantity}x ${item.product_name}`;
+    const qtyName = `${item.quantity}x ${formatItemHeading(item.product_name, item.variant_selection)}`;
     enc.bold(true);
     safePrinterText(enc, truncateText(qtyName, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
     enc.bold(false);

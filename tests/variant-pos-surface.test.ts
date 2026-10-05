@@ -16,6 +16,9 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
+import { escPosToText } from '../main/printers/thermal';
+import { loadFrontendPrintModules } from './helpers/receipt-column-measure';
+
 const ROOT = path.join(__dirname, '..');
 const Module = require('module');
 const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
@@ -347,6 +350,115 @@ function receiptItem(variantSelection: unknown) {
 
   assert.equal(slipHeading(JSON.stringify(variant())), 'Cappuccino (Large)', 'a delivery slip line names the variant sold');
   assert.equal(slipHeading(undefined), 'Cappuccino', 'a delivery slip item with no variant prints exactly the product name');
+}
+
+// ---------------------------------------------------------------------------
+// The WebUSB and browser encoders name the variant sold
+// ---------------------------------------------------------------------------
+{
+  const fe = loadFrontendPrintModules();
+  const snapshot = JSON.stringify(variant());
+  const snapshotWithSku = JSON.stringify(variant({ sku: 'CAP-LG' }));
+
+  const kotOrder = (variantSelection: unknown) => ({
+    order_number: 'A1',
+    type: 'dine_in',
+    created_at: '2026-08-21 18:42:00',
+    items: [{
+      product_name: 'Cappuccino',
+      quantity: 1,
+      status: 'pending',
+      addons: [],
+      special_instructions: '',
+      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+    }],
+  });
+  const kotText = (variantSelection: unknown) =>
+    escPosToText(Buffer.from(fe.kotEncoder.buildKotBytes(kotOrder(variantSelection) as any, { paperWidth: 80, language: 'en' })));
+  assert.ok(kotText(snapshot).includes('1x Cappuccino (Large)'), 'the WebUSB KOT names the variant sold');
+  assert.ok(kotText(snapshotWithSku).includes('Cappuccino (Large) [CAP-LG]'), 'the WebUSB KOT carries the variant SKU');
+  assert.ok(kotText(undefined).includes('1x Cappuccino'), 'a KOT item with no variant prints exactly the product name');
+  assert.ok(!kotText(undefined).includes('(Large)'), 'a KOT item with no variant invents no variant heading');
+
+  const taxBill = (variantSelection: unknown) => ({
+    bill_number: 'INV-1',
+    order_id: 1,
+    subtotal: 11,
+    tax_amount: 0,
+    discount_amount: 0,
+    service_charge: 0,
+    delivery_charge: 0,
+    total: 11,
+    paid_amount: 11,
+    balance: 0,
+    payment_status: 'paid',
+    payment_details: null,
+    order: {
+      order_number: 'A1',
+      created_at: '2026-08-21 18:42:00',
+      type: 'dine_in',
+      items: [receiptItem(variantSelection)],
+    },
+  });
+  const taxBillText = (variantSelection: unknown) =>
+    escPosToText(fe.taxBillEncoder.buildTaxBillBytes(
+      taxBill(variantSelection) as any,
+      { business_name: 'Flo Test Cafe', currency: 'USD', country: 'US' } as any,
+      { paperWidth: 80, rawEscPos: true, language: 'en' },
+    ));
+  assert.ok(taxBillText(snapshot).includes('Cappuccino (Large)'), 'the WebUSB tax bill names the variant sold');
+  assert.ok(!taxBillText(undefined).includes('(Large)'), 'a tax-bill line with no variant prints exactly the product name');
+
+  const slipOrder = { order_number: 'D1', created_at: '2026-08-21 18:42:00', type: 'delivery' };
+  const slipItems = (variantSelection: unknown) => [{
+    product_name: 'Cappuccino',
+    quantity: 2,
+    ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+  }];
+  const contact = { name: 'Asha Kumar', phone: '+91 98765 43210', address: '12 Marine Road' };
+
+  const slipBytesText = (variantSelection: unknown) =>
+    escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
+      slipOrder as any, slipItems(variantSelection) as any, contact, { paperWidth: 80, language: 'en' }, [],
+    )));
+  assert.ok(slipBytesText(snapshot).includes('2x  Cappuccino (Large)'), 'the WebUSB delivery slip names the variant sold');
+  assert.ok(!slipBytesText(undefined).includes('(Large)'), 'a delivery slip item with no variant prints exactly the product name');
+
+  const slipHtml = (variantSelection: unknown) =>
+    fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+      slipOrder as any, slipItems(variantSelection) as any, contact, { paperWidth: 80, language: 'en' },
+    );
+  assert.ok(slipHtml(snapshot).includes('2x Cappuccino (Large)'), 'the browser delivery slip names the variant sold');
+  assert.ok(!slipHtml(undefined).includes('(Large)'), 'a browser delivery slip item with no variant prints exactly the product name');
+
+  const orderSlipLabels = {
+    title: 'Order', subtotal: 'Subtotal', discount: 'Discount', serviceCharge: 'Service',
+    deliveryCharge: 'Delivery', packagingCharge: 'Packaging', tax: 'Tax', total: 'Total',
+  };
+  const orderSlip = (variantSelection: unknown) => ({
+    order_number: 'A1',
+    type: 'dine_in',
+    subtotal: 11,
+    tax_amount: 0,
+    discount_amount: 0,
+    service_charge: 0,
+    delivery_charge: 0,
+    packaging_charge: 0,
+    total: 11,
+    items: [{
+      product_name: 'Cappuccino',
+      quantity: 2,
+      unit_price: 5.5,
+      subtotal: 11,
+      addons: [],
+      special_instructions: '',
+      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+    }],
+  });
+  const orderSlipHtml = (variantSelection: unknown) =>
+    fe.orderSlipWebPrint.generateOrderSlipHtml(orderSlip(variantSelection) as any, orderSlipLabels, { paperWidth: 80, language: 'en' });
+  assert.ok(orderSlipHtml(snapshot).includes('2x Cappuccino (Large)'), 'the browser order slip names the variant sold');
+  assert.ok(!orderSlipHtml(undefined).includes('(Large)'), 'an order slip line with no variant prints exactly the product name');
 }
 
 // ---------------------------------------------------------------------------

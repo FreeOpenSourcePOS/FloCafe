@@ -501,6 +501,7 @@ test('delivery slip: the local paths carry the selected add-ons, like the backen
   const start = usePrinter.indexOf('const slipItems');
   const projection = usePrinter.slice(start, start + 700);
   assert.ok(/addons:/.test(projection), 'the item projection carries add-ons through to the encoders');
+  assert.ok(/variant_selection:/.test(projection), 'the item projection carries the sold variant through to the encoders');
 
   const byteEncoder = fs.readFileSync(path.join(__dirname, '../frontend/src/lib/printer/delivery-slip-encoder.ts'), 'utf8');
   assert.ok(

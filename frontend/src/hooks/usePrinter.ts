@@ -611,6 +611,7 @@ export const usePrinterStore = create<PrinterState>()(
           const slipContact = (billDeliveryShowCustomerPhoneAlways || billShowCustomerPhone) ? contact : { ...contact, phone: '' };
           const slipItems = (orderForPrint.items ?? []).map((item) => ({
             product_name: item.product_name,
+            variant_selection: item.variant_selection ?? null,
             quantity: Number(item.quantity) || 0,
             addons: (item.addons ?? []).map((addon) => ({
               name: addon.name,

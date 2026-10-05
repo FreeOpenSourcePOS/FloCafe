@@ -10,6 +10,7 @@ import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components'
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME } from './branding';
 import { printLabelResolver } from './print-document';
+import { formatItemHeading } from './item-heading';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export interface TaxBillOptions {
@@ -261,7 +262,7 @@ export function buildTaxBillBytes(
 
   const items = order?.items ?? [];
   for (const item of items) {
-    const line = `${item.product_name}`;
+    const line = formatItemHeading(item.product_name, item.variant_selection);
     const amount = formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos);
 
     writeSafeFinancialRow(line, amount);

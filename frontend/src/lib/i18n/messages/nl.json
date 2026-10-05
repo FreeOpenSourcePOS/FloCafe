@@ -153,7 +153,8 @@
     "update": "Bijwerken",
     "windowControls": "Vensterbedieningen",
     "yes": "Ja",
-    "back": "Terug"
+    "back": "Terug",
+    "loadMore": "Laad meer"
   },
   "countries": {
     "selectCountry": "Selecteer land…"

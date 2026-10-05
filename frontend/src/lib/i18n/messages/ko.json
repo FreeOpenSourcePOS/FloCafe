@@ -153,7 +153,8 @@
     "windowControls": "창 컨트롤",
     "yes": "네",
     "back": "뒤로",
-    "tax": "세금"
+    "tax": "세금",
+    "loadMore": "더 불러오기"
   },
   "countries": {
     "selectCountry": "국가 선택…"

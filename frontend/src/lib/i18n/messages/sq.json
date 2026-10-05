@@ -153,7 +153,8 @@
     "update": "Përditëso",
     "windowControls": "Kontrollet e dritares",
     "yes": "Po",
-    "back": "Mbrapa"
+    "back": "Mbrapa",
+    "loadMore": "Ngarko më shumë"
   },
   "countries": {
     "selectCountry": "Zgjidhni vendin..."

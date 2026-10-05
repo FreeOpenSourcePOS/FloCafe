@@ -153,7 +153,8 @@
     "update": "更新",
     "windowControls": "窗口控制",
     "yes": "是",
-    "back": "返回"
+    "back": "返回",
+    "loadMore": "加载更多"
   },
   "countries": {
     "selectCountry": "选择国家/地区…"

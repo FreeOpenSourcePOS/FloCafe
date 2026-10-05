@@ -153,7 +153,8 @@
     "windowControls": "Pencere Kontrolleri",
     "yes": "Evet",
     "back": "Geri",
-    "tax": "Vergi"
+    "tax": "Vergi",
+    "loadMore": "Daha fazla yükle"
   },
   "countries": {
     "selectCountry": "Ülke Seçin"

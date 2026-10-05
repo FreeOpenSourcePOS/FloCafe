@@ -153,7 +153,8 @@
     "windowControls": "عناصر التحكم في النوافذ",
     "yes": "نعم",
     "back": "العودة",
-    "tax": "الضرائب"
+    "tax": "الضرائب",
+    "loadMore": "تحميل المزيد"
   },
   "countries": {
     "selectCountry": "اختر البلد…"

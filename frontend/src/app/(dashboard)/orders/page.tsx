@@ -141,6 +141,8 @@ export default function OrdersPage() {
   const searchRef = useRef(filters.search);
   const previousSearchRef = useRef(filters.search);
   const ordersFetchIdRef = useRef(0);
+  const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
@@ -242,16 +244,18 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async (): Promise<boolean> => {
+  const fetchOrders = async (cursor?: number): Promise<boolean> => {
     const fetchId = ++ordersFetchIdRef.current;
+    if (cursor !== undefined) setLoadingMoreOrders(true);
     try {
       const search = searchRef.current.trim();
       const { data } = await api.get('/orders', {
-        params: { per_page: 50, ...(search ? { search } : {}) },
+        params: { per_page: 50, ...(search ? { search } : {}), ...(cursor !== undefined ? { before_id: cursor } : {}) },
       });
       if (fetchId !== ordersFetchIdRef.current) return true;
       const orders = data.orders || [];
-      setOrders(orders);
+      setOrders((prev) => cursor === undefined ? orders : [...prev, ...orders]);
+      setNextOrdersCursor(data.nextCursor ?? null);
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
         if (order.bill?.id && !fetchedBillIdsRef.current.has(order.bill.id)) {
@@ -264,7 +268,10 @@ export default function OrdersPage() {
       if (fetchId === ordersFetchIdRef.current) toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
-      if (fetchId === ordersFetchIdRef.current) setLoading(false);
+      if (fetchId === ordersFetchIdRef.current) {
+        if (cursor === undefined) setLoading(false);
+        else setLoadingMoreOrders(false);
+      }
     }
   };
 
@@ -272,6 +279,9 @@ export default function OrdersPage() {
     searchRef.current = filters.search;
     if (previousSearchRef.current === filters.search) return;
     previousSearchRef.current = filters.search;
+    ordersFetchIdRef.current++;
+    setNextOrdersCursor(null);
+    setLoadingMoreOrders(false);
     const timeout = setTimeout(fetchOrders, 300);
     return () => clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1216,6 +1226,13 @@ export default function OrdersPage() {
               onRestoreItem={restoreItem}
             />
           ))}
+        </div>
+      )}
+      {tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
+        <div className="text-center py-3 border-t border-border">
+          <Button variant="outline" size="sm" onClick={() => fetchOrders(nextOrdersCursor)} disabled={loadingMoreOrders}>
+            {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
+          </Button>
         </div>
       )}
 

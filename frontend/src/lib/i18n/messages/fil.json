@@ -1226,13 +1226,13 @@
     "menuPrintFailed": "Hindi na-print ang menu",
     "menuPopupBlocked": "Blockado ng iyong browser ang print window. Payagan ang mga pop-up para sa site na ito at subukan muli.",
     "dietaryTagsLabel": "Mga Dietary Tag",
-    "variantGovernedHint": "Itinutoy ng mga variant sa ibaba ang presyo at stock.",
+    "variantGovernedHint": "Tinutukoy ng mga variant sa ibaba ang presyo at stock.",
     "variantMoveDown": "Ilipat pababa",
     "variantMoveUp": "Ilipat pataas",
     "variantOnlinePrice": "Presyo online",
     "variantRowInvalid": "Kailangan ng bawat variant ng pangalan at presyo.",
     "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)",
-    "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maaibalik mula sa screen na ito.",
+    "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maibabalik mula sa screen na ito.",
     "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order."
   },
   "receipt": {

@@ -102,7 +102,7 @@ export interface Product {
   inventory_deduction_quantity?: number | null;
   description: string | null;
   price: number;
-  cost_price: number | null;
+  cost: number | null;
   cb_percent?: number | null;
   tax_type: 'none' | 'inclusive' | 'exclusive';
   tax_rate: number;

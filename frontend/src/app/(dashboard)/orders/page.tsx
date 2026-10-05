@@ -145,7 +145,6 @@ export default function OrdersPage() {
   const ordersRefreshPendingRef = useRef(false);
   const ordersRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedOlderOrdersRef = useRef(false);
-  const lastRateLimitedOrdersRefreshAtRef = useRef(0);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
@@ -256,26 +255,17 @@ export default function OrdersPage() {
     }
     if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
     if (cursor === undefined && rateLimitedRefresh) {
-      const now = Date.now();
-      const cooldown = 1000 - (now - lastRateLimitedOrdersRefreshAtRef.current);
-      if (cooldown > 0) {
+      if (ordersRefreshTimerRef.current !== null) {
         ordersRefreshPendingRef.current = true;
-        if (ordersRefreshTimerRef.current === null) {
-          ordersRefreshTimerRef.current = setTimeout(() => {
-            ordersRefreshTimerRef.current = null;
-            if (!ordersRefreshPendingRef.current) return;
-            ordersRefreshPendingRef.current = false;
-            fetchOrders(undefined, true);
-          }, cooldown);
-        }
         return true;
       }
-      lastRateLimitedOrdersRefreshAtRef.current = now;
-    } else if (cursor === undefined) {
-      if (ordersRefreshTimerRef.current !== null) {
-        clearTimeout(ordersRefreshTimerRef.current);
+      ordersRefreshTimerRef.current = setTimeout(() => {
         ordersRefreshTimerRef.current = null;
-      }
+        if (!ordersRefreshPendingRef.current) return;
+        ordersRefreshPendingRef.current = false;
+        fetchOrders(undefined, true);
+      }, 1000);
+    } else if (cursor === undefined) {
       ordersRefreshPendingRef.current = false;
     }
     const fetchId = ++ordersFetchIdRef.current;
@@ -342,10 +332,6 @@ export default function OrdersPage() {
     ordersRefreshInProgressRef.current = false;
     ordersLoadMoreInProgressRef.current = false;
     ordersRefreshPendingRef.current = false;
-    if (ordersRefreshTimerRef.current !== null) {
-      clearTimeout(ordersRefreshTimerRef.current);
-      ordersRefreshTimerRef.current = null;
-    }
     hasLoadedOlderOrdersRef.current = false;
     setOrders([]);
     setNextOrdersCursor(null);

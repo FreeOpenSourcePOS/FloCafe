@@ -6828,21 +6828,24 @@ export function projectKdsStation(station: any, restricted: boolean, userCategor
 export function insertOrderItemAddons(
   dbInstance: Database.Database,
   orderItemId: number | bigint,
-  addons: { id?: string; name?: string; price?: number; quantity?: number }[] | null | undefined,
+  addons: { id?: string; name?: string; price?: number; quantity?: number; inventory_deducted_quantity?: number }[] | null | undefined,
   createdAt: string
 ): void {
   if (!addons || !Array.isArray(addons) || addons.length === 0) return;
   const addonExists = dbInstance.prepare('SELECT 1 FROM addons WHERE id = ?');
   const insertAddon = dbInstance.prepare(`
-    INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   for (const addon of addons) {
     if (!addon || !addon.name) continue;
     // Fall back to NULL addon_id if missing from catalog to prevent FK failure.
     const linkedAddonId = addon.id && addonExists.get(addon.id) ? addon.id : null;
     const qty = Math.max(1, Math.floor(Number(addon.quantity) || 1));
-    insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, qty, createdAt);
+    // The snapshot of what this line took out of the add-on pool, so a later
+    // cancel returns exactly this much instead of whatever the catalog says.
+    const deductedQuantity = Math.max(0, Number(addon.inventory_deducted_quantity) || 0);
+    insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, qty, deductedQuantity, createdAt);
   }
 }
 

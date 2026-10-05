@@ -9,6 +9,7 @@ export default defineConfig({
   workers: 1, // Single shared backend server requires serial execution to prevent DB state races
   retries: process.env.CI ? 1 : 0,
   use: {
+    headless: true,
     trace: 'on-first-retry', // Upload traces for debugging CI flakes
   },
   webServer: {

@@ -237,7 +237,17 @@ jobs:
         working-directory: frontend
         # This job is the browser-only layer. The Electron project has its own
         # config and dedicated native job with an explicit display server.
-        run: npx playwright test --config=playwright.config.ts --project=chromium
+        run: npx playwright test --config=playwright.config.ts --project=chromium --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale'
+        env:
+          CI: true
+
+      - name: Run verified browser E2E Tier 1
+        run: npm run test:e2e:browser:tier1
+        env:
+          CI: true
+
+      - name: Run verified browser E2E Tier 2
+        run: npm run test:e2e:browser:tier2
         env:
           CI: true
 

@@ -142,7 +142,8 @@ export default function OrdersPage() {
   const ordersFetchIdRef = useRef(0);
   const ordersRefreshInProgressRef = useRef(false);
   const ordersLoadMoreInProgressRef = useRef(false);
-  const refreshAfterLoadMoreRef = useRef(false);
+  const ordersRefreshPendingRef = useRef(false);
+  const ordersRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedOrdersPageCountRef = useRef(1);
   const lastBackgroundOrdersRefreshAtRef = useRef(0);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
@@ -249,16 +250,33 @@ export default function OrdersPage() {
   };
 
   const fetchOrders = async (cursor?: number, backgroundRefresh = false): Promise<boolean> => {
-    if (cursor === undefined && ordersLoadMoreInProgressRef.current) {
-      refreshAfterLoadMoreRef.current = true;
+    if (cursor === undefined && (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)) {
+      ordersRefreshPendingRef.current = true;
       return true;
     }
-    if (cursor === undefined && ordersRefreshInProgressRef.current) return true;
     if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
     if (cursor === undefined && backgroundRefresh) {
       const now = Date.now();
-      if (now - lastBackgroundOrdersRefreshAtRef.current < 1000) return true;
+      const cooldown = 1000 - (now - lastBackgroundOrdersRefreshAtRef.current);
+      if (cooldown > 0) {
+        ordersRefreshPendingRef.current = true;
+        if (ordersRefreshTimerRef.current === null) {
+          ordersRefreshTimerRef.current = setTimeout(() => {
+            ordersRefreshTimerRef.current = null;
+            if (!ordersRefreshPendingRef.current) return;
+            ordersRefreshPendingRef.current = false;
+            fetchOrders(undefined, true);
+          }, cooldown);
+        }
+        return true;
+      }
       lastBackgroundOrdersRefreshAtRef.current = now;
+    } else if (cursor === undefined) {
+      if (ordersRefreshTimerRef.current !== null) {
+        clearTimeout(ordersRefreshTimerRef.current);
+        ordersRefreshTimerRef.current = null;
+      }
+      ordersRefreshPendingRef.current = false;
     }
     const fetchId = ++ordersFetchIdRef.current;
     setLoadingMoreOrders(true);
@@ -308,8 +326,8 @@ export default function OrdersPage() {
           ordersLoadMoreInProgressRef.current = false;
         }
         setLoadingMoreOrders(false);
-        if (cursor !== undefined && refreshAfterLoadMoreRef.current) {
-          refreshAfterLoadMoreRef.current = false;
+        if (ordersRefreshPendingRef.current && ordersRefreshTimerRef.current === null) {
+          ordersRefreshPendingRef.current = false;
           fetchOrders(undefined, true);
         }
       }
@@ -323,7 +341,11 @@ export default function OrdersPage() {
     ordersFetchIdRef.current++;
     ordersRefreshInProgressRef.current = false;
     ordersLoadMoreInProgressRef.current = false;
-    refreshAfterLoadMoreRef.current = false;
+    ordersRefreshPendingRef.current = false;
+    if (ordersRefreshTimerRef.current !== null) {
+      clearTimeout(ordersRefreshTimerRef.current);
+      ordersRefreshTimerRef.current = null;
+    }
     loadedOrdersPageCountRef.current = 1;
     setOrders([]);
     setNextOrdersCursor(null);
@@ -450,6 +472,9 @@ export default function OrdersPage() {
     return () => {
       clearInterval(interval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ordersRefreshTimerRef.current !== null) clearTimeout(ordersRefreshTimerRef.current);
+      ordersRefreshTimerRef.current = null;
+      ordersRefreshPendingRef.current = false;
       if (ws) {
         ws.onclose = null;
         ws.close();

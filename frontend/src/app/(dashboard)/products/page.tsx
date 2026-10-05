@@ -312,7 +312,7 @@ export default function ProductsPage() {
       name: product.name,
       category_id: product.category_id != null ? String(product.category_id) : '',
       price: String(product.price),
-      cost_price: String(product.cost_price || ''),
+      cost_price: String(product.cost ?? ''),
       cb_percent: product.cb_percent === null || product.cb_percent === undefined ? '' : String(product.cb_percent),
       sku: product.sku || '',
       barcode: product.barcode || '',
@@ -407,7 +407,7 @@ export default function ProductsPage() {
         name: form.name,
         category_id: form.category_id || null,
         price: roundCurrencyValue(Number(form.price), unitAdapter.maxDecimals),
-        cost_price: form.cost_price ? roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals) : null,
+        cost_price: form.cost_price === '' ? null : roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals),
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
@@ -755,7 +755,7 @@ export default function ProductsPage() {
                 </td>
                 <td className="p-4 text-end">
                   <p className="font-medium">{fmt(Number(product.price))}</p>
-                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
+                  {product.cost != null && product.cost > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost)) })}</p>}
                 </td>
                 <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex flex-col gap-0.5">

@@ -3,6 +3,7 @@ import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
 import { hasPermission, requirePermission } from '../services/authorization';
+import { adjustProductStock } from '../services/inventory';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -61,6 +62,60 @@ function parseNonNegativeInteger(value: unknown, field: string, errors: FieldErr
   return numeric;
 }
 
+interface AddonInventoryFields {
+  track_inventory: boolean;
+  stock_quantity: number;
+  low_stock_threshold: number;
+  /** False when the caller omitted stock, so an update keeps the stored quantity. */
+  hasStockQuantity: boolean;
+}
+
+/** Falls back to the stored row so an omitted field keeps its current value on update. */
+function parseAddonInventoryFields(
+  addon: Record<string, unknown>,
+  prefix: string,
+  errors: FieldErrors,
+  existing?: Record<string, unknown>,
+): AddonInventoryFields {
+  const field = (name: string) => (prefix ? `${prefix}.${name}` : name);
+  const track_inventory = hasOwn(addon ?? {}, 'track_inventory')
+    ? normalizeBoolean(addon?.track_inventory, false)
+    : Boolean(Number(existing?.track_inventory ?? 0));
+  return {
+    track_inventory,
+    stock_quantity: parseNonNegativeNumber(addon?.stock_quantity, field('stock_quantity'), errors, Number(existing?.stock_quantity ?? 0)),
+    low_stock_threshold: parseNonNegativeNumber(addon?.low_stock_threshold, field('low_stock_threshold'), errors, Number(existing?.low_stock_threshold ?? 0)),
+    hasStockQuantity: hasOwn(addon ?? {}, 'stock_quantity') && addon?.stock_quantity !== null && addon?.stock_quantity !== undefined,
+  };
+}
+
+/**
+ * A stock change is a ledger event, never a silent overwrite: the add-on pool has
+ * to reconcile against its own movements or restore validation rejects the store.
+ */
+function applyAddonStockAdjustment(
+  db: ReturnType<typeof getDatabase>,
+  addonId: string,
+  requestedStock: number,
+  actorUserId: string,
+  referenceType: 'opening_balance' | 'manual_adjustment',
+): void {
+  const current = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addonId) as { stock_quantity?: number } | undefined;
+  if (!current) return;
+  const quantityDelta = requestedStock - Number(current.stock_quantity ?? 0);
+  if (quantityDelta === 0) return;
+  adjustProductStock(db, {
+    productId: null,
+    addonId,
+    quantityDelta,
+    movementType: 'adjustment',
+    referenceType,
+    referenceId: addonId,
+    reason: referenceType === 'opening_balance' ? 'Opening add-on stock' : 'Manual add-on stock update',
+    actorUserId,
+  });
+}
+
 function validationErrorResponse(res: Response, errors: FieldErrors): Response | null {
   if (Object.keys(errors).length === 0) return null;
   return res.status(400).json({ errors });
@@ -72,6 +127,9 @@ function serializeAddon(addon: any): any {
     ...addon,
     is_active: toBoolean(addon.is_active),
     inherit_parent_tax_category: toBoolean(addon.inherit_parent_tax_category),
+    track_inventory: toBoolean(addon.track_inventory),
+    stock_quantity: Number(addon.stock_quantity ?? 0),
+    low_stock_threshold: Number(addon.low_stock_threshold ?? 0),
   };
 }
 
@@ -193,12 +251,17 @@ router.post('/', addonGroupWriteRateLimit, requirePermission('catalog.manage'), 
       const addonErrors: FieldErrors = {};
       const addonName = parseName(addon?.name, `addons.${index}.name`, addonErrors);
       const price = parseNonNegativeNumber(addon?.price, `addons.${index}.price`, addonErrors, 0);
+      const inventory = parseAddonInventoryFields(addon, `addons.${index}`, addonErrors);
       Object.assign(errors, addonErrors);
       return {
         ...addon,
         name: addonName,
         price,
         is_active: normalizeBoolean(addon?.is_active, true),
+        track_inventory: inventory.track_inventory,
+        stock_quantity: inventory.stock_quantity,
+        low_stock_threshold: inventory.low_stock_threshold,
+        has_stock_quantity: inventory.hasStockQuantity,
       };
     }) : [];
     const activeAddonCount = normalizedAddons.filter((a: any) => a.is_active).length;
@@ -218,6 +281,7 @@ router.post('/', addonGroupWriteRateLimit, requirePermission('catalog.manage'), 
     }
 
     const db = getDatabase();
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const groupId = randomUUID();
     const { group, groupAddons } = withTxn(() => {
       db.prepare(`
@@ -230,16 +294,21 @@ router.post('/', addonGroupWriteRateLimit, requirePermission('catalog.manage'), 
 
       if (normalizedAddons.length > 0) {
         const insertAddon = db.prepare(`
-          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, track_inventory, stock_quantity, low_stock_threshold, is_active, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
         `);
         normalizedAddons.forEach((addon: any, index: number) => {
+          const addonId = randomUUID();
           insertAddon.run(
-            randomUUID(), groupId, addon.name, addon.price || 0,
+            addonId, groupId, addon.name, addon.price || 0,
             addon.tax_category_id || null, addon.tax_behavior || 'country_default',
             addon.inherit_parent_tax_category !== false ? 1 : 0,
+            addon.track_inventory ? 1 : 0, addon.low_stock_threshold,
             addon.is_active ? 1 : 0, index, now(), now(),
           );
+          if (addon.has_stock_quantity) {
+            applyAddonStockAdjustment(db, addonId, addon.stock_quantity, actorUserId, 'opening_balance');
+          }
         });
       }
 
@@ -276,6 +345,7 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
     }
     const existingAddonRows = db.prepare('SELECT * FROM addons WHERE addon_group_id = ?').all(req.params.id) as any[];
     const existingAddonIds = new Set(existingAddonRows.map((addon) => addon.id));
+    const existingAddonById = new Map(existingAddonRows.map((addon) => [addon.id, addon]));
     const normalizedAddons = Array.isArray(addons) ? addons.map((addon: any, index: number) => {
       const addonErrors: FieldErrors = {};
       const addonName = parseName(addon?.name, `addons.${index}.name`, addonErrors);
@@ -283,12 +353,17 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
       if (addon?.id !== undefined && (typeof addon.id !== 'string' || !existingAddonIds.has(addon.id))) {
         addonErrors[`addons.${index}.id`] = ['addon id must belong to this group'];
       }
+      const inventory = parseAddonInventoryFields(addon, `addons.${index}`, addonErrors, addon?.id ? existingAddonById.get(addon.id) : undefined);
       Object.assign(errors, addonErrors);
       return {
         ...addon,
         name: addonName,
         price,
         is_active: normalizeBoolean(addon?.is_active, true),
+        track_inventory: inventory.track_inventory,
+        stock_quantity: inventory.stock_quantity,
+        low_stock_threshold: inventory.low_stock_threshold,
+        has_stock_quantity: inventory.hasStockQuantity,
       };
     }) : null;
     const validationResponse = validationErrorResponse(res, errors);
@@ -318,6 +393,7 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
     const reqAllowMult = allow_multiple_quantities === undefined ? null : (normalizeBoolean(allow_multiple_quantities, false) ? 1 : 0);
     const reqSort = sort_order === undefined ? null : order;
     const reqActive = is_active === undefined ? null : (normalizeBoolean(is_active, true) ? 1 : 0);
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
 
     const { updated, updatedAddons } = withTxn(() => {
       db.prepare(`
@@ -332,12 +408,13 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
         const touchedIds = new Set<string>();
         const updateAddon = db.prepare(`
           UPDATE addons SET name = ?, price = ?, tax_category_id = ?, tax_behavior = ?,
-            inherit_parent_tax_category = ?, is_active = ?, sort_order = ?, updated_at = ?
+            inherit_parent_tax_category = ?, track_inventory = ?, low_stock_threshold = ?,
+            is_active = ?, sort_order = ?, updated_at = ?
           WHERE id = ? AND addon_group_id = ?
         `);
         const insertAddon = db.prepare(`
-          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, track_inventory, stock_quantity, low_stock_threshold, is_active, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
         `);
         normalizedAddons.forEach((addon: any, index: number) => {
           const addonId = addon.id || randomUUID();
@@ -346,12 +423,19 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
             addon.name, addon.price,
             addon.tax_category_id || null, addon.tax_behavior || 'country_default',
             addon.inherit_parent_tax_category !== false ? 1 : 0,
+            addon.track_inventory ? 1 : 0, addon.low_stock_threshold,
             addon.is_active ? 1 : 0, index, now(),
           ];
           if (addon.id) {
             updateAddon.run(...values, addonId, req.params.id);
           } else {
             insertAddon.run(addonId, req.params.id, ...values.slice(0, -1), now(), now());
+          }
+          if (addon.has_stock_quantity) {
+            applyAddonStockAdjustment(
+              db, addonId, addon.stock_quantity, actorUserId,
+              addon.id ? 'manual_adjustment' : 'opening_balance',
+            );
           }
         });
         for (const existingAddon of existingAddonRows) {
@@ -401,6 +485,7 @@ router.post('/:groupId/addons', addonGroupWriteRateLimit, requirePermission('cat
     const addonPrice = parseNonNegativeNumber(price, 'price', errors);
     const addonActive = normalizeBoolean(is_active, true);
     const addonSort = parseNonNegativeInteger(sort_order, 'sort_order', errors, 0);
+    const inventory = parseAddonInventoryFields(req.body, '', errors);
     const validationResponse = validationErrorResponse(res, errors);
     if (validationResponse) return validationResponse;
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
@@ -428,14 +513,21 @@ router.post('/:groupId/addons', addonGroupWriteRateLimit, requirePermission('cat
     }
 
     const addonId = randomUUID();
-    db.prepare(`
-      INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      addonId, req.params.groupId, addonName, addonPrice,
-      tax_category_id || null, tax_behavior || 'country_default', inherit_parent_tax_category !== false ? 1 : 0,
-      addonActive ? 1 : 0, addonSort, now(), now(),
-    );
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    withTxn(() => {
+      db.prepare(`
+        INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, track_inventory, stock_quantity, low_stock_threshold, is_active, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+      `).run(
+        addonId, req.params.groupId, addonName, addonPrice,
+        tax_category_id || null, tax_behavior || 'country_default', inherit_parent_tax_category !== false ? 1 : 0,
+        inventory.track_inventory ? 1 : 0, inventory.low_stock_threshold,
+        addonActive ? 1 : 0, addonSort, now(), now(),
+      );
+      if (inventory.hasStockQuantity) {
+        applyAddonStockAdjustment(db, addonId, inventory.stock_quantity, actorUserId, 'opening_balance');
+      }
+    });
 
     const addon = db.prepare('SELECT * FROM addons WHERE id = ?').get(addonId);
     res.status(201).json({ addon: serializeAddon(addon) });
@@ -454,6 +546,7 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
     const addonPrice = price === undefined ? null : parseNonNegativeNumber(price, 'price', errors);
     const addonSort = sort_order === undefined ? null : parseNonNegativeInteger(sort_order, 'sort_order', errors, 0);
     const addonActive = is_active === undefined ? null : normalizeBoolean(is_active, true);
+    const inventory = parseAddonInventoryFields(req.body, '', errors);
     const validationResponse = validationErrorResponse(res, errors);
     if (validationResponse) return validationResponse;
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
@@ -475,6 +568,7 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
     }
 
     const hasTaxCategoryId = 'tax_category_id' in req.body;
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const updatedAtomically = withTxn(() => {
       const current = db.prepare('SELECT is_active FROM addons WHERE id = ? AND addon_group_id = ?')
         .get(req.params.addonId, req.params.groupId) as { is_active: number } | undefined;
@@ -489,13 +583,21 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
           tax_category_id = CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
           tax_behavior = COALESCE(?, tax_behavior),
           inherit_parent_tax_category = COALESCE(?, inherit_parent_tax_category),
+          track_inventory = COALESCE(?, track_inventory),
+          low_stock_threshold = COALESCE(?, low_stock_threshold),
           is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order)
         WHERE id = ?
       `).run(
         addonName, addonPrice, hasTaxCategoryId ? 1 : 0, tax_category_id, tax_behavior,
         inherit_parent_tax_category === undefined ? null : (inherit_parent_tax_category ? 1 : 0),
+        hasOwn(req.body, 'track_inventory') ? (inventory.track_inventory ? 1 : 0) : null,
+        hasOwn(req.body, 'low_stock_threshold') && req.body.low_stock_threshold !== null && req.body.low_stock_threshold !== undefined
+          ? inventory.low_stock_threshold : null,
         addonActive === null ? null : (addonActive ? 1 : 0), addonSort, req.params.addonId,
       );
+      if (inventory.hasStockQuantity) {
+        applyAddonStockAdjustment(db, req.params.addonId as string, inventory.stock_quantity, actorUserId, 'manual_adjustment');
+      }
       return true;
     });
     if (updatedAtomically !== true) {

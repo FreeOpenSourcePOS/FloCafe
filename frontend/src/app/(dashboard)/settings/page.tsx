@@ -535,12 +535,12 @@ export default function SettingsPage() {
     }
   };
 
-  const handlePinGateSubmit = async (pin: string): Promise<{ success: boolean; error?: string }> => {
+  const handlePinGateSubmit = async (pin: string, currentPin?: string): Promise<{ success: boolean; error?: string }> => {
     if (!pinGate) return { success: false, error: t('nothingPending') };
 
     if (pinGate.mode === 'set') {
       try {
-        await api.post('/db-tools/master-pin/reset', { pin, confirm_pin: pin });
+        await api.post('/db-tools/master-pin/reset', { pin, confirm_pin: pin, ...(currentPin ? { master_pin: currentPin } : {}) });
         await fetchMasterPinStatus();
         toast.success(t('masterPinSaved'));
         setPinGate(null);
@@ -4767,8 +4767,10 @@ export default function SettingsPage() {
       <MasterPinPrompt
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
+        currentPinRequired={pinGate?.mode === 'set' && masterPinStatus.isSet}
         title={
-          pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
+          pinGate?.mode === 'set' && masterPinStatus.isSet ? t('masterPinChangeButton')
+          : pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
           : pinGate?.mode === 'restore-google-drive' ? t('googleDriveRestoreTitle')

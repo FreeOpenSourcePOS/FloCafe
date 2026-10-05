@@ -44,7 +44,7 @@ const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { databaseRoutes } = require('../main/routes/database');
-const { verifyMasterPin, isMasterPinSet } = require('../main/services/master-pin');
+const { verifyMasterPin, isMasterPinSet, resetMasterPin } = require('../main/services/master-pin');
 const { cancelHttpShutdownWork, closeHttpServer, installHttpShutdownTracking } = require('../main/shutdown');
 
 let passed = 0;
@@ -163,6 +163,36 @@ async function runTests() {
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Imported Owner', 'hash', 'owner', 1)`);
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
+
+  console.log('\nTest 1b: POST /db-tools/master-pin/reset requires the existing PIN but allows first-time setup');
+  {
+    const withoutCurrentPin = await request(app).post('/api/db-tools/master-pin/reset')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ pin: '5678', confirm_pin: '5678' });
+    assert(withoutCurrentPin.status === 403, `reset with an existing PIN rejects a request without current proof (got ${withoutCurrentPin.status})`);
+    assert(verifyMasterPin('1234'), 'a rejected reset without current proof leaves the existing PIN unchanged');
+    resetMasterPin('1234');
+
+    const withWrongCurrentPin = await request(app).post('/api/db-tools/master-pin/reset')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '0000', pin: '5678', confirm_pin: '5678' });
+    assert(withWrongCurrentPin.status === 403, `reset with an existing PIN rejects incorrect current proof (got ${withWrongCurrentPin.status})`);
+    assert(verifyMasterPin('1234'), 'a rejected reset with incorrect proof leaves the existing PIN unchanged');
+    resetMasterPin('1234');
+
+    const withCurrentPin = await request(app).post('/api/db-tools/master-pin/reset')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234', pin: '5678', confirm_pin: '5678' });
+    assert(withCurrentPin.status === 200, `reset with the correct current PIN succeeds (got ${withCurrentPin.status})`);
+    assert(verifyMasterPin('5678'), 'authorized reset stores the new PIN');
+    assert(!verifyMasterPin('1234'), 'authorized reset invalidates the old PIN');
+    resetMasterPin('1234');
+
+    fs.unlinkSync(path.join(testDir, 'master-pin.enc'));
+    assert(!isMasterPinSet(), 'the first-time setup control starts with no configured PIN');
+    const firstTimeSetup = await request(app).post('/api/db-tools/master-pin/reset')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ pin: '5678', confirm_pin: '5678' });
+    assert(firstTimeSetup.status === 200, `first-time PIN setup succeeds without existing-PIN proof (got ${firstTimeSetup.status})`);
+    assert(verifyMasterPin('5678'), 'first-time PIN setup stores the PIN');
+    resetMasterPin('1234');
+  }
 
   await new Promise<void>((resolve) => downloadServer.listen(0, '127.0.0.1', resolve));
   const stalledDownload = request(downloadServer)

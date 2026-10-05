@@ -19,22 +19,25 @@ interface MasterPinPromptProps {
   mode: 'verify' | 'set';
   title?: string;
   description?: string;
+  currentPinRequired?: boolean;
   onCancel: () => void;
-  onSubmit: (pin: string) => Promise<{ success: boolean; error?: string }>;
+  onSubmit: (pin: string, currentPin?: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const PIN_REGEX = /^\d{4}$/;
 
-export function MasterPinPrompt({ open, mode, title, description, onCancel, onSubmit }: MasterPinPromptProps) {
+export function MasterPinPrompt({ open, mode, title, description, currentPinRequired = false, onCancel, onSubmit }: MasterPinPromptProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const [pin, setPin] = useState('');
+  const [currentPin, setCurrentPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
     setPin('');
+    setCurrentPin('');
     setConfirmPin('');
     setError(null);
     setSubmitting(false);
@@ -48,6 +51,10 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
   const handleSubmit = async () => {
     setError(null);
 
+    if (mode === 'set' && currentPinRequired && !PIN_REGEX.test(currentPin)) {
+      setError(t('pinFourDigits'));
+      return;
+    }
     if (!PIN_REGEX.test(pin)) {
       setError(t('pinFourDigits'));
       return;
@@ -59,7 +66,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     }
 
     setSubmitting(true);
-    const result = await onSubmit(pin);
+    const result = await onSubmit(pin, currentPinRequired ? currentPin : undefined);
     setSubmitting(false);
 
     if (result.success) {
@@ -67,6 +74,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     } else {
       setError(result.error || tCommon('somethingWrong'));
       setPin('');
+      setCurrentPin('');
       setConfirmPin('');
     }
   };
@@ -84,6 +92,24 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
         </DialogHeader>
 
         <div className="space-y-4">
+          {mode === 'set' && currentPinRequired && (
+            <div className="space-y-2">
+              <Label htmlFor="master-pin-current">{t('masterPin')}</Label>
+              <Input
+                id="master-pin-current"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={4}
+                autoFocus
+                value={currentPin}
+                onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="••••"
+                className="text-center text-lg tracking-[0.5em]"
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="master-pin">{mode === 'set' ? t('newPin') : t('masterPin')}</Label>
             <Input
@@ -92,7 +118,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
               inputMode="numeric"
               pattern="[0-9]*"
               maxLength={4}
-              autoFocus
+              autoFocus={!currentPinRequired}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
               onKeyDown={(e) => e.key === 'Enter' && mode === 'verify' && handleSubmit()}

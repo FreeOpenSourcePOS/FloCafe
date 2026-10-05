@@ -1024,9 +1024,16 @@ export default function ProductsPage() {
                                 className={`${VARIANT_CELL} font-mono`} />
                             </td>
                             <td className="py-1 pe-2">
-                              <input type="number" min="0" step="any" required value={row.stock_quantity} aria-label={t('columnStock')}
-                                onChange={(e) => updateVariantRow(idx, { stock_quantity: e.target.value })}
-                                className={VARIANT_CELL} />
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked={row.track_inventory} aria-label={t('fieldTrackInventory')}
+                                  onChange={(e) => updateVariantRow(idx, { track_inventory: e.target.checked })}
+                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                                {row.track_inventory && (
+                                  <input type="number" min="0" step="any" required value={row.stock_quantity} aria-label={t('columnStock')}
+                                    onChange={(e) => updateVariantRow(idx, { stock_quantity: e.target.value })}
+                                    className={VARIANT_CELL} />
+                                )}
+                              </div>
                             </td>
                             <td className="py-1 pe-2 text-center">
                               <input type="checkbox" checked={row.is_active} aria-label={tCommon('active')}

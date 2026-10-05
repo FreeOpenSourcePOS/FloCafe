@@ -20,7 +20,7 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatDateForTenant } from '@/lib/countries';
 import type { Category, Product } from '@/lib/types';
-import { buildMenuWebPrintHtml, MenuPopupBlockedError, printMenuInBrowser, type MenuWebPrintSection } from '@/lib/printer/menu-web-print';
+import { buildMenuWebPrintHtml, MenuPopupBlockedError, printMenuInBrowser, reservePrintGesture, type MenuWebPrintSection } from '@/lib/printer/menu-web-print';
 
 interface Props {
   open: boolean;
@@ -144,14 +144,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     if (printing) return;
     setPrinting(true);
     // Preserve the user gesture for browsers that block asynchronous popups.
-    let reservedWindow: Window | null = null;
-    try {
-      if (typeof window !== 'undefined') {
-        reservedWindow = window.open('', '_blank');
-      }
-    } catch {
-      reservedWindow = null;
-    }
+    const reservedWindow = reservePrintGesture();
 
     try {
       const response = await api.post('/printers/print-menu', filters);

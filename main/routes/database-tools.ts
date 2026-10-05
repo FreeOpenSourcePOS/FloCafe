@@ -69,7 +69,13 @@ router.get('/master-pin/status', requirePermission('database.manage'), (_req: Re
   res.json({ available: isMasterPinAvailable(), isSet: isMasterPinSet(), schemaVersion: getCurrentSchemaVersion() });
 });
 
-router.post('/master-pin/reset', requirePermission('database.manage'), (req: Request, res: Response) => {
+router.post('/master-pin/reset', requirePermission('database.manage'), (req: Request, res: Response, next) => {
+  if (isMasterPinSet()) {
+    requireMasterPin(req, res, next);
+    return;
+  }
+  next();
+}, (req: Request, res: Response) => {
   const { pin, confirm_pin } = req.body as { pin?: string; confirm_pin?: string };
   const cleanPin = String(pin || '').trim();
   if (!/^\d{4}$/.test(cleanPin)) {

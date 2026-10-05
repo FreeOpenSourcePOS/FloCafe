@@ -176,6 +176,26 @@ async function main() {
       assert.equal(stockOfVariant(db, 'var-small'), before, 'cancelling the order returns the tracked variant stock');
     }
 
+    // ── A post-sale variant edit cannot redirect the refund ────────────────
+    {
+      const before = stockOfVariant(db, 'var-small');
+      const productBefore = stockOfProduct(db, 'prod-cappuccino');
+      const response = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-small', quantity: 2 }] });
+      const orderId = response.data.order.id;
+      const item = itemOf(orderId);
+      assert.equal(item.inventory_variant_id, 'var-small', 'the line records the variant pool it debited');
+      assert.equal(stockOfVariant(db, 'var-small'), before - 2, 'the tracked variant pool is debited at sale');
+
+      // The owner turns tracking off after the sale; the cancel must still credit
+      // the pool the sale debited, not the product pool the new settings select.
+      db.prepare('UPDATE product_variants SET track_inventory = 0 WHERE id = ?').run('var-small');
+      const cancelled = await api(baseUrl, `/api/orders/${orderId}/items/${item.id}/cancel`, { method: 'PATCH', headers: owner.authHeader, body: {} });
+      assert.equal(cancelled.status, 200, 'the tracked-variant item is cancelled after a settings edit');
+      assert.equal(stockOfVariant(db, 'var-small'), before, 'cancelling credits the recorded variant pool');
+      assert.equal(stockOfProduct(db, 'prod-cappuccino'), productBefore, 'the product pool is not credited instead');
+      db.prepare('UPDATE product_variants SET track_inventory = 1 WHERE id = ?').run('var-small');
+    }
+
     // ── Online orders use the platform price ──────────────────────────────
     {
       const response = await createOrder({
@@ -187,6 +207,13 @@ async function main() {
 
       const local = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-large', quantity: 1 }] });
       assert.equal(itemOf(local.data.order.id).unit_price, 500, 'a counter order is priced from variant.price');
+
+      const blank = await createOrder({
+        type: 'takeaway', online_platform: '   ',
+        items: [{ product_id: 'prod-cappuccino', variant_id: 'var-large', quantity: 1 }],
+      });
+      assert.equal(blank.status, 201, 'an order with a blank online platform is created');
+      assert.equal(itemOf(blank.data.order.id).unit_price, 500, 'a blank online platform is priced as a counter order');
     }
 
     // ── Rejections: never a silent fall back to the base price ────────────

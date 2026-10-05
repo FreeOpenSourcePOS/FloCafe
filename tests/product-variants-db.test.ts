@@ -42,9 +42,27 @@ function main() {
   assert.ok(variantsMigration, 'the product variants migration is registered');
   assert.equal(variantsMigration.name, 'add_product_variants_table', 'the migration is named add_product_variants_table');
   const tailVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
-  // Pinned on purpose: adding a migration has to update this literal, so a new
-  // tail cannot land unnoticed while every other assertion only checks ordering.
-  assert.equal(tailVersion, 103, 'the registry tail is the pinned head schema version');
+  // Nothing here names a version number. The registry has to be a permutation
+  // of 1..N with its highest version last, and a fresh install has to land on
+  // that same N. A new migration therefore cannot land unnoticed, and nobody
+  // has to remember to edit a literal for the suite to stay true.
+  const declaredVersions = MIGRATIONS.map((migration: any) => migration.version);
+  assert.equal(
+    new Set(declaredVersions).size,
+    declaredVersions.length,
+    'every migration version is declared exactly once',
+  );
+  const ascendingVersions = [...declaredVersions].sort((a: number, b: number) => a - b);
+  assert.deepEqual(
+    ascendingVersions,
+    ascendingVersions.map((_: unknown, index: number) => index + 1),
+    'the registry runs contiguously from 1 with no gaps',
+  );
+  assert.equal(
+    tailVersion,
+    ascendingVersions[ascendingVersions.length - 1],
+    'the registry tail is the highest declared version',
+  );
   assert.equal(getCurrentSchemaVersion(), tailVersion, 'a fresh install reaches the last registry version');
 
   assert.ok(

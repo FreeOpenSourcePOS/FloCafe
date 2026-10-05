@@ -47,7 +47,6 @@ import {
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
-import { matchesOrderSearch } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
@@ -142,6 +141,8 @@ export default function OrdersPage() {
   const previousSearchRef = useRef(filters.search);
   const ordersFetchIdRef = useRef(0);
   const ordersRefreshInProgressRef = useRef(false);
+  const ordersLoadMoreInProgressRef = useRef(false);
+  const refreshAfterLoadMoreRef = useRef(false);
   const loadedOrdersPageCountRef = useRef(1);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
@@ -247,13 +248,17 @@ export default function OrdersPage() {
   };
 
   const fetchOrders = async (cursor?: number): Promise<boolean> => {
-    if (cursor !== undefined && ordersRefreshInProgressRef.current) return true;
+    if (cursor === undefined && ordersLoadMoreInProgressRef.current) {
+      refreshAfterLoadMoreRef.current = true;
+      return true;
+    }
+    if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
     const fetchId = ++ordersFetchIdRef.current;
+    setLoadingMoreOrders(true);
     if (cursor === undefined) {
       ordersRefreshInProgressRef.current = true;
-      setLoadingMoreOrders(true);
     } else {
-      setLoadingMoreOrders(true);
+      ordersLoadMoreInProgressRef.current = true;
     }
     try {
       const search = searchRef.current.trim();
@@ -302,9 +307,17 @@ export default function OrdersPage() {
       return false;
     } finally {
       if (fetchId === ordersFetchIdRef.current) {
-        if (cursor === undefined) ordersRefreshInProgressRef.current = false;
-        if (cursor === undefined) setLoading(false);
+        if (cursor === undefined) {
+          ordersRefreshInProgressRef.current = false;
+          setLoading(false);
+        } else {
+          ordersLoadMoreInProgressRef.current = false;
+        }
         setLoadingMoreOrders(false);
+        if (cursor !== undefined && refreshAfterLoadMoreRef.current) {
+          refreshAfterLoadMoreRef.current = false;
+          fetchOrders();
+        }
       }
     }
   };
@@ -315,6 +328,8 @@ export default function OrdersPage() {
     previousSearchRef.current = filters.search;
     ordersFetchIdRef.current++;
     ordersRefreshInProgressRef.current = false;
+    ordersLoadMoreInProgressRef.current = false;
+    refreshAfterLoadMoreRef.current = false;
     loadedOrdersPageCountRef.current = 1;
     setOrders([]);
     setNextOrdersCursor(null);
@@ -535,10 +550,6 @@ export default function OrdersPage() {
     // Filter unpaid orders using resolved payment status since bills are generated at checkout.
     if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
 
-    // Search by order number, customer name, or phone
-    if (filters.search && !matchesOrderSearch(order, filters.search)) {
-      return false;
-    }
     // Filter by table
     if (filters.table && String(order.table_id) !== filters.table) {
       return false;
@@ -1266,7 +1277,7 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
-      {tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
+      {filters.search.trim() && tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
         <div className="text-center py-3 border-t border-border">
           <Button variant="outline" size="sm" onClick={() => fetchOrders(nextOrdersCursor)} disabled={loadingMoreOrders}>
             {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}

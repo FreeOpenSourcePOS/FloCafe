@@ -104,9 +104,15 @@ function main() {
   const { runHealthCheck } = require('../main/services/schema-health');
 
   // ── The real chain, against a real old install, must not throw ──────────
-  const migration99 = MIGRATIONS[MIGRATIONS.length - 1];
-  assert.equal(migration99?.version, 99, 'the final migration adds charge snapshots');
-  MIGRATIONS.pop();
+  // The charge snapshot migration is no longer the registry tail: later feature
+  // migrations land after it. Truncate the chain at that migration rather than
+  // at the end, so this still proves it applies cleanly to a v98 store.
+  const chargeMigrationIndex = MIGRATIONS.findIndex(
+    (migration: any) => migration.name === 'add_charges_breakdown_and_custom_charges_setting',
+  );
+  assert.ok(chargeMigrationIndex > 0, 'the charge snapshot migration is registered');
+  assert.equal(MIGRATIONS[chargeMigrationIndex].version, 99, 'the charge snapshot migration is v99');
+  const migrationsFromCharges = MIGRATIONS.splice(chargeMigrationIndex);
   try {
     try {
       initDatabase();
@@ -155,7 +161,7 @@ function main() {
     `).run(existingChargeSetting);
   } finally {
     closeDatabase();
-    MIGRATIONS.push(migration99);
+    MIGRATIONS.push(...migrationsFromCharges);
   }
   initDatabase();
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');

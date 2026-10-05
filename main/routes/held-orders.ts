@@ -25,6 +25,9 @@ interface HeldOrderRow {
 
 const MAX_HELD_ORDER_ITEMS = 100;
 const MAX_IDENTIFIER_LENGTH = 128;
+// Cart line ids are bounded digests (frontend/src/lib/cart-identity.ts), so this
+// only guards against a client sending an oversized identifier.
+const MAX_CART_LINE_ID_LENGTH = 2048;
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,7 +39,7 @@ function isValidIdentifier(value: unknown): value is string | number {
 }
 
 function validateHeldOrderItem(item: unknown, db: any): void {
-  if (!isRecord(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > MAX_IDENTIFIER_LENGTH) {
+  if (!isRecord(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > MAX_CART_LINE_ID_LENGTH) {
     throw new Error('Each held-order item must have a valid id');
   }
   if (!isRecord(item.product) || !isValidIdentifier(item.product.id)) {

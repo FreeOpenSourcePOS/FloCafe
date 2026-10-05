@@ -18,6 +18,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initDatabase, getDatabase, getCurrentSchemaVersion, MIGRATIONS, closeDatabase, now,
+  validateInventoryLedgerReplacement,
 } = require('../main/db');
 const {
   createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, api,
@@ -340,6 +341,37 @@ async function main() {
     });
     assertEqual(nextPage.status, 200, 'history cursor fetch succeeds');
     assert(nextPage.data.movements.every((movement: any) => movement.id < managerHistory.data.nextCursor), 'history cursor advances without overlap');
+    // A movement row is identified by its pool as well: a replacement that
+    // swaps a variant's movements for the same numbers under another variant id
+    // is erasing history, not replacing it.
+    const replacement = (variantId: string | null) => [{
+      id: 1,
+      product_id: 'replacement-product',
+      variant_id: variantId,
+      quantity_delta: 5,
+      movement_type: 'adjustment',
+      reference_type: 'opening_balance',
+      reference_id: 'replacement-variant',
+      reason: 'Opening count',
+      actor_user_id: 'replacement-owner',
+      stock_after: 5,
+      created_at: '2020-01-01 00:00:00',
+    }];
+    assertEqual(
+      validateInventoryLedgerReplacement([], replacement('variant-a'), [], replacement('variant-b')),
+      'Inventory movement history cannot be erased by a replacement',
+      'a replacement cannot swap one variant pool movement history for another',
+    );
+    assertEqual(
+      validateInventoryLedgerReplacement([], replacement('variant-a'), [], replacement('variant-a')),
+      null,
+      're-importing the same variant pool movement history is allowed',
+    );
+    assertEqual(
+      validateInventoryLedgerReplacement([], replacement(null), [], replacement('variant-a')),
+      'Inventory movement history cannot be erased by a replacement',
+      'a product pool movement cannot be replaced by a variant pool movement',
+    );
   } finally {
     await closeTestServer(server);
     fs.rmSync(activeTestDir, { recursive: true, force: true });

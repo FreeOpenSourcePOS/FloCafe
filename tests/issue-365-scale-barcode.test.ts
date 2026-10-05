@@ -147,4 +147,48 @@ assert.deepEqual(
 
 assert.equal(resolveScannedProduct('2156789012507', products), null, 'non-fractional products do not resolve scale labels');
 
+const largeVariant = {
+  id: 'var-large',
+  product_id: 'prod-each',
+  name: 'Large',
+  sku: null,
+  barcode: 'VAR-1',
+  price: 9,
+  online_price: null,
+  cost_price: null,
+  track_inventory: true,
+  stock_quantity: 3,
+  low_stock_threshold: null,
+  inventory_product_id: null,
+  inventory_deduction_quantity: null,
+  is_active: true,
+  sort_order: 0,
+};
+const retiredVariant = { ...largeVariant, id: 'var-retired', name: 'Retired', barcode: 'VAR-2', is_active: false };
+const variantProduct = { ...products[1], barcode: 'PROD-1', variants: [largeVariant, retiredVariant] };
+
+assert.deepEqual(
+  resolveScannedProduct('VAR-1', [variantProduct]),
+  { product: variantProduct, variant: largeVariant, quantity: 1, scaleBarcode: null },
+  'an active variant barcode resolves to that variant',
+);
+
+assert.deepEqual(
+  resolveScannedProduct(' VAR-1 ', [variantProduct]),
+  { product: variantProduct, variant: largeVariant, quantity: 1, scaleBarcode: null },
+  'a padded variant barcode still resolves after trimming',
+);
+
+assert.equal(
+  resolveScannedProduct('VAR-2', [variantProduct]),
+  null,
+  'an inactive variant barcode does not resolve',
+);
+
+assert.deepEqual(
+  resolveScannedProduct('PROD-1', [variantProduct]),
+  { product: variantProduct, quantity: 1, scaleBarcode: null },
+  'the product barcode still wins over a variant barcode',
+);
+
 console.log('✓ Issue #365 scale barcode parser checks passed');

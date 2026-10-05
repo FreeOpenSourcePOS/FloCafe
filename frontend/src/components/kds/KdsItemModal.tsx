@@ -9,6 +9,7 @@ import {
   type KitchenStatus,
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 
 export interface KdsItemModalProps {
   item: KdsOrderItem;
@@ -46,7 +47,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
             <p className="text-xs text-gray-400 font-medium mb-1">
               {t('modalOrderNumber', { orderNumber })}
             </p>
-            <h2 id="kds-item-modal-title" className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-foreground'}`}>{item.product_name}</h2>
+            <h2 id="kds-item-modal-title" className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-foreground'}`}>{formatItemHeading(item.product_name, item.variant_selection)}</h2>
             <div className="flex items-center gap-2 mt-1.5">
               <span className={`text-sm font-bold ${STATUS_CONFIG[currentStatus].text}`}>
                 {item.quantity}×

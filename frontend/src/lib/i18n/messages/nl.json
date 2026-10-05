@@ -864,7 +864,8 @@
     "addCharge": "Toevoegen",
     "removeCharge": "Verwijderen",
     "chargesTotal": "Totaal kosten",
-    "chargeUpdateFailed": "Kosten konden niet worden bijgewerkt"
+    "chargeUpdateFailed": "Kosten konden niet worden bijgewerkt",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Bedrag",
@@ -917,7 +918,10 @@
     "templateFallback": "Het geselecteerde bonsjabloon wordt niet ondersteund op dit afdrukpad, daarom is de ingebouwde kassabonindeling gebruikt."
   },
   "print": {
-    "menu": {"title": "Menukaart", "totalItems": "Totaal artikelen"},
+    "menu": {
+      "title": "Menukaart",
+      "totalItems": "Totaal artikelen"
+    },
     "taxInvoiceTitle": "BELASTINGFACTUUR",
     "invoiceTitle": "FACTUUR",
     "invoiceNumber": "Factuurnr.:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Printerbestemming",
     "systemBrowserPrint": "Systeem / browserafdruk",
     "menuPrintFailed": "Menu afdrukken is mislukt",
-    "menuPopupBlocked": "Uw browser heeft het afdrukvakster geblokkeerd. Sta pop-ups voor deze site toe en probeer het opnieuw."
+    "menuPopupBlocked": "Uw browser heeft het afdrukvakster geblokkeerd. Sta pop-ups voor deze site toe en probeer het opnieuw.",
+    "dietaryTagsLabel": "Dieetlabels",
+    "variantGovernedHint": "Prijs en voorraad worden bepaald door de varianten hieronder.",
+    "variantMoveDown": "Omlaag verplaatsen",
+    "variantMoveUp": "Omhoog verplaatsen",
+    "variantOnlinePrice": "Onlineprijs",
+    "variantRowInvalid": "Elke variant heeft een naam en prijs nodig.",
+    "variantToggle": "Dit product heeft varianten (bijv. formaat, korst, smaak)",
+    "variantDeactivateConfirm": "Deze variant wordt bij opslaan gedeactiveerd en kan vanaf dit scherm niet worden hersteld.",
+    "variantRemoveAllConfirm": "Als u dit uitschakelt, worden alle varianten van dit product gedeactiveerd. Eerdere bestellingen behouden ze."
   },
   "receipt": {
     "amount": "Bedrag",

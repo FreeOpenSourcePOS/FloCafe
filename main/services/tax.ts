@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
+import { resolveOrderItemVariant, variantUnitPrice } from './product-variants';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, resolveTenantCurrency, type TaxIdFormat } from '../countries';
 import { buildAppliedCharges, ChargeValidationError, VALID_CHARGE_ORDER_TYPES, type AppliedCharge } from './charges';
@@ -691,6 +692,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       service_charge,
       discount_type,
       discount_value,
+      online_platform,
       order_type,
       waived_charge_ids,
       opted_in_charge_ids,
@@ -736,6 +738,8 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const customer = customer_id
       ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as Customer | undefined)
       : null;
+    // Same pricing rule as order placement, including the online platform price.
+    const isOnlineOrder = typeof online_platform === 'string' && online_platform.trim().length > 0;
 
     const itemResults: any[] = [];
     const allBreakdowns: any[] = [];
@@ -754,7 +758,10 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         continue;
       }
 
-      const unitPrice = parseFloat(product.price) || 0;
+      // The cashier is quoted from the same catalog lookup the order is priced
+      // from, so a variant basket cannot be quoted at the parent price.
+      const variant = resolveOrderItemVariant(db, product, itemData, isOnlineOrder);
+      const unitPrice = variant ? variantUnitPrice(variant, isOnlineOrder) : (parseFloat(product.price) || 0);
       const rawQty = Number(itemData.quantity);
       const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
       const rawDisc = Number(itemData.discount_amount);

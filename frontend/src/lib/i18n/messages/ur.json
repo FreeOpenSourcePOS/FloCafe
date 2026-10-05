@@ -864,7 +864,8 @@
     "addCharge": "شامل کریں",
     "removeCharge": "ہٹائیں",
     "chargesTotal": "کل فیس",
-    "chargeUpdateFailed": "فیس اپ ڈیٹ نہیں ہو سکی"
+    "chargeUpdateFailed": "فیس اپ ڈیٹ نہیں ہو سکی",
+    "tagHalal": "حلال"
   },
   "printTest": {
     "amt": "رقم",
@@ -917,7 +918,10 @@
     "templateFallback": "منتخب بل ٹیمپلیٹ اس پرنٹ مسیر پر دستیاب نہیں، اس لیے بلٹ رسید کا بلٹ اِن ڈیزائن استعمال ہوا۔"
   },
   "print": {
-    "menu": {"title": "مینو", "totalItems": "کل اشیاء"},
+    "menu": {
+      "title": "مینو",
+      "totalItems": "کل اشیاء"
+    },
     "taxInvoiceTitle": "ٹیکس انوائس",
     "invoiceTitle": "انوائس",
     "invoiceNumber": "انوائس نمبر:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "پرنٹر",
     "systemBrowserPrint": "سسٹم / براؤزر پرنٹ",
     "menuPrintFailed": "مینو پرنٹ نہیں ہوسکا",
-    "menuPopupBlocked": "آپ کا براؤزر پرنٹ ونڈو بلاک کر دیا۔ اس سائٹ کے لیے پاپ اپس کی اجازت دیں اور دوبارہ کوشش کریں۔"
+    "menuPopupBlocked": "آپ کا براؤزر پرنٹ ونڈو بلاک کر دیا۔ اس سائٹ کے لیے پاپ اپس کی اجازت دیں اور دوبارہ کوشش کریں۔",
+    "dietaryTagsLabel": "خوراکی ٹیگز",
+    "variantGovernedHint": "قیمت اور اسٹاک نیچے دیے گئے وریئنٹس کے ذریعے طے ہوتے ہیں۔",
+    "variantMoveDown": "نیچے لے جائیں",
+    "variantMoveUp": "اوپر لے جائیں",
+    "variantOnlinePrice": "آن لائن قیمت",
+    "variantRowInvalid": "ہر وریئنٹ کے لیے نام اور قیمت درکار ہے۔",
+    "variantToggle": "اس پروڈکٹ کے وریئنٹ ہیں (مثلاً سائز، کرسٹ، ذائقہ)",
+    "variantDeactivateConfirm": "یہ وریئنٹ محفوظ کرنے پر غیر فعال ہو جائے گا اور اس اسکرین سے بحال نہیں کیا جا سکتا۔",
+    "variantRemoveAllConfirm": "اسے بند کرنے پر اس پروڈکٹ کے تمام وریئنٹ غیر فعال ہو جائیں گے۔ پرانے آرڈرز انہیں برقرار رکھتے ہیں۔"
   },
   "receipt": {
     "amount": "رقم",

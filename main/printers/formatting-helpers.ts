@@ -157,6 +157,36 @@ export function parseAddons(addons: any): any[] {
   return Array.isArray(addons) ? addons : [];
 }
 
+/** The variant a sold order item was resolved from, as persisted on the item. */
+export interface ItemVariantSelection {
+  name?: string | null;
+  sku?: string | null;
+}
+
+/** Read an order item's variant snapshot, stored either as JSON text or an object. */
+export function parseVariantSelection(value: unknown): ItemVariantSelection | null {
+  let candidate = value;
+  if (typeof candidate === 'string') {
+    if (!candidate) return null;
+    try {
+      candidate = JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+  return candidate as ItemVariantSelection;
+}
+
+/** Item heading that always names the variant sold. An item without a variant
+ * prints exactly its product name, so existing receipts are unchanged. */
+export function formatVariantItemHeading(productName: string, variant: ItemVariantSelection | null): string {
+  const variantName = String(variant?.name ?? '').trim();
+  if (!variantName) return productName;
+  const sku = String(variant?.sku ?? '').trim();
+  return `${productName} (${variantName})${sku ? ` [${sku}]` : ''}`;
+}
+
 function getSafeLatnLocale(locale: string | undefined): string {
   if (!locale) return 'en-US-u-nu-latn';
   if (/-nu-[a-z0-9]+/i.test(locale)) {

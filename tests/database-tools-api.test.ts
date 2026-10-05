@@ -39,7 +39,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const { API_JSON_BODY_LIMIT } = require('../main/http-limits');
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now, validateInventoryLedgerDatabase } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
@@ -590,6 +590,60 @@ async function runTests() {
     1,
     'rejected merged-state import leaves movement history unchanged',
   );
+
+  // A variant pool must survive the JSON round trip: dropping variant_id from
+  // the movement tuple would silently re-attribute the movement to the product
+  // pool and break the store's own ledger pre-check.
+  const variantMovementImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'variant-import-product', name: 'Variant Import Product', price: 10, stock_quantity: 0 }],
+        product_variants: [{
+          id: 'variant-import-variant',
+          product_id: 'variant-import-product',
+          name: 'Large',
+          price: 10,
+          track_inventory: 1,
+          stock_quantity: 4,
+          is_active: 1,
+        }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'variant-import-product',
+          variant_id: 'variant-import-variant',
+          quantity_delta: 4,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'variant-import-variant',
+          reason: 'Opening count',
+          actor_user_id: 'source-user-not-authenticated',
+          stock_after: 4,
+          created_at: sourceCreatedAt,
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(
+    variantMovementImport.status === 200,
+    `an import carrying a variant movement succeeds (got ${variantMovementImport.status}, ${JSON.stringify(variantMovementImport.body)})`,
+  );
+  assertEqual(
+    db.prepare('SELECT variant_id FROM inventory_movements WHERE product_id = ?').get('variant-import-product').variant_id,
+    'variant-import-variant',
+    'an imported variant movement keeps its pool attribution',
+  );
+  assertEqual(
+    validateInventoryLedgerDatabase(db),
+    null,
+    'the store validates against the ledger pre-check after a variant movement import',
+  );
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('variant-import-product');
+  db.prepare('DELETE FROM product_variants WHERE id = ?').run('variant-import-variant');
+  db.prepare('DELETE FROM products WHERE id = ?').run('variant-import-product');
 
   db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('merged-state-product');
   db.prepare('DELETE FROM products WHERE id = ?').run('merged-state-product');

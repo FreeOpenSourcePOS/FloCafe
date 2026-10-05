@@ -3,6 +3,7 @@
 import type { Order } from '@/lib/types';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { escapeHtml } from './web-print';
+import { formatItemHeading } from './item-heading';
 
 export interface OrderSlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -40,7 +41,7 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   const items = order.items ?? [];
   const itemRows = items.map((item) => `
     <div style="margin:${padding} 0;display:flex;justify-content:space-between;gap:8px;">
-      <span>${escapeHtml(item.quantity)}x ${escapeHtml(item.product_name)}</span>
+      <span>${escapeHtml(item.quantity)}x ${escapeHtml(formatItemHeading(item.product_name, item.variant_selection))}</span>
       <span>${escapeHtml(money(item.subtotal ?? item.unit_price * item.quantity))}</span>
     </div>
     ${(item.addons ?? []).filter((addon) => addon?.name).map((addon) => `

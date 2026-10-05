@@ -864,7 +864,8 @@
     "addCharge": "Tambah",
     "removeCharge": "Hapus",
     "chargesTotal": "Total biaya",
-    "chargeUpdateFailed": "Biaya tidak dapat diperbarui"
+    "chargeUpdateFailed": "Biaya tidak dapat diperbarui",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Jml",
@@ -917,7 +918,10 @@
     "templateFallback": "Templat tagihan yang dipilih tidak didukung pada jalur pencetakan ini, sehingga tata letak struk bawaan digunakan."
   },
   "print": {
-    "menu": {"title": "Daftar menu", "totalItems": "Total item"},
+    "menu": {
+      "title": "Daftar menu",
+      "totalItems": "Total item"
+    },
     "taxInvoiceTitle": "FAKTUR PAJAK",
     "invoiceTitle": "NOTA",
     "invoiceNumber": "No. nota:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Tujuan printer",
     "systemBrowserPrint": "Sistem / Cetak Browser",
     "menuPrintFailed": "Menu tidak dapat dicetak",
-    "menuPopupBlocked": "Browser Anda memblokir jendela cetak. Izinkan pop-up untuk situs ini lalu coba lagi."
+    "menuPopupBlocked": "Browser Anda memblokir jendela cetak. Izinkan pop-up untuk situs ini lalu coba lagi.",
+    "dietaryTagsLabel": "Label Diet",
+    "variantGovernedHint": "Harga dan stok ditentukan oleh varian di bawah ini.",
+    "variantMoveDown": "Pindahkan ke bawah",
+    "variantMoveUp": "Pindahkan ke atas",
+    "variantOnlinePrice": "Harga online",
+    "variantRowInvalid": "Setiap varian memerlukan nama dan harga.",
+    "variantToggle": "Produk ini memiliki varian (mis. Ukuran, Adonan, Rasa)",
+    "variantDeactivateConfirm": "Varian ini akan dinonaktifkan saat disimpan dan tidak dapat dipulihkan dari layar ini.",
+    "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya."
   },
   "receipt": {
     "amount": "Jumlah",

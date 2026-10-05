@@ -50,37 +50,37 @@ function addon(id: number | string, overrides: Record<string, unknown> = {}) {
 function main() {
   // The old delimiter-joined identity made these two different configurations
   // produce the same string: "burger-a-b-c".
-  const delimiterFirst = generateCartItemId('burger-a', [], 'b-c');
-  const delimiterSecond = generateCartItemId('burger', [], 'a-b-c');
+  const delimiterFirst = generateCartItemId('burger-a', null, [], 'b-c');
+  const delimiterSecond = generateCartItemId('burger', null, [], 'a-b-c');
   assert.notEqual(delimiterFirst, delimiterSecond, 'delimiter-bearing product/note values keep distinct cart lines');
 
-  const addonDelimiterFirst = generateCartItemId('burger', [addon('extra')], 'a:1-b-c');
-  const addonDelimiterSecond = generateCartItemId('burger-extra:1-a:1', [], 'b-c');
+  const addonDelimiterFirst = generateCartItemId('burger', null, [addon('extra')], 'a:1-b-c');
+  const addonDelimiterSecond = generateCartItemId('burger-extra:1-a:1', null, [], 'b-c');
   assert.notEqual(addonDelimiterFirst, addonDelimiterSecond, 'delimiter-bearing add-on/note values keep distinct cart lines');
 
   assert.notEqual(
-    generateCartItemId('001', [], ''),
-    generateCartItemId(1, [], ''),
+    generateCartItemId('001', null, [], ''),
+    generateCartItemId(1, null, [], ''),
     'leading-zero product IDs are not coerced into numeric IDs',
   );
   assert.notEqual(
-    generateCartItemId('burger', [addon('001')], ''),
-    generateCartItemId('burger', [addon(1)], ''),
+    generateCartItemId('burger', null, [addon('001')], ''),
+    generateCartItemId('burger', null, [addon(1)], ''),
     'leading-zero add-on IDs are not coerced into numeric IDs',
   );
   assert.notEqual(
-    generateCartItemId('burger', [addon('extra', { name: 'No onions' })], ''),
-    generateCartItemId('burger', [addon('extra', { name: 'Extra onions' })], ''),
+    generateCartItemId('burger', null, [addon('extra', { name: 'No onions' })], ''),
+    generateCartItemId('burger', null, [addon('extra', { name: 'Extra onions' })], ''),
     'add-on option fields participate in cart identity',
   );
   assert.equal(
-    generateCartItemId('burger', [addon('extra', { quantity: undefined })], ''),
-    generateCartItemId('burger', [addon('extra', { quantity: 1 })], ''),
+    generateCartItemId('burger', null, [addon('extra', { quantity: undefined })], ''),
+    generateCartItemId('burger', null, [addon('extra', { quantity: 1 })], ''),
     'missing add-on quantity matches the default quantity of one',
   );
   assert.equal(
-    generateCartItemId('burger', [addon('extra', { quantity: 0 })], ''),
-    generateCartItemId('burger', [addon('extra', { quantity: 1 })], ''),
+    generateCartItemId('burger', null, [addon('extra', { quantity: 0 })], ''),
+    generateCartItemId('burger', null, [addon('extra', { quantity: 1 })], ''),
     'falsy add-on quantity matches the existing default quantity of one',
   );
 
@@ -109,15 +109,15 @@ function main() {
     'completion state cannot collide with another user\'s pending retry key',
   );
 
-  const normal = generateCartItemId('burger', [addon('cheese'), addon('sauce')], 'no onions');
+  const normal = generateCartItemId('burger', null, [addon('cheese'), addon('sauce')], 'no onions');
   assert.equal(
     normal,
-    generateCartItemId('burger', [addon('sauce'), addon('cheese')], 'no onions'),
+    generateCartItemId('burger', null, [addon('sauce'), addon('cheese')], 'no onions'),
     'normal cart identity is stable when selected add-ons arrive in a different order',
   );
   assert.notEqual(
     normal,
-    generateCartItemId('burger', [addon('cheese'), addon('sauce')], 'extra hot'),
+    generateCartItemId('burger', null, [addon('cheese'), addon('sauce')], 'extra hot'),
     'normal carts with different notes remain distinct',
   );
 
@@ -129,7 +129,7 @@ function main() {
   ]);
   assert.equal(normalizedLoaded.length, 2, 'loaded carts preserve distinct configurations while merging equivalent lines');
   assert.equal(normalizedLoaded.find((item: any) => item.special_instructions === 'no onions')?.quantity, 4, 'loaded equivalent lines use canonical identity and combine quantities');
-  assert.equal(normalizedLoaded.find((item: any) => item.special_instructions === 'no onions')?.id, generateCartItemId('burger', [], 'no onions'), 'loaded lines receive canonical IDs');
+  assert.equal(normalizedLoaded.find((item: any) => item.special_instructions === 'no onions')?.id, generateCartItemId('burger', null, [], 'no onions'), 'loaded lines receive canonical IDs');
 
   const storage = new MemoryStorage();
   const attemptStorageKey = getAppendAttemptStorageKey('cashier-1');

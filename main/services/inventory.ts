@@ -17,6 +17,7 @@ export class InventoryServiceError extends Error {
 
 export interface StockChangeOptions {
   productId: string | number;
+  variantId?: string | null;
   quantityDelta: number;
   movementType: InventoryMovementType;
   actorUserId: string;
@@ -39,6 +40,7 @@ export interface InventoryMovement {
   id: number;
   product_id: string;
   product_name: string | null;
+  variant_id: string | null;
   quantity_delta: number;
   movement_type: InventoryMovementType;
   reference_type: string | null;
@@ -66,21 +68,43 @@ export interface InventoryMovementPage {
 export interface InventoryDeduction {
   productId: string;
   deductedQuantity: number;
+  /** Set when the delta moves a variant's own stock pool rather than the product's. */
+  variantId?: string;
+}
+
+export interface InventoryProductLike {
+  id: string | number;
+  track_inventory?: number | boolean | null;
+  inventory_product_id?: string | null;
+  inventory_deduction_quantity?: number | null;
 }
 
 /**
- * Resolve which product stock a sale quantity consumes.
- * A 1-to-1 inventory link takes precedence over self track_inventory deduction.
+ * Resolve which stock a sale quantity consumes.
+ *
+ * A variant decides first: a recipe link depletes the base ingredient by a
+ * multiplier, otherwise a tracked variant depletes its own stock pool. With no
+ * variant the product's own link/track_inventory rules apply, so existing
+ * callers keep their behaviour.
  */
 export function resolveInventoryDeduction(
-  product: {
-    id: string | number;
-    track_inventory?: number | boolean | null;
-    inventory_product_id?: string | null;
-    inventory_deduction_quantity?: number | null;
-  },
+  product: InventoryProductLike,
   quantity: number,
+  variant?: InventoryProductLike | null,
 ): InventoryDeduction | null {
+  if (variant) {
+    if (variant.inventory_product_id) {
+      const factor = Number(variant.inventory_deduction_quantity ?? 1);
+      if (!Number.isFinite(factor) || factor <= 0) return null;
+      const deductedQuantity = quantity * factor;
+      if (!Number.isFinite(deductedQuantity) || deductedQuantity <= 0) return null;
+      return { productId: variant.inventory_product_id, deductedQuantity };
+    }
+    if (Number(variant.track_inventory) === 1 || variant.track_inventory === true) {
+      if (!Number.isFinite(quantity) || quantity <= 0) return null;
+      return { productId: String(product.id), deductedQuantity: quantity, variantId: String(variant.id) };
+    }
+  }
   if (product.inventory_product_id) {
     const factor = Number(product.inventory_deduction_quantity ?? 1);
     if (!Number.isFinite(factor) || factor <= 0) return null;
@@ -117,17 +141,21 @@ export function adjustProductStock(
   }
 
   const updatedAt = options.createdAt || now();
-  const current = db.prepare('SELECT id, stock_quantity FROM products WHERE id = ?').get(options.productId) as
-    | { id: string | number; stock_quantity: number | null }
-    | undefined;
+  // A variant keeps its own stock pool; the ledger row still names the owning
+  // product because inventory_movements.product_id is required.
+  const stockTable = options.variantId ? 'product_variants' : 'products';
+  const stockKey = options.variantId ? 'id = ? AND product_id = ?' : 'id = ?';
+  const stockIdArgs: (string | number)[] = options.variantId ? [options.variantId, options.productId] : [options.productId];
+  const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
+  const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
   const stockBefore = Number(current?.stock_quantity ?? 0);
   const update = db.prepare(`
-    UPDATE products
+    UPDATE ${stockTable}
     SET stock_quantity = CASE
       WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
       ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
     END, updated_at = ?
-    WHERE id = ?
+    WHERE ${stockKey}
       AND COALESCE(stock_quantity, 0) + ? >= -?
       AND CASE
         WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
@@ -140,7 +168,7 @@ export function adjustProductStock(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_PRECISION,
     updatedAt,
-    options.productId,
+    ...stockIdArgs,
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
@@ -149,20 +177,24 @@ export function adjustProductStock(
     INVENTORY_QUANTITY_PRECISION,
   );
   if (result.changes !== 1) {
-    throw new InventoryServiceError(current ? 400 : 404, current ? 'Insufficient stock' : 'Product not found');
+    if (!current) {
+      throw new InventoryServiceError(404, options.variantId ? 'Variant not found' : 'Product not found');
+    }
+    throw new InventoryServiceError(400, 'Insufficient stock');
   }
 
-  const updated = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(options.productId) as { stock_quantity: number };
-  const stockAfter = Number(updated.stock_quantity);
+  const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
+  const stockAfter = Number(updatedStock.stock_quantity);
   const effectiveQuantityDelta = stockAfter - stockBefore;
 
   db.prepare(`
     INSERT INTO inventory_movements (
-      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      product_id, variant_id, quantity_delta, movement_type, reference_type, reference_id,
       reason, actor_user_id, stock_after, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     options.productId,
+    options.variantId ?? null,
     effectiveQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
@@ -218,6 +250,7 @@ export function listInventoryMovements(
       m.id,
       m.product_id,
       p.name AS product_name,
+      m.variant_id,
       m.quantity_delta,
       m.movement_type,
       m.reference_type,

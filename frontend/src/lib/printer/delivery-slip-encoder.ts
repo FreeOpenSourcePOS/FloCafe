@@ -5,6 +5,7 @@ import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
+import { formatItemHeading } from './item-heading';
 import { clampDeliverySlipText, sanitizeDeliverySlipPaymentMethod, type DeliverySlipPrintData } from '@print/document';
 
 export type DeliverySlipPayment = NonNullable<DeliverySlipPrintData['payment']>;
@@ -40,6 +41,8 @@ export interface DeliverySlipOrder {
 
 export interface DeliverySlipItem {
   product_name: string;
+  /** Sold variant snapshot; the slip heading names the variant when present. */
+  variant_selection?: unknown;
   quantity: number;
   /** Selected add-ons, printed under the item as the kitchen ticket does. */
   addons?: Array<{ name: string; quantity?: number }>;
@@ -173,7 +176,7 @@ export function buildDeliverySlipBytes(
   for (const item of items ?? []) {
     const prefix = `${item.quantity}x  `;
     enc.bold(true);
-    safePrinterText(enc, prefix + item.product_name, warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, prefix + formatItemHeading(item.product_name, item.variant_selection), warnings, false, arabicShaping, undefined, cols, language).newline();
     enc.bold(false);
     for (const addon of item.addons ?? []) {
       const suffix = addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : '';

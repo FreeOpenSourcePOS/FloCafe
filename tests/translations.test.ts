@@ -488,6 +488,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'pos.loyaltyPointsShort', // standard abbreviation
   'pos.pointsApproxValue', // pure format with standard abbreviation
   'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.tagHalal', // universal dietary loanword "Halal"
   'pos.taxLine', // pure format: {title} @{rate}%
   'pos.total', // same word in French
   'printTest.escpos', // technical acronym
@@ -694,6 +695,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.subtotal',
   'pos.tagBestseller',
   'pos.tagCount',
+  'pos.tagHalal',
   'pos.tagOrganic',
   'pos.tagVegan',
   'pos.taxLine',
@@ -916,6 +918,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.orderTypeOnline',
   'pos.tagBestseller',
   'pos.tagCount',
+  'pos.tagHalal',
   'pos.tagVegan',
   'pos.taxLine',
   'print.hsn',
@@ -1037,6 +1040,7 @@ const IT_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.loadingEllipsis', // ellipsis
   'pos.orderTypeOnline', // Italian uses "Online"
   'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.tagHalal', // universal dietary loanword "Halal"
   'pos.taxLine', // pure format: {title} @{rate}%
   'print.hsn', // technical acronym
   'print.zReport.paymentCount', // pure format: x{count}
@@ -1318,7 +1322,7 @@ const ID_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.tabData', 'settings.tabDataCloud', 'settings.tabWhatsapp', 'settings.unicode',
   'settings.whatsapp', 'setup.pinLabel', 'support.platform', 'whatsapp.connect.pairingPhonePlaceholder',
   'auth.countryIndia', 'auth.countryThailand', 'common.subtotal', 'common.total', 'customer.email',
-  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount', 'pos.addonPrice', 'pos.loadingEllipsis', 'pos.subtotal', 'pos.tagCount',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount', 'pos.addonPrice', 'pos.loadingEllipsis', 'pos.subtotal', 'pos.tagCount', 'pos.tagHalal',
   'pos.tagVegan', 'pos.taxLine', 'pos.total', 'print.grandTotal', 'products.addonSelectionRange',
   'products.cashbackGlobalBadge', 'products.colorAmber', 'products.columnCashback', 'products.columnStatus',
   'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitLb', 'products.saleUnitMl', 'products.saleUnitOz', 'products.tagVegan',
@@ -1352,7 +1356,7 @@ const NL_INTENTIONAL_IDENTICAL = new Set<string>([
   'inventory.product', 'kds.addonsLabel', 'kds.connectionLive', 'kds.emptyColumn', 'kds.viewKanban',
   'permissionMatrix.areas.apps', // "apps" is a loanword in Dutch
   'nav.dashboard', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online', 'pos.addonPrice',
-  'pos.loadingEllipsis', 'pos.orderTypeOnline', 'pos.percentage', 'pos.tagBestseller', 'pos.tagCount',
+  'pos.loadingEllipsis', 'pos.orderTypeOnline', 'pos.percentage', 'pos.tagBestseller', 'pos.tagCount', 'pos.tagHalal',
   'pos.taxLine', 'printTest.downloadBin', 'printTest.escpos', 'print.kot.type', 'print.hsn',
   'print.zReport.paymentCount', 'products.addonSelectionRange', 'products.colorAmber',
   'products.colorFuchsia', 'products.colorIndigo', 'products.colorViolet', 'products.columnProduct',
@@ -1454,7 +1458,7 @@ const SQ_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.countryIndia', 'auth.email', 'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
   'customer.email', 'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount',
   'kds.viewKanban', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online',
-  'pos.addonPrice', 'pos.loadingEllipsis', 'pos.methodCash', 'pos.orderTypeOnline', 'pos.tagVegan', 'pos.taxLine',
+  'pos.addonPrice', 'pos.loadingEllipsis', 'pos.methodCash', 'pos.orderTypeOnline', 'pos.tagHalal', 'pos.tagVegan', 'pos.taxLine',
   'printTest.escpos', 'print.hsn', 'print.zReport.paymentCount',
   'products.colorIndigo', 'products.fieldSku', 'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG',
   'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitMl', 'products.saleUnitOz', 'products.skuLabel', 'products.tagVegan',
@@ -1501,6 +1505,7 @@ const VI_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.addonPrice',
   'pos.loadingEllipsis',
   'pos.tagCount',
+  'pos.tagHalal',
   'pos.taxLine',
   'printTest.escpos',
   'printTest.paperWidth58',

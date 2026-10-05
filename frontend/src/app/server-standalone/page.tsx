@@ -16,7 +16,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
 import AddonModal from '@/components/pos/AddonModal';
-import type { Order as FullOrder, Product, Addon, CartItem } from '@/lib/types';
+import type { Order as FullOrder, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
+import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -289,25 +290,25 @@ export default function ServerStandalonePage() {
     setUser(null);
   }
 
-  function addDraftLine(product: Product, quantity: number, addons: Addon[], specialInstructions: string) {
+  function addDraftLine(product: Product, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null = null) {
     setDraft((lines) => {
-      const lineId = generateCartItemId(product.id, addons, specialInstructions);
+      const lineId = generateCartItemId(product.id, variant?.id ?? null, addons, specialInstructions);
       const existing = lines.find((line) => line.id === lineId);
       if (existing) {
         return lines.map((line) => line.id === lineId ? { ...line, quantity: line.quantity + quantity } : line);
       }
-      return [...lines, { id: lineId, product, quantity, addons, special_instructions: specialInstructions }];
+      return [...lines, { id: lineId, product, quantity, addons, special_instructions: specialInstructions, variant }];
     });
   }
 
-  function updateDraftLine(lineId: string, quantity: number, addons: Addon[], specialInstructions: string) {
+  function updateDraftLine(lineId: string, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null = null) {
     setDraft((lines) => {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
 
-      const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+      const newId = generateCartItemId(target.product.id, (variant ?? target.variant)?.id ?? null, addons, specialInstructions);
       if (newId === lineId) {
-        return lines.map((line) => line.id === lineId ? { ...line, quantity, addons, special_instructions: specialInstructions } : line);
+        return lines.map((line) => line.id === lineId ? { ...line, quantity, addons, special_instructions: specialInstructions, variant: variant ?? target.variant ?? null } : line);
       }
 
       // The edit produced a config that matches another existing line — merge into it.
@@ -317,7 +318,7 @@ export default function ServerStandalonePage() {
           .filter((line) => line.id !== lineId)
           .map((line) => line.id === newId ? { ...line, quantity: line.quantity + quantity } : line);
       }
-      return lines.map((line) => line.id === lineId ? { ...line, id: newId, quantity, addons, special_instructions: specialInstructions } : line);
+      return lines.map((line) => line.id === lineId ? { ...line, id: newId, quantity, addons, special_instructions: specialInstructions, variant: variant ?? target.variant ?? null } : line);
     });
   }
 
@@ -427,14 +428,7 @@ export default function ServerStandalonePage() {
     setSending(true);
     try {
       const customerId = await ensureCustomer();
-      const items = draft.map((line) => ({
-        product_id: line.product.id,
-        quantity: line.quantity,
-        addons: line.addons.length > 0
-          ? line.addons.map((addon) => ({ id: addon.id, name: addon.name, price: addon.price, quantity: addon.quantity || 1 }))
-          : null,
-        special_instructions: line.special_instructions.trim() || undefined,
-      }));
+      const items = draft.map((line) => cartItemToOrderItem(line));
       let orderId: number;
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
@@ -492,7 +486,7 @@ export default function ServerStandalonePage() {
   });
   const draftTotal = draft.reduce((sum, line) => {
     const addonTotal = line.addons.reduce((addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1), 0);
-    return sum + (Number(line.product.price || 0) + addonTotal) * line.quantity;
+    return sum + ((Number(line.variant?.price ?? line.product.price) || 0) + addonTotal) * line.quantity;
   }, 0);
   const draftQuantities = useMemo(() => {
     const quantities = new Map<string, number>();
@@ -586,7 +580,9 @@ export default function ServerStandalonePage() {
               <div key={line.id} className="rounded-lg border border-border p-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{line.product.name}</span>
+                    <span className="block truncate text-sm font-medium">
+                      {line.variant ? `${line.product.name} (${line.variant.name})` : line.product.name}
+                    </span>
                     {line.addons.length > 0 && (
                       <div className="mt-0.5 space-y-0.5">
                         {line.addons.map((addon) => (
@@ -728,7 +724,7 @@ export default function ServerStandalonePage() {
           product={addonModalProduct}
           currency={regional?.currency || ''}
           country={regional?.country}
-          onAdd={(addedProduct, quantity, addons, instructions) => addDraftLine(addedProduct, quantity, addons, instructions)}
+          onAdd={(addedProduct, quantity, addons, instructions, variant) => addDraftLine(addedProduct, quantity, addons, instructions, variant)}
           onClose={() => setAddonModalProduct(null)}
         />
       )}
@@ -742,7 +738,8 @@ export default function ServerStandalonePage() {
           initialQuantity={editingDraftLine.quantity}
           initialAddons={editingDraftLine.addons}
           initialInstructions={editingDraftLine.special_instructions}
-          onAdd={(_editedProduct, quantity, addons, instructions) => updateDraftLine(editingDraftLine.id, quantity, addons, instructions)}
+          initialVariant={editingDraftLine.variant}
+          onAdd={(_editedProduct, quantity, addons, instructions, variant) => updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant)}
           onClose={() => setEditingDraftLine(null)}
         />
       )}

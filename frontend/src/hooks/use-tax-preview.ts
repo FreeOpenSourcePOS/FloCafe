@@ -22,6 +22,8 @@ export interface TaxPreview {
 
 export interface TaxPreviewChargeContext {
   orderType: CartOrderType;
+  /** The platform text as typed; blank means the quote is a counter quote. */
+  onlinePlatform: string;
   waivedChargeIds: string[];
   optedInChargeIds: string[];
 }
@@ -57,6 +59,10 @@ export function useTaxPreview(
   const requestPayload = {
     items: items.map((item) => ({
       product_id: item.product.id,
+      // The backend refuses a preview for a product with active variants that
+      // names none, so the variant travels with the line or the till cannot
+      // price it. It is part of requestKey, so switching variant re-quotes.
+      variant_id: item.variant?.id ?? null,
       quantity: item.quantity,
       addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
       discount_amount: 0,
@@ -67,6 +73,12 @@ export function useTaxPreview(
     discount_value: discount?.value,
     ...(chargeContext ? {
       order_type: chargeContext.orderType,
+      // The backend prices an online quote from variant.online_price, so the
+      // platform travels with the quote or the shown total can disagree with
+      // the created order.
+      online_platform: chargeContext.orderType === 'online' && chargeContext.onlinePlatform.trim().length > 0
+        ? chargeContext.onlinePlatform
+        : undefined,
       waived_charge_ids: chargeContext.waivedChargeIds,
       opted_in_charge_ids: chargeContext.optedInChargeIds,
     } : {}),

@@ -864,7 +864,8 @@
     "addCharge": "Thêm",
     "removeCharge": "Bỏ",
     "chargesTotal": "Tổng phí",
-    "chargeUpdateFailed": "Không thể cập nhật khoản phí"
+    "chargeUpdateFailed": "Không thể cập nhật khoản phí",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Số tiền",
@@ -917,7 +918,10 @@
     "templateFallback": "Mẫu hóa đơn đã chọn không được hỗ trợ trên đường dẫn in này, nên đã dùng bố cục biên nhận tích hợp."
   },
   "print": {
-    "menu": {"title": "Thực đơn", "totalItems": "Tổng số món"},
+    "menu": {
+      "title": "Thực đơn",
+      "totalItems": "Tổng số món"
+    },
     "taxInvoiceTitle": "HÓA ĐƠN THUẾ",
     "invoiceTitle": "HÓA ĐƠN",
     "invoiceNumber": "Số hóa đơn:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Máy in",
     "systemBrowserPrint": "Hệ thống / In bằng trình duyệt",
     "menuPrintFailed": "Không thể in menu",
-    "menuPopupBlocked": "Trình duyệt của bạn đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi thử lại."
+    "menuPopupBlocked": "Trình duyệt của bạn đã chặn cửa sổ in. Hãy cho phép pop-up cho trang này rồi thử lại.",
+    "dietaryTagsLabel": "Thẻ dinh dưỡng",
+    "variantGovernedHint": "Giá và tồn kho do các biến thể bên dưới quyết định.",
+    "variantMoveDown": "Di chuyển xuống",
+    "variantMoveUp": "Di chuyển lên",
+    "variantOnlinePrice": "Giá trực tuyến",
+    "variantRowInvalid": "Mỗi biến thể cần có tên và giá.",
+    "variantToggle": "Sản phẩm này có biến thể (ví dụ: kích cỡ, đế bánh, hương vị)",
+    "variantDeactivateConfirm": "Biến thể này sẽ bị vô hiệu hóa khi lưu và không thể khôi phục từ màn hình này.",
+    "variantRemoveAllConfirm": "Tắt mục này sẽ vô hiệu hóa mọi biến thể của sản phẩm này. Các đơn hàng cũ vẫn giữ chúng."
   },
   "receipt": {
     "amount": "Số tiền",

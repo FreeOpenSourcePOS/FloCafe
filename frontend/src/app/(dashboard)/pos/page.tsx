@@ -9,7 +9,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
+import type { Addon, Category, Product, ProductVariant, Table, Bill, Order, CartItem } from '@/lib/types';
+import { cartItemToOrderItem } from '@/lib/cart-order-item';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -44,6 +45,7 @@ import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import { scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -131,6 +133,8 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
+  // The variant a scanned barcode named, preselected in the customizer.
+  const [addonInitialVariant, setAddonInitialVariant] = useState<ProductVariant | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
@@ -568,16 +572,26 @@ export default function POSPage() {
 
   const handleProductClick = (product: Product) => {
     // Always open modal so user can add notes and adjust quantity
+    setAddonInitialVariant(null);
     setAddonProduct(product);
   };
 
-  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
-    cart.addItem(product, quantity, addons, instructions);
+  const handleScannedVariant = (product: Product, variant: ProductVariant) => {
+    if (scannedVariantNeedsCustomizer(product, variant)) {
+      setAddonInitialVariant(variant);
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '', variant);
   };
 
-  const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string) => {
+  const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string, variant: ProductVariant | null) => {
+    cart.addItem(product, quantity, addons, instructions, variant);
+  };
+
+  const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string, variant: ProductVariant | null) => {
     if (!editingCartItem) return;
-    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions);
+    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions, variant);
   };
 
   // A modal already open means the scan (if one lands) isn't meant for the
@@ -590,6 +604,7 @@ export default function POSPage() {
     const scan = resolveScannedProduct(code, products);
     if (scan) {
       if (scan.scaleBarcode) cart.addItem(scan.product, scan.quantity);
+      else if (scan.variant) handleScannedVariant(scan.product, scan.variant);
       else handleProductClick(scan.product);
     } else {
       toast.error(t('barcodeNotFound', { code }));
@@ -623,14 +638,7 @@ export default function POSPage() {
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
-        const newItems = cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        }));
+        const newItems = cart.items.map(cartItemToOrderItem);
         const specialInstructions = cart.orderNotes || undefined;
         const itemFingerprint = buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions);
         const storage = getAppendAttemptStorage();
@@ -669,14 +677,7 @@ export default function POSPage() {
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-          items: cart.items.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            addons: item.addons.length > 0
-              ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-              : null,
-            special_instructions: item.special_instructions || null,
-          })),
+          items: cart.items.map(cartItemToOrderItem),
         };
         const orderFingerprint = JSON.stringify(orderPayload);
         const priorOrderAttempt = readPostpaidAttempt();
@@ -723,14 +724,7 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
-    const orderItems = cart.items.map((item) => ({
-      product_id: item.product.id,
-      quantity: item.quantity,
-      addons: item.addons.length > 0
-        ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-        : null,
-      special_instructions: item.special_instructions || null,
-    }));
+    const orderItems = cart.items.map(cartItemToOrderItem);
     const paymentLines = payments
       .filter((p) => p.amount > 0)
       .map((p) => ({
@@ -1023,14 +1017,7 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
-      const items = cart.items.map((item) => ({
-        product_id: item.product.id,
-        quantity: item.quantity,
-        addons: item.addons.length > 0
-          ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-          : null,
-        special_instructions: item.special_instructions || null,
-      }));
+      const items = cart.items.map(cartItemToOrderItem);
       const specialInstructions = order.special_instructions || undefined;
       const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
       const storage = getAppendAttemptStorage();
@@ -1211,6 +1198,7 @@ export default function POSPage() {
             setSearch={setSearch}
             currency={currency}
             onProductClick={handleProductClick}
+            onScannedVariant={handleScannedVariant}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
@@ -1261,8 +1249,9 @@ export default function POSPage() {
         <AddonModal
           product={addonProduct}
           currency={currency}
+          initialVariant={addonInitialVariant}
           onAdd={handleAddonAdd}
-          onClose={() => setAddonProduct(null)}
+          onClose={() => { setAddonProduct(null); setAddonInitialVariant(null); }}
         />
       )}
 
@@ -1274,6 +1263,7 @@ export default function POSPage() {
           initialQuantity={editingCartItem.quantity}
           initialAddons={editingCartItem.addons}
           initialInstructions={editingCartItem.special_instructions}
+          initialVariant={editingCartItem.variant}
           onAdd={handleEditItemSave}
           onClose={() => setEditingCartItem(null)}
         />

@@ -864,7 +864,8 @@
     "addCharge": "Ajouter",
     "removeCharge": "Retirer",
     "chargesTotal": "Total des frais",
-    "chargeUpdateFailed": "Impossible de modifier le frais"
+    "chargeUpdateFailed": "Impossible de modifier le frais",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Montant",
@@ -917,7 +918,10 @@
     "templateFallback": "Le modèle de facture sélectionné n’est pas pris en charge par ce mode d’impression. La mise en page de reçu intégrée a donc été utilisée."
   },
   "print": {
-    "menu": {"title": "Carte", "totalItems": "Total des articles"},
+    "menu": {
+      "title": "Carte",
+      "totalItems": "Total des articles"
+    },
     "taxInvoiceTitle": "FACTURE FISCALE",
     "invoiceTitle": "FACTURE",
     "invoiceNumber": "N° de facture :",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Imprimante",
     "systemBrowserPrint": "Système / impression du navigateur",
     "menuPrintFailed": "Impossible d’imprimer le menu",
-    "menuPopupBlocked": "Votre navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres contextuelles pour ce site et réessayez."
+    "menuPopupBlocked": "Votre navigateur a bloqué la fenêtre d’impression. Autorisez les fenêtres contextuelles pour ce site et réessayez.",
+    "dietaryTagsLabel": "Étiquettes alimentaires",
+    "variantGovernedHint": "Le prix et le stock sont définis par les variantes ci-dessous.",
+    "variantMoveDown": "Descendre",
+    "variantMoveUp": "Monter",
+    "variantOnlinePrice": "Prix en ligne",
+    "variantRowInvalid": "Chaque variante doit avoir un nom et un prix.",
+    "variantToggle": "Ce produit possède des variantes (ex. : taille, pâte, saveur)",
+    "variantDeactivateConfirm": "Cette variante sera désactivée à l’enregistrement et ne pourra pas être restaurée depuis cet écran.",
+    "variantRemoveAllConfirm": "Si vous le désactivez, toutes les variantes de ce produit seront désactivées. Les commandes passées les conservent."
   },
   "receipt": {
     "amount": "Montant",

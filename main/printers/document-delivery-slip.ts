@@ -9,6 +9,8 @@ import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
 
+  formatVariantItemHeading,
+  parseVariantSelection,
   pushWrapped,
   truncate,
   truncateShapedLine,
@@ -156,7 +158,10 @@ export function buildDeliverySlipPrintData(
     },
     ...(payment ? { payment } : {}),
     items: ticketItems.map((item) => ({
-      productName: String(item?.product_name ?? ''),
+      productName: formatVariantItemHeading(
+        String(item?.product_name ?? ''),
+        parseVariantSelection(item?.variant_selection),
+      ),
       quantity: Number(item?.quantity) || 0,
       addons: parseSlipAddons(item?.addons),
       specialInstructions: String(item?.special_instructions ?? ''),

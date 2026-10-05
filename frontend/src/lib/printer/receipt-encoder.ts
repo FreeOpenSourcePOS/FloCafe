@@ -32,6 +32,7 @@ import {
 } from '@print/document';
 import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
+import { formatItemHeading } from './item-heading';
 
 export interface ReceiptOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -951,7 +952,7 @@ export function buildDetailedReceiptBytes(
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals, fractionDigits, primaryLang, opts.capabilities)) {
+    for (const row of col4Rows(formatItemHeading(item.product_name, item.variant_selection), item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals, fractionDigits, primaryLang, opts.capabilities)) {
       safePrinterText(enc, row, warnings, false, arabicShaping).newline();
     }
 

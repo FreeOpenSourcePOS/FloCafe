@@ -864,7 +864,8 @@
     "addCharge": "যোগ করুন",
     "removeCharge": "সরান",
     "chargesTotal": "মোট ফি",
-    "chargeUpdateFailed": "ফি আপডেট করা যায়নি"
+    "chargeUpdateFailed": "ফি আপডেট করা যায়নি",
+    "tagHalal": "হালাল"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -917,7 +918,10 @@
     "templateFallback": "নির্বাচিত বিল টেমপ্লেট এই মুদ্রণ পথে সমর্থিত নয়, তাই অন্তর্নির্মিত রসিদ বিন্যাস ব্যবহার করা হয়েছিল।"
   },
   "print": {
-    "menu": {"title": "মেনু", "totalItems": "মোট আইটেম"},
+    "menu": {
+      "title": "মেনু",
+      "totalItems": "মোট আইটেম"
+    },
     "taxInvoiceTitle": "কর ইনভয়েস",
     "invoiceTitle": "বিল",
     "invoiceNumber": "চালান #:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "প্রিন্টার",
     "systemBrowserPrint": "সিস্টেম / ব্রাউজার প্রিন্ট",
     "menuPrintFailed": "মেনু প্রিন্ট করা যায়নি",
-    "menuPopupBlocked": "আপনার ব্রাউজার প্রিন্ট উইন্ডো ব্লক করেছে। এই সাইটের জন্য পপ-আপ অনুমতি দিন এবং আবার চেষ্টা করুন।"
+    "menuPopupBlocked": "আপনার ব্রাউজার প্রিন্ট উইন্ডো ব্লক করেছে। এই সাইটের জন্য পপ-আপ অনুমতি দিন এবং আবার চেষ্টা করুন।",
+    "dietaryTagsLabel": "খাদ্য ট্যাগ",
+    "variantGovernedHint": "দাম ও স্টক নিচের ভ্যারিয়েন্ট দ্বারা নির্ধারিত।",
+    "variantMoveDown": "নিচে সরান",
+    "variantMoveUp": "উপরে সরান",
+    "variantOnlinePrice": "অনলাইন দাম",
+    "variantRowInvalid": "প্রতিটি ভ্যারিয়েন্টের নাম ও দাম প্রয়োজন।",
+    "variantToggle": "এই পণ্যের ভ্যারিয়েন্ট আছে (যেমন: সাইজ, ক্রাস্ট, ফ্লেভার)",
+    "variantDeactivateConfirm": "এই ভ্যারিয়েন্টটি সংরক্ষণের সময় নিষ্ক্রিয় হবে এবং এই স্ক্রিন থেকে ফিরিয়ে আনা যাবে না।",
+    "variantRemoveAllConfirm": "এটি বন্ধ করলে এই পণ্যের সব ভ্যারিয়েন্ট নিষ্ক্রিয় হয়ে যাবে। পুরোনো অর্ডারে সেগুলো থাকবে।"
   },
   "receipt": {
     "amount": "পরিমাণ",

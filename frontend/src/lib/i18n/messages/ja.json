@@ -864,7 +864,8 @@
     "addCharge": "追加",
     "removeCharge": "削除",
     "chargesTotal": "料金合計",
-    "chargeUpdateFailed": "料金を更新できませんでした"
+    "chargeUpdateFailed": "料金を更新できませんでした",
+    "tagHalal": "ハラール"
   },
   "printTest": {
     "amt": "金額",
@@ -917,7 +918,10 @@
     "templateFallback": "選択した請求書テンプレートはこの印刷経路に対応していないため、内蔵レシートレイアウトを使用しました。"
   },
   "print": {
-    "menu": {"title": "メニュー", "totalItems": "商品数"},
+    "menu": {
+      "title": "メニュー",
+      "totalItems": "商品数"
+    },
     "taxInvoiceTitle": "税務請求書",
     "invoiceTitle": "請求書",
     "invoiceNumber": "請求書番号：",
@@ -1220,7 +1224,16 @@
     "printerDestination": "プリンター",
     "systemBrowserPrint": "システム / ブラウザー印刷",
     "menuPrintFailed": "メニューを印刷できませんでした",
-    "menuPopupBlocked": "ブラウザーが印刷ウィンドウをブロックしました。このサイトのポップアップを許可してから、もう一度お試しください。"
+    "menuPopupBlocked": "ブラウザーが印刷ウィンドウをブロックしました。このサイトのポップアップを許可してから、もう一度お試しください。",
+    "dietaryTagsLabel": "食事タグ",
+    "variantGovernedHint": "価格と在庫は下のバリアントで決まります。",
+    "variantMoveDown": "下へ移動",
+    "variantMoveUp": "上へ移動",
+    "variantOnlinePrice": "オンライン価格",
+    "variantRowInvalid": "各バリアントには名前と価格が必要です。",
+    "variantToggle": "この商品にはバリアントがあります（例：サイズ、生地、フレーバー）",
+    "variantDeactivateConfirm": "保存するとこのバリアントは無効になり、この画面から復元できません。",
+    "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。"
   },
   "receipt": {
     "amount": "金額",

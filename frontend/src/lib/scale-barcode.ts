@@ -1,4 +1,4 @@
-import type { Product } from '@/lib/types';
+import type { Product, ProductVariant } from '@/lib/types';
 
 export type ScaleBarcodeConfig = {
   prefix: string;
@@ -56,10 +56,19 @@ function quantityForProductUnit(parsed: ParsedScaleBarcode, product: Product): n
 export function resolveScannedProduct(
   code: string,
   products: Product[],
-): { product: Product; quantity: number; scaleBarcode: ParsedScaleBarcode | null } | null {
+): { product: Product; variant?: ProductVariant; quantity: number; scaleBarcode: ParsedScaleBarcode | null } | null {
   const normalizedCode = normalizeBarcode(code);
   const exact = products.find((product) => normalizeBarcode(product.barcode) === normalizedCode);
   if (exact) return { product: exact, quantity: 1, scaleBarcode: null };
+
+  for (const product of products) {
+    for (const variant of Array.isArray(product.variants) ? product.variants : []) {
+      if (!variant.is_active || !variant.barcode) continue;
+      if (normalizeBarcode(variant.barcode) === normalizedCode) {
+        return { product, variant, quantity: 1, scaleBarcode: null };
+      }
+    }
+  }
 
   const parsed = parseScaleBarcode(normalizedCode);
   if (!parsed) return null;

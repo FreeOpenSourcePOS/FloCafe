@@ -4,6 +4,7 @@ import { createTranslator } from 'use-intl/core';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { escapeHtml } from './web-print';
+import { formatItemHeading } from './item-heading';
 import { formatTime } from './format-date';
 import type {
   DeliverySlipContact,
@@ -60,7 +61,7 @@ export function generateDeliverySlipHtml(
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
   const itemRows = (items ?? []).map((item) => `
-    <div style="margin:${padding} 0;font-weight:bold;">${escapeHtml(`${item.quantity}x ${item.product_name}`)}</div>
+    <div style="margin:${padding} 0;font-weight:bold;">${escapeHtml(`${item.quantity}x ${formatItemHeading(item.product_name, item.variant_selection)}`)}</div>
     ${(item.addons ?? []).map((addon) => `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : ''}</div>`).join('')}
     ${item.special_instructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${escapeHtml(item.special_instructions)}</div>` : ''}
   `).join('');

@@ -864,7 +864,8 @@
     "addCharge": "Hinzufügen",
     "removeCharge": "Entfernen",
     "chargesTotal": "Gebühren gesamt",
-    "chargeUpdateFailed": "Gebühr konnte nicht aktualisiert werden"
+    "chargeUpdateFailed": "Gebühr konnte nicht aktualisiert werden",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Betrag",
@@ -917,7 +918,10 @@
     "templateFallback": "Die gewählte Druckvorlage wird auf diesem Pfad nicht unterstützt. Das integrierte Standard-Layout wurde verwendet."
   },
   "print": {
-    "menu": {"title": "Menü", "totalItems": "Artikel insgesamt"},
+    "menu": {
+      "title": "Menü",
+      "totalItems": "Artikel insgesamt"
+    },
     "taxInvoiceTitle": "STEUERRECHNUNG",
     "invoiceTitle": "Rechnung",
     "invoiceNumber": "Rechnung Nr.",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Drucker",
     "systemBrowserPrint": "System / Browserdruck",
     "menuPrintFailed": "Menü konnte nicht gedruckt werden",
-    "menuPopupBlocked": "Ihr Browser hat das Druckfenster blockiert. Erlauben Sie Pop-ups für diese Seite und versuchen Sie es erneut."
+    "menuPopupBlocked": "Ihr Browser hat das Druckfenster blockiert. Erlauben Sie Pop-ups für diese Seite und versuchen Sie es erneut.",
+    "dietaryTagsLabel": "Ernährungstags",
+    "variantGovernedHint": "Preis und Bestand werden durch die Varianten unten bestimmt.",
+    "variantMoveDown": "Nach unten verschieben",
+    "variantMoveUp": "Nach oben verschieben",
+    "variantOnlinePrice": "Online-Preis",
+    "variantRowInvalid": "Jede Variante benötigt einen Namen und einen Preis.",
+    "variantToggle": "Dieses Produkt hat Varianten (z. B. Größe, Belag, Geschmack)",
+    "variantDeactivateConfirm": "Diese Variante wird beim Speichern deaktiviert und kann auf diesem Bildschirm nicht wiederhergestellt werden.",
+    "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie."
   },
   "receipt": {
     "amount": "Betrag",

@@ -71,6 +71,24 @@ export interface LoyaltyLedger {
   created_at: string;
 }
 
+export interface ProductVariant {
+  id: string;
+  product_id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  price: number;
+  online_price: number | null;
+  cost_price: number | null;
+  track_inventory: boolean;
+  stock_quantity: number;
+  low_stock_threshold: number | null;
+  inventory_product_id: string | null;
+  inventory_deduction_quantity: number | null;
+  is_active: boolean;
+  sort_order: number;
+}
+
 export interface Product {
   id: string;
   category_id: string | null;
@@ -98,7 +116,8 @@ export interface Product {
   has_image: boolean;
   updated_at: string;
   tags: string[] | null;
-  variants: Record<string, unknown>[] | null;
+  dietary_tags?: string[] | null;
+  variants?: ProductVariant[] | null;
   modifiers: Record<string, unknown>[] | null;
   sort_order: number;
   category?: Category;
@@ -209,6 +228,8 @@ export interface OrderItem {
   product_id: string;
   product_name: string;
   product_sku: string | null;
+  variant_id?: string | null;
+  variant_selection?: { id: string; name: string; price: number; sku?: string | null } | null;
   unit_price: number;
   quantity: number;
   subtotal: number;
@@ -299,4 +320,5 @@ export interface CartItem {
   quantity: number;
   addons: Addon[];
   special_instructions: string;
+  variant?: ProductVariant | null;
 }

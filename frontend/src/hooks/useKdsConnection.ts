@@ -97,6 +97,8 @@ export interface KdsOrderItem {
   status?: string;
   addons?: KdsOrderItemAddon[] | null;
   special_instructions?: string | null;
+  /** Variant the kitchen actually received, JSON text or object per the API. */
+  variant_selection?: { id: string; name: string; price: number; sku?: string | null } | string | null;
   created_at?: string;
   updated_at?: string;
 }

@@ -22,6 +22,7 @@ import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Ltr } from '@/components/layout/Ltr';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -251,7 +252,7 @@ function KanbanOrderCard({
             >
               <div className="flex items-center gap-2">
                 <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                <span className="text-lg text-foreground font-medium flex-1 truncate">{item.product_name}</span>
+                <span className="text-lg text-foreground font-medium flex-1 truncate">{formatItemHeading(item.product_name, item.variant_selection)}</span>
                 {item.addons && item.addons.length > 0 && (
                   <span className="text-[10px] text-blue-600">+{item.addons.length}</span>
                 )}
@@ -312,7 +313,7 @@ function VoidedColumn({
                 >
                   <div className="flex items-center gap-2">
                     <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                    <span className="text-lg text-gray-400 line-through font-medium flex-1 truncate">{item.product_name}</span>
+                    <span className="text-lg text-gray-400 line-through font-medium flex-1 truncate">{formatItemHeading(item.product_name, item.variant_selection)}</span>
                   </div>
                 </button>
               ))}

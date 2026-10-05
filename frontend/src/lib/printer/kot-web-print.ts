@@ -12,6 +12,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
 import { formatTime } from './format-date';
 import { escapeHtml } from './web-print';
+import { formatItemHeading } from './item-heading';
 
 export interface KotWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -147,7 +148,7 @@ export function generateKotHtml(
   const items = (order.items ?? [])
     .filter((item) => isKotItemPending(item.status))
     .map((item) => ({
-      name: directionalText(String(item.product_name ?? ''), base),
+      name: directionalText(formatItemHeading(String(item.product_name ?? ''), item.variant_selection), base),
       quantity: Number(item.quantity) || 0,
       addons: (Array.isArray(item.addons) ? item.addons : []).filter((addon) => addon?.name),
       specialInstructions: item.special_instructions

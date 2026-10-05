@@ -8,6 +8,8 @@ import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capa
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
+  formatVariantItemHeading,
+  parseVariantSelection,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -51,7 +53,10 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
     },
     items: ticketItems.map((item: any) => ({
-      productName: String(item?.product_name ?? ''),
+      productName: formatVariantItemHeading(
+        String(item?.product_name ?? ''),
+        parseVariantSelection(item?.variant_selection),
+      ),
       quantity: Number(item?.quantity) || 0,
       addons: parseKotAddons(item?.addons).map((addon) => ({
         name: String(addon?.name ?? ''),

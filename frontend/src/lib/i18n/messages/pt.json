@@ -864,7 +864,8 @@
     "addCharge": "Adicionar",
     "removeCharge": "Remover",
     "chargesTotal": "Total das taxas",
-    "chargeUpdateFailed": "Não foi possível atualizar a taxa"
+    "chargeUpdateFailed": "Não foi possível atualizar a taxa",
+    "tagHalal": "Halal"
   },
   "printTest": {
     "amt": "Total",
@@ -917,7 +918,10 @@
     "templateFallback": "O modelo de recibo selecionado não é compatível com este caminho de impressão; o layout de recibo integrado foi usado."
   },
   "print": {
-    "menu": {"title": "Menu", "totalItems": "Total de itens"},
+    "menu": {
+      "title": "Menu",
+      "totalItems": "Total de itens"
+    },
     "taxInvoiceTitle": "FATURA COM IMPOSTOS",
     "invoiceTitle": "FATURA",
     "invoiceNumber": "Fatura N.º:",
@@ -1220,7 +1224,16 @@
     "printerDestination": "Impressora",
     "systemBrowserPrint": "Sistema / impressão do navegador",
     "menuPrintFailed": "Não foi possível imprimir o menu",
-    "menuPopupBlocked": "Seu navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente."
+    "menuPopupBlocked": "Seu navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente.",
+    "dietaryTagsLabel": "Etiquetas alimentares",
+    "variantGovernedHint": "O preço e o estoque são definidos pelas variantes abaixo.",
+    "variantMoveDown": "Mover para baixo",
+    "variantMoveUp": "Mover para cima",
+    "variantOnlinePrice": "Preço online",
+    "variantRowInvalid": "Cada variante precisa de um nome e um preço.",
+    "variantToggle": "Este produto tem variantes (ex.: tamanho, massa, sabor)",
+    "variantDeactivateConfirm": "Esta variante será desativada ao salvar e não poderá ser restaurada a partir desta tela.",
+    "variantRemoveAllConfirm": "Ao desligar, todas as variantes deste produto serão desativadas. Os pedidos anteriores as mantêm."
   },
   "receipt": {
     "amount": "Valor",

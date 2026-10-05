@@ -293,6 +293,26 @@ router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Requ
       wheres.push('type = ?');
       params.push(req.query.type);
     }
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (search) {
+      const escapedSearch = search.toLowerCase().replace(/[\\%_]/g, '\\$&');
+      const searchPattern = `%${escapedSearch}%`;
+      const phoneDigits = search.replace(/\D/g, '');
+      const customerSearch = ['LOWER(search_customer.name) LIKE ? ESCAPE char(92)'];
+      if (phoneDigits && !/\p{L}/u.test(search)) {
+        customerSearch.push("REPLACE(search_customer.phone_digits, '/', '') LIKE ?");
+      }
+      wheres.push(`(
+        LOWER(orders.order_number) LIKE ? ESCAPE char(92)
+        OR EXISTS (
+          SELECT 1 FROM customers AS search_customer
+          WHERE search_customer.id = orders.customer_id
+            AND (${customerSearch.join(' OR ')})
+        )
+      )`);
+      params.push(searchPattern, searchPattern);
+      if (phoneDigits && !/\p{L}/u.test(search)) params.push(`%${phoneDigits}%`);
+    }
     // Filter by UTC day or date range across indexed created_at column.
     if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());

@@ -138,6 +138,9 @@ export default function OrdersPage() {
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
+  const searchRef = useRef(filters.search);
+  const previousSearchRef = useRef(filters.search);
+  const ordersFetchIdRef = useRef(0);
 
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
@@ -240,8 +243,13 @@ export default function OrdersPage() {
   };
 
   const fetchOrders = async (): Promise<boolean> => {
+    const fetchId = ++ordersFetchIdRef.current;
     try {
-      const { data } = await api.get('/orders', { params: { per_page: 50 } });
+      const search = searchRef.current.trim();
+      const { data } = await api.get('/orders', {
+        params: { per_page: 50, ...(search ? { search } : {}) },
+      });
+      if (fetchId !== ordersFetchIdRef.current) return true;
       const orders = data.orders || [];
       setOrders(orders);
       // Fetch print history only for bills we haven't fetched yet
@@ -253,12 +261,21 @@ export default function OrdersPage() {
       });
       return true;
     } catch {
-      toast.error(tOrders('loadOrdersFailed'));
+      if (fetchId === ordersFetchIdRef.current) toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
-      setLoading(false);
+      if (fetchId === ordersFetchIdRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    searchRef.current = filters.search;
+    if (previousSearchRef.current === filters.search) return;
+    previousSearchRef.current = filters.search;
+    const timeout = setTimeout(fetchOrders, 300);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;

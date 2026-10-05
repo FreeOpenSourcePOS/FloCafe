@@ -1631,6 +1631,11 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
       tax_category_id: null,
       tax_behavior: 'country_default',
       inherit_parent_tax_category: 1,
+      // Add-on stock is reset for the same reason variant stock is: the reset
+      // starts an empty ledger, so any restored stock would have no movement
+      // history behind it and would fail the ledger pre-check on every later
+      // restore.
+      stock_quantity: 0,
     }));
   const addonGroupProducts = snapshot.addonGroupProducts.filter(
     (link) => productIds.has(link.product_id) && addonGroupIds.has(link.addon_group_id),
@@ -1863,20 +1868,26 @@ export function validateInventoryLedgerRows(
   productRows: readonly Record<string, unknown>[],
   movementRows: readonly Record<string, unknown>[],
   variantRows: readonly Record<string, unknown>[] = [],
+  addonRows: readonly Record<string, unknown>[] = [],
 ): string | null {
   type Chain = { createdAt: string; id: number; movementType: string; quantityDelta: number; stockAfter: number };
-  // A variant owns its own stock pool but shares the product id, so a chain is
-  // keyed by product AND variant: product pool on a null variant id.
-  const chainKey = (productId: string, variantId: string | null) => `${productId}|${variantId ?? ''}`;
+  // A variant owns its own stock pool but shares the product id, and an add-on
+  // pool has no product at all, so a chain is keyed by product AND variant AND
+  // add-on. Exactly one pool id is set per movement, which keeps an add-on chain
+  // from ever being compared against a product or variant snapshot row.
+  const chainKey = (productId: string, variantId: string | null, addonId: string | null) =>
+    `${productId}|${variantId ?? ''}|${addonId ?? ''}`;
   const movementsByChain = new Map<string, Chain[]>();
 
   for (const [index, row] of movementRows.entries()) {
     const productId = row?.product_id == null ? '' : String(row.product_id);
     const variantId = row?.variant_id == null ? null : String(row.variant_id);
+    const addonId = row?.addon_id == null ? null : String(row.addon_id);
     const movementType = String(row?.movement_type ?? '');
     const quantityDelta = Number(row?.quantity_delta);
     const stockAfter = Number(row?.stock_after);
-    if (!productId || !Number.isFinite(quantityDelta) || quantityDelta === 0 || !Number.isFinite(stockAfter) || stockAfter < 0) {
+    const namesOnePool = productId ? !addonId : Boolean(addonId);
+    if (!namesOnePool || !Number.isFinite(quantityDelta) || quantityDelta === 0 || !Number.isFinite(stockAfter) || stockAfter < 0) {
       return 'Inventory movement history contains an invalid stock state';
     }
     if (movementType === 'sale' && quantityDelta >= 0) {
@@ -1885,7 +1896,7 @@ export function validateInventoryLedgerRows(
     const createdAt = String(row?.created_at ?? '');
     const rawId = Number(row?.id);
     const id = Number.isFinite(rawId) ? rawId : index;
-    const key = chainKey(productId, variantId);
+    const key = chainKey(productId, variantId, addonId);
     const movements = movementsByChain.get(key) ?? [];
     movements.push({ createdAt, id, movementType, quantityDelta, stockAfter });
     movementsByChain.set(key, movements);
@@ -1913,12 +1924,13 @@ export function validateInventoryLedgerRows(
   }
 
   const matchesLatestMovement = (
-    label: 'Product' | 'Variant',
+    label: 'Product' | 'Variant' | 'Add-on',
     productId: string,
     variantId: string | null,
+    addonId: string | null,
     stockQuantity: number,
   ): string | null => {
-    const latestMovement = latestMovementByChain.get(chainKey(productId, variantId));
+    const latestMovement = latestMovementByChain.get(chainKey(productId, variantId, addonId));
     if (!latestMovement) {
       return stockQuantity === 0 ? null : `${label} stock has no matching inventory movement history`;
     }
@@ -1937,7 +1949,7 @@ export function validateInventoryLedgerRows(
     if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
       return 'Product stock quantity is invalid in the inventory snapshot';
     }
-    const mismatch = matchesLatestMovement('Product', productId, null, stockQuantity);
+    const mismatch = matchesLatestMovement('Product', productId, null, null, stockQuantity);
     if (mismatch) return mismatch;
   }
 
@@ -1951,7 +1963,20 @@ export function validateInventoryLedgerRows(
     if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
       return 'Variant stock quantity is invalid in the inventory snapshot';
     }
-    const mismatch = matchesLatestMovement('Variant', productId, variantId, stockQuantity);
+    const mismatch = matchesLatestMovement('Variant', productId, variantId, null, stockQuantity);
+    if (mismatch) return mismatch;
+  }
+
+  for (const row of addonRows) {
+    const addonId = row?.id == null ? '' : String(row.id);
+    if (!row || typeof row !== 'object' || !addonId || !Object.prototype.hasOwnProperty.call(row, 'stock_quantity')) {
+      return 'Add-on stock quantity is missing from the inventory snapshot';
+    }
+    const stockQuantity = row.stock_quantity == null ? 0 : Number(row.stock_quantity);
+    if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
+      return 'Add-on stock quantity is invalid in the inventory snapshot';
+    }
+    const mismatch = matchesLatestMovement('Add-on', '', null, addonId, stockQuantity);
     if (mismatch) return mismatch;
   }
 
@@ -1970,9 +1995,16 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
     && getColumns(dbInstance, 'product_variants').includes('stock_quantity')
     ? dbInstance.prepare('SELECT id, product_id, stock_quantity FROM product_variants').all() as Record<string, unknown>[]
     : [];
+  const addons = tables.has('addons')
+    && getColumns(dbInstance, 'addons').includes('stock_quantity')
+    ? dbInstance.prepare('SELECT id, stock_quantity FROM addons').all() as Record<string, unknown>[]
+    : [];
   if (!tables.has('inventory_movements')) {
     if (variants.some((variant) => Number(variant.stock_quantity ?? 0) !== 0)) {
       return 'Backup is missing inventory movement history for variant stock';
+    }
+    if (addons.some((addon) => Number(addon.stock_quantity ?? 0) !== 0)) {
+      return 'Backup is missing inventory movement history for add-on stock';
     }
     return products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
       ? 'Backup is missing inventory movement history for product stock'
@@ -1980,13 +2012,13 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
   }
 
   const movements = getInventoryMovementRows(dbInstance);
-  return validateInventoryLedgerRows(products, movements, variants);
+  return validateInventoryLedgerRows(products, movements, variants, addons);
 }
 
 export function getInventoryMovementRows(dbInstance: Database.Database): Record<string, unknown>[] {
   const columns = new Set(getColumns(dbInstance, 'inventory_movements'));
   const selectableColumns = [
-    'id', 'product_id', 'variant_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
+    'id', 'product_id', 'variant_id', 'addon_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
     'reason', 'actor_user_id', 'stock_after', 'created_at', 'imported_by_user_id', 'import_batch_id',
     'source_actor_user_id', 'source_reference_type', 'source_reference_id',
     'source_reason', 'source_created_at',
@@ -2006,6 +2038,7 @@ function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
     numericValue(row.id),
     nullableString(row.product_id),
     nullableString(row.variant_id),
+    nullableString(row.addon_id),
     numericValue(row.quantity_delta),
     nullableString(row.movement_type),
     nullableString(row.reference_type),
@@ -5616,6 +5649,85 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     up: () => {
       if (!getColumns(db, 'order_items').includes('inventory_variant_id')) {
         db.exec(`ALTER TABLE order_items ADD COLUMN inventory_variant_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 103,
+    name: 'add_addon_inventory',
+    up: () => {
+      // Additive only, like every catalog column so far: existing add-ons keep
+      // an untracked, zero-stock pool until a merchant switches tracking on.
+      const addonColumns = getColumns(db, 'addons');
+      const addAddonColumn = (name: string, definition: string) => {
+        if (addonColumns.includes(name)) return;
+        db.exec(`ALTER TABLE addons ADD COLUMN ${definition}`);
+        addonColumns.push(name);
+      };
+      addAddonColumn('track_inventory', 'track_inventory INTEGER DEFAULT 0');
+      addAddonColumn('stock_quantity', 'stock_quantity REAL DEFAULT 0');
+      addAddonColumn('low_stock_threshold', 'low_stock_threshold REAL DEFAULT 0');
+
+      if (!getColumns(db, 'order_item_addons').includes('inventory_deducted_quantity')) {
+        db.exec(`ALTER TABLE order_item_addons ADD COLUMN inventory_deducted_quantity REAL NOT NULL DEFAULT 0`);
+      }
+      if (!getColumns(db, 'inventory_movements').includes('addon_id')) {
+        db.exec(`ALTER TABLE inventory_movements ADD COLUMN addon_id TEXT DEFAULT NULL`);
+      }
+
+      // An add-on pool has no owning product, so the ledger can no longer
+      // require product_id. Rebuild once: SQLite cannot relax a NOT NULL
+      // constraint in place. Every existing row is copied column by column, so
+      // a column this migration does not know about fails the copy loudly
+      // instead of being dropped.
+      const productIdColumn = (db.prepare('PRAGMA table_info(inventory_movements)').all() as { name: string; notnull: number }[])
+        .find((column) => column.name === 'product_id');
+      if (productIdColumn?.notnull === 1) {
+        db.exec(`
+          ALTER TABLE inventory_movements RENAME TO inventory_movements_v102;
+          CREATE TABLE inventory_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id TEXT DEFAULT NULL REFERENCES products(id),
+            quantity_delta REAL NOT NULL CHECK (quantity_delta <> 0),
+            movement_type TEXT NOT NULL CHECK (movement_type IN ('sale', 'cancel_restore', 'adjustment')),
+            reference_type TEXT,
+            reference_id TEXT,
+            reason TEXT,
+            actor_user_id TEXT NOT NULL REFERENCES users(id),
+            stock_after REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            imported_by_user_id TEXT REFERENCES users(id),
+            import_batch_id TEXT,
+            source_actor_user_id TEXT,
+            source_reference_type TEXT,
+            source_reference_id TEXT,
+            source_reason TEXT,
+            source_created_at TEXT,
+            variant_id TEXT DEFAULT NULL,
+            addon_id TEXT DEFAULT NULL
+          );
+          INSERT INTO inventory_movements (
+            id, product_id, quantity_delta, movement_type, reference_type, reference_id,
+            reason, actor_user_id, stock_after, created_at,
+            imported_by_user_id, import_batch_id,
+            source_actor_user_id, source_reference_type, source_reference_id,
+            source_reason, source_created_at, variant_id, addon_id
+          )
+          SELECT
+            id, product_id, quantity_delta, movement_type, reference_type, reference_id,
+            reason, actor_user_id, stock_after, created_at,
+            imported_by_user_id, import_batch_id,
+            source_actor_user_id, source_reference_type, source_reference_id,
+            source_reason, source_created_at, variant_id, addon_id
+          FROM inventory_movements_v102;
+          DROP TABLE inventory_movements_v102;
+          CREATE INDEX IF NOT EXISTS idx_inventory_movements_product_created
+            ON inventory_movements(product_id, created_at, id);
+          CREATE INDEX IF NOT EXISTS idx_inventory_movements_reference
+            ON inventory_movements(reference_type, reference_id);
+          CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
+            ON inventory_movements(created_at, id);
+        `);
       }
     },
   },

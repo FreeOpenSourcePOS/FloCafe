@@ -144,7 +144,7 @@ export default function OrdersPage() {
   const ordersLoadMoreInProgressRef = useRef(false);
   const ordersRefreshPendingRef = useRef(false);
   const ordersRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadedOrdersPageCountRef = useRef(1);
+  const hasLoadedOlderOrdersRef = useRef(false);
   const lastRateLimitedOrdersRefreshAtRef = useRef(0);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
@@ -294,7 +294,7 @@ export default function OrdersPage() {
       const orders: Order[] = data.orders || [];
       const nextCursor: number | null = data.nextCursor ?? null;
       if (cursor === undefined) {
-        if (loadedOrdersPageCountRef.current > 1) {
+        if (hasLoadedOlderOrdersRef.current) {
           const refreshedOrderIds = new Set(orders.map((order) => order.id));
           setOrders((prev) => [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))]);
         } else {
@@ -303,7 +303,7 @@ export default function OrdersPage() {
         }
       } else {
         setOrders((prev) => [...prev, ...orders]);
-        loadedOrdersPageCountRef.current++;
+        hasLoadedOlderOrdersRef.current = true;
         setNextOrdersCursor(nextCursor);
       }
       // Fetch print history only for bills we haven't fetched yet
@@ -346,7 +346,7 @@ export default function OrdersPage() {
       clearTimeout(ordersRefreshTimerRef.current);
       ordersRefreshTimerRef.current = null;
     }
-    loadedOrdersPageCountRef.current = 1;
+    hasLoadedOlderOrdersRef.current = false;
     setOrders([]);
     setNextOrdersCursor(null);
     setLoading(true);

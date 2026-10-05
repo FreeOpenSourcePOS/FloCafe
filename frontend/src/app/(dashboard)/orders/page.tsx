@@ -144,6 +144,7 @@ export default function OrdersPage() {
   const ordersLoadMoreInProgressRef = useRef(false);
   const refreshAfterLoadMoreRef = useRef(false);
   const loadedOrdersPageCountRef = useRef(1);
+  const lastBackgroundOrdersRefreshAtRef = useRef(0);
   const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
@@ -247,12 +248,18 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async (cursor?: number): Promise<boolean> => {
+  const fetchOrders = async (cursor?: number, backgroundRefresh = false): Promise<boolean> => {
     if (cursor === undefined && ordersLoadMoreInProgressRef.current) {
       refreshAfterLoadMoreRef.current = true;
       return true;
     }
+    if (cursor === undefined && ordersRefreshInProgressRef.current) return true;
     if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
+    if (cursor === undefined && backgroundRefresh) {
+      const now = Date.now();
+      if (now - lastBackgroundOrdersRefreshAtRef.current < 1000) return true;
+      lastBackgroundOrdersRefreshAtRef.current = now;
+    }
     const fetchId = ++ordersFetchIdRef.current;
     setLoadingMoreOrders(true);
     if (cursor === undefined) {
@@ -262,34 +269,21 @@ export default function OrdersPage() {
     }
     try {
       const search = searchRef.current.trim();
-      let orders: Order[] = [];
-      let nextCursor: number | null = null;
+      const { data } = await api.get('/orders', {
+        params: { per_page: 50, ...(search ? { search } : {}), ...(cursor !== undefined ? { before_id: cursor } : {}) },
+      });
+      if (fetchId !== ordersFetchIdRef.current) return true;
+      const orders: Order[] = data.orders || [];
+      const nextCursor: number | null = data.nextCursor ?? null;
       if (cursor === undefined) {
-        let beforeCursor: number | undefined;
-        let remainingOrderCount = loadedOrdersPageCountRef.current * 50;
-        while (remainingOrderCount > 0) {
-          const perPage = Math.min(remainingOrderCount, 500);
-          const { data } = await api.get('/orders', {
-            params: { per_page: perPage, ...(search ? { search } : {}), ...(beforeCursor !== undefined ? { before_id: beforeCursor } : {}) },
-          });
-          if (fetchId !== ordersFetchIdRef.current) return true;
-          const pageOrders = data.orders || [];
-          orders.push(...pageOrders);
-          remainingOrderCount -= pageOrders.length;
-          nextCursor = data.nextCursor ?? null;
-          if (nextCursor === null || remainingOrderCount <= 0) break;
-          beforeCursor = nextCursor;
+        if (loadedOrdersPageCountRef.current > 1) {
+          const refreshedOrderIds = new Set(orders.map((order) => order.id));
+          setOrders((prev) => [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))]);
+        } else {
+          setOrders(orders);
+          setNextOrdersCursor(nextCursor);
         }
-        setOrders(orders);
-        loadedOrdersPageCountRef.current = Math.max(1, Math.ceil(orders.length / 50));
-        setNextOrdersCursor(nextCursor);
       } else {
-        const { data } = await api.get('/orders', {
-          params: { per_page: 50, ...(search ? { search } : {}), before_id: cursor },
-        });
-        if (fetchId !== ordersFetchIdRef.current) return true;
-        orders = data.orders || [];
-        nextCursor = data.nextCursor ?? null;
         setOrders((prev) => [...prev, ...orders]);
         loadedOrdersPageCountRef.current++;
         setNextOrdersCursor(nextCursor);
@@ -316,7 +310,7 @@ export default function OrdersPage() {
         setLoadingMoreOrders(false);
         if (cursor !== undefined && refreshAfterLoadMoreRef.current) {
           refreshAfterLoadMoreRef.current = false;
-          fetchOrders();
+          fetchOrders(undefined, true);
         }
       }
     }
@@ -408,7 +402,7 @@ export default function OrdersPage() {
     initPage();
 
     // 10-second backup polling interval (WebSocket handles real-time updates)
-    const interval = setInterval(fetchOrders, 10000);
+    const interval = setInterval(() => fetchOrders(undefined, true), 10000);
 
     // Live WebSocket connection to trigger immediate updates
     let ws: globalThis.WebSocket | null = null;
@@ -432,7 +426,7 @@ export default function OrdersPage() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
-              fetchOrders();
+              fetchOrders(undefined, true);
             }
           } catch {
             // Ignore parse errors

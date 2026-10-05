@@ -42,6 +42,34 @@ function variantPillClassName(isSelected: boolean, soldOut: boolean): string {
   return 'border-border hover:border-brand/40';
 }
 
+function addonRowClassName(isSelected: boolean, soldOut: boolean): string {
+  if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
+  if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
+  return 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border';
+}
+
+/**
+ * The stock badges for one add-on row. Sold out wins over running low, so a
+ * zero-stock add-on never carries both.
+ */
+function addonStockBadges(soldOut: boolean, lowStock: boolean, labels: { outOfStock: string; lowStock: string }) {
+  if (!soldOut && !lowStock) return null;
+  return (
+    <>
+      {soldOut && (
+        <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+          {labels.outOfStock}
+        </span>
+      )}
+      {lowStock && (
+        <span className="rounded-full bg-orange-100 dark:bg-orange-950/40 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:text-orange-300">
+          {labels.lowStock}
+        </span>
+      )}
+    </>
+  );
+}
+
 export default function AddonModal({
   product, currency, country, onAdd, onClose,
   initialQuantity = 1, initialAddons = [], initialInstructions = '', initialVariant = null, mode = 'add',
@@ -251,35 +279,22 @@ export default function AddonModal({
                     // the group cap, and an untracked add-on is never limited.
                     const atStockCeiling = stockCeiling != null && addonQty >= stockCeiling;
                     const plusDisabled = soldOut || atStockCeiling;
-                    const rowTone = isSel
-                      ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
-                      : soldOut
-                        ? 'border-border opacity-50 cursor-not-allowed'
-                        : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border';
                     const priceTone = isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground';
                     const counterButton = 'touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]';
+                    const badges = addonStockBadges(soldOut, lowStock, { outOfStock: t('outOfStock'), lowStock: t('lowStock') });
 
                     if (allowMultiple) {
                       return (
                         <div
                           key={addon.id}
-                          className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${rowTone}`}
+                          className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${addonRowClassName(isSel, soldOut)}`}
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-foreground">{addon.name}</span>
                             <span className={`text-xs ${priceTone}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
-                            {soldOut && (
-                              <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
-                                {t('outOfStock')}
-                              </span>
-                            )}
-                            {lowStock && (
-                              <span className="rounded-full bg-orange-100 dark:bg-orange-950/40 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:text-orange-300">
-                                {t('lowStock')}
-                              </span>
-                            )}
+                            {badges}
                           </div>
                           <div className="flex items-center gap-2">
                             {isSel ? (
@@ -319,23 +334,14 @@ export default function AddonModal({
                     return (
                       <div
                         key={addon.id}
-                        className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${rowTone}`}
+                        className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${addonRowClassName(isSel, soldOut)}`}
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-foreground">{addon.name}</span>
                           <span className={`text-xs ${priceTone}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>
-                          {soldOut && (
-                            <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
-                              {t('outOfStock')}
-                            </span>
-                          )}
-                          {lowStock && (
-                            <span className="rounded-full bg-orange-100 dark:bg-orange-950/40 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:text-orange-300">
-                              {t('lowStock')}
-                            </span>
-                          )}
+                          {badges}
                         </div>
                         <div className="flex items-center gap-2">
                           {isSel ? (

@@ -288,6 +288,62 @@ async function main() {
     });
     assert.equal(variantTakesProductBarcode.status, 400, 'a variant cannot take its own product barcode');
 
+    // A variant cannot link its recipe to a product that is itself a recipe
+    // link; the depletion would land in a pool no sale ever reconciles.
+    const chainedLink = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Chained Link', price: 100, inventory_product_id: 'prod-dough' },
+    });
+    assert.equal(chainedLink.status, 201, 'a product linked to a recipe base is created');
+    const variantRecipeChain = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-drinks',
+        name: 'Chained Variant',
+        price: 100,
+        variants: [{ name: 'Linked', price: 100, inventory_product_id: chainedLink.data.product.id }],
+      },
+    });
+    assert.equal(variantRecipeChain.status, 400, 'a variant cannot link to a product that is itself linked');
+    assert.equal(
+      (db.prepare("SELECT COUNT(*) AS count FROM products WHERE name = 'Chained Variant'").get() as { count: number }).count,
+      0,
+      'the rejected chained link writes nothing',
+    );
+
+    // A barcode this write releases is immediately reusable: dropping an active
+    // variant and claiming its barcode in the same save must not need a second save.
+    const barcodeSource = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { category_id: 'cat-drinks', name: 'Barcode Source', price: 100, variants: [{ name: 'Old', price: 100, barcode: 'SWAP-1' }] },
+    });
+    assert.equal(barcodeSource.status, 201, 'a product with a barcoded variant is created');
+    const swapBarcode = await api(baseUrl, `/api/products/${barcodeSource.data.product.id}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ name: 'New', price: 120, barcode: 'SWAP-1' }] },
+    });
+    assert.equal(
+      swapBarcode.status,
+      200,
+      `a new variant can claim the barcode of the variant this save deactivates (${JSON.stringify(swapBarcode.data)})`,
+    );
+    assert.equal(
+      (db.prepare("SELECT is_active FROM product_variants WHERE product_id = ? AND name = 'Old'").get(barcodeSource.data.product.id) as { is_active: number }).is_active,
+      0,
+      'the omitted variant is deactivated by the same write',
+    );
+
+    const productClaimsVariantBarcode = await api(baseUrl, `/api/products/${barcodeSource.data.product.id}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { barcode: 'SWAP-1', variants: [] },
+    });
+    assert.equal(productClaimsVariantBarcode.status, 200, 'the product can claim the barcode of the variants this save deactivates');
+
     // A variant may be deactivated in the same request that keeps its barcode
     // in the payload: Component 2 accepts is_active, and the row survives.
     const deactivateBarcodedVariant = await api(baseUrl, `/api/products/${productId}`, {

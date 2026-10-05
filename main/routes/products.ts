@@ -639,9 +639,13 @@ function normalizeVariants(
       if (typeof rawRecipeLink !== 'string') {
         return { error: `variants[${index}].inventory_product_id must be a product id string or null` };
       }
-      const recipeTarget = db.prepare('SELECT id FROM products WHERE id = ? AND deleted_at IS NULL').get(rawRecipeLink);
+      const recipeTarget = db.prepare('SELECT id, inventory_product_id FROM products WHERE id = ? AND deleted_at IS NULL')
+        .get(rawRecipeLink) as { id: string; inventory_product_id?: string | null } | undefined;
       if (!recipeTarget) {
         return { error: `variants[${index}].inventory_product_id must reference an existing product` };
+      }
+      if (recipeTarget.inventory_product_id) {
+        return { error: `variants[${index}].inventory_product_id target cannot itself be linked to another product` };
       }
       if (productId && rawRecipeLink === productId) {
         return { error: `variants[${index}].inventory_product_id cannot reference the product itself` };
@@ -1363,16 +1367,24 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     // variant cannot claim the barcode of the product it belongs to.
     const payloadVariants = normalizedVariants.variants || [];
     const payloadVariantIds = payloadVariants.map((variant) => variant.id).filter((id): id is string => !!id);
+    // Every active variant of this product is either rewritten or deactivated by
+    // this write, so an omitted variant releases its barcode here as well.
+    const ownActiveVariantIds = hasOwn(req.body, 'variants')
+      ? (db.prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1')
+        .all(String(req.params.id)) as { id: string }[]).map((row) => row.id)
+      : [];
+    const payloadIdSet = new Set(payloadVariantIds);
     const barcodeError = validateCatalogBarcodes(db, {
       productId: String(req.params.id),
       productBarcode: hasOwn(req.body, 'barcode')
         ? normalizedBarcode
         : normalizeBarcode((product as { barcode?: unknown }).barcode),
       variantBarcodes: payloadVariants.map((variant) => variant.barcode),
-      payloadVariantIds,
-      deactivatedVariantIds: payloadVariants
-        .filter((variant) => variant.is_active === 0 && variant.id)
-        .map((variant) => variant.id as string),
+      payloadVariantIds: [...new Set([...payloadVariantIds, ...ownActiveVariantIds])],
+      deactivatedVariantIds: [
+        ...payloadVariants.filter((variant) => variant.is_active === 0 && variant.id).map((variant) => variant.id as string),
+        ...ownActiveVariantIds.filter((id) => !payloadIdSet.has(id)),
+      ],
     });
     if (barcodeError) {
       return res.status(400).json({ error: barcodeError });

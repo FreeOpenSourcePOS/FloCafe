@@ -24,9 +24,11 @@ Module._load = function (request: string) {
 process.env.JWT_SECRET = 'test-secret-product-variants-api';
 
 const assert = require('node:assert/strict');
+const jwt = require('jsonwebtoken');
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedCategory, api, closeDatabase,
 } = require('./helpers/test-setup');
+const { getJWTSecret } = require('../main/routes/auth');
 const { productRoutes } = require('../main/routes/products');
 const { resolveInventoryDeduction, adjustProductStock } = require('../main/services/inventory');
 
@@ -35,6 +37,17 @@ async function main() {
   const owner = seedOwnerUser(db);
   seedCategory(db, 'cat-drinks', 'Drinks');
   seedCategory(db, 'cat-food', 'Food');
+
+  // catalog.view is every staff member; catalog.manage is owner/manager only.
+  db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES ('cashier-variant-read', 'Variant Cashier', 'variant-cashier@test.local', 'hash', 'cashier', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')`).run();
+  const cashierAuthHeader = {
+    Authorization: `Bearer ${jwt.sign(
+      { userId: 'cashier-variant-read', email: 'variant-cashier@test.local', role: 'cashier' },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    )}`,
+  };
 
   // The recipe base ingredient a variant depletes instead of itself.
   db.prepare(`INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
@@ -370,6 +383,134 @@ async function main() {
       0,
       'the deactivated variant keeps its row for historical references',
     );
+
+    // ── Deactivated variants stay reachable for the back office ──────────
+    // The editor needs to list and reactivate a soft-deactivated variant, so
+    // the read takes an opt-in gated to catalog managers. Sellable reads stay
+    // active-only, and reactivation reuses the same row and stock ledger.
+    {
+      const editorProduct = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          category_id: 'cat-drinks',
+          name: 'Variant Editor',
+          price: 100,
+          variants: [
+            { name: 'Large', price: 150, barcode: 'EDIT-L', track_inventory: true, stock_quantity: 3 },
+            { name: 'Small', price: 100, barcode: 'EDIT-S' },
+          ],
+        },
+      });
+      assert.equal(editorProduct.status, 201, `a product for the editor flow is created (${JSON.stringify(editorProduct.data)})`);
+      const editorProductId = editorProduct.data.product.id;
+      const editorVariants = db.prepare(
+        'SELECT * FROM product_variants WHERE product_id = ? ORDER BY sort_order',
+      ).all(editorProductId) as any[];
+      const editorLarge = editorVariants.find((variant) => variant.name === 'Large');
+      const editorSmall = editorVariants.find((variant) => variant.name === 'Small');
+      const editorMovements = () => (db.prepare(
+        'SELECT COUNT(*) AS count FROM inventory_movements WHERE variant_id = ?',
+      ).get(editorLarge.id) as { count: number }).count;
+      assert.equal(editorMovements(), 1, 'opening editor-variant stock writes one ledger row');
+
+      const dropLarge = await api(baseUrl, `/api/products/${editorProductId}`, {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: { variants: [{ id: editorSmall.id, name: 'Small', price: 100, barcode: 'EDIT-S' }] },
+      });
+      assert.equal(dropLarge.status, 200, `the editor drops the Large variant (${JSON.stringify(dropLarge.data)})`);
+      assert.equal(
+        (db.prepare('SELECT is_active FROM product_variants WHERE id = ?').get(editorLarge.id) as { is_active: number }).is_active,
+        0,
+        'the dropped variant is soft-deactivated',
+      );
+
+      const plainSingleRead = await api(baseUrl, `/api/products/${editorProductId}`, { headers: owner.authHeader });
+      assert.deepEqual(
+        plainSingleRead.data.product.variants.map((variant: any) => variant.name),
+        ['Small'],
+        'a plain single read still offers only active variants',
+      );
+      const plainListRead = await api(baseUrl, '/api/products', { headers: owner.authHeader });
+      assert.deepEqual(
+        plainListRead.data.products.find((product: any) => product.id === editorProductId).variants.map((variant: any) => variant.name),
+        ['Small'],
+        'a plain list read still offers only active variants',
+      );
+
+      const fullSingleRead = await api(
+        baseUrl,
+        `/api/products/${editorProductId}?include_inactive_variants=true`,
+        { headers: owner.authHeader },
+      );
+      assert.equal(fullSingleRead.status, 200, 'the opt-in single read succeeds for a catalog manager');
+      const fullVariants = fullSingleRead.data.product.variants;
+      assert.deepEqual(
+        fullVariants.map((variant: any) => variant.name).sort(),
+        ['Large', 'Small'],
+        'the opt-in read returns every variant',
+      );
+      const inactiveLarge = fullVariants.find((variant: any) => variant.name === 'Large');
+      assert.equal(inactiveLarge.id, editorLarge.id, 'the inactive variant keeps its server id');
+      assert.equal(inactiveLarge.is_active, false, 'the inactive variant is returned as inactive');
+      assert.equal(inactiveLarge.stock_quantity, 3, 'the inactive variant keeps its stock');
+
+      const fullListRead = await api(baseUrl, '/api/products?include_inactive_variants=true', { headers: owner.authHeader });
+      assert.deepEqual(
+        fullListRead.data.products.find((product: any) => product.id === editorProductId).variants.map((variant: any) => variant.name).sort(),
+        ['Large', 'Small'],
+        'the list read honours the opt-in too',
+      );
+
+      const cashierRead = await api(
+        baseUrl,
+        `/api/products/${editorProductId}?include_inactive_variants=true`,
+        { headers: cashierAuthHeader },
+      );
+      assert.equal(cashierRead.status, 200, 'a cashier can still read the catalog');
+      assert.deepEqual(
+        cashierRead.data.product.variants.map((variant: any) => variant.name),
+        ['Small'],
+        'the opt-in is refused without catalog.manage',
+      );
+
+      const movementsBeforeReactivate = editorMovements();
+      const reactivated = await api(baseUrl, `/api/products/${editorProductId}`, {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: {
+          variants: fullVariants.map((variant: any) => ({
+            id: variant.id,
+            name: variant.name,
+            price: variant.price,
+            online_price: variant.online_price,
+            sku: variant.sku,
+            barcode: variant.barcode,
+            stock_quantity: variant.stock_quantity,
+            cost_price: variant.cost_price,
+            track_inventory: variant.track_inventory,
+            low_stock_threshold: variant.low_stock_threshold,
+            inventory_product_id: variant.inventory_product_id,
+            inventory_deduction_quantity: variant.inventory_deduction_quantity,
+            is_active: true,
+          })),
+        },
+      });
+      assert.equal(
+        reactivated.status,
+        200,
+        `the editor round-trips every variant and reactivates it (${JSON.stringify(reactivated.data)})`,
+      );
+      assert.deepEqual(
+        (db.prepare('SELECT * FROM product_variants WHERE product_id = ?').all(editorProductId) as any[])
+          .map((variant) => [variant.id, variant.is_active, variant.stock_quantity])
+          .sort(),
+        [[editorLarge.id, 1, 3], [editorSmall.id, 1, 0]].sort(),
+        'reactivation reuses the same rows with their stock',
+      );
+      assert.equal(editorMovements(), movementsBeforeReactivate, 'reactivating at unchanged stock writes no phantom ledger row');
+    }
 
     // The delete guard covers recipe bases referenced by a live variant, not
     // only by a product's own inventory link.

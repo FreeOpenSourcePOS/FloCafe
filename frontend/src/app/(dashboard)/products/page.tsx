@@ -157,7 +157,7 @@ export default function ProductsPage() {
   const fetchData = async () => {
     try {
       const requests: Promise<{ data: Record<string, unknown> }>[] = [
-        api.get('/products'),
+        api.get('/products?include_inactive_variants=true'),
         api.get('/categories'),
       ];
       if (isRestaurant) requests.push(api.get('/addon-groups'));
@@ -175,7 +175,7 @@ export default function ProductsPage() {
   useEffect(() => {
     const controller = new AbortController();
     const requests: Promise<{ data: Record<string, unknown> }>[] = [
-      api.get('/products', { signal: controller.signal }),
+      api.get('/products?include_inactive_variants=true', { signal: controller.signal }),
       api.get('/categories', { signal: controller.signal }),
     ];
     if (isRestaurant) requests.push(api.get('/addon-groups', { signal: controller.signal }));
@@ -359,8 +359,8 @@ export default function ProductsPage() {
     variants: removeVariantRow(prev.variants, idx),
   }));
 
-  // Deactivated variants drop out of the next GET, so the only way back is a
-  // row the merchant retypes. Make the one-way door explicit before taking it.
+  // The editor loads deactivated variants so the row can be switched back on;
+  // make stopping sales explicit before taking it.
   const toggleVariantActive = async (idx: number, isActive: boolean) => {
     if (isActive) {
       updateVariantRow(idx, { is_active: true });

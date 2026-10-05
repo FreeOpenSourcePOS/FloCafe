@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { isBlockedSsrfTarget } from '../middleware/security';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import { adjustProductStock } from '../services/inventory';
@@ -172,7 +172,11 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
 }
 
 /** Batch loads category and addon group relations for a list of products. */
-export function loadProductRelationsBatch(db: any, products: any[]) {
+export function loadProductRelationsBatch(
+  db: any,
+  products: any[],
+  options: { includeInactiveVariants?: boolean } = {},
+) {
   if (products.length === 0) return new Map();
 
   const productIds = products.map((p: any) => p.id);
@@ -248,9 +252,9 @@ export function loadProductRelationsBatch(db: any, products: any[]) {
     }
   }
 
-  // 7. Load active variants for these products in one query
+  // 7. Load variants for these products in one query
   const variantRows = db.prepare(
-    `SELECT * FROM product_variants WHERE product_id IN (${placeholders}) AND is_active = 1
+    `SELECT * FROM product_variants WHERE product_id IN (${placeholders})${options.includeInactiveVariants ? '' : ' AND is_active = 1'}
      ORDER BY product_id, sort_order, name`
   ).all(...productIds);
   const variantsByProduct = new Map<string, Record<string, unknown>[]>();
@@ -287,6 +291,15 @@ const router = Router();
 
 function hasOwn(body: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, field);
+}
+
+/**
+ * The back office needs deactivated variants to reactivate them; sellable
+ * reads stay active-only. Mirrors the add-on groups `include_inactive` gate.
+ */
+function wantsInactiveVariants(req: Request): boolean {
+  return req.query.include_inactive_variants === 'true'
+    && hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'catalog.manage');
 }
 
 function stockReason(value: unknown, fallback: string): string {
@@ -872,6 +885,7 @@ function validateAddonGroupIds(db: any, rawIds: unknown, productId?: string): { 
 router.get('/', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const includeInactiveVariants = wantsInactiveVariants(req);
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
       p.inventory_product_id, p.inventory_deduction_quantity,
@@ -913,7 +927,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const products = db.prepare(query).all(...params);
 
     // Batch-load relations
-    const relations = loadProductRelationsBatch(db, products as any[]);
+    const relations = loadProductRelationsBatch(db, products as any[], { includeInactiveVariants });
 
     const productsWithRelations = (products as any[]).map((product: any) => {
       const rel = relations.get(product.id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
@@ -998,7 +1012,9 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
     }
 
     // Single-product query — still batch-style for consistency
-    const relations = loadProductRelationsBatch(db, [product as any]);
+    const relations = loadProductRelationsBatch(db, [product as any], {
+      includeInactiveVariants: wantsInactiveVariants(req),
+    });
     const rel = relations.get((product as any).id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
 
     res.json({ product: serializeProduct({

@@ -12,7 +12,8 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
 
 /** Open cash session row plus the live expected figure, from
- *  GET /api/cash-sessions/current. Money fields are integer cents. */
+ *  GET /api/cash-sessions/current. The endpoint answers 200 with `null` when
+ *  no shift is open. Money fields are integer cents. */
 export interface CashSession {
   id: number;
   opened_by: string;
@@ -69,11 +70,8 @@ export function useCashSession() {
   const fetchState = async (): Promise<{ data: CashSession | null; error: string | null }> => {
     try {
       const res = await api.get('/cash-sessions/current');
-      return { data: res.data as CashSession, error: null };
+      return { data: (res.data ?? null) as CashSession | null, error: null };
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 404) {
-        return { data: null, error: null };
-      }
       return {
         data: null,
         error: axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Failed to load shift',

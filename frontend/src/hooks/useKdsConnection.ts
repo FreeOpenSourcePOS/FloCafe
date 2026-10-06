@@ -149,10 +149,8 @@ export interface UseKdsConnectionOptions {
   api: AxiosInstance;
   /** Overrides endpoint paths for standalone KDS device page (:3002). */
   endpoints?: UseKdsConnectionEndpoints;
-  /** When false, session restore, WebSocket, and REST polling stay idle. The
-   *  host page owns the disabled state; the server refuses /kds upgrades with
-   *  404 while the feature is off. Defaults to true. */
-  enabled?: boolean;
+  /** Session restore, WebSocket, and REST polling stay idle until confirmed on. */
+  enabled: boolean;
 }
 
 export interface UseKdsConnectionResult {
@@ -196,7 +194,7 @@ function markKdsAuthBlocked(): void {
 }
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
-  const { api, endpoints, enabled = true } = options;
+  const { api, endpoints, enabled } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
   const mePath = endpoints?.me ?? ME_ENDPOINT;
   const logoutPath = endpoints?.logout ?? '/auth/logout';
@@ -411,6 +409,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const tryWebSocket = useCallback(
     (token: string, retryDuringMaintenance = false) => {
+      if (!enabled) return;
       const generation = sessionGenerationRef.current;
       if (wsRef.current) {
         wsRef.current.close();
@@ -570,7 +569,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }, 5000);
     },
-    [t, api, stopRestPolling],
+    [t, api, enabled, stopRestPolling],
   );
   useEffect(() => {
     tryWebSocketRef.current = tryWebSocket;
@@ -579,6 +578,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      if (!enabled) return;
       clearKdsAuthBlocked();
       setLoginError('');
       sessionGenerationRef.current += 1;
@@ -615,7 +615,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }
     },
-    [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket],
+    [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket, enabled],
   );
 
   const handleLogout = useCallback(async () => {

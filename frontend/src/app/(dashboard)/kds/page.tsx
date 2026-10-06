@@ -11,14 +11,18 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
-// Checks live kds_enabled setting directly from API; defaults to enabled on fetch errors.
+// Keeps KDS idle until its setting is confirmed enabled.
 function useKdsEnabledCheck(): boolean | null {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
     api.get('/settings/kds_enabled')
-      .then((res) => { if (!cancelled) setEnabled(res.data?.setting?.value !== 'false'); })
-      .catch(() => { if (!cancelled) setEnabled(true); });
+      .then((res) => {
+        if (cancelled) return;
+        const value = res.data?.setting?.value;
+        setEnabled(value === 'true' ? true : value === 'false' ? false : null);
+      })
+      .catch(() => { if (!cancelled) setEnabled(null); });
     return () => { cancelled = true; };
   }, []);
   return enabled;

@@ -411,8 +411,11 @@ export default function OrdersPage() {
 
   useEffect(() => {
     api.get('/settings/kds_enabled')
-      .then((res) => setKdsEnabled(res.data?.setting?.value !== 'false'))
-      .catch(() => setKdsEnabled(true));
+      .then((res) => {
+        const value = res.data?.setting?.value;
+        setKdsEnabled(value === 'true' ? true : value === 'false' ? false : null);
+      })
+      .catch(() => setKdsEnabled(null));
   }, []);
 
   // Live KDS push while the feature is on. The 10-second polling interval in
@@ -595,7 +598,7 @@ export default function OrdersPage() {
   const isOrderActive = (order: Order) => {
     if (order.status === 'cancelled') return false;
     if (order.status === 'completed') {
-      return kdsEnabled !== false && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
+      return kdsEnabled === true && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
     }
     return true;
   };

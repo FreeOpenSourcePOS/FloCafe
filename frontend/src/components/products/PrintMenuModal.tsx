@@ -269,7 +269,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       } else if (status === 401 || status === 403) {
         if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(t('menuPrintFailed'));
-      } else if (code === 'printer_not_configured' || code === 'printer_not_found' || status === 502 || (status !== undefined && status >= 500) || status === undefined) {
+      } else if (code === 'printer_not_configured' || status === 502 || (status !== undefined && status >= 500) || status === undefined) {
         try {
           if (await printOnPaper(filters, reservedWindow)) {
             if (reservedWindow && !reservedWindow.closed) reservedWindow.close();

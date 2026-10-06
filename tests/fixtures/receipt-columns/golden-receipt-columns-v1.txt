@@ -231,12 +231,12 @@ rule=32 maxFontA=32 max=36
 010 32A |Espresso Doppio 2|
 011 14A |Rate: Rs250.00|
 012 16A |Amount: Rs500.00|
-013 30A |+ Oat milk x2         Rs160.00|
-014 13A |>> Less sugar|
+013 32A |  + Oat milk x2         Rs160.00|
+014 15A |  >> Less sugar|
 015 32A |Extra Long Caramelized Vanill. 1|
 016 14A |Rate: Rs420.00|
 017 16A |Amount: Rs420.00|
-018 21A |+ No-price extra shot|
+018 23A |  + No-price extra shot|
 019 32A |────────────────────────────────|
 020 32A |Subtotal              Rs1,220.00|
 021 32A |Discount               -Rs120.00|
@@ -267,12 +267,12 @@ rule=42 maxFontA=42 max=43
 008 42A |Item                   Qty    Rate     Amt|
 009 42A |──────────────────────────────────────────|
 010 42A |Espresso Doppio          2Rs250.00Rs500.00|
-011 40A |+ Oat milk x2                   Rs160.00|
-012 13A |>> Less sugar|
+011 42A |  + Oat milk x2                   Rs160.00|
+012 15A |  >> Less sugar|
 013 42A |Extra Long Caramelized Vanilla Bean Cre. 1|
 014 14A |Rate: Rs420.00|
 015 16A |Amount: Rs420.00|
-016 21A |+ No-price extra shot|
+016 23A |  + No-price extra shot|
 017 42A |──────────────────────────────────────────|
 018 42A |Subtotal                        Rs1,220.00|
 019 42A |Discount                         -Rs120.00|
@@ -303,10 +303,10 @@ rule=32 maxFontA=32 max=42
 008 32A |────────────────────────────────|
 009 32A |Espresso Doppio         Rs500.00|
 010 42  |                              2 x Rs250.00|
-011 30A |+ Oat milk x2         Rs160.00|
+011 32A |  + Oat milk x2         Rs160.00|
 012 16A |Note: Less sugar|
 013 32A |Extra Long Caramelized. Rs420.00|
-014 21A |+ No-price extra shot|
+014 23A |  + No-price extra shot|
 015 32A |────────────────────────────────|
 016 32A |Discount               -Rs120.00|
 017 32A |Delivery                  Rs8.00|
@@ -334,10 +334,10 @@ rule=42 maxFontA=42 max=56
 008 42A |──────────────────────────────────────────|
 009 42A |Espresso Doppio                   Rs500.00|
 010 56  |                                            2 x Rs250.00|
-011 40A |+ Oat milk x2                   Rs160.00|
+011 42A |  + Oat milk x2                   Rs160.00|
 012 16A |Note: Less sugar|
 013 42A |Extra Long Caramelized Vanilla B. Rs420.00|
-014 21A |+ No-price extra shot|
+014 23A |  + No-price extra shot|
 015 42A |──────────────────────────────────────────|
 016 42A |Discount                         -Rs120.00|
 017 42A |Delivery                            Rs8.00|

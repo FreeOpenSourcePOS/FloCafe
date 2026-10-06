@@ -22,11 +22,14 @@ const {
   api,
   assert,
   assertEqual,
+  assertEqualOrThrow,
+  assertIncludesOrThrow,
   getResults,
   closeDatabase,
   now,
 } = require('./helpers/test-setup');
 const { menuCsvRoutes } = require('../main/routes/menu-csv');
+const { validateInventoryLedgerDatabase } = require('../main/db');
 
 const PRODUCT_HEADER = 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active';
 const ADDON_HEADER = 'group_name,addon_name,price,group_required,group_min_select,group_max_select';
@@ -43,12 +46,24 @@ function addonCsvWithHeader(header: string, ...rows: string[]): string {
   return [header, ...rows].join('\n');
 }
 
+async function fetchText(baseUrl: string, urlPath: string, headers: Record<string, string>): Promise<string> {
+  const response = await (globalThis as any).fetch(baseUrl + urlPath, { headers });
+  return await response.text();
+}
+
+/** Finds the exported CSV record for a group/add-on pair and returns its cells. */
+function exportedRecord(csv: string, groupName: string, addonName: string): string[] | null {
+  const prefix = `${groupName},${addonName},`;
+  const line = csv.split('\n').find((candidate: string) => candidate.startsWith(prefix));
+  return line === undefined ? null : line.split(',');
+}
+
 async function main() {
   console.log('Integration Test: Issue #248 strict catalog CSV imports');
   console.log('='.repeat(58));
 
   const db = initTestDb();
-  const { authHeader } = seedOwnerUser(db);
+  const { authHeader, userId } = seedOwnerUser(db);
   seedCategory(db, 'cat-csv-248', 'CSV Category');
 
   const app = createApp({ '/api/menu/csv': menuCsvRoutes });
@@ -284,6 +299,127 @@ async function main() {
     assertEqual(skippedActive.data.groups_reactivated, 0, 'active group is not reported as reactivated');
     assertEqual(skippedActive.data.addons_reactivated, 0, 'active addon is not reported as reactivated');
     assertEqual(skippedActive.data.skipped, 1, 'active duplicate addon is skipped');
+
+    console.log('\n─── Add-on inventory columns: legacy sheets stay importable ───');
+    // A spreadsheet exported before add-on stock existed must still import, and
+    // must land untracked: a file that never mentioned stock must not invent a
+    // stock pool a merchant never counted.
+    const legacyImport = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: { csv: addonCsv('Legacy Sheet Group,Legacy Sheet Addon,9,no,0,1') },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyImport.status, 200, 'a pre-inventory add-on CSV still imports');
+    assertEqualOrThrow(legacyImport.data.addons_created, 1, 'the legacy add-on row is created');
+    assertEqualOrThrow(legacyImport.data.failed, 0, 'the legacy add-on row is not reported as failed');
+    const legacyRow = db.prepare('SELECT track_inventory, stock_quantity FROM addons WHERE name = ?').get('Legacy Sheet Addon') as any;
+    assertEqualOrThrow(legacyRow.track_inventory, 0, 'a CSV without the inventory columns defaults to untracked');
+    assertEqualOrThrow(legacyRow.stock_quantity, 0, 'a CSV without the inventory columns defaults to zero stock');
+
+    console.log('\n─── Add-on inventory columns: stock lands as a ledger movement ───');
+    const trackedImport = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},track_inventory,stock_quantity`,
+          'Stock Group,Tracked Addon,12,no,0,1,yes,50',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(trackedImport.status, 200, 'an add-on CSV carrying stock columns imports');
+    assertEqualOrThrow(trackedImport.data.addons_created, 1, 'the tracked add-on row is created');
+    assertEqualOrThrow(trackedImport.data.failed, 0, 'the tracked add-on row is not reported as failed');
+    const trackedRow = db.prepare('SELECT id, track_inventory, stock_quantity FROM addons WHERE name = ?').get('Tracked Addon') as any;
+    assertEqualOrThrow(trackedRow.track_inventory, 1, 'track_inventory imports as tracked');
+    assertEqualOrThrow(trackedRow.stock_quantity, 50, 'stock_quantity imports onto the new add-on');
+
+    // The decisive assertion for a catalog write: stock must not land as a bare
+    // column update. It has to arrive as a movement the restore validator can
+    // reconcile, attributed to the operator who ran the import.
+    const openingMovement = db.prepare(
+      `SELECT quantity_delta, movement_type, reference_type, actor_user_id, stock_after, product_id
+       FROM inventory_movements WHERE addon_id = ?`,
+    ).get(trackedRow.id) as any;
+    assertEqualOrThrow(openingMovement.quantity_delta, 50, 'the imported stock is recorded as a movement delta');
+    assertEqualOrThrow(openingMovement.movement_type, 'adjustment', 'the imported stock is an adjustment movement');
+    assertEqualOrThrow(openingMovement.reference_type, 'opening_balance', 'a newly created add-on opens its balance');
+    assertEqualOrThrow(openingMovement.stock_after, 50, 'the movement records the imported stock level');
+    assertEqualOrThrow(openingMovement.actor_user_id, userId, 'the movement is attributed to the importing operator');
+    assertEqualOrThrow(openingMovement.product_id, null, 'an add-on movement names no product');
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'imported add-on stock reconciles with its movement history',
+    );
+
+    const invalidStock = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},track_inventory,stock_quantity`,
+          'Stock Group,Negative Stock,5,no,0,1,yes,-3',
+          'Stock Group,Text Stock,5,no,0,1,yes,lots',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(invalidStock.data.failed, 2, 'negative and non-numeric stock are counted as failures');
+    assert(invalidStock.data.errors.some((error: string) => error.includes('invalid stock_quantity "-3"')), 'negative add-on stock is rejected');
+    assert(invalidStock.data.errors.some((error: string) => error.includes('invalid stock_quantity "lots"')), 'non-numeric add-on stock is rejected');
+    assertEqualOrThrow(db.prepare('SELECT id FROM addons WHERE name = ?').get('Negative Stock'), undefined, 'a row rejected for stock is not persisted');
+
+    console.log('\n─── Add-on inventory columns: a legacy sheet never strips a stock pool ───');
+    db.prepare('UPDATE addons SET is_active = 0 WHERE id = ?').run(trackedRow.id);
+    const legacyReactivate = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: { csv: addonCsv('Stock Group,Tracked Addon,12,no,0,1') },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyReactivate.data.addons_reactivated, 1, 'the deactivated tracked add-on reactivates');
+    const reactivatedRow = db.prepare('SELECT track_inventory, stock_quantity FROM addons WHERE id = ?').get(trackedRow.id) as any;
+    assertEqualOrThrow(reactivatedRow.track_inventory, 1, 'a legacy reactivation preserves existing tracking');
+    assertEqualOrThrow(reactivatedRow.stock_quantity, 50, 'a legacy reactivation preserves existing stock');
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'a legacy reactivation leaves the add-on ledger reconcilable',
+    );
+
+    console.log('\n─── Add-on inventory columns: export and round trip ───');
+    const exported = await fetchText(baseUrl, '/api/menu/csv/export/addons', authHeader);
+    const exportHeader = exported.split('\n')[0];
+    assertIncludesOrThrow(exportHeader, 'track_inventory', 'the add-on export carries a track_inventory column');
+    assertIncludesOrThrow(exportHeader, 'stock_quantity', 'the add-on export carries a stock_quantity column');
+    assertIncludesOrThrow(exportHeader, 'low_stock_threshold', 'the add-on export carries a low_stock_threshold column');
+    const exportedTracked = exportedRecord(exported, 'Stock Group', 'Tracked Addon');
+    assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[6], 'yes', 'the export marks a tracked add-on as tracked');
+    assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[7], '50', 'the export carries the add-on stock level');
+    assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[8], '0', 'the export carries the default low stock threshold');
+    const exportedLegacy = exportedRecord(exported, 'Legacy Sheet Group', 'Legacy Sheet Addon');
+    assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[6], 'no', 'the export marks an untracked add-on as untracked');
+    assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[7], '0', 'the export carries zero stock for an untracked add-on');
+    assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[8], '0', 'the export carries zero threshold for an untracked add-on');
+
+    // Round trip: the exported header is the new format, so re-importing it must
+    // rebuild the same stock pool on a fresh add-on rather than losing it.
+    const roundTrip = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: [exportHeader, 'Round Trip Group,Round Trip Addon,12,no,0,1,yes,50,5'].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(roundTrip.data.addons_created, 1, 'an exported-format row re-imports as a new add-on');
+    const roundTripRow = db.prepare('SELECT id, track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE name = ?').get('Round Trip Addon') as any;
+    assertEqualOrThrow(roundTripRow.track_inventory, 1, 'the round trip preserves tracking');
+    assertEqualOrThrow(roundTripRow.stock_quantity, 50, 'the round trip preserves stock');
+    assertEqualOrThrow(roundTripRow.low_stock_threshold, 5, 'the round trip preserves low stock threshold');
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'a round-tripped add-on reconciles with its movement history',
+    );
 
     console.log('\n─── CSV resource bounds ───');
     const tooManyCells = await api(baseUrl, '/api/menu/csv/import/products', {

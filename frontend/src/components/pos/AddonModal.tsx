@@ -8,6 +8,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
+import { addonStockCeiling, isAddonLowStock, isAddonSoldOut } from '@/lib/addon-inventory';
 import { activeVariants, isVariantSoldOut, selectDefaultVariant } from '@/lib/product-variants';
 import { cartVariantUnitPrice } from '@/lib/cart-price';
 import type { Product, Addon, AddonGroup, ProductVariant } from '@/lib/types';
@@ -42,6 +43,34 @@ function variantPillClassName(isSelected: boolean, soldOut: boolean): string {
   if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
   if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
   return 'border-border hover:border-brand/40';
+}
+
+function addonRowClassName(isSelected: boolean, soldOut: boolean): string {
+  if (isSelected) return 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300';
+  if (soldOut) return 'border-border opacity-50 cursor-not-allowed';
+  return 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border';
+}
+
+/**
+ * The stock badges for one add-on row. Sold out wins over running low, so a
+ * zero-stock add-on never carries both.
+ */
+function addonStockBadges(soldOut: boolean, lowStock: boolean, labels: { outOfStock: string; lowStock: string }) {
+  if (!soldOut && !lowStock) return null;
+  return (
+    <>
+      {soldOut && (
+        <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">
+          {labels.outOfStock}
+        </span>
+      )}
+      {lowStock && (
+        <span className="rounded-full bg-orange-100 dark:bg-orange-950/40 px-2 py-0.5 text-[10px] font-bold text-orange-700 dark:text-orange-300">
+          {labels.lowStock}
+        </span>
+      )}
+    </>
+  );
 }
 
 export default function AddonModal({
@@ -109,6 +138,12 @@ export default function AddonModal({
         return;
       }
 
+      const rawCeiling = addonStockCeiling(addon);
+      const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
+      if (delta > 0 && stockCeiling != null && newQty > stockCeiling) {
+        return;
+      }
+
       if (existingIndex >= 0) {
         const updatedList = [...currentList];
         updatedList[existingIndex] = { ...updatedList[existingIndex], quantity: newQty };
@@ -139,6 +174,20 @@ export default function AddonModal({
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
   const itemTotal = (basePrice + addonTotal) * quantity;
 
+  const canQuantityCoverAddons = (targetQty: number): boolean => {
+    if (targetQty <= 0) return false;
+    for (const addon of allAddons) {
+      const rawCeiling = addonStockCeiling(addon);
+      if (rawCeiling == null) continue;
+      const required = (addon.quantity || 1) * targetQty;
+      if (required > rawCeiling) return false;
+    }
+    return true;
+  };
+
+  const nextItemQty = step == null ? quantity + 1 : roundToQuantityPrecision(quantity + step, step);
+  const canIncreaseItemQty = canQuantityCoverAddons(nextItemQty);
+
   const groupsSatisfied = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
     const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
@@ -148,7 +197,7 @@ export default function AddonModal({
   });
   // A product with variants cannot be sold without one, and a fully sold-out
   // variant set cannot be sold at all.
-  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant));
+  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant)) && canQuantityCoverAddons(quantity);
 
   const handleAdd = () => {
     if (!isValid) return;
@@ -244,22 +293,30 @@ export default function AddonModal({
                   {activeAddons.map((addon) => {
                     const addonQty = getAddonQuantity(group.id, addon.id);
                     const isSel = addonQty > 0;
+                    const soldOut = isAddonSoldOut(addon);
+                    const lowStock = isAddonLowStock(addon);
+                    const rawCeiling = addonStockCeiling(addon);
+                    const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
+                    // The cashier may only dial up to what is left, but never past
+                    // the group cap, and an untracked add-on is never limited.
+                    const atStockCeiling = stockCeiling != null && addonQty >= stockCeiling;
+                    const plusDisabled = soldOut || atStockCeiling;
+                    const priceTone = isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground';
+                    const counterButton = 'touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]';
+                    const badges = addonStockBadges(soldOut, lowStock, { outOfStock: t('outOfStock'), lowStock: t('lowStock') });
 
                     if (allowMultiple) {
                       return (
                         <div
                           key={addon.id}
-                          className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                            isSel
-                              ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
-                              : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
-                          }`}
+                          className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${addonRowClassName(isSel, soldOut)}`}
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-foreground">{addon.name}</span>
-                            <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
+                            <span className={`text-xs ${priceTone}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
+                            {badges}
                           </div>
                           <div className="flex items-center gap-2">
                             {isSel ? (
@@ -267,15 +324,16 @@ export default function AddonModal({
                                 <button
                                   type="button"
                                   onClick={() => updateAddonQuantity(group, addon, -1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
+                                  className={counterButton}
                                 >
                                   <Minus size={14} />
                                 </button>
                                 <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">{addonQty}</span>
                                 <button
                                   type="button"
+                                  disabled={plusDisabled}
                                   onClick={() => updateAddonQuantity(group, addon, 1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
+                                  className={`${counterButton} disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent`}
                                 >
                                   <Plus size={14} />
                                 </button>
@@ -283,8 +341,9 @@ export default function AddonModal({
                             ) : (
                               <button
                                 type="button"
+                                disabled={plusDisabled}
                                 onClick={() => updateAddonQuantity(group, addon, 1)}
-                                className="touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted"
+                                className={`touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50`}
                               >
                                 <Plus size={14} />
                               </button>
@@ -297,17 +356,14 @@ export default function AddonModal({
                     return (
                       <div
                         key={addon.id}
-                        className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                          isSel
-                            ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
-                            : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
-                        }`}
+                        className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${addonRowClassName(isSel, soldOut)}`}
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-foreground">{addon.name}</span>
-                          <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
+                          <span className={`text-xs ${priceTone}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>
+                          {badges}
                         </div>
                         <div className="flex items-center gap-2">
                           {isSel ? (
@@ -315,7 +371,7 @@ export default function AddonModal({
                               <button
                                 type="button"
                                 onClick={() => toggleAddonCheckbox(group, addon)}
-                                className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
+                                className={counterButton}
                               >
                                 <Minus size={14} />
                               </button>
@@ -331,8 +387,9 @@ export default function AddonModal({
                           ) : (
                             <button
                               type="button"
+                              disabled={plusDisabled}
                               onClick={() => toggleAddonCheckbox(group, addon)}
-                              className="touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted"
+                              className={`touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50`}
                             >
                               <Plus size={14} />
                             </button>
@@ -383,18 +440,22 @@ export default function AddonModal({
               <Minus size={18} />
             </button>
             <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((quickQty) => (
-                <button
-                  key={quickQty}
-                  type="button"
-                  onClick={() => setQty(quickQty)}
-                  className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums ${
-                    quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
-                  }`}
-                >
-                  {quickQty}
-                </button>
-              ))}
+              {[1, 2, 3].map((quickQty) => {
+                const disabled = !canQuantityCoverAddons(quickQty);
+                return (
+                  <button
+                    key={quickQty}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setQty(quickQty)}
+                    className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums disabled:cursor-not-allowed disabled:opacity-50 ${
+                      quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
+                    }`}
+                  >
+                    {quickQty}
+                  </button>
+                );
+              })}
             </div>
             {step == null ? (
               <span className="text-lg font-bold w-10 text-center tabular-nums">{quantity}</span>
@@ -420,7 +481,8 @@ export default function AddonModal({
                   ? setQty(quantity + 1)
                   : setQty(roundToQuantityPrecision(quantity + step, step))
               }
-              className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted"
+              disabled={!canIncreaseItemQty}
+              className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={t('addItems')}
             >
               <Plus size={18} />

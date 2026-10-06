@@ -79,6 +79,23 @@ const VARIANT_CELL = 'w-full px-2 py-1.5 text-sm border border-gray-300 dark:bor
 
 type TabType = 'products' | 'categories' | 'addons';
 
+/** One editable add-on row inside the add-on group editor. */
+interface AddonEditorRow {
+  id?: number | string;
+  name: string;
+  price: number;
+  is_active?: boolean;
+  track_inventory: boolean;
+  stock_quantity: string;
+  low_stock_threshold: string;
+  /**
+   * Set only when the merchant edits the stock box. The addon API reads a
+   * submitted stock_quantity as an absolute set and writes a ledger movement,
+   * so re-saving a group must not overwrite stock an order has since moved.
+   */
+  stock_edited: boolean;
+}
+
 function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
   return tc.rate_percent != null ? `${tc.label} (${tc.rate_percent}%)` : tc.label;
 }
@@ -114,7 +131,7 @@ export default function ProductsPage() {
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
-  const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
+  const [addonList, setAddonList] = useState<AddonEditorRow[]>([]);
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     sale_unit: 'each' as Product['sale_unit'], allow_fractional_quantity: false, weight_precision: '3',
@@ -585,7 +602,16 @@ export default function ProductsPage() {
   const openEditAddonGroup = (group: AddonGroup) => {
     setEditingAddonGroup(group);
     setAddonForm({ name: group.name, description: group.description || '', is_required: Boolean(group.is_required), allow_multiple_quantities: Boolean(group.allow_multiple_quantities), min_selection: group.min_selection, max_selection: group.max_selection });
-    setAddonList(group.addons?.map((a) => ({ id: a.id, name: a.name, price: a.price, is_active: Boolean(a.is_active) })) || []);
+    setAddonList(group.addons?.map((a) => ({
+      id: a.id,
+      name: a.name,
+      price: a.price,
+      is_active: Boolean(a.is_active),
+      track_inventory: Boolean(a.track_inventory),
+      stock_quantity: String(a.stock_quantity ?? 0),
+      low_stock_threshold: String(a.low_stock_threshold ?? 0),
+      stock_edited: false,
+    })) || []);
     setShowAddonModal(true);
   };
 
@@ -600,8 +626,15 @@ export default function ProductsPage() {
         min_selection: addonForm.min_selection,
         max_selection: addonForm.max_selection,
         addons: addonList.map((addon) => ({
-          ...addon,
+          id: addon.id,
+          name: addon.name,
           price: roundCurrencyValue(Number(addon.price), unitAdapter.maxDecimals),
+          is_active: addon.is_active,
+          track_inventory: addon.track_inventory,
+          low_stock_threshold: Math.max(0, Number(addon.low_stock_threshold) || 0),
+          // Omitted unless the merchant edited it: the API reads a submitted
+          // stock_quantity as an absolute set and writes a ledger movement.
+          ...(addon.stock_edited ? { stock_quantity: Math.max(0, Number(addon.stock_quantity) || 0) } : {}),
         })),
       };
       if (editingAddonGroup) {
@@ -625,8 +658,19 @@ export default function ProductsPage() {
     } catch { toast.error(tCommon('failedToDelete')); }
   };
 
-  const addAddonItem = () => setAddonList((prev) => [...prev, { name: '', price: 0 }]);
-  const updateAddonItem = (idx: number, field: string, value: string | number) => setAddonList((prev) => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
+  const addAddonItem = () => setAddonList((prev) => [...prev, {
+    name: '',
+    price: 0,
+    track_inventory: false,
+    stock_quantity: '0',
+    low_stock_threshold: '0',
+    stock_edited: false,
+  }]);
+  const updateAddonItem = (idx: number, patch: Partial<AddonEditorRow>) =>
+    setAddonList((prev) => prev.map((a, i) => (i === idx ? { ...a, ...patch } : a)));
+  // Editing the stock box is what authorises an absolute stock write on save.
+  const updateAddonStock = (idx: number, value: string) =>
+    setAddonList((prev) => prev.map((a, i) => (i === idx ? { ...a, stock_quantity: value, stock_edited: true } : a)));
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
   if (loading) {
@@ -1468,10 +1512,34 @@ export default function ProductsPage() {
                         <span aria-hidden="true" />
                       </div>
                       {addonList.map((addon, idx) => (
-                        <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
-                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, 'price', v === '' ? 0 : v)} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
+                        <div key={idx} className="flex flex-wrap items-center gap-2">
+                          <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center grow">
+                            <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, { name: e.target.value })} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                            <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, { price: v === '' ? 0 : v })} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                            <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
+                          </div>
+                          <label className="flex items-center gap-1.5">
+                            <input type="checkbox" checked={addon.track_inventory} aria-label={t('fieldTrackInventory')}
+                              onChange={(e) => updateAddonItem(idx, { track_inventory: e.target.checked })}
+                              className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                            <span className="text-xs text-muted-foreground">{t('fieldTrackInventory')}</span>
+                          </label>
+                          {addon.track_inventory && (
+                            <>
+                              <label className="flex items-center gap-1.5">
+                                <span className="text-xs text-muted-foreground">{t('fieldStock')}</span>
+                                <input type="number" min="0" step="any" value={addon.stock_quantity} aria-label={t('fieldStock')}
+                                  onChange={(e) => updateAddonStock(idx, e.target.value)}
+                                  className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                              </label>
+                              <label className="flex items-center gap-1.5">
+                                <span className="text-xs text-muted-foreground">{t('fieldLowStockThreshold')}</span>
+                                <input type="number" min="0" step="any" value={addon.low_stock_threshold} aria-label={t('fieldLowStockThreshold')}
+                                  onChange={(e) => updateAddonItem(idx, { low_stock_threshold: e.target.value })}
+                                  className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                              </label>
+                            </>
+                          )}
                         </div>
                       ))}
                     </div>

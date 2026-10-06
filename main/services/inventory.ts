@@ -16,8 +16,10 @@ export class InventoryServiceError extends Error {
 }
 
 export interface StockChangeOptions {
-  productId: string | number;
+  /** Null when the delta moves an add-on pool, which has no owning product. */
+  productId: string | number | null;
   variantId?: string | null;
+  addonId?: string | null;
   quantityDelta: number;
   movementType: InventoryMovementType;
   actorUserId: string;
@@ -29,6 +31,7 @@ export interface StockChangeOptions {
 
 export interface InventoryMovementFilters {
   productId?: string;
+  addonId?: string;
   movementType?: InventoryMovementType;
   referenceType?: string;
   referenceId?: string;
@@ -38,9 +41,11 @@ export interface InventoryMovementFilters {
 
 export interface InventoryMovement {
   id: number;
-  product_id: string;
+  product_id: string | null;
   product_name: string | null;
   variant_id: string | null;
+  addon_id: string | null;
+  addon_name: string | null;
   quantity_delta: number;
   movement_type: InventoryMovementType;
   reference_type: string | null;
@@ -139,13 +144,38 @@ export function adjustProductStock(
   if (typeof options.reason === 'string' && options.reason.length > 500) {
     throw new InventoryServiceError(400, 'reason is too long');
   }
+  const addonId = options.addonId ?? null;
+  const variantId = options.variantId ?? null;
+  // One movement moves one pool. Naming two would write a ledger row that the
+  // validator cannot attribute to a single snapshot row.
+  if (addonId && variantId) {
+    throw new InventoryServiceError(400, 'A movement moves either a variant pool or an add-on pool, not both');
+  }
+  if (addonId && options.productId) {
+    throw new InventoryServiceError(400, 'A movement moves either a product pool or an add-on pool, not both');
+  }
+  if (!options.productId && !addonId) {
+    throw new InventoryServiceError(400, 'product_id or addon_id is required');
+  }
 
   const updatedAt = options.createdAt || now();
-  // A variant keeps its own stock pool; the ledger row still names the owning
-  // product because inventory_movements.product_id is required.
-  const stockTable = options.variantId ? 'product_variants' : 'products';
-  const stockKey = options.variantId ? 'id = ? AND product_id = ?' : 'id = ?';
-  const stockIdArgs: (string | number)[] = options.variantId ? [options.variantId, options.productId] : [options.productId];
+  // A variant keeps its own stock pool but shares the product id, and an add-on
+  // owns a pool with no product at all, so the ledger row names only the pool
+  // the delta actually moved.
+  let stockTable = 'products';
+  let stockKey = 'id = ?';
+  let stockLabel = 'Product';
+  let stockIdArgs: (string | number)[] = [options.productId as string | number];
+  if (addonId) {
+    stockTable = 'addons';
+    stockLabel = 'Add-on';
+    stockIdArgs = [String(addonId)];
+  } else if (variantId) {
+    stockTable = 'product_variants';
+    stockKey = 'id = ? AND product_id = ?';
+    stockLabel = 'Variant';
+    stockIdArgs = [variantId, options.productId as string | number];
+  }
   const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
   const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
   const stockBefore = Number(current?.stock_quantity ?? 0);
@@ -178,7 +208,7 @@ export function adjustProductStock(
   );
   if (result.changes !== 1) {
     if (!current) {
-      throw new InventoryServiceError(404, options.variantId ? 'Variant not found' : 'Product not found');
+      throw new InventoryServiceError(404, `${stockLabel} not found`);
     }
     throw new InventoryServiceError(400, 'Insufficient stock');
   }
@@ -189,12 +219,13 @@ export function adjustProductStock(
 
   db.prepare(`
     INSERT INTO inventory_movements (
-      product_id, variant_id, quantity_delta, movement_type, reference_type, reference_id,
+      product_id, variant_id, addon_id, quantity_delta, movement_type, reference_type, reference_id,
       reason, actor_user_id, stock_after, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    options.productId,
-    options.variantId ?? null,
+    options.productId ?? null,
+    variantId,
+    addonId,
     effectiveQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
@@ -218,6 +249,10 @@ export function listInventoryMovements(
   if (filters.productId) {
     conditions.push('m.product_id = ?');
     params.push(filters.productId);
+  }
+  if (filters.addonId) {
+    conditions.push('m.addon_id = ?');
+    params.push(filters.addonId);
   }
   if (filters.movementType) {
     conditions.push('m.movement_type = ?');
@@ -251,6 +286,8 @@ export function listInventoryMovements(
       m.product_id,
       p.name AS product_name,
       m.variant_id,
+      m.addon_id,
+      a.name AS addon_name,
       m.quantity_delta,
       m.movement_type,
       m.reference_type,
@@ -269,6 +306,7 @@ export function listInventoryMovements(
       m.source_created_at
     FROM inventory_movements m
     LEFT JOIN products p ON p.id = m.product_id
+    LEFT JOIN addons a ON a.id = m.addon_id
     LEFT JOIN users u ON u.id = m.actor_user_id
     ${whereSql}
     ORDER BY m.created_at DESC, m.id DESC

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { randomUUID } from 'node:crypto';
 import { requirePermission } from '../services/authorization';
+import { adjustProductStock } from '../services/inventory';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import {
   RegionalNotConfiguredError,
@@ -224,6 +225,33 @@ function isTruthy(v: string) {
   return ['yes', 'true', '1'].includes((v || '').toLowerCase());
 }
 
+// An imported stock figure is a catalog write, so it moves through the ledger
+// exactly like the product and variant paths do. A bare column write would leave
+// a stock value with no movement behind it, which the restore validator rejects.
+function applyImportedAddonStock(
+  db: ReturnType<typeof getDatabase>,
+  addonId: string,
+  stockQuantity: number,
+  referenceType: 'opening_balance' | 'manual_adjustment',
+  referenceId: string,
+  actorUserId: string,
+) {
+  const current = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?')
+    .get(addonId) as { stock_quantity: number } | undefined;
+  const quantityDelta = stockQuantity - Number(current?.stock_quantity ?? 0);
+  if (quantityDelta === 0) return;
+  adjustProductStock(db, {
+    productId: null,
+    addonId,
+    quantityDelta,
+    movementType: 'adjustment',
+    referenceType,
+    referenceId,
+    reason: 'Add-on stock imported from menu CSV',
+    actorUserId,
+  });
+}
+
 // ─── Templates ───────────────────────────────────────────────────────────────
 
 const TEMPLATES: Record<string, string> = {
@@ -246,17 +274,17 @@ const TEMPLATES: Record<string, string> = {
   ].join('\n'),
 
   addons: [
-    'group_name,addon_name,price,group_required,group_min_select,group_max_select',
-    'Size,Small,0,no,1,1',
-    'Size,Regular,20,no,1,1',
-    'Size,Large,40,no,1,1',
-    'Milk Type,Full Cream,0,yes,1,1',
-    'Milk Type,Oat Milk,30,yes,1,1',
-    'Milk Type,Almond Milk,40,yes,1,1',
-    'Extras,Extra Shot,30,no,0,3',
-    'Extras,Extra Sugar,0,no,0,3',
-    'Temperature,Hot,0,yes,1,1',
-    'Temperature,Cold (Iced),10,yes,1,1',
+    'group_name,addon_name,price,group_required,group_min_select,group_max_select,track_inventory,stock_quantity,low_stock_threshold',
+    'Size,Small,0,no,1,1,no,0,0',
+    'Size,Regular,20,no,1,1,no,0,0',
+    'Size,Large,40,no,1,1,no,0,0',
+    'Milk Type,Full Cream,0,yes,1,1,no,0,0',
+    'Milk Type,Oat Milk,30,yes,1,1,no,0,0',
+    'Milk Type,Almond Milk,40,yes,1,1,no,0,0',
+    'Extras,Extra Shot,30,no,0,3,no,0,0',
+    'Extras,Extra Sugar,0,no,0,3,no,0,0',
+    'Temperature,Hot,0,yes,1,1,no,0,0',
+    'Temperature,Cold (Iced),10,yes,1,1,no,0,0',
   ].join('\n'),
 };
 
@@ -333,13 +361,14 @@ router.get('/export/addons', requirePermission('catalog.import-export'), (_req: 
     const groups = db
       .prepare('SELECT * FROM addon_groups WHERE is_active = 1 ORDER BY sort_order, name')
       .all() as any[];
-    const lines = ['group_name,addon_name,price,group_required,group_min_select,group_max_select'];
+    const lines = ['group_name,addon_name,price,group_required,group_min_select,group_max_select,track_inventory,stock_quantity,low_stock_threshold'];
     for (const g of groups) {
       const addons = db
         .prepare('SELECT * FROM addons WHERE addon_group_id = ? AND is_active = 1 ORDER BY sort_order, name')
         .all(g.id) as any[];
       for (const a of addons)
-        lines.push(toCsvRow([g.name, a.name, formatAmountForCsv(a.price, regionalSnapshot), g.is_required ? 'yes' : 'no', g.min_selection, g.max_selection]));
+        lines.push(toCsvRow([g.name, a.name, formatAmountForCsv(a.price, regionalSnapshot), g.is_required ? 'yes' : 'no', g.min_selection, g.max_selection,
+          a.track_inventory ? 'yes' : 'no', Number(a.stock_quantity ?? 0), Number(a.low_stock_threshold ?? 0)]));
     }
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="addons-export.csv"');
@@ -556,11 +585,15 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
     const hasGroupRequiredColumn = headers.has('group_required');
     const hasGroupMinColumn = headers.has('group_min_select');
     const hasGroupMaxColumn = headers.has('group_max_select');
+    const hasTrackInventoryColumn = headers.has('track_inventory');
+    const hasStockQuantityColumn = headers.has('stock_quantity');
+    const hasLowStockThresholdColumn = headers.has('low_stock_threshold');
     const rows = toObjects(parsedCsv);
     if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
 
     const db = getDatabase();
     const regionalSnapshot = currentRegionalSnapshot();
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     let groupsCreated = 0, groupsUpdated = 0, addonsCreated = 0;
     let groupsReactivated = 0, addonsReactivated = 0;
     let skipped = 0, failed = 0;
@@ -583,7 +616,9 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
       const priceResult = parseNumericField(row.price, 'price', { min: 0, localized: regionalSnapshot });
       const minResult = parseNumericField(row.group_min_select, 'group_min_select', { optional: true, defaultValue: 0, integer: true, min: 0 });
       const maxResult = parseNumericField(row.group_max_select, 'group_max_select', { optional: true, defaultValue: 1, integer: true, min: 0 });
-      if (!priceResult.ok || !minResult.ok || !maxResult.ok) continue;
+      const stockResult = parseNumericField(row.stock_quantity, 'stock_quantity', { optional: true, defaultValue: 0, min: 0 });
+      const thresholdResult = parseNumericField(row.low_stock_threshold, 'low_stock_threshold', { optional: true, defaultValue: 0, min: 0 });
+      if (!priceResult.ok || !minResult.ok || !maxResult.ok || !stockResult.ok || !thresholdResult.ok) continue;
 
       const key = row.group_name.toLowerCase();
       let plan = groupPlans.get(key);
@@ -653,6 +688,22 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
         errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${maxResult.error}`);
         continue;
       }
+      const stockResult = parseNumericField(r.stock_quantity, 'stock_quantity', { optional: true, defaultValue: 0, min: 0 });
+      if (!stockResult.ok) {
+        failed++;
+        errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${stockResult.error}`);
+        continue;
+      }
+      const stockQuantity = stockResult.value;
+      const thresholdResult = parseNumericField(r.low_stock_threshold, 'low_stock_threshold', { optional: true, defaultValue: 0, min: 0 });
+      if (!thresholdResult.ok) {
+        failed++;
+        errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${thresholdResult.error}`);
+        continue;
+      }
+      const lowStockThreshold = thresholdResult.value;
+      const trackInventory = isTruthy(r.track_inventory) ? 1 : 0;
+
       const key = r.group_name.toLowerCase();
       const groupPlan = groupPlans.get(key);
       const effectiveMinSelection = hasGroupMinColumn ? minResult.value : (groupPlan?.existing?.min_selection ?? 0);
@@ -715,19 +766,33 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
         .get(groupId, r.addon_name) as { id: string; is_active: number } | undefined;
       if (addonExists) {
         if (addonExists.is_active === 0) {
-          db.prepare('UPDATE addons SET is_active = 1, price = ?, updated_at = ? WHERE id = ?')
-            .run(price, now(), addonExists.id);
+          // A pre-inventory spreadsheet carries neither inventory column, so
+          // tracking is only touched when the merchant's file actually states it.
+          db.prepare(
+            `UPDATE addons SET is_active = 1, price = ?,
+             track_inventory = CASE WHEN ? = 1 THEN ? ELSE track_inventory END,
+             low_stock_threshold = CASE WHEN ? = 1 THEN ? ELSE low_stock_threshold END,
+             updated_at = ? WHERE id = ?`
+          ).run(price, hasTrackInventoryColumn ? 1 : 0, trackInventory,
+            hasLowStockThresholdColumn ? 1 : 0, lowStockThreshold, now(), addonExists.id);
           addonsReactivated++;
+          if (hasStockQuantityColumn) {
+            applyImportedAddonStock(db, addonExists.id, stockQuantity, 'manual_adjustment', addonExists.id, actorUserId);
+          }
         } else {
           skipped++;
         }
         continue;
       }
 
+      const addonId = randomUUID();
       db.prepare(
-        `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 1, 0, ?, ?)`
-      ).run(randomUUID(), groupId, r.addon_name, price, now(), now());
+        `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, track_inventory, stock_quantity, low_stock_threshold, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, 0, ?, 0, ?, ?, ?)`
+      ).run(addonId, groupId, r.addon_name, price, trackInventory, lowStockThreshold, now(), now());
+      if (stockQuantity !== 0) {
+        applyImportedAddonStock(db, addonId, stockQuantity, 'opening_balance', addonId, actorUserId);
+      }
       addonsCreated++;
     } })();
 

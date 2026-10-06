@@ -323,6 +323,9 @@ function serializeAddon(addon: any): any {
     ...addon,
     is_active: toBoolean(addon.is_active),
     inherit_parent_tax_category: toBoolean(addon.inherit_parent_tax_category),
+    track_inventory: toBoolean(addon.track_inventory),
+    stock_quantity: Number(addon.stock_quantity ?? 0),
+    low_stock_threshold: Number(addon.low_stock_threshold ?? 0),
   };
 }
 

@@ -15,7 +15,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import { buildAppliedCharges, ChargeValidationError, serializeAppliedCharges } from '../services/charges';
-import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
+import { adjustProductStock, InventoryServiceError, resolveInventoryDeduction } from '../services/inventory';
 import { resolveOrderItemVariant, variantUnitPrice, type ProductVariant } from '../services/product-variants';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
@@ -191,12 +191,72 @@ function orderItemInventoryTarget(
   return recorded ? { productId: recorded.id, variantId: recordedVariantId } : null;
 }
 
+/** One add-on pool an order line consumed, carrying the snapshot quantity taken. */
+interface AddonStockLine {
+  id: string | null;
+  name: string;
+  inventory_deducted_quantity: number;
+}
+
+/** Move the add-on pools an order line consumed, using the snapshot recorded on the line. */
+function moveOrderItemAddonStock(
+  db: ReturnType<typeof getDatabase>,
+  addons: AddonStockLine[],
+  options: {
+    direction: 'deplete' | 'restore';
+    actorUserId: string;
+    referenceId: string;
+    reason?: string;
+    createdAt?: string;
+  },
+): void {
+  const sign = options.direction === 'deplete' ? -1 : 1;
+  const movementType = options.direction === 'deplete' ? 'sale' : 'cancel_restore';
+  for (const addon of addons) {
+    const quantity = Number(addon.inventory_deducted_quantity) || 0;
+    if (quantity <= 0 || !addon.id) continue;
+    try {
+      adjustProductStock(db, {
+        productId: null,
+        addonId: addon.id,
+        quantityDelta: sign * quantity,
+        movementType,
+        referenceType: 'order_item',
+        referenceId: options.referenceId,
+        reason: options.reason ?? null,
+        actorUserId: options.actorUserId,
+        createdAt: options.createdAt,
+      });
+    } catch (err) {
+      // Two lines can each clear the per-line check and jointly exhaust the
+      // pool; the ledger guard stops the second, so name the add-on as the
+      // pre-check does rather than returning a bare "Insufficient stock".
+      if (!(err instanceof InventoryServiceError) || err.statusCode !== 400) throw err;
+      const pool = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addon.id) as { stock_quantity: number } | undefined;
+      throw Object.assign(
+        new Error(`Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`),
+        { statusCode: 400 },
+      );
+    }
+  }
+}
+
+/** The add-on snapshot rows an order line drew out of its pools, read at sale time. */
+function orderItemAddonStockLines(db: ReturnType<typeof getDatabase>, orderItemId: number | bigint): AddonStockLine[] {
+  return db.prepare(`
+    SELECT addon_id AS id, addon_name AS name, inventory_deducted_quantity
+    FROM order_item_addons
+    WHERE order_item_id = ? AND inventory_deducted_quantity > 0
+  `).all(orderItemId) as AddonStockLine[];
+}
+
 /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
 function resolveItemAddons(
   db: ReturnType<typeof getDatabase>,
   productId: string,
   addons: any[] | null | undefined,
-): { id: string; name: string; price: number; quantity: number }[] {
+  itemQuantity: unknown,
+): { id: string; name: string; price: number; quantity: number; inventory_deducted_quantity: number }[] {
   const addonInputs = Array.isArray(addons) ? addons : [];
 
   const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(productId) as { category_id: string | null } | undefined;
@@ -208,7 +268,7 @@ function resolveItemAddons(
     : [];
   const linkedGroupIds = new Set([...productGroupIds, ...categoryGroupIds]);
 
-  const resolved: { id: string; name: string; price: number; quantity: number }[] = [];
+  const resolved: { id: string; name: string; price: number; quantity: number; inventory_deducted_quantity: number }[] = [];
   const groupSelections = new Map<string, { totalQty: number; hasMultiQty: boolean }>();
 
   for (const addon of addonInputs) {
@@ -221,7 +281,7 @@ function resolveItemAddons(
       FROM addons LEFT JOIN addon_groups ON addon_groups.id = addons.addon_group_id
       WHERE addons.id = ?
     `).get(addon.id) as
-      | { id: string; addon_group_id: string | null; name: string; price: number; is_active: number; addon_group_is_active: number | null }
+      | { id: string; addon_group_id: string | null; name: string; price: number; is_active: number; addon_group_is_active: number | null; track_inventory: number | null; stock_quantity: number | null }
       | undefined;
     if (!catalog) {
       throw new Error(`Add-on "${addon.id}" was not found`);
@@ -239,7 +299,24 @@ function resolveItemAddons(
       throw new Error(`Invalid add-on quantity for "${catalog.name}": must be a positive integer`);
     }
 
-    resolved.push({ id: catalog.id, name: catalog.name, price: Number(catalog.price) || 0, quantity });
+    // One tracked add-on on a line consumes a whole item's worth: three burgers
+    // with two extra bacon each take six, not two. An item quantity that is not
+    // yet a positive number is refused by validateProductQuantity before the
+    // order is written, so there is no requirement to check here.
+    const unitCount = Number(itemQuantity);
+    const requirement = Number.isFinite(unitCount) && unitCount > 0 ? unitCount * quantity : 0;
+    let inventoryDeductedQuantity = 0;
+    if (Number(catalog.track_inventory) === 1) {
+      const available = Number(catalog.stock_quantity ?? 0);
+      // Refusing is the point: a tracked add-on with nothing left must not be
+      // silently substituted, so there is no variant-style fallback here.
+      if (requirement - available > 1e-8) {
+        throw new Error(`Add-on "${catalog.name}" is out of stock (requested ${requirement}, available ${available})`);
+      }
+      inventoryDeductedQuantity = requirement;
+    }
+
+    resolved.push({ id: catalog.id, name: catalog.name, price: Number(catalog.price) || 0, quantity, inventory_deducted_quantity: inventoryDeductedQuantity });
 
     const qty = Math.max(1, Math.floor(quantity));
     const current = groupSelections.get(addonGroupId) || { totalQty: 0, hasMultiQty: false };
@@ -622,6 +699,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 
     const db = getDatabase();
 
+    if (idempotencyKey && requestHash) {
+      const replayed = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash) as { order: any } | null;
+      if (replayed) {
+        return res.status(200).json({ order: replayed.order });
+      }
+    }
+
     // Free text that ends up printed on a courier slip, so it is capped and
     // validated the same way order notes are, at this boundary.
     let expectedPaymentMethod: string | null;
@@ -637,15 +721,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
-        item.addons = resolveItemAddons(db, item.product_id, item.addons);
+        item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
       }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
     const result = withTxn(() => {
       if (idempotencyKey) {
-        // Preserve exact replay for pre-user-scoped records whose creator is
-        // unavailable. New records never use the `legacy` compatibility owner.
         const prior = db.prepare(`
           SELECT request_hash, response_json
           FROM order_idempotency
@@ -799,6 +881,12 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
             createdAt: itemCreatedAt,
           });
         }
+        moveOrderItemAddonStock(db, item.addons, {
+          direction: 'deplete',
+          actorUserId: authenticatedUserId,
+          referenceId: String(insertItemResult.lastInsertRowid),
+          createdAt: itemCreatedAt,
+        });
 
         if (recipeSnapshot) {
           applyRecipeSnapshot(db, recipeSnapshot, {
@@ -978,7 +1066,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       try {
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
-          item.addons = resolveItemAddons(db, item.product_id, item.addons);
+          item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
         }
         if (special_instructions !== undefined) {
           validateOrderNotes(db, special_instructions);
@@ -1063,6 +1151,12 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
             createdAt: itemCreatedAt,
           });
         }
+        moveOrderItemAddonStock(db, item.addons, {
+          direction: 'deplete',
+          actorUserId: idempotencyUserId,
+          referenceId: String(insertItemResult.lastInsertRowid),
+          createdAt: itemCreatedAt,
+        });
 
         if (recipeSnapshot) {
           applyRecipeSnapshot(db, recipeSnapshot, {
@@ -1291,6 +1385,12 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
                 actorUserId: authUser.userId,
               });
             }
+            moveOrderItemAddonStock(db, orderItemAddonStockLines(db, item.id), {
+              direction: 'restore',
+              actorUserId: authUser.userId,
+              referenceId: `${item.id}:${item.updated_at}`,
+              reason: reason || 'Order cancelled',
+            });
             const recipeSnapshot = parseRecipeSnapshot(item.recipe_snapshot);
             if (recipeSnapshot) {
               applyRecipeSnapshot(db, recipeSnapshot, {
@@ -2025,6 +2125,12 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
             actorUserId: actorId,
           });
         }
+        moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
+          direction: 'restore',
+          actorUserId: actorId,
+          referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+          reason: reason || 'Item cancelled',
+        });
         const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
         if (recipeSnapshot) {
           applyRecipeSnapshot(db, recipeSnapshot, {
@@ -2215,6 +2321,14 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
           actorUserId: actorId,
         });
       }
+      // The add-on snapshot, not a recomputation from the current catalog: the
+      // merchant may have changed the add-on since the order was placed.
+      moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
+        direction: 'deplete',
+        actorUserId: actorId,
+        referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+        reason: 'Cancelled item restored',
+      });
       const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
       if (recipeSnapshot) {
         applyRecipeSnapshot(db, recipeSnapshot, {

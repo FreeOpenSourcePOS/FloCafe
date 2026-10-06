@@ -71,6 +71,16 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
 
 export class MenuPopupBlockedError extends Error {}
 
+/** Holds the user gesture before async print requests in browsers with popup blockers. */
+export function reservePrintGesture(host: Window = window): Window | null {
+  if (host.electronAPI) return null;
+  try {
+    return host.open('', '_blank');
+  } catch {
+    return null;
+  }
+}
+
 export function printMenuInBrowser(html: string, targetWindow?: Window | null): void {
   const printWindow = targetWindow !== undefined ? targetWindow : window.open('', '_blank');
   if (!printWindow || printWindow.closed) throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
 import { displayCellWidth } from '../shared/print/width';
 import { buildMenuDocument, renderMenuViaDocument } from '../main/printers/document-menu';
 import { escPosToText } from '../main/printers/thermal';
@@ -143,6 +145,57 @@ test('browser menu supports A4 and Letter and escapes descriptions, modifiers, a
   });
   assert.ok(invalidPage.includes('size: A4 portrait'));
   assert.doesNotMatch(invalidPage, /<script\b/i);
+});
+
+test('the print gesture is reserved only where a popup blocker could take it', () => {
+  const { reservePrintGesture } = require('../frontend/src/lib/printer/menu-web-print');
+
+  // A browser blocks a window opened after the await, so the reservation is
+  // still what makes browser printing possible at all.
+  const opened: string[][] = [];
+  const browserWindow = {};
+  const browserHost = {
+    open: (...args: string[]) => { opened.push(args); return browserWindow; },
+  };
+  assert.equal(reservePrintGesture(browserHost as never), browserWindow, 'a browser keeps the reservation it needs');
+  assert.deepEqual(opened, [['', '_blank']], 'the reservation is a blank window opened while the click gesture is live');
+
+  // The desktop runtime decides every popup itself and has no blocker to
+  // defeat, so a reservation there was an empty window flashing at the till.
+  const desktopOpens: string[][] = [];
+  const desktopHost = {
+    electronAPI: { getStatus: () => Promise.resolve({}) },
+    open: (...args: string[]) => { desktopOpens.push(args); return { openedOnATill: true }; },
+  };
+  assert.equal(reservePrintGesture(desktopHost as never), null, 'the desktop runtime reserves nothing, so nothing flashes');
+  assert.deepEqual(desktopOpens, [], 'not one window is opened at a till; the flash is the whole point');
+
+  // A host that cannot open at all is not a crash and not a flash.
+  assert.equal(reservePrintGesture({ open: () => { throw new Error('blocked'); } } as never), null, 'a refused reservation is reported, not thrown');
+});
+
+test('a deleted reservation would block the browser print it exists for', () => {
+  const { MenuPopupBlockedError, printMenuInBrowser } = require('../frontend/src/lib/printer/menu-web-print');
+
+  // What the reservation prevents: with nothing held back from the click, the
+  // post-await window.open is refused and the merchant gets told why.
+  assert.throws(
+    () => printMenuInBrowser('<p>menu</p>', null),
+    (error: unknown) => error instanceof MenuPopupBlockedError,
+    'with no reservation in hand, a blocked window is reported rather than printed into nothing',
+  );
+
+  // The modal has to actually make the reservation; a helper nobody calls is
+  // the same bug with extra indirection.
+  const modal = fs.readFileSync(
+    path.join(__dirname, '../frontend/src/components/products/PrintMenuModal.tsx'),
+    'utf8',
+  );
+  assert.match(
+    modal,
+    /const reservedWindow = reservePrintGesture\(\);/,
+    'the print handler reserves the gesture before the print request goes out',
+  );
 });
 
 test('Unicode menu printing uses raster-capable WebUSB output and refuses raster failure', async () => {

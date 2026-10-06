@@ -144,6 +144,10 @@ export interface Addon {
   name: string;
   price: number;
   quantity?: number;
+  // Always emitted by the addon serializer: never null, never absent.
+  track_inventory: boolean;
+  stock_quantity: number;
+  low_stock_threshold: number;
   is_active: boolean;
   sort_order: number;
 }

@@ -156,9 +156,16 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && Number(bill.paid_amount || 0) === 0
     && bill.payment_status !== 'refunded'
     && bill.payment_status !== 'partially_refunded';
+  const splitCheckItems = (bill.order?.items || []).filter(
+    (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
+  );
+  const hasDivisibleSplitCheckItems = splitCheckItems.length > 0
+    && splitCheckItems.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
+    && splitCheckItems.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
   // Split checks divide an untouched dine-in bill into separately payable
   // checks; the backend refuses anything else (POST /bills/:id/split-check).
   const canSplitCheck = splitChecksEnabled
+    && hasDivisibleSplitCheckItems
     && bill.order?.type === 'dine_in'
     && bill.payment_status === 'unpaid'
     && Number(bill.paid_amount || 0) === 0

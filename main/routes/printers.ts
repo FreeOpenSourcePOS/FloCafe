@@ -369,7 +369,7 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
     if (body.paperWidth !== undefined && body.paperWidth !== 58 && body.paperWidth !== 80) {
       return res.status(400).json({ error: 'paperWidth must be 58 or 80' });
     }
-    if (body.printerId !== undefined && typeof body.printerId !== 'string' && typeof body.printerId !== 'number') {
+    if (body.printerId !== undefined && typeof body.printerId !== 'string') {
       return res.status(400).json({ error: 'printerId must be a string' });
     }
 

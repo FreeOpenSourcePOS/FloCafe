@@ -36,6 +36,7 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await dialog.getByRole('radio', { name: 'Paper (A4 / Letter)' }).click();
   await page.evaluate(() => {
     for (const key of '9780123456789') window.dispatchEvent(new KeyboardEvent('keydown', { key }));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
@@ -44,7 +45,6 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect(dialog.getByRole('heading', { name: 'Print Menu', exact: true })).toBeVisible();
   await dialog.getByRole('checkbox', { name: 'Include descriptions' }).click();
   await dialog.getByRole('checkbox', { name: 'Include modifiers' }).click();
-  await dialog.getByRole('radio', { name: 'Paper (A4 / Letter)' }).click();
   await dialog.getByRole('combobox', { name: 'Paper Size' }).selectOption('Letter');
   const popupPromise = page.waitForEvent('popup');
   await dialog.getByRole('button', { name: 'Print Menu', exact: true }).click();
@@ -76,8 +76,18 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   const destinations = dialog.getByRole('radiogroup', { name: 'Print destination' });
   await expect(destinations.getByRole('radio')).toHaveCount(3);
   await expect(destinations.getByRole('radio', { name: 'Receipt printer' })).toBeVisible();
-  await expect(destinations.getByRole('radio', { name: 'Paper (A4 / Letter)' })).toHaveAttribute('aria-checked', 'true');
+  const paperDestination = destinations.getByRole('radio', { name: 'Paper (A4 / Letter)' });
+  await expect(paperDestination).toHaveAttribute('aria-checked', 'false');
   await expect(destinations.getByRole('radio', { name: 'Save as PDF' })).toBeVisible();
+  const destinationBox = await destinations.boundingBox();
+  const filterBox = await dialog.getByRole('checkbox').first().boundingBox();
+  expect(destinationBox).not.toBeNull();
+  expect(filterBox).not.toBeNull();
+  expect(destinationBox!.y).toBeLessThan(filterBox!.y);
+  const printButton = dialog.getByRole('button', { name: 'Print Menu', exact: true });
+  await expect(printButton).toBeDisabled();
+  await paperDestination.click();
+  await expect(printButton).toBeEnabled();
 
   // The receipt destination swaps the sheet size for the thermal roll width,
   // and a missing picker never dead-ends the operator.

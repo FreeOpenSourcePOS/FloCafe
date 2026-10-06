@@ -62,7 +62,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   const [includeHidden, setIncludeHidden] = useState(false);
   const [includeDescriptions, setIncludeDescriptions] = useState(false);
   const [includeModifiers, setIncludeModifiers] = useState(false);
-  const [destination, setDestination] = useState<PrintDestination>('paper');
+  const [destination, setDestination] = useState<PrintDestination | null>(null);
   const [pageSize, setPageSize] = useState<'A4' | 'Letter'>('A4');
   const [paperWidth, setPaperWidth] = useState<58 | 80>(58);
   const [printers, setPrinters] = useState<HardwarePrinter[]>([]);
@@ -103,6 +103,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       setIncludeHidden(false);
       setIncludeDescriptions(false);
       setIncludeModifiers(false);
+      setDestination(null);
     }
     onOpenChange(nextOpen);
   };
@@ -227,7 +228,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
   };
 
   const handlePrint = async () => {
-    if (printing) return;
+    if (printing || !destination) return;
     setPrinting(true);
 
     if (destination === 'paper' || destination === 'pdf') {
@@ -327,14 +328,6 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="max-h-[60vh] space-y-5 overflow-y-auto pe-1">
-          <div className="divide-y divide-border rounded-lg border border-border">
-            {filterRow(t('includeInactiveItems'), includeInactive, setIncludeInactive)}
-            {filterRow(t('includeOutOfStockItems'), includeOutOfStock, setIncludeOutOfStock)}
-            {filterRow(t('includeHiddenItems'), includeHidden, setIncludeHidden)}
-            {filterRow(t('includeDescriptions'), includeDescriptions, setIncludeDescriptions)}
-            {filterRow(t('includeModifiers'), includeModifiers, setIncludeModifiers)}
-          </div>
-
           <div className="space-y-3 rounded-lg border border-border p-4">
             <span className="block text-sm font-medium text-foreground">{t('printDestination')}</span>
             <div role="radiogroup" aria-label={t('printDestination')} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -372,7 +365,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
                   <option value="Letter">Letter</option>
                 </select>
               </label>
-            ) : (
+            ) : destination === 'receipt' ? (
               <>
                 <label className="flex items-center justify-between gap-4 text-sm">
                   <span>{t('printerDestination')}</span>
@@ -405,7 +398,15 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
                   <p className="text-xs text-muted-foreground">{tPos('noPrinters')}</p>
                 )}
               </>
-            )}
+            ) : null}
+          </div>
+
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {filterRow(t('includeInactiveItems'), includeInactive, setIncludeInactive)}
+            {filterRow(t('includeOutOfStockItems'), includeOutOfStock, setIncludeOutOfStock)}
+            {filterRow(t('includeHiddenItems'), includeHidden, setIncludeHidden)}
+            {filterRow(t('includeDescriptions'), includeDescriptions, setIncludeDescriptions)}
+            {filterRow(t('includeModifiers'), includeModifiers, setIncludeModifiers)}
           </div>
         </div>
 
@@ -413,7 +414,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
           <Button variant="outline" className="min-h-11" disabled={printing} onClick={() => setDialogOpen(false)}>
             {tCommon('cancel')}
           </Button>
-          <Button className="min-h-11" disabled={printing} onClick={handlePrint}>
+          <Button className="min-h-11" disabled={printing || !destination} onClick={handlePrint}>
             {printing ? <LoaderCircle className="me-2 animate-spin" size={16} aria-hidden="true" /> : primaryIcon}
             {destination === 'pdf' ? t('printToPdf') : t('printMenu')}
           </Button>

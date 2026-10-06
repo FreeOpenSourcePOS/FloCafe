@@ -123,8 +123,9 @@ async function main() {
     assert.equal(unknown.status, 404, `an unknown printerId is refused (${unknown.status})`);
     assert.equal(unknown.data.code, 'printer_not_found', 'an unknown printerId is refused as printer_not_found');
 
-    const numericUnknown = await printMenu({ printerId: 999999 });
-    assert.equal(numericUnknown.status, 404, `a numeric printerId is treated as an identifier and refused when unknown (${numericUnknown.status})`);
+    const numericId = await printMenu({ printerId: 999999 });
+    assert.equal(numericId.status, 400, `a numeric printerId is rejected (${numericId.status})`);
+    assert.equal(numericId.data.error, 'printerId must be a string', 'a numeric printerId reports the expected message');
 
     const selectedByDefault = await printMenu({ printerId: frontCounterId });
     assert.equal(selectedByDefault.data.printerName, 'Front Counter Printer', 'picking the default printer explicitly is also honoured');

@@ -153,7 +153,8 @@
     "windowControls": "Điều khiển cửa sổ",
     "yes": "Có",
     "back": "Quay lại",
-    "tax": "Thuế"
+    "tax": "Thuế",
+    "loadMore": "Tải thêm"
   },
   "countries": {
     "selectCountry": "Chọn quốc gia…"
@@ -688,6 +689,8 @@
     "decreasePax": "Giảm số khách",
     "delivery": "Giao hàng",
     "deliveryAddress": "Địa chỉ giao hàng",
+    "expectedPayment": "Thanh toán dự kiến",
+    "deliveryNotePlaceholder": "Ghi chú giao hàng cho người giao",
     "discount": "Giảm giá",
     "discounts": "Giảm giá",
     "discountInvalid": "Vui lòng nhập giá trị giảm giá hợp lệ",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "HOÀN TIỀN MỘT PHẦN",
       "cashOnDelivery": "Thanh toán khi nhận hàng",
       "amountDue": "Số tiền còn phải thu",
-      "multiplePaymentMethods": "Nhiều phương thức thanh toán"
+      "multiplePaymentMethods": "Nhiều phương thức thanh toán",
+      "expectedPayment": "Thanh toán dự kiến",
+      "deliveryNote": "Ghi chú giao hàng"
     },
     "hsn": "HSN",
     "zReport": {

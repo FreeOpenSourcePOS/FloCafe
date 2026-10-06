@@ -153,7 +153,8 @@
     "windowControls": "Controles de ventana",
     "yes": "Sí",
     "back": "Atrás",
-    "tax": "Impuestos"
+    "tax": "Impuestos",
+    "loadMore": "Cargar más"
   },
   "countries": {
     "selectCountry": "Seleccioná un país…"
@@ -688,6 +689,8 @@
     "decreasePax": "Reducir comensales",
     "delivery": "Delivery",
     "deliveryAddress": "Dirección de entrega",
+    "expectedPayment": "Pago previsto",
+    "deliveryNotePlaceholder": "Nota de entrega para el repartidor",
     "discount": "Descuento",
     "discounts": "Descuentos",
     "discountInvalid": "Ingresá un valor de descuento válido",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "REEMBOLSO PARCIAL",
       "cashOnDelivery": "Pago contra entrega",
       "amountDue": "Importe pendiente",
-      "multiplePaymentMethods": "Varios métodos de pago"
+      "multiplePaymentMethods": "Varios métodos de pago",
+      "expectedPayment": "Pago previsto",
+      "deliveryNote": "Nota de entrega"
     },
     "hsn": "HSN",
     "zReport": {

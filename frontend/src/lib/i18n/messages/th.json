@@ -153,7 +153,8 @@
     "windowControls": "ปุ่มควบคุมหน้าต่าง",
     "yes": "ใช่",
     "back": "ย้อนกลับ",
-    "tax": "ภาษี"
+    "tax": "ภาษี",
+    "loadMore": "โหลดเพิ่มเติม"
   },
   "countries": {
     "selectCountry": "เลือกประเทศ…"
@@ -688,6 +689,8 @@
     "decreasePax": "ลดจำนวนคน",
     "delivery": "จัดส่ง",
     "deliveryAddress": "ที่อยู่จัดส่ง",
+    "expectedPayment": "การชำระเงินที่คาดไว้",
+    "deliveryNotePlaceholder": "หมายเหตุการจัดส่งสำหรับพนักงานส่ง",
     "discount": "ส่วนลด",
     "discounts": "ส่วนลด",
     "discountInvalid": "โปรดป้อนมูลค่าส่วนลดที่ถูกต้อง",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "คืนเงินบางส่วน",
       "cashOnDelivery": "เก็บเงินปลายทาง",
       "amountDue": "ยอดค้างชำระ",
-      "multiplePaymentMethods": "หลายวิธีการชำระเงิน"
+      "multiplePaymentMethods": "หลายวิธีการชำระเงิน",
+      "expectedPayment": "การชำระเงินที่คาดไว้",
+      "deliveryNote": "หมายเหตุการจัดส่ง"
     },
     "hsn": "HSN",
     "zReport": {

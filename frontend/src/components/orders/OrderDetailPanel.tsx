@@ -21,6 +21,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 import {
   orderStatusBadge,
   paymentStatusBadge,
@@ -431,13 +432,14 @@ function OrderDetailContent({
         <div className="px-4 py-3 space-y-2">
           {activeItems.map((item: OrderItem) => {
             const dotConfig = itemStatusDot[item.status] || itemStatusDot.pending;
+            const heading = formatItemHeading(item.product_name, item.variant_selection);
             return (
               <div key={item.id} className="text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${dotConfig.dot}`} title={tOrders(dotConfig.labelKey)} />
                     <span className="font-semibold text-foreground shrink-0">{item.quantity}x</span>
-                    <span className="text-foreground truncate" title={item.product_name}>{item.product_name}</span>
+                    <span className="text-foreground truncate" title={heading}>{heading}</span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <span className="text-muted-foreground font-medium">{fmt(Number(item.total))}</span>
@@ -456,7 +458,7 @@ function OrderDetailContent({
                         {(item.status === 'preparing' || item.status === 'ready') && onVoidItem && (
                           <button
                             type="button"
-                            onClick={() => onVoidItem(order.id, item.id, item.product_name)}
+                            onClick={() => onVoidItem(order.id, item.id, heading)}
                             className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                             title={tOrders('voidItem')}
                           >
@@ -497,7 +499,7 @@ function OrderDetailContent({
               {inactiveItems.map((cItem: OrderItem) => (
                 <div key={cItem.id} className="flex items-center justify-between text-xs opacity-70">
                   <span className="line-through text-muted-foreground truncate">
-                    {cItem.quantity}x {cItem.product_name}
+                    {cItem.quantity}x {formatItemHeading(cItem.product_name, cItem.variant_selection)}
                   </span>
                   {cItem.status === 'cancelled' && !isPaid && !['completed', 'cancelled'].includes(order.status) && onRestoreItem && (
                     <button

@@ -153,7 +153,8 @@
     "windowControls": "উইন্ডো নিয়ন্ত্রণ",
     "yes": "হ্যাঁ",
     "back": "ব্যাক",
-    "tax": "কর"
+    "tax": "কর",
+    "loadMore": "আরো লোড"
   },
   "countries": {
     "selectCountry": "দেশ নির্বাচন করুন..."
@@ -688,6 +689,8 @@
     "decreasePax": "প্যাক্স হ্রাস করুন",
     "delivery": "ডেলিভারি",
     "deliveryAddress": "ডেলিভারি ঠিকানা",
+    "expectedPayment": "প্রত্যাশিত পেমেন্ট",
+    "deliveryNotePlaceholder": "কুরিয়ারের জন্য ডেলিভারি নোট",
     "discount": "ছাড়",
     "discounts": "ছাড়",
     "discountInvalid": "একটি বৈধ ডিসকাউন্ট মান লিখুন দয়া করে",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "আংশিক ফেরত দেওয়া হয়েছে",
       "cashOnDelivery": "ক্যাশ অন ডেলিভারি",
       "amountDue": "বকেয়া পরিমাণ",
-      "multiplePaymentMethods": "একাধিক পেমেন্ট পদ্ধতি"
+      "multiplePaymentMethods": "একাধিক পেমেন্ট পদ্ধতি",
+      "expectedPayment": "প্রত্যাশিত পেমেন্ট",
+      "deliveryNote": "ডেলিভারি নোট"
     },
     "hsn": "HSN",
     "zReport": {

@@ -153,7 +153,8 @@
     "windowControls": "Pencere Kontrolleri",
     "yes": "Evet",
     "back": "Geri",
-    "tax": "Vergi"
+    "tax": "Vergi",
+    "loadMore": "Daha fazla yükle"
   },
   "countries": {
     "selectCountry": "Ülke Seçin"
@@ -688,6 +689,8 @@
     "decreasePax": "Kişi sayısını azalt",
     "delivery": "Teslimat",
     "deliveryAddress": "Teslimat Adresi",
+    "expectedPayment": "Beklenen ödeme",
+    "deliveryNotePlaceholder": "Kurye için teslimat notu",
     "discount": "İndirim",
     "discounts": "İndirimler",
     "discountInvalid": "Lütfen geçerli bir indirim tutarı girin",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "KISMEN İADE EDİLDİ",
       "cashOnDelivery": "Kapıda ödeme",
       "amountDue": "Ödenecek tutar",
-      "multiplePaymentMethods": "Birden fazla ödeme yöntemi"
+      "multiplePaymentMethods": "Birden fazla ödeme yöntemi",
+      "expectedPayment": "Beklenen ödeme",
+      "deliveryNote": "Teslimat notu"
     },
     "hsn": "HSN / GTİP",
     "zReport": {

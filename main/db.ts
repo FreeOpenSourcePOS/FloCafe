@@ -5654,6 +5654,21 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 103,
+    name: 'add_order_delivery_collection_details',
+    up: () => {
+      // Additive only: NULL reads as an unknown expected method and no note,
+      // which is exactly what every existing delivery order recorded.
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('expected_payment_method')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN expected_payment_method TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('delivery_note')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN delivery_note TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 104,
     name: 'add_addon_inventory',
     up: () => {
       // Additive only, like every catalog column so far: existing add-ons keep
@@ -5684,7 +5699,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         .find((column) => column.name === 'product_id');
       if (productIdColumn?.notnull === 1) {
         db.exec(`
-          ALTER TABLE inventory_movements RENAME TO inventory_movements_v102;
+          ALTER TABLE inventory_movements RENAME TO inventory_movements_v103;
           CREATE TABLE inventory_movements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             product_id TEXT DEFAULT NULL REFERENCES products(id),
@@ -5719,8 +5734,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
             imported_by_user_id, import_batch_id,
             source_actor_user_id, source_reference_type, source_reference_id,
             source_reason, source_created_at, variant_id, addon_id
-          FROM inventory_movements_v102;
-          DROP TABLE inventory_movements_v102;
+          FROM inventory_movements_v103;
+          DROP TABLE inventory_movements_v103;
           CREATE INDEX IF NOT EXISTS idx_inventory_movements_product_created
             ON inventory_movements(product_id, created_at, id);
           CREATE INDEX IF NOT EXISTS idx_inventory_movements_reference
@@ -6024,6 +6039,8 @@ function createSchema(): void {
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
       delivery_address TEXT DEFAULT NULL,
+      expected_payment_method TEXT DEFAULT NULL,
+      delivery_note TEXT DEFAULT NULL,
       guest_count INTEGER,
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,

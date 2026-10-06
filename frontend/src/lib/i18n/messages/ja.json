@@ -153,7 +153,8 @@
     "windowControls": "ウィンドウ操作",
     "yes": "はい",
     "back": "戻る",
-    "tax": "税"
+    "tax": "税",
+    "loadMore": "さらに読み込む"
   },
   "countries": {
     "selectCountry": "国を選択…"
@@ -688,6 +689,8 @@
     "decreasePax": "人数を減らす",
     "delivery": "デリバリー",
     "deliveryAddress": "配達先住所",
+    "expectedPayment": "予定の支払い方法",
+    "deliveryNotePlaceholder": "配達員への配達メモ",
     "discount": "割引",
     "discounts": "割引",
     "discountInvalid": "有効な割引値を入力してください",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "一部返金済み",
       "cashOnDelivery": "代金引換",
       "amountDue": "未払い金額",
-      "multiplePaymentMethods": "複数の支払い方法"
+      "multiplePaymentMethods": "複数の支払い方法",
+      "expectedPayment": "予定の支払い方法",
+      "deliveryNote": "配達メモ"
     },
     "hsn": "HSN",
     "zReport": {

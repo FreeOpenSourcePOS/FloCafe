@@ -153,7 +153,8 @@
     "windowControls": "Kontrol jendela",
     "yes": "Ya",
     "back": "Kembali",
-    "tax": "Pajak"
+    "tax": "Pajak",
+    "loadMore": "Muat lebih banyak"
   },
   "countries": {
     "selectCountry": "Pilih negara…"
@@ -688,6 +689,8 @@
     "decreasePax": "Kurangi tamu",
     "delivery": "Antar",
     "deliveryAddress": "Alamat pengantaran",
+    "expectedPayment": "Pembayaran yang diharapkan",
+    "deliveryNotePlaceholder": "Catatan pengantaran untuk kurir",
     "discount": "Diskon",
     "discounts": "Diskon",
     "discountInvalid": "Masukkan nilai diskon yang valid",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "DIKEMBALIKAN SEBAGIAN",
       "cashOnDelivery": "Bayar di Tempat",
       "amountDue": "Jumlah Terutang",
-      "multiplePaymentMethods": "Beberapa metode pembayaran"
+      "multiplePaymentMethods": "Beberapa metode pembayaran",
+      "expectedPayment": "Pembayaran yang diharapkan",
+      "deliveryNote": "Catatan pengantaran"
     },
     "hsn": "HSN",
     "zReport": {

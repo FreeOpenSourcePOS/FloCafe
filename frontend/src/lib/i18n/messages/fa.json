@@ -153,7 +153,8 @@
     "windowControls": "دکمه‌های پنجره",
     "yes": "بله",
     "back": "بازگشت",
-    "tax": "مالیات"
+    "tax": "مالیات",
+    "loadMore": "بارگذاری بیشتر"
   },
   "countries": {
     "selectCountry": "کشور را برگزینید…"
@@ -688,6 +689,8 @@
     "decreasePax": "کاهش نفر",
     "delivery": "رسانش",
     "deliveryAddress": "نشانی رسانش",
+    "expectedPayment": "پرداخت مورد انتظار",
+    "deliveryNotePlaceholder": "یادداشت رسانش برای پیک",
     "discount": "تخفیف",
     "discounts": "تخفیف‌ها",
     "discountInvalid": "لطفاً یک مقدار تخفیف درست بنویسید",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "بازپرداخت جزئی",
       "cashOnDelivery": "پرداخت در محل",
       "amountDue": "مبلغ قابل پرداخت",
-      "multiplePaymentMethods": "چند روش پرداخت"
+      "multiplePaymentMethods": "چند روش پرداخت",
+      "expectedPayment": "پرداخت مورد انتظار",
+      "deliveryNote": "یادداشت رسانش"
     },
     "hsn": "کد کالا",
     "zReport": {

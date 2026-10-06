@@ -153,7 +153,8 @@
     "windowControls": "ونڈو کے کنٹرولز",
     "yes": "ہاں",
     "back": "واپس",
-    "tax": "ٹیکس"
+    "tax": "ٹیکس",
+    "loadMore": "مزید لوڈ کریں"
   },
   "countries": {
     "selectCountry": "ملک منتخب کریں…"
@@ -688,6 +689,8 @@
     "decreasePax": "مہمانوں کی تعداد کم کریں",
     "delivery": "ڈیلیوری",
     "deliveryAddress": "ڈیلیوری کا پتہ",
+    "expectedPayment": "متوقع ادائیگی",
+    "deliveryNotePlaceholder": "کوریئر کے لیے ڈیلیوری نوٹ",
     "discount": "رعایت",
     "discounts": "رعایتیں",
     "discountInvalid": "درست رعایت کی قدر درج کریں",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "جزوی رقم واپس کی گئی",
       "cashOnDelivery": "وصولی پر ادائیگی",
       "amountDue": "واجب الادا رقم",
-      "multiplePaymentMethods": "ادائیگی کے متعدد طریقے"
+      "multiplePaymentMethods": "ادائیگی کے متعدد طریقے",
+      "expectedPayment": "متوقع ادائیگی",
+      "deliveryNote": "ڈیلیوری نوٹ"
     },
     "hsn": "HSN",
     "zReport": {

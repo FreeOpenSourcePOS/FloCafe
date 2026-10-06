@@ -153,7 +153,8 @@
     "windowControls": "Mga Kontrol sa Window",
     "yes": "Oo",
     "back": "Bumalik",
-    "tax": "Buwis"
+    "tax": "Buwis",
+    "loadMore": "Mag-load pa"
   },
   "countries": {
     "selectCountry": "Pumili ng Bansa"
@@ -688,6 +689,8 @@
     "decreasePax": "Bawasan ang dami ng tao",
     "delivery": "Delivery",
     "deliveryAddress": "Address ng Delivery",
+    "expectedPayment": "Inaasahang bayad",
+    "deliveryNotePlaceholder": "Tala sa paghahatid para sa courier",
     "discount": "Discount",
     "discounts": "Mga Discount",
     "discountInvalid": "Pakilagay ang wastong halaga ng discount",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "BAHAGYANG NA-REFUND",
       "cashOnDelivery": "Bayad sa paghahatid",
       "amountDue": "Halagang dapat bayaran",
-      "multiplePaymentMethods": "Maramihang paraan ng pagbabayad"
+      "multiplePaymentMethods": "Maramihang paraan ng pagbabayad",
+      "expectedPayment": "Inaasahang bayad",
+      "deliveryNote": "Tala sa paghahatid"
     },
     "hsn": "HSN/SAC",
     "zReport": {

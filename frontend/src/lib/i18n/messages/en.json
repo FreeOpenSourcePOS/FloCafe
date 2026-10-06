@@ -153,7 +153,8 @@
     "windowControls": "Window controls",
     "yes": "Yes",
     "back": "Back",
-    "tax": "Tax"
+    "tax": "Tax",
+    "loadMore": "Load more"
   },
   "countries": {
     "selectCountry": "Select country…"
@@ -688,6 +689,8 @@
     "decreasePax": "Decrease pax",
     "delivery": "Delivery",
     "deliveryAddress": "Delivery address",
+    "expectedPayment": "Expected payment",
+    "deliveryNotePlaceholder": "Delivery note for the courier",
     "discount": "Discount",
     "discounts": "Discounts",
     "discountInvalid": "Please enter a valid discount value",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "PARTIALLY REFUNDED",
       "cashOnDelivery": "Cash on Delivery",
       "amountDue": "Amount Due",
-      "multiplePaymentMethods": "Multiple payment methods"
+      "multiplePaymentMethods": "Multiple payment methods",
+      "expectedPayment": "Expected payment",
+      "deliveryNote": "Delivery note"
     },
     "hsn": "HSN",
     "zReport": {

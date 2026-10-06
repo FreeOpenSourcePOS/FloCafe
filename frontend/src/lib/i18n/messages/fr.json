@@ -153,7 +153,8 @@
     "update": "Mettre à jour",
     "windowControls": "Commandes de la fenêtre",
     "yes": "Oui",
-    "back": "Retour"
+    "back": "Retour",
+    "loadMore": "Charger plus"
   },
   "countries": {
     "selectCountry": "Sélectionner un pays…"
@@ -688,6 +689,8 @@
     "decreasePax": "Réduire le nombre de couverts",
     "delivery": "Livraison",
     "deliveryAddress": "Adresse de livraison",
+    "expectedPayment": "Paiement prévu",
+    "deliveryNotePlaceholder": "Note de livraison pour le livreur",
     "discount": "Remise",
     "discounts": "Remises",
     "discountInvalid": "Saisissez une valeur de remise valide",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "PARTIELLEMENT REMBOURSÉ",
       "cashOnDelivery": "Paiement à la livraison",
       "amountDue": "Montant dû",
-      "multiplePaymentMethods": "Plusieurs moyens de paiement"
+      "multiplePaymentMethods": "Plusieurs moyens de paiement",
+      "expectedPayment": "Paiement prévu",
+      "deliveryNote": "Note de livraison"
     },
     "hsn": "HSN",
     "zReport": {

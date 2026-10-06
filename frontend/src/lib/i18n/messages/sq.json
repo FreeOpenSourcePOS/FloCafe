@@ -153,7 +153,8 @@
     "update": "Përditëso",
     "windowControls": "Kontrollet e dritares",
     "yes": "Po",
-    "back": "Mbrapa"
+    "back": "Mbrapa",
+    "loadMore": "Ngarko më shumë"
   },
   "countries": {
     "selectCountry": "Zgjidhni vendin..."
@@ -688,6 +689,8 @@
     "decreasePax": "Zbrit numrin e vizitorëve",
     "delivery": "Dorëzim",
     "deliveryAddress": "Adresa e dorëzimit",
+    "expectedPayment": "Pagesa e pritshme",
+    "deliveryNotePlaceholder": "Shënim dorëzimi për korrierin",
     "discount": "Zbritje",
     "discounts": "Zbritjet",
     "discountInvalid": "Jepni një vlerë të vlefshme zbritjeje",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "PJESËRISHT I RIMBURSUA",
       "cashOnDelivery": "Pagesë në dorëzim",
       "amountDue": "Shuma për t'u paguar",
-      "multiplePaymentMethods": "Disa mënyra pagese"
+      "multiplePaymentMethods": "Disa mënyra pagese",
+      "expectedPayment": "Pagesa e pritshme",
+      "deliveryNote": "Shënim dorëzimi"
     },
     "hsn": "HSN",
     "zReport": {

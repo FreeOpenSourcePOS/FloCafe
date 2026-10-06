@@ -10,6 +10,7 @@ import { formatCurrencyForTenant } from '@/lib/countries';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import { addonStockCeiling, isAddonLowStock, isAddonSoldOut } from '@/lib/addon-inventory';
 import { activeVariants, isVariantSoldOut, selectDefaultVariant } from '@/lib/product-variants';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 import type { Product, Addon, AddonGroup, ProductVariant } from '@/lib/types';
 
 interface Props {
@@ -24,6 +25,8 @@ interface Props {
   initialInstructions?: string;
   initialVariant?: ProductVariant | null;
   mode?: 'add' | 'edit';
+  /** Quote the variant's online platform price, matching the order this line becomes. */
+  onlinePlatformSelected?: boolean;
 }
 
 function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
@@ -73,6 +76,7 @@ function addonStockBadges(soldOut: boolean, lowStock: boolean, labels: { outOfSt
 export default function AddonModal({
   product, currency, country, onAdd, onClose,
   initialQuantity = 1, initialAddons = [], initialInstructions = '', initialVariant = null, mode = 'add',
+  onlinePlatformSelected = false,
 }: Props) {
   const t = useTranslations('pos');
   const tenantFmt = useFormatCurrency();
@@ -86,7 +90,9 @@ export default function AddonModal({
   const defaultVariant = selectDefaultVariant(variants, initialVariant?.id);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(defaultVariant?.id ?? null);
   const selectedVariant = variants.find((variant) => variant.id === selectedVariantId) ?? null;
-  const basePrice = Number(selectedVariant?.price ?? product.price) || 0;
+  const variantUnitPrice = (variant: ProductVariant | null) =>
+    cartVariantUnitPrice({ variant, product }, onlinePlatformSelected);
+  const basePrice = variantUnitPrice(selectedVariant);
   const step = fractionalQuantityStep(product);
 
   const setQty = (next: number) => {
@@ -225,7 +231,7 @@ export default function AddonModal({
                     >
                       <span className="font-medium text-foreground">{variant.name}</span>
                       <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
-                        {fmt(Number(variant.price))}
+                        {fmt(variantUnitPrice(variant))}
                       </span>
                       {soldOut && (
                         <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-300">

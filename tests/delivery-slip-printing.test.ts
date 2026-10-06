@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { buildDeliverySlipDocument, isDeliverySlipDocument, shouldShowCustomerNumber } from '../shared/print/document';
 import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS, MAX_DELIVERY_SLIP_NOTE_CHARS } from '../main/printers/document-delivery-slip';
 import { clampDeliverySlipText } from '../shared/print/document';
-import { formatReceipt, escPosToText } from '../main/printers/thermal';
+import { formatKOT, formatReceipt, escPosToText } from '../main/printers/thermal';
 import { capabilitiesForPrinter, getSupportedPrinterProfiles, resolvePrinterProfile } from '../main/printers/profiles';
 import { displayCellWidth, graphemeSegments } from '../shared/print/width';
 import { validateCustomerAddress } from '../main/routes/orders-validation';
@@ -1179,7 +1179,7 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
       payment_details: JSON.stringify([{ method: 'card', amount: 25 }]),
     },
   };
-  const unpaidOrder = { ...paymentOrder };
+  const unpaidOrder = { ...paymentOrder, expected_payment_method: 'cash' };
   const partialOrder = {
     ...paymentOrder,
     bill: {
@@ -1219,6 +1219,7 @@ test('delivery slip: paid, partial, unpaid, and multi-tender summaries match acr
     amountDue: 25,
     formattedAmount: '$25.00',
     formattedAmountDue: '$25.00',
+    expectedMethod: 'cash',
   });
   assert.deepEqual(partialData.payment, {
     status: 'unpaid',
@@ -1666,4 +1667,223 @@ test('delivery slip: an order with no contact still renders, and says nothing it
   assert.equal(contactBlock.addressSource, null, 'no address means no claimed source');
   assert.equal(contactBlock.phone, null, 'an unknown number prints as nothing, not as a placeholder');
   assert.ok(!text.includes('undefined'), 'an absent field never prints as the word undefined');
+});
+
+// ---------------------------------------------------------------------------
+// Expected collection method and delivery note.
+// ---------------------------------------------------------------------------
+
+/** Every slip render path over the same order, whitespace-normalised because each one wraps. */
+function renderAllSlipPaths(order: any): Array<[string, string]> {
+  const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
+  const printData = buildDeliverySlipPrintData(order, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' });
+  const backend = renderDeliverySlipViaDocument(order, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: profile.cutMode,
+    capabilities: capabilitiesForPrinter(profile, 'cols-42', false),
+  });
+  const frontOrder = {
+    order_number: order.order_number,
+    created_at: order.created_at,
+    type: order.type,
+    special_instructions: order.special_instructions,
+    delivery_note: order.delivery_note,
+  };
+  const frontItems = ORDER.items.map((item: any) => ({ product_name: item.product_name, quantity: item.quantity }));
+  const payment = printData.payment ? { payment: printData.payment } : {};
+  const webusb = fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    frontOrder,
+    frontItems,
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en', ...payment },
+    [],
+  );
+  const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(frontOrder, frontItems, CONTACT, {
+    paperWidth: 80,
+    language: 'en',
+    ...payment,
+  });
+  return [
+    ['backend ESC/POS', escPosToText(backend.data)],
+    ['WebUSB', escPosToText(Buffer.from(webusb))],
+    ['web print', html],
+  ].map(([name, text]) => [name, text.replace(/\s+/g, ' ')] as [string, string]);
+}
+
+test('delivery slip: an unpaid balance states the expected method, and unknown or pending never becomes cash on delivery', () => {
+  const cases = [
+    { stored: undefined, printed: 'Expected payment: Unknown' },
+    { stored: null, printed: 'Expected payment: Unknown' },
+    { stored: 'pending', printed: 'Expected payment: Pending' },
+    { stored: 'card', printed: 'Expected payment: Card' },
+    { stored: 'UPI', printed: 'Expected payment: UPI' },
+    { stored: 'cash', printed: 'Cash on Delivery' },
+  ];
+  for (const { stored, printed } of cases) {
+    const order = { ...ORDER, total: 25, expected_payment_method: stored };
+    for (const [name, text] of renderAllSlipPaths(order)) {
+      const label = `${name} with expected method ${JSON.stringify(stored)}`;
+      assert.ok(text.includes('TO COLLECT: $25.00'), `${label}: the balance is still to collect, got:\n${text}`);
+      assert.ok(text.includes(printed), `${label}: prints "${printed}", got:\n${text}`);
+      assert.ok(!text.includes('PAID'), `${label}: an expectation is never presented as a payment`);
+      if (stored !== 'cash') {
+        assert.ok(!text.includes('Cash on Delivery'), `${label}: does not assume cash on delivery`);
+      }
+    }
+  }
+
+  // The expectation travels with the payment summary the browser paths fetch,
+  // and a sanitiser bounds it before it reaches any printer.
+  const hostile = buildDeliverySlipPrintData(
+    { ...ORDER, total: 25, expected_payment_method: 'Custom {CUT}\nmethod' },
+    ORDER.items,
+    CONTACT,
+    { locale: 'en-US', currency: 'USD' },
+  );
+  assert.equal(hostile.payment?.expectedMethod, 'Custom CUT method', 'printer braces and line breaks are stripped');
+  assert.equal(
+    buildDeliverySlipPrintData({ ...ORDER, total: 25 }, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' }).payment?.expectedMethod,
+    undefined,
+    'an unknown method is absent from the summary, not a placeholder string',
+  );
+});
+
+test('delivery slip: a captured payment wins over the expected method', () => {
+  const paidOrder = {
+    ...ORDER,
+    total: 25,
+    expected_payment_method: 'card',
+    bill: { payment_status: 'paid', total: 25, payment_details: [{ method: 'cash', amount: 25 }] },
+  };
+  for (const [name, text] of renderAllSlipPaths(paidOrder)) {
+    assert.ok(text.includes('PAID: Cash'), `${name}: the captured method is what prints, got:\n${text}`);
+    assert.ok(!text.includes('Expected payment'), `${name}: a settled order does not repeat the expectation`);
+    assert.ok(!text.includes('Card'), `${name}: the expected method is not mistaken for the captured one`);
+  }
+
+  const zeroDue = { ...ORDER, total: 0, expected_payment_method: 'card' };
+  for (const [name, text] of renderAllSlipPaths(zeroDue)) {
+    assert.ok(text.includes('Amount Due: $0.00'), `${name}: a zero balance stays explicit`);
+    assert.ok(!text.includes('Expected payment'), `${name}: nothing to collect means no collection hint`);
+  }
+});
+
+test('delivery slip: the delivery note prints once on every render path, beside the order note', () => {
+  const DELIVERY_NOTE = 'Gate code 4321, leave with the guard';
+  const order = { ...ORDER, delivery_note: DELIVERY_NOTE, special_instructions: 'Extra napkins' };
+  for (const [name, text] of renderAllSlipPaths(order)) {
+    assert.ok(text.includes(`Delivery note: ${DELIVERY_NOTE}`), `${name}: prints the delivery note, got:\n${text}`);
+    assert.equal(text.split('Gate code 4321').length - 1, 1, `${name}: the delivery note prints once`);
+    assert.ok(text.includes('Note: Extra napkins'), `${name}: the order note still prints`);
+    assert.ok(text.indexOf('Gate code 4321') < text.indexOf('Espresso Doppio'), `${name}: the note sits above the items`);
+  }
+
+  // A delivery note on its own is enough to emit the notes block, and the
+  // document stays valid; without either note the slip is the original three blocks.
+  const printContext = {
+    columns: 42,
+    languages: ['en'],
+    baseDirection: 'ltr' as const,
+    locale: 'en-US',
+    currency: 'INR',
+    currencySymbol: 'Rs',
+    trimDecimals: false,
+    resolveLabel: (conceptId: string) => conceptId,
+  };
+  const alone = buildDeliverySlipDocument(
+    buildDeliverySlipPrintData({ ...ORDER, delivery_note: DELIVERY_NOTE }, ORDER.items, CONTACT),
+    printContext,
+  );
+  const notes = alone.blocks.find((block) => block.kind === 'delivery-slip-notes') as any;
+  assert.ok(notes, 'a delivery note alone emits the notes block');
+  assert.equal(notes.deliveryNote.text, DELIVERY_NOTE);
+  assert.equal(notes.note, null, 'the order note stays empty');
+  assert.ok(isDeliverySlipDocument(alone), 'the document with a delivery note passes its guard');
+  for (const blank of ['', '   ', null, undefined]) {
+    const blanked = buildDeliverySlipDocument(
+      buildDeliverySlipPrintData({ ...ORDER, delivery_note: blank }, ORDER.items, CONTACT),
+      printContext,
+    );
+    assert.equal(blanked.blocks.length, 3, `a ${JSON.stringify(blank)} delivery note leaves the slip unchanged`);
+  }
+
+  const injected = fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', delivery_note: '<img src=x onerror=alert(1)>' },
+    [],
+    CONTACT,
+    { paperWidth: 80, language: 'en' },
+  );
+  assert.ok(!injected.includes('<img') && injected.includes('&lt;img'), 'the delivery note is HTML-escaped');
+
+  const tokenised = renderDeliverySlipViaDocument({ ...ORDER, delivery_note: '{CUT} ring twice {INIT}' }, ORDER.items, CONTACT, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-IN',
+    timezone: 'Asia/Kolkata',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: resolvePrinterProfile({ paper_width: 'cols-42' }).cutMode,
+    capabilities: capabilitiesForPrinter(resolvePrinterProfile({ paper_width: 'cols-42' }), 'cols-42', false),
+  });
+  assert.equal([...tokenised.data].filter((byte) => byte === 0x1d).length, 1, 'a {CUT} in the delivery note does not cut the paper');
+  assert.ok(escPosToText(tokenised.data).includes('ring twice'), 'and the note text still prints');
+});
+
+test('delivery slip: an over-long delivery note is clamped the same way on every render path', () => {
+  const overLong = 'Leave the parcel with the neighbour at number 42 '.repeat(10);
+  const clamped = clampDeliverySlipText(overLong.trim(), MAX_DELIVERY_SLIP_NOTE_CHARS);
+  assert.ok(clamped.truncatedChars > 0, 'the fixture exceeds the budget');
+  const printData = buildDeliverySlipPrintData({ ...ORDER, delivery_note: overLong }, ORDER.items, CONTACT);
+  assert.equal(printData.deliveryNote, clamped.text, 'the backend keeps the shared clamp\'s text');
+  assert.equal(printData.deliveryNoteTruncatedChars, clamped.truncatedChars, 'and reports the honest count');
+  for (const [name, text] of renderAllSlipPaths({ ...ORDER, delivery_note: overLong })) {
+    assert.ok(text.includes(clamped.text.replace(/\s+/g, ' ')), `${name}: prints the clamped delivery note`);
+    assert.ok(text.includes(`${clamped.truncatedChars} more characters not shown`), `${name}: states the honest cut`);
+  }
+});
+
+test('delivery slip: the delivery note and expected method stay off the kitchen ticket and the receipt', () => {
+  const DELIVERY_NOTE = 'Gate code 4321, leave with the guard';
+  const order = {
+    ...RECEIPT_ORDER,
+    type: 'delivery',
+    special_instructions: '',
+    delivery_note: DELIVERY_NOTE,
+    expected_payment_method: 'card',
+  };
+  const outputs: Array<[string, string]> = [
+    ['backend KOT', escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'UTC' }, [], false, 'en'))],
+    ['WebUSB KOT', Buffer.from(fe.kotEncoder.buildKotBytes(order as any, { paperWidth: 80, language: 'en', stationName: 'Main Kitchen', timezone: 'UTC' })).toString('utf8')],
+    ['backend receipt', escPosToText(formatReceipt(order, RECEIPT_BILL, RECEIPT_BUSINESS, 'classic', 42, false, false, undefined, []))],
+    ['WebUSB receipt', escPosToText(Buffer.from(fe.receiptEncoder.buildClassicReceiptBytes(
+      { ...RECEIPT_BILL, order } as any,
+      { business_name: 'Cafe', currency: 'INR', country: 'IN', timezone: 'Asia/Kolkata' } as any,
+      { paperWidth: 80 },
+      [],
+    )))],
+  ];
+  for (const [name, text] of outputs) {
+    assert.ok(text.includes('Espresso Doppio'), `${name}: renders the order`);
+    assert.ok(!text.includes('Gate code 4321'), `${name}: the courier note stays on the courier slip`);
+    assert.ok(!text.includes('Expected payment'), `${name}: the expected method stays on the courier slip`);
+  }
+});
+
+test('delivery slip: the local paths carry the delivery note and the fetched expectation to the encoders', () => {
+  // The browser paths take the note from the order projection and the expected
+  // method from the backend payment summary, so both must survive the hook.
+  const usePrinter = fs.readFileSync(path.join(__dirname, '../frontend/src/hooks/usePrinter.ts'), 'utf8');
+  const start = usePrinter.indexOf('const slipOrder');
+  const projection = usePrinter.slice(start, start + 500);
+  assert.ok(/delivery_note: orderForPrint\.delivery_note/.test(projection), 'the slip projection carries the delivery note');
+  assert.ok(
+    /api\.get<\{ payment\?: DeliverySlipPayment \}>\(`\/printers\/delivery-slip-payment\//.test(usePrinter),
+    'the expected method arrives with the backend payment summary',
+  );
 });

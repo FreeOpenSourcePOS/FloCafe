@@ -5,6 +5,27 @@ interface SearchableOrder {
 
 const digitsOnly = (value: string): string => value.replace(/\D/g, '');
 
+export async function fetchLoadedOrderPages<T>(
+  fetchPage: (cursor?: number) => Promise<{ orders: T[]; nextCursor: number | null }>,
+  loadedPageCount: number,
+): Promise<{ orders: T[]; nextCursor: number | null }> {
+  const orders: T[] = [];
+  let cursor: number | undefined;
+  let nextCursor: number | null = null;
+  let pageCount = 0;
+
+  while (pageCount < loadedPageCount) {
+    const page = await fetchPage(cursor);
+    orders.push(...page.orders);
+    nextCursor = page.nextCursor;
+    pageCount++;
+    if (nextCursor === null) break;
+    cursor = nextCursor;
+  }
+
+  return { orders, nextCursor };
+}
+
 /** Matches an order against the orders-page search box: order number, customer name, or phone digits. */
 export function matchesOrderSearch(order: SearchableOrder, query: string): boolean {
   const q = query.trim().toLowerCase();

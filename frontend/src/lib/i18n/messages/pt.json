@@ -153,7 +153,8 @@
     "update": "Atualizar",
     "windowControls": "Controles da janela",
     "yes": "Sim",
-    "back": "Voltar"
+    "back": "Voltar",
+    "loadMore": "Carregar mais"
   },
   "countries": {
     "selectCountry": "Selecionar país…"
@@ -688,6 +689,8 @@
     "decreasePax": "Diminuir pessoas",
     "delivery": "Entrega",
     "deliveryAddress": "Endereço de entrega",
+    "expectedPayment": "Pagamento previsto",
+    "deliveryNotePlaceholder": "Observação de entrega para o entregador",
     "discount": "Desconto",
     "discounts": "Descontos",
     "discountInvalid": "Digite um valor de desconto válido",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "PARCIALMENTE REEMBOLSADO",
       "cashOnDelivery": "Pagamento na entrega",
       "amountDue": "Valor em aberto",
-      "multiplePaymentMethods": "Vários métodos de pagamento"
+      "multiplePaymentMethods": "Vários métodos de pagamento",
+      "expectedPayment": "Pagamento previsto",
+      "deliveryNote": "Observação de entrega"
     },
     "hsn": "HSN",
     "zReport": {

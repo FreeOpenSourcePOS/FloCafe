@@ -63,7 +63,11 @@ vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax
 `delivery-slip-payment`, then `delivery-slip-items`. The payment block shows the paid method(s) and
 total with zero due, or the selected bill balance(s) as amount due. Refund status stays visible and
 does not hide a refund-marked bill's positive stored balance; when no bill exists, the slip falls
-back to the order total. It is a **separate kind, not a receipt
+back to the order total. An unpaid balance also names the order's `expected_payment_method`: Cash on
+Delivery for cash, otherwise the method, Pending, or Unknown when none was recorded. It is an
+expectation, never a payment, and a paid slip shows the captured method instead. The notes block
+carries the courier-only `delivery_note` beside the order note; neither the delivery note nor the
+expected method is printed on a kitchen ticket or receipt. It is a **separate kind, not a receipt
 template**, and that is load-bearing. It carries the delivery address and the full customer number
 when the caller's visibility rule permits it. The API route and browser/WebUSB hook include the
 number when either `bill_delivery_show_customer_phone_always` or `bill_show_customer_phone` is on,

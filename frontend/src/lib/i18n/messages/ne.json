@@ -153,7 +153,8 @@
     "windowControls": "विन्डो नियन्त्रणहरू",
     "yes": "हो",
     "back": "पछाडि",
-    "tax": "कर"
+    "tax": "कर",
+    "loadMore": "थप लोड गर्नुहोस्"
   },
   "countries": {
     "selectCountry": "देश चयन गर्नुहोस्..."
@@ -688,6 +689,8 @@
     "decreasePax": "प्याक्स घटाउनुहोस्",
     "delivery": "डेलिभरी",
     "deliveryAddress": "डेलिभरी ठेगाना",
+    "expectedPayment": "अपेक्षित भुक्तानी",
+    "deliveryNotePlaceholder": "कुरियरका लागि डेलिभरी नोट",
     "discount": "छुट",
     "discounts": "छुटहरू",
     "discountInvalid": "कृपया मान्य छुट मान प्रविष्ट गर्नुहोस्",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "आंशिक रूपमा फिर्ता गरियो",
       "cashOnDelivery": "डेलिभरीमा नगद",
       "amountDue": "तिर्न बाँकी रकम",
-      "multiplePaymentMethods": "धेरै भुक्तानी विधिहरू"
+      "multiplePaymentMethods": "धेरै भुक्तानी विधिहरू",
+      "expectedPayment": "अपेक्षित भुक्तानी",
+      "deliveryNote": "डेलिभरी नोट"
     },
     "hsn": "HSN",
     "zReport": {

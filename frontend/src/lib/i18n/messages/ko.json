@@ -153,7 +153,8 @@
     "windowControls": "창 컨트롤",
     "yes": "네",
     "back": "뒤로",
-    "tax": "세금"
+    "tax": "세금",
+    "loadMore": "더 불러오기"
   },
   "countries": {
     "selectCountry": "국가 선택…"
@@ -688,6 +689,8 @@
     "decreasePax": "인원 감소",
     "delivery": "배달",
     "deliveryAddress": "배달 주소",
+    "expectedPayment": "예상 결제 수단",
+    "deliveryNotePlaceholder": "배달 기사님께 전달할 메모",
     "discount": "할인",
     "discounts": "할인",
     "discountInvalid": "유효한 할인 금액을 입력하세요",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "부분 환불",
       "cashOnDelivery": "착불",
       "amountDue": "미결제 금액",
-      "multiplePaymentMethods": "여러 결제 수단"
+      "multiplePaymentMethods": "여러 결제 수단",
+      "expectedPayment": "예상 결제 수단",
+      "deliveryNote": "배달 메모"
     },
     "hsn": "HSN",
     "zReport": {

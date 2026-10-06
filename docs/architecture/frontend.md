@@ -384,6 +384,10 @@ bill summary rather than from the kernel's `DeliverySlipDocument`. That model an
 `shared/print/document.ts` and are consumed by the backend renderer
 [`main/printers/document-delivery-slip.ts`](../../main/printers/document-delivery-slip.ts), so the
 rule that a renderer consumes a document does not hold for the WebUSB and browser slip paths.
+The projection carries the order and delivery notes, and the summary from
+`GET /api/printers/delivery-slip-payment/:orderId` carries the expected collection method, which
+all three paths word through `deliverySlipExpectedPaymentText` in `shared/print/document.ts`. The
+cart records both delivery details beside the delivery address, and only for delivery orders.
 
 The action is reachable on an unpaid delivery order, because that is the workflow: the courier
 leaves before the customer settles. `OrderCard` renders it outside the payment branches, limited to

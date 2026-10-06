@@ -438,7 +438,7 @@ export default function SettingsPage() {
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.
-  const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
+  const [pinGate, setPinGate] = useState<PinGate>(null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // Starts true until the Data tab performs its first load.
   const [backupsLoading, setBackupsLoading] = useState(true);
@@ -466,7 +466,7 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchMasterPinStatus = async (signal?: AbortSignal): Promise<boolean> => {
+  const fetchMasterPinStatus = useCallback(async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const { data } = await api.get('/db-tools/master-pin/status', signal ? { signal } : undefined);
       if (signal?.aborted) return false;
@@ -477,7 +477,21 @@ export default function SettingsPage() {
       // ignore — card just shows "Unknown" state until retried
       return false;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (requestedAction !== 'master-pin') return;
+    const controller = new AbortController();
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchMasterPinStatus(controller.signal).then((loaded) => {
+      if (active && loaded) setPinGate({ mode: 'set' });
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [fetchMasterPinStatus, requestedAction]);
 
   const fetchBackups = async (signal?: AbortSignal): Promise<boolean> => {
     setBackupsLoading(true);
@@ -535,12 +549,12 @@ export default function SettingsPage() {
     }
   };
 
-  const handlePinGateSubmit = async (pin: string): Promise<{ success: boolean; error?: string }> => {
+  const handlePinGateSubmit = async (pin: string, currentPin?: string): Promise<{ success: boolean; error?: string }> => {
     if (!pinGate) return { success: false, error: t('nothingPending') };
 
     if (pinGate.mode === 'set') {
       try {
-        await api.post('/db-tools/master-pin/reset', { pin, confirm_pin: pin });
+        await api.post('/db-tools/master-pin/reset', { pin, confirm_pin: pin, ...(currentPin ? { master_pin: currentPin } : {}) });
         await fetchMasterPinStatus();
         toast.success(t('masterPinSaved'));
         setPinGate(null);
@@ -4767,8 +4781,10 @@ export default function SettingsPage() {
       <MasterPinPrompt
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
+        currentPinRequired={pinGate?.mode === 'set' && masterPinStatus.isSet}
         title={
-          pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
+          pinGate?.mode === 'set' && masterPinStatus.isSet ? t('masterPinChangeButton')
+          : pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
           : pinGate?.mode === 'restore-google-drive' ? t('googleDriveRestoreTitle')

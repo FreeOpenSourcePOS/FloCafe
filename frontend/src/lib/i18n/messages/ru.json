@@ -153,7 +153,8 @@
     "update": "Обновить",
     "windowControls": "Элементы управления окнами",
     "yes": "Да",
-    "back": "Назад"
+    "back": "Назад",
+    "loadMore": "Загрузить еще"
   },
   "countries": {
     "selectCountry": "Выбрать страну…"
@@ -688,6 +689,8 @@
     "decreasePax": "Уменьшить количество человек",
     "delivery": "Доставка",
     "deliveryAddress": "Адрес доставки",
+    "expectedPayment": "Ожидаемая оплата",
+    "deliveryNotePlaceholder": "Примечание к доставке для курьера",
     "discount": "Скидка",
     "discounts": "Скидки",
     "discountInvalid": "Пожалуйста, введите действительную сумму скидки.",
@@ -962,7 +965,9 @@
       "partiallyRefunded": "ЧАСТИЧНО ВОЗВРАЩЕНО",
       "cashOnDelivery": "Оплата при получении",
       "amountDue": "Сумма к оплате",
-      "multiplePaymentMethods": "Несколько способов оплаты"
+      "multiplePaymentMethods": "Несколько способов оплаты",
+      "expectedPayment": "Ожидаемая оплата",
+      "deliveryNote": "Примечание к доставке"
     },
     "hsn": "HSN",
     "zReport": {

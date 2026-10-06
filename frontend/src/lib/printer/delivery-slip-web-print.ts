@@ -11,7 +11,12 @@ import type {
   DeliverySlipItem,
   DeliverySlipOrder,
 } from './delivery-slip-encoder';
-import { clampDeliverySlipText, sanitizeDeliverySlipPaymentMethod, type DeliverySlipPrintData } from '@print/document';
+import {
+  clampDeliverySlipText,
+  deliverySlipExpectedPaymentText,
+  sanitizeDeliverySlipPaymentMethod,
+  type DeliverySlipPrintData,
+} from '@print/document';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -31,14 +36,14 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {
+function slipNoteHtml(raw: string | null | undefined, label: string, tr: (key: string) => string): string {
   const { text, truncatedChars: truncated } = clampDeliverySlipText((raw ?? '').trim());
   if (!text && truncated <= 0) return '';
   const marker = truncated > 0
     ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
     : '';
   const noteHtml = text
-    ? `<p style="margin:2px 0;">${escapeHtml(tr('print.note'))}: ${escapeHtml(text)}</p>`
+    ? `<p style="margin:2px 0;">${escapeHtml(label)}: ${escapeHtml(text)}</p>`
     : '';
   return `${noteHtml}${marker}`;
 }
@@ -86,7 +91,7 @@ export function generateDeliverySlipHtml(
     : isPaid
       ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #15803d;border-radius:4px;background:#ecfdf5;color:#14532d;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr('print.deliverySlip.paid'))}: ${escapeHtml(paymentMethod)} (${escapeHtml(tr('pos.total'))}: ${escapeHtml(payment.formattedAmount)})</div>${payment.formattedAmountDue ? `<div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue)}</div>` : ''}</div>`
       : isCollectible
-        ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #d97706;border-radius:4px;background:#fffbeb;color:#92400e;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(tr('print.deliverySlip.cashOnDelivery'))})</div>`
+        ? `<div style="margin:${padding} 0;padding:${padding};border:2px solid #d97706;border-radius:4px;background:#fffbeb;color:#92400e;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.toCollect'))}: ${escapeHtml(payment.formattedAmount)} (${escapeHtml(deliverySlipExpectedPaymentText(payment.expectedMethod, tr))})</div>`
         : payment.status === 'unpaid'
           ? `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmount)}</div>`
           : `<div style="margin:${padding} 0;padding:${padding};border:1px solid #9ca3af;border-radius:4px;background:#f9fafb;color:#374151;overflow-wrap:anywhere;word-break:break-word;font-weight:bold;"><div>${escapeHtml(tr(payment.status === 'refunded' ? 'print.deliverySlip.refunded' : 'print.deliverySlip.partiallyRefunded'))}</div><div style="margin-top:2px;font-weight:normal;">${escapeHtml(tr('print.deliverySlip.amountDue'))}: ${escapeHtml(payment.formattedAmountDue ?? '')}</div></div>`;
@@ -100,7 +105,8 @@ export function generateDeliverySlipHtml(
       ${contact.name ? `<p style="margin:2px 0;font-weight:bold;">${escapeHtml(contact.name)}</p>` : ''}
       ${contact.phone ? `<p style="margin:2px 0;">${escapeHtml(tr('print.numberShort'))}: ${escapeHtml(contact.phone)}</p>` : ''}
       ${contact.address ? `<p style="margin:2px 0;">${escapeHtml(tr('print.deliverySlip.address'))}: ${escapeHtml(contact.address)}</p>` : ''}
-      ${slipNoteHtml(order.special_instructions, tr)}
+      ${slipNoteHtml(order.delivery_note, tr('print.deliverySlip.deliveryNote'), tr)}
+      ${slipNoteHtml(order.special_instructions, tr('print.note'), tr)}
       ${paymentHtml}
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${itemRows}

@@ -20,7 +20,7 @@ import { resolveOrderItemVariant, variantUnitPrice, type ProductVariant } from '
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
-import { validateOrderNotes, validateItemNotes, validateProductQuantity, validateDeliveryAddress } from './orders-validation';
+import { validateOrderNotes, validateItemNotes, validateProductQuantity, validateDeliveryAddress, validateDeliveryNote, resolveExpectedPaymentMethod } from './orders-validation';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
@@ -376,6 +376,31 @@ router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Requ
       wheres.push('type = ?');
       params.push(req.query.type);
     }
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (search) {
+      db.function('orders_search_contains', (value: string | null, query: string) =>
+        typeof value === 'string' && value.toLowerCase().includes(query.toLowerCase()) ? 1 : 0
+      );
+      db.function('orders_search_digits_contains', (value: string | null, digits: string) =>
+        typeof value === 'string' && value.replace(/\D/g, '').includes(digits) ? 1 : 0
+      );
+      const phoneDigits = search.replace(/\D/g, '');
+      const customerSearch = ['orders_search_contains(search_customer.name, ?)'];
+      if (phoneDigits && !/\p{L}/u.test(search)) {
+        customerSearch.push('orders_search_digits_contains(search_customer.phone_digits, ?)');
+        customerSearch.push('orders_search_digits_contains(search_customer.phone, ?)');
+      }
+      wheres.push(`(
+        orders_search_contains(orders.order_number, ?)
+        OR EXISTS (
+          SELECT 1 FROM customers AS search_customer
+          WHERE search_customer.id = orders.customer_id
+            AND (${customerSearch.join(' OR ')})
+        )
+      )`);
+      params.push(search, search);
+      if (phoneDigits && !/\p{L}/u.test(search)) params.push(phoneDigits, phoneDigits);
+    }
     // Filter by UTC day or date range across indexed created_at column.
     if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());
@@ -608,7 +633,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address, waived_charge_ids, opted_in_charge_ids } = body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address, expected_payment_method, delivery_note, waived_charge_ids, opted_in_charge_ids } = body;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -668,6 +693,12 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       return res.status(400).json({ error: 'delivery_address must be a string' });
     }
     const deliveryAddress = typeof delivery_address === 'string' ? delivery_address.trim() || null : null;
+    if (delivery_note !== undefined && delivery_note !== null && typeof delivery_note !== 'string') {
+      return res.status(400).json({ error: 'delivery_note must be a string' });
+    }
+    // Courier-only details: other order types never store them.
+    const isDelivery = type === 'delivery';
+    const deliveryNote = isDelivery && typeof delivery_note === 'string' ? delivery_note.trim() || null : null;
     const onlinePlatform = typeof online_platform === 'string' ? online_platform.trim().slice(0, 100) : null;
     const externalOrderId = typeof external_order_id === 'string' ? external_order_id.trim().slice(0, 100) : null;
     const isOnlineOrder = Boolean(onlinePlatform);
@@ -676,10 +707,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 
     // Free text that ends up printed on a courier slip, so it is capped and
     // validated the same way order notes are, at this boundary.
+    let expectedPaymentMethod: string | null;
     try {
       validateDeliveryAddress(db, deliveryAddress);
+      validateDeliveryNote(db, deliveryNote);
+      expectedPaymentMethod = isDelivery ? resolveExpectedPaymentMethod(db, expected_payment_method) : null;
     } catch (err: unknown) {
-      return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid delivery address' });
+      return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid delivery details' });
     }
 
     try {
@@ -746,12 +780,12 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const orderCustomerId = customer_id || reservedCustomerId || null;
 
       const orderResult = db.prepare(`
-        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, delivery_address, guest_count, special_instructions,
+        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, delivery_address, expected_payment_method, delivery_note, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
           service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, deliveryAddress,
-        guest_count || null, special_instructions || null, pkgCharge, delCharge,
+        expectedPaymentMethod, deliveryNote, guest_count || null, special_instructions || null, pkgCharge, delCharge,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         serviceCharge, chargeContext.service_charge_tax_category_id,
         onlinePlatform || null, externalOrderId || null, now(), now());

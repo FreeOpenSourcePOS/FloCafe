@@ -471,7 +471,15 @@ function validateInventoryLinkFields(
     const incomingLink = db.prepare(
       'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
     ).get(productId) as { id: string } | undefined;
-    if (incomingLink) {
+    // A live recipe variant makes this product an inventory target too: linking
+    // it onward would chain variant -> product -> product, which the resolver
+    // never reconciles.
+    const incomingVariantLink = db.prepare(
+      `SELECT v.id FROM product_variants v
+       JOIN products p ON p.id = v.product_id
+       WHERE v.inventory_product_id = ? AND v.is_active = 1 AND p.deleted_at IS NULL LIMIT 1`,
+    ).get(productId) as { id: string } | undefined;
+    if (incomingLink || incomingVariantLink) {
       return 'A product that is already an inventory target cannot be linked to another product';
     }
   }
@@ -1224,7 +1232,11 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     const barcodeError = validateCatalogBarcodes(db, {
       productId: null,
       productBarcode: normalizedBarcode,
-      variantBarcodes: (normalizedVariants?.variants || []).map((variant) => variant.barcode),
+      // Only rows that stay sellable claim a barcode; an inactive variant
+      // releases the one it holds.
+      variantBarcodes: (normalizedVariants?.variants || [])
+        .filter((variant) => variant.is_active === 1)
+        .map((variant) => variant.barcode),
       payloadVariantIds: [],
       deactivatedVariantIds: [],
     });
@@ -1398,7 +1410,11 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       productBarcode: hasOwn(req.body, 'barcode')
         ? normalizedBarcode
         : normalizeBarcode((product as { barcode?: unknown }).barcode),
-      variantBarcodes: payloadVariants.map((variant) => variant.barcode),
+      // Only rows that stay sellable claim a barcode; an inactive variant
+      // releases the one it holds, even when the editor resubmits its row.
+      variantBarcodes: payloadVariants
+        .filter((variant) => variant.is_active === 1)
+        .map((variant) => variant.barcode),
       payloadVariantIds: [...new Set([...payloadVariantIds, ...ownActiveVariantIds])],
       deactivatedVariantIds: [
         ...payloadVariants.filter((variant) => variant.is_active === 0 && variant.id).map((variant) => variant.id as string),

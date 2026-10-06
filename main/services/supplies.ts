@@ -351,8 +351,8 @@ export function listSupplyMovements(
     params.push(filters.movementType);
   }
   if (filters.search) {
-    conditions.push('(s.name LIKE ? OR m.reason LIKE ? OR u.name LIKE ?)');
-    const searchTerm = `%${filters.search}%`;
+    conditions.push("(s.name LIKE ? ESCAPE '!' OR m.reason LIKE ? ESCAPE '!' OR u.name LIKE ? ESCAPE '!')");
+    const searchTerm = `%${filters.search.replace(/[!%_]/g, '!$&')}%`;
     params.push(searchTerm, searchTerm, searchTerm);
   }
   if (filters.beforeId !== undefined) {

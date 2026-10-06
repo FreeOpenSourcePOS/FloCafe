@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
@@ -85,6 +85,7 @@ export default function InventoryPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [movements, setMovements] = useState<SupplyMovement[]>([]);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const movementRequestSequence = useRef(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [recipeSearch, setRecipeSearch] = useState('');
@@ -144,35 +145,25 @@ export default function InventoryPage() {
   }, [tab, refreshKey, canManage]);
 
   const loadMovements = useCallback(async (cursor?: number | null) => {
+    const requestSequence = ++movementRequestSequence.current;
     try {
       const params: Record<string, string | number> = { per_page: 50 };
       if (movementSearch.trim()) params.search = movementSearch.trim();
       if (cursor) params.before_id = cursor;
       const { data } = await api.get('/supplies/movements', { params });
+      if (requestSequence !== movementRequestSequence.current) return;
       setMovements((prev) => (cursor ? [...prev, ...(data.movements || [])] : data.movements || []));
       setNextCursor(data.nextCursor ?? null);
     } catch {
-      toast.error(t('loadFailed'));
+      if (requestSequence === movementRequestSequence.current) toast.error(t('loadFailed'));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey, movementSearch]);
 
   useEffect(() => {
     if (!canManage || tab !== 'movements') return;
-    const controller = new AbortController();
-    const params: Record<string, string | number> = { per_page: 50 };
-    if (movementSearch.trim()) params.search = movementSearch.trim();
-    api.get('/supplies/movements', { params, signal: controller.signal })
-      .then(({ data }) => {
-        setMovements(data.movements || []);
-        setNextCursor(data.nextCursor ?? null);
-      })
-      .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
-      });
-    return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, refreshKey, canManage, movementSearch]);
+    void loadMovements(null);
+  }, [tab, canManage, loadMovements]);
 
   const openAddSupply = () => {
     setEditingSupply(null);
@@ -234,7 +225,6 @@ export default function InventoryPage() {
       setMovementSupply(null);
       setMovementForm({ movement_type: 'receive', quantity: '', unit: 'each', reason: '' });
       refresh();
-      if (tab === 'movements') loadMovements(null);
     } catch (err: unknown) {
       const message = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
@@ -474,7 +464,12 @@ export default function InventoryPage() {
           <div className="relative mb-4 max-w-sm">
             <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              type="text" value={movementSearch} onChange={(e) => setMovementSearch(e.target.value)}
+              type="text" value={movementSearch} onChange={(e) => {
+                movementRequestSequence.current++;
+                setMovements([]);
+                setNextCursor(null);
+                setMovementSearch(e.target.value);
+              }}
               placeholder={tCommon('search')}
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
             />

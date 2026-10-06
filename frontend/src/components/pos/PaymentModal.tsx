@@ -488,9 +488,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
-        toast.error(t('paymentIncomplete', {
-          amount: currencyFmt(Number(updatedBill?.balance) || 0),
-        }));
+        if (updatedBill?.payment_status === 'partial') {
+          toast.success(t('paymentRecorded'));
+        } else {
+          toast.error(t('paymentIncomplete', {
+            amount: currencyFmt(Number(updatedBill?.balance) || 0),
+          }));
+        }
         return;
       }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;

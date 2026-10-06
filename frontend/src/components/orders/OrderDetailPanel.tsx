@@ -141,7 +141,8 @@ function OrderDetailContent({
 
   const orderBills = order.bills && order.bills.length > 0 ? order.bills : bill ? [bill] : [];
   const splitBills = orderBills.filter((candidate) => Boolean(candidate.split_group_id));
-  const hasUnpaidSplitBills = splitBills.some((candidate) => candidate.payment_status !== 'paid');
+  const canPaySplitBill = (candidate: Bill) => candidate.payment_status === 'unpaid' || candidate.payment_status === 'partial';
+  const hasUnpaidSplitBills = splitBills.some(canPaySplitBill);
   const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
   const hasEligibleRefund = paidBills.length > 0;
 
@@ -633,7 +634,7 @@ function OrderDetailContent({
                     {fmt(Number(splitBill.total))} · {splitBill.payment_status === 'paid' ? tOrders('paid') : tOrders('balance')}
                   </p>
                 </div>
-                {splitBill.payment_status !== 'paid' && onPayBill && (
+                {canPaySplitBill(splitBill) && onPayBill && (
                   <Button size="sm" onClick={() => onPayBill({ ...splitBill, order })} className="h-9 shrink-0">
                     {tPos('pay')}
                   </Button>

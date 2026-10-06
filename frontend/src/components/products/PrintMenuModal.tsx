@@ -184,12 +184,12 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
 
   /** PDF export. Electron renders the HTML offscreen and asks where to save;
    *  a plain browser falls back to the print dialog's "Save as PDF". */
-  const savePdf = async (selectedFilters: PrintFilters): Promise<boolean> => {
+  const savePdf = async (selectedFilters: PrintFilters, targetWindow?: Window | null): Promise<boolean> => {
     const html = await buildMenuHtml(selectedFilters);
     if (html === null) return false;
     const saveHtmlAsPdf = window.electronAPI?.saveHtmlAsPdf;
     if (!saveHtmlAsPdf) {
-      printMenuInBrowser(html);
+      printMenuInBrowser(html, targetWindow);
       toast.success(tCommon('done'));
       return true;
     }
@@ -231,12 +231,19 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     setPrinting(true);
 
     if (destination === 'paper' || destination === 'pdf') {
+      const reservedWindow = window.electronAPI ? undefined : reservePrintGesture();
       try {
         const printed = destination === 'paper'
-          ? await printOnPaper(filters)
-          : await savePdf(filters);
-        if (printed) setDialogOpen(false);
+          ? await printOnPaper(filters, reservedWindow)
+          : await savePdf(filters, reservedWindow);
+        if (printed) {
+          if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
+          setDialogOpen(false);
+        } else if (reservedWindow && !reservedWindow.closed) {
+          reservedWindow.close();
+        }
       } catch (error) {
+        if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
         toast.error(error instanceof MenuPopupBlockedError ? t('menuPopupBlocked') : t('menuPrintFailed'));
       } finally {
         setPrinting(false);
@@ -246,7 +253,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
 
     // Preserve the user gesture for browsers that block asynchronous popups:
     // a failed thermal print falls back to the system print dialog.
-    const reservedWindow = reservePrintGesture();
+    const reservedWindow = window.electronAPI ? undefined : reservePrintGesture();
     try {
       await printToReceipt(filters, reservedWindow);
       setDialogOpen(false);
@@ -265,6 +272,7 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       } else if (code === 'printer_not_configured' || code === 'printer_not_found' || status === 502 || (status !== undefined && status >= 500) || status === undefined) {
         try {
           if (await printOnPaper(filters, reservedWindow)) {
+            if (reservedWindow && !reservedWindow.closed) reservedWindow.close();
             setDialogOpen(false);
           } else if (reservedWindow && !reservedWindow.closed) {
             reservedWindow.close();

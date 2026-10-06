@@ -198,6 +198,18 @@ async function main() {
   const searchedOlder = listSupplyMovements(db, { search: 'coffee', beforeId: searchedPage.nextCursor, perPage: 100 });
   assert(searchedOlder.movements.every((m: any) => m.supply_id === coffee.id), 'search cursor page stays on the filtered set');
 
+  const wildcardSupply = createSupply(db, {
+    name: 'Mix 100%_salt!', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
+  });
+  createSupply(db, {
+    name: 'Mix 1000Xsalt', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
+  });
+  for (const search of ['100%', '_salt', '!']) {
+    const matches = listSupplyMovements(db, { search });
+    assertEqual(matches.movements.length, 1, `search treats ${search} as literal text`);
+    assertEqual(matches.movements[0].supply_id, wildcardSupply.id, `search ${search} excludes wildcard matches`);
+  }
+
   // ── Soft delete ──
   softDeleteSupply(db, cups.id);
   expectServiceError(() => getSupply(db, cups.id), 404, 'soft-deleted supply is not found');

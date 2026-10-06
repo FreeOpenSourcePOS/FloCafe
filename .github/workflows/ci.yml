@@ -176,6 +176,13 @@ jobs:
         if: matrix.shard == 0
         run: bash tests/run-test.sh npm run test:payment-methods-split
 
+      # These two suites live in npm pretest, which the shard runner
+      # intentionally does not execute; run them here so a schema or catalog
+      # API regression fails the PR instead of only a local `npm test`.
+      - name: Product variant schema and catalog API checks (npm pretest)
+        if: matrix.shard == 0
+        run: bash tests/run-test.sh npm run test:product-variants-db && bash tests/run-test.sh npm run test:product-variants-api
+
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run
         # time, so shard coverage cannot drift from a hand-maintained list.

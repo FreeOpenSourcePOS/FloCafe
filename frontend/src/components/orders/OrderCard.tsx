@@ -43,6 +43,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
@@ -561,6 +562,7 @@ export function OrderCard({
         <div id={`order-items-${order.id}`} className="space-y-2">
           {displayedItems.map((item: OrderItem) => {
             const dotConfig = itemStatusDot[item.status] || itemStatusDot.pending;
+            const heading = formatItemHeading(item.product_name, item.variant_selection);
             return (
               <div key={item.id} className="text-xs">
                 <div className="flex items-center justify-between gap-1">
@@ -572,8 +574,8 @@ export function OrderCard({
                     <span className="font-semibold text-foreground shrink-0">
                       {item.quantity}x
                     </span>
-                    <span className="text-foreground truncate" title={item.product_name}>
-                      {item.product_name}
+                    <span className="text-foreground truncate" title={heading}>
+                      {heading}
                     </span>
                   </div>
 
@@ -598,7 +600,7 @@ export function OrderCard({
                         {(item.status === 'preparing' || item.status === 'ready') && onVoidItem && (
                           <button
                             type="button"
-                            onClick={() => onVoidItem(order.id, item.id, item.product_name)}
+                            onClick={() => onVoidItem(order.id, item.id, heading)}
                             className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 active:scale-95 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors touch-manipulation"
                             title={tOrders('voidItem')}
                           >
@@ -663,7 +665,7 @@ export function OrderCard({
               {inactiveItems.map((cItem: OrderItem) => (
                 <div key={cItem.id} className="flex items-center justify-between text-xs opacity-70">
                   <span className="line-through text-muted-foreground truncate">
-                    {cItem.quantity}x {cItem.product_name}
+                    {cItem.quantity}x {formatItemHeading(cItem.product_name, cItem.variant_selection)}
                   </span>
                   {cItem.status === 'cancelled' && !isPaid && !['completed', 'cancelled'].includes(order.status) && onRestoreItem && (
                     <button

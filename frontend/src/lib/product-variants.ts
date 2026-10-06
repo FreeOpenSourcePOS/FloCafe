@@ -9,8 +9,13 @@
 import { roundCurrencyValue } from './currency-input';
 import type { AddonGroup, ProductVariant } from '@/lib/types';
 
-/** A tracked variant with no stock cannot be sold. */
+/**
+ * A tracked variant with no stock cannot be sold. A variant that links to a
+ * recipe ingredient never sells from its own pool (the backend gives the link
+ * precedence over `track_inventory`), so its own stock must not gate it.
+ */
 export function isVariantSoldOut(variant: ProductVariant): boolean {
+  if (variant.inventory_product_id) return false;
   return Boolean(variant.track_inventory) && Number(variant.stock_quantity) <= 0;
 }
 
@@ -59,6 +64,10 @@ export interface ProductVariantRow {
   sku: string;
   barcode: string;
   stock_quantity: string;
+  /** Stock the row was loaded with; sent to the API only when the merchant changed it. */
+  loaded_stock_quantity: string | null;
+  /** Editor-only: marks a row the merchant edited, so untouched inactive history stays out of the payload. */
+  touched: boolean;
   is_active: boolean;
   /**
    * Backend-managed. This screen has no inputs for these, but the products API
@@ -81,7 +90,8 @@ export interface ProductVariantPayload {
   online_price: number | null;
   cost_price: number | null;
   track_inventory: boolean;
-  stock_quantity: number;
+  /** Omitted when the merchant did not change the stock field, so intervening sales survive the save. */
+  stock_quantity?: number;
   low_stock_threshold: number | null;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
@@ -98,6 +108,8 @@ export function newVariantRow(): ProductVariantRow {
     sku: '',
     barcode: '',
     stock_quantity: '0',
+    loaded_stock_quantity: null,
+    touched: false,
     is_active: true,
     cost_price: null,
     track_inventory: false,
@@ -116,6 +128,8 @@ export function toVariantRows(variants: ProductVariant[] | null | undefined): Pr
     sku: variant.sku ?? '',
     barcode: variant.barcode ?? '',
     stock_quantity: String(variant.stock_quantity ?? 0),
+    loaded_stock_quantity: String(variant.stock_quantity ?? 0),
+    touched: false,
     is_active: Boolean(variant.is_active),
     cost_price: variant.cost_price ?? null,
     // The variant table stores these as 0/1 integers; normalise before sending.
@@ -134,24 +148,46 @@ export function hasInvalidVariantRow(rows: ProductVariantRow[]): boolean {
  * Rows the merchant removed are absent from the payload: the products API
  * soft-deactivates the omitted variants so historical order items keep
  * resolving them.
+ *
+ * Untouched inactive rows are history too: submitting them would only consume
+ * one of the API's 64 variant slots on every later save, so they are skipped
+ * unless the merchant edited them. Active rows always travel, because the API
+ * reads an omitted active row as removed.
  */
 export function buildVariantsPayload(rows: ProductVariantRow[], maxDecimals: number): ProductVariantPayload[] {
-  return rows.map((row, index) => ({
-    ...(row.id ? { id: row.id } : {}),
-    name: row.name.trim(),
-    price: roundCurrencyValue(Number(row.price), maxDecimals),
-    online_price: row.online_price === '' ? null : roundCurrencyValue(Number(row.online_price), maxDecimals),
-    sku: row.sku.trim() || null,
-    barcode: row.barcode.trim() || null,
-    stock_quantity: Math.max(0, Number(row.stock_quantity) || 0),
-    is_active: row.is_active,
-    cost_price: row.cost_price,
-    track_inventory: row.track_inventory,
-    low_stock_threshold: row.low_stock_threshold,
-    inventory_product_id: row.inventory_product_id,
-    inventory_deduction_quantity: row.inventory_deduction_quantity,
-    sort_order: index,
-  }));
+  return rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => row.is_active || row.id === null || row.touched)
+    .map(({ row, index }) => {
+      const stockQuantity = Math.max(0, Number(row.stock_quantity) || 0);
+      const loadedStockQuantity = row.loaded_stock_quantity !== null
+        ? Math.max(0, Number(row.loaded_stock_quantity) || 0)
+        : null;
+      const stockUnchanged = row.id !== null
+        && loadedStockQuantity !== null
+        && stockQuantity === loadedStockQuantity;
+
+      return {
+        ...(row.id ? { id: row.id } : {}),
+        name: row.name.trim(),
+        price: roundCurrencyValue(Number(row.price), maxDecimals),
+        online_price: row.online_price === '' ? null : roundCurrencyValue(Number(row.online_price), maxDecimals),
+        sku: row.sku.trim() || null,
+        barcode: row.barcode.trim() || null,
+        // Stock is absolute on the server: resubmitting the value the editor
+        // loaded would credit back any sale that happened in between.
+        ...(stockUnchanged ? {} : { stock_quantity: stockQuantity }),
+        is_active: row.is_active,
+        cost_price: row.cost_price,
+        track_inventory: row.track_inventory,
+        low_stock_threshold: row.low_stock_threshold,
+        inventory_product_id: row.inventory_product_id,
+        inventory_deduction_quantity: row.inventory_deduction_quantity,
+        // The position in the full editor table, so a skipped inactive row keeps
+        // the display order of the rows around it.
+        sort_order: index,
+      };
+    });
 }
 
 /** Returns the same array reference when the move would fall outside the table. */

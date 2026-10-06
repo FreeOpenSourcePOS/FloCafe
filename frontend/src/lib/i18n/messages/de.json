@@ -153,7 +153,8 @@
     "update": "Aktualisieren",
     "windowControls": "Fenstersteuerung",
     "yes": "Ja",
-    "back": "Zurück"
+    "back": "Zurück",
+    "loadMore": "Mehr laden"
   },
   "countries": {
     "selectCountry": "Land auswählen…"

@@ -153,7 +153,8 @@
     "windowControls": "ปุ่มควบคุมหน้าต่าง",
     "yes": "ใช่",
     "back": "ย้อนกลับ",
-    "tax": "ภาษี"
+    "tax": "ภาษี",
+    "loadMore": "โหลดเพิ่มเติม"
   },
   "countries": {
     "selectCountry": "เลือกประเทศ…"

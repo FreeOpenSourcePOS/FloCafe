@@ -153,7 +153,8 @@
     "windowControls": "ウィンドウ操作",
     "yes": "はい",
     "back": "戻る",
-    "tax": "税"
+    "tax": "税",
+    "loadMore": "さらに読み込む"
   },
   "countries": {
     "selectCountry": "国を選択…"

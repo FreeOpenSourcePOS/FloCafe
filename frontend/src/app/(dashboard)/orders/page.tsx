@@ -47,7 +47,7 @@ import {
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
-import { matchesOrderSearch } from '@/lib/orders-search';
+import { fetchLoadedOrderPages } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 
@@ -138,6 +138,18 @@ export default function OrdersPage() {
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
+  const searchRef = useRef(filters.search);
+  const previousSearchRef = useRef(filters.search);
+  const ordersFetchIdRef = useRef(0);
+  const ordersRefreshInProgressRef = useRef(false);
+  const ordersLoadMoreInProgressRef = useRef(false);
+  const ordersRefreshPendingRef = useRef(false);
+  const ordersRefreshLoadedPagesPendingRef = useRef(false);
+  const ordersRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoadedOlderOrdersRef = useRef(false);
+  const loadedOrdersPageCountRef = useRef(1);
+  const [nextOrdersCursor, setNextOrdersCursor] = useState<number | null>(null);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
 
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
@@ -239,11 +251,85 @@ export default function OrdersPage() {
     }
   };
 
-  const fetchOrders = async (): Promise<boolean> => {
+  const fetchOrders = async (
+    cursor?: number,
+    { rateLimitedRefresh = false, refreshLoadedPages = false }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
+  ): Promise<boolean> => {
+    if (cursor === undefined && (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)) {
+      ordersRefreshPendingRef.current = true;
+      ordersRefreshLoadedPagesPendingRef.current ||= refreshLoadedPages;
+      return true;
+    }
+    if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
+    if (cursor === undefined && rateLimitedRefresh) {
+      if (ordersRefreshTimerRef.current !== null) {
+        ordersRefreshPendingRef.current = true;
+        ordersRefreshLoadedPagesPendingRef.current ||= refreshLoadedPages;
+        return true;
+      }
+      ordersRefreshTimerRef.current = setTimeout(() => {
+        ordersRefreshTimerRef.current = null;
+        if (!ordersRefreshPendingRef.current) return;
+        ordersRefreshPendingRef.current = false;
+        const shouldRefreshLoadedPages = ordersRefreshLoadedPagesPendingRef.current;
+        ordersRefreshLoadedPagesPendingRef.current = false;
+        fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: shouldRefreshLoadedPages });
+      }, 1000);
+    } else if (cursor === undefined) {
+      ordersRefreshPendingRef.current = false;
+    }
+    const fetchId = ++ordersFetchIdRef.current;
+    setLoadingMoreOrders(true);
+    if (cursor === undefined) {
+      ordersRefreshInProgressRef.current = true;
+    } else {
+      ordersLoadMoreInProgressRef.current = true;
+    }
     try {
-      const { data } = await api.get('/orders', { params: { per_page: 50 } });
-      const orders = data.orders || [];
-      setOrders(orders);
+      const search = searchRef.current.trim();
+      const orders: Order[] = [];
+      let nextCursor: number | null = null;
+      if (refreshLoadedPages) {
+        const refreshed = await fetchLoadedOrderPages(async (pageCursor) => {
+          const { data } = await api.get('/orders', {
+            params: { per_page: 50, ...(search ? { search } : {}), ...(pageCursor !== undefined ? { before_id: pageCursor } : {}) },
+          });
+          if (fetchId !== ordersFetchIdRef.current) return { orders: [], nextCursor: null };
+          return { orders: (data.orders || []) as Order[], nextCursor: data.nextCursor ?? null };
+        }, loadedOrdersPageCountRef.current);
+        orders.push(...refreshed.orders);
+        nextCursor = refreshed.nextCursor;
+      } else {
+        const { data } = await api.get('/orders', {
+          params: { per_page: 50, ...(search ? { search } : {}), ...(cursor !== undefined ? { before_id: cursor } : {}) },
+        });
+        if (fetchId !== ordersFetchIdRef.current) return true;
+        orders.push(...(data.orders || []));
+        nextCursor = data.nextCursor ?? null;
+      }
+      if (fetchId !== ordersFetchIdRef.current) return true;
+      if (refreshLoadedPages) {
+        setOrders(orders);
+        loadedOrdersPageCountRef.current = Math.max(1, Math.ceil(orders.length / 50));
+        hasLoadedOlderOrdersRef.current = orders.length > 50;
+        setNextOrdersCursor(nextCursor);
+      } else if (cursor === undefined) {
+        if (hasLoadedOlderOrdersRef.current) {
+          const refreshedOrderIds = new Set(orders.map((order) => order.id));
+          setOrders((prev) => [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))]);
+        } else {
+          setOrders(orders);
+          setNextOrdersCursor(nextCursor);
+          loadedOrdersPageCountRef.current = 1;
+        }
+      } else {
+        setOrders((prev) => [...prev, ...orders]);
+        if (orders.length > 0) {
+          hasLoadedOlderOrdersRef.current = true;
+          loadedOrdersPageCountRef.current++;
+        }
+        setNextOrdersCursor(nextCursor);
+      }
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
         if (order.bill?.id && !fetchedBillIdsRef.current.has(order.bill.id)) {
@@ -253,12 +339,46 @@ export default function OrdersPage() {
       });
       return true;
     } catch {
-      toast.error(tOrders('loadOrdersFailed'));
+      if (fetchId === ordersFetchIdRef.current) toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
-      setLoading(false);
+      if (fetchId === ordersFetchIdRef.current) {
+        if (cursor === undefined) {
+          ordersRefreshInProgressRef.current = false;
+          setLoading(false);
+        } else {
+          ordersLoadMoreInProgressRef.current = false;
+        }
+        setLoadingMoreOrders(false);
+        if (ordersRefreshPendingRef.current && ordersRefreshTimerRef.current === null) {
+          ordersRefreshPendingRef.current = false;
+          const shouldRefreshLoadedPages = ordersRefreshLoadedPagesPendingRef.current;
+          ordersRefreshLoadedPagesPendingRef.current = false;
+          fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: shouldRefreshLoadedPages });
+        }
+      }
     }
   };
+
+  useEffect(() => {
+    searchRef.current = filters.search;
+    if (previousSearchRef.current === filters.search) return;
+    previousSearchRef.current = filters.search;
+    ordersFetchIdRef.current++;
+    ordersRefreshInProgressRef.current = false;
+    ordersLoadMoreInProgressRef.current = false;
+    ordersRefreshPendingRef.current = false;
+    ordersRefreshLoadedPagesPendingRef.current = false;
+    hasLoadedOlderOrdersRef.current = false;
+    loadedOrdersPageCountRef.current = 1;
+    setOrders([]);
+    setNextOrdersCursor(null);
+    setLoading(true);
+    setLoadingMoreOrders(false);
+    const timeout = setTimeout(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 300);
+    return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -279,7 +399,7 @@ export default function OrdersPage() {
       if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
       addItemsAttemptRef.current = null;
       toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     }).catch(() => {
       toast.error(tOrders('addItemsFailed'));
     });
@@ -328,7 +448,7 @@ export default function OrdersPage() {
     initPage();
 
     // 10-second backup polling interval (WebSocket handles real-time updates)
-    const interval = setInterval(fetchOrders, 10000);
+    const interval = setInterval(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 10000);
 
     // Live WebSocket connection to trigger immediate updates
     let ws: globalThis.WebSocket | null = null;
@@ -352,7 +472,7 @@ export default function OrdersPage() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
-              fetchOrders();
+              fetchOrders(undefined, { rateLimitedRefresh: true });
             }
           } catch {
             // Ignore parse errors
@@ -376,6 +496,10 @@ export default function OrdersPage() {
     return () => {
       clearInterval(interval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ordersRefreshTimerRef.current !== null) clearTimeout(ordersRefreshTimerRef.current);
+      ordersRefreshTimerRef.current = null;
+      ordersRefreshPendingRef.current = false;
+      ordersRefreshLoadedPagesPendingRef.current = false;
       if (ws) {
         ws.onclose = null;
         ws.close();
@@ -447,7 +571,7 @@ export default function OrdersPage() {
       setLinkCustomerOrderId(null);
       setLinkCustomerSearch('');
       setLinkCustomerResults([]);
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('linkCustomerFailed'));
     } finally {
@@ -470,10 +594,6 @@ export default function OrdersPage() {
     // Filter unpaid orders using resolved payment status since bills are generated at checkout.
     if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
 
-    // Search by order number, customer name, or phone
-    if (filters.search && !matchesOrderSearch(order, filters.search)) {
-      return false;
-    }
     // Filter by table
     if (filters.table && String(order.table_id) !== filters.table) {
       return false;
@@ -514,7 +634,7 @@ export default function OrdersPage() {
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
-    fetchOrders();
+    fetchOrders(undefined, { refreshLoadedPages: true });
 
     if (bill && autoPrintBill) {
       try {
@@ -596,7 +716,7 @@ export default function OrdersPage() {
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       const bill = data.bill as Bill;
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
-      await fetchOrders();
+      await fetchOrders(undefined, { refreshLoadedPages: true });
       setConfirmPrintBillId(bill.id);
     } catch {
       toast.error(tOrders('generateBillFailed'));
@@ -674,7 +794,7 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
       toast.success(tOrders('itemRemoved'));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('removeItemFailed'));
     }
@@ -690,7 +810,7 @@ export default function OrdersPage() {
       });
       toast.success(tOrders('itemVoided'));
       setVoidItemModal(null);
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('voidItemFailed'));
     } finally {
@@ -703,7 +823,7 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
       toast.success(tOrders('itemRestored'));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('restoreItemFailed'));
     }
@@ -732,7 +852,7 @@ export default function OrdersPage() {
         { pointsEarned: order.bill.points_earned ?? 0 },
         locale,
       );
-      await fetchOrders();
+      await fetchOrders(undefined, { refreshLoadedPages: true });
     } finally {
       setSendingWaOrderId(null);
     }
@@ -764,7 +884,7 @@ export default function OrdersPage() {
         override_pin: discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
       });
       toast.success(tOrders('discountApplied'));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('discountFailed'));
     } finally {
@@ -780,7 +900,7 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${order.id}/convert-to-takeaway`);
       toast.success(tOrders('orderConvertedTakeaway'));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('convertOrderFailed'));
     } finally {
@@ -873,7 +993,7 @@ export default function OrdersPage() {
       addItemsAttemptRef.current = null;
       toast.success(tOrders('itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('addItemsFailed'));
     } finally {
@@ -893,7 +1013,7 @@ export default function OrdersPage() {
         override_pin: cancelModal.overridePin || undefined,
       });
       toast.success(tOrders('orderCancelled'));
-      fetchOrders();
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
       toast.error(tOrders('cancelOrderFailed'));
     } finally {
@@ -1201,6 +1321,13 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
+      {filters.search.trim() && tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
+        <div className="text-center py-3 border-t border-border">
+          <Button variant="outline" size="sm" onClick={() => fetchOrders(nextOrdersCursor)} disabled={loadingMoreOrders}>
+            {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
+          </Button>
+        </div>
+      )}
 
       {/* Payment Modal */}
       {paymentBill && (
@@ -1219,7 +1346,7 @@ export default function OrdersPage() {
           order={refundModal.order}
           bills={refundModal.bills}
           onClose={() => setRefundModal(null)}
-          onRefunded={() => { setRefundModal(null); fetchOrders(); }}
+          onRefunded={() => { setRefundModal(null); fetchOrders(undefined, { refreshLoadedPages: true }); }}
         />
       )}
 

@@ -153,7 +153,8 @@
     "update": "Aggiorna",
     "windowControls": "Controlli della finestra",
     "yes": "Sì",
-    "back": "Indietro"
+    "back": "Indietro",
+    "loadMore": "Carica altro"
   },
   "countries": {
     "selectCountry": "Seleziona paese…"

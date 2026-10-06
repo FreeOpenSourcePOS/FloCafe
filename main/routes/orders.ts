@@ -293,6 +293,31 @@ router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Requ
       wheres.push('type = ?');
       params.push(req.query.type);
     }
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    if (search) {
+      db.function('orders_search_contains', (value: string | null, query: string) =>
+        typeof value === 'string' && value.toLowerCase().includes(query.toLowerCase()) ? 1 : 0
+      );
+      db.function('orders_search_digits_contains', (value: string | null, digits: string) =>
+        typeof value === 'string' && value.replace(/\D/g, '').includes(digits) ? 1 : 0
+      );
+      const phoneDigits = search.replace(/\D/g, '');
+      const customerSearch = ['orders_search_contains(search_customer.name, ?)'];
+      if (phoneDigits && !/\p{L}/u.test(search)) {
+        customerSearch.push('orders_search_digits_contains(search_customer.phone_digits, ?)');
+        customerSearch.push('orders_search_digits_contains(search_customer.phone, ?)');
+      }
+      wheres.push(`(
+        orders_search_contains(orders.order_number, ?)
+        OR EXISTS (
+          SELECT 1 FROM customers AS search_customer
+          WHERE search_customer.id = orders.customer_id
+            AND (${customerSearch.join(' OR ')})
+        )
+      )`);
+      params.push(search, search);
+      if (phoneDigits && !/\p{L}/u.test(search)) params.push(phoneDigits, phoneDigits);
+    }
     // Filter by UTC day or date range across indexed created_at column.
     if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());

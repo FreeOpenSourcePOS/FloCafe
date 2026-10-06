@@ -153,7 +153,8 @@
     "windowControls": "विंडो नियंत्रण",
     "yes": "हाँ",
     "back": "वापस",
-    "tax": "कर"
+    "tax": "कर",
+    "loadMore": "और अधिक लोड करें"
   },
   "countries": {
     "selectCountry": "देश चुनें…"

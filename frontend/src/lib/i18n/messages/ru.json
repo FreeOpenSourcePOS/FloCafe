@@ -153,7 +153,8 @@
     "update": "Обновить",
     "windowControls": "Элементы управления окнами",
     "yes": "Да",
-    "back": "Назад"
+    "back": "Назад",
+    "loadMore": "Загрузить еще"
   },
   "countries": {
     "selectCountry": "Выбрать страну…"

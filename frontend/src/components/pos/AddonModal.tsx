@@ -138,7 +138,8 @@ export default function AddonModal({
         return;
       }
 
-      const stockCeiling = addonStockCeiling(addon);
+      const rawCeiling = addonStockCeiling(addon);
+      const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / Math.max(1, quantity));
       if (delta > 0 && stockCeiling != null && newQty > stockCeiling) {
         return;
       }
@@ -173,6 +174,20 @@ export default function AddonModal({
   const addonTotal = allAddons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
   const itemTotal = (basePrice + addonTotal) * quantity;
 
+  const canQuantityCoverAddons = (targetQty: number): boolean => {
+    if (targetQty <= 0) return false;
+    for (const addon of allAddons) {
+      const rawCeiling = addonStockCeiling(addon);
+      if (rawCeiling == null) continue;
+      const required = (addon.quantity || 1) * targetQty;
+      if (required > rawCeiling) return false;
+    }
+    return true;
+  };
+
+  const nextItemQty = step == null ? quantity + 1 : roundToQuantityPrecision(quantity + step, step);
+  const canIncreaseItemQty = canQuantityCoverAddons(nextItemQty);
+
   const groupsSatisfied = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
     const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
@@ -182,7 +197,7 @@ export default function AddonModal({
   });
   // A product with variants cannot be sold without one, and a fully sold-out
   // variant set cannot be sold at all.
-  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant));
+  const isValid = groupsSatisfied && (variants.length === 0 || Boolean(selectedVariant)) && canQuantityCoverAddons(quantity);
 
   const handleAdd = () => {
     if (!isValid) return;
@@ -280,7 +295,8 @@ export default function AddonModal({
                     const isSel = addonQty > 0;
                     const soldOut = isAddonSoldOut(addon);
                     const lowStock = isAddonLowStock(addon);
-                    const stockCeiling = addonStockCeiling(addon);
+                    const rawCeiling = addonStockCeiling(addon);
+                    const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / Math.max(1, quantity));
                     // The cashier may only dial up to what is left, but never past
                     // the group cap, and an untracked add-on is never limited.
                     const atStockCeiling = stockCeiling != null && addonQty >= stockCeiling;
@@ -371,7 +387,7 @@ export default function AddonModal({
                           ) : (
                             <button
                               type="button"
-                              disabled={soldOut}
+                              disabled={plusDisabled}
                               onClick={() => toggleAddonCheckbox(group, addon)}
                               className={`touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50`}
                             >
@@ -424,18 +440,22 @@ export default function AddonModal({
               <Minus size={18} />
             </button>
             <div className="grid grid-cols-3 gap-2">
-              {[1, 2, 3].map((quickQty) => (
-                <button
-                  key={quickQty}
-                  type="button"
-                  onClick={() => setQty(quickQty)}
-                  className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums ${
-                    quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
-                  }`}
-                >
-                  {quickQty}
-                </button>
-              ))}
+              {[1, 2, 3].map((quickQty) => {
+                const disabled = !canQuantityCoverAddons(quickQty);
+                return (
+                  <button
+                    key={quickQty}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setQty(quickQty)}
+                    className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums disabled:cursor-not-allowed disabled:opacity-50 ${
+                      quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
+                    }`}
+                  >
+                    {quickQty}
+                  </button>
+                );
+              })}
             </div>
             {step == null ? (
               <span className="text-lg font-bold w-10 text-center tabular-nums">{quantity}</span>
@@ -461,7 +481,8 @@ export default function AddonModal({
                   ? setQty(quantity + 1)
                   : setQty(roundToQuantityPrecision(quantity + step, step))
               }
-              className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted"
+              disabled={!canIncreaseItemQty}
+              className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={t('addItems')}
             >
               <Plus size={18} />

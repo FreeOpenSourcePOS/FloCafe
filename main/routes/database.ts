@@ -188,11 +188,16 @@ router.post('/import', requirePermission('database.manage'),
           });
         }
       }
+      const importAddons = Array.isArray(importData.addons)
+        ? (importSchemaVersion !== null && importSchemaVersion < 104
+          ? importData.addons.map((a) => (a && typeof a === 'object' && !('stock_quantity' in a) ? { ...a, stock_quantity: 0 } : a))
+          : importData.addons)
+        : [];
       if (Array.isArray(importData.inventory_movements) && validateInventoryLedgerRows(
         importData.products,
         importData.inventory_movements,
         Array.isArray(importData.product_variants) ? importData.product_variants : [],
-        Array.isArray(importData.addons) ? importData.addons : [],
+        importAddons,
       )) {
         return res.status(400).json({
           error: 'Product stock must match the latest inventory movement history',

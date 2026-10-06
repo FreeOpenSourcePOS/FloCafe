@@ -71,16 +71,7 @@ export function buildMenuWebPrintHtml(input: MenuWebPrintInput): string {
 
 export class MenuPopupBlockedError extends Error {}
 
-/**
- * Holds the user gesture a popup blocker would otherwise consume.
- *
- * The print request crosses an await, so a window opened after it would be
- * blocked. The desktop runtime has no blocker to defeat - its window-open
- * handler decides every popup outright - so opening one there bought nothing
- * and cost the cashier a flash of an empty window on every successful print,
- * a window that a physical printer never used. Where a blocker does exist the
- * reservation is still made, synchronously, before the request goes out.
- */
+/** Holds the user gesture before async print requests in browsers with popup blockers. */
 export function reservePrintGesture(host: Window = window): Window | null {
   if (host.electronAPI) return null;
   try {
@@ -91,7 +82,9 @@ export function reservePrintGesture(host: Window = window): Window | null {
 }
 
 export function printMenuInBrowser(html: string, targetWindow?: Window | null): void {
-  const printWindow = targetWindow !== undefined ? targetWindow : window.open('', '_blank');
+  const printWindow = (targetWindow !== undefined && targetWindow !== null)
+    ? targetWindow
+    : window.open('', '_blank');
   if (!printWindow || printWindow.closed) throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');
   printWindow.document.open();
   printWindow.document.write(html);

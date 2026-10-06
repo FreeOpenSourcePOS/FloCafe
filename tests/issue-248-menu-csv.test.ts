@@ -391,26 +391,30 @@ async function main() {
     const exportHeader = exported.split('\n')[0];
     assertIncludesOrThrow(exportHeader, 'track_inventory', 'the add-on export carries a track_inventory column');
     assertIncludesOrThrow(exportHeader, 'stock_quantity', 'the add-on export carries a stock_quantity column');
+    assertIncludesOrThrow(exportHeader, 'low_stock_threshold', 'the add-on export carries a low_stock_threshold column');
     const exportedTracked = exportedRecord(exported, 'Stock Group', 'Tracked Addon');
     assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[6], 'yes', 'the export marks a tracked add-on as tracked');
     assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[7], '50', 'the export carries the add-on stock level');
+    assertEqualOrThrow(exportedTracked === null ? null : exportedTracked[8], '0', 'the export carries the default low stock threshold');
     const exportedLegacy = exportedRecord(exported, 'Legacy Sheet Group', 'Legacy Sheet Addon');
     assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[6], 'no', 'the export marks an untracked add-on as untracked');
     assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[7], '0', 'the export carries zero stock for an untracked add-on');
+    assertEqualOrThrow(exportedLegacy === null ? null : exportedLegacy[8], '0', 'the export carries zero threshold for an untracked add-on');
 
     // Round trip: the exported header is the new format, so re-importing it must
     // rebuild the same stock pool on a fresh add-on rather than losing it.
     const roundTrip = await api(baseUrl, '/api/menu/csv/import/addons', {
       method: 'POST',
       body: {
-        csv: [exportHeader, 'Round Trip Group,Round Trip Addon,12,no,0,1,yes,50'].join('\n'),
+        csv: [exportHeader, 'Round Trip Group,Round Trip Addon,12,no,0,1,yes,50,5'].join('\n'),
       },
       headers: authHeader,
     });
     assertEqualOrThrow(roundTrip.data.addons_created, 1, 'an exported-format row re-imports as a new add-on');
-    const roundTripRow = db.prepare('SELECT id, track_inventory, stock_quantity FROM addons WHERE name = ?').get('Round Trip Addon') as any;
+    const roundTripRow = db.prepare('SELECT id, track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE name = ?').get('Round Trip Addon') as any;
     assertEqualOrThrow(roundTripRow.track_inventory, 1, 'the round trip preserves tracking');
     assertEqualOrThrow(roundTripRow.stock_quantity, 50, 'the round trip preserves stock');
+    assertEqualOrThrow(roundTripRow.low_stock_threshold, 5, 'the round trip preserves low stock threshold');
     assertEqualOrThrow(
       validateInventoryLedgerDatabase(db),
       null,

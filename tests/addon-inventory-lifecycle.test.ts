@@ -1,17 +1,4 @@
-/**
- * Add-on inventory, end to end (#358).
- *
- * One story, one fixture, one database: the registry carries the add-on stock
- * columns, the catalog takes a tracked add-on with opening stock, a till sells
- * it and is refused when the pool cannot cover the line, cancelling gives back
- * exactly what was taken, a void stays a waste, a restore re-deducts the
- * recorded snapshot, and the POS refuses to sell a row the pool has emptied.
- *
- * Every assertion is on observable behaviour - a stock figure, a ledger row, an
- * HTTP status, a message - so a regression has to break one of those to pass.
- *
- * Usage: node tests/run-electron-node-test.cjs tests/addon-inventory-lifecycle.test.ts
- */
+/** Add-on inventory end-to-end lifecycle verification. */
 const Module = require('module');
 const originalLoad = Module._load;
 const fs = require('fs');
@@ -37,7 +24,7 @@ const { orderRoutes } = require('../main/routes/orders');
 const { isAddonSoldOut, isAddonLowStock, addonStockCeiling } = require('../frontend/src/lib/addon-inventory');
 
 /** Version the add-on inventory migration ships as, and the registry tail it must own. */
-const ADDON_MIGRATION_VERSION = 103;
+const ADDON_MIGRATION_VERSION = 104;
 // The catalog assigns the ids, so these are filled in once the group is created.
 let OAT = '';
 let WHOLE = '';
@@ -87,9 +74,11 @@ async function main() {
     // ── 1. The registry carries the add-on stock columns ───────────────────
     console.log('\n--- The registry carries the add-on stock columns ---');
     {
+      const migration = MIGRATIONS.find((m: any) => m.version === ADDON_MIGRATION_VERSION);
+      assertOrThrow(!!migration, 'the add-on inventory migration is registered');
+      assertEqualOrThrow(migration.name, 'add_addon_inventory', 'the migration is add_addon_inventory');
       const tail = MIGRATIONS[MIGRATIONS.length - 1];
-      assertEqualOrThrow(tail.version, ADDON_MIGRATION_VERSION, 'the add-on inventory migration is the registry tail');
-      assertEqualOrThrow(tail.name, 'add_addon_inventory', 'the tail migration is add_addon_inventory');
+      assertEqualOrThrow(tail.version, ADDON_MIGRATION_VERSION, 'the add-on inventory migration is the current registry tail');
 
       const addonColumns = columnsOf(db, 'addons').map((column) => column.name);
       for (const column of ['track_inventory', 'stock_quantity', 'low_stock_threshold']) {

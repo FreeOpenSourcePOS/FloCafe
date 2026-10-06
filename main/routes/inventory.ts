@@ -17,6 +17,7 @@ function queryString(value: unknown, field: string): string | undefined {
 router.get('/movements', requirePermission('inventory.view'), (req: Request, res: Response) => {
   try {
     const productId = queryString(req.query.product_id, 'product_id');
+    const addonId = queryString(req.query.addon_id, 'addon_id');
     const referenceType = queryString(req.query.reference_type, 'reference_type');
     const referenceId = queryString(req.query.reference_id, 'reference_id');
     const movementType = queryString(req.query.movement_type, 'movement_type') as InventoryMovementType | undefined;
@@ -40,6 +41,7 @@ router.get('/movements', requirePermission('inventory.view'), (req: Request, res
 
     const page = listInventoryMovements(getDatabase(), {
       productId,
+      addonId,
       movementType,
       referenceType,
       referenceId,

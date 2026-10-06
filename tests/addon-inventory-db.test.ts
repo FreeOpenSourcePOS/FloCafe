@@ -1,16 +1,4 @@
-/**
- * Add-on inventory schema, ledger, and currency-reset foundation.
- *
- * Usage: node tests/run-electron-node-test.cjs tests/addon-inventory-db.test.ts
- *
- * Migration v103 gives add-ons their own stock pool. The load-bearing part is
- * the ledger: inventory_movements now carries a third pool, and every read path
- * of the append-only ledger has to recognise it. A pool the validator does not
- * know fails quietly - the store simply can never restore its own backup again -
- * so this suite proves the add-on pool is carried through the selectable
- * columns, the history key, the chain keying, the replacement check, and the
- * currency reset that restarts the ledger empty.
- */
+/** Add-on inventory schema, ledger, and currency-reset foundation. */
 const Module = require('module');
 const originalLoad = Module._load;
 const fs = require('fs');
@@ -28,12 +16,12 @@ const {
   getInventoryMovementRows, validateInventoryLedgerDatabase, validateInventoryLedgerRows,
   validateInventoryLedgerReplacement, resetDatabaseForCurrencyChange, createBackup, restoreBackup,
 } = require('../main/db');
-const { adjustProductStock } = require('../main/services/inventory');
+const { adjustProductStock, listInventoryMovements } = require('../main/services/inventory');
 const {
   assertOrThrow, assertEqualOrThrow, getResults, resetCounters,
 } = require('./helpers/test-setup');
 
-const ADDON_INVENTORY_VERSION = 103;
+const ADDON_INVENTORY_VERSION = 104;
 
 function columnInfo(db: any, table: string, column: string): any {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).find((info) => info.name === column);
@@ -252,6 +240,13 @@ function inventoryServiceAssertions(): void {
     unknownAddon = error.message;
   }
   assertEqualOrThrow(unknownAddon, 'Add-on not found', 'an unknown add-on pool is a 404, not a silent write');
+
+  const addonPage = listInventoryMovements(db, { addonId: 'oat' });
+  assertOrThrow(addonPage.movements.length >= 2, 'listing movements with addonId filter returns add-on movements');
+  assertOrThrow(
+    addonPage.movements.every((m: any) => m.addon_id === 'oat' && m.addon_name === 'oat'),
+    'movements filtered by addonId carry addon_id and addon_name',
+  );
 }
 
 function ledgerValidatorAssertions(): void {
@@ -370,31 +365,31 @@ function replaySafetyAssertions(): void {
 
   assertOrThrow(
     JSON.stringify(columnsOf(db, 'inventory_movements')) === JSON.stringify(beforeColumns),
-    'replaying v103 adds no duplicate ledger columns',
+    'replaying v104 adds no duplicate ledger columns',
   );
   assertEqualOrThrow(
     db.prepare('SELECT COUNT(*) AS count FROM inventory_movements').get().count,
     beforeRows,
-    'replaying v103 keeps every movement row',
+    'replaying v104 keeps every movement row',
   );
   assertOrThrow(
     JSON.stringify(indexNames(db, 'inventory_movements').sort()) === JSON.stringify(beforeIndexes),
-    'replaying v103 does not duplicate ledger indexes',
+    'replaying v104 does not duplicate ledger indexes',
   );
   assertOrThrow(
     JSON.stringify(db.prepare('SELECT id, stock_quantity FROM addons ORDER BY id').all()) === JSON.stringify(beforeAddons),
-    'replaying v103 keeps add-on stock untouched',
+    'replaying v104 keeps add-on stock untouched',
   );
   assertEqualOrThrow(
     validateInventoryLedgerDatabase(db),
     null,
-    'the store still validates after a v103 replay',
+    'the store still validates after a v104 replay',
   );
 }
 
-async function upgradeFromPreV103Assertions(): Promise<void> {
+async function upgradeFromPreV104Assertions(): Promise<void> {
   await closeStore();
-  const db = initAtVersion(102);
+  const db = initAtVersion(103);
   const stamp = now();
   db.prepare(`INSERT INTO users (id, name, password, role, is_active, created_at, updated_at)
     VALUES ('owner', 'Owner', 'hash', 'owner', 1, ?, ?)`).run(stamp, stamp);
@@ -415,12 +410,12 @@ async function upgradeFromPreV103Assertions(): Promise<void> {
 
   assertOrThrow(
     !columnsOf(db, 'addons').includes('stock_quantity'),
-    'the pre-v103 fixture has no add-on stock column',
+    'the pre-v104 fixture has no add-on stock column',
   );
   assertEqualOrThrow(
     columnInfo(db, 'inventory_movements', 'product_id').notnull,
     1,
-    'the pre-v103 fixture still requires a product on every movement',
+    'the pre-v104 fixture still requires a product on every movement',
   );
 
   MIGRATIONS.length = 0;
@@ -433,7 +428,7 @@ async function upgradeFromPreV103Assertions(): Promise<void> {
     })();
   }
 
-  assertEqualOrThrow(getCurrentSchemaVersion(), ADDON_INVENTORY_VERSION, 'the upgraded store reaches v103');
+  assertEqualOrThrow(getCurrentSchemaVersion(), ADDON_INVENTORY_VERSION, 'the upgraded store reaches v104');
   assertOrThrow(
     columnsOf(db, 'addons').includes('low_stock_threshold'),
     'the upgrade adds the add-on inventory columns',
@@ -589,11 +584,11 @@ async function main() {
 
   console.log('─── Replay safety ───');
   replaySafetyAssertions();
-  console.log('  ✓ v103 can be replayed without duplicating columns, indexes, or rows');
+  console.log('  ✓ v104 can be replayed without duplicating columns, indexes, or rows');
 
-  console.log('─── Upgrade from a pre-v103 store ───');
-  await upgradeFromPreV103Assertions();
-  console.log('  ✓ a populated pre-v103 store upgrades without losing data or reusing movement ids');
+  console.log('─── Upgrade from a pre-v104 store ───');
+  await upgradeFromPreV104Assertions();
+  console.log('  ✓ a populated pre-v104 store upgrades without losing data or reusing movement ids');
 
   console.log('─── Currency reset ───');
   await currencyResetAssertions();
@@ -604,9 +599,12 @@ async function main() {
   if (results.failed > 0) process.exit(1);
 }
 
-main().catch((error: unknown) => {
-  console.error(error);
-  try { closeDatabase(); } catch { /* already closed */ }
-  fs.rmSync(activeTestDir, { recursive: true, force: true });
-  process.exit(1);
-});
+main()
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    try { closeDatabase(); } catch { /* already closed */ }
+    fs.rmSync(activeTestDir, { recursive: true, force: true });
+  });

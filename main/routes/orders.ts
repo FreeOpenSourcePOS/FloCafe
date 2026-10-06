@@ -198,13 +198,7 @@ interface AddonStockLine {
   inventory_deducted_quantity: number;
 }
 
-/**
- * Move the add-on pools an order line consumed, in the caller's transaction.
- *
- * Quantities come from the snapshot written on the line, never from a
- * recomputation: a merchant may have changed the add-on after the sale, and
- * moving a recomputed amount would silently inflate or drain the pool.
- */
+/** Move the add-on pools an order line consumed, using the snapshot recorded on the line. */
 function moveOrderItemAddonStock(
   db: ReturnType<typeof getDatabase>,
   addons: AddonStockLine[],
@@ -316,7 +310,7 @@ function resolveItemAddons(
       const available = Number(catalog.stock_quantity ?? 0);
       // Refusing is the point: a tracked add-on with nothing left must not be
       // silently substituted, so there is no variant-style fallback here.
-      if (requirement > available) {
+      if (requirement - available > 1e-8) {
         throw new Error(`Add-on "${catalog.name}" is out of stock (requested ${requirement}, available ${available})`);
       }
       inventoryDeductedQuantity = requirement;
@@ -705,6 +699,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 
     const db = getDatabase();
 
+    if (idempotencyKey && requestHash) {
+      const replayed = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash) as { order: any } | null;
+      if (replayed) {
+        return res.status(200).json({ order: replayed.order });
+      }
+    }
+
     // Free text that ends up printed on a courier slip, so it is capped and
     // validated the same way order notes are, at this boundary.
     let expectedPaymentMethod: string | null;
@@ -727,8 +728,6 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     }
     const result = withTxn(() => {
       if (idempotencyKey) {
-        // Preserve exact replay for pre-user-scoped records whose creator is
-        // unavailable. New records never use the `legacy` compatibility owner.
         const prior = db.prepare(`
           SELECT request_hash, response_json
           FROM order_idempotency

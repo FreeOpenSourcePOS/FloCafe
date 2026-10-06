@@ -631,7 +631,7 @@ function OrderDetailContent({
                     {splitBill.split_label || `#${splitBill.bill_number}`}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {fmt(Number(splitBill.total))} · {splitBill.payment_status === 'paid' ? tOrders('paid') : tOrders('balance')}
+                    {fmt(Number(splitBill.payment_status === 'paid' ? splitBill.total : splitBill.balance))} · {splitBill.payment_status === 'paid' ? tOrders('paid') : tOrders('balance')}
                   </p>
                 </div>
                 {canPaySplitBill(splitBill) && onPayBill && (

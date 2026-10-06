@@ -422,6 +422,7 @@ export default function OrdersPage() {
   // the effect below is the fallback when the socket is unavailable.
   useEffect(() => {
     if (kdsEnabled !== true) return;
+    let active = true;
     let ws: globalThis.WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
 
@@ -455,7 +456,16 @@ export default function OrdersPage() {
             setKdsEnabled(false);
             return;
           }
-          reconnectTimeout = setTimeout(connectWS, 3000);
+          reconnectTimeout = setTimeout(() => {
+            api.get('/settings/kds_enabled')
+              .then(({ data }) => {
+                if (!active) return;
+                const value = data?.setting?.value;
+                if (value === 'true') connectWS();
+                else setKdsEnabled(value === 'false' ? false : null);
+              })
+              .catch(() => { if (active) setKdsEnabled(null); });
+          }, 3000);
         };
 
         ws.onerror = () => {
@@ -469,6 +479,7 @@ export default function OrdersPage() {
     connectWS();
 
     return () => {
+      active = false;
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) {
         ws.onclose = null;

@@ -44,6 +44,7 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect(dialog.getByRole('heading', { name: 'Print Menu', exact: true })).toBeVisible();
   await dialog.getByRole('checkbox', { name: 'Include descriptions' }).click();
   await dialog.getByRole('checkbox', { name: 'Include modifiers' }).click();
+  await dialog.getByRole('radio', { name: 'Paper (A4 / Letter)' }).click();
   await dialog.getByRole('combobox', { name: 'Paper Size' }).selectOption('Letter');
   const popupPromise = page.waitForEvent('popup');
   await dialog.getByRole('button', { name: 'Print Menu', exact: true }).click();
@@ -53,5 +54,45 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect.poll(() => popup.locator('style').textContent()).toContain('size: Letter portrait');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 })).toHaveCount(0);
+  await popup.close();
+});
+
+test('print menu offers receipt, paper, and PDF destinations', async ({ page, context }) => {
+  await context.addInitScript(() => { window.print = () => {}; });
+  await page.goto(`${BASE}/auth/login`);
+  await page.getByLabel('Email').fill('owner@flo.local');
+  await page.getByLabel('Password').fill(E2E_PASSWORD);
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL(/\/(pos|orders)/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('token'))).not.toBeNull();
+  await page.goto(`${BASE}/pos`);
+  await expect(page.getByRole('button', { name: /E2E Coffee/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Print Menu', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  // Every destination the operator can reach is offered up front; A4/Letter is
+  // a detail of the paper choice rather than the only way to print.
+  const destinations = dialog.getByRole('radiogroup', { name: 'Print destination' });
+  await expect(destinations.getByRole('radio')).toHaveCount(3);
+  await expect(destinations.getByRole('radio', { name: 'Receipt printer' })).toBeVisible();
+  await expect(destinations.getByRole('radio', { name: 'Paper (A4 / Letter)' })).toHaveAttribute('aria-checked', 'true');
+  await expect(destinations.getByRole('radio', { name: 'Save as PDF' })).toBeVisible();
+
+  // The receipt destination swaps the sheet size for the thermal roll width,
+  // and a missing picker never dead-ends the operator.
+  await destinations.getByRole('radio', { name: 'Receipt printer' }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Paper Size' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Print Menu', exact: true })).toBeEnabled();
+
+  // Without the desktop bridge, saving as PDF still produces a printable
+  // document through the browser print dialog.
+  await destinations.getByRole('radio', { name: 'Save as PDF' }).click();
+  const popupPromise = page.waitForEvent('popup');
+  await dialog.getByRole('button', { name: 'Save as PDF' }).click();
+  const popup = await popupPromise;
+  await expect(popup.getByRole('heading', { name: 'Menu', level: 1 })).toBeVisible();
+  await expect.poll(() => popup.locator('style').textContent()).toContain('size: A4 portrait');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await popup.close();
 });

@@ -689,6 +689,8 @@
     "decreasePax": "Aantal personen verlagen",
     "delivery": "Bezorging",
     "deliveryAddress": "Afleveradres",
+    "expectedPayment": "Verwachte betaling",
+    "deliveryNotePlaceholder": "Bezorgnotitie voor de koerier",
     "discount": "Korting",
     "discounts": "Kortingen",
     "discountInvalid": "Voer een geldige kortingswaarde in",
@@ -963,7 +965,9 @@
       "partiallyRefunded": "GEDEELTELIJK TERUGBETAALD",
       "cashOnDelivery": "Rembours",
       "amountDue": "Verschuldigd bedrag",
-      "multiplePaymentMethods": "Meerdere betaalmethoden"
+      "multiplePaymentMethods": "Meerdere betaalmethoden",
+      "expectedPayment": "Verwachte betaling",
+      "deliveryNote": "Bezorgnotitie"
     },
     "hsn": "HSN",
     "zReport": {

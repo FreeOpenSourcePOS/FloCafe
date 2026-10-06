@@ -7,6 +7,9 @@ const DEFAULT_MAX_ORDER_NOTES_LENGTH = 200;
 const DEFAULT_MAX_ITEM_NOTES_LENGTH = 100;
 const DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH = 300;
 const DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH = 300;
+const DEFAULT_MAX_DELIVERY_NOTE_LENGTH = 200;
+/** Built-in methods a courier can collect at the door; wallet and loyalty settle in-store. */
+const COURIER_COLLECTIBLE_METHODS = ['cash', 'card'];
 
 function validateNoteLength(db: SettingsLookup, settingKey: string, defaultLimit: number, notes: string | null | undefined, label: string): void {
   if (!notes) return;
@@ -34,6 +37,29 @@ export function validateCustomerAddress(db: SettingsLookup, address: string | nu
 /** Free text bound for a printed document, so nothing unbounded is persisted. */
 export function validateDeliveryAddress(db: SettingsLookup, address: string | null | undefined): void {
   validateNoteLength(db, 'max_delivery_address_length', DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH, address, 'Delivery address');
+}
+
+/** Courier-only free text, bounded for the slip like the delivery address. */
+export function validateDeliveryNote(db: SettingsLookup, note: string | null | undefined): void {
+  validateNoteLength(db, 'max_delivery_note_length', DEFAULT_MAX_DELIVERY_NOTE_LENGTH, note, 'Delivery note');
+}
+
+/**
+ * The method the courier expects to collect, never a record of payment. Null is
+ * unknown; `pending` means the customer has not decided yet.
+ */
+export function resolveExpectedPaymentMethod(db: SettingsLookup, value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw new Error('expected_payment_method must be a string');
+  const method = value.trim();
+  const normalized = method.toLowerCase();
+  if (normalized === '' || normalized === 'unknown') return null;
+  if (normalized === 'pending' || COURIER_COLLECTIBLE_METHODS.includes(normalized)) return normalized;
+  const custom = db.prepare('SELECT name FROM payment_methods WHERE name = ? COLLATE NOCASE AND is_active = 1').get(method) as { name?: string } | undefined;
+  if (!custom?.name) {
+    throw new Error('expected_payment_method must be unknown, pending, cash, card, or an active payment method');
+  }
+  return custom.name;
 }
 
 export function validateProductQuantity(

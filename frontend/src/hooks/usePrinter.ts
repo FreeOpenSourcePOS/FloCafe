@@ -626,6 +626,7 @@ export const usePrinterStore = create<PrinterState>()(
             created_at: String(orderForPrint.created_at ?? ''),
             type: String((orderForPrint as { type?: string }).type ?? ''),
             special_instructions: orderForPrint.special_instructions ?? null,
+            delivery_note: orderForPrint.delivery_note ?? null,
           };
           const hw = initialPrinter;
           if (hw && get().printMethod === 'escpos') {

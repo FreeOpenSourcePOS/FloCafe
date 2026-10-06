@@ -5619,6 +5619,21 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 103,
+    name: 'add_order_delivery_collection_details',
+    up: () => {
+      // Additive only: NULL reads as an unknown expected method and no note,
+      // which is exactly what every existing delivery order recorded.
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('expected_payment_method')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN expected_payment_method TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('delivery_note')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN delivery_note TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5912,6 +5927,8 @@ function createSchema(): void {
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
       delivery_address TEXT DEFAULT NULL,
+      expected_payment_method TEXT DEFAULT NULL,
+      delivery_note TEXT DEFAULT NULL,
       guest_count INTEGER,
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,

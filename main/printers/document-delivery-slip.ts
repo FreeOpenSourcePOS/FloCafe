@@ -30,6 +30,7 @@ import {
   clampDeliverySlipText,
   MAX_DELIVERY_SLIP_NOTE_CHARS,
   resolveDeliverySlipPaymentSummary,
+  sanitizeDeliverySlipPaymentMethod,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
   type DeliverySlipPaymentBill,
@@ -78,6 +79,10 @@ export interface DeliverySlipOrderRow {
   readonly delivery_address?: unknown;
   /** Order-level note. Item-level instructions arrive on DeliverySlipItemRow. */
   readonly special_instructions?: unknown;
+  /** Courier-only note; absent on every pre-column order. */
+  readonly delivery_note?: unknown;
+  /** Method expected at handover; NULL is unknown. Never a captured payment. */
+  readonly expected_payment_method?: unknown;
   readonly total?: unknown;
   readonly bill?: {
     readonly payment_status?: unknown;
@@ -118,6 +123,10 @@ export function buildDeliverySlipPrintData(
   const { text: note, truncatedChars: noteTruncatedChars } = clampDeliverySlipText(
     String(order?.special_instructions ?? '').trim(),
   );
+  const { text: deliveryNote, truncatedChars: deliveryNoteTruncatedChars } = clampDeliverySlipText(
+    String(order?.delivery_note ?? '').trim(),
+  );
+  const expectedMethod = sanitizeDeliverySlipPaymentMethod(order?.expected_payment_method);
 
   const ticketItems = Array.isArray(items) ? items : [];
   const paymentBills = Array.isArray(order?.bills) ? order.bills : order?.bill;
@@ -135,6 +144,7 @@ export function buildDeliverySlipPrintData(
       ...paymentSummary,
       formattedAmount: formatAmount(paymentSummary.amount),
       formattedAmountDue: formatAmount(paymentSummary.amountDue),
+      ...(expectedMethod ? { expectedMethod } : {}),
     }
     : undefined;
   return {
@@ -147,6 +157,8 @@ export function buildDeliverySlipPrintData(
     // item. Stored on every order; printed on none before this.
     note,
     noteTruncatedChars,
+    deliveryNote,
+    deliveryNoteTruncatedChars,
     contact: {
       name: String(contact?.name ?? order?.customer?.name ?? '').trim(),
       // The delivery override, or the receipt setting when it is off: both
@@ -335,29 +347,33 @@ function slipNoteLines(
   sourceControlLines: string[],
 ): string[] {
   const lines: string[] = [];
-  if (!notes.note && notes.noteTruncatedChars <= 0) return lines;
-  // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
-  // than one that runs long. pushWrapped is the same helper the address uses.
-  if (notes.note) {
-    const labeled = thermalSafeText(
-      `${labelOf(notes.label)}: `,
-      'Note: ',
-      options.arabicShaping,
-      options.capabilities,
-    ) + notes.note.text;
-    const start = lines.length;
-    pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
-    sourceLines.push(labeled);
-    sourceControlLines.push(lines[start] ?? '');
-  }
-  // A courier instruction that ends without saying it was cut reads as the whole
-  // instruction, so the drop is stated on the paper rather than only in the data.
-  if (notes.noteTruncatedChars > 0) {
-    const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
-      .replace('{count}', String(notes.noteTruncatedChars));
-    pushWrapped(lines, marker, options.columns, options.language, options.capabilities);
-    sourceLines.push(marker);
-    sourceControlLines.push(lines.at(-1) ?? '');
+  for (const [label, fallback, text, truncatedChars] of [
+    [notes.deliveryNoteLabel, 'Delivery note: ', notes.deliveryNote, notes.deliveryNoteTruncatedChars],
+    [notes.label, 'Note: ', notes.note, notes.noteTruncatedChars],
+  ] as const) {
+    // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
+    // than one that runs long. pushWrapped is the same helper the address uses.
+    if (text) {
+      const labeled = thermalSafeText(
+        `${labelOf(label)}: `,
+        fallback,
+        options.arabicShaping,
+        options.capabilities,
+      ) + text.text;
+      const start = lines.length;
+      pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
+      sourceLines.push(labeled);
+      sourceControlLines.push(lines[start] ?? '');
+    }
+    // A courier instruction that ends without saying it was cut reads as the whole
+    // instruction, so the drop is stated on the paper rather than only in the data.
+    if (truncatedChars > 0) {
+      const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
+        .replace('{count}', String(truncatedChars));
+      pushWrapped(lines, marker, options.columns, options.language, options.capabilities);
+      sourceLines.push(marker);
+      sourceControlLines.push(lines.at(-1) ?? '');
+    }
   }
   return lines;
 }

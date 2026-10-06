@@ -689,6 +689,8 @@
     "decreasePax": "मेहमान घटाएँ",
     "delivery": "डिलीवरी",
     "deliveryAddress": "डिलीवरी का पता",
+    "expectedPayment": "अपेक्षित भुगतान",
+    "deliveryNotePlaceholder": "कूरियर के लिए डिलीवरी नोट",
     "discount": "छूट",
     "discounts": "छूट",
     "discountInvalid": "कृपया एक वैध छूट मूल्य दर्ज करें",
@@ -963,7 +965,9 @@
       "partiallyRefunded": "आंशिक धनवापसी",
       "cashOnDelivery": "डिलीवरी पर नकद",
       "amountDue": "देय राशि",
-      "multiplePaymentMethods": "कई भुगतान विधियाँ"
+      "multiplePaymentMethods": "कई भुगतान विधियाँ",
+      "expectedPayment": "अपेक्षित भुगतान",
+      "deliveryNote": "डिलीवरी नोट"
     },
     "hsn": "HSN",
     "zReport": {

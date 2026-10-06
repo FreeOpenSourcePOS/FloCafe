@@ -689,6 +689,8 @@
     "decreasePax": "تقليل عدد الأشخاص",
     "delivery": "توصيل",
     "deliveryAddress": "عنوان التسليم",
+    "expectedPayment": "الدفع المتوقع",
+    "deliveryNotePlaceholder": "ملاحظة التسليم للمندوب",
     "discount": "الخصم",
     "discounts": "الخصومات",
     "discountInvalid": "يرجى إدخال قيمة خصم صالحة",
@@ -963,7 +965,9 @@
       "partiallyRefunded": "مُسْتَرَدّ جُزْئِيًا",
       "cashOnDelivery": "الدفع عند الاستلام",
       "amountDue": "المبلغ المستحق",
-      "multiplePaymentMethods": "طرق دفع متعددة"
+      "multiplePaymentMethods": "طرق دفع متعددة",
+      "expectedPayment": "الدفع المتوقع",
+      "deliveryNote": "ملاحظة التسليم"
     },
     "hsn": "HSN",
     "zReport": {

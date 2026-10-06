@@ -1,5 +1,6 @@
 // Delivery-address contract: the column exists and is bounded, the address never
 // reaches the cloud outbox, and the merchant's number override is a real setting.
+// The expected collection method and courier note follow the same boundary.
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -22,9 +23,11 @@ const {
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { settingsRoutes } = require('../main/routes/settings');
+const { printerRoutes } = require('../main/routes/printers');
 
 const DELIVERY_ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
 const OVER_CAP_ADDRESS = 'x'.repeat(400);
+const DELIVERY_NOTE = 'Gate code 4321, call on arrival';
 
 /** `createApp` mounts the middleware production mounts, so the chain matches. */
 function testApp(): any {
@@ -139,7 +142,12 @@ test('delivery address: it never reaches the cloud sync outbox', async () => {
     const created = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { type: 'delivery', delivery_address: DELIVERY_ADDRESS, items: [{ product_id: 'product-1', quantity: 1 }] },
+      body: {
+        type: 'delivery',
+        delivery_address: DELIVERY_ADDRESS,
+        delivery_note: DELIVERY_NOTE,
+        items: [{ product_id: 'product-1', quantity: 1 }],
+      },
     });
     assert.equal(created.status, 201, 'the delivery order is accepted');
 
@@ -155,9 +163,142 @@ test('delivery address: it never reaches the cloud sync outbox', async () => {
       !JSON.stringify(payload).includes('Anecacuilco'),
       'nor any fragment of the address, wherever in the snapshot it would otherwise sit',
     );
+    assert.ok(!('delivery_note' in payload), 'the courier note must not leave the machine either');
+    assert.ok(!JSON.stringify(payload).includes('Gate code'), 'nor any fragment of the courier note');
     // The row is still a real order snapshot: this is a redaction, not a snapshot
     // that silently stopped being built.
     assert.ok(payload.order_number, 'the snapshot is otherwise intact');
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test('delivery details: the expected method and courier note persist without recording a payment', async () => {
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  seedCategory(db, 'cat-1', 'Coffee');
+  seedProduct(db, 'product-1', 'cat-1', 'Espresso', 250);
+  db.prepare("INSERT OR IGNORE INTO payment_methods (name, is_active, sort_order) VALUES ('UPI', 1, 10)").run();
+  const { baseUrl, server } = await startServer(testApp());
+  const createDelivery = (details: Record<string, unknown>) => api(baseUrl, '/api/orders', {
+    method: 'POST',
+    headers: owner.authHeader,
+    body: { type: 'delivery', items: [{ product_id: 'product-1', quantity: 1 }], ...details },
+  });
+  const stored = (id: number) => db.prepare(
+    'SELECT expected_payment_method, delivery_note FROM orders WHERE id = ?',
+  ).get(id);
+  try {
+    const created = await createDelivery({ expected_payment_method: 'Card', delivery_note: `  ${DELIVERY_NOTE}  ` });
+    assert.equal(created.status, 201, 'the delivery order is accepted');
+    assert.deepEqual(
+      { ...stored(created.data.order.id) },
+      { expected_payment_method: 'card', delivery_note: DELIVERY_NOTE },
+      'the built-in method is normalised and the note trimmed',
+    );
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS c FROM bills WHERE order_id = ?').get(created.data.order.id).c,
+      0,
+      'an expected method is not a bill or a payment',
+    );
+
+    for (const [sent, expected] of [
+      ['pending', 'pending'],
+      ['upi', 'UPI'],
+      ['unknown', null],
+      [undefined, null],
+      [null, null],
+    ] as const) {
+      const response = await createDelivery({ expected_payment_method: sent });
+      assert.equal(response.status, 201, `${JSON.stringify(sent)} is accepted`);
+      assert.equal(
+        stored(response.data.order.id).expected_payment_method,
+        expected,
+        `${JSON.stringify(sent)} is stored as ${JSON.stringify(expected)}`,
+      );
+    }
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test('delivery details: an uncollectable method or an over-long note is refused at the boundary', async () => {
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  seedCategory(db, 'cat-1', 'Coffee');
+  seedProduct(db, 'product-1', 'cat-1', 'Espresso', 250);
+  db.prepare("INSERT OR IGNORE INTO payment_methods (name, is_active, sort_order) VALUES ('Voucher', 0, 20)").run();
+  const { baseUrl, server } = await startServer(testApp());
+  const before = db.prepare('SELECT COUNT(*) AS c FROM orders').get().c;
+  try {
+    for (const details of [
+      { expected_payment_method: 'wallet' },
+      { expected_payment_method: 'bitcoin' },
+      { expected_payment_method: 'Voucher' },
+      { expected_payment_method: 42 },
+      { delivery_note: 'x'.repeat(201) },
+      { delivery_note: { not: 'a string' } },
+    ]) {
+      const rejected = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { type: 'delivery', items: [{ product_id: 'product-1', quantity: 1 }], ...details },
+      });
+      assert.equal(rejected.status, 400, `${JSON.stringify(details)} is refused`);
+    }
+    assert.equal(db.prepare('SELECT COUNT(*) AS c FROM orders').get().c, before, 'no refused order was persisted');
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test('delivery details: other order types never store them', async () => {
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  seedCategory(db, 'cat-1', 'Coffee');
+  seedProduct(db, 'product-1', 'cat-1', 'Espresso', 250);
+  const { baseUrl, server } = await startServer(testApp());
+  try {
+    for (const type of ['dine_in', 'takeaway', 'online']) {
+      const created = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { type, expected_payment_method: 'card', delivery_note: DELIVERY_NOTE, items: [{ product_id: 'product-1', quantity: 1 }] },
+      });
+      assert.equal(created.status, 201, `the ${type} order is accepted`);
+      assert.deepEqual(
+        { ...db.prepare('SELECT expected_payment_method, delivery_note FROM orders WHERE id = ?').get(created.data.order.id) },
+        { expected_payment_method: null, delivery_note: null },
+        `a ${type} order stores no delivery details`,
+      );
+    }
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
+test('delivery details: the slip payment summary the browser paths fetch carries the expected method', async () => {
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  seedCategory(db, 'cat-1', 'Coffee');
+  seedProduct(db, 'product-1', 'cat-1', 'Espresso', 250);
+  const { baseUrl, server } = await startServer(createApp({ '/api/orders': orderRoutes, '/api/printers': printerRoutes }));
+  try {
+    const created = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { type: 'delivery', expected_payment_method: 'card', items: [{ product_id: 'product-1', quantity: 1 }] },
+    });
+    assert.equal(created.status, 201, 'the delivery order is accepted');
+    const summary = await api(baseUrl, `/api/printers/delivery-slip-payment/${created.data.order.id}`, { headers: owner.authHeader });
+    assert.equal(summary.status, 200, 'the unpaid slip summary is available before payment');
+    assert.equal(summary.data.payment.status, 'unpaid', 'nothing has been paid');
+    assert.equal(summary.data.payment.expectedMethod, 'card', 'the expected method travels beside, not inside, the payment status');
+    assert.equal(summary.data.payment.method, undefined, 'no captured method is invented from the expectation');
   } finally {
     server.close();
     closeDatabase();

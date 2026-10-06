@@ -689,6 +689,8 @@
     "decreasePax": "Diminuisci coperti",
     "delivery": "Consegna",
     "deliveryAddress": "Indirizzo di consegna",
+    "expectedPayment": "Pagamento previsto",
+    "deliveryNotePlaceholder": "Nota di consegna per il corriere",
     "discount": "Sconto",
     "discounts": "Sconti",
     "discountInvalid": "Inserisci un valore di sconto valido",
@@ -963,7 +965,9 @@
       "partiallyRefunded": "PARZIALMENTE RIMBORSATO",
       "cashOnDelivery": "Contrassegno",
       "amountDue": "Importo dovuto",
-      "multiplePaymentMethods": "Metodi di pagamento multipli"
+      "multiplePaymentMethods": "Metodi di pagamento multipli",
+      "expectedPayment": "Pagamento previsto",
+      "deliveryNote": "Nota di consegna"
     },
     "hsn": "HSN",
     "zReport": {

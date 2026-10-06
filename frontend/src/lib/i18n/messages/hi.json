@@ -154,7 +154,9 @@
     "yes": "हाँ",
     "back": "वापस",
     "tax": "कर",
-    "loadMore": "और अधिक लोड करें"
+    "loadMore": "और अधिक लोड करें",
+    "clear": "साफ़ करें",
+    "noResults": "कोई मिलता-जुलता परिणाम नहीं"
   },
   "countries": {
     "selectCountry": "देश चुनें…"
@@ -868,7 +870,8 @@
     "removeCharge": "हटाएँ",
     "chargesTotal": "शुल्कों का योग",
     "chargeUpdateFailed": "शुल्क अपडेट नहीं हो सका",
-    "tagHalal": "हलाल"
+    "tagHalal": "हलाल",
+    "partialPaymentConfirm": "अभी {amount} लें? {remaining} बाकी रहेगा।"
   },
   "printTest": {
     "amt": "राशि",

@@ -154,7 +154,9 @@
     "yes": "네",
     "back": "뒤로",
     "tax": "세금",
-    "loadMore": "더 불러오기"
+    "loadMore": "더 불러오기",
+    "clear": "지우기",
+    "noResults": "일치하는 결과 없음"
   },
   "countries": {
     "selectCountry": "국가 선택…"
@@ -868,7 +870,8 @@
     "removeCharge": "제거",
     "chargesTotal": "수수료 합계",
     "chargeUpdateFailed": "수수료를 업데이트할 수 없습니다",
-    "tagHalal": "할랄"
+    "tagHalal": "할랄",
+    "partialPaymentConfirm": "지금 {amount}을 받으시겠습니까? {remaining}은 미결제로 남습니다."
   },
   "printTest": {
     "amt": "금액",

@@ -154,7 +154,9 @@
     "yes": "ใช่",
     "back": "ย้อนกลับ",
     "tax": "ภาษี",
-    "loadMore": "โหลดเพิ่มเติม"
+    "loadMore": "โหลดเพิ่มเติม",
+    "clear": "ล้าง",
+    "noResults": "ไม่พบผลลัพธ์ที่ตรงกัน"
   },
   "countries": {
     "selectCountry": "เลือกประเทศ…"
@@ -868,7 +870,8 @@
     "removeCharge": "นำออก",
     "chargesTotal": "ค่าธรรมเนียมรวม",
     "chargeUpdateFailed": "ไม่สามารถอัปเดตค่าธรรมเนียมได้",
-    "tagHalal": "ฮาลาล"
+    "tagHalal": "ฮาลาล",
+    "partialPaymentConfirm": "เก็บ {amount} ตอนนี้หรือไม่? {remaining} จะยังค้างชำระ"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

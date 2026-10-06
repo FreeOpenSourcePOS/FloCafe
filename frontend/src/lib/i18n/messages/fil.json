@@ -154,7 +154,9 @@
     "yes": "Oo",
     "back": "Bumalik",
     "tax": "Buwis",
-    "loadMore": "Mag-load pa"
+    "loadMore": "Mag-load pa",
+    "clear": "I-clear",
+    "noResults": "Walang tugmang resulta"
   },
   "countries": {
     "selectCountry": "Pumili ng Bansa"
@@ -868,7 +870,8 @@
     "removeCharge": "Alisin",
     "chargesTotal": "Kabuuang bayarin",
     "chargeUpdateFailed": "Hindi ma-update ang bayarin",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Kunin ang {amount} ngayon? Mananatiling babayaran ang {remaining}."
   },
   "printTest": {
     "amt": "Halaga",

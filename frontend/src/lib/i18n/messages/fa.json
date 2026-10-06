@@ -154,7 +154,9 @@
     "yes": "بله",
     "back": "بازگشت",
     "tax": "مالیات",
-    "loadMore": "بارگذاری بیشتر"
+    "loadMore": "بارگذاری بیشتر",
+    "clear": "پاک کردن",
+    "noResults": "نتیجه مطابقی یافت نشد"
   },
   "countries": {
     "selectCountry": "کشور را برگزینید…"
@@ -868,7 +870,8 @@
     "removeCharge": "حذف",
     "chargesTotal": "جمع کل هزینه‌ها",
     "chargeUpdateFailed": "به‌روزرسانی هزینه ممکن نشد",
-    "tagHalal": "حلال"
+    "tagHalal": "حلال",
+    "partialPaymentConfirm": "اکنون {amount} دریافت شود؟ {remaining} همچنان بدهی می‌ماند."
   },
   "printTest": {
     "amt": "مبلغ",

@@ -154,7 +154,9 @@
     "windowControls": "Kontrollet e dritares",
     "yes": "Po",
     "back": "Mbrapa",
-    "loadMore": "Ngarko më shumë"
+    "loadMore": "Ngarko më shumë",
+    "clear": "Pastro",
+    "noResults": "Nuk ka rezultate përputhëse"
   },
   "countries": {
     "selectCountry": "Zgjidhni vendin..."
@@ -868,7 +870,8 @@
     "removeCharge": "Hiq",
     "chargesTotal": "Totali i ngarkesave",
     "chargeUpdateFailed": "Nuk mund të përditësohej ngarkesa",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Të arkëtohet {amount} tani? {remaining} do të mbetet e papaguar."
   },
   "printTest": {
     "amt": "Shuma",

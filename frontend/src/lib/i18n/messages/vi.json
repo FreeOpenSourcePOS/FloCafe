@@ -154,7 +154,9 @@
     "yes": "Có",
     "back": "Quay lại",
     "tax": "Thuế",
-    "loadMore": "Tải thêm"
+    "loadMore": "Tải thêm",
+    "clear": "Xóa",
+    "noResults": "Không có kết quả phù hợp"
   },
   "countries": {
     "selectCountry": "Chọn quốc gia…"
@@ -868,7 +870,8 @@
     "removeCharge": "Bỏ",
     "chargesTotal": "Tổng phí",
     "chargeUpdateFailed": "Không thể cập nhật khoản phí",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Thu {amount} ngay bây giờ? {remaining} vẫn sẽ còn nợ."
   },
   "printTest": {
     "amt": "Số tiền",

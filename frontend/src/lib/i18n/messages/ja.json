@@ -154,7 +154,9 @@
     "yes": "はい",
     "back": "戻る",
     "tax": "税",
-    "loadMore": "さらに読み込む"
+    "loadMore": "さらに読み込む",
+    "clear": "クリア",
+    "noResults": "一致する結果がありません"
   },
   "countries": {
     "selectCountry": "国を選択…"
@@ -868,7 +870,8 @@
     "removeCharge": "削除",
     "chargesTotal": "料金合計",
     "chargeUpdateFailed": "料金を更新できませんでした",
-    "tagHalal": "ハラール"
+    "tagHalal": "ハラール",
+    "partialPaymentConfirm": "今すぐ {amount} を徴収しますか？{remaining} は未払いのままです。"
   },
   "printTest": {
     "amt": "金額",

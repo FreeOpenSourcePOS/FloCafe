@@ -154,7 +154,9 @@
     "yes": "হ্যাঁ",
     "back": "ব্যাক",
     "tax": "কর",
-    "loadMore": "আরো লোড"
+    "loadMore": "আরো লোড",
+    "clear": "মুছুন",
+    "noResults": "কোনো মিল পাওয়া যায়নি"
   },
   "countries": {
     "selectCountry": "দেশ নির্বাচন করুন..."
@@ -868,7 +870,8 @@
     "removeCharge": "সরান",
     "chargesTotal": "মোট ফি",
     "chargeUpdateFailed": "ফি আপডেট করা যায়নি",
-    "tagHalal": "হালাল"
+    "tagHalal": "হালাল",
+    "partialPaymentConfirm": "এখন {amount} নিন? {remaining} বাকি থাকবে।"
   },
   "printTest": {
     "amt": "এএমটি",

@@ -154,7 +154,9 @@
     "yes": "نعم",
     "back": "العودة",
     "tax": "الضرائب",
-    "loadMore": "تحميل المزيد"
+    "loadMore": "تحميل المزيد",
+    "clear": "مسح",
+    "noResults": "لا توجد نتائج مطابقة"
   },
   "countries": {
     "selectCountry": "اختر البلد…"
@@ -868,7 +870,8 @@
     "removeCharge": "إزالة",
     "chargesTotal": "إجمالي الرسوم",
     "chargeUpdateFailed": "تعذر تحديث الرسم",
-    "tagHalal": "حلال"
+    "tagHalal": "حلال",
+    "partialPaymentConfirm": "تحصيل {amount} الآن؟ سيظل {remaining} مستحقًا."
   },
   "printTest": {
     "amt": "المبلغ",

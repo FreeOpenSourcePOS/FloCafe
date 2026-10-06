@@ -154,7 +154,9 @@
     "yes": "Sí",
     "back": "Atrás",
     "tax": "Impuestos",
-    "loadMore": "Cargar más"
+    "loadMore": "Cargar más",
+    "clear": "Borrar",
+    "noResults": "No hay resultados coincidentes"
   },
   "countries": {
     "selectCountry": "Seleccioná un país…"
@@ -868,7 +870,8 @@
     "removeCharge": "Quitar",
     "chargesTotal": "Total de cargos",
     "chargeUpdateFailed": "No se pudo actualizar el cargo",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "¿Cobrar {amount} ahora? {remaining} seguirá pendiente."
   },
   "printTest": {
     "amt": "Total",

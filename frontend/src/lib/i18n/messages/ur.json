@@ -154,7 +154,9 @@
     "yes": "ہاں",
     "back": "واپس",
     "tax": "ٹیکس",
-    "loadMore": "مزید لوڈ کریں"
+    "loadMore": "مزید لوڈ کریں",
+    "clear": "صاف کریں",
+    "noResults": "کوئی مماثل نتیجہ نہیں"
   },
   "countries": {
     "selectCountry": "ملک منتخب کریں…"
@@ -868,7 +870,8 @@
     "removeCharge": "ہٹائیں",
     "chargesTotal": "کل فیس",
     "chargeUpdateFailed": "فیس اپ ڈیٹ نہیں ہو سکی",
-    "tagHalal": "حلال"
+    "tagHalal": "حلال",
+    "partialPaymentConfirm": "ابھی {amount} وصول کریں؟ {remaining} واجب الادا رہے گا۔"
   },
   "printTest": {
     "amt": "رقم",

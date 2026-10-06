@@ -154,7 +154,9 @@
     "windowControls": "Vensterbedieningen",
     "yes": "Ja",
     "back": "Terug",
-    "loadMore": "Laad meer"
+    "loadMore": "Laad meer",
+    "clear": "Wissen",
+    "noResults": "Geen overeenkomende resultaten"
   },
   "countries": {
     "selectCountry": "Selecteer land…"
@@ -868,7 +870,8 @@
     "removeCharge": "Verwijderen",
     "chargesTotal": "Totaal kosten",
     "chargeUpdateFailed": "Kosten konden niet worden bijgewerkt",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "{amount} nu innen? {remaining} blijft verschuldigd."
   },
   "printTest": {
     "amt": "Bedrag",

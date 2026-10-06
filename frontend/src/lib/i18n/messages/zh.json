@@ -154,7 +154,9 @@
     "windowControls": "窗口控制",
     "yes": "是",
     "back": "返回",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "clear": "清除",
+    "noResults": "没有匹配的结果"
   },
   "countries": {
     "selectCountry": "选择国家/地区…"
@@ -868,7 +870,8 @@
     "removeCharge": "移除",
     "chargesTotal": "费用合计",
     "chargeUpdateFailed": "无法更新费用",
-    "tagHalal": "清真"
+    "tagHalal": "清真",
+    "partialPaymentConfirm": "现在收取 {amount}？{remaining} 仍将欠款。"
   },
   "printTest": {
     "amt": "金额",

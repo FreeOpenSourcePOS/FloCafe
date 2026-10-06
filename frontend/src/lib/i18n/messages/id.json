@@ -154,7 +154,9 @@
     "yes": "Ya",
     "back": "Kembali",
     "tax": "Pajak",
-    "loadMore": "Muat lebih banyak"
+    "loadMore": "Muat lebih banyak",
+    "clear": "Hapus",
+    "noResults": "Tidak ada hasil yang cocok"
   },
   "countries": {
     "selectCountry": "Pilih negara…"
@@ -868,7 +870,8 @@
     "removeCharge": "Hapus",
     "chargesTotal": "Total biaya",
     "chargeUpdateFailed": "Biaya tidak dapat diperbarui",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Tagih {amount} sekarang? {remaining} tetap terutang."
   },
   "printTest": {
     "amt": "Jml",

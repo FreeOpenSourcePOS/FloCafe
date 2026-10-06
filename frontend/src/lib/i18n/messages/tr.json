@@ -154,7 +154,9 @@
     "yes": "Evet",
     "back": "Geri",
     "tax": "Vergi",
-    "loadMore": "Daha fazla yükle"
+    "loadMore": "Daha fazla yükle",
+    "clear": "Temizle",
+    "noResults": "Eşleşen sonuç yok"
   },
   "countries": {
     "selectCountry": "Ülke Seçin"
@@ -868,7 +870,8 @@
     "removeCharge": "Kaldır",
     "chargesTotal": "Toplam ücretler",
     "chargeUpdateFailed": "Ücret güncellenemedi",
-    "tagHalal": "Helal"
+    "tagHalal": "Helal",
+    "partialPaymentConfirm": "Şimdi {amount} tahsil edilsin mi? {remaining} borç olarak kalacak."
   },
   "printTest": {
     "amt": "Tutar",

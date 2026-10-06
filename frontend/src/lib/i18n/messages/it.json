@@ -154,7 +154,9 @@
     "windowControls": "Controlli della finestra",
     "yes": "Sì",
     "back": "Indietro",
-    "loadMore": "Carica altro"
+    "loadMore": "Carica altro",
+    "clear": "Cancella",
+    "noResults": "Nessun risultato corrispondente"
   },
   "countries": {
     "selectCountry": "Seleziona paese…"
@@ -868,7 +870,8 @@
     "removeCharge": "Rimuovi",
     "chargesTotal": "Totale spese",
     "chargeUpdateFailed": "Impossibile aggiornare la spesa",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Incassare {amount} ora? {remaining} resterà dovuto."
   },
   "printTest": {
     "amt": "Importo",

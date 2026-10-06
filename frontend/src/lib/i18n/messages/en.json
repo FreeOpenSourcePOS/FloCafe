@@ -154,7 +154,9 @@
     "yes": "Yes",
     "back": "Back",
     "tax": "Tax",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "clear": "Clear",
+    "noResults": "No matching results"
   },
   "countries": {
     "selectCountry": "Select country…"
@@ -868,7 +870,8 @@
     "removeCharge": "Remove",
     "chargesTotal": "Charges total",
     "chargeUpdateFailed": "Could not update the charge",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Collect {amount} now? {remaining} will still be due."
   },
   "printTest": {
     "amt": "Amt",

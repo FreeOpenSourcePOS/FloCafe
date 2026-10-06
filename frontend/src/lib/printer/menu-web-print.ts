@@ -82,9 +82,7 @@ export function reservePrintGesture(host: Window = window): Window | null {
 }
 
 export function printMenuInBrowser(html: string, targetWindow?: Window | null): void {
-  const printWindow = (targetWindow !== undefined && targetWindow !== null)
-    ? targetWindow
-    : window.open('', '_blank');
+  const printWindow = targetWindow !== undefined ? targetWindow : window.open('', '_blank');
   if (!printWindow || printWindow.closed) throw new MenuPopupBlockedError('Allow pop-ups to use browser printing');
   printWindow.document.open();
   printWindow.document.write(html);

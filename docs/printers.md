@@ -26,6 +26,20 @@ Enable **Open cash drawer on checkout** on a receipt printer only when a till is
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to
 printed receipt jobs for that printer, and only for payment methods on the drawer's allowlist.
 
+## Menu printing
+
+From **Products** or **POS**, open **Print Menu** and choose a destination before printing:
+
+- **Receipt printer** sends the menu to a configured printer. Choose the printer and its 58 mm or
+  80 mm roll width.
+- **Paper** opens the system print dialog for A4 or Letter paper.
+- **PDF** saves a structured PDF through the desktop save dialog. In a browser, use **Save as PDF**
+  in the system print dialog instead.
+
+The dialog also lets you filter which products and details appear. See the
+[printing architecture](architecture/printing.md#menu-catalog-printing) for how each destination is
+rendered.
+
 ## Printer profiles and paper width
 
 FloCafe resolves a printer to a capability profile in three steps, in order:

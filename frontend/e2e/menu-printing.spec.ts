@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD } from './helpers/test-auth';
+import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
+
+const evidence = process.env.FLO_E2E_EVIDENCE_DIR;
 
 test('menu modal suspends barcode scans and browser fallback includes selected details on Letter paper', async ({ page, context }) => {
-  await context.addInitScript(() => { window.print = () => {}; });
+  await context.addInitScript(() => {
+    window.print = () => {};
+    // Keep the generated document inspectable after the stubbed print dialog returns.
+    window.close = () => {};
+  });
   await page.route('**/api/products*', async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
@@ -54,11 +60,22 @@ test('menu modal suspends barcode scans and browser fallback includes selected d
   await expect.poll(() => popup.locator('style').textContent()).toContain('size: Letter portrait');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'E2E Coffee', exact: true, level: 2 })).toHaveCount(0);
+  if (evidence) await popup.screenshot({ path: `${evidence}/print-menu-letter-browser-preview.png`, fullPage: true });
   await popup.close();
 });
 
-test('print menu offers receipt, paper, and PDF destinations', async ({ page, context }) => {
-  await context.addInitScript(() => { window.print = () => {}; });
+test('print menu offers receipt, paper, and PDF destinations', async ({ page, context, request }) => {
+  await context.addInitScript(() => {
+    window.print = () => {};
+    // Keep the generated document inspectable after the stubbed print dialog returns.
+    window.close = () => {};
+  });
+  const printerResponse = await request.post(`${BASE}/api/printers`, {
+    headers: { Authorization: `Bearer ${getE2eToken()}` },
+    data: { name: 'E2E Menu Printer', connection_type: 'network', ip_address: '127.0.0.1', port: 9100 },
+  });
+  expect(printerResponse.status()).toBe(201);
+  const printer = (await printerResponse.json()).printer as { id: string; name: string };
   await page.goto(`${BASE}/auth/login`);
   await page.getByLabel('Email').fill('owner@flo.local');
   await page.getByLabel('Password').fill(E2E_PASSWORD);
@@ -91,9 +108,21 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
 
   // The receipt destination swaps the sheet size for the thermal roll width,
   // and a missing picker never dead-ends the operator.
-  await destinations.getByRole('radio', { name: 'Receipt printer' }).click();
-  await expect(dialog.getByRole('combobox', { name: 'Paper Size' })).toBeVisible();
+  const receiptDestination = destinations.getByRole('radio', { name: 'Receipt printer' });
+  await receiptDestination.click();
+  await expect(receiptDestination).toHaveAttribute('aria-checked', 'true');
+  await expect(receiptDestination).toHaveClass(/border-brand/);
+  await expect(paperDestination).toHaveAttribute('aria-checked', 'false');
+  const printerPicker = dialog.getByRole('combobox', { name: 'Printer', exact: true });
+  await expect(printerPicker).toHaveValue(printer.id);
+  await expect(printerPicker.locator('option')).toHaveText([printer.name]);
+  const rollWidth = dialog.getByRole('combobox', { name: 'Paper Size' });
+  await expect(rollWidth.locator('option')).toHaveText(['2.5" (58mm)', '3.5" (80mm)']);
+  await rollWidth.selectOption('80');
+  await expect(rollWidth).toHaveValue('80');
   await expect(dialog.getByRole('button', { name: 'Print Menu', exact: true })).toBeEnabled();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  if (evidence) await page.screenshot({ path: `${evidence}/print-menu-receipt-destination.png`, fullPage: true });
 
   // Without the desktop bridge, saving as PDF still produces a printable
   // document through the browser print dialog.
@@ -104,5 +133,6 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await expect(popup.getByRole('heading', { name: 'Menu', level: 1 })).toBeVisible();
   await expect.poll(() => popup.locator('style').textContent()).toContain('size: A4 portrait');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  if (evidence) await popup.screenshot({ path: `${evidence}/print-menu-a4-pdf-preview.png`, fullPage: true });
   await popup.close();
 });

@@ -162,8 +162,22 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (!canManage || tab !== 'movements') return;
-    void loadMovements(null);
-  }, [tab, canManage, loadMovements]);
+    const controller = new AbortController();
+    const requestSequence = ++movementRequestSequence.current;
+    const params: Record<string, string | number> = { per_page: 50 };
+    if (movementSearch.trim()) params.search = movementSearch.trim();
+    api.get('/supplies/movements', { params, signal: controller.signal })
+      .then(({ data }) => {
+        if (requestSequence !== movementRequestSequence.current) return;
+        setMovements(data.movements || []);
+        setNextCursor(data.nextCursor ?? null);
+      })
+      .catch((err: unknown) => {
+        if (requestSequence === movementRequestSequence.current && !(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
+      });
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, canManage, refreshKey, movementSearch]);
 
   const openAddSupply = () => {
     setEditingSupply(null);

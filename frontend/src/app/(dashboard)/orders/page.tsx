@@ -450,7 +450,11 @@ export default function OrdersPage() {
           }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
+          if (/kds is disabled/i.test(event.reason)) {
+            setKdsEnabled(false);
+            return;
+          }
           reconnectTimeout = setTimeout(connectWS, 3000);
         };
 

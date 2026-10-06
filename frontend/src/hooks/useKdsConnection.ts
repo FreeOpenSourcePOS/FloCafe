@@ -228,6 +228,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
+  const kdsDisabledRef = useRef(false);
   const updatingIdsRef = useRef(new Set<number>());
   // Mutable ref allowing reconnect timer to invoke latest tryWebSocket recursively.
   const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(() => {});
@@ -243,6 +244,28 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     }
     restRequestSequenceRef.current += 1;
   }, []);
+
+  const disableKdsConnection = useCallback((message: string) => {
+    kdsDisabledRef.current = true;
+    sessionGenerationRef.current += 1;
+    stopRestPolling();
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    const activeWs = wsRef.current;
+    wsRef.current = null;
+    if (activeWs) activeWs.close();
+    updatingIdsRef.current.clear();
+    setUpdating(null);
+    setUser(null);
+    setOrders([]);
+    setCounts({});
+    setConnected(false);
+    setConnectionMode(null);
+    setLoading(false);
+    setLoginError(message);
+  }, [stopRestPolling]);
 
   const fetchOrdersRest = useCallback(async () => {
     const generation = sessionGenerationRef.current;
@@ -277,23 +300,18 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       } else if (status === 403) {
         const message = axiosError.response?.data?.error || t('authFailed');
         const kdsDisabled = /kds is disabled/i.test(message);
-        if (!kdsDisabled) {
-          // A station/role denial is a KDS authorization failure. Never retain
-          // data fetched earlier or retry it on the next mount.
-          sessionGenerationRef.current += 1;
-          markKdsAuthBlocked();
-          stopRestPolling();
-          updatingIdsRef.current.clear();
-          setUpdating(null);
-          setUser(null);
-          setLoginError(t('authFailed'));
-          setConnectionMode(null);
-        } else {
-          // KDS can be re-enabled without changing the user's credentials;
-          // keep polling rather than permanently blocking the session.
-          setLoginError(t('authFailed'));
-          setConnectionMode('rest');
+        if (kdsDisabled) {
+          disableKdsConnection(message);
+          return;
         }
+        sessionGenerationRef.current += 1;
+        markKdsAuthBlocked();
+        stopRestPolling();
+        updatingIdsRef.current.clear();
+        setUpdating(null);
+        setUser(null);
+        setLoginError(t('authFailed'));
+        setConnectionMode(null);
         setOrders([]);
         setCounts({});
         setConnected(false);
@@ -302,7 +320,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnected(false);
       }
     }
-  }, [api, ordersPath, stopRestPolling, t]);
+  }, [api, disableKdsConnection, ordersPath, stopRestPolling, t]);
   // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)
   // so state updates do not land in the invoking effect commit.
   const startRestPolling = useCallback(() => {
@@ -368,27 +386,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           return false;
         }
         if (kdsDisabled) {
-          sessionGenerationRef.current += 1;
-          restRequestSequenceRef.current += 1;
-          updatingIdsRef.current.clear();
-          setUpdating(null);
-          const disabledGeneration = sessionGenerationRef.current;
-          const activeWs = wsRef.current;
-          wsRef.current = null;
-          if (activeWs) activeWs.close();
-          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = setTimeout(() => {
-            const token = window.localStorage.getItem('token');
-            if (token && disabledGeneration === sessionGenerationRef.current) {
-              tryWebSocketRef.current(token, true);
-            }
-          }, 1500);
-          setOrders([]);
-          setCounts({});
-          setConnected(false);
-          setConnectionMode('rest');
-          setLoading(false);
-          setLoginError(errorMessage);
+          disableKdsConnection(errorMessage);
           return false;
         }
         if (!opts.silent) {
@@ -404,12 +402,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     },
     // statusLabel is derived from `t` (already in deps), so omit it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, connectionMode, fetchOrdersRest, itemStatusPath, stopRestPolling, t],
+    [api, connectionMode, disableKdsConnection, fetchOrdersRest, itemStatusPath, stopRestPolling, t],
   );
 
   const tryWebSocket = useCallback(
     (token: string, retryDuringMaintenance = false) => {
-      if (!enabled) return;
+      if (!enabled || kdsDisabledRef.current) return;
       const generation = sessionGenerationRef.current;
       if (wsRef.current) {
         wsRef.current.close();
@@ -463,9 +461,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }, 5000);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         cleanup();
         if (wsRef.current !== ws || generation !== sessionGenerationRef.current) return;
+        if (/kds is disabled/i.test(event.reason)) {
+          disableKdsConnection(event.reason);
+          return;
+        }
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
         setConnected(false);
@@ -514,7 +516,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             const maintenanceInProgress = /database maintenance/i.test(msg.message || '');
             const kdsDisabled = /kds is disabled/i.test(msg.message || '');
-            const temporaryUnavailable = maintenanceInProgress || kdsDisabled;
+            if (kdsDisabled) {
+              disableKdsConnection(msg.message || t('authFailed'));
+              return;
+            }
+            const temporaryUnavailable = maintenanceInProgress;
             const authorizationFailure = /user not found|only kitchen staff|no active kitchen station|could not load station permissions/i.test(msg.message || '');
             const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
             sessionGenerationRef.current += 1;
@@ -569,7 +575,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }, 5000);
     },
-    [t, api, enabled, stopRestPolling],
+    [t, api, disableKdsConnection, enabled, stopRestPolling],
   );
   useEffect(() => {
     tryWebSocketRef.current = tryWebSocket;
@@ -578,7 +584,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!enabled) return;
+      if (!enabled || kdsDisabledRef.current) return;
       clearKdsAuthBlocked();
       setLoginError('');
       sessionGenerationRef.current += 1;

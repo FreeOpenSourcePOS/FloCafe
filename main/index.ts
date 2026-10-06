@@ -426,8 +426,8 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
   }
   windowLoadRecoveryAttempted = true;
   try {
-    createWindow();
     if (!failedWindow.isDestroyed()) failedWindow.destroy();
+    createWindow();
   } catch (error) {
     log.error('[Window] Window recreation failed:', error);
     requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
@@ -866,8 +866,23 @@ function registerPowerMonitorRecovery(): void {
 // Track child process crashes and trigger GPU fallback relaunch on GPU crash.
 function registerChildProcessCrashTelemetry(): void {
   app.on('child-process-gone', (_event, details) => {
-    log.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
-    console.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
+    const systemErrorCode = 'systemErrorCode' in details
+      ? (details as { systemErrorCode?: number }).systemErrorCode
+      : undefined;
+    log.error(
+      '[Process] Child process gone:',
+      details.type,
+      details.reason,
+      details.exitCode,
+      systemErrorCode !== undefined ? `systemErrorCode=${systemErrorCode}` : '',
+    );
+    console.error(
+      '[Process] Child process gone:',
+      details.type,
+      details.reason,
+      details.exitCode,
+      systemErrorCode !== undefined ? `systemErrorCode=${systemErrorCode}` : '',
+    );
     // Ignore normal shutdown/clean-exit signals.
     const isGpuFailure = details.type === 'GPU'
       && details.reason !== 'clean-exit'
@@ -882,6 +897,7 @@ function registerChildProcessCrashTelemetry(): void {
       type: details.type,
       reason: details.reason,
       exitCode: details.exitCode,
+      systemErrorCode,
       serviceName: details.serviceName,
       consecutiveGpuCrashCount: isGpuFailure ? consecutiveGpuCrashes : undefined,
     }).catch((error) => {

@@ -43,11 +43,23 @@ export function createMainWindow(
   preload: string,
   platform: NodeJS.Platform = process.platform,
   isDarkOrTitleBarMode: boolean | TitleBarMode = false,
-  titleBarMode: TitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : 'native-overlay',
+  titleBarModeOrOptions?: TitleBarMode | Partial<BrowserWindowConstructorOptions>,
+  options?: Partial<BrowserWindowConstructorOptions>,
 ): BrowserWindow {
   const isDark = typeof isDarkOrTitleBarMode === 'boolean' ? isDarkOrTitleBarMode : false;
-  const resolvedTitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : titleBarMode;
+  const resolvedTitleBarMode: TitleBarMode =
+    typeof titleBarModeOrOptions === 'string'
+      ? titleBarModeOrOptions
+      : typeof isDarkOrTitleBarMode === 'string'
+        ? isDarkOrTitleBarMode
+        : 'native-overlay';
+  const resolvedOptions =
+    typeof titleBarModeOrOptions === 'object' && titleBarModeOrOptions !== null
+      ? titleBarModeOrOptions
+      : options;
   return new BrowserWindowConstructor({
+    name: 'flo-main',
+    windowStatePersistence: true,
     width: 1400,
     height: 900,
     minWidth: 1024,
@@ -70,6 +82,7 @@ export function createMainWindow(
       sandbox: false,
     },
     show: false,
+    ...resolvedOptions,
   });
 }
 

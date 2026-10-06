@@ -29,6 +29,8 @@ const windowsMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/prelo
 const linuxMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux');
 const darkMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'darwin', true);
 
+assert.equal(macMainWindow.options.name, 'flo-main');
+assert.equal(macMainWindow.options.windowStatePersistence, true);
 assert.equal(macMainWindow.options.titleBarStyle, 'hiddenInset');
 assert.equal(windowsMainWindow.options.titleBarStyle, 'hidden');
 assert.equal(linuxMainWindow.options.titleBarStyle, 'hidden');

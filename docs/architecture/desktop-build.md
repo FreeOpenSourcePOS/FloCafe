@@ -76,8 +76,9 @@ drive-by cleanup.
 
 ## The native title bar
 
-The main window is 1400x900 with a minimum of 1024x768, is created hidden, and is shown only once
-its renderer reports ready (see the readiness contract below).
+The main window defaults to 1400x900 with a minimum of 1024x768, persists its window state between
+launches, is created hidden, and is shown only once its renderer reports ready (see the readiness
+contract below).
 
 ### Mode resolution
 

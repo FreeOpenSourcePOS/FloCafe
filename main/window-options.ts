@@ -43,11 +43,26 @@ export function createMainWindow(
   preload: string,
   platform: NodeJS.Platform = process.platform,
   isDarkOrTitleBarMode: boolean | TitleBarMode = false,
-  titleBarMode: TitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : 'native-overlay',
+  titleBarModeOrOptions?: TitleBarMode | Partial<BrowserWindowConstructorOptions>,
+  options?: Partial<BrowserWindowConstructorOptions>,
 ): BrowserWindow {
   const isDark = typeof isDarkOrTitleBarMode === 'boolean' ? isDarkOrTitleBarMode : false;
-  const resolvedTitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : titleBarMode;
+  const resolvedTitleBarMode: TitleBarMode =
+    typeof titleBarModeOrOptions === 'string'
+      ? titleBarModeOrOptions
+      : typeof isDarkOrTitleBarMode === 'string'
+        ? isDarkOrTitleBarMode
+        : 'native-overlay';
+  const resolvedOptions =
+    typeof titleBarModeOrOptions === 'object' && titleBarModeOrOptions !== null
+      ? titleBarModeOrOptions
+      : options;
+  // Merge webPreferences instead of replacing it, so overriding one preference
+  // cannot drop the generated preload or the isolation settings it enables.
+  const { webPreferences: webPreferencesOverrides, ...windowOptions } = resolvedOptions ?? {};
   return new BrowserWindowConstructor({
+    name: 'flo-main',
+    windowStatePersistence: true,
     width: 1400,
     height: 900,
     minWidth: 1024,
@@ -64,12 +79,14 @@ export function createMainWindow(
       : {}),
     ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),
     webPreferences: {
+      ...(webPreferencesOverrides ?? {}),
       preload,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
     show: false,
+    ...windowOptions,
   });
 }
 

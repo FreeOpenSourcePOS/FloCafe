@@ -132,6 +132,7 @@ async function main() {
       path.join(__dirname, '_probe-preload-noop.js'),
       platform,
       resolved,
+      { name: 'observed-mac-window' },
     );
     const trafficLightPosition = observedMacOptions?.trafficLightPosition;
     record(

@@ -656,7 +656,9 @@ function createWindow(): void {
   mainWindow = createdWindow;
 
   mainWindow.once('ready-to-show', () => {
-    if (isDev) {
+    // The native E2E harness drives the app through Playwright from a window it
+    // never shows, so it must not spawn DevTools on the developer's desktop.
+    if (isDev && process.env.FLO_E2E_HIDDEN_WINDOW !== '1') {
       mainWindow?.webContents.openDevTools();
     }
   });

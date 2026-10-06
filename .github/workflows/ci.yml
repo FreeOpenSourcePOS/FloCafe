@@ -312,9 +312,13 @@ jobs:
       - name: Run native Electron tests under Xvfb
         # Playwright supplies --no-sandbox for Electron on Linux. Xvfb is the
         # required visible display; no packaged or modified app is launched.
+        # The harness hides windows by default so local runs do not pop up on a
+        # developer's desktop; CI has no desktop, and the native window-state
+        # and OS-theme tests need a shown window, so opt back in here.
         run: xvfb-run -a --server-args='-screen 0 1280x800x24' npm run test:e2e:electron
         env:
           CI: true
+          FLO_E2E_SHOW_WINDOW: '1'
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

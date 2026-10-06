@@ -158,28 +158,36 @@ export function buildVariantsPayload(rows: ProductVariantRow[], maxDecimals: num
   return rows
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => row.is_active || row.id === null || row.touched)
-    .map(({ row, index }) => ({
-      ...(row.id ? { id: row.id } : {}),
-      name: row.name.trim(),
-      price: roundCurrencyValue(Number(row.price), maxDecimals),
-      online_price: row.online_price === '' ? null : roundCurrencyValue(Number(row.online_price), maxDecimals),
-      sku: row.sku.trim() || null,
-      barcode: row.barcode.trim() || null,
-      // Stock is absolute on the server: resubmitting the value the editor
-      // loaded would credit back any sale that happened in between.
-      ...(row.id !== null && row.loaded_stock_quantity !== null && row.stock_quantity === row.loaded_stock_quantity
-        ? {}
-        : { stock_quantity: Math.max(0, Number(row.stock_quantity) || 0) }),
-      is_active: row.is_active,
-      cost_price: row.cost_price,
-      track_inventory: row.track_inventory,
-      low_stock_threshold: row.low_stock_threshold,
-      inventory_product_id: row.inventory_product_id,
-      inventory_deduction_quantity: row.inventory_deduction_quantity,
-      // The position in the full editor table, so a skipped inactive row keeps
-      // the display order of the rows around it.
-      sort_order: index,
-    }));
+    .map(({ row, index }) => {
+      const stockQuantity = Math.max(0, Number(row.stock_quantity) || 0);
+      const loadedStockQuantity = row.loaded_stock_quantity !== null
+        ? Math.max(0, Number(row.loaded_stock_quantity) || 0)
+        : null;
+      const stockUnchanged = row.id !== null
+        && loadedStockQuantity !== null
+        && stockQuantity === loadedStockQuantity;
+
+      return {
+        ...(row.id ? { id: row.id } : {}),
+        name: row.name.trim(),
+        price: roundCurrencyValue(Number(row.price), maxDecimals),
+        online_price: row.online_price === '' ? null : roundCurrencyValue(Number(row.online_price), maxDecimals),
+        sku: row.sku.trim() || null,
+        barcode: row.barcode.trim() || null,
+        // Stock is absolute on the server: resubmitting the value the editor
+        // loaded would credit back any sale that happened in between.
+        ...(stockUnchanged ? {} : { stock_quantity: stockQuantity }),
+        is_active: row.is_active,
+        cost_price: row.cost_price,
+        track_inventory: row.track_inventory,
+        low_stock_threshold: row.low_stock_threshold,
+        inventory_product_id: row.inventory_product_id,
+        inventory_deduction_quantity: row.inventory_deduction_quantity,
+        // The position in the full editor table, so a skipped inactive row keeps
+        // the display order of the rows around it.
+        sort_order: index,
+      };
+    });
 }
 
 /** Returns the same array reference when the move would fall outside the table. */

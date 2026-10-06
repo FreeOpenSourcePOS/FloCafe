@@ -197,6 +197,9 @@ check('an unchanged stock field is not resubmitted; a changed one is', () => {
   const [unchanged] = buildVariantsPayload([{ ...loaded, name: 'Large renamed' }], 2);
   assert.ok(!('stock_quantity' in unchanged), 'an unrelated edit leaves the stock field out of the payload');
 
+  const [formatted] = buildVariantsPayload([{ ...loaded, stock_quantity: '10.0' }], 2);
+  assert.ok(!('stock_quantity' in formatted), 'a formatting-only stock edit is not resubmitted');
+
   const [edited] = buildVariantsPayload([{ ...loaded, stock_quantity: '12' }], 2);
   assert.equal(edited.stock_quantity, 12, 'a changed stock field is submitted as the new absolute value');
 

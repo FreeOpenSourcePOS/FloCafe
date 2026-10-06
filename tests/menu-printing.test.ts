@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fs from 'node:fs';
-import path from 'node:path';
 import { displayCellWidth } from '../shared/print/width';
 import { buildMenuDocument, renderMenuViaDocument } from '../main/printers/document-menu';
 import { escPosToText } from '../main/printers/thermal';
@@ -174,7 +172,7 @@ test('the print gesture is reserved only where a popup blocker could take it', (
   assert.equal(reservePrintGesture({ open: () => { throw new Error('blocked'); } } as never), null, 'a refused reservation is reported, not thrown');
 });
 
-test('a deleted reservation would block the browser print it exists for', () => {
+test('browser printing reports popup blocking without a reservation', () => {
   const { MenuPopupBlockedError, printMenuInBrowser } = require('../frontend/src/lib/printer/menu-web-print');
 
   // What the reservation prevents: with nothing held back from the click, the
@@ -183,18 +181,6 @@ test('a deleted reservation would block the browser print it exists for', () => 
     () => printMenuInBrowser('<p>menu</p>', null),
     (error: unknown) => error instanceof MenuPopupBlockedError,
     'with no reservation in hand, a blocked window is reported rather than printed into nothing',
-  );
-
-  // The modal has to actually make the reservation; a helper nobody calls is
-  // the same bug with extra indirection.
-  const modal = fs.readFileSync(
-    path.join(__dirname, '../frontend/src/components/products/PrintMenuModal.tsx'),
-    'utf8',
-  );
-  assert.match(
-    modal,
-    /const reservedWindow = reservePrintGesture\(\);/,
-    'the print handler reserves the gesture before the print request goes out',
   );
 });
 

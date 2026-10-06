@@ -201,7 +201,7 @@ async function main() {
   const wildcardSupply = createSupply(db, {
     name: 'Mix 100%_salt!', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
   });
-  createSupply(db, {
+  const wildcardLookalikeSupply = createSupply(db, {
     name: 'Mix 1000Xsalt', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
   });
   for (const search of ['100%', '_salt', '!']) {
@@ -209,6 +209,8 @@ async function main() {
     assertEqual(matches.movements.length, 1, `search treats ${search} as literal text`);
     assertEqual(matches.movements[0].supply_id, wildcardSupply.id, `search ${search} excludes wildcard matches`);
   }
+  softDeleteSupply(db, wildcardSupply.id);
+  softDeleteSupply(db, wildcardLookalikeSupply.id);
 
   // ── Soft delete ──
   softDeleteSupply(db, cups.id);

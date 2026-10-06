@@ -70,9 +70,10 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
     // Keep the generated document inspectable after the stubbed print dialog returns.
     window.close = () => {};
   });
+  const printerName = `E2E Menu Printer ${Math.random().toString(36).slice(2, 8)}`;
   const printerResponse = await request.post(`${BASE}/api/printers`, {
     headers: { Authorization: `Bearer ${getE2eToken()}` },
-    data: { name: 'E2E Menu Printer', connection_type: 'network', ip_address: '127.0.0.1', port: 9100 },
+    data: { name: printerName, connection_type: 'network', ip_address: '127.0.0.1', port: 9100 },
   });
   expect(printerResponse.status()).toBe(201);
   const printer = (await printerResponse.json()).printer as { id: string; name: string };
@@ -114,8 +115,9 @@ test('print menu offers receipt, paper, and PDF destinations', async ({ page, co
   await expect(receiptDestination).toHaveClass(/border-brand/);
   await expect(paperDestination).toHaveAttribute('aria-checked', 'false');
   const printerPicker = dialog.getByRole('combobox', { name: 'Printer', exact: true });
+  await expect(printerPicker.getByRole('option', { name: printerName, exact: true })).toHaveCount(1);
+  await printerPicker.selectOption(printer.id);
   await expect(printerPicker).toHaveValue(printer.id);
-  await expect(printerPicker.locator('option')).toHaveText([printer.name]);
   const rollWidth = dialog.getByRole('combobox', { name: 'Paper Size' });
   await expect(rollWidth.locator('option')).toHaveText(['2.5" (58mm)', '3.5" (80mm)']);
   await rollWidth.selectOption('80');

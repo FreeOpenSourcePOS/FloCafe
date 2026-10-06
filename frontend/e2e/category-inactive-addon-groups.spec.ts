@@ -36,7 +36,7 @@ test('category editor can remove an assigned inactive add-on group', async ({ pa
   await page.getByRole('button', { name: 'Sign In' }).click();
   await page.waitForURL(/\/(pos|orders)/, { timeout: 20000 });
   await page.goto(`${BASE}/products`);
-  await page.getByRole('button', { name: 'Categories', exact: true }).click();
+  await page.getByRole('tab', { name: 'Categories', exact: true }).click();
 
   const row = page.getByRole('row').filter({ hasText: categoryName });
   await row.getByRole('button').first().click();

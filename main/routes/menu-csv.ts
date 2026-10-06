@@ -617,7 +617,8 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
       const minResult = parseNumericField(row.group_min_select, 'group_min_select', { optional: true, defaultValue: 0, integer: true, min: 0 });
       const maxResult = parseNumericField(row.group_max_select, 'group_max_select', { optional: true, defaultValue: 1, integer: true, min: 0 });
       const stockResult = parseNumericField(row.stock_quantity, 'stock_quantity', { optional: true, defaultValue: 0, min: 0 });
-      if (!priceResult.ok || !minResult.ok || !maxResult.ok || !stockResult.ok) continue;
+      const thresholdResult = parseNumericField(row.low_stock_threshold, 'low_stock_threshold', { optional: true, defaultValue: 0, min: 0 });
+      if (!priceResult.ok || !minResult.ok || !maxResult.ok || !stockResult.ok || !thresholdResult.ok) continue;
 
       const key = row.group_name.toLowerCase();
       let plan = groupPlans.get(key);

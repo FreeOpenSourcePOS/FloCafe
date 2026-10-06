@@ -139,7 +139,7 @@ export default function AddonModal({
       }
 
       const rawCeiling = addonStockCeiling(addon);
-      const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / Math.max(1, quantity));
+      const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
       if (delta > 0 && stockCeiling != null && newQty > stockCeiling) {
         return;
       }
@@ -296,7 +296,7 @@ export default function AddonModal({
                     const soldOut = isAddonSoldOut(addon);
                     const lowStock = isAddonLowStock(addon);
                     const rawCeiling = addonStockCeiling(addon);
-                    const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / Math.max(1, quantity));
+                    const stockCeiling = rawCeiling == null ? null : Math.floor(rawCeiling / (quantity > 0 ? quantity : 1));
                     // The cashier may only dial up to what is left, but never past
                     // the group cap, and an untracked add-on is never limited.
                     const atStockCeiling = stockCeiling != null && addonQty >= stockCeiling;
@@ -341,7 +341,7 @@ export default function AddonModal({
                             ) : (
                               <button
                                 type="button"
-                                disabled={soldOut}
+                                disabled={plusDisabled}
                                 onClick={() => updateAddonQuantity(group, addon, 1)}
                                 className={`touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted disabled:cursor-not-allowed disabled:opacity-50`}
                               >

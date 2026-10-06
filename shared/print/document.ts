@@ -1043,9 +1043,7 @@ export function sanitizeDeliverySlipPaymentMethod(value: unknown): string {
 }
 
 /**
- * The collection hint for an unpaid balance. It states what the order expects,
- * never that anything was paid: absent reads as unknown and `pending` as a
- * customer who has not decided. Shared so every slip renderer prints the same words.
+ * Expected collection method for an unpaid balance, rendered identically across all slip paths.
  */
 export function deliverySlipExpectedPaymentText(
   expectedMethod: unknown,

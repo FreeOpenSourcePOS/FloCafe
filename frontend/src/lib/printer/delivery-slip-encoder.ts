@@ -119,9 +119,8 @@ export function buildDeliverySlipBytes(
       safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
     }
   }
-  // The delivery and order notes, once for the whole delivery, wrapped like the
-  // address: a courier instruction cut mid-sentence is worse than one that runs
-  // long. A note over the budget is bounded, and the cut is stated on the paper.
+  // The delivery and order notes are printed once for the whole delivery,
+  // bounded by the shared note budget and wrapped like the delivery address.
   for (const [noteLabel, rawNote] of [
     [label('print.deliverySlip.deliveryNote'), order.delivery_note],
     [label('print.note'), order.special_instructions],

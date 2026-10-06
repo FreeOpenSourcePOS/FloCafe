@@ -192,6 +192,10 @@ export interface Order {
   customer_id: number | string | null;
   /** Address confirmed for this delivery; printed in full on the courier slip. */
   delivery_address?: string | null;
+  /** Method the courier expects to collect; null is unknown. Not a payment record. */
+  expected_payment_method?: string | null;
+  /** Courier-only note, printed on the delivery slip. */
+  delivery_note?: string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
   subtotal: number;

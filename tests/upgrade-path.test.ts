@@ -231,6 +231,11 @@ function main() {
     ['2026-07-01 10:00:00', '2026-07-01 10:00:00', '2026-07-01 10:05:00', '2026-07-01 10:12:00'],
     'v45 normalizes legacy ISO order timestamps to the space form (second precision)',
   );
+  assert.deepEqual(
+    { ...db.prepare(`SELECT expected_payment_method, delivery_note FROM orders WHERE order_number = 'ORD-ISO-TS'`).get() as object },
+    { expected_payment_method: null, delivery_note: null },
+    'v103 keeps existing orders, reading as an unknown expected method with no courier note',
+  );
   const isoBillRow = db.prepare(
     `SELECT created_at, updated_at, paid_at FROM bills WHERE bill_number = 'INV-ISO-TS'`
   ).get() as { created_at: string; updated_at: string; paid_at: string };

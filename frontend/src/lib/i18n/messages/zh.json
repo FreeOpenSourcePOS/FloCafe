@@ -689,6 +689,8 @@
     "decreasePax": "减少人数",
     "delivery": "外送",
     "deliveryAddress": "外送地址",
+    "expectedPayment": "预期付款方式",
+    "deliveryNotePlaceholder": "给外送员的外送备注",
     "discount": "折扣",
     "discounts": "折扣",
     "discountInvalid": "请输入有效的折扣值",
@@ -963,7 +965,9 @@
       "partiallyRefunded": "部分退款",
       "cashOnDelivery": "货到付款",
       "amountDue": "应付金额",
-      "multiplePaymentMethods": "多种付款方式"
+      "multiplePaymentMethods": "多种付款方式",
+      "expectedPayment": "预期付款方式",
+      "deliveryNote": "外送备注"
     },
     "hsn": "HSN",
     "zReport": {

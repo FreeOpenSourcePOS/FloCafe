@@ -973,6 +973,10 @@ export interface DeliverySlipNotesBlock {
   readonly label: SemanticLabel;
   /** Characters dropped from an over-long note, 0 when it printed whole. */
   readonly noteTruncatedChars: number;
+  /** Courier-only note; unlike `note`, it never reaches a kitchen ticket or receipt. */
+  readonly deliveryNote: DirectionalText | null;
+  readonly deliveryNoteLabel: SemanticLabel;
+  readonly deliveryNoteTruncatedChars: number;
 }
 
 /** Payment or collection status for the courier. */
@@ -1036,6 +1040,27 @@ export function sanitizeDeliverySlipPaymentMethod(value: unknown): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 60);
+}
+
+/**
+ * The collection hint for an unpaid balance. It states what the order expects,
+ * never that anything was paid: absent reads as unknown and `pending` as a
+ * customer who has not decided. Shared so every slip renderer prints the same words.
+ */
+export function deliverySlipExpectedPaymentText(
+  expectedMethod: unknown,
+  resolveLabel: (conceptId: LabelConceptId) => string,
+): string {
+  const method = sanitizeDeliverySlipPaymentMethod(expectedMethod);
+  const normalized = method.toLowerCase();
+  if (normalized === 'cash') return resolveLabel('print.deliverySlip.cashOnDelivery');
+  const methodConcept = PAYMENT_METHOD_CONCEPTS[normalized];
+  const value = !method
+    ? resolveLabel('common.unknown')
+    : normalized === 'pending'
+      ? resolveLabel('orders.pending')
+      : methodConcept !== undefined ? resolveLabel(methodConcept) : method;
+  return `${resolveLabel('print.deliverySlip.expectedPayment')}: ${value}`;
 }
 
 export interface DeliverySlipPaymentSummary {
@@ -1172,6 +1197,9 @@ export interface DeliverySlipPrintData {
   readonly note?: string;
   /** Characters dropped from a legacy or over-long note, 0 when it printed whole. */
   readonly noteTruncatedChars?: number;
+  /** Courier-only note for this delivery. Absent or blank prints nothing. */
+  readonly deliveryNote?: string;
+  readonly deliveryNoteTruncatedChars?: number;
   readonly contact: {
     readonly name: string;
     /** Full number, country code already prefixed by the caller. */
@@ -1189,6 +1217,8 @@ export interface DeliverySlipPrintData {
     readonly amountDue: number;
     readonly formattedAmount: string;
     readonly formattedAmountDue?: string;
+    /** Method expected at handover, separate from any captured payment; absent is unknown. */
+    readonly expectedMethod?: string;
   };
   readonly items: readonly {
     readonly productName: string;
@@ -1485,7 +1515,10 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
   if (value.kind === 'delivery-slip-notes') {
     return isOptionalDirectionalText(value.note)
       && isSemanticLabel(value.label)
-      && isFiniteNumber(value.noteTruncatedChars);
+      && isFiniteNumber(value.noteTruncatedChars)
+      && isOptionalDirectionalText(value.deliveryNote)
+      && isSemanticLabel(value.deliveryNoteLabel)
+      && isFiniteNumber(value.deliveryNoteTruncatedChars);
   }
   if (value.kind === 'delivery-slip-payment') {
     return (value.status === 'paid' || value.status === 'unpaid'
@@ -1576,12 +1609,16 @@ export function buildDeliverySlipDocument(
   });
 
   const note = String(printData.note ?? '').trim();
+  const deliveryNote = String(printData.deliveryNote ?? '').trim();
   const notes: DeliverySlipNotesBlock = Object.freeze({
     kind: 'delivery-slip-notes',
     direction: base,
     note: optionalDirectional(note, base),
     label: resolveSemanticLabel(labels, 'print.note'),
     noteTruncatedChars: toTruncatedCount(printData.noteTruncatedChars),
+    deliveryNote: optionalDirectional(deliveryNote, base),
+    deliveryNoteLabel: resolveSemanticLabel(labels, 'print.deliverySlip.deliveryNote'),
+    deliveryNoteTruncatedChars: toTruncatedCount(printData.deliveryNoteTruncatedChars),
   });
 
   const paymentData = printData.payment;
@@ -1630,7 +1667,12 @@ export function buildDeliverySlipDocument(
           ),
         }
         : paymentData.status === 'unpaid' && paymentData.amount > 0
-          ? { detailsText: directionalText(resolveSemanticLabel(labels, 'print.deliverySlip.cashOnDelivery').primary, base) }
+          ? {
+            detailsText: directionalText(
+              deliverySlipExpectedPaymentText(paymentData.expectedMethod, (conceptId) => resolveSemanticLabel(labels, conceptId).primary),
+              base,
+            ),
+          }
           : paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
             ? {
               detailsText: directionalText(
@@ -1662,7 +1704,9 @@ export function buildDeliverySlipDocument(
   });
 
   const blocks: DeliverySlipDocumentBlock[] = [header, contact];
-  if (note.length > 0 || notes.noteTruncatedChars > 0) blocks.push(notes);
+  if (note.length > 0 || notes.noteTruncatedChars > 0 || deliveryNote.length > 0 || notes.deliveryNoteTruncatedChars > 0) {
+    blocks.push(notes);
+  }
   if (paymentBlock) blocks.push(paymentBlock);
   blocks.push(items);
 

@@ -44,7 +44,7 @@ function main() {
   const tailVersion = MIGRATIONS[MIGRATIONS.length - 1].version;
   // Pinned on purpose: adding a migration has to update this literal, so a new
   // tail cannot land unnoticed while every other assertion only checks ordering.
-  assert.equal(tailVersion, 102, 'the registry tail is the pinned head schema version');
+  assert.equal(tailVersion, 103, 'the registry tail is the pinned head schema version');
   assert.equal(getCurrentSchemaVersion(), tailVersion, 'a fresh install reaches the last registry version');
 
   assert.ok(

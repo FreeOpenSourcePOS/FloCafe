@@ -5,9 +5,11 @@ import { useEffect } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
-  Users,
+  Users, Wallet, StickyNote,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import api from '@/lib/api';
+import type { CustomPaymentMethod } from '@/lib/payment-methods';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
@@ -141,9 +143,19 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const billingType = usePosSettingsStore((s) => s.billingType);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
+
+  const isDeliveryOrder = cart.orderType === 'delivery';
+  const [customPaymentMethods, setCustomPaymentMethods] = useState<CustomPaymentMethod[]>([]);
+  useEffect(() => {
+    if (!isDeliveryOrder) return;
+    api.get('/payment-methods')
+      .then((res) => setCustomPaymentMethods(res.data.payment_methods || []))
+      .catch(() => setCustomPaymentMethods([]));
+  }, [isDeliveryOrder]);
 
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
@@ -248,6 +260,40 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>
+        )}
+
+        {/* Expected collection and courier note: recorded with the order, never a payment */}
+        {isDeliveryOrder && (
+          <>
+            <label className="flex items-center gap-2">
+              <Wallet size={14} className="text-muted-foreground shrink-0" />
+              <span className="text-sm text-muted-foreground">{t('expectedPayment')}</span>
+              <select
+                value={cart.expectedPaymentMethod}
+                onChange={(e) => cart.setExpectedPaymentMethod(e.target.value)}
+                className="flex-1 min-w-0 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              >
+                <option value="">{tCommon('unknown')}</option>
+                <option value="pending">{tOrders('pending')}</option>
+                <option value="cash">{t('methodCash')}</option>
+                <option value="card">{t('methodCard')}</option>
+                {customPaymentMethods.map((method) => (
+                  <option key={method.id} value={method.name}>{method.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-center gap-2">
+              <StickyNote size={14} className="text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                value={cart.deliveryNote}
+                onChange={(e) => cart.setDeliveryNote(e.target.value.slice(0, 200))}
+                placeholder={t('deliveryNotePlaceholder')}
+                maxLength={200}
+                className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              />
+            </div>
+          </>
         )}
 
         {/* Online platform + external order id — shown inline when online is selected */}

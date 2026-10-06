@@ -45,6 +45,8 @@ export const PRINT_CONCEPT_IDS = [
   'print.deliverySlip.cashOnDelivery',
   'print.deliverySlip.amountDue',
   'print.deliverySlip.multiplePaymentMethods',
+  'print.deliverySlip.expectedPayment',
+  'print.deliverySlip.deliveryNote',
   'print.hsn',
   'print.zReport.title',
   'print.zReport.businessDate',
@@ -130,6 +132,8 @@ export const PRINT_CONCEPT_IDS = [
   'dashboard.countedCash',
   'dashboard.variance',
   'dashboard.ticketFooter',
+  'common.unknown',
+  'orders.pending',
 ] as const;
 
 export type PrintConceptId = (typeof PRINT_CONCEPT_IDS)[number];

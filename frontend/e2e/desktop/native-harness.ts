@@ -27,6 +27,9 @@ export interface NativeElectronHarness {
   page: Page;
   ports: NativeServicePorts;
   profileDir: string;
+  /** True when the app runs with its window hidden (default). Native window
+   *  state and renderer focus cannot be exercised in this mode. */
+  hiddenWindow: boolean;
   setActivePage: (page: Page) => void;
   authenticateDashboard: () => Promise<void>;
   simulateTerminalRuntimeLoss: () => Promise<void>;
@@ -326,6 +329,10 @@ async function boundedRelaunchClose(
 }
 
 export async function createNativeElectronHarness(): Promise<NativeElectronHarness> {
+  // Headless by default so a local run never pops windows over the developer's
+  // desktop. FLO_E2E_SHOW_WINDOW=1 restores the visible-window variant for
+  // native focus/window-state coverage.
+  const hiddenWindow = process.env.FLO_E2E_SHOW_WINDOW !== '1';
   const profileDir = mkdtempSync(path.join(tmpdir(), 'flo-native-e2e-'));
   const ports = await findServicePorts();
   const pidFile = path.join(profileDir, 'electron.pid');
@@ -343,6 +350,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
     FLO_E2E_USER_DATA_DIR: profileDir,
     FLO_E2E_DB_PATH: path.join(profileDir, 'flo.db'),
     FLO_E2E_PID_FILE: pidFile,
+    FLO_E2E_HIDDEN_WINDOW: hiddenWindow ? '1' : '0',
     PORT: String(ports.main),
     KDS_PORT: String(ports.kds),
     SERVER_APP_PORT: String(ports.serverApp),
@@ -408,26 +416,28 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         await nextPage.goto(`http://localhost:${ports.main}/pos`, { waitUntil: 'domcontentloaded' });
         await nextPage.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
       }
-      const activeOrigin = new URL(nextPage.url()).origin;
-      await nextPage.bringToFront().catch(() => {});
-      await nextApp.evaluate(({ app: electronApp, BrowserWindow }, origin) => {
-        electronApp.focus({ steal: true });
-        const target = BrowserWindow.getAllWindows().find((window: { webContents: { getURL: () => string }; isDestroyed: () => boolean }) => {
-          try { return new URL(window.webContents.getURL()).origin === origin; } catch { return false; }
-        });
-        if (!target || target.isDestroyed()) return;
-        target.show();
-        target.focus();
-        target.webContents.focus();
-        // Xvfb runs without a window manager in CI, so briefly toggling
-        // always-on-top is the reliable way to deliver native focus there.
-        if (process.platform === 'linux') {
-          target.setAlwaysOnTop(true);
-          target.setAlwaysOnTop(false);
+      if (!hiddenWindow) {
+        const activeOrigin = new URL(nextPage.url()).origin;
+        await nextPage.bringToFront().catch(() => {});
+        await nextApp.evaluate(({ app: electronApp, BrowserWindow }, origin) => {
           electronApp.focus({ steal: true });
-        }
-      }, activeOrigin);
-      await nextPage.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
+          const target = BrowserWindow.getAllWindows().find((window: { webContents: { getURL: () => string }; isDestroyed: () => boolean }) => {
+            try { return new URL(window.webContents.getURL()).origin === origin; } catch { return false; }
+          });
+          if (!target || target.isDestroyed()) return;
+          target.show();
+          target.focus();
+          target.webContents.focus();
+          // Xvfb runs without a window manager in CI, so briefly toggling
+          // always-on-top is the reliable way to deliver native focus there.
+          if (process.platform === 'linux') {
+            target.setAlwaysOnTop(true);
+            target.setAlwaysOnTop(false);
+            electronApp.focus({ steal: true });
+          }
+        }, activeOrigin);
+        await nextPage.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
+      }
       await nextPage.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
     };
 
@@ -436,6 +446,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
       get page() { return activePage; },
       ports,
       profileDir,
+      hiddenWindow,
       setActivePage: (page) => { activePage = page; },
       authenticateDashboard: buildAuthenticate(() => activePage, app),
       simulateTerminalRuntimeLoss: async () => {
@@ -500,6 +511,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
           get page() { return newActivePage; },
           ports,
           profileDir,
+          hiddenWindow,
           setActivePage: (page) => { newActivePage = page; },
           authenticateDashboard: buildAuthenticate(() => newActivePage, newApp),
           simulateTerminalRuntimeLoss: async () => {

@@ -390,6 +390,9 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   if (
     (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
   ) return false;
+  // Native E2E drives the real app without popping a window on the developer's
+  // desktop; the renderer keeps running unthrottled (see createWindow).
+  if (process.env.FLO_E2E_HIDDEN_WINDOW === '1') return true;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -644,6 +647,11 @@ function createWindow(): void {
     process.platform,
     initialIsDark,
     resolvedTitleBarMode,
+    // Hidden windows are throttled by Chromium; the native E2E harness still
+    // needs live timers and WebSocket traffic from a window it never shows.
+    process.env.FLO_E2E_HIDDEN_WINDOW === '1'
+      ? { webPreferences: { backgroundThrottling: false } }
+      : undefined,
   );
   mainWindow = createdWindow;
 

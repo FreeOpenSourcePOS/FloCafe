@@ -176,6 +176,13 @@ jobs:
         if: matrix.shard == 0
         run: bash tests/run-test.sh npm run test:payment-methods-split
 
+      # These two suites live in npm pretest, which the shard runner
+      # intentionally does not execute; run them here so a schema or catalog
+      # API regression fails the PR instead of only a local `npm test`.
+      - name: Product variant schema and catalog API checks (npm pretest)
+        if: matrix.shard == 0
+        run: bash tests/run-test.sh npm run test:product-variants-db && bash tests/run-test.sh npm run test:product-variants-api
+
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run
         # time, so shard coverage cannot drift from a hand-maintained list.
@@ -237,7 +244,17 @@ jobs:
         working-directory: frontend
         # This job is the browser-only layer. The Electron project has its own
         # config and dedicated native job with an explicit display server.
-        run: npx playwright test --config=playwright.config.ts --project=chromium
+        run: npx playwright test --config=playwright.config.ts --project=chromium --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'
+        env:
+          CI: true
+
+      - name: Run verified browser E2E Tier 1
+        run: npm run test:e2e:browser:tier1
+        env:
+          CI: true
+
+      - name: Run verified browser E2E Tier 2
+        run: npm run test:e2e:browser:tier2
         env:
           CI: true
 

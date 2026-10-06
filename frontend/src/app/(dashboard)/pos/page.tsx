@@ -1250,6 +1250,7 @@ export default function POSPage() {
           product={addonProduct}
           currency={currency}
           initialVariant={addonInitialVariant}
+          onlinePlatformSelected={cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0}
           onAdd={handleAddonAdd}
           onClose={() => { setAddonProduct(null); setAddonInitialVariant(null); }}
         />
@@ -1264,6 +1265,7 @@ export default function POSPage() {
           initialAddons={editingCartItem.addons}
           initialInstructions={editingCartItem.special_instructions}
           initialVariant={editingCartItem.variant}
+          onlinePlatformSelected={cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0}
           onAdd={handleEditItemSave}
           onClose={() => setEditingCartItem(null)}
         />

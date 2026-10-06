@@ -12,6 +12,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
+import { formatItemHeading } from '@/lib/printer/item-heading';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
@@ -22,7 +23,7 @@ import { cartItemToOrderItem } from '@/lib/cart-order-item';
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
 type Table = { id: string; name?: string; number?: string; status?: string; activeOrder?: Order | null; current_order?: Order | null };
-type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
+type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null; variant_selection?: unknown };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
 type DraftLine = CartItem;
 type ServerAppInfo = {
@@ -563,7 +564,7 @@ export default function ServerStandalonePage() {
             {currentOrder.items.map((item) => (
               <div key={item.id} className="flex items-center gap-2 text-sm">
                 {itemStatusIcon(item.status, t)}
-                <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {item.product_name}</span>
+                <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {formatItemHeading(item.product_name, item.variant_selection)}</span>
               </div>
             ))}
           </div>

@@ -1203,8 +1203,8 @@ export default function OrdersPage() {
         </div>
       ) : ordersLayout === 'split' ? (
         <div className="flex-1 min-h-0 flex gap-4">
-          {/* Master pane — 40% on desktop, full width below md. */}
-          <div className={cn(selectedOrder ? 'hidden md:flex' : 'flex', 'w-full md:w-[40%] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden')}>
+          {/* Master pane — a fixed reading column on desktop, full width below md. */}
+          <div className={cn(selectedOrder ? 'hidden md:flex' : 'flex', 'w-full md:w-[360px] lg:w-[400px] xl:w-[440px] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden')}>
             <OrdersMasterList
               orders={filteredOrders}
               selectedOrderId={selectedOrderId}
@@ -1213,8 +1213,8 @@ export default function OrdersPage() {
             />
           </div>
 
-          {/* Detail pane — 60% on desktop, full width with back nav below md. */}
-          <div className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:w-[60%] min-w-0')}>
+          {/* Detail pane — fills the remaining row width on desktop, full width with back nav below md. */}
+          <div className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:flex-1 min-w-0')}>
             <OrderDetailPanel
               order={selectedOrder ?? null}
               onBack={() => setSelectedOrderId(null)}
@@ -1235,6 +1235,7 @@ export default function OrdersPage() {
               linkCustomerResults={linkCustomerResults}
               linkingCustomer={linkingCustomer}
               onCheckout={handleCheckout}
+              onPayBill={(bill) => setPaymentBill(bill)}
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
               onConvertToTakeaway={handleConvertToTakeaway}
@@ -1349,6 +1350,10 @@ export default function OrdersPage() {
           onClose={() => setPaymentBill(null)}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
+          onSplit={() => {
+            setPaymentBill(null);
+            fetchOrders(undefined, { refreshLoadedPages: true });
+          }}
         />
       )}
 

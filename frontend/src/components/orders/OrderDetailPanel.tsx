@@ -52,6 +52,7 @@ export interface OrderDetailPanelProps {
   linkingCustomer?: boolean;
   onBack?: () => void;
   onCheckout: (orderId: number) => void;
+  onPayBill?: (bill: Bill) => void;
   onAddItems: (order: Order) => void;
   onRefund: (order: Order, bills: Bill[]) => void;
   onConvertToTakeaway: (order: Order) => void;
@@ -91,6 +92,7 @@ function OrderDetailContent({
   linkCustomerResults,
   linkingCustomer,
   onCheckout,
+  onPayBill,
   onAddItems,
   onRefund,
   onConvertToTakeaway,
@@ -138,6 +140,8 @@ function OrderDetailContent({
   const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
 
   const orderBills = order.bills && order.bills.length > 0 ? order.bills : bill ? [bill] : [];
+  const splitBills = orderBills.filter((candidate) => Boolean(candidate.split_group_id));
+  const hasUnpaidSplitBills = splitBills.some((candidate) => candidate.payment_status !== 'paid');
   const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
   const hasEligibleRefund = paidBills.length > 0;
 
@@ -616,6 +620,26 @@ function OrderDetailContent({
           <div className="w-full py-2 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5 min-h-[40px]">
             <Info size={14} className="shrink-0 text-muted-foreground" />
             <span>{tOrders('noFurtherActions')}</span>
+          </div>
+        ) : hasUnpaidSplitBills ? (
+          <div className="space-y-2">
+            {splitBills.map((splitBill) => (
+              <div key={splitBill.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {splitBill.split_label || `#${splitBill.bill_number}`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmt(Number(splitBill.total))} · {splitBill.payment_status === 'paid' ? tOrders('paid') : tOrders('balance')}
+                  </p>
+                </div>
+                {splitBill.payment_status !== 'paid' && onPayBill && (
+                  <Button size="sm" onClick={() => onPayBill({ ...splitBill, order })} className="h-9 shrink-0">
+                    {tPos('pay')}
+                  </Button>
+                )}
+              </div>
+            ))}
           </div>
         ) : isPaid || order.status === 'completed' ? (
           <div className="flex items-center gap-2">

@@ -87,6 +87,8 @@ export default function InventoryPage() {
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
+  const [recipeSearch, setRecipeSearch] = useState('');
+  const [movementSearch, setMovementSearch] = useState('');
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [includeInactive, setIncludeInactive] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -144,6 +146,7 @@ export default function InventoryPage() {
   const loadMovements = useCallback(async (cursor?: number | null) => {
     try {
       const params: Record<string, string | number> = { per_page: 50 };
+      if (movementSearch.trim()) params.search = movementSearch.trim();
       if (cursor) params.before_id = cursor;
       const { data } = await api.get('/supplies/movements', { params });
       setMovements((prev) => (cursor ? [...prev, ...(data.movements || [])] : data.movements || []));
@@ -152,12 +155,14 @@ export default function InventoryPage() {
       toast.error(t('loadFailed'));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [refreshKey, movementSearch]);
 
   useEffect(() => {
     if (!canManage || tab !== 'movements') return;
     const controller = new AbortController();
-    api.get('/supplies/movements', { params: { per_page: 50 }, signal: controller.signal })
+    const params: Record<string, string | number> = { per_page: 50 };
+    if (movementSearch.trim()) params.search = movementSearch.trim();
+    api.get('/supplies/movements', { params, signal: controller.signal })
       .then(({ data }) => {
         setMovements(data.movements || []);
         setNextCursor(data.nextCursor ?? null);
@@ -167,7 +172,7 @@ export default function InventoryPage() {
       });
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, refreshKey, canManage]);
+  }, [tab, refreshKey, canManage, movementSearch]);
 
   const openAddSupply = () => {
     setEditingSupply(null);
@@ -303,6 +308,16 @@ export default function InventoryPage() {
     }
   };
 
+  // Recipes come from one unpaginated list, so this filter always sees every
+  // recipe; movements are searched on the server (see the movements request).
+  const normalizedRecipeSearch = recipeSearch.trim().toLowerCase();
+  const visibleRecipes = normalizedRecipeSearch === ''
+    ? recipes
+    : recipes.filter((recipe) => [
+        recipe.product_name || recipe.product_id,
+        ...recipe.items.map((item) => item.supply_name),
+      ].some((field) => field.toLowerCase().includes(normalizedRecipeSearch)));
+
   if (!canManage) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -405,6 +420,14 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="recipes">
+          <div className="relative mb-4 max-w-sm">
+            <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)}
+              placeholder={tCommon('search')}
+              className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+            />
+          </div>
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead className="bg-muted">
@@ -416,7 +439,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {recipes.map((r) => (
+                {visibleRecipes.map((r) => (
                   <tr key={r.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">{r.product_name || r.product_id}</td>
                     <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
@@ -443,11 +466,19 @@ export default function InventoryPage() {
                 ))}
               </tbody>
             </table>
-            {recipes.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptyRecipes')}</p>}
+            {visibleRecipes.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedRecipeSearch === '' ? t('emptyRecipes') : tCommon('noResults')}</p>}
           </div>
         </TabsContent>
 
         <TabsContent value="movements">
+          <div className="relative mb-4 max-w-sm">
+            <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text" value={movementSearch} onChange={(e) => setMovementSearch(e.target.value)}
+              placeholder={tCommon('search')}
+              className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+            />
+          </div>
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead className="bg-muted">
@@ -488,7 +519,7 @@ export default function InventoryPage() {
                 })}
               </tbody>
             </table>
-            {movements.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptyMovements')}</p>}
+            {movements.length === 0 && <p className="text-center text-muted-foreground py-12">{movementSearch.trim() === '' ? t('emptyMovements') : tCommon('noResults')}</p>}
             {nextCursor !== null && (
               <div className="text-center py-3 border-t border-border">
                 <Button variant="outline" size="sm" onClick={() => loadMovements(nextCursor)}>{t('loadMore')}</Button>

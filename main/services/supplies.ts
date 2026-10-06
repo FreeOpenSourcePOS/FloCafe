@@ -335,6 +335,7 @@ export function listSupplyMovements(
   filters: {
     supplyId?: string;
     movementType?: SupplyMovementType;
+    search?: string;
     beforeId?: number;
     perPage?: number;
   } = {},
@@ -348,6 +349,11 @@ export function listSupplyMovements(
   if (filters.movementType) {
     conditions.push('m.movement_type = ?');
     params.push(filters.movementType);
+  }
+  if (filters.search) {
+    conditions.push('(s.name LIKE ? OR m.reason LIKE ? OR u.name LIKE ?)');
+    const searchTerm = `%${filters.search}%`;
+    params.push(searchTerm, searchTerm, searchTerm);
   }
   if (filters.beforeId !== undefined) {
     const cursor = db.prepare('SELECT created_at FROM supply_movements WHERE id = ?').get(filters.beforeId) as

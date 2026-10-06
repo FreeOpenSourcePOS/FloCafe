@@ -213,7 +213,7 @@ Router: `main/routes/supplies.ts`. Full path: `/api/supplies`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.ownerManager` | query: `?include_inactive`, `?low_stock`, `?search` | Supply list. `?low_stock` and `?include_inactive` narrow it. |
 | `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `name`, `base_unit`, `stock_quantity`, `low_stock_threshold`, `is_active` | - |
-| `GET` | `/movements` | `ROLE_ACCESS.ownerManager` | query: `?supply_id`, `?movement_type`, `?before_id`, `?per_page` | Supply movement ledger, newest first; `?before_id` pages backwards. |
+| `GET` | `/movements` | `ROLE_ACCESS.ownerManager` | query: `?supply_id`, `?movement_type`, `?search`, `?before_id`, `?per_page` | Supply movement ledger, newest first; `?search` matches the supply name, reason, or actor across the whole ledger; `?before_id` pages backwards. |
 | `GET` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `name`, `is_active`, `low_stock_threshold` | - |
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |

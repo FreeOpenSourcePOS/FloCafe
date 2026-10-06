@@ -35,6 +35,8 @@ const originalResolveFilename = moduleApi._resolveFilename;
 moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
   const resolvedRequest = request === '@countries'
     ? path.resolve(ROOT, 'main/countries.ts')
+    : request.startsWith('@print/')
+      ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
     : request.startsWith('@shared/')
       ? path.resolve(ROOT, 'shared', request.slice('@shared/'.length))
     : request.startsWith('@/')
@@ -480,8 +482,11 @@ async function runCatalogSaveBoundaryTests() {
     };
     const productTree = renderProductsPage('products');
     const submitForms = collectElements(productTree, (element) => typeof element.props?.onSubmit === 'function');
-    assert.equal(submitForms.length, 1, 'ProductsPage exposes the product save form');
-    await submitForms[0].props.onSubmit({ preventDefault: () => undefined });
+    // The shared Tabs markup keeps every tab's form in the element tree, so the
+    // product form is picked by its id rather than by being the only form.
+    const productForm = submitForms.find((form) => form.props?.id === 'product-form');
+    assert(productForm, 'ProductsPage exposes the product save form');
+    await productForm.props.onSubmit({ preventDefault: () => undefined });
     const productSave = calls.find((call) => call.method === 'post' && call.path === '/products');
     assert.equal(productSave?.payload?.price, 2, 'product price is rounded at the save handler');
     assert.equal(productSave?.payload?.cost_price, 3, 'product cost price is rounded at the save handler');

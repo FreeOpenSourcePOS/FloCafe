@@ -35,7 +35,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
 
   return (
     // Two rows below xl so the action buttons never crowd the customer
-    // fields: lookup on the first row, actions right-aligned on the second.
+    // fields: lookup on the first row, actions end-aligned on the second.
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2.5">
       <div className="flex-1 min-w-0">
         <CustomerSearch variant="topbar" />

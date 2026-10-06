@@ -28,6 +28,8 @@ import log from 'electron-log/main';
 
 // Cap on the log content attached to a support ticket (most recent bytes only).
 const LOG_TAIL_MAX_BYTES = 200_000;
+// Cap on renderer-built print HTML accepted for PDF export.
+const MAX_PDF_HTML_BYTES = 2_000_000;
 // Prefer excluding log lines older than this from a support-ticket attachment.
 const LOG_TAIL_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Matches electron-log's default line prefix, e.g. "[2026-09-13 10:15:30.123] [info] ...".
@@ -602,6 +604,49 @@ export function registerIpcHandlers(
       return { error: getErrorMessage(error) };
     }
     });
+  });
+
+  // Saves renderer-built print HTML (the menu, and future documents) as a PDF
+  // through an offscreen window, so a merchant can share it without a printer.
+  handle('save-html-as-pdf', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { success: false, error: 'Invalid PDF request' };
+    const { html, defaultFileName, pageSize } = payload as {
+      html?: unknown;
+      defaultFileName?: unknown;
+      pageSize?: unknown;
+    };
+    if (typeof html !== 'string' || html.length === 0) {
+      return { success: false, error: 'Invalid PDF request' };
+    }
+    if (Buffer.byteLength(html, 'utf8') > MAX_PDF_HTML_BYTES) {
+      return { success: false, error: 'Document too large to export' };
+    }
+    const resolvedPageSize = pageSize === 'Letter' ? 'Letter' : 'A4';
+    const requestedName = typeof defaultFileName === 'string' ? defaultFileName.trim() : '';
+    const baseName = requestedName.replace(/[^\w.\- ]+/g, '-').slice(0, 80) || 'document.pdf';
+    const saveResult = await dialog.showSaveDialog({
+      defaultPath: path.join(app.getPath('documents'), baseName.endsWith('.pdf') ? baseName : `${baseName}.pdf`),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (saveResult.canceled || !saveResult.filePath) return { success: false, canceled: true };
+
+    const pdfWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, javascript: false },
+    });
+    try {
+      await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+      const pdfData = await pdfWindow.webContents.printToPDF({
+        printBackground: true,
+        pageSize: resolvedPageSize,
+      });
+      await fs.promises.writeFile(saveResult.filePath, pdfData);
+      return { success: true, path: saveResult.filePath };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error) };
+    } finally {
+      if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+    }
   });
 
   handle('rasterize-print-document', async (_event, payload: unknown) => {

@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSVをアップロード",
     "printMenu": "メニューを印刷",
     "printMenuDescription": "印刷するメニューに含める商品を選択します。",
+    "printDestination": "印刷先",
+    "printToReceipt": "レシートプリンター",
+    "printToPaper": "用紙 (A4 / レター)",
+    "printToPdf": "PDF として保存",
     "includeInactiveItems": "非アクティブな商品を含める",
     "includeOutOfStockItems": "在庫切れの商品を含める",
     "includeHiddenItems": "非表示の商品を含める",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "オンライン価格",
     "variantRowInvalid": "各バリアントには名前と価格が必要です。",
     "variantToggle": "この商品にはバリアントがあります（例：サイズ、生地、フレーバー）",
+    "variantsSection": "バリエーション",
     "variantDeactivateConfirm": "保存するとこのバリアントは無効になり、この画面から復元できません。",
     "variantRemoveAllConfirm": "オフにするとこの商品のすべてのバリアントが無効になります。過去の注文には残ります。"
   },

@@ -1221,6 +1221,10 @@
     "uploadCsv": "Unggah CSV",
     "printMenu": "Cetak Menu",
     "printMenuDescription": "Atur produk yang akan disertakan dalam menu cetak.",
+    "printDestination": "Tujuan cetak",
+    "printToReceipt": "Printer struk",
+    "printToPaper": "Kertas (A4 / Letter)",
+    "printToPdf": "Simpan sebagai PDF",
     "includeInactiveItems": "Sertakan produk nonaktif",
     "includeOutOfStockItems": "Sertakan produk yang kehabisan stok",
     "includeHiddenItems": "Sertakan produk tersembunyi",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Harga online",
     "variantRowInvalid": "Setiap varian memerlukan nama dan harga.",
     "variantToggle": "Produk ini memiliki varian (mis. Ukuran, Adonan, Rasa)",
+    "variantsSection": "Varian",
     "variantDeactivateConfirm": "Varian ini akan dinonaktifkan saat disimpan dan tidak dapat dipulihkan dari layar ini.",
     "variantRemoveAllConfirm": "Mematikannya akan menonaktifkan semua varian produk ini. Pesanan lama tetap menyimpannya."
   },

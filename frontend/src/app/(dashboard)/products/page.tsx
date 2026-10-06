@@ -868,13 +868,15 @@ export default function ProductsPage() {
       {/* Product Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+          <div className="bg-card rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
               <h2 className="text-lg font-bold">{editingProduct ? t('editProductTitle') : t('addProductTitle')}</h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Wide two-column layout: the full-width variant editor and the
+                  grid rows keep every control inside the popup. */}
+              <form id="product-form" onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-x-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -1021,12 +1023,13 @@ export default function ProductsPage() {
                 <span className="text-sm text-foreground">{t('variantToggle')}</span>
               </label>
               {form.has_variants && (
-                <div className="space-y-2">
-                  <div className="flex justify-end">
+                <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4 lg:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-foreground">{t('variantsSection')}</span>
                     <button type="button" onClick={addVariantRow} className="text-xs text-brand hover:underline">{t('addButton')}</button>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="w-full min-w-[720px] text-sm">
                       <thead>
                         <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                           <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
@@ -1282,10 +1285,13 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
-              <Button type="submit" className="w-full">
+              </form>
+            </div>
+            <div className="flex shrink-0 justify-end gap-3 border-t border-border p-4">
+              <Button type="button" variant="outline" onClick={resetForm}>{tCommon('cancel')}</Button>
+              <Button type="submit" form="product-form">
                 {editingProduct ? t('updateProduct') : t('createProduct')}
               </Button>
-            </form>
             </div>
           </div>
         </div>

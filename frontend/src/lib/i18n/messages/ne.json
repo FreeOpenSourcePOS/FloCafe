@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSV अपलोड गर्नुहोस्",
     "printMenu": "मेनु प्रिन्ट गर्नुहोस्",
     "printMenuDescription": "प्रिन्ट हुने मेनुमा कुन उत्पादन समावेश गर्ने छान्नुहोस्।",
+    "printDestination": "प्रिन्ट गन्तव्य",
+    "printToReceipt": "रसिद प्रिन्टर",
+    "printToPaper": "कागज (A4 / Letter)",
+    "printToPdf": "PDF को रूपमा बचत गर्नुहोस्",
     "includeInactiveItems": "निष्क्रिय उत्पादन समावेश गर्नुहोस्",
     "includeOutOfStockItems": "स्टकमा नभएका उत्पादन समावेश गर्नुहोस्",
     "includeHiddenItems": "लुकेका उत्पादन समावेश गर्नुहोस्",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "अनलाइन मूल्य",
     "variantRowInvalid": "हरेक भेरियन्टको नाम र मूल्य आवश्यक छ।",
     "variantToggle": "यो उत्पादनमा भेरियन्टहरू छन् (जस्तै: आकार, क्रस्ट, स्वाद)",
+    "variantsSection": "भेरिएन्टहरू",
     "variantDeactivateConfirm": "यो भेरियन्ट सेव गर्दा निष्क्रिय हुन्छ र यो स्क्रिनबाट पुनःस्थापना गर्न मिल्दैन।",
     "variantRemoveAllConfirm": "यसलाई बन्द गर्दा यो उत्पादनका सबै भेरियन्टहरू निष्क्रिय हुन्छन्। पुराना अर्डरहरूमा तिनीहरू कायमै रहन्छन्।"
   },

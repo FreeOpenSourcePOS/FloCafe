@@ -1221,6 +1221,10 @@
     "uploadCsv": "Ngarko CSV",
     "printMenu": "Printo menunë",
     "printMenuDescription": "Zgjidhni produktet që do të përfshihen në menunë e printuar.",
+    "printDestination": "Destinacioni i printimit",
+    "printToReceipt": "Printer faturash",
+    "printToPaper": "Letër (A4 / Letter)",
+    "printToPdf": "Ruaj si PDF",
     "includeInactiveItems": "Përfshi produktet joaktive",
     "includeOutOfStockItems": "Përfshi produktet pa stok",
     "includeHiddenItems": "Përfshi produktet e fshehura",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Çmimi online",
     "variantRowInvalid": "Çdo variant duhet të ketë emër dhe çmim.",
     "variantToggle": "Ky produkt ka variante (p.sh. madhësi, kore, shije)",
+    "variantsSection": "Variantet",
     "variantDeactivateConfirm": "Ky variant do të çaktivizohet kur ruhet dhe nuk mund të rikthehet nga ky ekran.",
     "variantRemoveAllConfirm": "Nëse e çaktivizoni, do të çaktivizohen të gjitha variantet e këtij produkti. Porositë e vjetra i ruajnë."
   },

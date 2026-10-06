@@ -1221,6 +1221,10 @@
     "uploadCsv": "تحميل ملف CSV",
     "printMenu": "طباعة القائمة",
     "printMenuDescription": "إعداد العناصر التي تريد تضمينها في قائمة الطعام المطبوعة.",
+    "printDestination": "وجهة الطباعة",
+    "printToReceipt": "طابعة الإيصالات",
+    "printToPaper": "ورق (A4 / Letter)",
+    "printToPdf": "حفظ كملف PDF",
     "includeInactiveItems": "تضمين العناصر غير النشطة",
     "includeOutOfStockItems": "تضمين العناصر غير المتوفرة",
     "includeHiddenItems": "تضمين العناصر المخفية",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "سعر البيع عبر الإنترنت",
     "variantRowInvalid": "كل خيار يحتاج إلى اسم وسعر.",
     "variantToggle": "هذا المنتج له خيارات (مثل: الحجم، نوع العجينة، النكهة)",
+    "variantsSection": "المتغيرات",
     "variantDeactivateConfirm": "سيتم تعطيل هذا الخيار عند الحفظ ولا يمكن استعادته من هذه الشاشة.",
     "variantRemoveAllConfirm": "سيؤدي إيقاف هذا إلى تعطيل جميع خيارات المنتج. تحتفظ الطلبات السابقة بها."
   },

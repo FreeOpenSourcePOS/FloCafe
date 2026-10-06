@@ -1221,6 +1221,10 @@
     "uploadCsv": "Загрузить CSV",
     "printMenu": "Печать меню",
     "printMenuDescription": "Выберите товары для печатного меню.",
+    "printDestination": "Назначение печати",
+    "printToReceipt": "Принтер чеков",
+    "printToPaper": "Бумага (A4 / Letter)",
+    "printToPdf": "Сохранить в PDF",
     "includeInactiveItems": "Включить неактивные товары",
     "includeOutOfStockItems": "Включить товары без остатка",
     "includeHiddenItems": "Включить скрытые товары",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Цена онлайн",
     "variantRowInvalid": "У каждого варианта должны быть название и цена.",
     "variantToggle": "У этого товара есть варианты (например, размер, начинка, вкус)",
+    "variantsSection": "Варианты",
     "variantDeactivateConfirm": "Этот вариант будет отключён при сохранении, и восстановить его с этого экрана нельзя.",
     "variantRemoveAllConfirm": "Если выключить, будут отключены все варианты этого товара. В прежних заказах они сохранятся."
   },

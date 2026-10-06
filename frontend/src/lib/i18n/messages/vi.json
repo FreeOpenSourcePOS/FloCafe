@@ -1221,6 +1221,10 @@
     "uploadCsv": "Tải lên CSV",
     "printMenu": "In menu",
     "printMenuDescription": "Chọn sản phẩm cần đưa vào menu in.",
+    "printDestination": "Đích in",
+    "printToReceipt": "Máy in hóa đơn",
+    "printToPaper": "Giấy (A4 / Letter)",
+    "printToPdf": "Lưu dưới dạng PDF",
     "includeInactiveItems": "Bao gồm sản phẩm không hoạt động",
     "includeOutOfStockItems": "Bao gồm sản phẩm hết hàng",
     "includeHiddenItems": "Bao gồm sản phẩm bị ẩn",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Giá trực tuyến",
     "variantRowInvalid": "Mỗi biến thể cần có tên và giá.",
     "variantToggle": "Sản phẩm này có biến thể (ví dụ: kích cỡ, đế bánh, hương vị)",
+    "variantsSection": "Biến thể",
     "variantDeactivateConfirm": "Biến thể này sẽ bị vô hiệu hóa khi lưu và không thể khôi phục từ màn hình này.",
     "variantRemoveAllConfirm": "Tắt mục này sẽ vô hiệu hóa mọi biến thể của sản phẩm này. Các đơn hàng cũ vẫn giữ chúng."
   },

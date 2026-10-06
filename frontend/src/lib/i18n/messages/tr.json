@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSV Yükle",
     "printMenu": "Menüyü Yazdır",
     "printMenuDescription": "Yazdırılan menüye eklenecek ürünleri seçin.",
+    "printDestination": "Yazdırma hedefi",
+    "printToReceipt": "Fiş yazıcısı",
+    "printToPaper": "Kağıt (A4 / Letter)",
+    "printToPdf": "PDF olarak kaydet",
     "includeInactiveItems": "Etkin olmayan ürünleri dahil et",
     "includeOutOfStockItems": "Stokta olmayan ürünleri dahil et",
     "includeHiddenItems": "Gizli ürünleri dahil et",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Çevrimiçi fiyat",
     "variantRowInvalid": "Her varyantın adı ve fiyatı olmalıdır.",
     "variantToggle": "Bu ürünün varyantları var (örn. Boyut, Hamur, Tat)",
+    "variantsSection": "Varyantlar",
     "variantDeactivateConfirm": "Bu varyant kaydedildiğinde devre dışı bırakılır ve bu ekrandan geri alınamaz.",
     "variantRemoveAllConfirm": "Bunu kapatırsanız bu ürünün tüm varyantları devre dışı bırakılır. Eski siparişler korunur."
   },

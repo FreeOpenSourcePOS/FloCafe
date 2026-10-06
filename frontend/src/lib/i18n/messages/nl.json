@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSV uploaden",
     "printMenu": "Menu afdrukken",
     "printMenuDescription": "Kies welke producten op het afgedrukte menu komen.",
+    "printDestination": "Afdrukbestemming",
+    "printToReceipt": "Bonprinter",
+    "printToPaper": "Papier (A4 / Letter)",
+    "printToPdf": "Opslaan als PDF",
     "includeInactiveItems": "Inactieve producten opnemen",
     "includeOutOfStockItems": "Uitverkochte producten opnemen",
     "includeHiddenItems": "Verborgen producten opnemen",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Onlineprijs",
     "variantRowInvalid": "Elke variant heeft een naam en prijs nodig.",
     "variantToggle": "Dit product heeft varianten (bijv. formaat, korst, smaak)",
+    "variantsSection": "Varianten",
     "variantDeactivateConfirm": "Deze variant wordt bij opslaan gedeactiveerd en kan vanaf dit scherm niet worden hersteld.",
     "variantRemoveAllConfirm": "Als u dit uitschakelt, worden alle varianten van dit product gedeactiveerd. Eerdere bestellingen behouden ze."
   },

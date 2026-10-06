@@ -369,6 +369,9 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
     if (body.paperWidth !== undefined && body.paperWidth !== 58 && body.paperWidth !== 80) {
       return res.status(400).json({ error: 'paperWidth must be 58 or 80' });
     }
+    if (body.printerId !== undefined && typeof body.printerId !== 'string' && typeof body.printerId !== 'number') {
+      return res.status(400).json({ error: 'printerId must be a string' });
+    }
 
     const db = getDatabase();
     const categories = (db.prepare(`
@@ -441,23 +444,34 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       return res.status(422).json({ error: 'No products match the selected criteria', code: 'no_products_to_print' });
     }
 
-    const defaultPrinter = db.prepare(`
-      SELECT * FROM printers
-      WHERE is_default = 1
-      ORDER BY name
-      LIMIT 1
-    `).get() as { name?: string; paper_width?: string; connection_type?: string } | undefined;
-    const printer = (defaultPrinter || db.prepare(`
-      SELECT * FROM printers
-      WHERE connection_type != 'webusb'
-      ORDER BY name
-      LIMIT 1
-    `).get() || db.prepare(`
-      SELECT * FROM printers
-      WHERE connection_type = 'webusb'
-      ORDER BY name
-      LIMIT 1
-    `).get()) as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    // An explicit printerId comes from the print dialog's printer picker;
+    // without one the configured default keeps deciding.
+    let printer: { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    if (body.printerId !== undefined) {
+      printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(String(body.printerId)) as
+        { name?: string; paper_width?: string; connection_type?: string } | undefined;
+      if (!printer) {
+        return res.status(404).json({ error: 'Printer not found', code: 'printer_not_found' });
+      }
+    } else {
+      const defaultPrinter = db.prepare(`
+        SELECT * FROM printers
+        WHERE is_default = 1
+        ORDER BY name
+        LIMIT 1
+      `).get() as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+      printer = (defaultPrinter || db.prepare(`
+        SELECT * FROM printers
+        WHERE connection_type != 'webusb'
+        ORDER BY name
+        LIMIT 1
+      `).get() || db.prepare(`
+        SELECT * FROM printers
+        WHERE connection_type = 'webusb'
+        ORDER BY name
+        LIMIT 1
+      `).get()) as { name?: string; paper_width?: string; connection_type?: string } | undefined;
+    }
     if (!printer) {
       return res.status(400).json({ error: 'No default printer configured', code: 'printer_not_configured' });
     }

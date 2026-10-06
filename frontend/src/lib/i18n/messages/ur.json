@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSV اپ لوڈ کریں",
     "printMenu": "مینو پرنٹ کریں",
     "printMenuDescription": "منتخب کریں کہ پرنٹ شدہ مینو میں کون سی مصنوعات شامل ہوں۔",
+    "printDestination": "پرنٹ کی منزل",
+    "printToReceipt": "رسید پرنٹر",
+    "printToPaper": "کاغذ (A4 / Letter)",
+    "printToPdf": "PDF کے بطور محفوظ کریں",
     "includeInactiveItems": "غیر فعال مصنوعات شامل کریں",
     "includeOutOfStockItems": "اسٹاک سے باہر مصنوعات شامل کریں",
     "includeHiddenItems": "پوشیدہ مصنوعات شامل کریں",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "آن لائن قیمت",
     "variantRowInvalid": "ہر وریئنٹ کے لیے نام اور قیمت درکار ہے۔",
     "variantToggle": "اس پروڈکٹ کے وریئنٹ ہیں (مثلاً سائز، کرسٹ، ذائقہ)",
+    "variantsSection": "اقسام",
     "variantDeactivateConfirm": "یہ وریئنٹ محفوظ کرنے پر غیر فعال ہو جائے گا اور اس اسکرین سے بحال نہیں کیا جا سکتا۔",
     "variantRemoveAllConfirm": "اسے بند کرنے پر اس پروڈکٹ کے تمام وریئنٹ غیر فعال ہو جائیں گے۔ پرانے آرڈرز انہیں برقرار رکھتے ہیں۔"
   },

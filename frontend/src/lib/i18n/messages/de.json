@@ -1221,6 +1221,10 @@
     "uploadCsv": "CSV hochladen",
     "printMenu": "Menü drucken",
     "printMenuDescription": "Legen Sie fest, welche Artikel auf dem gedruckten Menü erscheinen.",
+    "printDestination": "Druckziel",
+    "printToReceipt": "Bon-Drucker",
+    "printToPaper": "Papier (A4 / Letter)",
+    "printToPdf": "Als PDF speichern",
     "includeInactiveItems": "Inaktive Artikel einbeziehen",
     "includeOutOfStockItems": "Nicht vorrätige Artikel einbeziehen",
     "includeHiddenItems": "Ausgeblendete Artikel einbeziehen",
@@ -1237,6 +1241,7 @@
     "variantOnlinePrice": "Online-Preis",
     "variantRowInvalid": "Jede Variante benötigt einen Namen und einen Preis.",
     "variantToggle": "Dieses Produkt hat Varianten (z. B. Größe, Belag, Geschmack)",
+    "variantsSection": "Varianten",
     "variantDeactivateConfirm": "Diese Variante wird beim Speichern deaktiviert und kann auf diesem Bildschirm nicht wiederhergestellt werden.",
     "variantRemoveAllConfirm": "Wenn Sie dies abschalten, werden alle Varianten dieses Produkts deaktiviert. Frühere Bestellungen behalten sie."
   },

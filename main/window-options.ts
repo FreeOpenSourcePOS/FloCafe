@@ -57,6 +57,9 @@ export function createMainWindow(
     typeof titleBarModeOrOptions === 'object' && titleBarModeOrOptions !== null
       ? titleBarModeOrOptions
       : options;
+  // Merge webPreferences instead of replacing it, so overriding one preference
+  // cannot drop the generated preload or the isolation settings it enables.
+  const { webPreferences: webPreferencesOverrides, ...windowOptions } = resolvedOptions ?? {};
   return new BrowserWindowConstructor({
     name: 'flo-main',
     windowStatePersistence: true,
@@ -76,13 +79,14 @@ export function createMainWindow(
       : {}),
     ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),
     webPreferences: {
+      ...(webPreferencesOverrides ?? {}),
       preload,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
     show: false,
-    ...resolvedOptions,
+    ...windowOptions,
   });
 }
 

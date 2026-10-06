@@ -132,7 +132,10 @@ export default function OrdersPage() {
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [refundModal, setRefundModal] = useState<{ order: Order; bills: Bill[] } | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
-  const [kdsEnabled, setKdsEnabled] = useState(true);
+  // null until /settings/kds_enabled resolves; the WebSocket stays closed
+  // until the feature is confirmed on, because a disabled KDS refuses the
+  // upgrade with 404.
+  const [kdsEnabled, setKdsEnabled] = useState<boolean | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const isWhatsAppReady = useWhatsAppReady();
 
@@ -412,6 +415,63 @@ export default function OrdersPage() {
       .catch(() => setKdsEnabled(true));
   }, []);
 
+  // Live KDS push while the feature is on. The 10-second polling interval in
+  // the effect below is the fallback when the socket is unavailable.
+  useEffect(() => {
+    if (kdsEnabled !== true) return;
+    let ws: globalThis.WebSocket | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const connectWS = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/kds`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          const token = localStorage.getItem('token');
+          if (token) {
+            ws?.send(JSON.stringify({ type: 'auth', token }));
+          }
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
+              fetchOrders(undefined, { rateLimitedRefresh: true });
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        };
+
+        ws.onclose = () => {
+          reconnectTimeout = setTimeout(connectWS, 3000);
+        };
+
+        ws.onerror = () => {
+          ws?.close();
+        };
+      } catch {
+        // WS not supported
+      }
+    };
+
+    connectWS();
+
+    return () => {
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kdsEnabled]);
+
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(interval);
@@ -450,60 +510,12 @@ export default function OrdersPage() {
     // 10-second backup polling interval (WebSocket handles real-time updates)
     const interval = setInterval(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 10000);
 
-    // Live WebSocket connection to trigger immediate updates
-    let ws: globalThis.WebSocket | null = null;
-    let reconnectTimeout: NodeJS.Timeout | null = null;
-
-    const connectWS = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/kds`;
-      
-      try {
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          const token = localStorage.getItem('token');
-          if (token) {
-            ws?.send(JSON.stringify({ type: 'auth', token }));
-          }
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
-              fetchOrders(undefined, { rateLimitedRefresh: true });
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        };
-
-        ws.onclose = () => {
-          reconnectTimeout = setTimeout(connectWS, 3000);
-        };
-
-        ws.onerror = () => {
-          ws?.close();
-        };
-      } catch {
-        // WS not supported
-      }
-    };
-
-    connectWS();
-
     return () => {
       clearInterval(interval);
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ordersRefreshTimerRef.current !== null) clearTimeout(ordersRefreshTimerRef.current);
       ordersRefreshTimerRef.current = null;
       ordersRefreshPendingRef.current = false;
       ordersRefreshLoadedPagesPendingRef.current = false;
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-      }
     };
      
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -583,7 +595,7 @@ export default function OrdersPage() {
   const isOrderActive = (order: Order) => {
     if (order.status === 'cancelled') return false;
     if (order.status === 'completed') {
-      return kdsEnabled && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
+      return kdsEnabled !== false && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
     }
     return true;
   };

@@ -149,6 +149,10 @@ export interface UseKdsConnectionOptions {
   api: AxiosInstance;
   /** Overrides endpoint paths for standalone KDS device page (:3002). */
   endpoints?: UseKdsConnectionEndpoints;
+  /** When false, session restore, WebSocket, and REST polling stay idle. The
+   *  host page owns the disabled state; the server refuses /kds upgrades with
+   *  404 while the feature is off. Defaults to true. */
+  enabled?: boolean;
 }
 
 export interface UseKdsConnectionResult {
@@ -192,7 +196,7 @@ function markKdsAuthBlocked(): void {
 }
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
-  const { api, endpoints } = options;
+  const { api, endpoints, enabled = true } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
   const mePath = endpoints?.me ?? ME_ENDPOINT;
   const logoutPath = endpoints?.logout ?? '/auth/logout';
@@ -647,6 +651,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (!enabled) {
+      const disabledTimer = window.setTimeout(() => setLoading(false), 0);
+      return () => window.clearTimeout(disabledTimer);
+    }
     const savedToken = window.localStorage.getItem('token');
     if (!savedToken || isKdsAuthBlocked()) {
       const resetTimer = window.setTimeout(() => setLoading(false), 0);
@@ -713,14 +721,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       }
       stopRestPolling();
     };
-  }, [api, mePath, tryWebSocket, stopRestPolling, t]);
+  }, [api, mePath, tryWebSocket, stopRestPolling, t, enabled]);
 
   useEffect(() => {
-    if (connectionMode === 'rest' && user) {
+    if (enabled && connectionMode === 'rest' && user) {
       startRestPolling();
     }
     return () => stopRestPolling();
-  }, [connectionMode, user, startRestPolling, stopRestPolling]);
+  }, [connectionMode, user, startRestPolling, stopRestPolling, enabled]);
 
   return {
     user,

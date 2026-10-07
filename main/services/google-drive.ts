@@ -1139,7 +1139,7 @@ class GoogleDriveService {
         if (!options.discardUnresolvedBoundary) throw createDriveError('conflict');
         console.error('[Google Drive] Discarding unresolvable restore boundary:', recoveryError);
         try {
-          this.invalidateAfterDatabaseRestore(null, { discardUnresolvedBoundary: true });
+          this.invalidateAfterDatabaseRestore(getDatabaseReplacementJournal(), { discardUnresolvedBoundary: true });
         } catch {
           throw createDriveError('conflict');
         }

@@ -43,6 +43,7 @@ process.env.JWT_SECRET = 'test-secret-db-initialize-boundary';
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
+const databaseModule = require('../main/db');
 const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
@@ -107,6 +108,24 @@ async function run(): Promise<void> {
     (error: any) => error?.code === 'conflict',
     'an unresolvable boundary still blocks Drive work that was not an explicit reset',
   );
+
+  const recoverySourcePath = path.join(testDir, 'committed-recovery.db');
+  fs.writeFileSync(recoverySourcePath, 'replacement snapshot');
+  const replacement = databaseModule.beginDatabaseReplacementJournal(recoverySourcePath, 'reset');
+  databaseModule.commitDatabaseReplacementJournal(replacement);
+  const finalizeDatabaseReplacementJournal = databaseModule.finalizeDatabaseReplacementJournal;
+  databaseModule.finalizeDatabaseReplacementJournal = () => { throw new Error('simulated journal finalization failure'); };
+  try {
+    await assert.rejects(
+      googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true }),
+      (error: any) => error?.code === 'conflict',
+      'initialize remains blocked when committed replacement cleanup fails',
+    );
+    assertEqualOrThrow(databaseModule.getDatabaseReplacementJournal()?.phase, 'committed', 'failed cleanup retains its committed replacement journal');
+    assertOrThrow(fs.existsSync(intentPath), 'failed cleanup retains the restore boundary');
+  } finally {
+    databaseModule.finalizeDatabaseReplacementJournal = finalizeDatabaseReplacementJournal;
+  }
 
   const blocked = await initialize();
   assertEqualOrThrow(blocked.status, 200, `initialize recovers a stale Drive restore boundary (got ${blocked.status}, ${JSON.stringify(blocked.body)})`);

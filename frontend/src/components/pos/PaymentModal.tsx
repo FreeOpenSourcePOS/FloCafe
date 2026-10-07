@@ -214,7 +214,23 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     }
   }
 
-  if (!isDiscountTypeAllowed(discountMode, discountType)) {
+  // Reconcile the draft discount with the configured mode. Mode `none` forbids
+  // every type, so its cleanup has to be a one-shot transition on entry: the
+  // incompatible-type normalization below can never be satisfied there and would
+  // reschedule a render-phase update until React aborts the tree.
+  const [reconciledDiscountMode, setReconciledDiscountMode] = useState(discountMode);
+  if (discountMode !== reconciledDiscountMode) {
+    setReconciledDiscountMode(discountMode);
+    if (discountMode === 'none') {
+      setDiscountType(defaultDiscountTypeForMode(discountMode));
+      setDiscountValue('');
+      setDiscountReason('');
+      setDiscountPin('');
+      setAmountTarget((target) => target?.kind === 'discount' ? null : target);
+    }
+  }
+
+  if (discountMode !== 'none' && !isDiscountTypeAllowed(discountMode, discountType)) {
     setDiscountType(defaultDiscountTypeForMode(discountMode));
     setDiscountValue('');
     setDiscountReason('');

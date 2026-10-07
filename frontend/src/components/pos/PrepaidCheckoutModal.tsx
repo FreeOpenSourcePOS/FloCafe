@@ -163,7 +163,22 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
 
-  if (!isDiscountTypeAllowed(discountMode, discountType)) {
+  // Same one-shot reconciliation as PaymentModal: `none` forbids every type, so
+  // its cleanup runs once on entry instead of rescheduling every render.
+  const [reconciledDiscountMode, setReconciledDiscountMode] = useState(discountMode);
+  if (discountMode !== reconciledDiscountMode) {
+    setReconciledDiscountMode(discountMode);
+    if (discountMode === 'none') {
+      setDiscountType(defaultDiscountTypeForMode(discountMode));
+      setDiscountValue('');
+      setDiscountReason('');
+      setDiscountPin('');
+      setPaymentsTouched(false);
+      setAmountTarget((target) => target?.kind === 'discount' ? null : target);
+    }
+  }
+
+  if (discountMode !== 'none' && !isDiscountTypeAllowed(discountMode, discountType)) {
     setDiscountType(defaultDiscountTypeForMode(discountMode));
     setDiscountValue('');
     setDiscountReason('');

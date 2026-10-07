@@ -236,7 +236,19 @@ export default function OrdersPage() {
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
-  if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+  // A tenant that disables discounts has no type left to normalize into, so an
+  // open draft dialog is closed once on entry into `none` instead of
+  // rescheduling a render-phase update forever.
+  const [reconciledDiscountMode, setReconciledDiscountMode] = useState(discountMode);
+  if (discountMode !== reconciledDiscountMode) {
+    setReconciledDiscountMode(discountMode);
+    if (discountMode === 'none') {
+      setDiscountModal(null);
+      setDiscountPin('');
+    }
+  }
+
+  if (discountModal && discountMode !== 'none' && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
     setDiscountModal({
       ...discountModal,
       type: defaultDiscountTypeForMode(discountMode),

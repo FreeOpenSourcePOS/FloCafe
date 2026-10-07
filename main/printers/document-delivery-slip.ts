@@ -83,6 +83,7 @@ export interface DeliverySlipOrderRow {
   readonly delivery_note?: unknown;
   /** Method expected at handover; NULL is unknown. Never a captured payment. */
   readonly expected_payment_method?: unknown;
+  readonly expected_payment_method_id?: unknown;
   readonly total?: unknown;
   readonly bill?: {
     readonly payment_status?: unknown;
@@ -127,6 +128,10 @@ export function buildDeliverySlipPrintData(
     String(order?.delivery_note ?? '').trim(),
   );
   const expectedMethod = sanitizeDeliverySlipPaymentMethod(order?.expected_payment_method);
+  // The persisted identity, not today's method table, decides whether the stored
+  // name prints literally - a later rename or deactivation cannot change it.
+  const expectedMethodIsCustom = Number.isSafeInteger(Number(order?.expected_payment_method_id))
+    && Number(order?.expected_payment_method_id) > 0;
 
   const ticketItems = Array.isArray(items) ? items : [];
   const paymentBills = Array.isArray(order?.bills) ? order.bills : order?.bill;
@@ -145,6 +150,7 @@ export function buildDeliverySlipPrintData(
       formattedAmount: formatAmount(paymentSummary.amount),
       formattedAmountDue: formatAmount(paymentSummary.amountDue),
       ...(expectedMethod ? { expectedMethod } : {}),
+      ...(expectedMethodIsCustom ? { expectedMethodIsCustom: true } : {}),
     }
     : undefined;
   return {

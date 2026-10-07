@@ -48,6 +48,7 @@ import {
   isWindowRendererReady,
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
+import { createFailedWindowRecovery, shouldQuitOnAllWindowsClosed } from './window-recovery';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
 import { probeBackendHealth } from './backend-health';
 import {
@@ -345,8 +346,6 @@ let isQuitting = false;
 let runtimeState: RuntimeState = 'starting';
 let initializationPromise: Promise<void> | null = null;
 let activationPending = false;
-let windowLoadRecoveryAttempted = false;
-let windowRecoveryInProgress = false;
 let runtimeRelaunchRequested = false;
 // Last did-fail-load detail captured for diagnostic dialog; cleared on successful load.
 let lastWindowLoadFailure: { errorCode: number; errorDescription: string; validatedURL?: string } | null = null;
@@ -416,25 +415,17 @@ function isFailedWindowDocument(window: BrowserWindow): boolean {
   }
 }
 
+const failedWindowRecovery = createFailedWindowRecovery({
+  getMainWindow: () => mainWindow,
+  isAborted: () => isQuitting || isShutdownRequested() || runtimeState === 'stopping',
+  isRuntimeHealthy: () => isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested()),
+  requestRelaunch: (reason) => requestRuntimeRelaunchOnce(reason),
+  createWindow,
+  logError: (message, error) => log.error(message, error),
+});
+
 function recoverFailedWindow(failedWindow: BrowserWindow): void {
-  if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
-  if (mainWindow !== failedWindow) return;
-  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
-    requestRuntimeRelaunchOnce('window-load-retry-exhausted');
-    return;
-  }
-  if (windowLoadRecoveryAttempted) {
-    requestRuntimeRelaunchOnce('window-load-recovery-failed');
-    return;
-  }
-  windowLoadRecoveryAttempted = true;
-  try {
-    if (!failedWindow.isDestroyed()) failedWindow.destroy();
-    createWindow();
-  } catch (error) {
-    log.error('[Window] Window recreation failed:', error);
-    requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
-  }
+  failedWindowRecovery.recover(failedWindow);
 }
 
 // Flag passed in argv to prevent infinite relaunch loops across process restarts.
@@ -732,7 +723,7 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.once('did-finish-load', () => {
-    windowLoadRecoveryAttempted = false;
+    failedWindowRecovery.markLoadSucceeded();
     lastWindowLoadFailure = null;
     clearRendererStabilityResetTimer();
     rendererStabilityResetTimer = setTimeout(() => {
@@ -771,14 +762,11 @@ function createWindow(): void {
         buttons: ['OK'],
       }).then(() => {
         if (mainWindow !== createdWindow) return;
-        windowRecoveryInProgress = true;
-        try {
+        failedWindowRecovery.suppressAllClosedQuit(() => {
           createdWindow.destroy();
           if (mainWindow === createdWindow) mainWindow = null;
           void handleMainWindowActivation();
-        } finally {
-          windowRecoveryInProgress = false;
-        }
+        });
       }).catch((error) => {
         log.error('[Window] Renderer crash recovery failed:', error);
         if (!isQuitting && !isShutdownRequested()) {
@@ -1428,7 +1416,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' && !windowRecoveryInProgress) {
+  if (shouldQuitOnAllWindowsClosed(process.platform, failedWindowRecovery.isReplacingWindow())) {
     app.quit();
   }
 });

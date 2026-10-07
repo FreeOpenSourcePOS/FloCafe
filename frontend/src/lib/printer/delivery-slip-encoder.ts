@@ -162,7 +162,7 @@ export function buildDeliverySlipBytes(
     const summary = isPaid
       ? `${status}: ${method ? `${method} ` : ''}(${label('pos.total')}: ${payment.formattedAmount})`
       : isCollectible
-        ? `${status}: ${payment.formattedAmount} (${deliverySlipExpectedPaymentText(payment.expectedMethod, label)})`
+        ? `${status}: ${payment.formattedAmount} (${deliverySlipExpectedPaymentText(payment.expectedMethod, label, payment.expectedMethodIsCustom === true)})`
         : payment.status === 'unpaid'
           ? `${status}: ${payment.formattedAmount}`
           : status;

@@ -1048,8 +1048,15 @@ export function sanitizeDeliverySlipPaymentMethod(value: unknown): string {
 export function deliverySlipExpectedPaymentText(
   expectedMethod: unknown,
   resolveLabel: (conceptId: LabelConceptId) => string,
+  expectedMethodIsCustom = false,
 ): string {
   const method = sanitizeDeliverySlipPaymentMethod(expectedMethod);
+  // A configured method named "Pending" or "Unknown" was recorded as its own
+  // identity, so its historical name prints literally instead of collapsing
+  // into the localized sentinel for that word.
+  if (expectedMethodIsCustom) {
+    return `${resolveLabel('print.deliverySlip.expectedPayment')}: ${method || resolveLabel('common.unknown')}`;
+  }
   const normalized = method.toLowerCase();
   if (normalized === 'cash') return resolveLabel('print.deliverySlip.cashOnDelivery');
   const methodConcept = PAYMENT_METHOD_CONCEPTS[normalized];
@@ -1217,6 +1224,8 @@ export interface DeliverySlipPrintData {
     readonly formattedAmountDue?: string;
     /** Method expected at handover, separate from any captured payment; absent is unknown. */
     readonly expectedMethod?: string;
+    /** True when `expectedMethod` is a configured method's stored name, so it prints literally. */
+    readonly expectedMethodIsCustom?: boolean;
   };
   readonly items: readonly {
     readonly productName: string;
@@ -1667,7 +1676,11 @@ export function buildDeliverySlipDocument(
         : paymentData.status === 'unpaid' && paymentData.amount > 0
           ? {
             detailsText: directionalText(
-              deliverySlipExpectedPaymentText(paymentData.expectedMethod, (conceptId) => resolveSemanticLabel(labels, conceptId).primary),
+              deliverySlipExpectedPaymentText(
+                paymentData.expectedMethod,
+                (conceptId) => resolveSemanticLabel(labels, conceptId).primary,
+                paymentData.expectedMethodIsCustom === true,
+              ),
               base,
             ),
           }

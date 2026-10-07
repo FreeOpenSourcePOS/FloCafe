@@ -11,13 +11,24 @@ export interface HeldOrder {
   customerId: number | string | null;
   guestCount: number;
   orderNotes: string;
+  /** Charge choices saved with the cart; a hold written by an older build has none. */
+  waivedChargeIds?: string[];
+  optedInChargeIds?: string[];
   heldAt: string;
 }
 
 interface HeldOrdersState {
   orders: Record<string, HeldOrder>;
   fetchHeldOrders: () => Promise<void>;
-  holdOrder: (tableId: string, items: CartItem[], customerId: number | string | null, guestCount: number, orderNotes?: string) => Promise<void>;
+  holdOrder: (
+    tableId: string,
+    items: CartItem[],
+    customerId: number | string | null,
+    guestCount: number,
+    orderNotes?: string,
+    waivedChargeIds?: string[],
+    optedInChargeIds?: string[],
+  ) => Promise<void>;
   restoreOrder: (tableId: string) => Promise<HeldOrder | null>;
   removeHeldOrder: (tableId: string, expectedHeldOrderId?: string) => Promise<boolean>;
   hasHeldOrder: (tableId: string) => boolean;
@@ -71,7 +82,13 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
         const { data } = await apiClient.get(HELD_ORDERS_ENDPOINT);
         if (data && data.orders && requestSequence === fetchSequence) {
           const fetchedOrders: Record<string, HeldOrder> = {};
-          for (const order of data.orders) fetchedOrders[order.tableId] = order;
+          for (const order of data.orders) {
+            fetchedOrders[order.tableId] = {
+              ...order,
+              waivedChargeIds: Array.isArray(order.waivedChargeIds) ? order.waivedChargeIds : [],
+              optedInChargeIds: Array.isArray(order.optedInChargeIds) ? order.optedInChargeIds : [],
+            };
+          }
           set((state) => {
             const newOrders = { ...state.orders };
             const tableIds = new Set([...Object.keys(state.orders), ...Object.keys(fetchedOrders)]);
@@ -89,14 +106,34 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
       }
     },
 
-    holdOrder: async (tableId, items, customerId, guestCount, orderNotes = '') => {
+    holdOrder: async (
+      tableId,
+      items,
+      customerId,
+      guestCount,
+      orderNotes = '',
+      waivedChargeIds: string[] = [],
+      optedInChargeIds: string[] = [],
+    ) => {
       try {
-        const { data } = await apiClient.post<HeldOrderPostResponse>(HELD_ORDERS_ENDPOINT, { tableId, items, customerId, guestCount, orderNotes });
+        const { data } = await apiClient.post<HeldOrderPostResponse>(HELD_ORDERS_ENDPOINT, {
+          tableId, items, customerId, guestCount, orderNotes, waivedChargeIds, optedInChargeIds,
+        });
         markTableMutation(tableId);
         set((state) => ({
           orders: {
             ...state.orders,
-            [tableId]: { id: data?.id, tableId, items, customerId, guestCount, orderNotes, heldAt: new Date().toISOString() },
+            [tableId]: {
+              id: data?.id,
+              tableId,
+              items,
+              customerId,
+              guestCount,
+              orderNotes,
+              waivedChargeIds: [...waivedChargeIds],
+              optedInChargeIds: [...optedInChargeIds],
+              heldAt: new Date().toISOString(),
+            },
           },
         }));
       } catch (err) {

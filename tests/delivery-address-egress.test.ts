@@ -224,6 +224,161 @@ test('delivery details: the expected method and courier note persist without rec
   }
 });
 
+test('expected-method identity: a configured method is resolved by its ID, never by its name', () => {
+  const db = initTestDb();
+  const { resolveExpectedPaymentMethod, resolveExpectedPaymentMethodIdentity } = require('../main/routes/orders-validation');
+  try {
+    db.prepare("INSERT OR IGNORE INTO payment_methods (id, name, is_active, sort_order) VALUES (71, 'Pending', 1, 10)").run();
+    db.prepare("INSERT OR IGNORE INTO payment_methods (id, name, is_active, sort_order) VALUES (72, 'Unknown', 1, 11)").run();
+    db.prepare("INSERT OR IGNORE INTO payment_methods (id, name, is_active, sort_order) VALUES (73, 'Voucher', 0, 12)").run();
+
+    // The legacy string contract is untouched: a bare name still resolves through
+    // the sentinel path, which is exactly why the ID has to travel separately.
+    assert.equal(resolveExpectedPaymentMethod(db, 'Pending'), 'pending',
+      'a bare name that collides with a sentinel keeps its legacy sentinel meaning');
+    assert.equal(resolveExpectedPaymentMethod(db, 'Unknown'), null,
+      'a bare `Unknown` keeps its legacy unknown meaning');
+
+    assert.deepEqual(resolveExpectedPaymentMethodIdentity(db, 71, 'Pending'),
+      { id: 71, name: 'Pending' }, 'an active custom method resolves by its ID');
+    assert.deepEqual(resolveExpectedPaymentMethodIdentity(db, 72, undefined),
+      { id: 72, name: 'Unknown' }, 'an omitted name is not a mismatch');
+    assert.deepEqual(resolveExpectedPaymentMethodIdentity(db, 71, '  pEnDiNg  '),
+      { id: 71, name: 'Pending' }, 'the name check is trimmed and case-insensitive');
+    assert.equal(resolveExpectedPaymentMethodIdentity(db, undefined, 'Voucher'), null,
+      'no ID keeps the caller on the legacy string contract');
+    assert.equal(resolveExpectedPaymentMethodIdentity(db, null, null), null, 'a null ID is the legacy contract');
+
+    for (const [id, name, why] of [
+      [0, undefined, 'zero is not a method identity'],
+      [-3, undefined, 'a negative ID is not a method identity'],
+      [1.5, undefined, 'a fractional ID is not a method identity'],
+      ['71', undefined, 'a string ID is not accepted in place of the numeric contract'],
+      [9999, undefined, 'an unknown ID is refused'],
+      [73, undefined, 'an inactive method cannot be a new expectation'],
+      [71, 'Cash', 'a mismatched name is refused rather than silently substituted'],
+    ] as const) {
+      assert.throws(
+        () => resolveExpectedPaymentMethodIdentity(db, id, name),
+        why,
+      );
+    }
+  } finally {
+    closeDatabase();
+  }
+});
+
+test('delivery details: a custom method identity survives names that collide with sentinels', async () => {
+  const db = initTestDb();
+  const owner = seedOwnerUser(db);
+  seedCategory(db, 'cat-1', 'Coffee');
+  seedProduct(db, 'product-1', 'cat-1', 'Espresso', 250);
+  db.prepare("INSERT OR IGNORE INTO payment_methods (name, is_active, sort_order) VALUES ('Pending', 1, 10)").run();
+  db.prepare("INSERT OR IGNORE INTO payment_methods (name, is_active, sort_order) VALUES ('Unknown', 1, 11)").run();
+  const idOf = (name: string) => (db.prepare('SELECT id FROM payment_methods WHERE name = ?').get(name) as { id: number }).id;
+  const pendingId = idOf('Pending');
+  const unknownId = idOf('Unknown');
+  assert.notEqual(pendingId, unknownId, 'the two custom methods are distinct rows');
+  const { baseUrl, server } = await startServer(testApp());
+  const createDelivery = (details: Record<string, unknown>, key?: string) => api(baseUrl, '/api/orders', {
+    method: 'POST',
+    headers: key ? { ...owner.authHeader, 'Idempotency-Key': key } : owner.authHeader,
+    body: { type: 'delivery', items: [{ product_id: 'product-1', quantity: 1 }], ...details },
+  });
+  const stored = (id: number) => db.prepare(
+    'SELECT expected_payment_method, expected_payment_method_id FROM orders WHERE id = ?',
+  ).get(id);
+  try {
+    const pending = await createDelivery({ expected_payment_method_id: pendingId, expected_payment_method: 'Pending' });
+    assert.equal(pending.status, 201, 'a configured method named Pending is accepted by ID');
+    assert.deepEqual(
+      { ...stored(pending.data.order.id) },
+      { expected_payment_method: 'Pending', expected_payment_method_id: pendingId },
+      'the stored name stays literal and the identity is the ID',
+    );
+    assert.equal(
+      pending.data.order.expected_payment_method_id,
+      pendingId,
+      'the created order response carries the identity',
+    );
+
+    const unknown = await createDelivery({ expected_payment_method_id: unknownId, expected_payment_method: 'Unknown' });
+    assert.equal(unknown.status, 201, 'a configured method named Unknown is accepted by ID');
+    assert.deepEqual(
+      { ...stored(unknown.data.order.id) },
+      { expected_payment_method: 'Unknown', expected_payment_method_id: unknownId },
+      'an Unknown-named custom method is stored as Unknown plus its ID, never as null',
+    );
+
+    // Old clients keep the exact legacy contract, including null identities.
+    const legacy = await createDelivery({ expected_payment_method: 'pending' });
+    assert.deepEqual(
+      { ...stored(legacy.data.order.id) },
+      { expected_payment_method: 'pending', expected_payment_method_id: null },
+      'a legacy sentinel request stores no identity',
+    );
+    const builtin = await createDelivery({ expected_payment_method: 'card' });
+    assert.deepEqual(
+      { ...stored(builtin.data.order.id) },
+      { expected_payment_method: 'card', expected_payment_method_id: null },
+      'a built-in method stores no identity',
+    );
+
+    // Non-delivery orders ignore both expected-method fields.
+    const takeaway = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'product-1', quantity: 1 }],
+        expected_payment_method_id: pendingId,
+        expected_payment_method: 'Pending',
+      },
+    });
+    assert.equal(takeaway.status, 201, 'a non-delivery order is still accepted');
+    assert.deepEqual(
+      { ...stored(takeaway.data.order.id) },
+      { expected_payment_method: null, expected_payment_method_id: null },
+      'a non-delivery order persists no expected-method identity',
+    );
+
+    for (const details of [
+      { expected_payment_method_id: 9999 },
+      { expected_payment_method_id: 0 },
+      { expected_payment_method_id: String(pendingId) },
+      { expected_payment_method_id: pendingId, expected_payment_method: 'Card' },
+    ]) {
+      const rejected = await createDelivery(details);
+      assert.equal(rejected.status, 400, `${JSON.stringify(details)} is refused`);
+    }
+
+    // An idempotent replay of the same payload returns the same order, and a
+    // different identity under that key is not silently substituted.
+    const firstKey = 'identity-replay-key';
+    const firstReplay = await createDelivery(
+      { expected_payment_method_id: pendingId, expected_payment_method: 'Pending' }, firstKey,
+    );
+    const secondReplay = await createDelivery(
+      { expected_payment_method_id: pendingId, expected_payment_method: 'Pending' }, firstKey,
+    );
+    assert.equal(secondReplay.status, 200, 'the replay is served from the stored response');
+    assert.equal(secondReplay.data.order.id, firstReplay.data.order.id, 'the replay returns the original order');
+    assert.equal(secondReplay.data.order.expected_payment_method_id, pendingId, 'the replay keeps the identity');
+    const mismatchedReplay = await createDelivery(
+      { expected_payment_method_id: unknownId, expected_payment_method: 'Unknown' }, firstKey,
+    );
+    assert.equal(mismatchedReplay.status, 409,
+      'a different identity under the same idempotency key is refused, not swapped in');
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS c FROM orders WHERE expected_payment_method_id = ?').get(unknownId).c, 1,
+      'the refused replay does not create a second order',
+    );
+  } finally {
+    server.close();
+    closeDatabase();
+  }
+});
+
 test('delivery details: an uncollectable method or an over-long note is refused at the boundary', async () => {
   const db = initTestDb();
   const owner = seedOwnerUser(db);

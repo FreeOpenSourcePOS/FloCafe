@@ -444,7 +444,9 @@ export default function OrdersPage() {
           try {
             const data = JSON.parse(event.data);
             if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
-              fetchOrders(undefined, { rateLimitedRefresh: true });
+              // Another terminal just changed an order this page has loaded, so
+              // the already-visible pages are refreshed, not only page one.
+              fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: true });
             }
           } catch {
             // Ignore parse errors
@@ -525,8 +527,13 @@ export default function OrdersPage() {
 
     initPage();
 
-    // 10-second backup polling interval (WebSocket handles real-time updates)
-    const interval = setInterval(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 10000);
+    // 10-second backup polling interval (WebSocket handles real-time updates).
+    // It is also the only trigger when the socket is unavailable, so it carries
+    // the same loaded-page refresh as the live push.
+    const interval = setInterval(
+      () => fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: true }),
+      10000,
+    );
 
     return () => {
       clearInterval(interval);
@@ -1193,7 +1200,16 @@ export default function OrdersPage() {
                       try {
                         const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
                         if (held) {
-                          cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
+                          cartStore.loadItems(
+                            held.items,
+                            heldOrder.tableId,
+                            held.customerId,
+                            held.guestCount,
+                            held.orderNotes,
+                            held.id,
+                            held.waivedChargeIds,
+                            held.optedInChargeIds,
+                          );
                           cartStore.setOrderType('dine_in');
                           router.push('/pos');
                         } else {

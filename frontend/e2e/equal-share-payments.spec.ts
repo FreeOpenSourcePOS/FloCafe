@@ -823,6 +823,7 @@ test.describe('equal share payments', () => {
       expect((await readOrder(request, order.id)).status).toBe('completed');
     } finally {
       await writeSetting(request, 'tables_required', tablesRequiredBefore ?? 'false');
+      await request.post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: managerHeaders }).catch(() => {});
     }
     expect(printRequests).toEqual([]);
   });

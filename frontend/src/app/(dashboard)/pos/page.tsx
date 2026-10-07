@@ -1326,13 +1326,27 @@ export default function POSPage() {
 
       {paymentBill && (
         <PaymentModal
+          key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
           initialOverridePin={checkoutOverridePin}
           onClose={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); }}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
-          onSplit={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); refreshTables(); }}
+          onSplit={(departingBill) => {
+            if (departingBill) {
+              // Re-read the leaving guest's check so the modal pays (and prints)
+              // that check, never the source it was split from.
+              setCheckoutOverridePin(undefined);
+              void api.get(`/bills/${departingBill.id}`)
+                .then(({ data }) => setPaymentBill((data?.bill as Bill) ?? departingBill))
+                .catch(() => setPaymentBill(departingBill));
+            } else {
+              setPaymentBill(null);
+              setCheckoutOverridePin(undefined);
+            }
+            refreshTables();
+          }}
         />
       )}
 

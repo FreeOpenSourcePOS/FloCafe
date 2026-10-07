@@ -1404,14 +1404,18 @@ export default function OrdersPage() {
       {/* Payment Modal */}
       {paymentBill && (
         <PaymentModal
+          key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
           onClose={() => setPaymentBill(null)}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
-          onSplit={() => {
-            setPaymentBill(null);
+          onSplit={(departingBill) => {
             fetchOrders(undefined, { refreshLoadedPages: true });
+            // A leaving guest's new check is fetched and opened for payment; an
+            // all-items split leaves the cashier on the refreshed list.
+            if (departingBill) void handlePayBill(departingBill);
+            else setPaymentBill(null);
           }}
         />
       )}

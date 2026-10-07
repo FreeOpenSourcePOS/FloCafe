@@ -41,8 +41,12 @@ interface Props {
   onClose: () => void;
   onPaid: () => void;
   onBillUpdate?: (bill: Bill) => void;
-  /** Runs after the check is split; the bill being paid no longer exists on its own. */
-  onSplit?: () => void;
+  /**
+   * Runs after the check is split. When the cashier split off a leaving guest's
+   * items, the new check is passed so the caller can open it for payment; an
+   * all-items split still reports no bill of its own.
+   */
+  onSplit?: (departingBill?: Bill) => void;
 }
 
 interface Payment {
@@ -164,7 +168,8 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && splitCheckItems.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
   // Split checks divide an untouched dine-in bill into separately payable
   // checks; the backend refuses anything else (POST /bills/:id/split-check).
-  const canSplitCheck = splitChecksEnabled
+  // An untouched unpaid check is divisible, including the remainder of an
+  // earlier split: the bill projection limits the offer to its own items.
     && bill.payment_status === 'unpaid'
     && Number(bill.paid_amount || 0) === 0
     && !bill.payment_details
@@ -424,19 +429,25 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     if (openingSplitCheck) return;
     setOpeningSplitCheck(true);
     try {
+      // The bill endpoint answers with this check's own projection, so a
+      // re-split never offers a paid sibling's quantities.
       const { data } = await api.get(`/bills/${bill.id}`);
-      const order = data.bill?.order as Order | undefined;
-      const items = (order?.items || []).filter(
+      let splitOrder = (data?.bill?.order ?? null) as Order | null;
+      if (!splitOrder?.items?.length && !bill.split_group_id) {
+        const fallback = await api.get(`/orders/${bill.order_id}`);
+        splitOrder = (fallback.data?.order ?? null) as Order | null;
+      }
+      const items = (splitOrder?.items || []).filter(
         (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
       );
       const hasDivisibleItems = items.length > 0
         && items.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
         && items.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
-      if (order?.type !== 'dine_in' || !hasDivisibleItems) {
+      if (splitOrder?.type !== 'dine_in' || !hasDivisibleItems) {
         toast.error(t('splitCheckFailed'));
         return;
       }
-      setSplitCheckOrder(order);
+      setSplitCheckOrder(splitOrder);
     } catch {
       toast.error(t('splitCheckFailed'));
     } finally {
@@ -444,9 +455,9 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     }
   };
 
-  const handleSplitComplete = () => {
+  const handleSplitComplete = (bills: Bill[], departingBill: Bill | null) => {
     setSplitCheckOrder(null);
-    if (onSplit) onSplit();
+    if (onSplit) onSplit(departingBill ?? undefined);
     else onClose();
   };
 

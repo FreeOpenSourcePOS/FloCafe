@@ -174,6 +174,19 @@ router.post('/import', requirePermission('database.manage'),
       });
     }
 
+    const invalidRecipeMultiplierIndex = Array.isArray(importData.product_variants)
+      ? importData.product_variants.findIndex((variant) => variant?.recipe_multiplier !== undefined && (
+        typeof variant.recipe_multiplier !== 'number'
+        || !Number.isFinite(variant.recipe_multiplier)
+        || variant.recipe_multiplier <= 0
+      ))
+      : -1;
+    if (invalidRecipeMultiplierIndex >= 0) {
+      return res.status(400).json({
+        error: `product_variants[${invalidRecipeMultiplierIndex}].recipe_multiplier must be a positive finite number`,
+      });
+    }
+
     if (Array.isArray(importData.products) && importData.products.length > 0) {
       if (!Array.isArray(importData.inventory_movements)) {
         const legacyZeroStockImport = !importedTables.includes('inventory_movements')

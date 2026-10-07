@@ -639,6 +639,12 @@ async function runTests() {
           track_inventory: 1,
           stock_quantity: 4,
           is_active: 1,
+        }, {
+          id: 'variant-import-portioned',
+          product_id: 'variant-import-product',
+          name: 'Extra Large',
+          price: 15,
+          recipe_multiplier: 2,
         }],
         inventory_movements: [{
           id: 1,
@@ -667,13 +673,51 @@ async function runTests() {
     'an imported variant movement keeps its pool attribution',
   );
   assertEqual(
+    db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get('variant-import-variant').recipe_multiplier,
+    1,
+    'an older variant import without a recipe multiplier keeps the default portion',
+  );
+  assertEqual(
+    db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get('variant-import-portioned').recipe_multiplier,
+    2,
+    'a valid imported recipe multiplier is preserved',
+  );
+  assertEqual(
     validateInventoryLedgerDatabase(db),
     null,
     'the store validates against the ledger pre-check after a variant movement import',
   );
   db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('variant-import-product');
-  db.prepare('DELETE FROM product_variants WHERE id = ?').run('variant-import-variant');
+  db.prepare('DELETE FROM product_variants WHERE product_id = ?').run('variant-import-product');
   db.prepare('DELETE FROM products WHERE id = ?').run('variant-import-product');
+
+  db.prepare('INSERT INTO products (id, name, price, stock_quantity) VALUES (?, ?, ?, ?)')
+    .run('invalid-variant-import-product', 'Invalid Variant Import Product', 10, 0);
+  const invalidRecipeMultiplierImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        product_variants: [{
+          id: 'invalid-variant-import-variant',
+          product_id: 'invalid-variant-import-product',
+          name: 'Invalid Portion',
+          price: 10,
+          recipe_multiplier: 'half',
+        }],
+        users: [],
+      },
+    },
+  });
+  assertEqual(invalidRecipeMultiplierImport.status, 400, 'variant imports reject nonnumeric recipe multipliers');
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM product_variants WHERE id = ?').get('invalid-variant-import-variant') as { count: number }).count,
+    0,
+    'a rejected variant import does not persist the invalid multiplier',
+  );
+  db.prepare('DELETE FROM products WHERE id = ?').run('invalid-variant-import-product');
 
   db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('merged-state-product');
   db.prepare('DELETE FROM products WHERE id = ?').run('merged-state-product');

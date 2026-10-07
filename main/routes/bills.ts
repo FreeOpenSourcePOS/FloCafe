@@ -1646,13 +1646,22 @@ export function syncUnpaidBillsForOrder(
   });
 }
 
-// Split unpaid dine-in bill into independently payable guest checks.
+const SPLIT_CHECKS_MIN = 2;
+const SPLIT_CHECKS_MAX = 20;
+
+/** A check that cannot be divided again without inventing or double-counting a share. */
+function splitSourceAllocationError(): Error {
+  return Object.assign(new Error('This check has no divisible item allocation'), { statusCode: 409 });
+}
+
+// Split an unpaid dine-in bill into independently payable guest checks. An
+// untouched unpaid group child splits again; paid siblings are never the source.
 router.post('/:id/split-check', requirePermission('bills.generate'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
     const checks = req.body?.checks;
-    if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
+    if (!Array.isArray(checks) || checks.length < SPLIT_CHECKS_MIN || checks.length > SPLIT_CHECKS_MAX) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
 
     const result = withTxn(() => {
       const txnSource = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
@@ -1662,10 +1671,61 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       if (txnSource.payment_status !== 'unpaid' || Number(txnSource.paid_amount || 0) !== 0 || txnSource.payment_details) {
         throw Object.assign(new Error('A check can only be split before any payment is recorded'), { statusCode: 409 });
       }
-      if (txnSource.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(txnSource.order_id) as any).n) > 1) {
+
+      // A group child may be divided again while untouched and unpaid; a second
+      // bill outside a split group is legacy data and keeps the rejection.
+      const sourceGroupId = txnSource.split_group_id ? String(txnSource.split_group_id) : null;
+      if (!sourceGroupId && Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(txnSource.order_id) as any).n) > 1) {
         throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
       }
-      const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded') ORDER BY id").all(txnSource.order_id) as any[];
+
+      const tenantCurrency = getTenantCurrency();
+      const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+      const decimals = getCurrencyFractionDigits(tenantCurrency);
+
+      const sourceGroupBillIds = sourceGroupId
+        ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(sourceGroupId) as any[])
+          .map((row) => Number(row.id))
+        : [];
+      // The bound applies to the resulting group, so repeated splits stay
+      // bounded instead of only capping one request.
+      if (sourceGroupId && sourceGroupBillIds.length - 1 + checks.length > SPLIT_CHECKS_MAX) {
+        throw Object.assign(new Error(`A split group can hold at most ${SPLIT_CHECKS_MAX} checks`), { statusCode: 409 });
+      }
+
+      // A first split divides the order's active items; a re-split divides the
+      // source check's own allocation rows, so siblings' shares stay unclaimed.
+      const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
+      let txnActiveItems: any[];
+      if (sourceGroupId) {
+        const sourceAllocations = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(txnSource.id) as any[];
+        const wellFormed = sourceAllocations.length > 0 && sourceAllocations.every((row) => (
+          Number.isSafeInteger(Number(row.order_item_id))
+          && Number.isSafeInteger(Number(row.quantity))
+          && Number(row.quantity) > 0
+        ));
+        if (!wellFormed) throw splitSourceAllocationError();
+
+        const orderItemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(txnSource.order_id) as any[];
+        if (sourceAllocations.some((row) => !orderItemRows.some((item) => Number(item.id) === Number(row.order_item_id)))) {
+          throw splitSourceAllocationError();
+        }
+
+        const childAllocationRows = db.prepare(
+          `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${sourceGroupBillIds.map(() => '?').join(',')})`,
+        ).all(...sourceGroupBillIds) as any[];
+        const childItemAllocations = childAllocationsForBills(
+          sourceGroupBillIds.map((id) => ({ id })),
+          childAllocationRows,
+          Number(txnSource.id),
+        );
+        const projected = projectOrderItems(txnOrder, orderItemRows, sourceAllocations, childItemAllocations, minorFactor);
+        const childScoped = applyPersistedChildTaxBreakdowns(projected, orderItemRows, txnSource.tax_breakdown, minorFactor);
+        txnActiveItems = childScoped.filter((item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status));
+        if (txnActiveItems.length === 0) throw splitSourceAllocationError();
+      } else {
+        txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded') ORDER BY id").all(txnSource.order_id) as any[];
+      }
       const txnItemById = new Map(txnActiveItems.map((item) => [Number(item.id), item]));
       const txnAssigned = new Map<number, number>();
 
@@ -1692,14 +1752,10 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         }
       }
 
-      const groupId = randomUUID();
+      const groupId = sourceGroupId || randomUUID();
       const weights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) =>
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
-
-      const tenantCurrency = getTenantCurrency();
-      const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
-      const decimals = getCurrencyFractionDigits(tenantCurrency);
 
       const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'service_charge', 'round_off', 'total'] as const;
       const allocations: Record<string, number[]> = {};
@@ -1723,7 +1779,6 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       );
 
       const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * minorFactor));
-      const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
       const snapshotItems = txnSnapshotItems.filter((item) => hasSnapshotLines(item.tax_snapshot));
       const snapshotWeights = snapshotItems.map((item) => {
         if (['voided', 'void_adjustment'].includes(item.status)) return null;
@@ -1809,6 +1864,9 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);
+        // Only the source's allocation rows are replaced here, so sibling
+        // shares survive a re-split untouched.
+        db.prepare('DELETE FROM bill_items WHERE bill_id = ?').run(billId);
         const insertItem = db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, ?)');
         for (const entry of check.items) insertItem.run(billId, entry.item.id, entry.quantity);
       });

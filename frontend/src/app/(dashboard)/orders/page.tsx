@@ -1404,14 +1404,18 @@ export default function OrdersPage() {
       {/* Payment Modal */}
       {paymentBill && (
         <PaymentModal
+          key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
           onClose={() => setPaymentBill(null)}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
-          onSplit={() => {
-            setPaymentBill(null);
+          onSplit={(departingBill) => {
             fetchOrders(undefined, { refreshLoadedPages: true });
+            // Synchronously clear paymentBill so the remainder check cannot be paid
+            // during the departing bill's fetch window.
+            setPaymentBill(null);
+            if (departingBill) void handlePayBill(departingBill);
           }}
         />
       )}

@@ -1326,13 +1326,28 @@ export default function POSPage() {
 
       {paymentBill && (
         <PaymentModal
+          key={paymentBill.id}
           bill={paymentBill}
           currency={currency}
           initialOverridePin={checkoutOverridePin}
           onClose={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); }}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
-          onSplit={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); refreshTables(); }}
+          onSplit={(departingBill) => {
+            if (departingBill) {
+              // Clear current paymentBill synchronously so the cashier cannot
+              // pay against the remainder source bill during the fetch window.
+              setPaymentBill(null);
+              setCheckoutOverridePin(undefined);
+              void api.get(`/bills/${departingBill.id}`)
+                .then(({ data }) => setPaymentBill((data?.bill as Bill) ?? departingBill))
+                .catch(() => setPaymentBill(departingBill));
+            } else {
+              setPaymentBill(null);
+              setCheckoutOverridePin(undefined);
+            }
+            refreshTables();
+          }}
         />
       )}
 

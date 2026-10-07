@@ -163,7 +163,59 @@ function runPaymentMathTests() {
   assert.equal(maxWalletStored, 2000, 'Max wallet stored is 2000 Rial');
   const maxWalletDisplay = tomanAdapter.toDisplay(maxWalletStored); // 200 Toman
   assert.equal(maxWalletDisplay, 200, 'Max wallet displayed is 200 Toman');
-  console.log('  ✓ Payment split allocation, discount, and wallet math verified');
+
+  // Equal-share allocation across currency precisions uses the one helper the
+  // payment dialog consumes, so these assertions pin the contract the shortcut
+  // relies on rather than a second copy of the arithmetic.
+  const { allocateEqualShares } = require('../frontend/src/lib/money') as {
+    allocateEqualShares: (totalMinor: number, count: number) => number[];
+  };
+  const { getCurrencyMinorUnitFactor } = require('../main/countries') as {
+    getCurrencyMinorUnitFactor: (currency: string) => number;
+  };
+
+  // A two-decimal balance of 100.00 over three payers, one smallest unit apart.
+  assert.deepEqual(allocateEqualShares(10000, 3), [3334, 3333, 3333]);
+  assert.equal(
+    allocateEqualShares(10000, 3).reduce((sum, share) => sum + share, 0),
+    10000,
+    'shares never create or lose a minor unit',
+  );
+  // Zero-decimal currencies keep whole units: 100 JPY over three is 34/33/33.
+  assert.deepEqual(allocateEqualShares(100, 3), [34, 33, 33]);
+  // Three-decimal currencies divide their own smallest unit.
+  assert.deepEqual(allocateEqualShares(100000, 3), [33334, 33333, 33333]);
+  // Divisible balances and the bounded payer range the dialog enforces.
+  assert.deepEqual(allocateEqualShares(10000, 2), [5000, 5000]);
+  assert.deepEqual(allocateEqualShares(10000, 20), Array(20).fill(500));
+  assert.deepEqual(allocateEqualShares(7, 3), [3, 2, 2]);
+
+  // Every share survives the dialog's display round trip at that currency's
+  // precision, so what the cashier reads back is what gets submitted.
+  const cases: [string, string, number, number][] = [
+    ['THB', 'TH', 10000, 3],
+    ['JPY', 'JP', 100, 3],
+    ['KWD', 'KW', 100000, 3],
+    ['BHD', 'BH', 100000, 3],
+    ['IRR', 'IR', 100000000, 3],
+  ];
+  for (const [currency, country, balanceMinor, payers] of cases) {
+    const adapter = currency === 'IRR'
+      ? getCurrencyUnitAdapter(currency, country, { currencyDisplay: 'toman' })
+      : getCurrencyUnitAdapter(currency, country);
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
+    const shares = allocateEqualShares(balanceMinor, payers);
+    assert.equal(shares.reduce((sum, share) => sum + share, 0), balanceMinor, `${currency} shares sum to the balance`);
+    for (const share of shares) {
+      const displayed = adapter.toDisplay(share / minorFactor);
+      assert.equal(
+        Math.round(adapter.toStored(displayed) * minorFactor),
+        share,
+        `${currency}: the displayed share ${displayed} stores back as ${share} minor units`,
+      );
+    }
+  }
+  console.log('  ✓ Payment split allocation, discount, wallet, and equal-share math verified');
 }
 
 async function runCurrencyInputBehaviorTests() {

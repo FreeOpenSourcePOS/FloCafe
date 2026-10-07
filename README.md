@@ -89,6 +89,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
 ## Highlights
 
 - **Order workflows:** Counter, dine-in, takeaway, and delivery orders with table management and held orders.
+- **Checkout:** Collect equal shares toward a bill; optional item-based split checks are available for dine-in orders.
 - **Modifiers & pricing:** Item modifiers, add-on groups, discounts, and customer loyalty points.
 - **Receipt printing:** ESC/POS thermal printing over USB, local network (TCP), and OS-managed print queues, with WebUSB supported in compatible browsers (58 mm and 80 mm paper support).
 - **Kitchen operations:** Standalone Kitchen Display System (KDS) server and category-based kitchen station routing.

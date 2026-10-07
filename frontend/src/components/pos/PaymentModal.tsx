@@ -7,7 +7,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Order } from '@/lib/types';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
-import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
+import { SplitCheckModal, MIN_CHECKS as MIN_EQUAL_SHARE_PAYERS, MAX_CHECKS as MAX_EQUAL_SHARE_PAYERS } from '@/components/pos/SplitCheckModal';
 import { resolveTaxComponents } from '@/lib/printer/tax-components';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -31,6 +31,7 @@ import {
   type DiscountType,
 } from '@/lib/discount-settings';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
+import { allocateEqualShares } from '@/lib/money';
 import { parseAppliedCharges, type AppliedCharge } from '@/lib/charges';
 import { useChargesStore, chargesForOrderType } from '@/store/charges';
 
@@ -56,6 +57,10 @@ interface Payment {
 }
 
 type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
+
+// One equal share written into a tender row, and the balance and payer count it
+// was sized from so a later change can withdraw it.
+type AppliedEqualShare = { index: number; amountMinor: number; amountInput: string; balanceMinor: number; payers: number };
 
 // Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 1;
@@ -147,6 +152,14 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const [splitCheckOrder, setSplitCheckOrder] = useState<Order | null>(null);
   const [openingSplitCheck, setOpeningSplitCheck] = useState(false);
   const [chargeStateUncertain, setChargeStateUncertain] = useState(false);
+  const [showEqualShare, setShowEqualShare] = useState(false);
+  // Session-only remaining payer count: reopening the dialog asks again rather
+  // than remembering who has paid.
+  const [equalSharePayers, setEqualSharePayers] = useState(() => String(
+    Math.min(MAX_EQUAL_SHARE_PAYERS, Math.max(MIN_EQUAL_SHARE_PAYERS, Number(bill.order?.guest_count) || MIN_EQUAL_SHARE_PAYERS)),
+  ));
+  const [equalShareNotice, setEqualShareNotice] = useState<'lastPayer' | 'invalidated' | null>(null);
+  const [appliedEqualShare, setAppliedEqualShare] = useState<AppliedEqualShare | null>(null);
   useEffect(() => {
     void loadCharges();
   }, [loadCharges]);
@@ -178,13 +191,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && (bill.split_group_id
       ? (!bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems))
       : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');
-  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !chargeStateUncertain;
+  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !applyingDiscount && !chargeStateUncertain;
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
   );
 
   const updateCharge = async (chargeId: string, change: { waived?: boolean; applied?: boolean }) => {
-    if (!canEditCharges || processing || updatingChargeId) return;
+    if (!canEditCharges || processing || applyingDiscount || updatingChargeId) return;
     setUpdatingChargeId(chargeId);
     setChargeStateUncertain(true);
     try {
@@ -302,8 +315,82 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
+  // Equal shares divide the remaining authoritative balance in the tenant's
+  // smallest unit, so no share is created or lost to rounding.
+  const equalShareCount = /^\d+$/.test(equalSharePayers.trim()) ? Number(equalSharePayers.trim()) : 0;
+  const equalShareCountInRange = equalShareCount >= MIN_EQUAL_SHARE_PAYERS && equalShareCount <= MAX_EQUAL_SHARE_PAYERS;
+  const equalShareShares = equalShareCountInRange && equalShareCount <= remainingMinor
+    ? allocateEqualShares(remainingMinor, equalShareCount)
+    : [];
+  const equalShareError = equalShareCountInRange
+    ? (equalShareCount > remainingMinor ? 'tooManyPayers' : null)
+    : 'invalidCount';
+  const equalShareSharesDiffer = equalShareShares.length > 1
+    && equalShareShares[0] !== equalShareShares[equalShareShares.length - 1];
+  const minorToStored = (minor: number) => minor / minorFactor;
+  // A share may only be applied over an empty entry board: the other tenders and
+  // the wallet are never overwritten.
+  const tenderHasConflict = (index: number) => walletAmt > 0
+    || payments.some((row, rowIndex) => rowIndex !== index && (parseFloat(row.amount) || 0) > 0);
+  const equalShareConflict = walletAmt > 0
+    || payments.filter((row) => (parseFloat(row.amount) || 0) > 0).length > 1;
+
+  const tenderLabel = (payment: Payment) => {
+    const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
+    const custom = customMethods.find((method) => method.id === payment.payment_method_id);
+    return builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
+  };
+
+  const applyEqualShare = (index: number) => {
+    const shareMinor = equalShareShares[0];
+    if (processing || shareMinor === undefined || tenderHasConflict(index)) return;
+    const amountInput = String(toDisplayUnit(minorToStored(shareMinor)));
+    setPaymentsTouched(true);
+    setPayments((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, amount: amountInput } : row));
+    setAppliedEqualShare({
+      index,
+      amountMinor: shareMinor,
+      amountInput,
+      balanceMinor: remainingMinor,
+      payers: equalShareCount,
+    });
+    setEqualShareNotice(null);
+  };
+
+  // The payer who just paid is done, so the count drops by one. The last payer
+  // collects the balance the ordinary way instead of through the shortcut.
+  const advanceEqualShare = (applied: AppliedEqualShare) => {
+    const payersRemaining = applied.payers - 1;
+    setAppliedEqualShare(null);
+    setPayments((rows) => rows.map((row, index) => (
+      index === applied.index && row.amount === applied.amountInput ? { ...row, amount: '' } : row
+    )));
+    if (payersRemaining >= MIN_EQUAL_SHARE_PAYERS) {
+      setEqualSharePayers(String(payersRemaining));
+      setEqualShareNotice(null);
+    } else {
+      setShowEqualShare(false);
+      setEqualShareNotice('lastPayer');
+    }
+  };
+
+  // A share sized for a balance or payer count that has since moved on is
+  // withdrawn so the cashier reviews the new preview; an amount the cashier
+  // typed themselves is left alone. Reconciled during render, like the balance
+  // rescale above, so the stale share never reaches a paint.
+  if (appliedEqualShare && (
+    appliedEqualShare.balanceMinor !== remainingMinor || appliedEqualShare.payers !== equalShareCount
+  )) {
+    setAppliedEqualShare(null);
+    setEqualShareNotice('invalidated');
+    setPayments((rows) => rows.map((row, index) => (
+      index === appliedEqualShare.index && row.amount === appliedEqualShare.amountInput ? { ...row, amount: '' } : row
+    )));
+  }
+
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
+    setAppliedEqualShare((current) => (current?.index === idx ? null : current));
     setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
@@ -312,6 +399,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     const dueStored = Math.max(0, remaining - allocatedElsewhere);
     const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
+    setAppliedEqualShare(null);
     setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
   };
 
@@ -373,7 +461,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
-    if (applyingDiscount) return;
+    if (applyingDiscount || processing || updatingChargeId || chargeStateUncertain) return;
     const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
       toast.error(t('discountInvalid'));
@@ -463,7 +551,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const handlePay = async () => {
-    if (processing || updatingChargeId || chargeStateUncertain) return;
+    if (processing || applyingDiscount || updatingChargeId || chargeStateUncertain) return;
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -536,6 +624,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
+        // Only a committed equal share retires its payer; an uncertain or
+        // different outcome keeps the applied share and its idempotency key.
+        if (updatedBill?.payment_status === 'partial'
+          && appliedEqualShare
+          && totalPaymentMinor === appliedEqualShare.amountMinor) {
+          advanceEqualShare(appliedEqualShare);
+        }
         if (updatedBill?.payment_status === 'partial') {
           toast.success(t('paymentRecorded'));
         } else {
@@ -852,7 +947,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 )}
                 <Button
                   onClick={() => handleApplyDiscount()}
-                  disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
+                  disabled={processing || applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   {applyingDiscount
@@ -860,7 +955,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
                 </Button>
                 {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" className="w-full" onClick={async () => {
+                  <Button variant="outline" className="w-full" disabled={processing || applyingDiscount} onClick={async () => {
                     if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
                   }}>
                     {t('remove')}
@@ -873,32 +968,122 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
           </div>
 
           <div className="space-y-4">
+
+          {/* Equal-share shortcut: divides the remaining balance by payer count */}
+          {remainingMinor > 0 && !justPaid && (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => { setShowEqualShare((open) => !open); setEqualShareNotice(null); }}
+                aria-expanded={showEqualShare}
+                className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
+              >
+                <span className="text-sm font-medium text-foreground">{t('splitPaymentEqually')}</span>
+                <ChevronDown size={16} className={`text-muted-foreground transition-transform ${showEqualShare ? 'rotate-180' : ''}`} />
+              </button>
+              {equalShareNotice && (
+                <p role="status" className="border-t border-border bg-muted px-3 py-2 text-[11px] text-muted-foreground">
+                  {t(equalShareNotice === 'lastPayer' ? 'equalShareLastPayer' : 'equalShareInvalidated')}
+                </p>
+              )}
+              {showEqualShare && (
+                <div className="space-y-2 border-t border-border bg-sky-50 p-3 dark:bg-sky-950/40">
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="equal-share-payers" className="text-sm font-medium text-foreground">{t('equalSharePayers')}</label>
+                    <input
+                      id="equal-share-payers"
+                      type="number"
+                      min={MIN_EQUAL_SHARE_PAYERS}
+                      max={MAX_EQUAL_SHARE_PAYERS}
+                      step={1}
+                      inputMode="numeric"
+                      value={equalSharePayers}
+                      disabled={processing}
+                      onChange={(event) => setEqualSharePayers(event.target.value)}
+                      className="min-h-9 w-20 rounded-lg border border-border bg-card px-2 py-1 text-end text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
+                    />
+                  </div>
+                  {equalShareError ? (
+                    <p role="alert" className="text-[11px] text-red-700 dark:text-red-300">
+                      {t(equalShareError === 'tooManyPayers' ? 'equalShareTooManyPayers' : 'equalShareInvalidCount')}
+                    </p>
+                  ) : (
+                    <>
+                      <ul className="space-y-1 text-sm">
+                        {equalShareShares.map((shareMinor, index) => (
+                          <li key={index} className="flex items-center justify-between gap-2">
+                            <span className="text-muted-foreground">
+                              {index + 1}
+                              {index === 0 && <span className="ms-2 text-[11px] font-medium text-brand">{t('equalShareNextShare')}</span>}
+                            </span>
+                            <span data-testid={`equal-share-share-${index}`} className="font-semibold tabular-nums text-foreground">
+                              {currencyFmt(minorToStored(shareMinor))}
+                            </span>
+                          </li>
+                        ))}
+                        <li className="flex items-center justify-between gap-2 border-t border-border pt-1 font-semibold">
+                          <span>{t('total')}</span>
+                          <span data-testid="equal-share-total" className="tabular-nums">{currencyFmt(remaining)}</span>
+                        </li>
+                      </ul>
+                      {equalShareSharesDiffer && (
+                        <p className="text-[11px] text-muted-foreground">{t('equalShareRoundingNote')}</p>
+                      )}
+                      {equalShareConflict && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300">{t('equalShareConflicts')}</p>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {payments.map((payment, idx) => (
+                          <Button
+                            key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`}
+                            variant="outline"
+                            size="sm"
+                            disabled={processing || tenderHasConflict(idx)}
+                            onClick={() => applyEqualShare(idx)}
+                          >
+                            {t('equalShareApplyTo', { method: tenderLabel(payment) })}
+                          </Button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-2">
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
-              const custom = customMethods.find((method) => method.id === payment.payment_method_id);
-              const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
+              const label = tenderLabel(payment);
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
-              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
-                <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
-                  {Icon && <Icon size={15} />}
-                  <span className="truncate">{label}</span>
-                </button>
-                <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
-                  <input
-                    type="number"
-                    value={payment.amount}
-                    onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
-                    onChange={(e) => updatePaymentAmount(idx, e.target.value)}
-                    placeholder="0.00"
-                    inputMode="decimal"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
-                    step={inputCurrencyStep}
-                    min="0"
-                  />
+              const isAppliedShare = appliedEqualShare?.index === idx;
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="space-y-1">
+                <div className="flex min-h-12">
+                  <button type="button" title={label} disabled={processing} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
+                    {Icon && <Icon size={15} />}
+                    <span className="truncate">{label}</span>
+                  </button>
+                  <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                    <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
+                    <input
+                      type="number"
+                      value={payment.amount}
+                      disabled={processing}
+                      onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
+                      onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                      placeholder="0.00"
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
+                      step={inputCurrencyStep}
+                      min="0"
+                    />
+                  </div>
                 </div>
+                {isAppliedShare && (
+                  <p className="px-1 text-[11px] font-medium text-brand">{t('equalShareBadge')}</p>
+                )}
               </div>;
             })}
           </div>
@@ -937,7 +1122,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
               <div className="flex min-h-12">
-                <button type="button" disabled={walletBalance <= 0} onClick={() => {
+                <button type="button" disabled={processing || walletBalance <= 0} onClick={() => {
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
@@ -961,7 +1146,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                       setWalletAmount(clamped);
                     }}
                     placeholder="0.00"
-                    disabled={walletBalance <= 0}
+                    disabled={processing || walletBalance <= 0}
                     inputMode="decimal"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
                     step={inputCurrencyStep}
@@ -973,7 +1158,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
-          {amountTarget && (
+          {amountTarget && !processing && (
             <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
@@ -1035,7 +1220,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   {t('splitCheck')}
                 </Button>
               )}
-              <Button onClick={handlePay} disabled={processing || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
+              <Button onClick={handlePay} disabled={processing || applyingDiscount || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
                 {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
               </Button>
             </>

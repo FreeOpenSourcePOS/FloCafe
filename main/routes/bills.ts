@@ -1687,11 +1687,6 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(sourceGroupId) as any[])
           .map((row) => Number(row.id))
         : [];
-      // The bound applies to the resulting group, so repeated splits stay
-      // bounded instead of only capping one request.
-      if (sourceGroupId && sourceGroupBillIds.length - 1 + checks.length > SPLIT_CHECKS_MAX) {
-        throw Object.assign(new Error(`A split group can hold at most ${SPLIT_CHECKS_MAX} checks`), { statusCode: 409 });
-      }
 
       // A first split divides the order's active items; a re-split divides the
       // source check's own allocation rows, so siblings' shares stay unclaimed.

@@ -432,28 +432,28 @@ async function main() {
     assertEqualOrThrow(legacyPairSplit.status, 409, 'a legacy second bill without a split group keeps the already-split rejection');
     assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(legacyPairOrder.id) as any).n, legacyPairBillsBefore, 'the rejected legacy split creates no bills');
 
-    // Group bound: the resulting group is capped, not just the request.
+    // A split group can grow when an unpaid child is divided again.
     seedProduct(db, 'split-many', 'split-cat', 'Many Guest Item', 1);
     const manyOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
-      type: 'dine_in', guest_count: 20, items: [{ product_id: 'split-many', quantity: 20 }],
+      type: 'dine_in', guest_count: 20, items: [{ product_id: 'split-many', quantity: 21 }],
     }, headers: authHeader });
     const manyOrder = manyOrderRes.data.order;
     const manyItem = manyOrder.items[0];
     const manyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: manyOrder.id }, headers: authHeader });
     const manyChecks = Array.from({ length: 20 }, (_, index) => ({
       label: `Guest ${index + 1}`,
-      items: [{ order_item_id: manyItem.id, quantity: 1 }],
+      items: [{ order_item_id: manyItem.id, quantity: index === 0 ? 2 : 1 }],
     }));
     const manySplit = await api(baseUrl, `/api/bills/${manyBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: manyChecks }, headers: authHeader });
-    assertEqualOrThrow(manySplit.status, 201, 'a 20-check group is the current maximum');
+    assertEqualOrThrow(manySplit.status, 201, 'a split request may create 20 checks');
     const manyBillsBefore = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(manyOrder.id) as any).n;
-    assertEqualOrThrow(manyBillsBefore, 20, 'the full group is persisted');
-    const groupBoundReject = await api(baseUrl, `/api/bills/${manySplit.data.bills[3].id}/split-check`, { method: 'POST', body: { checks: [
-      { label: 'Over 1', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
-      { label: 'Over 2', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
+    assertEqualOrThrow(manyBillsBefore, 20, 'the initial group is persisted');
+    const expandedGroup = await api(baseUrl, `/api/bills/${manySplit.data.bills[0].id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1A', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
+      { label: 'Guest 1B', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
     ] }, headers: authHeader });
-    assertEqualOrThrow(groupBoundReject.status, 409, 'a re-split that would exceed the group bound is refused');
-    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(manyOrder.id) as any).n, manyBillsBefore, 'the refused group-bound re-split creates no bills');
+    assertEqualOrThrow(expandedGroup.status, 201, 'a valid re-split may expand the group beyond 20 checks');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(manyOrder.id) as any).n, 21, 'the expanded group persists all 21 checks');
 
     // Conservation: every persisted money column of the source is divided, not
     // re-derived from the order, once a child carries a discount, tax, itemised
@@ -781,10 +781,7 @@ async function main() {
       ] }, headers: authHeader }),
       api(baseUrl, `/api/bills/${raceFirstSplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: raceFirstSplit.data.bills[0].total }] }, headers: authHeader }),
     ]);
-    assertOrThrow(
-      [raceSplit.status, racePay.status].every((status) => status === 201 || status === 200 || status === 409),
-      'a racing re-split and sibling payment each answer with a defined status',
-    );
+    assertEqualOrThrow(raceSplit.status, 201, 'a sibling payment does not reject the racing re-split');
     assertEqualOrThrow(racePay.status, 200, 'the sibling payment is accepted whichever request resolved first');
     assertEqualOrThrow(
       Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(raceGroupId) as any).total.toFixed(2)),

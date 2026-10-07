@@ -50,26 +50,34 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: {
   const [sourceOrder, setSourceOrder] = useState<Order>(order);
   const items = useMemo(() => selectableItems(sourceOrder), [sourceOrder]);
   const availableUnits = items.reduce((sum, item) => sum + Number(item.quantity), 0);
+  const canSplitTable = availableUnits >= MIN_CHECKS;
+  const maxTableChecks = Math.min(MAX_CHECKS, availableUnits);
   const checkTotal = Number(bill.total || 0);
 
   // A split-group child is divided for a leaving guest by default; the first
   // split of an untouched check keeps the familiar all-items grid.
-  const [mode, setMode] = useState<SplitMode>(bill.split_group_id ? 'guest' : 'table');
-  const initialCount = Math.min(8, Math.max(MIN_CHECKS, order.guest_count || MIN_CHECKS));
+  const [mode, setMode] = useState<SplitMode>(bill.split_group_id || !canSplitTable ? 'guest' : 'table');
+  const initialCount = canSplitTable
+    ? Math.min(8, maxTableChecks, Math.max(MIN_CHECKS, order.guest_count || MIN_CHECKS))
+    : MIN_CHECKS;
   const [count, setCount] = useState(initialCount);
   const [labels, setLabels] = useState(() => Array.from({ length: initialCount }, (_, i) => `Guest ${i + 1}`));
-  const [allocations, setAllocations] = useState<Record<number, number[]>>(() => Object.fromEntries(items.map((item) => {
-    const slots = Array(initialCount).fill(0);
-    for (let unit = 0; unit < item.quantity; unit++) slots[unit % initialCount]++;
-    return [item.id, slots];
-  })));
+  const [allocations, setAllocations] = useState<Record<number, number[]>>(() => {
+    let nextSlot = 0;
+    return Object.fromEntries(items.map((item) => {
+      const slots = Array(initialCount).fill(0);
+      for (let unit = 0; unit < item.quantity; unit++) slots[nextSlot++ % initialCount]++;
+      return [item.id, slots];
+    }));
+  });
   const [selected, setSelected] = useState<Record<number, number>>({});
   const [guestLabel, setGuestLabel] = useState(() => t('leavingGuestLabel').slice(0, MAX_LABEL_LENGTH));
   const [remainderLabel, setRemainderLabel] = useState(() => (bill.split_label || t('remainingCheckLabel')).slice(0, MAX_LABEL_LENGTH));
   const [saving, setSaving] = useState(false);
 
   const resize = (next: number) => {
-    next = Math.min(MAX_CHECKS, Math.max(MIN_CHECKS, next));
+    if (!canSplitTable) return;
+    next = Math.min(maxTableChecks, Math.max(MIN_CHECKS, next));
     setLabels((old) => Array.from({ length: next }, (_, i) => old[i] || `Guest ${i + 1}`));
     setAllocations((old) => Object.fromEntries(items.map((item) => {
       const slots = Array.from({ length: next }, (_, i) => old[item.id]?.[i] || 0);
@@ -175,12 +183,12 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: {
   const allSelected = selectedUnits > 0 && remainingUnits === 0;
 
   return <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4"><div className="bg-card rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
-    <div className="p-5 border-b flex items-center justify-between"><div><h2 className="text-lg font-bold">{t('splitCheck')}</h2><p className="text-sm text-muted-foreground">{mode === 'guest' ? t('selectItemsHint') : t('splitCheckHint')}</p></div><button onClick={onClose}><X size={20} /></button></div>
+    <div className="p-5 border-b flex items-center justify-between"><div><h2 className="text-lg font-bold">{t('splitCheck')}</h2><p className="text-sm text-muted-foreground">{mode === 'guest' ? t('selectItemsHint') : t('splitCheckHint')}</p></div><button onClick={onClose} disabled={saving} aria-label={tCommon('close')}><X size={20} /></button></div>
     <div className="p-5 border-b flex flex-wrap items-center gap-2">
-      <Button variant={mode === 'guest' ? 'default' : 'outline'} size="sm" onClick={() => setMode('guest')}>{t('splitModeSelected')}</Button>
-      <Button variant={mode === 'table' ? 'default' : 'outline'} size="sm" onClick={() => setMode('table')}>{t('splitModeAll')}</Button>
+      <Button variant={mode === 'guest' ? 'default' : 'outline'} size="sm" onClick={() => setMode('guest')} disabled={saving}>{t('splitModeSelected')}</Button>
+      <Button variant={mode === 'table' ? 'default' : 'outline'} size="sm" onClick={() => setMode('table')} disabled={saving || !canSplitTable}>{t('splitModeAll')}</Button>
       {mode === 'table'
-        ? <div className="flex items-center gap-3 ms-auto"><span className="text-sm text-muted-foreground">{t('numberOfChecks')}</span><button onClick={() => resize(count - 1)} className="size-7 rounded-full bg-muted flex items-center justify-center"><Minus size={13} /></button><strong>{count}</strong><button onClick={() => resize(count + 1)} className="size-7 rounded-full bg-muted flex items-center justify-center"><Plus size={13} /></button></div>
+        ? <div className="flex items-center gap-3 ms-auto"><span className="text-sm text-muted-foreground">{t('numberOfChecks')}</span><button onClick={() => resize(count - 1)} disabled={saving || count <= MIN_CHECKS} className="size-7 rounded-full bg-muted flex items-center justify-center disabled:opacity-50"><Minus size={13} /></button><strong>{count}</strong><button onClick={() => resize(count + 1)} disabled={saving || count >= maxTableChecks} className="size-7 rounded-full bg-muted flex items-center justify-center disabled:opacity-50"><Plus size={13} /></button></div>
         : <div className="flex items-center gap-3 ms-auto text-sm"><span className="text-muted-foreground">{t('selectedQuantity')}</span><strong>{selectedUnits}</strong><span className="text-muted-foreground">{t('remainingQuantity')}</span><strong>{remainingUnits}</strong></div>}
     </div>
     {mode === 'table'
@@ -216,11 +224,11 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: {
         </div>}
       </div>}
     <div className="p-5 border-t flex justify-end gap-2">
-      <Button variant="outline" onClick={onClose}>{tCommon('cancel')}</Button>
+      <Button variant="outline" onClick={onClose} disabled={saving}>{tCommon('cancel')}</Button>
       {mode === 'table'
-        ? <Button onClick={submitAllItems} disabled={saving || items.length === 0}>{saving ? tCommon('saving') : t('createChecks')}</Button>
+        ? <Button onClick={submitAllItems} disabled={saving || !canSplitTable || items.length === 0}>{saving ? tCommon('saving') : t('createChecks')}</Button>
         : allSelected
-          ? <Button onClick={onClose}>{t('payThisCheck')}</Button>
+          ? <Button onClick={onClose} disabled={saving}>{t('payThisCheck')}</Button>
           : <Button onClick={submitLeavingGuest} disabled={saving || selectedUnits === 0 || items.length === 0}>{saving ? tCommon('saving') : t('createChecks')}</Button>}
     </div>
   </div></div>;

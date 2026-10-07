@@ -661,6 +661,19 @@ export default function OrdersPage() {
     }
   };
 
+  const handlePayBill = async (billToPay: Bill) => {
+    try {
+      const { data } = await api.get(`/bills/${billToPay.id}`);
+      if (data?.bill) {
+        setPaymentBill(preferChildScopedBill(data.bill as Bill, billToPay.order));
+        return;
+      }
+    } catch {
+      // Fallback to existing bill if fetch fails
+    }
+    setPaymentBill(billToPay);
+  };
+
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
@@ -1253,7 +1266,7 @@ export default function OrdersPage() {
               linkCustomerResults={linkCustomerResults}
               linkingCustomer={linkingCustomer}
               onCheckout={handleCheckout}
-              onPayBill={(bill) => setPaymentBill(bill)}
+              onPayBill={handlePayBill}
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
               onConvertToTakeaway={handleConvertToTakeaway}

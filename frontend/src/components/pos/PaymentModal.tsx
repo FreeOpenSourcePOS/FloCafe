@@ -494,7 +494,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         // This request committed a partial payment, so the next attempt is a
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
-        if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
+        if (updatedBill && onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
         if (updatedBill?.payment_status === 'partial') {
           toast.success(t('paymentRecorded'));
         } else {

@@ -1061,7 +1061,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               const isAppliedShare = appliedEqualShare?.index === idx;
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="space-y-1">
                 <div className="flex min-h-12">
-                  <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
+                  <button type="button" title={label} disabled={processing} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                     {Icon && <Icon size={15} />}
                     <span className="truncate">{label}</span>
                   </button>
@@ -1070,6 +1070,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     <input
                       type="number"
                       value={payment.amount}
+                      disabled={processing}
                       onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                       onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                       placeholder="0.00"
@@ -1121,7 +1122,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
               <div className="flex min-h-12">
-                <button type="button" disabled={walletBalance <= 0} onClick={() => {
+                <button type="button" disabled={processing || walletBalance <= 0} onClick={() => {
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
@@ -1145,7 +1146,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                       setWalletAmount(clamped);
                     }}
                     placeholder="0.00"
-                    disabled={walletBalance <= 0}
+                    disabled={processing || walletBalance <= 0}
                     inputMode="decimal"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
                     step={inputCurrencyStep}
@@ -1157,7 +1158,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
-          {amountTarget && (
+          {amountTarget && !processing && (
             <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}

@@ -376,6 +376,8 @@ test.describe('equal share payments', () => {
     await openOrderCheckout(page, order.order_number);
     await openEqualShare(page);
     await applyShareTo(page, 'Cash');
+    await tenderRow(page, 'Cash').getByRole('spinbutton').focus();
+    await expect(page.locator('[aria-label="Numeric keypad"]')).toBeVisible();
 
     let releaseRequest = () => {};
     let signalRequest = () => {};
@@ -392,6 +394,9 @@ test.describe('equal share payments', () => {
     try {
       await intercepted;
       await expect(payerCount(page)).toBeDisabled();
+      await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
+      await expect(page.getByTitle('Cash', { exact: true })).toBeDisabled();
+      await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
     } finally {
       releaseRequest();
     }

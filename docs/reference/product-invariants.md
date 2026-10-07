@@ -298,14 +298,27 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    delivery is logged still goes through the POS. Negative balances are flagged in the UI for
    physical count reconciliation. There is no clamp and no 409.
 2. **Depletion happens at order creation and at item append**, when `recipe_snapshot`, an immutable
-   JSON copy of the scaled recipe components, is written to `order_items`.
-3. **Restoration is keyed off the snapshot, never the current recipe.** Cancelling a pending item
-   or an order restores exactly what the snapshot recorded, even if the recipe was edited since.
+   JSON copy of the scaled recipe components, is written to `order_items`. The scale is
+   `ingredient quantity x ordered quantity x portion / yield_quantity`, where the portion is the
+   ordered variant's `recipe_multiplier`: 1 is one base recipe portion, 0.5 half, 2 double. Parent
+   sales without a variant use a portion of 1, and the portion is scaled from the resolved catalog
+   variant, never from the order payload.
+3. **Restoration is keyed off the snapshot, never the current recipe or portion.** Cancelling a
+   pending item or an order restores exactly what the snapshot recorded, even if the recipe or the
+   variant's portion was edited since. Cancelling a half-portion sale therefore returns half of
+   every ingredient even after the variant was switched to double.
 4. **Void after preparation is physical waste.** Items voided while in progress, ready, or
    completed restore neither supplies nor product stock. Only a `pending` cancel restores.
 5. **Refunds never restore supplies**, matching product inventory behaviour.
 6. **Product stock tracking and recipe depletion are independent** and may both be active on the
-   same product.
+   same product. A variant scales them with two different fields: `recipe_multiplier` scales the
+   product's own ingredient recipe, while `inventory_deduction_quantity` scales the linked product
+   stock pool (`inventory_product_id`). Neither substitutes for the other, and both may move once
+   per sale.
+7. **A portion without a recipe has no effect.** A variant may store a portion while its product has
+   no active recipe; nothing depletes until a recipe exists, and the stored value is kept for when
+   one does. A portion is a positive finite number, so a stored zero, negative, or non-finite value
+   is refused at sale time rather than depleting a nonsense amount.
 
 **Reason:** POS availability during a stockout matters more than ledger neatness. A store that
 cannot sell because flour has not been counted in yet is worse than a negative row to reconcile
@@ -316,18 +329,24 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
 creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
 only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
-`pending`; a `voided` item is never restored.
+`pending`; a `voided` item is never restored. The portion comes from
+`resolveOrderItemVariant()` in `main/services/product-variants.ts`, the same server-side resolution
+that prices the line, and `buildRecipeSnapshot()` refuses a non-positive or non-finite portion so
+no order can record one. The variants table stores it as a positive value
+(`product_variants.recipe_multiplier`, default 1).
 
 **How to verify:**
 
 ```sh
 npm run test:recipe-order-lifecycle   # deplete, restore, void-no-restore, snapshot immutability
 npm run test:supplies-service         # negative stock, ledger, pagination
+npm run test:product-variants-orders  # half / whole / double portions across create, append, void
 ```
 
 **Change policy:** allowing negative stock and snapshot-keyed restoration are the load-bearing
-parts. Clamping stock or restoring from the live recipe would break historical correctness, so
-either needs explicit confirmation.
+parts. Clamping stock or restoring from the live recipe or portion would break historical
+correctness, so either needs explicit confirmation. `inventory_deduction_quantity` keeps its
+linked-product meaning; scaling the ingredient recipe with it would merge two independent pools.
 
 ---
 

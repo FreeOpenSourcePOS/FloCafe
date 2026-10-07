@@ -577,6 +577,8 @@ type NormalizedVariant = {
   low_stock_threshold: number | null;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
+  /** Portions of the product's own recipe this variant consumes; never the linked-stock factor. */
+  recipe_multiplier: number;
   is_active: number;
   sort_order: number;
 };
@@ -622,6 +624,7 @@ function normalizeVariants(
     }
 
     let id: string | null = null;
+    let storedRecipeMultiplier: number | null = null;
     if (candidate.id !== undefined && candidate.id !== null) {
       if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0) {
         return { error: `variants[${index}].id must be a variant id string` };
@@ -629,10 +632,12 @@ function normalizeVariants(
       id = candidate.id.trim();
       if (seenIds.has(id)) return { error: `variants[${index}].id is duplicated in the request` };
       seenIds.add(id);
-      const owner = db.prepare('SELECT product_id FROM product_variants WHERE id = ?').get(id) as { product_id: string } | undefined;
+      const owner = db.prepare('SELECT product_id, recipe_multiplier FROM product_variants WHERE id = ?').get(id) as
+        { product_id: string; recipe_multiplier: number } | undefined;
       if (!owner || owner.product_id !== productId) {
         return { error: `variants[${index}].id does not belong to this product` };
       }
+      storedRecipeMultiplier = Number(owner.recipe_multiplier);
     }
 
     if (candidate.track_inventory !== undefined && typeof candidate.track_inventory !== 'boolean') {
@@ -688,6 +693,22 @@ function normalizeVariants(
     }
     if (inventoryProductId && inventoryDeductionQuantity === null) inventoryDeductionQuantity = 1;
 
+    // The portion is optional on the wire so a client that does not know about
+    // it keeps working: absent means one portion for a new variant and "keep
+    // the stored value" for an existing one. A supplied value must be a
+    // positive finite number - no zero portion and no half of a stock factor.
+    let recipeMultiplier = 1;
+    if (candidate.recipe_multiplier !== undefined) {
+      if (typeof candidate.recipe_multiplier !== 'number'
+        || !Number.isFinite(candidate.recipe_multiplier)
+        || candidate.recipe_multiplier <= 0) {
+        return { error: `variants[${index}].recipe_multiplier must be a positive finite number` };
+      }
+      recipeMultiplier = candidate.recipe_multiplier;
+    } else if (storedRecipeMultiplier !== null && Number.isFinite(storedRecipeMultiplier) && storedRecipeMultiplier > 0) {
+      recipeMultiplier = storedRecipeMultiplier;
+    }
+
     variants.push({
       id,
       name,
@@ -701,6 +722,7 @@ function normalizeVariants(
       low_stock_threshold: lowStockThreshold.value ?? null,
       inventory_product_id: inventoryProductId,
       inventory_deduction_quantity: inventoryDeductionQuantity,
+      recipe_multiplier: recipeMultiplier,
       is_active: candidate.is_active === false ? 0 : 1,
       sort_order: typeof candidate.sort_order === 'number' ? candidate.sort_order : index,
     });
@@ -784,14 +806,14 @@ function writeProductVariants(
     INSERT INTO product_variants (
       id, product_id, name, sku, barcode, price, online_price, cost_price,
       track_inventory, stock_quantity, low_stock_threshold, inventory_product_id,
-      inventory_deduction_quantity, is_active, sort_order, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+      inventory_deduction_quantity, recipe_multiplier, is_active, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const updateVariant = db.prepare(`
     UPDATE product_variants SET
       name = ?, sku = ?, barcode = ?, price = ?, online_price = ?, cost_price = ?,
       track_inventory = ?, low_stock_threshold = ?, inventory_product_id = ?,
-      inventory_deduction_quantity = ?, is_active = ?, sort_order = ?, updated_at = ?
+      inventory_deduction_quantity = ?, recipe_multiplier = ?, is_active = ?, sort_order = ?, updated_at = ?
     WHERE id = ? AND product_id = ?
   `);
 
@@ -802,15 +824,15 @@ function writeProductVariants(
       updateVariant.run(
         variant.name, variant.sku, variant.barcode, variant.price, variant.online_price, variant.cost_price,
         variant.track_inventory, variant.low_stock_threshold, variant.inventory_product_id,
-        variant.inventory_deduction_quantity, variant.is_active, variant.sort_order, timestamp,
+        variant.inventory_deduction_quantity, variant.recipe_multiplier, variant.is_active, variant.sort_order, timestamp,
         variantId, productId,
       );
     } else {
       insertVariant.run(
         variantId, productId, variant.name, variant.sku, variant.barcode, variant.price,
         variant.online_price, variant.cost_price, variant.track_inventory, variant.low_stock_threshold,
-        variant.inventory_product_id, variant.inventory_deduction_quantity, variant.is_active,
-        variant.sort_order, timestamp, timestamp,
+        variant.inventory_product_id, variant.inventory_deduction_quantity, variant.recipe_multiplier,
+        variant.is_active, variant.sort_order, timestamp, timestamp,
       );
     }
     retainedIds.push(variantId);

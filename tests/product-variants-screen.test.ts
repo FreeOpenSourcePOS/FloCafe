@@ -31,6 +31,7 @@ Module._resolveFilename = function (request: string, parent: any, isMain: boolea
 const {
   buildVariantsPayload,
   hasInvalidVariantRow,
+  isPositiveRecipeMultiplier,
   moveVariantRow,
   newVariantRow,
   removeVariantRow,
@@ -54,6 +55,7 @@ function variantFixture(overrides: Record<string, unknown> = {}) {
     low_stock_threshold: 3,
     inventory_product_id: 'p-beans',
     inventory_deduction_quantity: 2,
+    recipe_multiplier: 0.5,
     is_active: true,
     sort_order: 1,
     ...overrides,
@@ -98,6 +100,7 @@ check('toVariantRows projects every column onto an editable row', () => {
     low_stock_threshold: 3,
     inventory_product_id: 'p-beans',
     inventory_deduction_quantity: 2,
+    recipe_multiplier: '0.5',
   });
 });
 
@@ -126,11 +129,13 @@ check('toVariantRows applies the backend defaults to absent managed fields', () 
     low_stock_threshold: null,
     inventory_product_id: null,
     inventory_deduction_quantity: null,
+    recipe_multiplier: undefined,
   })]);
   assert.equal(sparse.cost_price, null);
   assert.equal(sparse.low_stock_threshold, null);
   assert.equal(sparse.inventory_product_id, null);
   assert.equal(sparse.inventory_deduction_quantity, 1);
+  assert.equal(sparse.recipe_multiplier, '1', 'a response without a portion loads as one base portion');
 });
 
 check('a loaded row survives load -> payload unchanged', () => {
@@ -157,6 +162,7 @@ check('every backend-managed field reaches the payload', () => {
     low_stock_threshold: payload.low_stock_threshold,
     inventory_product_id: payload.inventory_product_id,
     inventory_deduction_quantity: payload.inventory_deduction_quantity,
+    recipe_multiplier: payload.recipe_multiplier,
   };
   assert.deepEqual(carried, {
     cost_price: 2.25,
@@ -164,7 +170,28 @@ check('every backend-managed field reaches the payload', () => {
     low_stock_threshold: 3,
     inventory_product_id: 'p-beans',
     inventory_deduction_quantity: 2,
+    recipe_multiplier: 0.5,
   });
+});
+
+check('a portion survives load, edit, and save without currency rounding', () => {
+  const rows = toVariantRows([variantFixture({ recipe_multiplier: 0.333 })]);
+  const [payload] = buildVariantsPayload(rows, 2);
+  assert.equal(payload.recipe_multiplier, 0.333, 'a fraction of a portion is sent as typed, not rounded to two decimals');
+
+  const edited = rows.map((r) => ({ ...r, id: r.id, recipe_multiplier: '2' }));
+  assert.equal(buildVariantsPayload(edited, 0)[0].recipe_multiplier, 2, 'a double portion survives a zero-decimal tenant');
+
+  // Saving an unrelated field must carry the portion the editor loaded.
+  const [renamed] = buildVariantsPayload(rows.map((r) => ({ ...r, name: 'Large renamed' })), 2);
+  assert.equal(renamed.recipe_multiplier, 0.333, 'an unrelated edit preserves the configured portion');
+});
+
+check('a new row starts at one portion and travels with the payload', () => {
+  const fresh = newVariantRow();
+  assert.equal(fresh.recipe_multiplier, '1', 'a row the merchant adds consumes one base recipe portion');
+  const [payload] = buildVariantsPayload([{ ...fresh, name: 'Small', price: '3' }], 2);
+  assert.equal(payload.recipe_multiplier, 1, 'the default portion reaches the API');
 });
 
 check('the payload carries exactly the fields the products API normalises', () => {
@@ -179,6 +206,7 @@ check('the payload carries exactly the fields the products API normalises', () =
     'name',
     'online_price',
     'price',
+    'recipe_multiplier',
     'sku',
     'sort_order',
     'stock_quantity',
@@ -342,7 +370,23 @@ const invalidCases: [string, Partial<Row>, boolean][] = [
   ['a complete row', { name: 'Large', price: '5' }, false],
   ['a zero price is a real price', { name: 'Free sample', price: '0' }, false],
   ['a blank online price is fine', { name: 'Large', price: '5', online_price: '' }, false],
+  ['a blank portion', { name: 'Large', price: '5', recipe_multiplier: '' }, true],
+  ['a zero portion', { name: 'Large', price: '5', recipe_multiplier: '0' }, true],
+  ['a negative portion', { name: 'Large', price: '5', recipe_multiplier: '-1' }, true],
+  ['a non-numeric portion', { name: 'Large', price: '5', recipe_multiplier: 'half' }, true],
+  ['a half portion is a real portion', { name: 'Large', price: '5', recipe_multiplier: '0.5' }, false],
+  ['a double portion is a real portion', { name: 'Large', price: '5', recipe_multiplier: '2' }, false],
 ];
+
+check('a portion has to be a positive finite number of base portions', () => {
+  assert.equal(isPositiveRecipeMultiplier('0.5'), true);
+  assert.equal(isPositiveRecipeMultiplier(' 2 '), true);
+  assert.equal(isPositiveRecipeMultiplier('0'), false);
+  assert.equal(isPositiveRecipeMultiplier('-0.5'), false);
+  assert.equal(isPositiveRecipeMultiplier(''), false);
+  assert.equal(isPositiveRecipeMultiplier('Infinity'), false);
+  assert.equal(isPositiveRecipeMultiplier('half'), false);
+});
 
 for (const [label, overrides, expected] of invalidCases) {
   check(`${label} is ${expected ? 'rejected' : 'accepted'}`, () => {

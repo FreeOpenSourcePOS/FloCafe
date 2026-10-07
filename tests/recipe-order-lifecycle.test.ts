@@ -328,6 +328,57 @@ async function main() {
       'soft-deleted supply stock is restored from historical snapshot',
     );
 
+    console.log('\n--- 12. Variant portions scale the same recipe ---');
+    const syrup = createSupply(db, {
+      name: 'Syrup', baseUnit: 'ml', stockQuantity: 1000, actorUserId: userId,
+    });
+    saveRecipe(db, {
+      productId: 'prod-latte',
+      yieldQuantity: 1,
+      items: [
+        { supplyId: beans.id, quantity: 18, unit: 'g' },
+        { supplyId: syrup.id, quantity: 0.4, unit: 'l' },
+      ],
+    });
+
+    const component = (snapshot: any, supplyId: string) =>
+      snapshot.components.find((entry: any) => entry.supply_id === supplyId)!.quantity;
+    const halfPortion = buildRecipeSnapshot(db, 'prod-latte', 2, 0.5)!;
+    assertEqual(component(halfPortion, beans.id), 18, 'a half portion of two servings depletes half the beans');
+    assertEqual(component(halfPortion, syrup.id), 400, 'a half portion converts litres to base ml before scaling');
+    assertEqual(component(buildRecipeSnapshot(db, 'prod-latte', 2)!, beans.id), 36, 'the default portion is one');
+    assertEqual(component(buildRecipeSnapshot(db, 'prod-latte', 2, 2)!, beans.id), 72, 'a double portion doubles the base recipe');
+    assertEqual(buildRecipeSnapshot(db, 'prod-water', 1, 2), null, 'a portion has no effect without an active recipe');
+    assertEqual(
+      buildRecipeSnapshot(db, 'prod-water', 1, 0),
+      null,
+      'a product without a recipe never fails on its stored portion',
+    );
+
+    saveRecipe(db, {
+      productId: 'prod-latte',
+      yieldQuantity: 4,
+      items: [{ supplyId: beans.id, quantity: 100, unit: 'g' }],
+    });
+    assertEqual(
+      component(buildRecipeSnapshot(db, 'prod-latte', 2, 2)!, beans.id),
+      100,
+      'a portion multiplies on top of a non-unit yield (100 g x 2 x 2 / 4)',
+    );
+
+    const portionIsRefused = (portion: number): boolean => {
+      try {
+        buildRecipeSnapshot(db, 'prod-latte', 1, portion);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    assert(portionIsRefused(0), 'a zero portion is refused');
+    assert(portionIsRefused(-1), 'a negative portion is refused');
+    assert(portionIsRefused(Number.NaN), 'a non-numeric portion is refused');
+    assert(portionIsRefused(Number.POSITIVE_INFINITY), 'an infinite portion is refused');
+
     console.log('='.repeat(65));
     const { passed, failed, total } = getResults();
     console.log(`${passed}/${total} passed, ${failed} failed`);

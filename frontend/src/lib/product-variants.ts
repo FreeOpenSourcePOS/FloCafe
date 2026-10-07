@@ -79,6 +79,12 @@ export interface ProductVariantRow {
   low_stock_threshold: number | null;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
+  /**
+   * Portions of the product's own ingredient recipe, as typed: 1 is one base
+   * portion, 0.5 half, 2 double. Not a money value, so it is never rounded to
+   * the tenant currency precision.
+   */
+  recipe_multiplier: string;
 }
 
 export interface ProductVariantPayload {
@@ -95,6 +101,7 @@ export interface ProductVariantPayload {
   low_stock_threshold: number | null;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
+  recipe_multiplier: number;
   is_active: boolean;
   sort_order: number;
 }
@@ -116,6 +123,7 @@ export function newVariantRow(): ProductVariantRow {
     low_stock_threshold: null,
     inventory_product_id: null,
     inventory_deduction_quantity: 1,
+    recipe_multiplier: '1',
   };
 }
 
@@ -137,11 +145,23 @@ export function toVariantRows(variants: ProductVariant[] | null | undefined): Pr
     low_stock_threshold: variant.low_stock_threshold ?? null,
     inventory_product_id: variant.inventory_product_id ?? null,
     inventory_deduction_quantity: variant.inventory_deduction_quantity ?? 1,
+    // A response from a server that does not carry the portion means one.
+    recipe_multiplier: String(variant.recipe_multiplier ?? 1),
   }));
 }
 
+/** A submitted portion must be a positive finite number of base recipe portions. */
+export function isPositiveRecipeMultiplier(value: string): boolean {
+  if (value.trim() === '') return false;
+  const portion = Number(value);
+  return Number.isFinite(portion) && portion > 0;
+}
+
 export function hasInvalidVariantRow(rows: ProductVariantRow[]): boolean {
-  return rows.some((row) => row.name.trim() === '' || row.price === '' || !Number.isFinite(Number(row.price)));
+  return rows.some((row) => row.name.trim() === ''
+    || row.price === ''
+    || !Number.isFinite(Number(row.price))
+    || !isPositiveRecipeMultiplier(row.recipe_multiplier));
 }
 
 /**
@@ -183,6 +203,7 @@ export function buildVariantsPayload(rows: ProductVariantRow[], maxDecimals: num
         low_stock_threshold: row.low_stock_threshold,
         inventory_product_id: row.inventory_product_id,
         inventory_deduction_quantity: row.inventory_deduction_quantity,
+        recipe_multiplier: Number(row.recipe_multiplier),
         // The position in the full editor table, so a skipped inactive row keeps
         // the display order of the rows around it.
         sort_order: index,

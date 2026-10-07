@@ -206,18 +206,28 @@ export function deleteRecipe(db: ReturnType<typeof getDatabase>, productId: stri
 
 /**
  * Build an immutable per-order-item snapshot of the recipe scaled to the
- * ordered quantity. Returns null when the product has no active recipe.
+ * ordered quantity and to the ordered variant's portion. `recipeMultiplier`
+ * is how many base recipe portions the variant consumes and comes from the
+ * resolved catalog variant, never from the client. Returns null when the
+ * product has no active recipe, in which case a portion has no effect.
  */
 export function buildRecipeSnapshot(
   db: ReturnType<typeof getDatabase>,
   productId: string,
   orderQuantity: number,
+  recipeMultiplier = 1,
 ): RecipeSnapshot | null {
   const recipe = getRecipeByProduct(db, productId);
   if (!recipe || recipe.is_active !== 1 || recipe.items.length === 0) return null;
   if (!Number.isFinite(orderQuantity) || orderQuantity <= 0) return null;
+  // A zero, negative, or non-finite portion would silently under-deplete and
+  // record a snapshot that cancel and restore would faithfully reproduce.
+  // roundQuantity refuses an overflowed product below.
+  if (!Number.isFinite(recipeMultiplier) || recipeMultiplier <= 0) {
+    throw new RecipeServiceError(400, 'recipe multiplier must be a positive finite number');
+  }
 
-  const scale = orderQuantity / recipe.yield_quantity;
+  const scale = (orderQuantity * recipeMultiplier) / recipe.yield_quantity;
   const components = recipe.items.map((item) => ({
     supply_id: item.supply_id,
     supply_name: item.supply_name,

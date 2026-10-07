@@ -530,7 +530,11 @@ function main() {
   );
   initDatabase();
   const preIdentity = getDatabase();
-  assert.equal(getCurrentSchemaVersion(), 106, 'the store is at the identity schema before rewinding');
+  assert.equal(
+    getCurrentSchemaVersion(),
+    MIGRATIONS[MIGRATIONS.length - 1].version,
+    'the store is fully migrated before rewinding the identity column',
+  );
   preIdentity.prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')
     .run('pending', legacyOrder.lastInsertRowid);
   preIdentity.prepare('UPDATE orders SET expected_payment_method = ? WHERE id = ?')

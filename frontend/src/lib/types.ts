@@ -85,6 +85,8 @@ export interface ProductVariant {
   low_stock_threshold: number | null;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
+  /** Portions of the product's own ingredient recipe this variant consumes. */
+  recipe_multiplier: number;
   is_active: boolean;
   sort_order: number;
 }

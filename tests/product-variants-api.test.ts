@@ -920,6 +920,137 @@ async function main() {
       "the rejected cross-product adjustment leaves the owner's variant stock untouched",
     );
 
+    // ── Variant recipe portions: the product's own recipe, not the link ───
+    // `recipe_multiplier` scales the product's ingredient recipe (supplies).
+    // It is not `inventory_deduction_quantity`, which scales the linked
+    // product-stock pool, so both values have to survive together.
+    const portions = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: [
+          { id: smallVariant.id, name: 'Small', price: 300, sku: 'CAP-S', barcode: 'CAP-S', stock_quantity: 8, track_inventory: true, recipe_multiplier: 0.5 },
+          { id: doughVariant.id, name: 'Twelve inch', price: 700, inventory_product_id: 'prod-dough', inventory_deduction_quantity: 2, recipe_multiplier: 2 },
+          { name: 'Unportioned', price: 100 },
+        ],
+      },
+    });
+    assert.equal(portions.status, 200, `a variant list with portions is accepted (${JSON.stringify(portions.data)})`);
+    const portionRows = db.prepare(
+      'SELECT name, recipe_multiplier, inventory_deduction_quantity FROM product_variants WHERE product_id = ? AND is_active = 1 ORDER BY sort_order, name',
+    ).all(productId) as any[];
+    assert.deepEqual(
+      portionRows.map((row) => [row.name, row.recipe_multiplier]),
+      [['Small', 0.5], ['Twelve inch', 2], ['Unportioned', 1]],
+      'a submitted portion is stored and an omitted one defaults to one',
+    );
+    assert.equal(
+      portionRows.find((row) => row.name === 'Twelve inch').inventory_deduction_quantity,
+      2,
+      'the linked-product stock factor is stored beside the portion, never replaced by it',
+    );
+    assert.deepEqual(
+      portions.data.product.variants.map((variant: any) => [variant.name, variant.recipe_multiplier]),
+      [['Small', 0.5], ['Twelve inch', 2], ['Unportioned', 1]],
+      'the write response carries the stored portions',
+    );
+
+    const portionRead = await api(baseUrl, `/api/products/${productId}`, { headers: owner.authHeader });
+    assert.equal(
+      portionRead.data.product.variants.find((variant: any) => variant.name === 'Small').recipe_multiplier,
+      0.5,
+      'a single-product read returns the stored portion',
+    );
+    const portionList = await api(baseUrl, '/api/products', { headers: owner.authHeader });
+    assert.equal(
+      portionList.data.products.find((product: any) => product.id === productId)
+        .variants.find((variant: any) => variant.name === 'Twelve inch').recipe_multiplier,
+      2,
+      'the bulk read returns the stored portion',
+    );
+
+    // An older client that knows nothing about portions sends no such key, so
+    // an unrelated edit must leave the configured portion alone.
+    const renamedWithoutPortion = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ id: smallVariant.id, name: 'Small cup', price: 300, sku: 'CAP-S', barcode: 'CAP-S' }] },
+    });
+    assert.equal(renamedWithoutPortion.status, 200, 'a variant list without portions is still accepted');
+    assert.deepEqual(
+      db.prepare('SELECT name, recipe_multiplier FROM product_variants WHERE id = ?').get(smallVariant.id),
+      { name: 'Small cup', recipe_multiplier: 0.5 },
+      'an edit that omits the portion preserves the configured one',
+    );
+
+    const changedPortion = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { variants: [{ id: smallVariant.id, name: 'Small cup', price: 300, recipe_multiplier: 1.5 }] },
+    });
+    assert.equal(changedPortion.status, 200, 'a portion can be changed');
+    assert.equal(
+      db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get(smallVariant.id).recipe_multiplier,
+      1.5,
+      'the new portion is stored',
+    );
+
+    // Malformed portions go through the normal catalog validation contract.
+    for (const [label, recipeMultiplier] of [
+      ['an explicit null', null],
+      ['a numeric string', '2'],
+      ['zero', 0],
+      ['a negative portion', -1],
+      ['a non-numeric string', 'half'],
+      ['a non-finite string', 'Infinity'],
+    ] as [string, unknown][]) {
+      const rejected = await api(baseUrl, `/api/products/${productId}`, {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: { variants: [{ id: smallVariant.id, name: 'Small cup', price: 300, recipe_multiplier: recipeMultiplier }] },
+      });
+      assert.equal(rejected.status, 400, `${label} is rejected`);
+      assert.match(rejected.data.error, /recipe_multiplier/, `${label} is rejected by name`);
+    }
+    assert.equal(
+      db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get(smallVariant.id).recipe_multiplier,
+      1.5,
+      'no rejected portion wrote anything',
+    );
+
+    // A variant without an active recipe may still store its portion: it has no
+    // effect until a recipe exists, and deactivating the variant must not lose
+    // the configured value.
+    const storedOnInactive = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: {
+        variants: [
+          { id: smallVariant.id, name: 'Small cup', price: 300, recipe_multiplier: 1.5 },
+          { id: doughVariant.id, name: 'Twelve inch', price: 700, inventory_product_id: 'prod-dough', inventory_deduction_quantity: 2, recipe_multiplier: 2, is_active: false },
+        ],
+      },
+    });
+    assert.equal(storedOnInactive.status, 200, 'a portion can be configured on a variant that is being deactivated');
+    assert.deepEqual(
+      db.prepare('SELECT is_active, recipe_multiplier FROM product_variants WHERE id = ?').get(doughVariant.id),
+      { is_active: 0, recipe_multiplier: 2 },
+      'the portion is stored on an inactive variant and has no effect yet',
+    );
+
+    // catalog.view is not enough to configure portions.
+    const cashierPortion = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: cashierAuthHeader,
+      body: { variants: [{ id: smallVariant.id, name: 'Small cup', price: 300, recipe_multiplier: 3 }] },
+    });
+    assert.equal(cashierPortion.status, 403, 'a cashier cannot configure variant portions');
+    assert.equal(
+      db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get(smallVariant.id).recipe_multiplier,
+      1.5,
+      'the refused catalog edit changes nothing',
+    );
+
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0, 'the catalog has no foreign-key violations');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

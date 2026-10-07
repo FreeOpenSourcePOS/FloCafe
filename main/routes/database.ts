@@ -174,6 +174,19 @@ router.post('/import', requirePermission('database.manage'),
       });
     }
 
+    const invalidRecipeMultiplierIndex = Array.isArray(importData.product_variants)
+      ? importData.product_variants.findIndex((variant) => variant?.recipe_multiplier !== undefined && (
+        typeof variant.recipe_multiplier !== 'number'
+        || !Number.isFinite(variant.recipe_multiplier)
+        || variant.recipe_multiplier <= 0
+      ))
+      : -1;
+    if (invalidRecipeMultiplierIndex >= 0) {
+      return res.status(400).json({
+        error: `product_variants[${invalidRecipeMultiplierIndex}].recipe_multiplier must be a positive finite number`,
+      });
+    }
+
     if (Array.isArray(importData.products) && importData.products.length > 0) {
       if (!Array.isArray(importData.inventory_movements)) {
         const legacyZeroStockImport = !importedTables.includes('inventory_movements')
@@ -306,7 +319,9 @@ router.post('/import', requirePermission('database.manage'),
 
         const currentCols = getTableColumns(db, tableName);
         // Validate and filter column names to prevent SQL injection
-        const importCols = Object.keys(rows[0]).filter(isSafeIdentifier);
+        const importCols = tableName === 'product_variants'
+          ? Array.from(new Set(rows.flatMap((row) => Object.keys(row).filter(isSafeIdentifier))))
+          : Object.keys(rows[0]).filter(isSafeIdentifier);
         // A normal export intentionally omits password/pin hashes. It must not
         // attempt to recreate users with a NULL required password.
         if (tableName === 'users' && !importCols.includes('password')) continue;
@@ -373,11 +388,7 @@ router.post('/import', requirePermission('database.manage'),
           continue;
         }
 
-        const colList = commonCols.join(', ');
-        const placeholders = commonCols.map(() => '?').join(', ');
-        const insertStmt = db.prepare(
-          `INSERT INTO ${tableName} (${colList}) VALUES (${placeholders})`
-        );
+        const insertStatements = new Map<string, ReturnType<typeof db.prepare>>();
         
         const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
         const tenantCountry = tenantCountryRow?.value || '';
@@ -402,7 +413,17 @@ router.post('/import', requirePermission('database.manage'),
             }
           }
 
-          insertStmt.run(...commonCols.map(col => row[col]));
+          const rowCols = tableName === 'product_variants'
+            ? commonCols.filter((column) => Object.prototype.hasOwnProperty.call(row, column))
+            : commonCols;
+          const rowColumnKey = rowCols.join(', ');
+          let insertStmt = insertStatements.get(rowColumnKey);
+          if (!insertStmt) {
+            const placeholders = rowCols.map(() => '?').join(', ');
+            insertStmt = db.prepare(`INSERT INTO ${tableName} (${rowColumnKey}) VALUES (${placeholders})`);
+            insertStatements.set(rowColumnKey, insertStmt);
+          }
+          insertStmt.run(rowCols.map((column) => row[column]));
         }
         
         console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);

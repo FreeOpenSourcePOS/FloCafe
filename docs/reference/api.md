@@ -183,16 +183,21 @@ Router: `main/routes/products.ts`. Full path: `/api/products`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/` | any authenticated role | query: `?category_id`, `?active`, `?search`, `?barcode`, `?low_stock` | Menu list. `?low_stock` returns only items at or below their threshold. |
+| `GET` | `/` | any authenticated role | query: `?category_id`, `?active`, `?search`, `?barcode`, `?low_stock` | Menu list. Variant objects include `recipe_multiplier`. `?low_stock` returns only items at or below their threshold. |
 | `GET` | `/:id/image` | any authenticated role | path: `id` | Product image bytes. Unauthenticated by design so `<img>` tags work; subject to SSRF and path-containment checks on the stored URL. |
-| `GET` | `/:id` | any authenticated role | path: `id` | Single product. |
+| `GET` | `/:id` | any authenticated role | path: `id` | Single product; variant objects include `recipe_multiplier`. |
 | `POST` | `/fetch-url` | `ROLE_ACCESS.ownerManager` | body: `url` | Body `url` is fetched server-side and stored as the product image. Subject to the SSRF blocklist. |
-| `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `category_id`, `name`, `sku`, `barcode`, `description`, `price`, `cost_price`, `sale_unit`, `allow_fractional_quantity`, `weight_precision`, `inventory_product_id`, `inventory_deduction_quantity`, `tax_category_id`, `tax_behavior`, `track_inventory`, `stock_quantity`, `low_stock_threshold`, `is_active`, `image_url`, `sort_order`, `cb_percent`, `tags`, `addon_group_ids`, `reason` | - |
-| `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `category_id`, `name`, `sku`, `barcode`, `description`, `price`, `cost_price`, `sale_unit`, `allow_fractional_quantity`, `weight_precision`, `inventory_product_id`, `inventory_deduction_quantity`, `tax_category_id`, `tax_behavior`, `track_inventory`, `stock_quantity`, `low_stock_threshold`, `is_active`, `image_url`, `sort_order`, `cb_percent`, `tags`, `addon_group_ids`, `reason` | - |
+| `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `category_id`, `name`, `sku`, `barcode`, `description`, `price`, `cost_price`, `sale_unit`, `allow_fractional_quantity`, `weight_precision`, `inventory_product_id`, `inventory_deduction_quantity`, `tax_category_id`, `tax_behavior`, `track_inventory`, `stock_quantity`, `low_stock_threshold`, `is_active`, `image_url`, `sort_order`, `cb_percent`, `tags`, `addon_group_ids`, `variants`, `reason` | - |
+| `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `category_id`, `name`, `sku`, `barcode`, `description`, `price`, `cost_price`, `sale_unit`, `allow_fractional_quantity`, `weight_precision`, `inventory_product_id`, `inventory_deduction_quantity`, `tax_category_id`, `tax_behavior`, `track_inventory`, `stock_quantity`, `low_stock_threshold`, `is_active`, `image_url`, `sort_order`, `cb_percent`, `tags`, `addon_group_ids`, `variants`, `reason` | - |
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `POST` | `/:id/stock` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `action`, `quantity`, `reason` | - |
 | `GET` | `/loyalty/global-rate-candidates` | `ROLE_ACCESS.ownerManager` | none | - |
 | `POST` | `/loyalty/apply-global-rate` | `ROLE_ACCESS.ownerManager` | none | Applies one cashback rate across products. |
+
+In product create/update requests, each `variants` entry may include a positive finite
+`recipe_multiplier`. If omitted, a new variant uses 1 and an existing variant keeps its stored
+value. Product reads return the field on each variant; see [product invariants](product-invariants.md#supplies-stock-and-recipe-depletion)
+for its recipe-depletion behavior.
 
 ### Recipes
 

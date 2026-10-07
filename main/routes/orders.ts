@@ -870,7 +870,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         subtotal += itemSubtotal;
 
         const itemCreatedAt = now();
-        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
+        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
         const insertItemResult = insertItem.run(
           orderId, product.id, variant ? variant.id : null, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null, deduction?.variantId ?? null,
@@ -1139,7 +1139,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         const itemTaxSnapshotJson = taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null;
 
         const itemCreatedAt = now();
-        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
+        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
         const insertItemResult = insertItem.run(
           req.params.id, product.id, variant ? variant.id : null, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null, deduction?.variantId ?? null,

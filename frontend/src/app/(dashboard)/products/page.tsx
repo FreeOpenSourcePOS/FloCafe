@@ -1077,7 +1077,7 @@ export default function ProductsPage() {
                     <button type="button" onClick={addVariantRow} className="text-xs text-brand hover:underline">{t('addButton')}</button>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-sm">
+                    <table className="w-full min-w-[820px] text-sm">
                       <thead>
                         <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                           <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
@@ -1086,6 +1086,7 @@ export default function ProductsPage() {
                           <th className="text-start py-1 pe-2">{t('fieldSku')}</th>
                           <th className="text-start py-1 pe-2">{t('fieldBarcode')}</th>
                           <th className="text-start py-1 pe-2">{t('columnStock')}</th>
+                          <th className="text-start py-1 pe-2">{t('variantRecipeMultiplier')}</th>
                           <th className="text-center py-1 pe-2">{tCommon('active')}</th>
                           <th aria-hidden="true" />
                         </tr>
@@ -1130,6 +1131,13 @@ export default function ProductsPage() {
                                 )}
                               </div>
                             </td>
+                            <td className="py-1 pe-2">
+                              <input type="number" min="0" step="any" inputMode="decimal" required
+                                value={row.recipe_multiplier} aria-label={t('variantRecipeMultiplier')}
+                                title={t('variantRecipeMultiplierHint')}
+                                onChange={(e) => updateVariantRow(idx, { recipe_multiplier: e.target.value })}
+                                className={VARIANT_CELL} />
+                            </td>
                             <td className="py-1 pe-2 text-center">
                               <input type="checkbox" checked={row.is_active} aria-label={tCommon('active')}
                                 onChange={(e) => toggleVariantActive(idx, e.target.checked)}
@@ -1159,6 +1167,7 @@ export default function ProductsPage() {
                       </tbody>
                     </table>
                   </div>
+                  <p className="text-xs text-muted-foreground">{t('variantRecipeMultiplierHint')}</p>
                 </div>
               )}
               {loyaltyEnabled && (

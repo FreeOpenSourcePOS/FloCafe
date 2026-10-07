@@ -5776,6 +5776,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 107,
+    name: 'add_variant_recipe_multiplier',
+    up: () => {
+      // Additive only: every existing variant consumes exactly one base recipe
+      // portion, which is what it did before the column existed. The multiplier
+      // scales ingredient depletion; it is not the linked-product stock factor.
+      if (!getColumns(db, 'product_variants').includes('recipe_multiplier')) {
+        db.exec('ALTER TABLE product_variants ADD COLUMN recipe_multiplier REAL NOT NULL DEFAULT 1 CHECK (recipe_multiplier > 0)');
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

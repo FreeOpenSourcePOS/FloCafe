@@ -10,10 +10,12 @@ export interface ProductVariant {
   track_inventory: number;
   inventory_product_id: string | null;
   inventory_deduction_quantity: number | null;
+  /** Portions of this product's own ingredient recipe the variant consumes. */
+  recipe_multiplier: number;
   is_active: number;
 }
 
-const VARIANT_COLUMNS = 'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, is_active';
+const VARIANT_COLUMNS = 'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, recipe_multiplier, is_active';
 
 export function loadProductVariant(db: ReturnType<typeof getDatabase>, variantId: string): ProductVariant | undefined {
   return db.prepare(`SELECT ${VARIANT_COLUMNS} FROM product_variants WHERE id = ?`).get(variantId) as ProductVariant | undefined;

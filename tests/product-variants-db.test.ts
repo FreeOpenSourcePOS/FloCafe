@@ -8,6 +8,12 @@
  * rewinding a populated database to the pre-v100 shape and replaying the
  * migration, which is the only way to show a pre-existing store keeps its
  * products and orders.
+ *
+ * The variant recipe-portion column is proven the same way: the migration is
+ * located by name, never by a version literal, and a populated store is rewound
+ * to the shape that predates it so an existing variant is shown keeping its
+ * price and stock while gaining the one-portion default, with a recorded order
+ * snapshot left byte-identical.
  */
 const Module = require('module');
 const originalLoad = Module._load;
@@ -193,6 +199,66 @@ function main() {
     'replaying the migration does not duplicate the barcode index',
   );
   console.log('   ✓ both new columns default to NULL and the migration is safe to replay');
+
+  // ── Variant recipe portions are additive and start at one ───────────────
+  const portionMigration = MIGRATIONS.find(
+    (migration: any) => migration.name === 'add_variant_recipe_multiplier',
+  );
+  assert.ok(portionMigration, 'the variant recipe-portion migration is registered');
+  assert.equal(
+    MIGRATIONS[MIGRATIONS.length - 1].name,
+    'add_variant_recipe_multiplier',
+    'the portion migration is the newest registry entry',
+  );
+  db.prepare(`INSERT INTO product_variants (id, product_id, name, price, stock_quantity, track_inventory, is_active, created_at, updated_at)
+    VALUES ('var-portion', 'latte', 'Half portion', 200, 4, 1, 1, ?, ?)`).run(stamp, stamp);
+  // A sale recorded before the migration: its scaled ingredients are history.
+  const historicalSnapshot = '{"recipe_id":"rcp_hist","components":[{"supply_id":"sup_hist","quantity":3.5,"base_unit":"kg"}]}';
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, recipe_snapshot, created_at, updated_at)
+    VALUES (1, 'latte', 'Latte', 250, 1, 250, 250, ?, ?, ?)`).run(historicalSnapshot, stamp, stamp);
+
+  // Rewind to the shape a store upgraded from the previous release has: the
+  // column is absent, the variant row and its stock are not.
+  db.exec('ALTER TABLE product_variants DROP COLUMN recipe_multiplier');
+  db.pragma(`user_version = ${portionMigration.version - 1}`);
+  assert.ok(
+    !columnsOf(db, 'product_variants').includes('recipe_multiplier'),
+    'the rewound database has no product_variants.recipe_multiplier',
+  );
+
+  portionMigration.up();
+  assert.ok(columnsOf(db, 'product_variants').includes('recipe_multiplier'), 'the migration adds recipe_multiplier');
+  const portionColumn = (db.prepare('PRAGMA table_info(product_variants)').all() as { name: string; notnull: number; dflt_value: string | null }[])
+    .find((column) => column.name === 'recipe_multiplier')!;
+  assert.equal(portionColumn.notnull, 1, 'the multiplier is NOT NULL so no variant can be portion-less by accident');
+  assert.equal(Number(portionColumn.dflt_value), 1, 'the multiplier defaults to one portion');
+  assert.deepEqual(
+    db.prepare("SELECT id, name, price, stock_quantity, track_inventory, recipe_multiplier FROM product_variants WHERE id = 'var-portion'").get(),
+    { id: 'var-portion', name: 'Half portion', price: 200, stock_quantity: 4, track_inventory: 1, recipe_multiplier: 1 },
+    'an existing variant keeps its identity, price and stock and gains the one-portion default',
+  );
+  assert.throws(
+    () => db.prepare("UPDATE product_variants SET recipe_multiplier = 0 WHERE id = 'var-portion'").run(),
+    'the storage boundary refuses a zero portion even for a direct write',
+  );
+  assert.equal(
+    db.prepare('SELECT recipe_snapshot FROM order_items WHERE recipe_snapshot IS NOT NULL').get().recipe_snapshot,
+    historicalSnapshot,
+    'the migration rewrites no historical recipe snapshot',
+  );
+  assert.throws(
+    () => db.prepare("UPDATE product_variants SET recipe_multiplier = -2 WHERE id = 'var-portion'").run(),
+    'the storage boundary refuses a negative portion even for a direct write',
+  );
+  portionMigration.up();
+  portionMigration.up();
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'product_variants'").get() as { count: number }).count,
+    1,
+    'replaying the portion migration does not duplicate the table',
+  );
+  assert.deepEqual(db.pragma('foreign_key_check'), [], 'the portion migration leaves no foreign-key violation');
+  console.log('   ✓ the portion column is additive, defaults to one, and refuses nonsense portions');
 
   // ── Cascade deletes, and the dormant variant_selection column is reused ──
   db.prepare(`INSERT INTO products (id, name, price, created_at, updated_at) VALUES ('pizza', 'Pizza', 500, ?, ?)`)

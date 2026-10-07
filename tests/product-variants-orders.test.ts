@@ -26,9 +26,10 @@ process.env.JWT_SECRET = 'test-secret-product-variants-orders';
 
 const assert = require('node:assert/strict');
 const {
-  initTestDb, createApp, startServer, seedOwnerUser, seedCategory, api, closeDatabase, now,
+  initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, api, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
+const { orderItemRoutes } = require('../main/routes/order-items');
 
 const stockOfVariant = (db: any, variantId: string) =>
   Number((db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get(variantId) as any).stock_quantity);
@@ -41,6 +42,8 @@ async function main() {
 
   const db = initTestDb();
   const owner = seedOwnerUser(db);
+  // Voiding a prepared item needs an owner/manager PIN, which the manager holds.
+  seedManagerUser(db);
   seedCategory(db, 'cat-var-orders', 'Variant orders');
 
   // A recipe base ingredient, and a product whose own stock is tracked so a
@@ -56,12 +59,12 @@ async function main() {
 
   const insertVariant = (db2: any, variant: Record<string, unknown>) => db2.prepare(`
     INSERT INTO product_variants (id, product_id, name, sku, price, online_price, track_inventory, stock_quantity,
-      inventory_product_id, inventory_deduction_quantity, is_active, created_at, updated_at)
+      inventory_product_id, inventory_deduction_quantity, recipe_multiplier, is_active, created_at, updated_at)
     VALUES (@id, @product_id, @name, @sku, @price, @online_price, @track_inventory, @stock_quantity,
-      @inventory_product_id, @inventory_deduction_quantity, @is_active, @created_at, @updated_at)
+      @inventory_product_id, @inventory_deduction_quantity, @recipe_multiplier, @is_active, @created_at, @updated_at)
   `).run({
     sku: null, online_price: null, track_inventory: 0, stock_quantity: 0,
-    inventory_product_id: null, inventory_deduction_quantity: 1, is_active: 1,
+    inventory_product_id: null, inventory_deduction_quantity: 1, recipe_multiplier: 1, is_active: 1,
     created_at: now(), updated_at: now(),
     ...variant,
   } as any);
@@ -73,7 +76,7 @@ async function main() {
   insertVariant(db, { id: 'var-sixteen', product_id: 'prod-pizza', name: 'Sixteen inch', price: 900, inventory_product_id: 'prod-dough', inventory_deduction_quantity: 2 });
   insertVariant(db, { id: 'var-pizza-retired', product_id: 'prod-pizza', name: 'Retired slice', price: 800, is_active: 0 });
 
-  const app = createApp({ '/api/orders': orderRoutes });
+  const app = createApp({ '/api/orders': orderRoutes, '/api/order-items': orderItemRoutes });
   // The prepaid checkout modal prices the cart through this endpoint before the
   // order exists, so the suite exercises the same handler main/routes mounts.
   app.post('/api/tax/preview', async (req: any, res: any) => {
@@ -307,6 +310,153 @@ async function main() {
       assert.equal(inactive.status, 400, 'a preview with an inactive variant is refused');
       const inactiveOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-cappuccino', variant_id: 'var-retired', quantity: 1 }] });
       assert.equal(inactive.data.error, inactiveOrder.data.error, 'both surfaces refuse an inactive variant identically');
+    }
+
+    // ── A variant's portion scales the product's own ingredient recipe ────
+    {
+      const { createSupply, getSupply } = require('../main/services/supplies');
+      const { saveRecipe } = require('../main/services/recipes');
+      const beans = createSupply(db, { name: 'Portion beans', baseUnit: 'g', stockQuantity: 2000, actorUserId: owner.userId });
+      const milk = createSupply(db, { name: 'Portion milk', baseUnit: 'ml', stockQuantity: 5000, actorUserId: owner.userId });
+      const stockOfSupply = (id: string) => Number(getSupply(db, id).stock_quantity);
+      const supplyMovements = (id: string, type: string) =>
+        (db.prepare('SELECT quantity_delta FROM supply_movements WHERE supply_id = ? AND movement_type = ? ORDER BY id')
+          .all(id, type) as any[]).map((movement) => movement.quantity_delta);
+      const componentOf = (item: any, supplyId: string) =>
+        JSON.parse(item.recipe_snapshot).components.find((component: any) => component.supply_id === supplyId).quantity;
+
+      db.prepare(`INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+        VALUES ('prod-portion', 'cat-var-orders', 'Cortado', 300, 0, 0, ?, ?)`).run(now(), now());
+      db.prepare(`INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+        VALUES ('prod-portion-plain', 'cat-var-orders', 'Plain portion', 300, 0, 0, ?, ?)`).run(now(), now());
+
+      insertVariant(db, { id: 'var-half', product_id: 'prod-portion', name: 'Half', price: 200, recipe_multiplier: 0.5 });
+      insertVariant(db, { id: 'var-whole', product_id: 'prod-portion', name: 'Whole', price: 300 });
+      insertVariant(db, { id: 'var-double', product_id: 'prod-portion', name: 'Double', price: 500, recipe_multiplier: 2 });
+      insertVariant(db, { id: 'var-plain-double', product_id: 'prod-portion-plain', name: 'Double', price: 500, recipe_multiplier: 2 });
+
+      saveRecipe(db, {
+        productId: 'prod-portion',
+        yieldQuantity: 1,
+        items: [
+          { supplyId: beans.id, quantity: 18, unit: 'g' },
+          { supplyId: milk.id, quantity: 200, unit: 'ml' },
+        ],
+      });
+      assert.equal(db.prepare('SELECT recipe_multiplier FROM product_variants WHERE id = ?').get('var-whole').recipe_multiplier, 1, 'a variant without a portion column value consumes one portion');
+
+      // Half portion, two ordered: half of the base recipe, twice over.
+      const beansBeforeHalf = stockOfSupply(beans.id);
+      const milkBeforeHalf = stockOfSupply(milk.id);
+      const halfOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-half', quantity: 2 }] });
+      assert.equal(halfOrder.status, 201, `a half-portion variant order is created (${JSON.stringify(halfOrder.data)})`);
+      const halfItem = itemOf(halfOrder.data.order.id);
+      assert.equal(componentOf(halfItem, beans.id), 18, 'a half portion depletes half of 18 g x 2');
+      assert.equal(componentOf(halfItem, milk.id), 200, 'the ml ingredient scales by the same portion');
+      assert.equal(stockOfSupply(beans.id), beansBeforeHalf - 18, 'half-portion bean stock follows the snapshot');
+      assert.equal(stockOfSupply(milk.id), milkBeforeHalf - 200, 'half-portion milk stock follows the snapshot');
+      assert.deepEqual(supplyMovements(beans.id, 'recipe_depletion'), [-18], 'one depletion movement carries the scaled amount');
+
+      // Double portion on the append path, which is the other authoritative writer.
+      const beansBeforeDouble = stockOfSupply(beans.id);
+      const doubleOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-plain', quantity: 1 }] });
+      const appended = await addItems(doubleOrder.data.order.id, [{ product_id: 'prod-portion', variant_id: 'var-double', quantity: 1 }]);
+      assert.equal(appended.status, 200, `a double-portion variant can be appended (${JSON.stringify(appended.data)})`);
+      const doubleItem = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND variant_id = 'var-double'").get(doubleOrder.data.order.id) as any;
+      assert.equal(componentOf(doubleItem, beans.id), 36, 'a double portion appended to an order depletes twice the base recipe');
+      assert.equal(stockOfSupply(beans.id), beansBeforeDouble - 36, 'appending depletes the supply once for the doubled amount');
+
+      // A whole portion is the untouched default.
+      const wholeOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-whole', quantity: 1 }] });
+      assert.equal(componentOf(itemOf(wholeOrder.data.order.id), beans.id), 18, 'a whole portion depletes exactly the base recipe');
+
+      // A later portion edit cannot rewrite what an order already recorded.
+      const beansBeforeEdit = stockOfSupply(beans.id);
+      db.prepare('UPDATE product_variants SET recipe_multiplier = 0.5 WHERE id = ?').run('var-double');
+      const cancelDouble = await api(baseUrl, `/api/orders/${doubleOrder.data.order.id}/items/${doubleItem.id}/cancel`, {
+        method: 'PATCH', headers: owner.authHeader, body: {},
+      });
+      assert.equal(cancelDouble.status, 200, 'a portion-variant item can be cancelled');
+      assert.equal(stockOfSupply(beans.id), beansBeforeEdit + 36, 'cancelling restores the snapshotted double portion, not the edited one');
+
+      const restoreDouble = await api(baseUrl, `/api/orders/${doubleOrder.data.order.id}/items/${doubleItem.id}/restore`, {
+        method: 'PATCH', headers: owner.authHeader, body: {},
+      });
+      assert.equal(restoreDouble.status, 200, 'a portion-variant item can be restored');
+      assert.equal(stockOfSupply(beans.id), beansBeforeEdit, 'restoring re-depletes the snapshotted amount');
+      db.prepare('UPDATE product_variants SET recipe_multiplier = 2 WHERE id = ?').run('var-double');
+
+      // Void after preparation is waste: the portion is not returned.
+      const voidOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-double', quantity: 1 }] });
+      const voidItem = itemOf(voidOrder.data.order.id);
+      await api(baseUrl, `/api/order-items/${voidItem.id}/status`, { method: 'PATCH', headers: owner.authHeader, body: { status: 'preparing' } });
+      const beansBeforeVoid = stockOfSupply(beans.id);
+      const voided = await api(baseUrl, `/api/orders/${voidOrder.data.order.id}/items/${voidItem.id}/cancel`, {
+        method: 'PATCH', headers: owner.authHeader, body: { override_pin: '1234' },
+      });
+      assert.equal(voided.status, 200, 'a prepared portion-variant item can be voided');
+      assert.equal(stockOfSupply(beans.id), beansBeforeVoid, 'voiding a prepared portion restores none of its ingredients');
+
+      // A portion on a product with no recipe has no effect, and does not block the sale.
+      const movementsBeforePlain = supplyMovements(beans.id, 'recipe_depletion').length;
+      const plainOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion-plain', variant_id: 'var-plain-double', quantity: 1 }] });
+      assert.equal(plainOrder.status, 201, 'a portion variant of a product without a recipe is still sellable');
+      assert.equal(itemOf(plainOrder.data.order.id).recipe_snapshot, null, 'a product without a recipe records no snapshot');
+      assert.equal(supplyMovements(beans.id, 'recipe_depletion').length, movementsBeforePlain, 'a portion without a recipe depletes nothing');
+
+      // An inactive recipe skips depletion whatever the portion says.
+      saveRecipe(db, { productId: 'prod-portion', yieldQuantity: 1, isActive: false, items: [{ supplyId: beans.id, quantity: 18, unit: 'g' }] });
+      const beansBeforeInactive = stockOfSupply(beans.id);
+      const inactiveOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-double', quantity: 1 }] });
+      assert.equal(inactiveOrder.status, 201, 'an inactive recipe does not block the sale');
+      assert.equal(stockOfSupply(beans.id), beansBeforeInactive, 'an inactive recipe depletes nothing for any portion');
+
+      // A non-unit yield still divides, with the portion applied on top.
+      saveRecipe(db, {
+        productId: 'prod-portion',
+        yieldQuantity: 4,
+        items: [{ supplyId: beans.id, quantity: 100, unit: 'g' }],
+      });
+      const beansBeforeYield = stockOfSupply(beans.id);
+      const yieldOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-double', quantity: 2 }] });
+      assert.equal(componentOf(itemOf(yieldOrder.data.order.id), beans.id), 100, 'a double portion of a 4-portion recipe follows base x qty x portion / yield');
+      assert.equal(stockOfSupply(beans.id), beansBeforeYield - 100, 'the yield-scaled portion reaches supply stock');
+
+      // Linked product stock and the ingredient portion are independent.
+      db.prepare(`INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+        VALUES ('prod-portion-linked', 'cat-var-orders', 'Linked portion', 300, 1, 20, ?, ?)`).run(now(), now());
+      insertVariant(db, {
+        id: 'var-linked-half', product_id: 'prod-portion-linked', name: 'Half linked', price: 300,
+        inventory_product_id: 'prod-dough', inventory_deduction_quantity: 2, recipe_multiplier: 0.5,
+      });
+      saveRecipe(db, { productId: 'prod-portion-linked', yieldQuantity: 1, items: [{ supplyId: beans.id, quantity: 60, unit: 'g' }] });
+      const doughBefore = stockOfProduct(db, 'prod-dough');
+      const beansBeforeLinked = stockOfSupply(beans.id);
+      const linkedOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion-linked', variant_id: 'var-linked-half', quantity: 3 }] });
+      assert.equal(linkedOrder.status, 201, 'a portioned variant with a linked stock factor is sellable');
+      assert.equal(stockOfProduct(db, 'prod-dough'), doughBefore - 6, 'the linked stock factor still moves its own pool');
+      assert.equal(stockOfSupply(beans.id), beansBeforeLinked - 90, 'the ingredient portion scales the product recipe independently');
+
+      // A negative balance is allowed: portion scaling must not gate order taking.
+      const scarce = createSupply(db, { name: 'Portion scarce', baseUnit: 'g', stockQuantity: 5, actorUserId: owner.userId });
+      db.prepare(`INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+        VALUES ('prod-portion-scarce', 'cat-var-orders', 'Scarce portion', 300, 0, 0, ?, ?)`).run(now(), now());
+      insertVariant(db, { id: 'var-scarce-double', product_id: 'prod-portion-scarce', name: 'Double', price: 500, recipe_multiplier: 2 });
+      saveRecipe(db, { productId: 'prod-portion-scarce', yieldQuantity: 1, items: [{ supplyId: scarce.id, quantity: 18, unit: 'g' }] });
+      const scarceOrder = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion-scarce', variant_id: 'var-scarce-double', quantity: 1 }] });
+      assert.equal(scarceOrder.status, 201, 'a portioned sale still goes through when the ingredient runs out');
+      assert.equal(stockOfSupply(scarce.id), 5 - 36, 'the scaled amount is deducted even past zero');
+
+      // A corrupt portion is refused and rolls the whole order back.
+      db.prepare('UPDATE product_variants SET recipe_multiplier = ? WHERE id = ?').run(Infinity, 'var-double');
+      const ordersBeforeInvalid = (db.prepare('SELECT COUNT(*) AS count FROM orders').get() as { count: number }).count;
+      const movementsBeforeInvalid = supplyMovements(beans.id, 'recipe_depletion').length;
+      const invalid = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-portion', variant_id: 'var-double', quantity: 1 }] });
+      assert.equal(invalid.status, 400, `a non-finite portion is refused rather than depleting a nonsense amount (${JSON.stringify(invalid.data)})`);
+      assert.match(String(invalid.data.error), /multiplier|finite/i, 'the refusal names the scaling problem');
+      assert.equal((db.prepare('SELECT COUNT(*) AS count FROM orders').get() as { count: number }).count, ordersBeforeInvalid, 'a refused portion leaves no order behind');
+      assert.equal(supplyMovements(beans.id, 'recipe_depletion').length, movementsBeforeInvalid, 'a refused portion depletes nothing');
+      db.prepare('UPDATE product_variants SET recipe_multiplier = 2 WHERE id = ?').run('var-double');
     }
 
     console.log('\n✅ Product variant order tests passed');

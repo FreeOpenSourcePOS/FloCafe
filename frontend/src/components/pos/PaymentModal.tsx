@@ -191,13 +191,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && (bill.split_group_id
       ? (!bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems))
       : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');
-  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !chargeStateUncertain;
+  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !applyingDiscount && !chargeStateUncertain;
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
   );
 
   const updateCharge = async (chargeId: string, change: { waived?: boolean; applied?: boolean }) => {
-    if (!canEditCharges || processing || updatingChargeId) return;
+    if (!canEditCharges || processing || applyingDiscount || updatingChargeId) return;
     setUpdatingChargeId(chargeId);
     setChargeStateUncertain(true);
     try {
@@ -461,7 +461,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
-    if (applyingDiscount) return;
+    if (applyingDiscount || processing || updatingChargeId || chargeStateUncertain) return;
     const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
       toast.error(t('discountInvalid'));
@@ -551,7 +551,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const handlePay = async () => {
-    if (processing || updatingChargeId || chargeStateUncertain) return;
+    if (processing || applyingDiscount || updatingChargeId || chargeStateUncertain) return;
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -947,7 +947,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 )}
                 <Button
                   onClick={() => handleApplyDiscount()}
-                  disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
+                  disabled={processing || applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   {applyingDiscount
@@ -955,7 +955,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
                 </Button>
                 {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" className="w-full" onClick={async () => {
+                  <Button variant="outline" className="w-full" disabled={processing || applyingDiscount} onClick={async () => {
                     if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
                   }}>
                     {t('remove')}
@@ -1220,7 +1220,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   {t('splitCheck')}
                 </Button>
               )}
-              <Button onClick={handlePay} disabled={processing || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
+              <Button onClick={handlePay} disabled={processing || applyingDiscount || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
                 {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
               </Button>
             </>

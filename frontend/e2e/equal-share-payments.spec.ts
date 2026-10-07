@@ -617,6 +617,86 @@ test.describe('equal share payments', () => {
     }
   });
 
+  test('discount and payment balance changes cannot overlap', async ({ page, request }) => {
+    const settingsResponse = await request.get(`${BASE}/api/settings/discount`, { headers: managerHeaders });
+    expect(settingsResponse.ok()).toBeTruthy();
+    const settingsBefore = (await settingsResponse.json()) as DiscountSettings;
+    const writeDiscount = (mode: string) => request.put(`${BASE}/api/settings/discount`, {
+      headers: managerHeaders,
+      data: { ...settingsBefore, discount_mode: mode, discount_requires_approval: false, discount_max_percentage: 100 },
+    });
+    const order = await createCheck(request, fixture.productId, 'Equal share concurrent discount', 2);
+    const discountPath = `/api/orders/${order.id}/discount`;
+    let discountRequests = 0;
+
+    try {
+      expect((await writeDiscount('percentage')).status()).toBe(200);
+      await login(page);
+      await openOrderCheckout(page, order.order_number);
+      await openEqualShare(page);
+      await setPayers(page, '2');
+      await applyShareTo(page, 'Cash');
+
+      const discountValue = page.getByRole('spinbutton', { name: '0', exact: true });
+      await page.getByRole('button', { name: 'Apply Discount' }).click();
+      await discountValue.fill('10');
+      page.on('request', (browserRequest) => {
+        if (browserRequest.method() === 'PATCH' && new URL(browserRequest.url()).pathname === discountPath) discountRequests += 1;
+      });
+
+      let releaseDiscount = () => {};
+      let signalDiscount = () => {};
+      const discountIntercepted = new Promise<void>((resolve) => { signalDiscount = resolve; });
+      await page.route(`**${discountPath}`, async (route) => {
+        await new Promise<void>((resolve) => {
+          releaseDiscount = resolve;
+          signalDiscount();
+        });
+        await route.continue();
+      });
+      const pendingDiscount = page.getByRole('button', { name: 'Apply Discount' }).last().click();
+      try {
+        await discountIntercepted;
+        await expect(page.getByRole('button', { name: /^Pay / })).toBeDisabled();
+      } finally {
+        releaseDiscount();
+      }
+      await pendingDiscount;
+      await page.unroute(`**${discountPath}`);
+      await expect(page.getByText('Discount updated')).toBeVisible();
+      await expect(page.getByText('The balance changed. Review and apply the share again.')).toBeVisible();
+
+      await applyShareTo(page, 'Cash');
+      expect(await tenderAmount(page, 'Cash')).toBe('45');
+      await discountValue.fill('20');
+
+      let releasePayment = () => {};
+      let signalPayment = () => {};
+      const paymentIntercepted = new Promise<void>((resolve) => { signalPayment = resolve; });
+      await page.route('**/api/bills/*/payments', async (route) => {
+        await new Promise<void>((resolve) => {
+          releasePayment = resolve;
+          signalPayment();
+        });
+        await route.continue();
+      });
+      const pendingPayment = submitPayment(page);
+      try {
+        await paymentIntercepted;
+        await expect(page.getByRole('button', { name: 'Update Discount' })).toBeDisabled();
+      } finally {
+        releasePayment();
+      }
+
+      const payment = await pendingPayment;
+      expect(payment.payments).toEqual([{ method: 'cash', amount: 45 }]);
+      expect(minorAmount(payment.body.bill!.balance)).toBe(45);
+      expect(discountRequests).toBe(1);
+    } finally {
+      await writeDiscount(settingsBefore.discount_mode);
+    }
+  });
+
   test('an earlier partial payment leaves only the remaining balance to split', async ({ page, request }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share after partial payment', 3);
     await login(page);

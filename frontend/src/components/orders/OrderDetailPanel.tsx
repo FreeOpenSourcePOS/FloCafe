@@ -52,6 +52,7 @@ export interface OrderDetailPanelProps {
   linkingCustomer?: boolean;
   onBack?: () => void;
   onCheckout: (orderId: number) => void;
+  onPayBill?: (bill: Bill) => void;
   onAddItems: (order: Order) => void;
   onRefund: (order: Order, bills: Bill[]) => void;
   onConvertToTakeaway: (order: Order) => void;
@@ -91,6 +92,7 @@ function OrderDetailContent({
   linkCustomerResults,
   linkingCustomer,
   onCheckout,
+  onPayBill,
   onAddItems,
   onRefund,
   onConvertToTakeaway,
@@ -138,6 +140,9 @@ function OrderDetailContent({
   const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
 
   const orderBills = order.bills && order.bills.length > 0 ? order.bills : bill ? [bill] : [];
+  const splitBills = orderBills.filter((candidate) => Boolean(candidate.split_group_id));
+  const canPaySplitBill = (candidate: Bill) => candidate.payment_status === 'unpaid' || candidate.payment_status === 'partial';
+  const hasUnpaidSplitBills = splitBills.some(canPaySplitBill);
   const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
   const hasEligibleRefund = paidBills.length > 0;
 
@@ -616,6 +621,36 @@ function OrderDetailContent({
           <div className="w-full py-2 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5 min-h-[40px]">
             <Info size={14} className="shrink-0 text-muted-foreground" />
             <span>{tOrders('noFurtherActions')}</span>
+          </div>
+        ) : hasUnpaidSplitBills ? (
+          <div className="space-y-2">
+            {splitBills.map((splitBill) => (
+              <div key={splitBill.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {splitBill.split_label || `#${splitBill.bill_number}`}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmt(Number(splitBill.payment_status === 'paid' ? splitBill.total : splitBill.balance))} · {splitBill.payment_status === 'paid' ? tOrders('paid') : tOrders('balance')}
+                  </p>
+                </div>
+                {canPaySplitBill(splitBill) && onPayBill && (
+                  <Button size="sm" onClick={() => onPayBill({ ...splitBill, order })} className="h-9 shrink-0">
+                    {tPos('pay')}
+                  </Button>
+                )}
+              </div>
+            ))}
+            {canRefund && hasEligibleRefund && (
+              <Button
+                variant="outline"
+                onClick={() => onRefund(order, paidBills)}
+                className="w-full h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+              >
+                <RotateCcw size={15} className="me-1.5 text-muted-foreground" />
+                {tOrders('refundButton')}
+              </Button>
+            )}
           </div>
         ) : isPaid || order.status === 'completed' ? (
           <div className="flex items-center gap-2">

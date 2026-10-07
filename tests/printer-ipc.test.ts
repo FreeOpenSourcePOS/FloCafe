@@ -9,6 +9,39 @@ const registered = new Map<string, (...args: any[]) => any>();
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-printer-ipc-'));
 const { buildBillDocument, buildKotDocument } = require('../shared/print/document');
 
+// Offscreen PDF export builds a hidden BrowserWindow and asks it to print. A
+// recording stand-in lets the suite assert the surface it is handed, the page
+// size it asks for, and the window teardown, without a real Chromium renderer.
+let saveDialogResult: any = { canceled: true };
+let lastSaveDialogOptions: any = null;
+let printToPdfFailure: Error | null = null;
+const pdfWindows: any[] = [];
+
+class RecordingWindow {
+  options: any;
+  destroyed = false;
+  loadedUrl: string | null = null;
+  pdfOptions: any = null;
+  webContents: any;
+
+  constructor(options: any = {}) {
+    this.options = options;
+    this.webContents = {
+      printToPDF: async (printOptions: any) => {
+        this.pdfOptions = printOptions;
+        if (printToPdfFailure) throw printToPdfFailure;
+        return Buffer.from('%PDF-1.4 recorded');
+      },
+    };
+    pdfWindows.push(this);
+  }
+
+  async loadURL(url: string): Promise<void> { this.loadedUrl = url; }
+  isDestroyed(): boolean { return this.destroyed; }
+  destroy(): void { this.destroyed = true; }
+  static fromWebContents(): null { return null; }
+}
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
@@ -19,7 +52,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         },
       },
       dialog: {
-        showSaveDialog: async () => ({ canceled: true }),
+        showSaveDialog: async (options: any) => {
+          lastSaveDialogOptions = options;
+          return saveDialogResult;
+        },
         showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
         showMessageBox: async () => ({ response: 1 }),
       },
@@ -29,7 +65,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         getVersion: () => 'test',
         getName: () => 'FloCafe',
       },
-      BrowserWindow: class {},
+      BrowserWindow: RecordingWindow,
     };
   }
   if (request === './middleware/security') {
@@ -102,6 +138,78 @@ async function run(): Promise<void> {
       profileId: 'profile',
       options: { columns: 100000000, language: 'en', locale: 'en-US', useUnicode: false, arabicShaping: false },
     }), { ok: false, error: 'Invalid raster KOT options' }, 'KOT raster IPC rejects oversized column counts');
+    // Saves the renderer-built menu as a PDF without a printer attached.
+    const saveHtmlAsPdf = registered.get('save-html-as-pdf');
+    assert.ok(saveHtmlAsPdf, 'save-html-as-pdf IPC handler is registered');
+
+    assert.deepEqual(
+      await saveHtmlAsPdf!({ sender: { getURL: () => 'https://example.com/' } }, { html: '<html></html>' }),
+      { error: 'Unauthorized sender' },
+      'PDF export refuses a sender that is not the local POS renderer',
+    );
+
+    for (const payload of [null, 'html', 42, {}, { html: '' }, { html: 42 }]) {
+      assert.deepEqual(
+        await saveHtmlAsPdf!(trustedSender, payload),
+        { success: false, error: 'Invalid PDF request' },
+        `PDF export rejects ${JSON.stringify(payload)}`,
+      );
+    }
+
+    assert.deepEqual(
+      await saveHtmlAsPdf!(trustedSender, { html: `<p>${'x'.repeat(2_000_001)}</p>` }),
+      { success: false, error: 'Document too large to export' },
+      'PDF export refuses a document over the size cap',
+    );
+
+    saveDialogResult = { canceled: true };
+    assert.deepEqual(
+      await saveHtmlAsPdf!(trustedSender, { html: '<html><body>Menu</body></html>' }),
+      { success: false, canceled: true },
+      'a cancelled save reports cancellation rather than failure',
+    );
+    assert.equal(pdfWindows.length, 0, 'a cancelled save never opens an offscreen window');
+
+    const pdfPath = path.join(testDir, 'menu.pdf');
+    saveDialogResult = { canceled: false, filePath: pdfPath };
+    assert.deepEqual(
+      await saveHtmlAsPdf!(trustedSender, { html: '<html><body>Menu</body></html>', defaultFileName: 'menu', pageSize: 'Letter' }),
+      { success: true, path: pdfPath },
+      'an accepted save reports the written path',
+    );
+    assert.equal(fs.readFileSync(pdfPath, 'utf8'), '%PDF-1.4 recorded', 'the rendered PDF bytes land in the chosen file');
+    assert.equal(pdfWindows.length, 1, 'exactly one offscreen window renders the document');
+    const pdfWindow = pdfWindows[0];
+    assert.equal(pdfWindow.options.show, false, 'the PDF window is never shown');
+    assert.deepEqual(
+      pdfWindow.options.webPreferences,
+      { contextIsolation: true, nodeIntegration: false, sandbox: true, javascript: false },
+      'the PDF window is isolated and runs no scripts',
+    );
+    assert.ok(String(pdfWindow.loadedUrl).startsWith('data:text/html'), 'the document is loaded as inline HTML rather than a file path');
+    assert.deepEqual(pdfWindow.pdfOptions, { printBackground: true, pageSize: 'Letter' }, 'the requested page size reaches the print call');
+    assert.equal(pdfWindow.destroyed, true, 'the offscreen window is destroyed after export');
+    assert.deepEqual(lastSaveDialogOptions.filters, [{ name: 'PDF', extensions: ['pdf'] }], 'the save dialog offers PDF files');
+    assert.equal(path.basename(lastSaveDialogOptions.defaultPath), 'menu.pdf', 'a suggested name without an extension gets one');
+    assert.equal(path.dirname(lastSaveDialogOptions.defaultPath), testDir, 'the save dialog opens in the documents folder');
+
+    saveDialogResult = { canceled: false, filePath: path.join(testDir, 'menu-a4.pdf') };
+    await saveHtmlAsPdf!(trustedSender, { html: '<html></html>', defaultFileName: '../escape:name', pageSize: 'A5' });
+    assert.equal(pdfWindows[1].pdfOptions.pageSize, 'A4', 'an unsupported page size falls back to A4');
+    assert.equal(path.basename(lastSaveDialogOptions.defaultPath), '..-escape-name.pdf', 'a directory separator in the suggested name is neutralised');
+    assert.equal(path.dirname(lastSaveDialogOptions.defaultPath), testDir, 'the suggested name cannot steer the save outside the documents folder');
+
+    printToPdfFailure = new Error('render surface crashed');
+    saveDialogResult = { canceled: false, filePath: path.join(testDir, 'menu-failed.pdf') };
+    assert.deepEqual(
+      await saveHtmlAsPdf!(trustedSender, { html: '<html></html>' }),
+      { success: false, error: 'render surface crashed' },
+      'a render failure is reported to the renderer',
+    );
+    assert.equal(pdfWindows[2].destroyed, true, 'the offscreen window is destroyed even when rendering fails');
+    assert.equal(fs.existsSync(path.join(testDir, 'menu-failed.pdf')), false, 'a failed render writes no file');
+    printToPdfFailure = null;
+
     console.log('Electron printer IPC surface matches the live SQLite schema.');
   } finally {
     closeDatabase();

@@ -43,6 +43,13 @@ export interface ElectronAPI {
 
   // Printers. Writing one goes through the permission-gated HTTP route.
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
+  /** Renders print HTML to a PDF file the user picks in a native save dialog. */
+  saveHtmlAsPdf?: (request: { html: string; defaultFileName?: string; pageSize?: 'A4' | 'Letter' }) => Promise<{
+    success: boolean;
+    path?: string;
+    canceled?: boolean;
+    error?: string;
+  }>;
   rasterizePrintDocument: (request: unknown) => Promise<{
     ok: boolean;
     data?: Uint8Array;

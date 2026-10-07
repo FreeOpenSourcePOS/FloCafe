@@ -179,6 +179,39 @@ async function main() {
   assert(filtered.movements.every((m: any) => m.movement_type === 'receive'), 'type filter works');
   assertEqual(filtered.movements.length, 2, 'two receive movements recorded');
 
+  // search filters server-side across supply name, reason, and actor
+  const bySupplyName = listSupplyMovements(db, { search: 'coffee' });
+  assertEqual(bySupplyName.movements.length, 7, 'search matches the supply name case-insensitively');
+  assert(bySupplyName.movements.every((m: any) => m.supply_id === coffee.id), 'search by supply name excludes other supplies');
+  const byReason = listSupplyMovements(db, { search: 'Delivery' });
+  assertEqual(byReason.movements.length, 1, 'search matches the reason');
+  assertEqual(byReason.movements[0].reason, 'Delivery', 'search returns the reason-matched movement');
+  assertEqual(listSupplyMovements(db, { search: 'spilled' }).movements.length, 1, 'search is case-insensitive');
+  const allMovements = listSupplyMovements(db, { perPage: 100 }).movements;
+  assertEqual(allMovements.length, 11, 'all recorded movements are listed');
+  const byActor = listSupplyMovements(db, { search: 'test owner', perPage: 100 });
+  assertEqual(byActor.movements.length, allMovements.length, 'search matches the actor name across all supplies');
+  assertEqual(listSupplyMovements(db, { search: 'nothing-here' }).movements.length, 0, 'search with no match returns an empty page');
+  const searchedPage = listSupplyMovements(db, { search: 'coffee', perPage: 3 });
+  assertEqual(searchedPage.movements.length, 3, 'search respects the page size');
+  assert(searchedPage.nextCursor !== null, 'search keeps the cursor for the next page');
+  const searchedOlder = listSupplyMovements(db, { search: 'coffee', beforeId: searchedPage.nextCursor, perPage: 100 });
+  assert(searchedOlder.movements.every((m: any) => m.supply_id === coffee.id), 'search cursor page stays on the filtered set');
+
+  const wildcardSupply = createSupply(db, {
+    name: 'Mix 100%_salt!', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
+  });
+  const wildcardLookalikeSupply = createSupply(db, {
+    name: 'Mix 1000Xsalt', baseUnit: 'kg', stockQuantity: 1, actorUserId: actor,
+  });
+  for (const search of ['100%', '_salt', '!']) {
+    const matches = listSupplyMovements(db, { search });
+    assertEqual(matches.movements.length, 1, `search treats ${search} as literal text`);
+    assertEqual(matches.movements[0].supply_id, wildcardSupply.id, `search ${search} excludes wildcard matches`);
+  }
+  softDeleteSupply(db, wildcardSupply.id);
+  softDeleteSupply(db, wildcardLookalikeSupply.id);
+
   // ── Soft delete ──
   softDeleteSupply(db, cups.id);
   expectServiceError(() => getSupply(db, cups.id), 404, 'soft-deleted supply is not found');

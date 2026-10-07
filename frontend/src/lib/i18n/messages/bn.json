@@ -154,7 +154,9 @@
     "yes": "হ্যাঁ",
     "back": "ব্যাক",
     "tax": "কর",
-    "loadMore": "আরো লোড"
+    "loadMore": "আরো লোড",
+    "clear": "মুছুন",
+    "noResults": "কোনো মিল পাওয়া যায়নি"
   },
   "countries": {
     "selectCountry": "দেশ নির্বাচন করুন..."
@@ -868,7 +870,8 @@
     "removeCharge": "সরান",
     "chargesTotal": "মোট ফি",
     "chargeUpdateFailed": "ফি আপডেট করা যায়নি",
-    "tagHalal": "হালাল"
+    "tagHalal": "হালাল",
+    "partialPaymentConfirm": "এখন {amount} নিন? {remaining} বাকি থাকবে।"
   },
   "printTest": {
     "amt": "এএমটি",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "CSV আপলোড করুন",
     "printMenu": "মেনু প্রিন্ট করুন",
     "printMenuDescription": "মুদ্রিত মেনুতে কোন পণ্য থাকবে তা বেছে নিন।",
+    "printDestination": "প্রিন্টের গন্তব্য",
+    "printToReceipt": "রসিদ প্রিন্টার",
+    "printToPaper": "কাগজ (A4 / Letter)",
+    "printToPdf": "PDF হিসেবে সংরক্ষণ করুন",
     "includeInactiveItems": "নিষ্ক্রিয় পণ্য অন্তর্ভুক্ত করুন",
     "includeOutOfStockItems": "স্টক-শেষ পণ্য অন্তর্ভুক্ত করুন",
     "includeHiddenItems": "লুকানো পণ্য অন্তর্ভুক্ত করুন",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "অনলাইন দাম",
     "variantRowInvalid": "প্রতিটি ভ্যারিয়েন্টের নাম ও দাম প্রয়োজন।",
     "variantToggle": "এই পণ্যের ভ্যারিয়েন্ট আছে (যেমন: সাইজ, ক্রাস্ট, ফ্লেভার)",
+    "variantsSection": "ভ্যারিয়েন্ট",
     "variantDeactivateConfirm": "এই ভ্যারিয়েন্টটি সংরক্ষণের সময় নিষ্ক্রিয় হবে এবং এই স্ক্রিন থেকে ফিরিয়ে আনা যাবে না।",
     "variantRemoveAllConfirm": "এটি বন্ধ করলে এই পণ্যের সব ভ্যারিয়েন্ট নিষ্ক্রিয় হয়ে যাবে। পুরোনো অর্ডারে সেগুলো থাকবে।"
   },

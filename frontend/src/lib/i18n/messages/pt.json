@@ -154,7 +154,9 @@
     "windowControls": "Controles da janela",
     "yes": "Sim",
     "back": "Voltar",
-    "loadMore": "Carregar mais"
+    "loadMore": "Carregar mais",
+    "clear": "Limpar",
+    "noResults": "Nenhum resultado correspondente"
   },
   "countries": {
     "selectCountry": "Selecionar país…"
@@ -868,7 +870,8 @@
     "removeCharge": "Remover",
     "chargesTotal": "Total das taxas",
     "chargeUpdateFailed": "Não foi possível atualizar a taxa",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Receber {amount} agora? {remaining} continuará em aberto."
   },
   "printTest": {
     "amt": "Total",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "Enviar CSV",
     "printMenu": "Imprimir menu",
     "printMenuDescription": "Escolha quais produtos incluir no menu impresso.",
+    "printDestination": "Destino de impressão",
+    "printToReceipt": "Impressora de recibos",
+    "printToPaper": "Papel (A4 / Carta)",
+    "printToPdf": "Salvar como PDF",
     "includeInactiveItems": "Incluir produtos inativos",
     "includeOutOfStockItems": "Incluir produtos sem estoque",
     "includeHiddenItems": "Incluir produtos ocultos",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "Preço online",
     "variantRowInvalid": "Cada variante precisa de um nome e um preço.",
     "variantToggle": "Este produto tem variantes (ex.: tamanho, massa, sabor)",
+    "variantsSection": "Variantes",
     "variantDeactivateConfirm": "Esta variante será desativada ao salvar e não poderá ser restaurada a partir desta tela.",
     "variantRemoveAllConfirm": "Ao desligar, todas as variantes deste produto serão desativadas. Os pedidos anteriores as mantêm."
   },

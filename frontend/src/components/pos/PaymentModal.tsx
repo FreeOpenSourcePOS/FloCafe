@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown } from 'lucide-react';
+import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import type { Bill } from '@/lib/types';
+import type { Bill, Order } from '@/lib/types';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
+import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import { resolveTaxComponents } from '@/lib/printer/tax-components';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -40,6 +41,8 @@ interface Props {
   onClose: () => void;
   onPaid: () => void;
   onBillUpdate?: (bill: Bill) => void;
+  /** Runs after the check is split; the bill being paid no longer exists on its own. */
+  onSplit?: () => void;
 }
 
 interface Payment {
@@ -61,7 +64,7 @@ const BUILT_IN_PAYMENT_KEYS = {
   card: 'methodCard',
 } as const satisfies Record<'cash' | 'card', PosKey>;
 
-export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid, onBillUpdate }: Props) {
+export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid, onBillUpdate, onSplit }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
@@ -136,6 +139,9 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
   const [updatingChargeId, setUpdatingChargeId] = useState<string | null>(null);
+  const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
+  const [splitCheckOrder, setSplitCheckOrder] = useState<Order | null>(null);
+  const [openingSplitCheck, setOpeningSplitCheck] = useState(false);
   const [chargeStateUncertain, setChargeStateUncertain] = useState(false);
   useEffect(() => {
     void loadCharges();
@@ -150,6 +156,20 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && Number(bill.paid_amount || 0) === 0
     && bill.payment_status !== 'refunded'
     && bill.payment_status !== 'partially_refunded';
+  const splitCheckItems = (bill.order?.items || []).filter(
+    (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
+  );
+  const hasDivisibleSplitCheckItems = splitCheckItems.length > 0
+    && splitCheckItems.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
+    && splitCheckItems.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
+  // Split checks divide an untouched dine-in bill into separately payable
+  // checks; the backend refuses anything else (POST /bills/:id/split-check).
+  const canSplitCheck = splitChecksEnabled
+    && hasDivisibleSplitCheckItems
+    && bill.order?.type === 'dine_in'
+    && bill.payment_status === 'unpaid'
+    && Number(bill.paid_amount || 0) === 0
+    && !bill.split_group_id;
   const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !chargeStateUncertain;
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
@@ -216,6 +236,12 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
       }));
     }
   }
+
+  useEffect(() => {
+    api.get('/settings/split_checks_enabled')
+      .then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true'))
+      .catch(() => setSplitChecksEnabled(false));
+  }, []);
 
   useEffect(() => {
     const custId = bill.customer_id || cartCustomerId;
@@ -376,6 +402,25 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     }
   };
 
+  const handleOpenSplitCheck = async () => {
+    if (openingSplitCheck) return;
+    setOpeningSplitCheck(true);
+    try {
+      const { data } = await api.get(`/orders/${bill.order_id}`);
+      setSplitCheckOrder(data.order as Order);
+    } catch {
+      toast.error(t('splitCheckFailed'));
+    } finally {
+      setOpeningSplitCheck(false);
+    }
+  };
+
+  const handleSplitComplete = () => {
+    setSplitCheckOrder(null);
+    if (onSplit) onSplit();
+    else onClose();
+  };
+
   const handlePay = async () => {
     if (processing || updatingChargeId || chargeStateUncertain) return;
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
@@ -399,9 +444,16 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
       toast.error(t('paymentAboveBalance'));
       return;
     }
+    // A short tender is a deliberate choice: the backend records what was
+    // collected and leaves the rest as the bill's outstanding balance.
     if (totalPaymentMinor < remainingMinor) {
-      toast.error(t('paymentBelowBalance'));
-      return;
+      const collected = totalPaymentMinor / minorFactor;
+      const stillDue = (remainingMinor - totalPaymentMinor) / minorFactor;
+      const proceed = await confirm(
+        t('partialPaymentConfirm', { amount: currencyFmt(collected), remaining: currencyFmt(stillDue) }),
+        { confirmLabel: t('pay') },
+      );
+      if (!proceed) return;
     }
     // Validate wallet amount against available balance (convert currency to points for comparison)
     if (walletAmt > 0 && walletBalance !== null) {
@@ -442,10 +494,14 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         // This request committed a partial payment, so the next attempt is a
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
-        if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
-        toast.error(t('paymentIncomplete', {
-          amount: currencyFmt(Number(updatedBill?.balance) || 0),
-        }));
+        if (updatedBill && onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
+        if (updatedBill?.payment_status === 'partial') {
+          toast.success(t('paymentRecorded'));
+        } else {
+          toast.error(t('paymentIncomplete', {
+            amount: currencyFmt(Number(updatedBill?.balance) || 0),
+          }));
+        }
         return;
       }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
@@ -925,12 +981,34 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               </Button>
             </>
           ) : (
-            <Button onClick={handlePay} disabled={processing || Boolean(updatingChargeId) || chargeStateUncertain || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
-              {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
-            </Button>
+            <>
+              {canSplitCheck && (
+                <Button
+                  variant="outline"
+                  onClick={handleOpenSplitCheck}
+                  disabled={openingSplitCheck || processing}
+                  className="w-full"
+                  size="lg"
+                >
+                  <Users size={16} className="me-2" />
+                  {t('splitCheck')}
+                </Button>
+              )}
+              <Button onClick={handlePay} disabled={processing || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
+                {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
+              </Button>
+            </>
           )}
         </div>
       </div>
+      {splitCheckOrder && (
+        <SplitCheckModal
+          bill={bill}
+          order={splitCheckOrder}
+          onClose={() => setSplitCheckOrder(null)}
+          onSplit={handleSplitComplete}
+        />
+      )}
       {ConfirmDialog}
     </div>
   );

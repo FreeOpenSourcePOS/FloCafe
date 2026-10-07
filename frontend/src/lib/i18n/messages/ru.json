@@ -154,7 +154,9 @@
     "windowControls": "Элементы управления окнами",
     "yes": "Да",
     "back": "Назад",
-    "loadMore": "Загрузить еще"
+    "loadMore": "Загрузить еще",
+    "clear": "Очистить",
+    "noResults": "Нет совпадающих результатов"
   },
   "countries": {
     "selectCountry": "Выбрать страну…"
@@ -868,7 +870,8 @@
     "removeCharge": "Убрать",
     "chargesTotal": "Итого сборы",
     "chargeUpdateFailed": "Не удалось обновить сбор",
-    "tagHalal": "Халяль"
+    "tagHalal": "Халяль",
+    "partialPaymentConfirm": "Принять {amount} сейчас? {remaining} останется к оплате."
   },
   "printTest": {
     "amt": "Сумма",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "Загрузить CSV",
     "printMenu": "Печать меню",
     "printMenuDescription": "Выберите товары для печатного меню.",
+    "printDestination": "Назначение печати",
+    "printToReceipt": "Принтер чеков",
+    "printToPaper": "Бумага (A4 / Letter)",
+    "printToPdf": "Сохранить в PDF",
     "includeInactiveItems": "Включить неактивные товары",
     "includeOutOfStockItems": "Включить товары без остатка",
     "includeHiddenItems": "Включить скрытые товары",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "Цена онлайн",
     "variantRowInvalid": "У каждого варианта должны быть название и цена.",
     "variantToggle": "У этого товара есть варианты (например, размер, начинка, вкус)",
+    "variantsSection": "Варианты",
     "variantDeactivateConfirm": "Этот вариант будет отключён при сохранении, и восстановить его с этого экрана нельзя.",
     "variantRemoveAllConfirm": "Если выключить, будут отключены все варианты этого товара. В прежних заказах они сохранятся."
   },

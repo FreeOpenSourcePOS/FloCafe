@@ -154,7 +154,9 @@
     "yes": "ใช่",
     "back": "ย้อนกลับ",
     "tax": "ภาษี",
-    "loadMore": "โหลดเพิ่มเติม"
+    "loadMore": "โหลดเพิ่มเติม",
+    "clear": "ล้าง",
+    "noResults": "ไม่พบผลลัพธ์ที่ตรงกัน"
   },
   "countries": {
     "selectCountry": "เลือกประเทศ…"
@@ -868,7 +870,8 @@
     "removeCharge": "นำออก",
     "chargesTotal": "ค่าธรรมเนียมรวม",
     "chargeUpdateFailed": "ไม่สามารถอัปเดตค่าธรรมเนียมได้",
-    "tagHalal": "ฮาลาล"
+    "tagHalal": "ฮาลาล",
+    "partialPaymentConfirm": "เก็บ {amount} ตอนนี้หรือไม่? {remaining} จะยังค้างชำระ"
   },
   "printTest": {
     "amt": "จำนวนเงิน",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "อัปโหลด CSV",
     "printMenu": "พิมพ์เมนู",
     "printMenuDescription": "เลือกสินค้าที่ต้องการรวมไว้ในเมนูที่พิมพ์",
+    "printDestination": "ปลายทางการพิมพ์",
+    "printToReceipt": "เครื่องพิมพ์ใบเสร็จ",
+    "printToPaper": "กระดาษ (A4 / Letter)",
+    "printToPdf": "บันทึกเป็น PDF",
     "includeInactiveItems": "รวมสินค้าที่ไม่ใช้งาน",
     "includeOutOfStockItems": "รวมสินค้าที่หมดสต็อก",
     "includeHiddenItems": "รวมสินค้าที่ซ่อนอยู่",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "ราคาออนไลน์",
     "variantRowInvalid": "ทุกตัวเลือกต้องมีชื่อและราคา",
     "variantToggle": "สินค้านี้มีตัวเลือก (เช่น ขนาด แป้ง รสชาติ)",
+    "variantsSection": "ตัวเลือก",
     "variantDeactivateConfirm": "ตัวเลือกนี้จะถูกปิดใช้งานเมื่อบันทึก และกู้คืนจากหน้าจอนี้ไม่ได้",
     "variantRemoveAllConfirm": "การปิดตัวนี้จะปิดใช้งานตัวเลือกทั้งหมดของสินค้านี้ คำสั่งซื้อเดิมจะยังคงอยู่"
   },

@@ -80,7 +80,7 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getApplicationMenu', 'getBetaChannel', 'getKdsInfo',
     'getLogTail', 'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openApplicationMenu', 'openKdsWindow', 'openWhatsAppShare', 'pickRestoreFile', 'platform', 'reportRendererError', 'restartAndInstall',
-    'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'setBetaChannel', 'setSetting', 'setThemeEffective',
+    'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'saveHtmlAsPdf', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());
 
@@ -106,6 +106,7 @@ async function run(): Promise<void> {
   await call('getPrinters');
   await call('rasterizePrintDocument', { document: {}, template: 'classic', profileId: 'profile', options: {} });
   await call('rasterizeKotDocument', { document: kotDocument, profileId: 'profile', options: {} });
+  await call('saveHtmlAsPdf', { html: '<html></html>', defaultFileName: 'menu.pdf', pageSize: 'A4' });
   await call('getBetaChannel');
   await call('setBetaChannel', true);
   await call('windowReady', { epoch: 1 });
@@ -147,6 +148,7 @@ async function run(): Promise<void> {
     { channel: 'get-printers', args: [] },
     { channel: 'rasterize-print-document', args: [{ document: {}, template: 'classic', profileId: 'profile', options: {} }] },
     { channel: 'rasterize-kot-document', args: [{ document: kotDocument, profileId: 'profile', options: {} }] },
+    { channel: 'save-html-as-pdf', args: [{ html: '<html></html>', defaultFileName: 'menu.pdf', pageSize: 'A4' }] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
     { channel: 'window-ready', args: [{ epoch: 1, documentNonce }] },

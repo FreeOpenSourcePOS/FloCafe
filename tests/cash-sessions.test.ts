@@ -180,7 +180,8 @@ async function main() {
     assert(typeof closure?.z_number === 'number', 'session closure carries a Z number');
     const after = await request(app).get('/api/cash-sessions/current')
       .set('Authorization', `Bearer ${cashierToken}`);
-    assert(after.status === 404, 'no current session after close (404)');
+    assert(after.status === 200, 'no current session after close (200)');
+    assert(after.body === null, 'current returns null when no shift is open');
   }
 
   // ── Section 3: enforcement (default off) ──────────────────────────────

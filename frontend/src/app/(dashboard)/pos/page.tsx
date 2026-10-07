@@ -1311,6 +1311,7 @@ export default function POSPage() {
           onClose={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); }}
           onPaid={handlePaymentComplete}
           onBillUpdate={(updated) => setPaymentBill(updated)}
+          onSplit={() => { setPaymentBill(null); setCheckoutOverridePin(undefined); refreshTables(); }}
         />
       )}
 

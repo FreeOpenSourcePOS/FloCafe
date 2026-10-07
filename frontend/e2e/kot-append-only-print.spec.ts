@@ -823,7 +823,8 @@ test('Orders keeps its bill print confirmation when the post-generation list ref
     const generation = page.waitForResponse((response) => response.request().method() === 'POST'
       && new URL(response.url()).pathname === '/api/bills/generate');
     const listRefresh = page.waitForResponse((response) => response.request().method() === 'GET'
-      && new URL(response.url()).pathname === '/api/orders');
+      && new URL(response.url()).pathname === '/api/orders'
+      && response.status() === 503);
     await printButton.click();
     const generationResponse = await generation;
     expect(generationResponse.ok()).toBeTruthy();

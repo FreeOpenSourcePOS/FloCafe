@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import {
   buildVariantsPayload,
@@ -146,6 +147,7 @@ export default function ProductsPage() {
     image_url: null as string | null,
   });
   const [imageTouched, setImageTouched] = useState(false);
+  const [search, setSearch] = useState('');
 
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [showPrintMenuModal, setShowPrintMenuModal] = useState(false);
@@ -673,6 +675,31 @@ export default function ProductsPage() {
     setAddonList((prev) => prev.map((a, i) => (i === idx ? { ...a, stock_quantity: value, stock_edited: true } : a)));
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
+  // One search box filters whichever list the active tab shows; every list is
+  // already fully loaded, so the filter never stops at a first page.
+  const normalizedSearch = search.trim().toLowerCase();
+  const matchesSearch = (fields: Array<string | null | undefined>) =>
+    fields.some((field) => typeof field === 'string' && field.toLowerCase().includes(normalizedSearch));
+  const visibleProducts = normalizedSearch === ''
+    ? products
+    : products.filter((product) => matchesSearch([
+        product.name,
+        product.sku,
+        product.barcode,
+        product.category?.name,
+        categories.find((c) => String(c.id) === String(product.category_id || product.category?.id))?.name,
+      ]));
+  const visibleCategories = normalizedSearch === ''
+    ? categories
+    : categories.filter((category) => matchesSearch([category.name, category.description]));
+  const visibleAddonGroups = normalizedSearch === ''
+    ? addonGroups
+    : addonGroups.filter((group) => matchesSearch([
+        group.name,
+        group.description,
+        ...(group.addons || []).map((addon) => addon.name),
+      ]));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -683,26 +710,47 @@ export default function ProductsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+        <div className="relative w-full sm:max-w-xs">
+          <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={tCommon('search')}
+            aria-label={tCommon('search')}
+            className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+          />
+          {search !== '' && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label={tCommon('clear')}
+              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex gap-1 mb-6 border-b">
-        <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-          <Package size={16} /> {t('tabProducts')}
-        </button>
-        <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-          <Folder size={16} /> {t('tabCategories')}
-        </button>
-        {isRestaurant && (
-          <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-            <Puzzle size={16} /> {t('tabAddonGroups')}
-          </button>
-        )}
-      </div>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
+        <TabsList className="mb-6">
+          <TabsTrigger value="products">
+            <Package size={16} /> {t('tabProducts')}
+          </TabsTrigger>
+          <TabsTrigger value="categories">
+            <Folder size={16} /> {t('tabCategories')}
+          </TabsTrigger>
+          {isRestaurant && (
+            <TabsTrigger value="addons">
+              <Puzzle size={16} /> {t('tabAddonGroups')}
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-      {activeTab === 'products' && (
-        <>
+        <TabsContent value="products">
           <div className="flex justify-end gap-2 mb-4">
             {isOwnerOrManager && taxCategories.length > 0 && (
               <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
@@ -737,7 +785,7 @@ export default function ProductsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {products.map((product) => {
+            {visibleProducts.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
               const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
@@ -860,21 +908,23 @@ export default function ProductsPage() {
             })}
           </tbody>
         </table>
-        {products.length === 0 && (
-          <p className="text-center text-muted-foreground py-12">{t('empty')}</p>
+        {visibleProducts.length === 0 && (
+          <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('empty') : tCommon('noResults')}</p>
         )}
       </div>
 
       {/* Product Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+          <div className="bg-card rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
               <h2 className="text-lg font-bold">{editingProduct ? t('editProductTitle') : t('addProductTitle')}</h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
-              <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Wide two-column layout: the full-width variant editor and the
+                  grid rows keep every control inside the popup. */}
+              <form id="product-form" onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-x-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -1021,12 +1071,13 @@ export default function ProductsPage() {
                 <span className="text-sm text-foreground">{t('variantToggle')}</span>
               </label>
               {form.has_variants && (
-                <div className="space-y-2">
-                  <div className="flex justify-end">
+                <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4 lg:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-foreground">{t('variantsSection')}</span>
                     <button type="button" onClick={addVariantRow} className="text-xs text-brand hover:underline">{t('addButton')}</button>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="w-full min-w-[720px] text-sm">
                       <thead>
                         <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                           <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
@@ -1282,19 +1333,20 @@ export default function ProductsPage() {
                   </div>
                 </div>
               )}
-              <Button type="submit" className="w-full">
+              </form>
+            </div>
+            <div className="flex shrink-0 justify-end gap-3 border-t border-border p-4">
+              <Button type="button" variant="outline" onClick={resetForm}>{tCommon('cancel')}</Button>
+              <Button type="submit" form="product-form">
                 {editingProduct ? t('updateProduct') : t('createProduct')}
               </Button>
-            </form>
             </div>
           </div>
         </div>
       )}
-        </>
-      )}
+        </TabsContent>
 
-      {activeTab === 'categories' && (
-        <>
+        <TabsContent value="categories">
           <div className="flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
@@ -1315,7 +1367,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {categories.map((cat) => {
+                {visibleCategories.map((cat) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
                     <tr key={cat.id} className="hover:bg-muted">
@@ -1352,7 +1404,7 @@ export default function ProductsPage() {
                 })}
               </tbody>
             </table>
-            {categories.length === 0 && <p className="text-center text-muted-foreground py-12">{t('categoryEmpty')}</p>}
+            {visibleCategories.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('categoryEmpty') : tCommon('noResults')}</p>}
           </div>
 
           {showForm && (
@@ -1415,11 +1467,9 @@ export default function ProductsPage() {
               </div>
             </div>
           )}
-        </>
-      )}
+        </TabsContent>
 
-      {activeTab === 'addons' && isRestaurant && (
-        <>
+        <TabsContent value="addons">
           <div className="flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('addons')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
@@ -1440,7 +1490,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {addonGroups.map((group) => (
+                {visibleAddonGroups.map((group) => (
                   <tr key={group.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">{group.name}</td>
                     <td className="p-4 text-center">
@@ -1462,7 +1512,7 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
-            {addonGroups.length === 0 && <p className="text-center text-muted-foreground py-12">{t('addonEmpty')}</p>}
+            {visibleAddonGroups.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('addonEmpty') : tCommon('noResults')}</p>}
           </div>
 
           {showAddonModal && (
@@ -1550,8 +1600,8 @@ export default function ProductsPage() {
               </div>
             </div>
           )}
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
 
       {showBulkTaxModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

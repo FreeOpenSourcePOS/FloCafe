@@ -154,7 +154,9 @@
     "yes": "Oo",
     "back": "Bumalik",
     "tax": "Buwis",
-    "loadMore": "Mag-load pa"
+    "loadMore": "Mag-load pa",
+    "clear": "I-clear",
+    "noResults": "Walang tugmang resulta"
   },
   "countries": {
     "selectCountry": "Pumili ng Bansa"
@@ -868,7 +870,8 @@
     "removeCharge": "Alisin",
     "chargesTotal": "Kabuuang bayarin",
     "chargeUpdateFailed": "Hindi ma-update ang bayarin",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Kunin ang {amount} ngayon? Mananatiling babayaran ang {remaining}."
   },
   "printTest": {
     "amt": "Halaga",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "Mag-upload ng CSV",
     "printMenu": "I-print ang Menu",
     "printMenuDescription": "Piliin kung aling mga produkto ang isasama sa naka-print na menu.",
+    "printDestination": "Destinasyon ng pag-print",
+    "printToReceipt": "Printer ng resibo",
+    "printToPaper": "Papel (A4 / Letter)",
+    "printToPdf": "I-save bilang PDF",
     "includeInactiveItems": "Isama ang mga hindi aktibong produkto",
     "includeOutOfStockItems": "Isama ang mga ubos na produkto",
     "includeHiddenItems": "Isama ang mga nakatagong produkto",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "Presyo online",
     "variantRowInvalid": "Kailangan ng bawat variant ng pangalan at presyo.",
     "variantToggle": "May mga variant ang produktong ito (hal. Sukat, Crust, Flavor)",
+    "variantsSection": "Mga variant",
     "variantDeactivateConfirm": "I-deactivate ang variant na ito kapag nai-save at hindi ito maibabalik mula sa screen na ito.",
     "variantRemoveAllConfirm": "Kapag pinatay ito, made-deactivate ang lahat ng variant ng produktong ito. Nananatili ang dating mga order."
   },

@@ -61,7 +61,9 @@ test('real preload, renderer, and main boundaries reach an authenticated dashboa
   expect(runtime.titleBarMode).toBe('native-overlay');
   expect(runtime.titleBarEpoch).toBeGreaterThan(0);
   expect(runtime.titleBarDocumentNonce).toMatch(/^[0-9a-f-]{36}$/i);
-  expect(runtime.focusedAttribute).toBe('true');
+  if (!harness.hiddenWindow) {
+    expect(runtime.focusedAttribute).toBe('true');
+  }
   expect(runtime.desktopAttribute).toBe('true');
   expect(runtime.appInfo).toMatchObject({ name: 'flo-desktop', platform: process.platform });
   expect(runtime.updateStatus.status).toBeTruthy();
@@ -71,6 +73,9 @@ test('real preload, renderer, and main boundaries reach an authenticated dashboa
 
 test('POS topbar fullscreen toggle stays synchronized with native window state', async () => {
   test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native maximize state is not observable');
+  // Maximizing a hidden window surfaces it, so this native-state test only
+  // runs in the opt-in visible-window mode.
+  test.skip(harness.hiddenWindow, 'Run with FLO_E2E_SHOW_WINDOW=1 for native maximize coverage');
   await harness.authenticateDashboard();
 
   const readNativeWindowState = async () => harness.app.evaluate(({ BrowserWindow }) => {
@@ -141,6 +146,7 @@ test('POS topbar fullscreen toggle stays synchronized with native window state',
 test('native window lifecycle is observable through the Electron boundary', async () => {
   test.skip(!['darwin', 'win32', 'linux'].includes(process.platform), 'FloCafe native window lifecycle is unsupported on this platform');
   test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native minimize/restore is not observable');
+  test.skip(harness.hiddenWindow, 'Run with FLO_E2E_SHOW_WINDOW=1 for native minimize/restore coverage');
   await harness.app.evaluate(({ app, BrowserWindow }) => {
     app.focus({ steal: true });
     const window = BrowserWindow.getAllWindows()[0];

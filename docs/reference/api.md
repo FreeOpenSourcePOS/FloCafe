@@ -213,7 +213,7 @@ Router: `main/routes/supplies.ts`. Full path: `/api/supplies`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.ownerManager` | query: `?include_inactive`, `?low_stock`, `?search` | Supply list. `?low_stock` and `?include_inactive` narrow it. |
 | `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `name`, `base_unit`, `stock_quantity`, `low_stock_threshold`, `is_active` | - |
-| `GET` | `/movements` | `ROLE_ACCESS.ownerManager` | query: `?supply_id`, `?movement_type`, `?before_id`, `?per_page` | Supply movement ledger, newest first; `?before_id` pages backwards. |
+| `GET` | `/movements` | `ROLE_ACCESS.ownerManager` | query: `?supply_id`, `?movement_type`, `?search`, `?before_id`, `?per_page` | Supply movement ledger, newest first; `?search` matches the supply name, reason, or actor across the whole ledger; `?before_id` pages backwards. |
 | `GET` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `name`, `is_active`, `low_stock_threshold` | - |
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
@@ -424,7 +424,7 @@ Router: `main/routes/printers.ts`. Full path: `/api/printers`.
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `POST` | `/:id/set-default` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `POST` | `/:id/test` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `rasterProbe` | - |
-| `POST` | `/print-menu` | `catalog.view` and `printing.execute` | body: boolean `includeInactive`, `includeOutOfStock`, `includeHidden`, `includeDescriptions`, `includeModifiers`; optional `paperWidth` (`58` or `80`) | `200` physical-print success, or `webusb: true` with byte array for browser delivery; `400` invalid input or `printer_not_configured`, `409` missing regional configuration, `422` empty selection, `502` print failure. Uses the configured default printer across connection types. |
+| `POST` | `/print-menu` | `catalog.view` and `printing.execute` | body: boolean `includeInactive`, `includeOutOfStock`, `includeHidden`, `includeDescriptions`, `includeModifiers`; optional `paperWidth` (`58` or `80`) and `printerId` | `200` physical-print success, or `webusb: true` with byte array for browser delivery; `400` invalid input or `printer_not_configured`, `404` unknown `printerId` (`printer_not_found`), `409` missing regional configuration, `422` empty selection, `502` print failure. Prints to `printerId` when given, otherwise to the configured default, across connection types. |
 | `POST` | `/print-bill` | `ROLE_ACCESS.sales` | body: `billId`, `orderId`, `isReprint`, `preview`, `useUnicode`, `arabicShaping` | Body `billId` or `orderId`, plus `isReprint`, `preview`, `useUnicode`, `arabicShaping`. `preview` returns the rendered payload without sending it to the device. |
 | `POST` | `/print-kot` | `ROLE_ACCESS.sales` | body: `orderId`, `stationName`, `items`, `useUnicode`, `arabicShaping` | Body `orderId`, optional `stationName` and `items`, plus `useUnicode` and `arabicShaping`. |
 | `GET` | `/delivery-slip-payment/:orderId` | `printing.execute` | path: `orderId` | `200` with optional `payment` fields `status`, `amount`, `amountDue`, `formattedAmount`, `formattedAmountDue`, `method`, `methods`, and `expectedMethod` (the order's expected collection method, absent when unknown); `404` if the order does not exist. Uses the order total when no bill exists, otherwise the latest bill or all same-order bills in that bill's split group and their stored balances. |

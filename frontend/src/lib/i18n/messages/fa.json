@@ -154,7 +154,9 @@
     "yes": "بله",
     "back": "بازگشت",
     "tax": "مالیات",
-    "loadMore": "بارگذاری بیشتر"
+    "loadMore": "بارگذاری بیشتر",
+    "clear": "پاک کردن",
+    "noResults": "نتیجه مطابقی یافت نشد"
   },
   "countries": {
     "selectCountry": "کشور را برگزینید…"
@@ -868,7 +870,8 @@
     "removeCharge": "حذف",
     "chargesTotal": "جمع کل هزینه‌ها",
     "chargeUpdateFailed": "به‌روزرسانی هزینه ممکن نشد",
-    "tagHalal": "حلال"
+    "tagHalal": "حلال",
+    "partialPaymentConfirm": "اکنون {amount} دریافت شود؟ {remaining} همچنان بدهی می‌ماند."
   },
   "printTest": {
     "amt": "مبلغ",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "بارگذاری CSV",
     "printMenu": "چاپ منو",
     "printMenuDescription": "انتخاب کنید کدام کالاها در منوی چاپی باشند.",
+    "printDestination": "مقصد چاپ",
+    "printToReceipt": "چاپگر رسید",
+    "printToPaper": "کاغذ (A4 / Letter)",
+    "printToPdf": "ذخیره به‌صورت PDF",
     "includeInactiveItems": "شامل کردن کالاهای غیرفعال",
     "includeOutOfStockItems": "شامل کردن کالاهای ناموجود",
     "includeHiddenItems": "شامل کردن کالاهای پنهان",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "قیمت آنلاین",
     "variantRowInvalid": "هر گزینه به نام و قیمت نیاز دارد.",
     "variantToggle": "این محصول گزینه‌هایی دارد (مانند: اندازه، خمیر، طعم)",
+    "variantsSection": "گونه‌ها",
     "variantDeactivateConfirm": "این گزینه هنگام ذخیره غیرفعال می‌شود و از این صفحه قابل بازگردانی نیست.",
     "variantRemoveAllConfirm": "با خاموش کردن این، همه گزینه‌های این محصول غیرفعال می‌شوند. سفارش‌های قبلی آن‌ها را نگه می‌دارند."
   },

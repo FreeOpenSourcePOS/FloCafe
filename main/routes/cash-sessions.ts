@@ -226,7 +226,9 @@ router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res
   try {
     const db = getDatabase();
     const session = getOpenSession(db);
-    if (!session) return res.status(404).json({ error: 'No open shift' });
+    // Documented contract (docs/reference/api.md): 200 with `null` when no
+    // shift is open. A 404 here logged a failed request on every POS mount.
+    if (!session) return res.json(null);
     // Single timestamp for the whole snapshot: now() has second granularity,
     // so two evaluations could straddle a second boundary and disagree.
     // Lightweight path: the snapshot only needs expected cash, none of the

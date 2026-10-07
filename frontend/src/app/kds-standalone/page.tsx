@@ -9,18 +9,21 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import { useEffect, useMemo, useState } from 'react';
 
-// Check whether KDS is disabled (endpoint returns 404) without locking out network errors.
-function useKdsDisabledCheck(baseUrl: string): boolean {
-  const [disabled, setDisabled] = useState(false);
+// The standalone server hides this endpoint with 404 while KDS is disabled.
+function useKdsEnabledCheck(baseUrl: string): boolean | null {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     let cancelled = false;
     fetch(`${baseUrl}/api/kds/info`, { cache: 'no-store' })
-      .then((res) => { if (!cancelled && res.status === 404) setDisabled(true); })
-      .catch(() => {});
+      .then((res) => {
+        if (cancelled) return;
+        setEnabled(res.status === 404 ? false : res.ok ? true : null);
+      })
+      .catch(() => { if (!cancelled) setEnabled(null); });
     return () => { cancelled = true; };
   }, [baseUrl]);
-  return disabled;
+  return enabled;
 }
 
 // Standalone axios client — points at this KDS server's origin (e.g. :3002),
@@ -61,12 +64,22 @@ export default function KdsStandalonePage() {
     orders: '/api/kds/orders',
     itemStatus: '/api/kds/items/:itemId/status',
   };
-  const conn = useKdsConnection(api ? { api, endpoints: standaloneEndpoints } : { api: axios.create() });
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const { kdsDefaultView } = useServerKdsInfo(origin);
-  const kdsDisabled = useKdsDisabledCheck(origin);
+  const kdsEnabled = useKdsEnabledCheck(origin);
+  const conn = useKdsConnection(api
+    ? { api, endpoints: standaloneEndpoints, enabled: kdsEnabled === true }
+    : { api: axios.create(), enabled: false });
 
-  if (kdsDisabled) {
+  if (kdsEnabled === null) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (kdsEnabled === false) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-background text-foreground">
         <h1 className="text-lg font-semibold">{t('disabledTitle')}</h1>

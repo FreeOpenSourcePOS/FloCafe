@@ -154,7 +154,9 @@
     "windowControls": "視窗控制",
     "yes": "是",
     "back": "返回",
-    "loadMore": "載入更多"
+    "loadMore": "載入更多",
+    "clear": "清除",
+    "noResults": "沒有相符的結果"
   },
   "countries": {
     "selectCountry": "選擇國家/地區…"
@@ -868,7 +870,8 @@
     "removeCharge": "移除",
     "chargesTotal": "費用合計",
     "chargeUpdateFailed": "無法更新費用",
-    "tagHalal": "清真"
+    "tagHalal": "清真",
+    "partialPaymentConfirm": "現在收取 {amount}？{remaining} 將仍為欠款。"
   },
   "printTest": {
     "amt": "金額",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "上傳 CSV",
     "printMenu": "列印菜單",
     "printMenuDescription": "選擇要列入列印菜單的商品。",
+    "printDestination": "列印目的地",
+    "printToReceipt": "收據印表機",
+    "printToPaper": "紙張（A4 / Letter）",
+    "printToPdf": "儲存為 PDF",
     "includeInactiveItems": "包含未啟用的商品",
     "includeOutOfStockItems": "包含缺貨商品",
     "includeHiddenItems": "包含隱藏商品",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "線上價格",
     "variantRowInvalid": "每個變體都需要名稱與價格。",
     "variantToggle": "此商品有變體（例如：尺寸、餅底、口味）",
+    "variantsSection": "變體",
     "variantDeactivateConfirm": "該變體儲存後將被停用，且無法在此頁面還原。",
     "variantRemoveAllConfirm": "關閉後將停用該商品的所有變體，歷史訂單仍會保留。"
   },

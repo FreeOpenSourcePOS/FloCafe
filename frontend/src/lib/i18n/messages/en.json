@@ -154,7 +154,9 @@
     "yes": "Yes",
     "back": "Back",
     "tax": "Tax",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "clear": "Clear",
+    "noResults": "No matching results"
   },
   "countries": {
     "selectCountry": "Select country…"
@@ -868,7 +870,8 @@
     "removeCharge": "Remove",
     "chargesTotal": "Charges total",
     "chargeUpdateFailed": "Could not update the charge",
-    "tagHalal": "Halal"
+    "tagHalal": "Halal",
+    "partialPaymentConfirm": "Collect {amount} now? {remaining} will still be due."
   },
   "printTest": {
     "amt": "Amt",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "Upload CSV",
     "printMenu": "Print Menu",
     "printMenuDescription": "Configure items to include on the printed menu roll.",
+    "printDestination": "Print destination",
+    "printToReceipt": "Receipt printer",
+    "printToPaper": "Paper (A4 / Letter)",
+    "printToPdf": "Save as PDF",
     "includeInactiveItems": "Include inactive items",
     "includeOutOfStockItems": "Include out-of-stock items",
     "includeHiddenItems": "Include hidden items",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "Online Price",
     "variantRowInvalid": "Every variant needs a name and a price.",
     "variantToggle": "This product has variants (e.g. Size, Crust, Flavor)",
+    "variantsSection": "Variants",
     "variantDeactivateConfirm": "This variant is deactivated on save and cannot be restored from this screen.",
     "variantRemoveAllConfirm": "Turning this off deactivates every variant of this product. Historical orders keep them."
   },

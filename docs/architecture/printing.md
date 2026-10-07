@@ -266,9 +266,13 @@ KOT path applies it, so an item that has left the kitchen does not reappear on a
 ## Menu catalog printing
 
 Products and POS expose a filtered menu print dialog with optional descriptions and effective
-add-on groups. `main/printers/document-menu.ts` builds the thermal menu; `printMenuDocument` uses
-the profile-owned raster path for unsupported text. Physical-print failures can fall back to
-`frontend/src/lib/printer/menu-web-print.ts` with the selected A4 or Letter page size.
+add-on groups. The dialog can send ESC/POS to a selected receipt printer and roll width, open the
+system print dialog for A4 or Letter paper, or save a structured PDF. In Electron, the PDF uses the
+`save-html-as-pdf` IPC capability; in a browser it uses the system print dialog's Save as PDF
+option. `main/printers/document-menu.ts` builds the thermal menu; `printMenuDocument` uses the
+profile-owned raster path for unsupported text. A failed receipt print can fall back to
+`frontend/src/lib/printer/menu-web-print.ts` with the selected A4 or Letter page size. Operator
+steps are in the [printer setup guide](../printers.md#menu-printing).
 
 ## Raster printing
 

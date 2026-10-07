@@ -145,6 +145,12 @@ test('real Electron flips the renderer palette when the owner toggles Dark in Se
 });
 
 test('real System mode follows nativeTheme.themeSource through the renderer matchMedia listener', async () => {
+  // macOS only delivers prefers-color-scheme updates to a window that has been
+  // shown; measured with the harness's hidden default, the main process sees
+  // themeSource/shouldUseDarkColors change while the renderer's media query
+  // never leaves light. System mode therefore needs a real window.
+  test.skip(harness.hiddenWindow, 'Run with FLO_E2E_SHOW_WINDOW=1 for OS theme propagation');
+
   // The Settings page is still mounted from test 1 — switch back to System.
   await clickThemeRadio('System');
 

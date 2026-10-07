@@ -66,8 +66,8 @@ does not preserve the nesting the export emits elsewhere.
 
 IPC is a narrow native surface, not a second data plane. The renderer reaches native capability
 through `main/preload.ts`, which exposes a `contextBridge` object. The window set is small: window
-controls, window state, opening the KDS window, update status, database initialization, and the
-theme handshake.
+controls, window state, opening the KDS window, update status, database initialization, the theme
+handshake, and native PDF export.
 
 The main window is created with `contextIsolation: true`, `nodeIntegration: false`, and
 `sandbox: false`. `sandbox: false` is a deliberate choice recorded in

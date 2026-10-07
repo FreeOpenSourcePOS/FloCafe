@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   rasterizePrintDocument: (request: unknown) => ipcRenderer.invoke('rasterize-print-document', request),
   rasterizeKotDocument: (request: unknown) => ipcRenderer.invoke('rasterize-kot-document', request),
+  saveHtmlAsPdf: (request: unknown) => ipcRenderer.invoke('save-html-as-pdf', request),
 
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   getBetaChannel: () => ipcRenderer.invoke('updates:get-beta-channel'),

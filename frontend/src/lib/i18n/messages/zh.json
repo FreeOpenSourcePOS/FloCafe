@@ -154,7 +154,9 @@
     "windowControls": "窗口控制",
     "yes": "是",
     "back": "返回",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "clear": "清除",
+    "noResults": "没有匹配的结果"
   },
   "countries": {
     "selectCountry": "选择国家/地区…"
@@ -868,7 +870,8 @@
     "removeCharge": "移除",
     "chargesTotal": "费用合计",
     "chargeUpdateFailed": "无法更新费用",
-    "tagHalal": "清真"
+    "tagHalal": "清真",
+    "partialPaymentConfirm": "现在收取 {amount}？{remaining} 仍将欠款。"
   },
   "printTest": {
     "amt": "金额",
@@ -1221,6 +1224,10 @@
     "uploadCsv": "上传 CSV",
     "printMenu": "打印菜单",
     "printMenuDescription": "选择要列入打印菜单的商品。",
+    "printDestination": "打印目标",
+    "printToReceipt": "小票打印机",
+    "printToPaper": "纸张（A4 / Letter）",
+    "printToPdf": "保存为 PDF",
     "includeInactiveItems": "包含未启用的商品",
     "includeOutOfStockItems": "包含缺货商品",
     "includeHiddenItems": "包含隐藏商品",
@@ -1237,6 +1244,7 @@
     "variantOnlinePrice": "在线价格",
     "variantRowInvalid": "每个变体都需要名称和价格。",
     "variantToggle": "此商品有变体（例如：尺寸、饼底、口味）",
+    "variantsSection": "变体",
     "variantDeactivateConfirm": "该变体保存后将被停用，且无法在此页面恢复。",
     "variantRemoveAllConfirm": "关闭后将停用该商品的所有变体，历史订单仍会保留。"
   },

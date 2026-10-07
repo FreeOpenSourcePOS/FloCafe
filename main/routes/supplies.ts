@@ -70,6 +70,7 @@ router.get('/movements', requirePermission('supplies.manage'), (req: Request, re
     if (movementType && !ALL_MOVEMENT_TYPES.includes(movementType)) {
       return res.status(400).json({ error: 'movement_type is invalid' });
     }
+    const search = queryString(req.query.search, 'search');
     const rawBeforeId = req.query.before_id;
     const beforeId = rawBeforeId === undefined
       ? undefined
@@ -83,7 +84,7 @@ router.get('/movements', requirePermission('supplies.manage'), (req: Request, re
       ? Math.min(requestedPerPage, 500)
       : 50;
 
-    const page = listSupplyMovements(getDatabase(), { supplyId, movementType, beforeId, perPage });
+    const page = listSupplyMovements(getDatabase(), { supplyId, movementType, search, beforeId, perPage });
     res.json({
       movements: page.movements,
       ...(page.nextCursor !== null && { nextCursor: page.nextCursor }),

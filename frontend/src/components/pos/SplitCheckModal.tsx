@@ -11,8 +11,10 @@ import type { Bill, Order, OrderItem } from '@/lib/types';
 
 type SplitMode = 'table' | 'guest';
 
-const MIN_CHECKS = 2;
-const MAX_CHECKS = 20;
+// Bounds shared with the equal-share payer count: both divide one check into a
+// small, bounded number of parts.
+export const MIN_CHECKS = 2;
+export const MAX_CHECKS = 20;
 const MAX_LABEL_LENGTH = 40;
 const EXCLUDED_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 

@@ -423,7 +423,7 @@ router.post('/import', requirePermission('database.manage'),
             insertStmt = db.prepare(`INSERT INTO ${tableName} (${rowColumnKey}) VALUES (${placeholders})`);
             insertStatements.set(rowColumnKey, insertStmt);
           }
-          insertStmt.run(...rowCols.map((column) => row[column]));
+          insertStmt.run(...(rowCols.map((column) => row[column]) as [any, ...any[]]));
         }
         
         console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);

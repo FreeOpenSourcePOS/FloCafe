@@ -158,7 +158,9 @@ router.post('/initialize', requirePermission('database.manage'), requireMasterPi
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }
   try {
-    await googleDrive.prepareForDatabaseRestore();
+    // The owner's typed INITIALIZE may discard a Drive restore boundary that can
+    // never resolve on its own; the reset invalidates Drive state either way.
+    await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
     const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
     const cleanup = googleDrive.completeDatabaseRestore();
     clearUserAuthCache();

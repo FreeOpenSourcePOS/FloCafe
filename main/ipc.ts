@@ -325,7 +325,9 @@ export function registerIpcHandlers(
     }
 
     try {
-      await googleDrive.prepareForDatabaseRestore();
+      // The owner's typed INITIALIZE may discard a Drive restore boundary that can
+      // never resolve on its own; the reset invalidates Drive state either way.
+      await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
       const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
       const cleanup = googleDrive.completeDatabaseRestore();
       clearUserAuthCache();

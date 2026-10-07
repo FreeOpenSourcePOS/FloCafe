@@ -1128,14 +1128,21 @@ class GoogleDriveService {
     }, true);
   }
 
-  async prepareForDatabaseRestore(): Promise<void> {
+  async prepareForDatabaseRestore(options: { discardUnresolvedBoundary?: boolean } = {}): Promise<void> {
     const hadRestoreBoundary = this.databaseRestorePending || this.restoreInvalidationCleanupPending;
     if (this.restoreInvalidationActive()) {
-      if (hadRestoreBoundary || this.operationRunning || this.activeJobs.size > 0) throw createDriveError('conflict');
+      if (this.operationRunning || this.activeJobs.size > 0) throw createDriveError('conflict');
+      if (hadRestoreBoundary && !options.discardUnresolvedBoundary) throw createDriveError('conflict');
       try {
         this.clearDatabaseRestoreInvalidation();
-      } catch {
-        throw createDriveError('conflict');
+      } catch (recoveryError) {
+        if (!options.discardUnresolvedBoundary) throw createDriveError('conflict');
+        console.error('[Google Drive] Discarding unresolvable restore boundary:', recoveryError);
+        try {
+          this.invalidateAfterDatabaseRestore(null, { discardUnresolvedBoundary: true });
+        } catch {
+          throw createDriveError('conflict');
+        }
       }
       if (this.restoreInvalidationActive()) throw createDriveError('conflict');
     }
@@ -1235,14 +1242,14 @@ class GoogleDriveService {
     }
   }
 
-  invalidateAfterDatabaseRestore(replacement: DatabaseReplacementJournalHandle | null = getDatabaseReplacementJournal()): void {
+  invalidateAfterDatabaseRestore(replacement: DatabaseReplacementJournalHandle | null = getDatabaseReplacementJournal(), options: { discardUnresolvedBoundary?: boolean } = {}): void {
     if (getDatabaseReplacementJournal()?.phase === 'prepared') {
       this.restoreInvalidationCleanupPending = true;
       this.scheduleRestoreRecoveryRetry();
       throw new Error('Prepared database replacement recovery remains pending');
     }
     const committedReplacement = replacement?.phase === 'committed' ? replacement : null;
-    if (!committedReplacement && this.databaseRestoreRecoveryDecision() !== 'committed') throw new Error('Database replacement is not committed');
+    if (!committedReplacement && !options.discardUnresolvedBoundary && this.databaseRestoreRecoveryDecision() !== 'committed') throw new Error('Database replacement is not committed');
     try {
       for (const fileName of fs.readdirSync(getStagingDir())) removeStagingFile(path.join(getStagingDir(), fileName));
     } catch { }

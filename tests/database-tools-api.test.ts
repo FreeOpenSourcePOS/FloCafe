@@ -644,6 +644,7 @@ async function runTests() {
           product_id: 'variant-import-product',
           name: 'Extra Large',
           price: 15,
+          stock_quantity: 0,
           recipe_multiplier: 2,
         }],
         inventory_movements: [{

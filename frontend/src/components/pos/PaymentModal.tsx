@@ -170,6 +170,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   // checks; the backend refuses anything else (POST /bills/:id/split-check).
   // An untouched unpaid check is divisible, including the remainder of an
   // earlier split: the bill projection limits the offer to its own items.
+  const canSplitCheck = splitChecksEnabled
     && bill.payment_status === 'unpaid'
     && Number(bill.paid_amount || 0) === 0
     && !bill.payment_details

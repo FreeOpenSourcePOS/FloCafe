@@ -168,6 +168,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && bill.payment_status === 'unpaid'
     && Number(bill.paid_amount || 0) === 0
     && !bill.payment_details
+    && tenantCan(currentTenant, 'bills.read')
     && (bill.split_group_id
       ? (!bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems))
       : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');

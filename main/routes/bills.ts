@@ -1785,8 +1785,9 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights, snapshotExclusions, minorFactor);
       const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * minorFactor);
       const legacyTaxRatio = getTaxDiscountRatio(txnSource.subtotal, txnSource.discount_amount);
+      const legacyTaxItems = sourceGroupId ? txnActiveItems : txnSnapshotItems;
       const legacyContribution = collectLegacyTaxContribution(
-        txnSnapshotItems,
+        legacyTaxItems,
         weights,
         (item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
           check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
@@ -1820,7 +1821,7 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         weights,
         getTaxBreakdownWeights(
           txnSource.tax_breakdown,
-          txnSnapshotItems,
+          legacyTaxItems,
           (item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
             check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
           )),

@@ -20,6 +20,7 @@ interface Props {
   onPrintBill?: (bill: Bill, reservedWindow?: Window | null) => Promise<void>;
   reservePrintWindow?: () => Window | null | undefined;
   canGenerateBill: boolean;
+  canReadBills?: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
 }
@@ -33,6 +34,7 @@ export default function TableCheckoutModal({
   onPrintBill,
   reservePrintWindow,
   canGenerateBill,
+  canReadBills = true,
   onPayment,
   onAddCartToOrder
 }: Props) {
@@ -270,10 +272,10 @@ export default function TableCheckoutModal({
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div><div className="flex gap-2">{splitChecksEnabled && order.type === 'dine_in' && bill.payment_status === 'unpaid' && Number(bill.paid_amount || 0) === 0 && !bill.payment_details && <Button size="sm" variant="outline" onClick={() => handleSplitCheck(bill)} disabled={generating}><Users size={14} className="me-1" />{t('splitCheck')}</Button>}{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => handlePayment(bill)}>{t('pay')}</Button>}</div></div>)}</div>}
+          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div><div className="flex gap-2">{splitChecksEnabled && canReadBills && order.type === 'dine_in' && bill.payment_status === 'unpaid' && Number(bill.paid_amount || 0) === 0 && !bill.payment_details && <Button size="sm" variant="outline" onClick={() => handleSplitCheck(bill)} disabled={generating}><Users size={14} className="me-1" />{t('splitCheck')}</Button>}{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => handlePayment(bill)}>{t('pay')}</Button>}</div></div>)}</div>}
 
           {/* Show different buttons based on cart state */}
-          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && (!order.bill || (order.bill.payment_status === 'unpaid' && Number(order.bill.paid_amount || 0) === 0 && !order.bill.payment_details)) && <Button variant="outline" onClick={() => handleSplitCheck()} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
+          {splitBills.length === 0 && splitChecksEnabled && canReadBills && order.type === 'dine_in' && (!order.bill || (order.bill.payment_status === 'unpaid' && Number(order.bill.paid_amount || 0) === 0 && !order.bill.payment_details)) && <Button variant="outline" onClick={() => handleSplitCheck()} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
           {cartItemCount > 0 ? (
             // Cart has items - show "Add items to order" option
             <div className="space-y-2">

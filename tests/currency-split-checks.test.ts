@@ -196,6 +196,142 @@ async function main() {
       assertOrThrow(Number.isInteger(b.total), `Child check ${b.split_label} is integer`);
     }
 
+    // ── 4b. JPY Re-split: settle a guest, divide the untouched remainder ──
+    console.log('\n4b. JPY Re-split of an Untouched Remainder:');
+    seedProduct(db, 'jpy-sushi', 'jpy-cat', 'Sushi Set', 1000);
+    const jpyResplitOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 3,
+        items: [{ product_id: 'jpy-sushi', quantity: 3 }],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(jpyResplitOrderRes.status, 201, 'JPY three-guest order created');
+    const jpyResplitOrder = jpyResplitOrderRes.data.order;
+    const jpySushi = jpyResplitOrder.items[0];
+    const jpyResplitBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: jpyResplitOrder.id },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(jpyResplitBillRes.data.bill.total, 3000, 'JPY sushi bill total is 3000');
+    const jpyFirstSplit = await api(baseUrl, `/api/bills/${jpyResplitBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'First guest', items: [{ order_item_id: jpySushi.id, quantity: 1 }] },
+          { label: 'Waiting guests', items: [{ order_item_id: jpySushi.id, quantity: 2 }] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(jpyFirstSplit.status, 201, 'JPY first split succeeds');
+    assertEqualOrThrow(jpyFirstSplit.data.bills[1].total, 2000, 'the JPY remainder holds 2000');
+    const jpyFirstGuestPay = await api(baseUrl, `/api/bills/${jpyFirstSplit.data.bills[0].id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'cash', amount: jpyFirstSplit.data.bills[0].total }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(jpyFirstGuestPay.status, 200, 'the first JPY guest settles');
+    const jpyGroupId = jpyFirstSplit.data.bills[0].split_group_id;
+    const jpyGroupBefore = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(jpyGroupId) as any).total);
+    const jpyRemainderId = Number(jpyFirstSplit.data.bills[1].id);
+    const jpySettledRowBefore = JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(jpyFirstSplit.data.bills[0].id));
+
+    const jpyResplit = await api(baseUrl, `/api/bills/${jpyRemainderId}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'Second guest', items: [{ order_item_id: jpySushi.id, quantity: 1 }] },
+          { label: 'Third guest', items: [{ order_item_id: jpySushi.id, quantity: 1 }] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(jpyResplit.status, 201, 'the untouched JPY remainder splits again');
+    assertEqualOrThrow(Number(jpyResplit.data.bills[0].id), jpyRemainderId, 'the JPY remainder keeps its bill id');
+    for (const bill of jpyResplit.data.bills) {
+      assertEqualOrThrow(bill.total, 1000, `JPY replacement ${bill.split_label} holds exactly 1000`);
+      assertOrThrow(Number.isInteger(bill.total) && Number.isInteger(bill.balance), `JPY replacement ${bill.split_label} stays in whole yen`);
+    }
+    assertEqualOrThrow(Number(jpyResplit.data.bills.reduce((sum: number, bill: any) => sum + bill.total, 0)), 2000, 'JPY replacements sum exactly to the remainder');
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(jpyFirstSplit.data.bills[0].id)),
+      jpySettledRowBefore,
+      'the settled JPY guest bill row is untouched by the later re-split',
+    );
+    for (const bill of jpyResplit.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${bill.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'cash', amount: bill.total }] },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(pay.status, 200, `JPY replacement ${bill.split_label} settles`);
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(jpyResplitOrder.id) as any).status, 'completed', 'the JPY order completes after three successive settlements');
+    assertEqualOrThrow(Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(jpyGroupId) as any).total), jpyGroupBefore, 'the JPY group total is unchanged by the re-split');
+    assertEqualOrThrow(Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(jpyGroupId) as any).total), jpyGroupBefore, 'the JPY group collects exactly its pre-split total');
+
+    // ── 4c. KWD Re-split: three-decimal currency keeps its precision ──
+    console.log('\n4c. KWD Re-split in a Three-Decimal Currency:');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'KW', ?)").run(now());
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'KWD', ?)").run(now());
+    seedCategory(db, 'kwd-cat', 'Kuwait Kitchen');
+    seedProduct(db, 'kwd-meal', 'kwd-cat', 'Mixed Grill', 10.001);
+    const kwdOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 3,
+        items: [{ product_id: 'kwd-meal', quantity: 3 }],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(kwdOrderRes.status, 201, 'KWD three-guest order created');
+    const kwdOrder = kwdOrderRes.data.order;
+    const kwdMeal = kwdOrder.items[0];
+    const kwdBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: kwdOrder.id },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(kwdBillRes.data.bill.total.toFixed(3), '30.003', 'KWD bill total keeps three decimals');
+    const kwdFirstSplit = await api(baseUrl, `/api/bills/${kwdBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'KWD first', items: [{ order_item_id: kwdMeal.id, quantity: 1 }] },
+          { label: 'KWD waiting', items: [{ order_item_id: kwdMeal.id, quantity: 2 }] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(kwdFirstSplit.status, 201, 'KWD first split succeeds');
+    assertEqualOrThrow(kwdFirstSplit.data.bills[1].total.toFixed(3), '20.002', 'the KWD remainder holds 20.002');
+    const kwdFirstPay = await api(baseUrl, `/api/bills/${kwdFirstSplit.data.bills[0].id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'cash', amount: '10.001' }] },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(kwdFirstPay.status, 200, 'the first KWD guest settles');
+    const kwdResplit = await api(baseUrl, `/api/bills/${kwdFirstSplit.data.bills[1].id}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'KWD second', items: [{ order_item_id: kwdMeal.id, quantity: 1 }] },
+          { label: 'KWD third', items: [{ order_item_id: kwdMeal.id, quantity: 1 }] },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(kwdResplit.status, 201, 'the untouched KWD remainder splits again');
+    for (const bill of kwdResplit.data.bills) {
+      assertEqualOrThrow(bill.total.toFixed(3), '10.001', `KWD replacement ${bill.split_label} keeps three-decimal precision`);
+    }
+    assertEqualOrThrow(Number(kwdResplit.data.bills.reduce((sum: number, bill: any) => sum + bill.total, 0).toFixed(3)), 20.002, 'KWD replacements sum exactly to the remainder');
+
     // ── 5. End-to-End USD Split Check Regression ─────────────────────
     console.log('\n5. End-to-End USD Split Check Regression:');
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'US', ?)").run(now());

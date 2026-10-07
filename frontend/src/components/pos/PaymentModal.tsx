@@ -157,7 +157,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && bill.payment_status !== 'refunded'
     && bill.payment_status !== 'partially_refunded';
   const splitCheckItems = (bill.order?.items || []).filter(
-    (item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status),
+    (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
   );
   const hasDivisibleSplitCheckItems = splitCheckItems.length > 0
     && splitCheckItems.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
@@ -165,11 +165,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   // Split checks divide an untouched dine-in bill into separately payable
   // checks; the backend refuses anything else (POST /bills/:id/split-check).
   const canSplitCheck = splitChecksEnabled
-    && hasDivisibleSplitCheckItems
-    && bill.order?.type === 'dine_in'
     && bill.payment_status === 'unpaid'
     && Number(bill.paid_amount || 0) === 0
-    && !bill.split_group_id;
+    && !bill.payment_details
+    && tenantCan(currentTenant, 'bills.read')
+    && (bill.split_group_id
+      ? (!bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems))
+      : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');
   const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !chargeStateUncertain;
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
@@ -422,8 +424,19 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     if (openingSplitCheck) return;
     setOpeningSplitCheck(true);
     try {
-      const { data } = await api.get(`/orders/${bill.order_id}`);
-      setSplitCheckOrder(data.order as Order);
+      const { data } = await api.get(`/bills/${bill.id}`);
+      const order = data.bill?.order as Order | undefined;
+      const items = (order?.items || []).filter(
+        (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
+      );
+      const hasDivisibleItems = items.length > 0
+        && items.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
+        && items.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
+      if (order?.type !== 'dine_in' || !hasDivisibleItems) {
+        toast.error(t('splitCheckFailed'));
+        return;
+      }
+      setSplitCheckOrder(order);
     } catch {
       toast.error(t('splitCheckFailed'));
     } finally {

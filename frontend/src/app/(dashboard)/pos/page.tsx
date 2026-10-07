@@ -1318,6 +1318,7 @@ export default function POSPage() {
             return expectedBrowserPrint ? printerService.reserveBrowserPrintWindow() : undefined;
           }}
           canGenerateBill={tenantCan(currentTenant, 'bills.generate')}
+          canReadBills={tenantCan(currentTenant, 'bills.read')}
           onPayment={(bill, overridePin) => { setCheckoutTable(null); setPaymentBill(bill); setCheckoutOverridePin(overridePin); }}
           onAddCartToOrder={handleAddCartToOrder}
         />

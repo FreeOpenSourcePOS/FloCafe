@@ -9,7 +9,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, installAndActivateTestTaxPack, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
+const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, installAndActivateTestTaxPack, api, assert, assertEqual, assertOrThrow, assertEqualOrThrow, getResults, closeDatabase, now } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes, allocateSignedMinorUnits, allocateTaxSnapshots } = require('../main/routes/bills');
 const { paymentMethodRoutes } = require('../main/routes/payment-methods');
@@ -211,10 +211,25 @@ async function main() {
     ] };
     const firstRepeatSplit = await api(baseUrl, `/api/bills/${repeatBillRes.data.bill.id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
     assertEqual(firstRepeatSplit.status, 201, 'first split request returns 201');
+    const repeatBillsAfterSplit = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(repeatOrderRes.data.order.id) as any).n;
     const secondRepeatSplit = await api(baseUrl, `/api/bills/${repeatBillRes.data.bill.id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
-    assertEqual(secondRepeatSplit.status, 409, 'repeated split request returns 409 Conflict');
+    assertEqual(secondRepeatSplit.status, 400, 'a stale repeat asks for more than the shrunk source still owns, so it is rejected');
+    assertEqual((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(repeatOrderRes.data.order.id) as any).n, repeatBillsAfterSplit, 'the rejected stale repeat creates no bills');
     const childSplit = await api(baseUrl, `/api/bills/${firstRepeatSplit.data.bills[1].id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
-    assertEqual(childSplit.status, 409, 'splitting child bill returns 409 Conflict');
+    assertEqual(childSplit.status, 400, 'a child split must allocate exactly the child allocation, never the whole table again');
+    assertEqual((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(repeatOrderRes.data.order.id) as any).n, repeatBillsAfterSplit, 'the rejected child split creates no bills');
+    const singleShareResplit = await api(baseUrl, `/api/bills/${firstRepeatSplit.data.bills[1].id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 2a', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+      { label: 'Guest 2b', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(singleShareResplit.status, 400, 'a check holding a single indivisible unit cannot be divided into two checks');
+    const repeatSecondGuestPay = await api(baseUrl, `/api/bills/${firstRepeatSplit.data.bills[1].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: firstRepeatSplit.data.bills[1].total }] }, headers: authHeader });
+    assertEqual(repeatSecondGuestPay.status, 200, 'the untouched child still settles after the rejected attempts');
+    const paidChildResplit = await api(baseUrl, `/api/bills/${firstRepeatSplit.data.bills[1].id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 2a', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+      { label: 'Guest 2b', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(paidChildResplit.status, 409, 'a paid child is not a split source');
     const totalSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(repeatOrderRes.data.order.id) as any;
     assertEqual(totalSplitGroups.n, 1, 'only one split group exists in database for order');
 
@@ -236,9 +251,691 @@ async function main() {
     ]);
     const concStatuses = [concRes1.status, concRes2.status].sort();
     assertEqual(concStatuses[0], 201, 'concurrent HTTP request: exactly one request returns 201');
-    assertEqual(concStatuses[1], 409, 'concurrent HTTP request: duplicate request returns 409');
+    assertEqual(concStatuses[1], 400, 'concurrent HTTP request: the loser cannot claim the winner shares');
+    assertEqual((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(concOrderRes.data.order.id) as any).n, 2, 'concurrent HTTP request: the rejected duplicate creates no extra bill');
     const concSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(concOrderRes.data.order.id) as any;
     assertEqual(concSplitGroups.n, 1, 'concurrent HTTP request: exactly one split group exists in database');
+
+    // ── Re-split: an untouched unpaid remainder is still divisible ───────────
+    // Three guests share one item. One settles first, then the untouched
+    // remainder has to be divisible again for the guests who have not paid.
+    seedProduct(db, 'split-resplit-a', 'split-cat', 'Resplit A', 120);
+    seedProduct(db, 'split-resplit-b', 'split-cat', 'Resplit B', 80);
+    const resplitOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3,
+      items: [{ product_id: 'split-resplit-a', quantity: 3 }, { product_id: 'split-resplit-b', quantity: 1 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(resplitOrderRes.status, 201, 'three-guest order created');
+    const resplitOrder = resplitOrderRes.data.order;
+    const resplitItemA = resplitOrder.items.find((item: any) => item.product_id === 'split-resplit-a');
+    const resplitItemB = resplitOrder.items.find((item: any) => item.product_id === 'split-resplit-b');
+    const resplitBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: resplitOrder.id }, headers: authHeader });
+    const resplitBill = resplitBillRes.data.bill;
+    const resplitFirstSplit = await api(baseUrl, `/api/bills/${resplitBill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: resplitItemA.id, quantity: 1 }, { order_item_id: resplitItemB.id, quantity: 1 }] },
+      { label: 'Remaining guests', items: [{ order_item_id: resplitItemA.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(resplitFirstSplit.status, 201, 'first split creates the guest check and the remainder');
+    const resplitGuestCheck = resplitFirstSplit.data.bills[0];
+    const resplitRemainder = resplitFirstSplit.data.bills[1];
+    const resplitGroupRows = db.prepare('SELECT id, split_group_id FROM bills WHERE id IN (?, ?)').all(resplitGuestCheck.id, resplitRemainder.id) as any[];
+    const resplitGroupId = resplitGroupRows[0].split_group_id;
+    assertOrThrow(!!resplitGroupId && resplitGroupId === resplitGroupRows[1].split_group_id, 'both checks carry the same split group');
+    const remainderBillNumber = (db.prepare('SELECT bill_number FROM bills WHERE id = ?').get(resplitRemainder.id) as any).bill_number;
+    const remainderItemsBefore = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(resplitRemainder.id) as any[];
+
+    const resplitGuestPay = await api(baseUrl, `/api/bills/${resplitGuestCheck.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: resplitGuestCheck.total }] }, headers: authHeader });
+    assertEqualOrThrow(resplitGuestPay.status, 200, 'the first guest settles before the remainder is divided');
+    const settledGuestRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(resplitGuestCheck.id) as any;
+    const settledGuestItems = db.prepare('SELECT * FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(resplitGuestCheck.id) as any[];
+    const settledGuestReceipt = await api(baseUrl, `/api/bills/${resplitGuestCheck.id}`, { headers: authHeader });
+    const groupTotalBefore = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(resplitGroupId) as any).total.toFixed(2));
+
+    const resplit = await api(baseUrl, `/api/bills/${resplitRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 2', items: [{ order_item_id: resplitItemA.id, quantity: 1 }] },
+      { label: 'Guest 3', items: [{ order_item_id: resplitItemA.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(resplit.status, 201, 'the untouched unpaid remainder splits again');
+    assertEqualOrThrow(resplit.data.bills.length, 2, 're-split returns the two replacement checks');
+    assertEqualOrThrow(Number(resplit.data.bills[0].id), Number(resplitRemainder.id), 'checks[0] keeps the remainder bill id');
+    assertEqualOrThrow((db.prepare('SELECT bill_number FROM bills WHERE id = ?').get(resplitRemainder.id) as any).bill_number, remainderBillNumber, 'the remainder keeps its bill number');
+    assertEqualOrThrow(
+      JSON.stringify(resplit.data.bills.map((bill: any) => bill.split_group_id)),
+      JSON.stringify([resplitGroupId, resplitGroupId]),
+      'replacement checks stay in the original split group',
+    );
+    const replacementTotal = Number(resplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill.total), 0).toFixed(2));
+    assertEqualOrThrow(replacementTotal, Number(resplitRemainder.total), 'replacement checks sum exactly to the source remainder total');
+    const groupTotalAfter = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(resplitGroupId) as any).total.toFixed(2));
+    assertEqualOrThrow(groupTotalAfter, groupTotalBefore, 'the whole group total is unchanged by the re-split');
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(resplitGuestCheck.id)),
+      JSON.stringify(settledGuestRow),
+      'the settled sibling bill row is untouched by the later re-split',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(resplitGuestCheck.id)),
+      JSON.stringify(settledGuestItems),
+      'the settled sibling item allocation is untouched by the later re-split',
+    );
+    const settledGuestReceiptAfter = await api(baseUrl, `/api/bills/${resplitGuestCheck.id}`, { headers: authHeader });
+    assertEqualOrThrow(
+      JSON.stringify(settledGuestReceiptAfter.data.bill.order.items),
+      JSON.stringify(settledGuestReceipt.data.bill.order.items),
+      'the settled sibling receipt projection is unchanged',
+    );
+    const remainderItemsAfter = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(resplitRemainder.id) as any[];
+    assertEqualOrThrow(
+      JSON.stringify(remainderItemsAfter),
+      JSON.stringify([{ order_item_id: resplitItemA.id, quantity: 1 }]),
+      'the remainder allocation rows are replaced with its new share',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(remainderItemsBefore),
+      JSON.stringify([{ order_item_id: resplitItemA.id, quantity: 2 }]),
+      'the remainder owned both remaining shares before the re-split',
+    );
+
+    const resplitPayments: number[] = [];
+    for (const check of resplit.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: check.total }] }, headers: authHeader });
+      assertEqualOrThrow(pay.status, 200, `guest check ${check.split_label} settles`);
+      resplitPayments.push(Number(pay.data.bill.paid_amount));
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(resplitOrder.id) as any).status, 'completed', 'the order completes once every replacement check is settled');
+    const settledGroupTotal = Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(resplitGroupId) as any).total.toFixed(2));
+    assertEqualOrThrow(settledGroupTotal, groupTotalBefore, 'the settled group collects exactly the pre-split group total');
+
+    // Rejection grid: a re-split may only consume its own source allocation.
+    const outsiderOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 2,
+      items: [{ product_id: 'split-resplit-a', quantity: 2 }, { product_id: 'split-resplit-b', quantity: 1 }],
+    }, headers: authHeader });
+    const outsiderOrder = outsiderOrderRes.data.order;
+    const outsiderItemA = outsiderOrder.items.find((item: any) => item.product_id === 'split-resplit-a');
+    const outsiderItemB = outsiderOrder.items.find((item: any) => item.product_id === 'split-resplit-b');
+    const outsiderBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: outsiderOrder.id }, headers: authHeader });
+    const outsiderSplit = await api(baseUrl, `/api/bills/${outsiderBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Owner of B', items: [{ order_item_id: outsiderItemB.id, quantity: 1 }] },
+      { label: 'Owner of A', items: [{ order_item_id: outsiderItemA.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(outsiderSplit.status, 201, 'outsider-share fixture splits');
+    const outsiderRemainder = outsiderSplit.data.bills[1];
+    const outsiderBillsBefore = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(outsiderOrder.id) as any).n;
+    const outsiderItemsBefore = db.prepare('SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE order_id = ?) ORDER BY bill_id, order_item_id').all(outsiderOrder.id) as any[];
+    const outsiderShareClaim = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }, { order_item_id: outsiderItemB.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(outsiderShareClaim.status, 400, 'a re-split cannot claim a sibling item share');
+    const overAllocateClaim = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(overAllocateClaim.status, 400, 'a re-split cannot allocate more than the source owns');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(outsiderOrder.id) as any).n, outsiderBillsBefore, 'rejected re-splits create no bills');
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE order_id = ?) ORDER BY bill_id, order_item_id').all(outsiderOrder.id)),
+      JSON.stringify(outsiderItemsBefore),
+      'rejected re-splits leave every allocation row intact',
+    );
+
+    const partialSource = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: 1 }] }, headers: authHeader });
+    assertEqualOrThrow(partialSource.status, 200, 'partially paying the remainder is accepted');
+    const partialResplit = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(partialResplit.status, 409, 'a partially paid check is not a re-split source');
+
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('split_checks_enabled', 'false', ?)").run(now());
+    const disabledResplit = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(disabledResplit.status, 403, 're-splitting honours the feature setting');
+    const unauthenticatedSplit = await api(baseUrl, `/api/bills/${outsiderRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+    ] } });
+    assertEqualOrThrow(unauthenticatedSplit.status, 401, 're-splitting keeps the authenticated-session requirement');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('split_checks_enabled', 'true', ?)").run(now());
+
+    // A child without allocation rows is malformed legacy data, never a licence
+    // to divide the whole order again.
+    const groupChildWithNoRows = outsiderSplit.data.bills[0];
+    db.prepare('DELETE FROM bill_items WHERE bill_id = ?').run(groupChildWithNoRows.id);
+    const malformedResplit = await api(baseUrl, `/api/bills/${groupChildWithNoRows.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim 1', items: [{ order_item_id: outsiderItemB.id, quantity: 1 }] },
+      { label: 'Claim 2', items: [{ order_item_id: outsiderItemA.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(malformedResplit.status, 409, 'a child without allocation rows fails safely instead of guessing');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(outsiderOrder.id) as any).n, outsiderBillsBefore, 'the malformed child stays unsplit');
+
+    // Legacy split data carries no group id, so a second bill for the order keeps
+    // the original rejection instead of becoming a re-split source.
+    seedProduct(db, 'split-legacy-pair', 'split-cat', 'Legacy Pair Item', 40);
+    const legacyPairOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-legacy-pair', quantity: 2 }],
+    }, headers: authHeader });
+    const legacyPairOrder = legacyPairOrderRes.data.order;
+    const legacyPairItem = legacyPairOrder.items[0];
+    const legacyPairBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: legacyPairOrder.id }, headers: authHeader });
+    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, 0, ?, 'unpaid', ?, ?)`)
+      .run(`LEGACY-${legacyPairOrder.id}`, legacyPairOrder.id, legacyPairOrder.subtotal, legacyPairOrder.total, legacyPairOrder.total, now(), now());
+    const legacyPairBillsBefore = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(legacyPairOrder.id) as any).n;
+    const legacyPairSplit = await api(baseUrl, `/api/bills/${legacyPairBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Legacy Guest 1', items: [{ order_item_id: legacyPairItem.id, quantity: 1 }] },
+      { label: 'Legacy Guest 2', items: [{ order_item_id: legacyPairItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(legacyPairSplit.status, 409, 'a legacy second bill without a split group keeps the already-split rejection');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(legacyPairOrder.id) as any).n, legacyPairBillsBefore, 'the rejected legacy split creates no bills');
+
+    // A split group can grow when an unpaid child is divided again.
+    seedProduct(db, 'split-many', 'split-cat', 'Many Guest Item', 1);
+    const manyOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 20, items: [{ product_id: 'split-many', quantity: 21 }],
+    }, headers: authHeader });
+    const manyOrder = manyOrderRes.data.order;
+    const manyItem = manyOrder.items[0];
+    const manyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: manyOrder.id }, headers: authHeader });
+    const manyChecks = Array.from({ length: 20 }, (_, index) => ({
+      label: `Guest ${index + 1}`,
+      items: [{ order_item_id: manyItem.id, quantity: index === 0 ? 2 : 1 }],
+    }));
+    const manySplit = await api(baseUrl, `/api/bills/${manyBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: manyChecks }, headers: authHeader });
+    assertEqualOrThrow(manySplit.status, 201, 'a split request may create 20 checks');
+    const manyBillsBefore = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(manyOrder.id) as any).n;
+    assertEqualOrThrow(manyBillsBefore, 20, 'the initial group is persisted');
+    const expandedGroup = await api(baseUrl, `/api/bills/${manySplit.data.bills[0].id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1A', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
+      { label: 'Guest 1B', items: [{ order_item_id: manyItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(expandedGroup.status, 201, 'a valid re-split may expand the group beyond 20 checks');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(manyOrder.id) as any).n, 21, 'the expanded group persists all 21 checks');
+
+    // Conservation: every persisted money column of the source is divided, not
+    // re-derived from the order, once a child carries a discount, tax, itemised
+    // charges and a negative round-off.
+    const conservationOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-resplit-a', quantity: 3 }],
+    }, headers: authHeader });
+    const conservationOrder = conservationOrderRes.data.order;
+    const conservationItem = conservationOrder.items[0];
+    const conservationBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: conservationOrder.id }, headers: authHeader });
+    const conservationFirstSplit = await api(baseUrl, `/api/bills/${conservationBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Payer', items: [{ order_item_id: conservationItem.id, quantity: 1 }] },
+      { label: 'Remainder', items: [{ order_item_id: conservationItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(conservationFirstSplit.status, 201, 'conservation fixture splits');
+    const conservationGuest = conservationFirstSplit.data.bills[0];
+    const conservationRemainder = conservationFirstSplit.data.bills[1];
+    const conservationGroupId = conservationFirstSplit.data.bills[0].split_group_id;
+    const charges = JSON.stringify([{ id: 'service_charge', name: 'Service', amount: 1.5 }]);
+    db.prepare(`UPDATE bills SET subtotal = 30.00, tax_amount = 5.55, tax_breakdown = ?, discount_amount = 3.30,
+      service_charge = 1.50, charges_breakdown = ?, round_off = -0.01, total = 33.74, balance = 33.74 WHERE id = ?`)
+      .run(JSON.stringify([{ title: 'VAT', rate: 20, amount: 5.55 }]), charges, conservationRemainder.id);
+    const conservationPay = await api(baseUrl, `/api/bills/${conservationGuest.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: conservationGuest.total }] }, headers: authHeader });
+    assertEqualOrThrow(conservationPay.status, 200, 'the advance payer settles before the re-split');
+    const conservationSourceRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(conservationRemainder.id) as any;
+    const conservationGroupBefore = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(conservationGroupId) as any).total.toFixed(2));
+    const conservationResplit = await api(baseUrl, `/api/bills/${conservationRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest B', items: [{ order_item_id: conservationItem.id, quantity: 1 }] },
+      { label: 'Guest C', items: [{ order_item_id: conservationItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(conservationResplit.status, 201, 'the taxed discounted remainder splits again');
+    const conservationFields = ['subtotal', 'tax_amount', 'discount_amount', 'service_charge', 'round_off', 'total'] as const;
+    for (const field of conservationFields) {
+      const summed = Number(conservationResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill[field] ?? 0), 0).toFixed(2));
+      assertEqualOrThrow(summed, Number(conservationSourceRow[field] ?? 0), `the re-split divides the source ${field} exactly`);
+    }
+    const conservationBreakdownTotal = Number(conservationResplit.data.bills
+      .flatMap((bill: any) => (Array.isArray(bill.tax_breakdown) ? bill.tax_breakdown : []))
+      .reduce((sum: number, component: any) => sum + Number(component.amount || 0), 0)
+      .toFixed(2));
+    assertEqualOrThrow(conservationBreakdownTotal, 5.55, 'the per-check tax breakdowns reconcile to the source tax');
+    const conservationGroupAfter = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(conservationGroupId) as any).total.toFixed(2));
+    assertEqualOrThrow(conservationGroupAfter, conservationGroupBefore, 'the group total survives the re-split of a discounted taxed check');
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT discount_amount, discount_type, tax_amount, round_off, total FROM bills WHERE id = ?').get(conservationGuest.id)),
+      JSON.stringify({ discount_amount: conservationGuest.discount_amount, discount_type: conservationGuest.discount_type, tax_amount: conservationGuest.tax_amount, round_off: conservationGuest.round_off, total: conservationGuest.total }),
+      'the settled sibling keeps its own discount, tax and rounding snapshot',
+    );
+    const conservationSettled = [];
+    for (const check of conservationResplit.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: check.total }] }, headers: authHeader });
+      assertEqualOrThrow(pay.status, 200, `replacement check ${check.split_label} settles`);
+      conservationSettled.push(Number(pay.data.bill.paid_amount));
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(conservationOrder.id) as any).status, 'completed', 'the discounted taxed order completes once every replacement settles');
+    const conservationCollected = Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(conservationGroupId) as any).total.toFixed(2));
+    assertEqualOrThrow(conservationCollected, conservationGroupBefore, 'the settled discounted group collects exactly its pre-split total');
+
+    // Penny residual: a tiny remainder with a negative round-off still divides
+    // into exact minor units.
+    seedProduct(db, 'split-penny', 'split-cat', 'Penny Item', 0.01);
+    const pennyOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-penny', quantity: 3 }],
+    }, headers: authHeader });
+    const pennyOrder = pennyOrderRes.data.order;
+    const pennyItem = pennyOrder.items[0];
+    const pennyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: pennyOrder.id }, headers: authHeader });
+    const pennySplit = await api(baseUrl, `/api/bills/${pennyBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Penny payer', items: [{ order_item_id: pennyItem.id, quantity: 1 }] },
+      { label: 'Penny remainder', items: [{ order_item_id: pennyItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(pennySplit.status, 201, 'penny fixture splits');
+    const pennyRemainder = pennySplit.data.bills[1];
+    db.prepare('UPDATE bills SET subtotal = 0.03, tax_amount = 0, round_off = -0.01, total = 0.02, balance = 0.02 WHERE id = ?').run(pennyRemainder.id);
+    const pennyPennyPay = await api(baseUrl, `/api/bills/${pennySplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: pennySplit.data.bills[0].total }] }, headers: authHeader });
+    assertEqualOrThrow(pennyPennyPay.status, 200, 'the penny payer settles first');
+    const pennyResplit = await api(baseUrl, `/api/bills/${pennyRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Penny B', items: [{ order_item_id: pennyItem.id, quantity: 1 }] },
+      { label: 'Penny C', items: [{ order_item_id: pennyItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(pennyResplit.status, 201, 'the penny remainder splits again');
+    const pennyTotal = Number(pennyResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill.total), 0).toFixed(2));
+    const pennyRoundOff = Number(pennyResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill.round_off), 0).toFixed(2));
+    assertEqualOrThrow(pennyTotal, 0.02, 'the penny replacements sum exactly to the source total');
+    assertEqualOrThrow(pennyRoundOff, -0.01, 'the signed round-off is preserved across the penny re-split');
+    assertOrThrow(pennyResplit.data.bills.every((bill: any) => bill.total >= 0 && bill.balance >= 0), 'no penny replacement carries a negative total or balance');
+
+    // Add-ons are folded into the source check's item values, so dividing the
+    // remainder again has to keep each guest's add-on share with their units.
+    const resplitAddonGroupRes = await api(baseUrl, '/api/addon-groups', { method: 'POST', body: {
+      name: 'Resplit add-ons',
+      is_required: false,
+      min_selection: 0,
+      max_selection: 3,
+      addons: [{ name: 'Extra Cheese', price: 1.5 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(resplitAddonGroupRes.status, 201, 'add-on group for the re-split fixture is created');
+    const resplitAddonGroupId = resplitAddonGroupRes.data.addon_group.id;
+    const resplitAddonId = resplitAddonGroupRes.data.addon_group.addons[0].id;
+    seedProduct(db, 'split-addon-meal', 'split-cat', 'Add-on Meal', 10);
+    db.prepare('INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)').run('split-addon-meal', resplitAddonGroupId);
+    const addonOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 4,
+      items: [{
+        product_id: 'split-addon-meal',
+        quantity: 4,
+        addons: [{ id: resplitAddonId, name: 'Extra Cheese', price: 1.5, quantity: 1 }],
+      }],
+    }, headers: authHeader });
+    assertEqualOrThrow(addonOrderRes.status, 201, 'the add-on order is created');
+    const addonOrder = addonOrderRes.data.order;
+    const addonItem = addonOrder.items[0];
+    assertEqualOrThrow(addonOrder.subtotal, 46, 'the add-on price is part of the order subtotal');
+    const addonBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: addonOrder.id }, headers: authHeader });
+    const addonFirstSplit = await api(baseUrl, `/api/bills/${addonBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Add-on payer', items: [{ order_item_id: addonItem.id, quantity: 1 }] },
+      { label: 'Add-on remainder', items: [{ order_item_id: addonItem.id, quantity: 3 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(addonFirstSplit.status, 201, 'the add-on order splits');
+    const addonPayer = addonFirstSplit.data.bills[0];
+    const addonRemainder = addonFirstSplit.data.bills[1];
+    assertEqualOrThrow(addonPayer.total, 11.5, 'the payer carries one unit of the add-on price');
+    assertEqualOrThrow(addonRemainder.total, 34.5, 'the remainder keeps three units of the add-on price');
+    const addonPayerPay = await api(baseUrl, `/api/bills/${addonPayer.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: addonPayer.total }] }, headers: authHeader });
+    assertEqualOrThrow(addonPayerPay.status, 200, 'the add-on payer settles first');
+    const addonGroupId = addonPayer.split_group_id;
+    const addonSourceRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(addonRemainder.id) as any;
+    const addonResplit = await api(baseUrl, `/api/bills/${addonRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Add-on Guest 2', items: [{ order_item_id: addonItem.id, quantity: 1 }] },
+      { label: 'Add-on Guest 3', items: [{ order_item_id: addonItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(addonResplit.status, 201, 'the add-on remainder splits again');
+    const addonReplacements = addonResplit.data.bills;
+    assertEqualOrThrow(
+      Number(addonReplacements.reduce((sum: number, bill: any) => sum + Number(bill.total), 0).toFixed(2)),
+      Number(addonSourceRow.total),
+      'the add-on replacements sum exactly to the remainder',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(addonReplacements.map((bill: any) => Number(bill.subtotal.toFixed(2)))),
+      JSON.stringify([11.5, 23]),
+      'the add-on price follows the units each replacement pays for',
+    );
+    const addonGuestTwoRes = await api(baseUrl, `/api/bills/${addonReplacements[0].id}`, { headers: authHeader });
+    const addonProjectedItem = addonGuestTwoRes.data.bill.order.items[0];
+    assertEqualOrThrow(addonProjectedItem.quantity, 1, 'the add-on replacement receipt exposes only its own units');
+    assertEqualOrThrow(addonProjectedItem.addons[0].name, 'Extra Cheese', 'the add-on stays attached to the replacement check');
+    for (const check of addonReplacements) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: check.total }] }, headers: authHeader });
+      assertEqualOrThrow(pay.status, 200, `add-on replacement ${check.split_label} settles`);
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(addonOrder.id) as any).status, 'completed', 'the add-on order completes after three settlements');
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(addonGroupId) as any).total.toFixed(2)),
+      Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(addonGroupId) as any).total.toFixed(2)),
+      'the add-on group collects exactly its group total',
+    );
+
+    // A cancelled line stays out of the divisible basis: it can neither be
+    // claimed again nor keep the remainder from being divided.
+    seedProduct(db, 'split-cancel-keep', 'split-cat', 'Cancel Keep Item', 100);
+    seedProduct(db, 'split-cancel-drop', 'split-cat', 'Cancel Drop Item', 50);
+    const cancelOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 2,
+      items: [{ product_id: 'split-cancel-keep', quantity: 2 }, { product_id: 'split-cancel-drop', quantity: 1 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(cancelOrderRes.status, 201, 'the cancel-regression order is created');
+    const cancelOrder = cancelOrderRes.data.order;
+    const cancelKeepItem = cancelOrder.items.find((item: any) => item.product_id === 'split-cancel-keep');
+    const cancelDropItem = cancelOrder.items.find((item: any) => item.product_id === 'split-cancel-drop');
+    const cancelBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: cancelOrder.id }, headers: authHeader });
+    const cancelFirstSplit = await api(baseUrl, `/api/bills/${cancelBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Cancel first guest', items: [{ order_item_id: cancelDropItem.id, quantity: 1 }] },
+      { label: 'Cancel remainder', items: [{ order_item_id: cancelKeepItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(cancelFirstSplit.status, 201, 'the cancel-regression fixture splits');
+    const cancelRemainder = cancelFirstSplit.data.bills[1];
+    const cancelPrepareRes = await api(baseUrl, `/api/order-items/${cancelDropItem.id}/status`, { method: 'PATCH', body: { status: 'preparing' }, headers: authHeader });
+    assertEqualOrThrow(cancelPrepareRes.status, 200, 'the dropped item reaches preparing before cancellation');
+    const cancelItemRes = await api(baseUrl, `/api/orders/${cancelOrder.id}/items/${cancelDropItem.id}/cancel`, { method: 'PATCH', body: { override_pin: '1234' }, headers: mgrUser.authHeader });
+    assertEqualOrThrow(cancelItemRes.status, 200, 'the dropped item is cancelled while every split check is unpaid');
+    const cancelSourceRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(cancelRemainder.id) as any;
+    assertEqualOrThrow(cancelSourceRow.payment_status, 'unpaid', 'the remainder is still an untouched unpaid source');
+    const cancelledShareClaim = await api(baseUrl, `/api/bills/${cancelRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Claim dropped', items: [{ order_item_id: cancelDropItem.id, quantity: 1 }] },
+      { label: 'Claim kept', items: [{ order_item_id: cancelKeepItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(cancelledShareClaim.status, 400, 'a re-split cannot resurrect a cancelled line');
+    const activeOnlyResplit = await api(baseUrl, `/api/bills/${cancelRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Cancel Guest 2', items: [{ order_item_id: cancelKeepItem.id, quantity: 1 }] },
+      { label: 'Cancel Guest 3', items: [{ order_item_id: cancelKeepItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(activeOnlyResplit.status, 201, 'the cancelled line is excluded from the divisible basis');
+    assertEqualOrThrow(
+      Number(activeOnlyResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill.total), 0).toFixed(2)),
+      Number(cancelSourceRow.total),
+      'the re-split still divides the source money exactly after the cancellation',
+    );
+    assertOrThrow(
+      (db.prepare('SELECT COUNT(*) AS n FROM bill_items WHERE bill_id IN (SELECT id FROM bills WHERE order_id = ?) AND order_item_id = ?').get(cancelOrder.id, cancelDropItem.id) as any).n > 0,
+      'the cancelled line keeps its historical allocation rows',
+    );
+
+    // A complimentary line still has to divide into zero-total checks.
+    seedProduct(db, 'split-free-item', 'split-cat', 'Complimentary Item', 0);
+    const freeOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 4, items: [{ product_id: 'split-free-item', quantity: 4 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(freeOrderRes.status, 201, 'the complimentary order is created');
+    const freeItem = freeOrderRes.data.order.items[0];
+    const freeBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: freeOrderRes.data.order.id }, headers: authHeader });
+    assertEqualOrThrow(freeBillRes.status, 201, 'the complimentary check is generated at zero');
+    const freeFirstSplit = await api(baseUrl, `/api/bills/${freeBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Free Guest 1', items: [{ order_item_id: freeItem.id, quantity: 1 }] },
+      { label: 'Free remainder', items: [{ order_item_id: freeItem.id, quantity: 3 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(freeFirstSplit.status, 201, 'the zero-total check splits');
+    const freeRemainder = freeFirstSplit.data.bills[1];
+    const freeResplit = await api(baseUrl, `/api/bills/${freeRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Free Guest 2', items: [{ order_item_id: freeItem.id, quantity: 1 }] },
+      { label: 'Free Guest 3', items: [{ order_item_id: freeItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(freeResplit.status, 201, 'the zero-total remainder splits again');
+    assertOrThrow(
+      freeResplit.data.bills.every((bill: any) => Number(bill.total) === 0 && Number(bill.balance) === 0),
+      'zero-total replacements stay at zero without inventing a balance',
+    );
+    assertEqualOrThrow(
+      Number(freeResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill.total), 0).toFixed(2)),
+      Number(freeRemainder.total),
+      'zero-total replacements sum exactly to the source',
+    );
+
+    // A failing write inside the split transaction must leave the group exactly
+    // as it was, including the source rows the split clears before reinserting.
+    seedProduct(db, 'split-atomic', 'split-cat', 'Atomic Item', 60);
+    const atomicOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-atomic', quantity: 3 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(atomicOrderRes.status, 201, 'the atomic-regression order is created');
+    const atomicOrder = atomicOrderRes.data.order;
+    const atomicItem = atomicOrder.items[0];
+    const atomicBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: atomicOrder.id }, headers: authHeader });
+    const atomicFirstSplit = await api(baseUrl, `/api/bills/${atomicBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Atomic payer', items: [{ order_item_id: atomicItem.id, quantity: 1 }] },
+      { label: 'Atomic remainder', items: [{ order_item_id: atomicItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(atomicFirstSplit.status, 201, 'the atomic-regression fixture splits');
+    const atomicPayer = atomicFirstSplit.data.bills[0];
+    const atomicRemainder = atomicFirstSplit.data.bills[1];
+    const atomicGroupId = atomicPayer.split_group_id;
+    const atomicPayerPay = await api(baseUrl, `/api/bills/${atomicPayer.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: atomicPayer.total }] }, headers: authHeader });
+    assertEqualOrThrow(atomicPayerPay.status, 200, 'the atomic payer settles first');
+    const atomicSourceRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(atomicRemainder.id);
+    const atomicSourceItems = db.prepare('SELECT * FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(atomicRemainder.id);
+    const atomicPayerRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(atomicPayer.id);
+    const atomicBillsBefore = (db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(atomicOrder.id) as any).n;
+    const atomicPaidBefore = Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(atomicGroupId) as any).total.toFixed(2));
+    const atomicResplitPayload = { checks: [
+      { label: 'Atomic Guest 2', items: [{ order_item_id: atomicItem.id, quantity: 1 }] },
+      { label: 'Atomic Guest 3', items: [{ order_item_id: atomicItem.id, quantity: 1 }] },
+    ] };
+    db.exec(`CREATE TRIGGER resplit_atomic_guard BEFORE INSERT ON bills
+      WHEN NEW.order_id = ${Number(atomicOrder.id)} AND NEW.split_group_id = '${atomicGroupId}'
+      BEGIN SELECT RAISE(ABORT, 'injected re-split write failure'); END;`);
+    const injectedResplit = await api(baseUrl, `/api/bills/${atomicRemainder.id}/split-check`, { method: 'POST', body: atomicResplitPayload, headers: authHeader });
+    db.exec('DROP TRIGGER resplit_atomic_guard');
+    assertEqualOrThrow(injectedResplit.status, 500, 'an injected write failure aborts the re-split');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(atomicOrder.id) as any).n, atomicBillsBefore, 'the failed re-split creates no bills');
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(atomicRemainder.id)),
+      JSON.stringify(atomicSourceRow),
+      'the failed re-split leaves the source check byte-identical',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(atomicRemainder.id)),
+      JSON.stringify(atomicSourceItems),
+      'the failed re-split restores the source allocation rows it had cleared',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(atomicPayer.id)),
+      JSON.stringify(atomicPayerRow),
+      'the failed re-split leaves the settled sibling untouched',
+    );
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(atomicGroupId) as any).total.toFixed(2)),
+      atomicPaidBefore,
+      'the failed re-split records no payment',
+    );
+    const atomicResplit = await api(baseUrl, `/api/bills/${atomicRemainder.id}/split-check`, { method: 'POST', body: atomicResplitPayload, headers: authHeader });
+    assertEqualOrThrow(atomicResplit.status, 201, 'the same request succeeds once the injected failure is gone');
+    for (const check of atomicResplit.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: check.total }] }, headers: authHeader });
+      assertEqualOrThrow(pay.status, 200, `atomic replacement ${check.split_label} settles`);
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(atomicOrder.id) as any).status, 'completed', 'three successive settlements complete the order');
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(atomicGroupId) as any).total.toFixed(2)),
+      Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(atomicGroupId) as any).total.toFixed(2)),
+      'the settled atomic group collects exactly its group total',
+    );
+
+    // A re-split racing a sibling payment must never double-count money: the
+    // payment lands either before the split (which then rejects the paid state)
+    // or after it, never twice into the same share.
+    seedProduct(db, 'split-race', 'split-cat', 'Race Item', 90);
+    const raceOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-race', quantity: 3 }],
+    }, headers: authHeader });
+    assertEqualOrThrow(raceOrderRes.status, 201, 'the race-regression order is created');
+    const raceOrder = raceOrderRes.data.order;
+    const raceItem = raceOrder.items[0];
+    const raceBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: raceOrder.id }, headers: authHeader });
+    const raceFirstSplit = await api(baseUrl, `/api/bills/${raceBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Race payer', items: [{ order_item_id: raceItem.id, quantity: 1 }] },
+      { label: 'Race remainder', items: [{ order_item_id: raceItem.id, quantity: 2 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(raceFirstSplit.status, 201, 'the race-regression fixture splits');
+    const raceGroupId = raceFirstSplit.data.bills[0].split_group_id;
+    const raceGroupTotal = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(raceGroupId) as any).total.toFixed(2));
+    const [raceSplit, racePay] = await Promise.all([
+      api(baseUrl, `/api/bills/${raceFirstSplit.data.bills[1].id}/split-check`, { method: 'POST', body: { checks: [
+        { label: 'Race Guest 2', items: [{ order_item_id: raceItem.id, quantity: 1 }] },
+        { label: 'Race Guest 3', items: [{ order_item_id: raceItem.id, quantity: 1 }] },
+      ] }, headers: authHeader }),
+      api(baseUrl, `/api/bills/${raceFirstSplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: raceFirstSplit.data.bills[0].total }] }, headers: authHeader }),
+    ]);
+    assertEqualOrThrow(raceSplit.status, 201, 'a sibling payment does not reject the racing re-split');
+    assertEqualOrThrow(racePay.status, 200, 'the sibling payment is accepted whichever request resolved first');
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(raceGroupId) as any).total.toFixed(2)),
+      raceGroupTotal,
+      'the racing re-split leaves the group total unchanged',
+    );
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(paid_amount) + SUM(balance) AS total FROM bills WHERE split_group_id = ?').get(raceGroupId) as any).total.toFixed(2)),
+      raceGroupTotal,
+      'collected money plus outstanding balances still equal the group total after the race',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL').get(raceOrder.id) as any).n,
+      1,
+      'the racing requests never create a second split group',
+    );
+
+    // Mixed legacy lines: an exclusive, an inclusive and an untaxed item in the
+    // same source check each keep their own attribution after the re-split.
+    seedProduct(db, 'split-legacy-exclusive', 'split-cat', 'Legacy Exclusive', 10);
+    seedProduct(db, 'split-legacy-inclusive', 'split-cat', 'Legacy Inclusive', 10);
+    seedProduct(db, 'split-legacy-untaxed', 'split-cat', 'Legacy Untaxed', 10);
+    const legacyOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: {
+      type: 'dine_in', guest_count: 3,
+      items: [
+        { product_id: 'split-legacy-exclusive', quantity: 2 },
+        { product_id: 'split-legacy-inclusive', quantity: 1 },
+        { product_id: 'split-legacy-untaxed', quantity: 1 },
+      ],
+    }, headers: authHeader });
+    assertEqualOrThrow(legacyOrderRes.status, 201, 'the mixed legacy order is created');
+    const legacyOrder = legacyOrderRes.data.order;
+    const legacyExclusiveItem = legacyOrder.items.find((item: any) => item.product_id === 'split-legacy-exclusive');
+    const legacyInclusiveItem = legacyOrder.items.find((item: any) => item.product_id === 'split-legacy-inclusive');
+    const legacyUntaxedItem = legacyOrder.items.find((item: any) => item.product_id === 'split-legacy-untaxed');
+    const exclusiveBreakdown = JSON.stringify([{ title: 'Exclusive Tax', rate: 10, amount: 2 }]);
+    const inclusiveBreakdown = JSON.stringify([{ title: 'Inclusive Tax', rate: 5, amount: 0.5 }]);
+    db.prepare('UPDATE order_items SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, tax_type = ?, total = ? WHERE id = ?')
+      .run(2, exclusiveBreakdown, 'exclusive', 22, legacyExclusiveItem.id);
+    db.prepare('UPDATE order_items SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, tax_type = ?, total = ? WHERE id = ?')
+      .run(0.5, inclusiveBreakdown, 'inclusive', 10, legacyInclusiveItem.id);
+    db.prepare('UPDATE order_items SET tax_amount = 0, tax_breakdown = NULL, tax_snapshot = NULL, tax_type = ?, total = ? WHERE id = ?')
+      .run('exempt', 10, legacyUntaxedItem.id);
+    const legacySubtotal = 40;
+    const legacyTax = 2.5;
+    const legacyTotal = 42;
+    const legacyBreakdown = JSON.stringify([
+      [{ title: 'Exclusive Tax', rate: 10, amount: 2 }],
+      [{ title: 'Inclusive Tax', rate: 5, amount: 0.5 }],
+    ]);
+    db.prepare('UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(legacySubtotal, legacyTax, legacyBreakdown, legacyTotal, legacyOrder.id);
+    const legacyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: legacyOrder.id }, headers: authHeader });
+    db.prepare('UPDATE bills SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, total = ?, balance = ? WHERE id = ?')
+      .run(legacySubtotal, legacyTax, legacyBreakdown, legacyTotal, legacyTotal, legacyBillRes.data.bill.id);
+    const legacyFirstSplit = await api(baseUrl, `/api/bills/${legacyBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Legacy Exclusive guest', items: [{ order_item_id: legacyExclusiveItem.id, quantity: 1 }] },
+      { label: 'Legacy mixed remainder', items: [
+        { order_item_id: legacyExclusiveItem.id, quantity: 1 },
+        { order_item_id: legacyInclusiveItem.id, quantity: 1 },
+        { order_item_id: legacyUntaxedItem.id, quantity: 1 },
+      ] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(legacyFirstSplit.status, 201, 'the mixed legacy fixture splits');
+    const legacyRemainder = legacyFirstSplit.data.bills[1];
+    const legacyGroupId = legacyFirstSplit.data.bills[0].split_group_id;
+    const legacyPayerPay = await api(baseUrl, `/api/bills/${legacyFirstSplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: legacyFirstSplit.data.bills[0].total }] }, headers: authHeader });
+    assertEqualOrThrow(legacyPayerPay.status, 200, 'the mixed legacy payer settles first');
+    const legacySourceRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(legacyRemainder.id) as any;
+    const legacyResplit = await api(baseUrl, `/api/bills/${legacyRemainder.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Legacy exclusive replacement', items: [{ order_item_id: legacyExclusiveItem.id, quantity: 1 }] },
+      { label: 'Legacy inclusive replacement', items: [{ order_item_id: legacyInclusiveItem.id, quantity: 1 }] },
+      { label: 'Legacy untaxed replacement', items: [{ order_item_id: legacyUntaxedItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqualOrThrow(legacyResplit.status, 201, 'the mixed legacy remainder splits into three checks');
+    assertEqualOrThrow((db.prepare('SELECT split_group_id FROM bills WHERE id = ?').get(legacyRemainder.id) as any).split_group_id, legacyGroupId, 'the mixed legacy replacement stays in the original group');
+    for (const field of ['subtotal', 'tax_amount', 'discount_amount', 'total'] as const) {
+      assertEqualOrThrow(
+        Number(legacyResplit.data.bills.reduce((sum: number, bill: any) => sum + Number(bill[field] ?? 0), 0).toFixed(2)),
+        Number(legacySourceRow[field] ?? 0),
+        `the mixed legacy re-split divides the source ${field} exactly`,
+      );
+    }
+    const legacyComponentsById = new Map<number, any[]>();
+    for (const check of [legacyFirstSplit.data.bills[0], ...legacyResplit.data.bills]) {
+      const childRes = await api(baseUrl, `/api/bills/${check.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const components = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      legacyComponentsById.set(Number(check.id), components);
+      assertEqualOrThrow(
+        Number(components.reduce((sum: number, component: any) => sum + Number(component.amount), 0).toFixed(2)),
+        Number(child.tax_amount.toFixed(2)),
+        `legacy check ${child.split_label} tax components reconcile to its own tax`,
+      );
+    }
+    const componentAmount = (billId: number, title: string): number => Number(
+      (legacyComponentsById.get(billId) || [])
+        .filter((component: any) => component.title === title)
+        .reduce((sum: number, component: any) => sum + Number(component.amount), 0)
+        .toFixed(2),
+    );
+    const exclusiveReplacementId = Number(legacyResplit.data.bills[0].id);
+    const inclusiveReplacementId = Number(legacyResplit.data.bills[1].id);
+    const untaxedReplacementId = Number(legacyResplit.data.bills[2].id);
+    assertEqualOrThrow(
+      componentAmount(exclusiveReplacementId, 'Exclusive Tax'),
+      Number(legacyResplit.data.bills[0].tax_amount.toFixed(2)),
+      'the exclusive replacement carries its exclusive tax and nothing else',
+    );
+    assertEqualOrThrow(componentAmount(exclusiveReplacementId, 'Inclusive Tax'), 0, 'the exclusive replacement is not charged another item included tax');
+    assertEqualOrThrow(
+      componentAmount(inclusiveReplacementId, 'Inclusive Tax'),
+      Number(legacyResplit.data.bills[1].tax_amount.toFixed(2)),
+      'the inclusive replacement carries its included tax',
+    );
+    assertEqualOrThrow(componentAmount(inclusiveReplacementId, 'Exclusive Tax'), 0, 'the inclusive replacement is not charged another item exclusive tax');
+    assertEqualOrThrow(
+      Number(legacyResplit.data.bills[2].tax_amount) + componentAmount(untaxedReplacementId, 'Exclusive Tax') + componentAmount(untaxedReplacementId, 'Inclusive Tax'),
+      0,
+      'the untaxed replacement carries no tax at all',
+    );
+    const legacyGroupBillIds = [Number(legacyFirstSplit.data.bills[0].id), ...legacyResplit.data.bills.map((bill: any) => Number(bill.id))];
+    assertEqualOrThrow(
+      Number(legacyGroupBillIds.reduce((sum, billId) => sum + componentAmount(billId, 'Exclusive Tax'), 0).toFixed(2)),
+      2,
+      'exclusive tax reconciles across the mixed replacements and their settled sibling',
+    );
+    assertEqualOrThrow(
+      Number(legacyGroupBillIds.reduce((sum, billId) => sum + componentAmount(billId, 'Inclusive Tax'), 0).toFixed(2)),
+      0.5,
+      'included tax reconciles across the mixed replacements and their settled sibling',
+    );
+    assertEqualOrThrow(Number(legacyResplit.data.bills[2].tax_amount), 0, 'the untaxed replacement pays no tax');
+    assertEqualOrThrow(Number(legacyResplit.data.bills[1].total), Number(legacyResplit.data.bills[1].subtotal), 'the inclusive replacement keeps tax inside its total');
+    assertEqualOrThrow(
+      Number((Number(legacyResplit.data.bills[0].total) - Number(legacyResplit.data.bills[0].subtotal)).toFixed(2)),
+      Number(legacyResplit.data.bills[0].tax_amount.toFixed(2)),
+      'the exclusive replacement adds its tax on top of its subtotal',
+    );
+    assertEqualOrThrow(
+      Number(Number(legacyResplit.data.bills[0].tax_amount).toFixed(2)),
+      Number(Number(legacySourceRow.tax_amount - Number(legacyResplit.data.bills[1].tax_amount) - Number(legacyResplit.data.bills[2].tax_amount)).toFixed(2)),
+      'the exclusive replacement carries the source tax its siblings do not',
+    );
+    for (const check of legacyResplit.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: check.total }] }, headers: authHeader });
+      assertEqualOrThrow(pay.status, 200, `mixed legacy replacement ${check.split_label} settles`);
+    }
+    assertEqualOrThrow((db.prepare('SELECT status FROM orders WHERE id = ?').get(legacyOrder.id) as any).status, 'completed', 'the mixed legacy order completes once every replacement settles');
+    assertEqualOrThrow(
+      Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(legacyGroupId) as any).total.toFixed(2)),
+      Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(legacyGroupId) as any).total.toFixed(2)),
+      'the mixed legacy group collects exactly its group total',
+    );
 
     // G. Nested Tax Breakdown Allocation & Reconciliation
     const taxOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
@@ -845,6 +1542,104 @@ async function main() {
       assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedSnapshotComponents), 'restore sync recomputes child item and charge tax attribution');
       assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'restore sync resolved tax reconciles to each child tax amount');
     }
+
+    // Snapshot tax re-split: the settled guest keeps its taxed share while the
+    // untouched remainder divides again with per-check attribution intact.
+    const resplitSnapshotOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 3,
+        packaging_charge: 20,
+        items: [{ product_id: 'split-tax-item-a', quantity: 3 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(resplitSnapshotOrderRes.status, 201, 'snapshot re-split order is created');
+    assertEqual(resplitSnapshotOrderRes.data.order.tax_amount, 4, 'snapshot re-split source tax covers three item taxes and one packaging tax');
+    const resplitSnapshotOrder = resplitSnapshotOrderRes.data.order;
+    const resplitSnapshotItem = resplitSnapshotOrder.items[0];
+    const resplitSnapshotBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: resplitSnapshotOrder.id },
+      headers: authHeader,
+    });
+    const resplitSnapshotFirst = await api(baseUrl, `/api/bills/${resplitSnapshotBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Snapshot payer', items: [{ order_item_id: resplitSnapshotItem.id, quantity: 1 }] },
+        { label: 'Snapshot remainder', items: [{ order_item_id: resplitSnapshotItem.id, quantity: 2 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(resplitSnapshotFirst.status, 201, 'the snapshot order splits');
+    const resplitSnapshotPayer = resplitSnapshotFirst.data.bills[0];
+    const resplitSnapshotRemainder = resplitSnapshotFirst.data.bills[1];
+    const resplitSnapshotGroupId = resplitSnapshotPayer.split_group_id;
+    const resplitSnapshotPayerPay = await api(baseUrl, `/api/bills/${resplitSnapshotPayer.id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'cash', amount: resplitSnapshotPayer.total }] },
+      headers: authHeader,
+    });
+    assertEqual(resplitSnapshotPayerPay.status, 200, 'the snapshot payer settles first');
+    const resplitSnapshotPayerRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(resplitSnapshotPayer.id);
+    const resplitSnapshotGroupBefore = Number((db.prepare('SELECT SUM(total) AS total FROM bills WHERE split_group_id = ?').get(resplitSnapshotGroupId) as any).total.toFixed(2));
+    const resplitSnapshot = await api(baseUrl, `/api/bills/${resplitSnapshotRemainder.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Snapshot Guest 2', items: [{ order_item_id: resplitSnapshotItem.id, quantity: 1 }] },
+        { label: 'Snapshot Guest 3', items: [{ order_item_id: resplitSnapshotItem.id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(resplitSnapshot.status, 201, 'the snapshot remainder splits again');
+    let resplitSnapshotTax = 0;
+    for (const check of resplitSnapshot.data.bills) {
+      const childRes = await api(baseUrl, `/api/bills/${check.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const components = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      assertEqual(
+        Number(components.reduce((sum: number, component: any) => sum + Number(component.amount), 0).toFixed(2)),
+        Number(child.tax_amount.toFixed(2)),
+        'snapshot replacement tax components reconcile to their own tax',
+      );
+      const replacementSnapshots = typeof child.tax_snapshot === 'string' ? JSON.parse(child.tax_snapshot) : child.tax_snapshot;
+      assertOrThrow(
+        Array.isArray(replacementSnapshots) && replacementSnapshots.some((snapshot: any) => snapshot?.splitAllocation === 'minor-unit-v1'),
+        'snapshot replacements stay marked for split allocation',
+      );
+      resplitSnapshotTax = Number((resplitSnapshotTax + Number(child.tax_amount)).toFixed(2));
+    }
+    assertEqual(resplitSnapshotTax, Number(resplitSnapshotRemainder.tax_amount.toFixed(2)), 'the snapshot replacements carry exactly the remainder tax');
+    const resplitSnapshotGroupTaxes = new Map<string, number>();
+    for (const billId of [Number(resplitSnapshotPayer.id), ...resplitSnapshot.data.bills.map((bill: any) => Number(bill.id))]) {
+      const billRes = await api(baseUrl, `/api/bills/${billId}`, { headers: authHeader });
+      for (const component of resolveBackendTaxComponents({ ...billRes.data.bill, items: billRes.data.bill.order.items })) {
+        const amount = Number(component.amount);
+        resplitSnapshotGroupTaxes.set(component.title, Number(((resplitSnapshotGroupTaxes.get(component.title) || 0) + amount).toFixed(2)));
+      }
+    }
+    assertEqual(resplitSnapshotGroupTaxes.get('Item Tax'), 3, 'item tax stays with the item owners across the re-split');
+    assertEqual(resplitSnapshotGroupTaxes.get('Charge Tax'), 1, 'charge tax stays proportionate across the re-split');
+    assertEqual(
+      JSON.stringify(db.prepare('SELECT * FROM bills WHERE id = ?').get(resplitSnapshotPayer.id)),
+      JSON.stringify(resplitSnapshotPayerRow),
+      'the settled snapshot sibling is untouched by the re-split',
+    );
+    for (const check of resplitSnapshot.data.bills) {
+      const pay = await api(baseUrl, `/api/bills/${check.id}/payments`, {
+        method: 'POST',
+        body: { payments: [{ method: 'cash', amount: check.total }] },
+        headers: authHeader,
+      });
+      assertEqual(pay.status, 200, `snapshot replacement ${check.split_label} settles`);
+    }
+    assertEqual((db.prepare('SELECT status FROM orders WHERE id = ?').get(resplitSnapshotOrder.id) as any).status, 'completed', 'the snapshot order completes after three settlements');
+    assertEqual(
+      Number((db.prepare('SELECT SUM(paid_amount) AS total FROM bills WHERE split_group_id = ?').get(resplitSnapshotGroupId) as any).total.toFixed(2)),
+      resplitSnapshotGroupBefore,
+      'the snapshot group collects exactly its pre-split total',
+    );
 
     const signedSnapshot = JSON.stringify({
       lines: [{

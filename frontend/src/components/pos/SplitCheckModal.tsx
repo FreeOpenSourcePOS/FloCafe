@@ -13,19 +13,23 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill;
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  const items = (order.items || []).filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status));
-  const initialCount = Math.min(8, Math.max(2, order.guest_count || 2));
+  const items = (order.items || []).filter((item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status));
+  const maxChecks = Math.min(20, Math.max(2, items.reduce((total, item) => total + Number(item.quantity), 0)));
+  const initialCount = Math.min(maxChecks, 8, Math.max(2, order.guest_count || 2));
   const [count, setCount] = useState(initialCount);
   const [labels, setLabels] = useState(() => Array.from({ length: initialCount }, (_, i) => `Guest ${i + 1}`));
-  const [allocations, setAllocations] = useState<Record<number, number[]>>(() => Object.fromEntries(items.map((item) => {
-    const slots = Array(initialCount).fill(0);
-    for (let unit = 0; unit < item.quantity; unit++) slots[unit % initialCount]++;
-    return [item.id, slots];
-  })));
+  const [allocations, setAllocations] = useState<Record<number, number[]>>(() => {
+    let nextSlot = 0;
+    return Object.fromEntries(items.map((item) => {
+      const slots = Array(initialCount).fill(0);
+      for (let unit = 0; unit < item.quantity; unit++) slots[nextSlot++ % initialCount]++;
+      return [item.id, slots];
+    }));
+  });
   const [saving, setSaving] = useState(false);
 
   const resize = (next: number) => {
-    next = Math.min(20, Math.max(2, next));
+    next = Math.min(maxChecks, Math.max(2, next));
     setLabels((old) => Array.from({ length: next }, (_, i) => old[i] || `Guest ${i + 1}`));
     setAllocations((old) => Object.fromEntries(items.map((item) => {
       const slots = Array.from({ length: next }, (_, i) => old[item.id]?.[i] || 0);

@@ -36,9 +36,10 @@ self-contained.
 
 ## The migration registry
 
-`MIGRATIONS` is an exported, append-only array of `{ version, name, up }`. **There are 92 entries,
-numbered 1 through 92 with no gaps and no duplicates**, and the highest is `version: 92`. The
-highest entry is `add_table_reservation_customer`.
+`MIGRATIONS` in [`main/db.ts`](../../main/db.ts) is the exported, append-only array of
+`{ version, name, up }` entries. Its order and version numbers are the persisted schema contract
+for installed databases. The registry is the source for the current entry count, latest version,
+and migration names.
 
 Two rules follow from the array being the registry:
 

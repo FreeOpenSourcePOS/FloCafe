@@ -1412,10 +1412,10 @@ export default function OrdersPage() {
           onBillUpdate={(updated) => setPaymentBill(updated)}
           onSplit={(departingBill) => {
             fetchOrders(undefined, { refreshLoadedPages: true });
-            // A leaving guest's new check is fetched and opened for payment; an
-            // all-items split leaves the cashier on the refreshed list.
+            // Synchronously clear paymentBill so the remainder check cannot be paid
+            // during the departing bill's fetch window.
+            setPaymentBill(null);
             if (departingBill) void handlePayBill(departingBill);
-            else setPaymentBill(null);
           }}
         />
       )}

@@ -1335,8 +1335,9 @@ export default function POSPage() {
           onBillUpdate={(updated) => setPaymentBill(updated)}
           onSplit={(departingBill) => {
             if (departingBill) {
-              // Re-read the leaving guest's check so the modal pays (and prints)
-              // that check, never the source it was split from.
+              // Clear current paymentBill synchronously so the cashier cannot
+              // pay against the remainder source bill during the fetch window.
+              setPaymentBill(null);
               setCheckoutOverridePin(undefined);
               void api.get(`/bills/${departingBill.id}`)
                 .then(({ data }) => setPaymentBill((data?.bill as Bill) ?? departingBill))

@@ -658,7 +658,7 @@ Router: `main/routes/database-tools.ts`. Full path: `/api/db-tools`.
 | `POST` | `/master-pin/reset` | `ROLE_ACCESS.owner` (`database.manage`) + current Master PIN when one is configured | body: `pin`, `confirm_pin`, and `master_pin` when a PIN is already configured | First-time setup requires no `master_pin`. |
 | `GET` | `/currency-reset-impact` | `ROLE_ACCESS.owner` | none | Active currency plus the invoice, order, refund, customer, product, and add-on counts the destructive warning uses. |
 | `POST` | `/currency-reset` | `ROLE_ACCESS.owner` + Master PIN | body: `currency` | Also needs `current_currency` and `confirmation_phrase` of the form `CHANGE TO <CODE>`. Creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields zeroed, and returns the backup path. The active session becomes invalid. |
-| `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | Master-PIN gated database initialization. |
+| `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | A stale Drive restore boundary classified as ambiguous by recovery may be discarded only by this owner-authorized reset with the exact `INITIALIZE` phrase (stored Drive credentials are dropped); an active in-process reset still conflicts. |
 
 ### Reports
 

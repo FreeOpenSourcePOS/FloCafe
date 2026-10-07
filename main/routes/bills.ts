@@ -1684,16 +1684,16 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const decimals = getCurrencyFractionDigits(tenantCurrency);
 
       const sourceGroupBillIds = sourceGroupId
-        ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(sourceGroupId) as any[])
+        ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(sourceGroupId) as { id: number | string }[])
           .map((row) => Number(row.id))
         : [];
 
       // A first split divides the order's active items; a re-split divides the
       // source check's own allocation rows, so siblings' shares stay unclaimed.
       const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
-      let txnActiveItems: any[];
+      let txnActiveItems: ReturnType<typeof projectOrderItems>;
       if (sourceGroupId) {
-        const sourceAllocations = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(txnSource.id) as any[];
+        const sourceAllocations = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ? ORDER BY order_item_id').all(txnSource.id) as { order_item_id: number | string; quantity: number | string }[];
         const wellFormed = sourceAllocations.length > 0 && sourceAllocations.every((row) => (
           Number.isSafeInteger(Number(row.order_item_id))
           && Number.isSafeInteger(Number(row.quantity))
@@ -1701,14 +1701,14 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         ));
         if (!wellFormed) throw splitSourceAllocationError();
 
-        const orderItemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(txnSource.order_id) as any[];
+        const orderItemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(txnSource.order_id) as { id: number | string }[];
         if (sourceAllocations.some((row) => !orderItemRows.some((item) => Number(item.id) === Number(row.order_item_id)))) {
           throw splitSourceAllocationError();
         }
 
         const childAllocationRows = db.prepare(
           `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${sourceGroupBillIds.map(() => '?').join(',')})`,
-        ).all(...sourceGroupBillIds) as any[];
+        ).all(...sourceGroupBillIds) as { bill_id: number | string; order_item_id: number | string; quantity: number | string }[];
         const childItemAllocations = childAllocationsForBills(
           sourceGroupBillIds.map((id) => ({ id })),
           childAllocationRows,

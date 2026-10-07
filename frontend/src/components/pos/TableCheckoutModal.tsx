@@ -139,14 +139,28 @@ export default function TableCheckoutModal({
     }
   };
 
-  const handleSplitCheck = async () => {
+  const handleSplitCheck = async (sourceBill?: Bill) => {
     if (!order) return;
     setGenerating(true);
     try {
-      const bill = order.bill ? { ...order.bill, order } : (await api.post('/bills/generate', { order_id: order.id })).data.bill;
-      setSplitBill(bill);
+      const bill = sourceBill
+        ? (await api.get(`/bills/${sourceBill.id}`)).data.bill as Bill
+        : order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
+      const detailedBill = bill.order ? bill : (await api.get(`/bills/${bill.id}`)).data.bill as Bill;
+      const splitOrder = detailedBill.order as Order | undefined;
+      const splitItems = (splitOrder?.items || []).filter(
+        (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
+      );
+      const hasDivisibleItems = splitItems.length > 0
+        && splitItems.every((item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0)
+        && splitItems.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
+      if (splitOrder?.type !== 'dine_in' || !hasDivisibleItems) {
+        toast.error(t('splitCheckFailed'));
+        return;
+      }
+      setSplitBill(detailedBill);
     } catch {
-      toast.error(t('generateBillFailed'));
+      toast.error(t('splitCheckFailed'));
     }
     finally { setGenerating(false); }
   };
@@ -256,10 +270,10 @@ export default function TableCheckoutModal({
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => handlePayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
+          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div><div className="flex gap-2">{splitChecksEnabled && order.type === 'dine_in' && bill.payment_status === 'unpaid' && Number(bill.paid_amount || 0) === 0 && !bill.payment_details && <Button size="sm" variant="outline" onClick={() => handleSplitCheck(bill)} disabled={generating}><Users size={14} className="me-1" />{t('splitCheck')}</Button>}{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => handlePayment(bill)}>{t('pay')}</Button>}</div></div>)}</div>}
 
           {/* Show different buttons based on cart state */}
-          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
+          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && (!order.bill || (order.bill.payment_status === 'unpaid' && Number(order.bill.paid_amount || 0) === 0 && !order.bill.payment_details)) && <Button variant="outline" onClick={() => handleSplitCheck()} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
           {cartItemCount > 0 ? (
             // Cart has items - show "Add items to order" option
             <div className="space-y-2">
@@ -305,7 +319,11 @@ export default function TableCheckoutModal({
         </div>
       </div>
     </div>
-    {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
+    {splitBill && <SplitCheckModal bill={splitBill} order={splitBill.order || order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder((current) => {
+      if (!current) return current;
+      const existingBills = current.bills || (current.bill ? [current.bill] : []);
+      return { ...current, bill: bills[0], bills: [...existingBills.filter((existing) => existing.id !== splitBill.id), ...bills] };
+    }); setSplitBill(null); }} />}
     </>
   );
 }

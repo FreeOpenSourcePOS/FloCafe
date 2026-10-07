@@ -641,6 +641,16 @@ function OrderDetailContent({
                 )}
               </div>
             ))}
+            {canRefund && hasEligibleRefund && (
+              <Button
+                variant="outline"
+                onClick={() => onRefund(order, paidBills)}
+                className="w-full h-10 border-border text-foreground hover:bg-muted font-semibold text-xs"
+              >
+                <RotateCcw size={15} className="me-1.5 text-muted-foreground" />
+                {tOrders('refundButton')}
+              </Button>
+            )}
           </div>
         ) : isPaid || order.status === 'completed' ? (
           <div className="flex items-center gap-2">

@@ -428,7 +428,11 @@ async function upgradeFromPreV104Assertions(): Promise<void> {
     })();
   }
 
-  assertEqualOrThrow(getCurrentSchemaVersion(), ADDON_INVENTORY_VERSION, 'the upgraded store reaches v104');
+  assertEqualOrThrow(
+    getCurrentSchemaVersion(),
+    MIGRATIONS[MIGRATIONS.length - 1].version,
+    'the upgraded store reaches the latest registry version',
+  );
   assertOrThrow(
     columnsOf(db, 'addons').includes('low_stock_threshold'),
     'the upgrade adds the add-on inventory columns',

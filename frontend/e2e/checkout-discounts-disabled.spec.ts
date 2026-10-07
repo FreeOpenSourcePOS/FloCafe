@@ -4,6 +4,7 @@ import {
   request as playwrightRequest,
   type APIRequestContext,
   type Page,
+  type Request,
 } from '@playwright/test';
 import {
   E2E_PASSWORD,
@@ -106,11 +107,27 @@ async function login(page: Page): Promise<void> {
 }
 
 /** Orders opens the payment modal for this order; the caller owns the assertions. */
-async function openCheckout(page: Page, orderNumber: string): Promise<void> {
+async function openCheckout(page: Page, orderNumber: string, waitForModalSettings = true): Promise<void> {
+  const ordersSettingsResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === '/api/settings/discount';
+  });
   await page.goto(`${BASE}/orders`);
+  expect((await ordersSettingsResponse).ok()).toBeTruthy();
   await page.getByPlaceholder(/search/i).first().fill(orderNumber);
   await expect(page.getByText(`#${orderNumber}`)).toBeVisible();
-  await page.getByRole('button', { name: 'Checkout', exact: true }).click();
+  const checkoutButton = page.getByRole('button', { name: 'Checkout', exact: true });
+  if (waitForModalSettings) {
+    const modalSettingsRequestPromise = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET' && url.pathname === '/api/settings/discount';
+    });
+    await checkoutButton.click();
+    const modalSettingsResponse = await (await modalSettingsRequestPromise).response();
+    expect(modalSettingsResponse?.ok()).toBeTruthy();
+  } else {
+    await checkoutButton.click();
+  }
 }
 
 const recoveryScreen = (page: Page) => page.getByText('Something went wrong', { exact: true });
@@ -143,7 +160,8 @@ function collectPageErrors(page: Page): string[] {
  * surface before asserting that it never happened.
  */
 async function expectNoRenderLoop(pageErrors: string[]): Promise<void> {
-  await expect.poll(() => pageErrors.join(' | '), { timeout: 3000 }).toBe('');
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  expect(pageErrors).toEqual([]);
 }
 
 type BillRecord = {
@@ -218,12 +236,7 @@ test('orders checkout with discounts disabled opens a payable screen instead of 
   await login(page);
   await expect(page.getByPlaceholder(/search/i).first()).toBeVisible();
 
-  const settingsResponse = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.request().method() === 'GET' && url.pathname === '/api/settings/discount';
-  });
   await openCheckout(page, order.order_number);
-  expect((await settingsResponse).ok()).toBeTruthy();
 
   // A render loop unmounts the modal before any control is usable.
   await expectNoRenderLoop(pageErrors);
@@ -256,21 +269,22 @@ test('a late disabled-discount response drops an open checkout draft and still s
   // response is still in flight; the Orders page's own read passes through.
   let released: (() => void) | undefined;
   const release = new Promise<void>((resolve) => { released = resolve; });
-  const settingsReads: string[] = [];
+  const settingsReads: Request[] = [];
   await page.route('**/api/settings/discount', async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue();
       return;
     }
-    settingsReads.push(route.request().url());
+    settingsReads.push(route.request());
     if (settingsReads.length > 1) await release;
     await route.continue();
   });
 
   await login(page);
-  await openCheckout(page, order.order_number);
+  await openCheckout(page, order.order_number, false);
   await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
   await expect.poll(() => settingsReads.length).toBeGreaterThan(1);
+  const settingsRequest = settingsReads[1];
 
   // While the delayed read is in flight the draft is open and editable.
   await page.getByRole('button', { name: 'Apply Discount', exact: true }).click();
@@ -279,6 +293,8 @@ test('a late disabled-discount response drops an open checkout draft and still s
   await expect(draftInput).toHaveValue('10');
 
   released?.();
+  const settingsResponse = await settingsRequest.response();
+  expect(settingsResponse?.ok()).toBeTruthy();
   // The resolved mode is `none`, so the draft and its editor must disappear.
   await expect(discountToggle(page)).toHaveCount(0);
   await expect(page.getByText('Apply Discount', { exact: true })).toHaveCount(0);
@@ -468,12 +484,13 @@ test('prepaid checkout settles an undiscounted bill when discounts are disabled'
     await page.getByTestId('pos-product-card').click();
     await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
 
-    const settingsResponse = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'GET' && url.pathname === '/api/settings/discount';
+    const settingsRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return request.method() === 'GET' && url.pathname === '/api/settings/discount';
     });
     await page.getByRole('button', { name: 'Place Order' }).click();
-    expect((await settingsResponse).ok()).toBeTruthy();
+    const settingsResponse = await (await settingsRequest).response();
+    expect(settingsResponse?.ok()).toBeTruthy();
 
     await expectNoRenderLoop(pageErrors);
     // Undiscounted preview, no recovery boundary, no discount controls.

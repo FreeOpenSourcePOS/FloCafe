@@ -573,6 +573,7 @@ class GoogleDriveService {
   private jobControllers = new Map<string, AbortController>();
   private shutdownController = new AbortController();
   private databaseRestorePending = false;
+  private databaseRestoreInProcess = false;
   private restoreInvalidationCleanupPending = false;
   private restoreRecoveryRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private restoreRecoveryRetryCount = 0;
@@ -1128,25 +1129,41 @@ class GoogleDriveService {
     }, true);
   }
 
-  async prepareForDatabaseRestore(): Promise<void> {
+  async prepareForDatabaseRestore(options: { discardUnresolvedBoundary?: boolean } = {}): Promise<void> {
+    if (this.databaseRestoreInProcess) throw createDriveError('conflict');
     const hadRestoreBoundary = this.databaseRestorePending || this.restoreInvalidationCleanupPending;
     if (this.restoreInvalidationActive()) {
-      if (hadRestoreBoundary || this.operationRunning || this.activeJobs.size > 0) throw createDriveError('conflict');
+      if (this.operationRunning || this.activeJobs.size > 0) throw createDriveError('conflict');
+      if (hadRestoreBoundary && !options.discardUnresolvedBoundary) throw createDriveError('conflict');
       try {
         this.clearDatabaseRestoreInvalidation();
-      } catch {
-        throw createDriveError('conflict');
+      } catch (recoveryError) {
+        if (!options.discardUnresolvedBoundary
+          || !this.restoreInvalidationCleanupPending
+          || this.databaseRestoreRecoveryDecision() !== 'ambiguous') throw createDriveError('conflict');
+        console.error('[Google Drive] Discarding unresolvable restore boundary:', recoveryError);
+        try {
+          this.invalidateAfterDatabaseRestore(getDatabaseReplacementJournal(), { discardUnresolvedBoundary: true });
+        } catch {
+          throw createDriveError('conflict');
+        }
       }
       if (this.restoreInvalidationActive()) throw createDriveError('conflict');
     }
+    this.databaseRestoreInProcess = true;
     this.databaseRestorePending = true;
-    this.backupAbortController?.abort();
-    this.abortQueuedDriveOperations();
-    for (const controller of this.jobControllers.values()) controller.abort();
-    await this.abortAndAwaitActiveDriveOperations();
-    await this.operationTail;
-    await this.abortAndAwaitActiveDriveOperations();
-    this.activateDatabaseRestoreInvalidation();
+    try {
+      this.backupAbortController?.abort();
+      this.abortQueuedDriveOperations();
+      for (const controller of this.jobControllers.values()) controller.abort();
+      await this.abortAndAwaitActiveDriveOperations();
+      await this.operationTail;
+      await this.abortAndAwaitActiveDriveOperations();
+      this.activateDatabaseRestoreInvalidation();
+    } catch (error) {
+      this.databaseRestoreInProcess = false;
+      throw error;
+    }
   }
 
   async beginDatabaseRestoreInvalidation(jobId?: string): Promise<void> {
@@ -1157,6 +1174,7 @@ class GoogleDriveService {
   }
 
   releaseDatabaseRestore(): void {
+    this.databaseRestoreInProcess = false;
     if (this.restoreInvalidationCleanupPending) return;
     const replacement = getDatabaseReplacementJournal();
     if (this.restoreInvalidationIntentExists() || replacement?.phase === 'prepared') {
@@ -1206,6 +1224,7 @@ class GoogleDriveService {
   }
 
   completeDatabaseRestore(): DatabaseReplacementCompletion {
+    this.databaseRestoreInProcess = false;
     const replacement = getDatabaseReplacementJournal();
     if (!replacement) {
       const decision = this.databaseRestoreRecoveryDecision();
@@ -1235,14 +1254,14 @@ class GoogleDriveService {
     }
   }
 
-  invalidateAfterDatabaseRestore(replacement: DatabaseReplacementJournalHandle | null = getDatabaseReplacementJournal()): void {
+  invalidateAfterDatabaseRestore(replacement: DatabaseReplacementJournalHandle | null = getDatabaseReplacementJournal(), options: { discardUnresolvedBoundary?: boolean } = {}): void {
     if (getDatabaseReplacementJournal()?.phase === 'prepared') {
       this.restoreInvalidationCleanupPending = true;
       this.scheduleRestoreRecoveryRetry();
       throw new Error('Prepared database replacement recovery remains pending');
     }
     const committedReplacement = replacement?.phase === 'committed' ? replacement : null;
-    if (!committedReplacement && this.databaseRestoreRecoveryDecision() !== 'committed') throw new Error('Database replacement is not committed');
+    if (!committedReplacement && !options.discardUnresolvedBoundary && this.databaseRestoreRecoveryDecision() !== 'committed') throw new Error('Database replacement is not committed');
     try {
       for (const fileName of fs.readdirSync(getStagingDir())) removeStagingFile(path.join(getStagingDir(), fileName));
     } catch { }

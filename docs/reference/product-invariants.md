@@ -316,9 +316,10 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    stock pool (`inventory_product_id`). Neither substitutes for the other, and both may move once
    per sale.
 7. **A portion without a recipe has no effect.** A variant may store a portion while its product has
-   no active recipe; nothing depletes until a recipe exists, and the stored value is kept for when
-   one does. A portion is a positive finite number, so a stored zero, negative, or non-finite value
-   is refused at sale time rather than depleting a nonsense amount.
+   no active recipe. Sales without an active recipe create no recipe snapshot; the portion applies
+   to later sales after a recipe becomes active. Portions must be positive finite numbers; catalog
+   writes and database imports reject invalid supplied values, and recipe snapshot creation rejects
+   an invalid portion before depletion.
 
 **Reason:** POS availability during a stockout matters more than ledger neatness. A store that
 cannot sell because flour has not been counted in yet is worse than a negative row to reconcile
@@ -331,9 +332,9 @@ creation, item append, item cancel and item restore paths in `main/routes/orders
 only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
 `pending`; a `voided` item is never restored. The portion comes from
 `resolveOrderItemVariant()` in `main/services/product-variants.ts`, the same server-side resolution
-that prices the line, and `buildRecipeSnapshot()` refuses a non-positive or non-finite portion so
-no order can record one. The variants table stores it as a positive value
-(`product_variants.recipe_multiplier`, default 1).
+that prices the line, and `buildRecipeSnapshot()` refuses a non-positive or non-finite portion
+before depletion. The migration gives existing variants a default portion of 1 in
+`product_variants.recipe_multiplier`.
 
 **How to verify:**
 

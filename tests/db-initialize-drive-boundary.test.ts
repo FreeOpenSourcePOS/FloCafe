@@ -38,14 +38,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-process.env.JWT_SECRET = 'test-secret-db-initialize-boundary';
-
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const databaseModule = require('../main/db');
 const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion } = require('../main/db');
-const { getJWTSecret } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { googleDrive } = require('../main/services/google-drive');
 const { resetMasterPin } = require('../main/services/master-pin');
@@ -77,24 +73,13 @@ async function run(): Promise<void> {
 
   const app = express();
   app.use(express.json());
-  app.use((req: any, res: any, next: any) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Authentication required' });
-      return;
-    }
-    try {
-      req.user = jwt.verify(authHeader.split(' ')[1], getJWTSecret());
-      next();
-    } catch {
-      res.status(401).json({ error: 'Invalid or expired token' });
-    }
+  app.use((req: any, _res: any, next: any) => {
+    req.user = { userId: 'owner-1', email: 'owner@flo.local', role: 'owner' };
+    next();
   });
   app.use('/api/db-tools', databaseToolsRoutes);
 
-  const ownerToken = jwt.sign({ userId: 'owner-1', email: 'owner@flo.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
   const initialize = () => request(app).post('/api/db-tools/initialize')
-    .set('Authorization', `Bearer ${ownerToken}`)
     .send({ master_pin: '1234', confirmation_phrase: 'INITIALIZE' });
 
   // Mirror app startup: the Drive service reconciles the boundary before any request.

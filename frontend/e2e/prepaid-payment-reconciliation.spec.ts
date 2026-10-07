@@ -581,8 +581,11 @@ test('payment modal hides charge controls without bill discount permission', asy
       await serverEmail.fill('server@flo.local');
       await serverPage!.locator('#password').fill(E2E_PASSWORD);
       await serverPage!.locator('button[type="submit"]').click();
-      await serverPage!.waitForURL((url) => url.pathname !== '/auth/login' && url.pathname !== '/auth/login/');
-      await serverPage!.goto(`${BASE}/orders`);
+      // Sign-in already lands this restricted staff member on Orders, so wait for
+      // the intended page instead of navigating again: a second full navigation
+      // mounts the page twice and doubles its per-mount settings reads.
+      await serverPage!.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/orders');
+      await expect(serverPage!.getByPlaceholder(/search/i).first()).toBeVisible();
       await serverPage!.getByPlaceholder(/search/i).first().fill(order.order_number);
       await expect(serverPage!.getByText(`#${order.order_number}`)).toBeVisible();
       markStage('staff_login_order_search', 'complete');

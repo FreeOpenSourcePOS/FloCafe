@@ -131,6 +131,132 @@ async function main() {
     assertEqualOrThrow(disallowedFraction.status, 400, 'POST /held-orders rejects fractional quantity for a whole-unit product');
 
     // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario B3: held carts keep waived/opted-in charge choices ───');
+    const selectionTableId = 'tbl-selection-365';
+    seedTable(db, selectionTableId, 4);
+    const readHeldForTable = async (targetTableId: string) =>
+      (await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders
+        .find((order: any) => order.tableId === targetTableId);
+
+    const firstSelectionHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: selectionTableId,
+        items: mockItems,
+        waivedChargeIds: ['service_charge', 'late_fee', 'late_fee'],
+        optedInChargeIds: ['optional_packing'],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(firstSelectionHold.status, 200, 'POST /held-orders accepts charge selections');
+    const heldSelection = await readHeldForTable(selectionTableId);
+    assertEqualOrThrow(JSON.stringify(heldSelection.waivedChargeIds), JSON.stringify(['service_charge', 'late_fee']),
+      'waived charge ids round-trip and deduplicate');
+    assertEqualOrThrow(JSON.stringify(heldSelection.optedInChargeIds), JSON.stringify(['optional_packing']), 'opted-in charge ids round-trip');
+    console.log('  ✓ held charge selections round-trip through hold and fetch');
+
+    const overwriteSelection = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: selectionTableId,
+        items: mockItems,
+        waivedChargeIds: [],
+        optedInChargeIds: ['optional_packing', 'gift_wrap'],
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(overwriteSelection.status, 200, 'POST /held-orders overwrites an existing hold');
+    const afterOverwriteSelection = await readHeldForTable(selectionTableId);
+    assertEqualOrThrow(JSON.stringify(afterOverwriteSelection.waivedChargeIds), '[]', 'an emptied waived selection is persisted');
+    assertEqualOrThrow(JSON.stringify(afterOverwriteSelection.optedInChargeIds), JSON.stringify(['optional_packing', 'gift_wrap']),
+      'the overwritten opted-in selection is persisted');
+    console.log('  ✓ overwriting a hold replaces both saved selections');
+
+    const legacyPayloadHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: selectionTableId, items: mockItems },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyPayloadHold.status, 200, 'POST /held-orders still accepts the pre-selection payload');
+    const afterLegacyPayload = await readHeldForTable(selectionTableId);
+    assertEqualOrThrow(JSON.stringify(afterLegacyPayload.waivedChargeIds), '[]', 'an omitted waived selection defaults to empty');
+    assertEqualOrThrow(JSON.stringify(afterLegacyPayload.optedInChargeIds), '[]', 'an omitted opted-in selection defaults to empty');
+    assertEqualOrThrow(
+      db.prepare('SELECT waived_charge_ids FROM held_orders WHERE table_id = ?').get(selectionTableId).waived_charge_ids,
+      '[]',
+      'an omitted selection is stored as an empty array, not NULL',
+    );
+    console.log('  ✓ pre-selection clients keep working and store empty selections');
+
+    // A hold whose stored selection JSON is damaged by a foreign build must
+    // still be resumable, with only the damaged selection dropped.
+    db.prepare('UPDATE held_orders SET waived_charge_ids = ?, opted_in_charge_ids = ? WHERE table_id = ?')
+      .run('not json', '{"packing":true}', selectionTableId);
+    const malformedSelectionHold = await readHeldForTable(selectionTableId);
+    assertOrThrow(Boolean(malformedSelectionHold), 'a hold with malformed selection JSON is still returned');
+    assertEqualOrThrow(JSON.stringify(malformedSelectionHold.waivedChargeIds), '[]', 'malformed stored waived selection degrades to empty');
+    assertEqualOrThrow(JSON.stringify(malformedSelectionHold.optedInChargeIds), '[]', 'malformed stored opted-in selection degrades to empty');
+    assertEqualOrThrow(malformedSelectionHold.items[0].id, 'latte-line', 'a malformed selection keeps the held cart items');
+    console.log('  ✓ malformed stored selections degrade to empty without dropping the hold');
+
+    // Restore a good hold, then prove rejected payloads cannot clobber it.
+    const restoreGoodSelections = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: selectionTableId, items: mockItems, waivedChargeIds: ['late_fee'], optedInChargeIds: ['optional_packing'] },
+      headers: authHeader,
+    });
+    const protectedHoldId = restoreGoodSelections.data.id;
+    const invalidSelections = [
+      { waivedChargeIds: 'service_charge' },
+      { waivedChargeIds: [42] },
+      { optedInChargeIds: ['bad id!'] },
+      { optedInChargeIds: ['a'.repeat(65)] },
+      { optedInChargeIds: [{ id: 'service_charge' }] },
+      { waivedChargeIds: Array.from({ length: 51 }, (_, index) => `charge_${index}`) },
+    ];
+    for (const invalidSelection of invalidSelections) {
+      const invalidSelectionRes = await api(baseUrl, '/api/held-orders', {
+        method: 'POST',
+        body: { tableId: selectionTableId, items: mockItems, ...invalidSelection },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(invalidSelectionRes.status, 400,
+        `rejects an invalid charge selection: ${JSON.stringify(invalidSelection).slice(0, 60)}`);
+    }
+    const afterRejectedSelections = await readHeldForTable(selectionTableId);
+    assertEqualOrThrow(afterRejectedSelections.id, protectedHoldId, 'a rejected hold leaves the prior identity intact');
+    assertEqualOrThrow(JSON.stringify(afterRejectedSelections.waivedChargeIds), JSON.stringify(['late_fee']), 'a rejected hold leaves the prior waived selection intact');
+    assertEqualOrThrow(JSON.stringify(afterRejectedSelections.optedInChargeIds), JSON.stringify(['optional_packing']), 'a rejected hold leaves the prior opted-in selection intact');
+    console.log('  ✓ malformed charge selections are rejected without touching the stored hold');
+
+    // A role without held-orders.manage cannot read or write selections.
+    const jwt = require('jsonwebtoken');
+    const { getJWTSecret } = require('../main/routes/auth');
+    db.prepare(`
+      INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('chef-held-365', 'Test Chef', 'chef-held@test.local', 'x', 'chef', 1, ?, ?)
+    `).run(now(), now());
+    const chefAuthHeader = {
+      Authorization: `Bearer ${jwt.sign({ userId: 'chef-held-365', email: 'chef-held@test.local', role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+    };
+    const deniedHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: selectionTableId, items: mockItems, waivedChargeIds: ['late_fee'] },
+      headers: chefAuthHeader,
+    });
+    assertEqualOrThrow(deniedHold.status, 403, 'a role without held-orders.manage cannot hold an order');
+    const deniedRead = await api(baseUrl, '/api/held-orders', { headers: chefAuthHeader });
+    assertEqualOrThrow(deniedRead.status, 403, 'a role without held-orders.manage cannot read held orders');
+    assertEqualOrThrow((await readHeldForTable(selectionTableId)).id, protectedHoldId, 'a denied hold leaves the stored cart untouched');
+    console.log('  ✓ the held-order authorization boundary covers the new fields');
+
+    await api(
+      baseUrl,
+      `/api/held-orders/${selectionTableId}?heldOrderId=${encodeURIComponent(protectedHoldId)}`,
+      { method: 'DELETE', headers: authHeader },
+    );
+
+    // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario C: POST /held-orders validates request data ───');
     const invalidRequests = [
       { tableId: 123, items: mockItems },

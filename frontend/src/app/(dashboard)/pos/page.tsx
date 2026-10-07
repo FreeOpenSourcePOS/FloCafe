@@ -676,6 +676,7 @@ export default function POSPage() {
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
           expected_payment_method: cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
+          expected_payment_method_id: cart.orderType === 'delivery' ? cart.expectedPaymentMethodId ?? undefined : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
@@ -746,6 +747,7 @@ export default function POSPage() {
       external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
       expected_payment_method: cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
+      expected_payment_method_id: cart.orderType === 'delivery' ? cart.expectedPaymentMethodId ?? undefined : undefined,
       delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
       items: orderItems,
       waived_charge_ids: Array.from(cart.waivedChargeIds),
@@ -835,6 +837,7 @@ export default function POSPage() {
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
           expected_payment_method: cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
+          expected_payment_method_id: cart.orderType === 'delivery' ? cart.expectedPaymentMethodId ?? undefined : undefined,
           delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
           waived_charge_ids: Array.from(cart.waivedChargeIds),
           opted_in_charge_ids: Array.from(cart.optedInChargeIds),
@@ -975,7 +978,16 @@ export default function POSPage() {
     try {
       const held = await heldOrders.restoreOrder(tableId);
       if (held) {
-        cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
+        cart.loadItems(
+          held.items,
+          tableId,
+          held.customerId,
+          held.guestCount,
+          held.orderNotes,
+          held.id,
+          held.waivedChargeIds,
+          held.optedInChargeIds,
+        );
         cart.setOrderType('dine_in');
       } else {
         await heldOrders.fetchHeldOrders();
@@ -996,7 +1008,15 @@ export default function POSPage() {
     }
     const tableName = tables.find((t) => t.id === tableId)?.name || tableId;
     try {
-      await heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
+      await heldOrders.holdOrder(
+        tableId,
+        cart.items,
+        cart.customerId,
+        cart.guestCount,
+        cart.orderNotes,
+        [...cart.waivedChargeIds],
+        [...cart.optedInChargeIds],
+      );
       cart.clearCart();
       setShowTablePicker(false);
       toast.success(t('orderHeld', { tableName }));

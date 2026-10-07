@@ -19,7 +19,8 @@ import { usePrinterStore, type HardwarePrinter } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatDateForTenant } from '@/lib/countries';
-import type { Category, Product } from '@/lib/types';
+import type { Category, Product, ProductVariant } from '@/lib/types';
+import { activeVariants, isVariantSoldOut } from '@/lib/product-variants';
 import { buildMenuWebPrintHtml, MenuPopupBlockedError, printMenuInBrowser, reservePrintGesture, type MenuWebPrintSection } from '@/lib/printer/menu-web-print';
 
 interface Props {
@@ -120,13 +121,25 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
     const products = (productResponse.data.products || []) as Product[];
     const categories = (categoryResponse.data.categories || []) as Category[];
     const categoryById = new Map(categories.map((category) => [category.id, category]));
-    const included = products.filter((product) =>
-      (selectedFilters.includeInactive || product.is_active)
-      && (selectedFilters.includeOutOfStock || !isOutOfStock(product))
-      && (selectedFilters.includeHidden || !product.category_id || categoryById.get(product.category_id)?.is_active === true));
-    const toPrintProduct = (product: Product) => ({
-      name: product.name,
-      price: formatCurrency(Number(product.price)),
+    // A product with active variants prints one row per variant at the
+    // variant's own price; the parent's unsellable price never reaches paper.
+    // A product without active variants keeps its single parent row.
+    const included = products
+      .filter((product) =>
+        (selectedFilters.includeInactive || product.is_active)
+        && (selectedFilters.includeHidden || !product.category_id || categoryById.get(product.category_id)?.is_active === true))
+      .flatMap((product) => {
+        const variants = activeVariants(product.variants);
+        if (variants.length === 0) {
+          return selectedFilters.includeOutOfStock || !isOutOfStock(product) ? [{ product }] : [];
+        }
+        return variants
+          .filter((variant) => selectedFilters.includeOutOfStock || !isVariantSoldOut(variant))
+          .map((variant) => ({ product, variant }));
+      });
+    const toPrintProduct = ({ product, variant }: { product: Product; variant?: ProductVariant }) => ({
+      name: variant ? `${product.name} (${variant.name})` : product.name,
+      price: formatCurrency(Number(variant ? variant.price : product.price)),
       details: [
         ...(selectedFilters.includeDescriptions && product.description ? [product.description] : []),
         ...(selectedFilters.includeModifiers ? (product.addon_groups || []).map((group) =>
@@ -137,12 +150,12 @@ export default function PrintMenuModal({ open, onOpenChange }: Props) {
       .map((category) => ({
         name: category.name,
         products: included
-          .filter((product) => product.category_id === category.id)
+          .filter((row) => row.product.category_id === category.id)
           .map(toPrintProduct),
       }))
       .filter((section) => section.products.length > 0);
     const uncategorized = included
-      .filter((product) => !product.category_id || !categoryById.has(product.category_id))
+      .filter((row) => !row.product.category_id || !categoryById.has(row.product.category_id))
       .map(toPrintProduct);
     if (uncategorized.length > 0) sections.push({ name: null, products: uncategorized });
     const itemCount = sections.reduce((total, section) => total + section.products.length, 0);

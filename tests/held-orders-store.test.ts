@@ -16,6 +16,8 @@ type HeldOrder = {
   customerId: number | string | null;
   guestCount: number;
   orderNotes: string;
+  waivedChargeIds?: string[];
+  optedInChargeIds?: string[];
   heldAt: string;
 };
 
@@ -50,7 +52,15 @@ const serverApi = {
     }
     return response;
   },
-  post: async (url: string, body: { tableId: string; items: HeldOrder['items']; customerId: HeldOrder['customerId']; guestCount: number; orderNotes: string }) => {
+  post: async (url: string, body: {
+    tableId: string;
+    items: HeldOrder['items'];
+    customerId: HeldOrder['customerId'];
+    guestCount: number;
+    orderNotes: string;
+    waivedChargeIds?: string[];
+    optedInChargeIds?: string[];
+  }) => {
     assert.equal(url, '/held-orders');
     const id = `ho-${body.tableId}-${++nextOrderId}`;
     serverOrders.set(body.tableId, {
@@ -60,6 +70,8 @@ const serverApi = {
       customerId: body.customerId,
       guestCount: body.guestCount,
       orderNotes: body.orderNotes,
+      waivedChargeIds: clone(body.waivedChargeIds ?? []),
+      optedInChargeIds: clone(body.optedInChargeIds ?? []),
       heldAt: '2026-08-01T00:00:00.000Z',
     });
     return { data: { success: true, id } };
@@ -264,6 +276,77 @@ async function main() {
   );
   assert.equal(secondTerminal.getState().hasHeldOrder('table-c'), true, 'delete errors retain the cached order for retry');
   assert.equal(serverOrders.has('table-c'), true, 'delete errors do not consume the server row');
+
+  // ── Charge selections travel with the hold and come back on resume ──────
+  const selectionStore = createHeldOrdersStore(serverApi);
+  const selectionItems = [{
+    id: 'selection-line',
+    product: { id: 'product-selection', name: 'Latte', price: 100 },
+    quantity: 1,
+    addons: [],
+    special_instructions: '',
+  }];
+  await selectionStore.getState().holdOrder(
+    'table-selection', selectionItems, null, 2, 'no sugar', ['service_charge'], ['optional_packing'],
+  );
+  assert.deepEqual(
+    serverOrders.get('table-selection')?.waivedChargeIds,
+    ['service_charge'],
+    'the hold request carries the waived charge ids to the server',
+  );
+  assert.deepEqual(
+    serverOrders.get('table-selection')?.optedInChargeIds,
+    ['optional_packing'],
+    'the hold request carries the opted-in charge ids to the server',
+  );
+  const heldLocally = selectionStore.getState().getHeldOrder('table-selection');
+  assert.deepEqual(heldLocally?.waivedChargeIds, ['service_charge'], 'the local snapshot keeps the waived selection');
+  assert.deepEqual(heldLocally?.optedInChargeIds, ['optional_packing'], 'the local snapshot keeps the opted-in selection');
+
+  const selectionResume = createHeldOrdersStore(serverApi);
+  await selectionResume.getState().fetchHeldOrders();
+  const fetchedSelections = selectionResume.getState().getHeldOrder('table-selection');
+  assert.deepEqual(fetchedSelections?.waivedChargeIds, ['service_charge'], 'a fetched hold exposes the waived selection');
+  assert.deepEqual(fetchedSelections?.optedInChargeIds, ['optional_packing'], 'a fetched hold exposes the opted-in selection');
+  const restoredSelections = await selectionResume.getState().restoreOrder('table-selection');
+  assert.deepEqual(restoredSelections?.waivedChargeIds, ['service_charge'], 'a resumed hold returns the waived selection');
+  assert.deepEqual(restoredSelections?.optedInChargeIds, ['optional_packing'], 'a resumed hold returns the opted-in selection');
+
+  // A hold written by an older build has no selection fields at all.
+  serverOrders.set('table-legacy-selection', makeHeldOrder('table-legacy-selection'));
+  await selectionResume.getState().fetchHeldOrders();
+  const legacySelections = selectionResume.getState().getHeldOrder('table-legacy-selection');
+  assert.deepEqual(legacySelections?.waivedChargeIds, [], 'a legacy hold without selections defaults to empty waivers');
+  assert.deepEqual(legacySelections?.optedInChargeIds, [], 'a legacy hold without selections defaults to empty opt-ins');
+
+  // Overwriting a hold replaces both selections.
+  await selectionStore.getState().holdOrder(
+    'table-selection', selectionItems, null, 2, 'no sugar', [], ['optional_packing', 'gift_wrap'],
+  );
+  await selectionStore.getState().fetchHeldOrders();
+  const overwritten = selectionStore.getState().getHeldOrder('table-selection');
+  assert.deepEqual(overwritten?.waivedChargeIds, [], 'an overwrite clears the waived selection');
+  assert.deepEqual(overwritten?.optedInChargeIds, ['optional_packing', 'gift_wrap'], 'an overwrite replaces the opted-in selection');
+
+  // A failed hold must not replace the cached hold or its selections.
+  const failedHoldStore = createHeldOrdersStore(serverApi);
+  await failedHoldStore.getState().fetchHeldOrders();
+  const beforeFailedHold = failedHoldStore.getState().getHeldOrder('table-selection');
+  const postFailure = new Error('hold rejected');
+  const originalPost = serverApi.post;
+  serverApi.post = async () => { throw postFailure; };
+  await assert.rejects(
+    () => failedHoldStore.getState().holdOrder('table-selection', selectionItems, null, 2, '', ['late_fee'], ['optional_packing']),
+    /hold rejected/,
+    'a failed hold surfaces its error',
+  );
+  serverApi.post = originalPost;
+  assert.deepEqual(
+    failedHoldStore.getState().getHeldOrder('table-selection'),
+    beforeFailedHold,
+    'a failed hold leaves the cached hold and its selections untouched',
+  );
+  console.log('  ✓ held charge selections survive hold, fetch, overwrite, and resume');
 
   console.log('\n✅ Held-order client store regression tests passed');
 }

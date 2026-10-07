@@ -62,6 +62,37 @@ export function resolveExpectedPaymentMethod(db: SettingsLookup, value: unknown)
   return custom.name;
 }
 
+/**
+ * Resolves the explicit custom-method identity a caller sends alongside the name
+ * snapshot. The ID is the durable marker, so it is resolved against the active
+ * configuration here and the canonical name is stored with it; the optional name
+ * is only checked for agreement and never invented. Null keeps the legacy
+ * string/sentinel contract untouched.
+ */
+export function resolveExpectedPaymentMethodIdentity(
+  db: SettingsLookup,
+  methodId: unknown,
+  methodName: unknown,
+): { id: number; name: string } | null {
+  if (methodId === undefined || methodId === null) return null;
+  if (typeof methodId !== 'number' || !Number.isSafeInteger(methodId) || methodId <= 0) {
+    throw new Error('expected_payment_method_id must be a positive integer');
+  }
+  const method = db.prepare('SELECT id, name FROM payment_methods WHERE id = ? AND is_active = 1')
+    .get(methodId) as { id: number; name: string } | undefined;
+  if (!method) {
+    throw new Error('expected_payment_method_id must reference an active payment method');
+  }
+  if (methodName !== undefined && methodName !== null && typeof methodName !== 'string') {
+    throw new Error('expected_payment_method must be a string');
+  }
+  const suppliedName = typeof methodName === 'string' ? methodName.trim() : '';
+  if (suppliedName && suppliedName.toLowerCase() !== method.name.toLowerCase()) {
+    throw new Error('expected_payment_method does not match expected_payment_method_id');
+  }
+  return { id: method.id, name: method.name };
+}
+
 export function validateProductQuantity(
   product: { name?: string; sale_unit?: string; allow_fractional_quantity?: boolean | number; weight_precision?: number },
   quantity: unknown,

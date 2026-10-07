@@ -144,6 +144,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
+  const tSettings = useTranslations('settings');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
@@ -195,7 +196,15 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     }
     const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
     try {
-      await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
+      await heldOrders.holdOrder(
+        cart.tableId,
+        cart.items,
+        cart.customerId,
+        cart.guestCount,
+        cart.orderNotes,
+        [...cart.waivedChargeIds],
+        [...cart.optedInChargeIds],
+      );
       cart.clearCart();
       toast.success(t('orderHeldFor', { table: tableName }));
     } catch {
@@ -269,17 +278,43 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               <Wallet size={14} className="text-muted-foreground shrink-0" />
               <span className="text-sm text-muted-foreground">{t('expectedPayment')}</span>
               <select
-                value={cart.expectedPaymentMethod}
-                onChange={(e) => cart.setExpectedPaymentMethod(e.target.value)}
+                value={cart.expectedPaymentMethodId !== null
+                  ? `custom:${cart.expectedPaymentMethodId}`
+                  : cart.expectedPaymentMethod}
+                onChange={(e) => {
+                  const selected = e.target.value;
+                  // A configured method travels by identity, so a method named
+                  // "Pending" or "Unknown" cannot be read back as a sentinel.
+                  const customId = selected.startsWith('custom:')
+                    ? Number(selected.slice('custom:'.length))
+                    : null;
+                  if (customId !== null) {
+                    const method = customPaymentMethods.find((candidate) => candidate.id === customId);
+                    if (method) {
+                      cart.setExpectedPaymentMethod(method.name, method.id);
+                      return;
+                    }
+                    if (customId === cart.expectedPaymentMethodId) return;
+                  }
+                  cart.setExpectedPaymentMethod(selected, null);
+                }}
                 className="flex-1 min-w-0 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               >
                 <option value="">{tCommon('unknown')}</option>
                 <option value="pending">{tOrders('pending')}</option>
                 <option value="cash">{t('methodCash')}</option>
                 <option value="card">{t('methodCard')}</option>
-                {customPaymentMethods.map((method) => (
-                  <option key={method.id} value={method.name}>{method.name}</option>
-                ))}
+                {customPaymentMethods.length > 0 && (
+                  <optgroup label={tSettings('paymentMethods')}>
+                    {customPaymentMethods.map((method) => (
+                      <option key={method.id} value={`custom:${method.id}`}>{method.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {cart.expectedPaymentMethodId !== null
+                  && !customPaymentMethods.some((method) => method.id === cart.expectedPaymentMethodId) && (
+                  <option value={`custom:${cart.expectedPaymentMethodId}`}>{cart.expectedPaymentMethod || tCommon('unknown')}</option>
+                )}
               </select>
             </label>
             <div className="flex items-center gap-2">

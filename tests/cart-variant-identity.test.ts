@@ -240,4 +240,43 @@ assert.equal(scanned.length, 1, 'a scanned variant barcode lands a single line i
 assert.equal(scanned[0].variant?.id, 'var-scan-m', 'the scanned line carries the scanned variant');
 assert.equal(scanned[0].quantity, 1, 'the scanned line is added at quantity 1');
 
+// A resumed held cart restores the cashier's charge decisions as live Sets.
+const restoredWaived = ['service_charge', 'late_fee'];
+const restoredOptedIn = ['optional_packing'];
+cart().clearCart();
+cart().loadItems([], 'tbl-resume', null, 2, 'no sugar', 'ho-resume', restoredWaived, restoredOptedIn);
+assert.deepEqual([...cart().waivedChargeIds], ['service_charge', 'late_fee'], 'a resumed cart restores the waived charges');
+assert.deepEqual([...cart().optedInChargeIds], ['optional_packing'], 'a resumed cart restores the opted-in charges');
+assert.ok(cart().waivedChargeIds instanceof Set, 'restored waivers are live Sets, not arrays');
+assert.equal(cart().orderType, 'dine_in', 'restoring a cart keeps the current order type');
+
+// The Sets are independent of the arrays they were built from.
+restoredWaived.push('courier_fee');
+restoredOptedIn.length = 0;
+assert.equal(cart().waivedChargeIds.has('courier_fee'), false, 'mutating the source array cannot alter the restored waivers');
+assert.equal(cart().optedInChargeIds.size, 1, 'mutating the source array cannot alter the restored opt-ins');
+cart().toggleWaiveCharge('late_fee');
+assert.equal(cart().waivedChargeIds.has('late_fee'), false, 'restored waivers stay toggleable');
+
+// Legacy and caller-less restores default to no decisions.
+cart().clearCart();
+cart().loadItems([], 'tbl-legacy', null, 2, '', 'ho-legacy');
+assert.equal(cart().waivedChargeIds.size, 0, 'a legacy held order restores with no waivers');
+assert.equal(cart().optedInChargeIds.size, 0, 'a legacy held order restores with no opt-ins');
+cart().toggleWaiveCharge('service_charge');
+cart().toggleOptedInCharge('optional_packing');
+cart().loadItems([], 'tbl-next', null, 1, '', 'ho-next', ['gift_wrap'], []);
+assert.deepEqual([...cart().waivedChargeIds], ['gift_wrap'], 'the next restore replaces the previous waivers');
+assert.equal(cart().optedInChargeIds.size, 0, 'the next restore replaces the previous opt-ins');
+
+// Leaving the cart clears the decisions with everything else.
+cart().clearCart();
+assert.equal(cart().waivedChargeIds.size, 0, 'clearCart clears waived charges');
+assert.equal(cart().optedInChargeIds.size, 0, 'clearCart clears opted-in charges');
+cart().loadItems([], 'tbl-reset', null, 1, '', 'ho-reset', ['service_charge'], ['optional_packing']);
+cart().setOrderType('delivery');
+assert.equal(cart().waivedChargeIds.size, 0, 'a real order-type change resets waived charges');
+assert.equal(cart().optedInChargeIds.size, 0, 'a real order-type change resets opted-in charges');
+cart().clearCart();
+
 console.log('✓ cart variant identity and cart store checks passed');

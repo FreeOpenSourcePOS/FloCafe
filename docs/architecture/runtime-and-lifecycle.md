@@ -95,8 +95,8 @@ Playwright and CI runs survive the restart.
 ## Window load failures
 
 A window whose document URL has become `chrome-error://` is treated as a failed load.
-`recoverFailedWindow` rebuilds the window once, guarded by `windowLoadRecoveryAttempted`. A second
-failure, or a runtime that is not healthy, requests a relaunch rather than looping.
+`recoverFailedWindow` allows one in-place rebuild while the runtime is healthy. A second failure, or
+a runtime that is not healthy, requests a relaunch rather than looping.
 
 ## Shutdown order
 

@@ -198,6 +198,8 @@ export interface Order {
   delivery_address?: string | null;
   /** Method the courier expects to collect; null is unknown. Not a payment record. */
   expected_payment_method?: string | null;
+  /** Historical configured-method identity; null for built-ins, sentinels, and legacy orders. */
+  expected_payment_method_id?: number | null;
   /** Courier-only note, printed on the delivery slip. */
   delivery_note?: string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';

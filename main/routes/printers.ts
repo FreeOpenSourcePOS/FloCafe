@@ -406,21 +406,42 @@ router.post('/print-menu', requirePermission('catalog.view'), requirePermission(
       stock_quantity: number | null;
       sort_order: number | null;
     }>;
-    const relations = body.includeModifiers ? loadProductRelationsBatch(db, productRows) : new Map();
-    const products = productRows.map((product) => ({
-      description: product.description,
-      modifiers: (relations.get(product.id)?.addon_groups || []).map((group: { name: string; addons: { name: string; price: number }[] }) => ({
-        name: group.name,
-        options: group.addons.map((addon) => ({ name: addon.name, price: addon.price })),
-      })),
-      categoryId: typeof product.category_id === 'string' ? product.category_id : null,
-      name: String(product.name ?? ''),
-      price: Number(product.price),
-      isActive: product.is_active === 1,
-      trackInventory: product.track_inventory === 1,
-      stockQuantity: Number(product.stock_quantity) || 0,
-      sortOrder: Number(product.sort_order) || 0,
-    }));
+    // Sale rows need active variants even when add-on modifiers are off, so the
+    // relation loader always runs.
+    const relations = loadProductRelationsBatch(db, productRows);
+    const products = productRows.flatMap((product) => {
+      const base = {
+        description: product.description,
+        modifiers: (relations.get(product.id)?.addon_groups || []).map((group: { name: string; addons: { name: string; price: number }[] }) => ({
+          name: group.name,
+          options: group.addons.map((addon) => ({ name: addon.name, price: addon.price })),
+        })),
+        categoryId: typeof product.category_id === 'string' ? product.category_id : null,
+        name: String(product.name ?? ''),
+        price: Number(product.price),
+        isActive: product.is_active === 1,
+        trackInventory: product.track_inventory === 1,
+        stockQuantity: Number(product.stock_quantity) || 0,
+        sortOrder: Number(product.sort_order) || 0,
+      };
+      // The relation loader returns only active variants, so an empty list means
+      // the parent row is the only sellable form the backend offers.
+      const variants = (relations.get(product.id)?.variants || []) as Array<Record<string, unknown>>;
+      if (variants.length === 0) return [base];
+      return variants.map((variant, variantIndex) => ({
+        ...base,
+        name: `${base.name} (${String(variant.name ?? '')})`,
+        // The loader returns variants in catalog order; the minor key keeps that
+        // order inside the parent's slot in the document's flat, sorted row list.
+        sortOrder: base.sortOrder + (variantIndex + 1) / (variants.length + 1),
+        price: Number(variant.price),
+        isActive: base.isActive && variant.is_active === 1,
+        // Mirrors POS gating: a variant that links to a recipe ingredient never
+        // sells from its own pool, so that pool cannot advertise it as sold out.
+        trackInventory: variant.inventory_product_id ? false : variant.track_inventory === 1,
+        stockQuantity: Number(variant.stock_quantity) || 0,
+      }));
+    });
     const settings = Object.fromEntries(
       (db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[])
         .map((row) => [row.key, row.value]),

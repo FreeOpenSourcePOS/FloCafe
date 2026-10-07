@@ -23,7 +23,7 @@ const { addonGroupRoutes } = require('../main/routes/addon-groups');
 const { orderRoutes } = require('../main/routes/orders');
 const { isAddonSoldOut, isAddonLowStock, addonStockCeiling } = require('../frontend/src/lib/addon-inventory');
 
-/** Version the add-on inventory migration ships as, and the registry tail it must own. */
+/** Version the add-on inventory migration ships as. */
 const ADDON_MIGRATION_VERSION = 104;
 // The catalog assigns the ids, so these are filled in once the group is created.
 let OAT = '';
@@ -77,8 +77,6 @@ async function main() {
       const migration = MIGRATIONS.find((m: any) => m.version === ADDON_MIGRATION_VERSION);
       assertOrThrow(!!migration, 'the add-on inventory migration is registered');
       assertEqualOrThrow(migration.name, 'add_addon_inventory', 'the migration is add_addon_inventory');
-      const tail = MIGRATIONS[MIGRATIONS.length - 1];
-      assertEqualOrThrow(tail.version, ADDON_MIGRATION_VERSION, 'the add-on inventory migration is the current registry tail');
 
       const addonColumns = columnsOf(db, 'addons').map((column) => column.name);
       for (const column of ['track_inventory', 'stock_quantity', 'low_stock_threshold']) {

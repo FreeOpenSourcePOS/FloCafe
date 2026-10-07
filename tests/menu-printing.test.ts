@@ -219,18 +219,31 @@ test('menu route preserves regional conflicts, validates filters, and honors the
   const originals = { getDatabase: database.getDatabase, requirePermission: authorization.requirePermission, printMenuDocument: thermal.printMenuDocument };
   let configured = false;
   let printed: any;
+  const variantRows = [
+    { id: 'v-small', product_id: 'coffee', name: 'Small', price: 5, is_active: 1, sort_order: 0, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
+    { id: 'v-large', product_id: 'coffee', name: 'Large', price: 8, is_active: 1, sort_order: 1, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
+    { id: 'v-retired', product_id: 'coffee', name: 'Retired', price: 3, is_active: 0, sort_order: 2, track_inventory: 0, stock_quantity: 0, inventory_product_id: null },
+    { id: 'v-sold-out', product_id: 'coffee', name: 'Sold Out', price: 6, is_active: 1, sort_order: 3, track_inventory: 1, stock_quantity: 0, inventory_product_id: null },
+    { id: 'v-linked', product_id: 'coffee', name: 'Linked', price: 7, is_active: 1, sort_order: 4, track_inventory: 1, stock_quantity: 0, inventory_product_id: 'product-beans' },
+  ];
   database.getDatabase = () => ({ prepare: (sql: string) => ({
     all: () => {
       if (sql.includes('FROM settings')) return configured ? [{ key: 'country', value: 'US' }, { key: 'currency', value: 'USD' }] : [];
       if (sql.includes('FROM categories')) return [{ id: 'drinks', name: 'Drinks', is_active: 1, sort_order: 0 }];
-      if (sql.includes('FROM products p')) return [{ id: 'tea', category_id: 'drinks', name: 'Tea', description: 'Fresh tea', price: 5, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 0 }];
+      if (sql.includes('FROM products p')) return [
+        { id: 'tea', category_id: 'drinks', name: 'Tea', description: 'Fresh tea', price: 5, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 0 },
+        // A parent whose own price is unsellable: only its variants are sold.
+        { id: 'coffee', category_id: 'drinks', name: 'Coffee', description: null, price: 0, is_active: 1, track_inventory: 0, stock_quantity: 0, sort_order: 1 },
+      ];
       if (sql.includes('FROM addon_group_product')) return [{ product_id: 'tea', addon_group_id: 'milk' }];
       if (sql.includes('FROM category_addon_groups')) return [];
       if (sql.includes('FROM addon_groups')) return [{ id: 'milk', name: 'Milk', is_active: 1, sort_order: 0 }];
       if (sql.includes('FROM addons')) return [{ id: 'oat', addon_group_id: 'milk', name: 'Oat', price: 2, is_active: 1 }];
-      // The menu route reuses the catalog's shared relation loader, which also
-      // loads product variants. A menu has no variant rows to print.
-      if (sql.includes('FROM product_variants')) return [];
+      // The menu route reuses the catalog's shared relation loader, which
+      // returns only active variants unless the caller asks for all of them.
+      if (sql.includes('FROM product_variants')) return variantRows.filter(
+        (variant) => sql.includes('is_active = 1') ? variant.is_active === 1 : true,
+      );
       throw new Error(`Unexpected query: ${sql}`);
     },
     get: () => {
@@ -257,6 +270,33 @@ test('menu route preserves regional conflicts, validates filters, and honors the
     assert.equal(success.body.webusb, true);
     assert.equal(printed.printer.name, 'Default WebUSB');
     assert.deepEqual(printed.document.sections[0].products[0].details.map((detail: { text: string }) => detail.text), ['Fresh tea', 'Milk: Oat ($2.00)']);
+
+    // A product with active variants prints one sellable row per variant at the
+    // variant's own price; the parent's unsellable price is never advertised,
+    // and an inactive variant is not a menu row.
+    const rows = printed.document.sections[0].products as Array<{ name: { text: string }; price: string }>;
+    const rowNames = rows.map((row) => row.name.text);
+    assert.deepEqual(
+      rowNames.filter((name) => name.startsWith('Coffee')),
+      ['Coffee (Small)', 'Coffee (Large)', 'Coffee (Linked)'],
+      'only active variants of a parent print as rows',
+    );
+    const coffeePrices = Object.fromEntries(rows.map((row) => [row.name.text, row.price]));
+    assert.equal(coffeePrices['Coffee (Small)'], '$5.00', 'a variant row shows the variant price, not the parent price');
+    assert.equal(coffeePrices['Coffee (Large)'], '$8.00', 'each variant carries its own price');
+    assert.equal(rowNames.includes('Coffee'), false, 'an unsellable parent 0 price is never a phantom row');
+    assert.equal(rowNames.includes('Coffee (Retired)'), false, 'an inactive variant is not printed');
+    assert.equal(rowNames.includes('Coffee (Sold Out)'), false, 'a sold-out tracked variant is withheld by default');
+    assert.equal(coffeePrices['Coffee (Linked)'], '$7.00', 'a recipe-linked variant sells from its recipe, not its own empty pool');
+    assert.equal(rowNames.includes('Tea'), true, 'a product without variants still prints its parent row');
+    assert.equal(printed.document.itemCount, rows.length, 'the printed item count counts emitted variant rows');
+
+    // includeOutOfStock applies to emitted sale rows too.
+    const withOutOfStock = await request(app).post('/api/printers/print-menu').send({ includeOutOfStock: true });
+    assert.equal(withOutOfStock.status, 200);
+    const outOfStockNames = (printed.document.sections[0].products as Array<{ name: { text: string } }>)
+      .map((row) => row.name.text);
+    assert.equal(outOfStockNames.includes('Coffee (Sold Out)'), true, 'includeOutOfStock surfaces a sold-out variant row');
   } finally {
     Object.assign(database, { getDatabase: originals.getDatabase });
     Object.assign(authorization, { requirePermission: originals.requirePermission });

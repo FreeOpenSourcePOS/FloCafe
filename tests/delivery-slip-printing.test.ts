@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDeliverySlipDocument, isDeliverySlipDocument, shouldShowCustomerNumber } from '../shared/print/document';
+import { buildDeliverySlipDocument, deliverySlipExpectedPaymentText, isDeliverySlipDocument, shouldShowCustomerNumber } from '../shared/print/document';
 import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS, MAX_DELIVERY_SLIP_NOTE_CHARS } from '../main/printers/document-delivery-slip';
 import { clampDeliverySlipText } from '../shared/print/document';
 import { formatKOT, formatReceipt, escPosToText } from '../main/printers/thermal';
@@ -1753,6 +1753,138 @@ test('delivery slip: an unpaid balance states the expected method, and unknown o
     'an unknown method is absent from the summary, not a placeholder string',
   );
 });
+
+test('delivery slip: a configured method prints its stored name literally while sentinels stay localized', () => {
+  // A non-English resolver shows the difference: a built-in sentinel is
+  // translated, a configured method's historical name is not.
+  const labels: Record<string, string> = {
+    'print.deliverySlip.expectedPayment': 'Zahlung erwartet',
+    'print.deliverySlip.cashOnDelivery': 'Barzahlung bei Lieferung',
+    'orders.pending': 'Ausstehend',
+    'common.unknown': 'Unbekannt',
+    'pos.methodCard': 'Karte',
+  };
+  const resolveLabel = (conceptId: string) => labels[conceptId] ?? conceptId;
+
+  assert.equal(
+    deliverySlipExpectedPaymentText('pending', resolveLabel),
+    'Zahlung erwartet: Ausstehend',
+    'a built-in pending sentinel keeps its localized meaning',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('Pending', resolveLabel, true),
+    'Zahlung erwartet: Pending',
+    'a configured method named Pending prints its stored name literally',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('Card', resolveLabel),
+    'Zahlung erwartet: Karte',
+    'a built-in name without the marker still resolves through its concept label',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('Card', resolveLabel, true),
+    'Zahlung erwartet: Card',
+    'the marker keeps a configured method\'s own name instead of the built-in label',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('Unknown', resolveLabel, true),
+    'Zahlung erwartet: Unknown',
+    'a configured method named Unknown prints its literal name',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('Cash', resolveLabel, true),
+    'Zahlung erwartet: Cash',
+    'a configured method whose name matches a built-in word is not translated',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText('{CUT}\nCash', resolveLabel, true),
+    'Zahlung erwartet: CUT Cash',
+    'a custom name is still stripped of printer tokens and line breaks before printing',
+  );
+  assert.equal(
+    deliverySlipExpectedPaymentText(undefined, resolveLabel, true),
+    'Zahlung erwartet: Unbekannt',
+    'an absent name with the marker still reads as unknown',
+  );
+
+  // The marker travels with the print data and reaches every slip renderer.
+  const customOrder = { ...ORDER, total: 25, expected_payment_method: 'Pending', expected_payment_method_id: 17 };
+  const printData = buildDeliverySlipPrintData(customOrder, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' });
+  assert.equal(printData.payment?.expectedMethodIsCustom, true, 'the persisted identity sets the print marker');
+  assert.equal(printData.payment?.expectedMethod, 'Pending', 'the stored name travels unchanged');
+  for (const [name, text] of renderAllSlipPaths(customOrder)) {
+    assert.ok(text.includes('Expected payment: Pending'), `${name}: the custom name prints literally, got:\n${text}`);
+  }
+
+  // Renaming or deactivating the configured method cannot rewrite the snapshot:
+  // the marker comes from the order's own identity column.
+  const renamedOrder = { ...customOrder, expected_payment_method: 'Express Cash' };
+  assert.equal(
+    buildDeliverySlipPrintData(renamedOrder, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' })
+      .payment?.expectedMethodIsCustom,
+    true,
+    'the marker follows the order row, not today\'s method table',
+  );
+
+  // A slip built from the snapshot keeps the marker through document construction.
+  const document = buildDeliverySlipDocument(printData, {
+    columns: 42,
+    languages: ['en'],
+    baseDirection: 'ltr',
+    locale: 'en-US',
+    currency: 'USD',
+    currencySymbol: '$',
+    trimDecimals: false,
+    resolveLabel: (conceptId) => conceptId,
+  });
+  const paymentBlock = document.blocks.find((block) => block.kind === 'delivery-slip-payment') as any;
+  assert.equal(
+    paymentBlock?.detailsText?.text,
+    'print.deliverySlip.expectedPayment: Pending',
+    'the semantic document prints the stored name literally instead of the sentinel label',
+  );
+  assert.equal(
+    isDeliverySlipDocument(JSON.parse(JSON.stringify(document))),
+    true,
+    'a serialized custom-method slip still validates',
+  );
+  const sentinelDocument = buildDeliverySlipDocument(
+    buildDeliverySlipPrintData(
+      { ...ORDER, total: 25, expected_payment_method: 'pending' },
+      ORDER.items,
+      CONTACT,
+      { locale: 'en-US', currency: 'USD' },
+    ),
+    {
+      columns: 42,
+      languages: ['en'],
+      baseDirection: 'ltr',
+      locale: 'en-US',
+      currency: 'USD',
+      currencySymbol: '$',
+      trimDecimals: false,
+      resolveLabel: (conceptId) => conceptId,
+    },
+  );
+  assert.equal(
+    (sentinelDocument.blocks.find((block) => block.kind === 'delivery-slip-payment') as any)?.detailsText?.text,
+    'print.deliverySlip.expectedPayment: orders.pending',
+    'a legacy sentinel still resolves through its localized label',
+  );
+
+  // Legacy string-only orders keep their prior meaning on every path.
+  const legacyOrder = { ...ORDER, total: 25, expected_payment_method: 'Pending' } as any;
+  for (const [name, text] of renderAllSlipPaths(legacyOrder)) {
+    assert.ok(text.includes('Expected payment: Pending'), `${name}: a legacy order keeps its prior print, got:\n${text}`);
+  }
+  assert.equal(
+    buildDeliverySlipPrintData(legacyOrder, ORDER.items, CONTACT, { locale: 'en-US', currency: 'USD' })
+      .payment?.expectedMethodIsCustom,
+    undefined,
+    'a legacy order without an identity carries no custom marker',
+  );
+});
+
 
 test('delivery slip: a captured payment wins over the expected method', () => {
   const paidOrder = {

@@ -5746,6 +5746,36 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 105,
+    name: 'add_held_order_charge_selections',
+    up: () => {
+      // Additive only: a cart held before these columns existed carries no
+      // charge decisions, and an empty selection list says exactly that.
+      const heldOrderColumns = getColumns(db, 'held_orders');
+      const addHeldOrderColumn = (name: string, definition: string) => {
+        if (heldOrderColumns.includes(name)) return;
+        db.exec(`ALTER TABLE held_orders ADD COLUMN ${definition}`);
+        heldOrderColumns.push(name);
+      };
+      addHeldOrderColumn('waived_charge_ids', `waived_charge_ids TEXT NOT NULL DEFAULT '[]'`);
+      addHeldOrderColumn('opted_in_charge_ids', `opted_in_charge_ids TEXT NOT NULL DEFAULT '[]'`);
+    },
+  },
+  {
+    version: 106,
+    name: 'add_order_expected_payment_method_id',
+    up: () => {
+      // A historical identity marker, deliberately not a foreign key: deleting
+      // or renaming the configured method must never rewrite what an order
+      // said it expected. Rows that predate the column stay NULL - an old
+      // `expected_payment_method` string was never an identity and must not be
+      // guessed into one.
+      if (!getColumns(db, 'orders').includes('expected_payment_method_id')) {
+        db.exec('ALTER TABLE orders ADD COLUMN expected_payment_method_id INTEGER DEFAULT NULL');
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

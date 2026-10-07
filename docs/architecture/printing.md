@@ -65,7 +65,11 @@ total with zero due, or the selected bill balance(s) as amount due. Refund statu
 does not hide a refund-marked bill's positive stored balance; when no bill exists, the slip falls
 back to the order total. An unpaid balance also names the order's `expected_payment_method`: Cash on
 Delivery for cash, otherwise the method, Pending, or Unknown when none was recorded. It is an
-expectation, never a payment, and a paid slip shows the captured method instead. The notes block
+expectation, never a payment, and a paid slip shows the captured method instead. When the order
+carries an `expected_payment_method_id`, the stored name is the historical snapshot of a configured
+method and prints literally instead of resolving through a builtin or sentinel label, so a configured
+method named Pending or Unknown keeps its own meaning on the slip even when the method is later
+renamed or deactivated. The notes block
 carries the courier-only `delivery_note` beside the order note; neither the delivery note nor the
 expected method is printed on a kitchen ticket or receipt. It is a **separate kind, not a receipt
 template**, and that is load-bearing. It carries the delivery address and the full customer number
@@ -264,6 +268,13 @@ KOT path applies it, so an item that has left the kitchen does not reappear on a
 - `frontend/src/lib/printer/kot-encoder.ts`, the browser KOT encoder
 
 ## Menu catalog printing
+
+A product with active variants prints one sale row per active variant, in the catalog's variant
+order, named `Parent (Variant)` at the variant's own price, so the menu never advertises the
+parent's unsellable price. A product with no active variants keeps its single parent row. A
+variant that links to a recipe ingredient is not gated by its own pool, and `includeOutOfStock`
+decides whether a sold-out variant row is emitted; the printed item count counts emitted rows on
+every destination.
 
 Products and POS expose a filtered menu print dialog with optional descriptions and effective
 add-on groups. The dialog can send ESC/POS to a selected receipt printer and roll width, open the

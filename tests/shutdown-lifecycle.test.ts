@@ -19,6 +19,12 @@ import {
   waitForHttpShutdownWork,
 } from '../main/shutdown';
 import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
+import {
+  createFailedWindowRecovery,
+  shouldQuitOnAllWindowsClosed,
+  type FailedWindowRecovery,
+  type RecoverableWindow,
+} from '../main/window-recovery';
 import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -1231,6 +1237,169 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
   }
 }
 
+/**
+ * Reproduces the native event order that shut load recovery down on
+ * Windows/Linux: destroying the last window raises `window-all-closed` while
+ * the replacement window does not exist yet, so a quit admitted there aborts
+ * recovery mid-flight.
+ */
+async function testFailedWindowRecovery(): Promise<void> {
+  interface RecoveryHarness {
+    recovery: FailedWindowRecovery;
+    failedWindow: RecoverableWindow;
+    mainWindow: RecoverableWindow | null;
+    destroyed: { value: boolean };
+    creates: { value: number };
+    relaunches: string[];
+    logErrors: unknown[];
+    quitCalls: { value: number };
+    aborted: { value: boolean };
+    runtimeHealthy: { value: boolean };
+    /** Wired exactly like the production all-closed listener. */
+    handleAllWindowsClosed: (platform: string) => void;
+  }
+
+  const buildHarness = (
+    createWindow: (harness: RecoveryHarness) => void,
+    platform = 'win32',
+  ): RecoveryHarness => {
+    const destroyed = { value: false };
+    const harness: RecoveryHarness = {
+      failedWindow: {
+        isDestroyed: () => destroyed.value,
+        destroy: () => {
+          destroyed.value = true;
+          // Electron emits window-all-closed from the native destroy, before
+          // the recovery path can create the replacement.
+          harness.handleAllWindowsClosed(platform);
+        },
+      },
+      mainWindow: null,
+      destroyed,
+      creates: { value: 0 },
+      relaunches: [],
+      logErrors: [],
+      quitCalls: { value: 0 },
+      aborted: { value: false },
+      runtimeHealthy: { value: true },
+      recovery: undefined as unknown as FailedWindowRecovery,
+      handleAllWindowsClosed: (activePlatform: string) => {
+        if (shouldQuitOnAllWindowsClosed(activePlatform, harness.recovery.isReplacingWindow())) {
+          harness.quitCalls.value += 1;
+        }
+      },
+    };
+    harness.recovery = createFailedWindowRecovery({
+      getMainWindow: () => harness.mainWindow,
+      isAborted: () => harness.aborted.value,
+      isRuntimeHealthy: () => harness.runtimeHealthy.value,
+      requestRelaunch: (reason) => { harness.relaunches.push(reason); },
+      createWindow: () => {
+        harness.creates.value += 1;
+        createWindow(harness);
+      },
+      logError: (_message, error) => { harness.logErrors.push(error); },
+    });
+    harness.mainWindow = harness.failedWindow;
+    return harness;
+  };
+
+  const replaceWithLiveWindow = (harness: RecoveryHarness): void => {
+    const replacement: RecoverableWindow = { isDestroyed: () => false, destroy: () => {} };
+    harness.mainWindow = replacement;
+    // A replacement that itself closes must be able to quit the app again.
+    harness.handleAllWindowsClosed('win32');
+  };
+
+  // Success: the destroy raises all-closed while the replacement is pending,
+  // yet neither quit nor relaunch is admitted.
+  const success = buildHarness(replaceWithLiveWindow);
+  success.recovery.recover(success.failedWindow);
+  assert.equal(success.destroyed.value, true, 'recovery destroys the failed window');
+  assert.equal(success.creates.value, 1, 'recovery builds exactly one replacement window');
+  assert.equal(success.quitCalls.value, 0, 'destroying the failed window during recovery must not quit the app');
+  assert.deepEqual(success.relaunches, [], 'successful recovery does not request a relaunch');
+  assert.equal(success.recovery.isReplacingWindow(), false, 'recovery flag is restored after success');
+  assert.equal(
+    shouldQuitOnAllWindowsClosed('win32', success.recovery.isReplacingWindow()),
+    true,
+    'a normal all-closed after recovery still quits on Windows',
+  );
+
+  // Create failure: relaunch is requested, the flag is restored, and the
+  // queued all-closed event still cannot quit.
+  const createFailure = buildHarness(() => { throw new Error('window construction failed'); });
+  createFailure.recovery.recover(createFailure.failedWindow);
+  assert.deepEqual(createFailure.relaunches, ['window-load-recovery-create-failed'],
+    'recreation failure requests a relaunch');
+  assert.equal(createFailure.logErrors.length, 1, 'recreation failure is logged');
+  assert.equal(createFailure.quitCalls.value, 0, 'a failed replacement must not quit the app');
+  assert.equal(createFailure.recovery.isReplacingWindow(), false, 'recovery flag is restored after a failed create');
+  const afterFailure = buildHarness(replaceWithLiveWindow);
+  afterFailure.recovery.recover(afterFailure.failedWindow);
+  assert.equal(afterFailure.quitCalls.value, 0, 'the restored flag is a real flag, not a stuck one');
+
+  // Already-destroyed input: destroy is skipped but a replacement is still built.
+  let redundantDestroys = 0;
+  const alreadyDestroyed = buildHarness(replaceWithLiveWindow);
+  alreadyDestroyed.destroyed.value = true;
+  alreadyDestroyed.failedWindow.destroy = () => { redundantDestroys += 1; };
+  alreadyDestroyed.recovery.recover(alreadyDestroyed.failedWindow);
+  assert.equal(redundantDestroys, 0, 'an already-destroyed window is not destroyed twice');
+  assert.equal(alreadyDestroyed.creates.value, 1, 'an already-destroyed window is still replaced');
+  assert.equal(alreadyDestroyed.quitCalls.value, 0, 'replacement after double destroy does not quit');
+
+  // Normal close outside recovery keeps the platform quit policy.
+  const idle = buildHarness(replaceWithLiveWindow);
+  idle.handleAllWindowsClosed('win32');
+  idle.handleAllWindowsClosed('linux');
+  assert.equal(idle.quitCalls.value, 2, 'normal Windows/Linux all-closed still quits');
+  idle.handleAllWindowsClosed('darwin');
+  assert.equal(idle.quitCalls.value, 2, 'macOS never quits on all-closed');
+
+  // Unhealthy runtime relaunches instead of destroying a window it cannot replace.
+  const unhealthy = buildHarness(replaceWithLiveWindow);
+  unhealthy.runtimeHealthy.value = false;
+  unhealthy.recovery.recover(unhealthy.failedWindow);
+  assert.deepEqual(unhealthy.relaunches, ['window-load-retry-exhausted'], 'unhealthy runtime relaunches');
+  assert.equal(unhealthy.destroyed.value, false, 'unhealthy runtime leaves the window alone');
+
+  // Only one in-place recovery is attempted; later failures relaunch.
+  const secondAttempt = buildHarness(replaceWithLiveWindow);
+  secondAttempt.recovery.recover(secondAttempt.failedWindow);
+  const secondFailure: RecoverableWindow = { isDestroyed: () => false, destroy: () => {} };
+  secondAttempt.mainWindow = secondFailure;
+  secondAttempt.recovery.recover(secondFailure);
+  assert.deepEqual(secondAttempt.relaunches, ['window-load-recovery-failed'],
+    'a second failure escalates to a relaunch');
+  assert.equal(secondAttempt.creates.value, 1, 'the second failure does not rebuild again');
+
+  // A successful load re-arms in-place recovery for the replacement window.
+  const rearmed = buildHarness(replaceWithLiveWindow);
+  rearmed.recovery.recover(rearmed.failedWindow);
+  rearmed.recovery.markLoadSucceeded();
+  const reloadedWindow: RecoverableWindow = { isDestroyed: () => false, destroy: () => {} };
+  rearmed.mainWindow = reloadedWindow;
+  rearmed.recovery.recover(reloadedWindow);
+  assert.equal(rearmed.creates.value, 2, 'a successful load re-arms in-place recovery');
+  assert.deepEqual(rearmed.relaunches, [], 'the re-armed attempt does not relaunch first');
+
+  // Quits and shutdowns already in progress own the lifecycle.
+  const aborted = buildHarness(replaceWithLiveWindow);
+  aborted.aborted.value = true;
+  aborted.recovery.recover(aborted.failedWindow);
+  assert.equal(aborted.destroyed.value, false, 'an in-progress quit is not interrupted by recovery');
+  assert.deepEqual(aborted.relaunches, [], 'an in-progress quit does not relaunch');
+
+  // A stale failed window is ignored once the main window moved on.
+  const stale = buildHarness(replaceWithLiveWindow);
+  stale.mainWindow = { isDestroyed: () => false, destroy: () => {} };
+  stale.recovery.recover(stale.failedWindow);
+  assert.equal(stale.destroyed.value, false, 'a window that is no longer main is not destroyed');
+
+  console.log('Failed-window recovery lifecycle tests passed.');
+}
+
 (async () => {
   console.log('phase coordinator');
   await testCoordinatorOrderingAndIdempotency();
@@ -1255,6 +1424,8 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
   await testOwnedServerStopEntrypoints();
   console.log('phase update install ordering');
   await testQuitAndInstallCleanupOrdering();
+  console.log('phase window recovery');
+  await testFailedWindowRecovery();
   console.log('Shutdown lifecycle tests passed.');
 })().catch((error) => {
   console.error(error);

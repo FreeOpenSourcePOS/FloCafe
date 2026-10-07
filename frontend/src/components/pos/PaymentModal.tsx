@@ -998,6 +998,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                       step={1}
                       inputMode="numeric"
                       value={equalSharePayers}
+                      disabled={processing}
                       onChange={(event) => setEqualSharePayers(event.target.value)}
                       className="min-h-9 w-20 rounded-lg border border-border bg-card px-2 py-1 text-end text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
                     />

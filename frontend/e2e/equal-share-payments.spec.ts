@@ -370,6 +370,38 @@ test.describe('equal share payments', () => {
     expect(printRequests).toEqual([]);
   });
 
+  test('payer count stays fixed while an equal-share payment is pending', async ({ page, request }) => {
+    const order = await createCheck(request, fixture.productId, 'Equal share pending payment', 3);
+    await login(page);
+    await openOrderCheckout(page, order.order_number);
+    await openEqualShare(page);
+    await applyShareTo(page, 'Cash');
+
+    let releaseRequest = () => {};
+    let signalRequest = () => {};
+    const intercepted = new Promise<void>((resolve) => { signalRequest = resolve; });
+    await page.route('**/api/bills/*/payments', async (route) => {
+      await new Promise<void>((resolve) => {
+        releaseRequest = resolve;
+        signalRequest();
+      });
+      await route.continue();
+    });
+
+    const pendingPayment = submitPayment(page);
+    try {
+      await intercepted;
+      await expect(payerCount(page)).toBeDisabled();
+    } finally {
+      releaseRequest();
+    }
+
+    const payment = await pendingPayment;
+    expect(payment.payments).toEqual([{ method: 'cash', amount: 33.34 }]);
+    await expect(payerCount(page)).toHaveValue('2');
+    await page.unroute('**/api/bills/*/payments');
+  });
+
   test('the shortcut is independent of item splitting', async ({ page, request }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share splitting independent', 3, { quantity: 3 });
     const splitRequests: string[] = [];

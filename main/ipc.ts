@@ -324,10 +324,12 @@ export function registerIpcHandlers(
       return { success: false, error: 'Confirmation phrase does not match' };
     }
 
+    let restorePrepared = false;
     try {
       // The owner's typed INITIALIZE may discard a Drive restore boundary that can
       // never resolve on its own; the reset invalidates Drive state either way.
       await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
+      restorePrepared = true;
       const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
       const cleanup = googleDrive.completeDatabaseRestore();
       clearUserAuthCache();
@@ -338,7 +340,7 @@ export function registerIpcHandlers(
       console.error('[IPC] db-initialize: Error:', error);
       return { success: false, error: getErrorMessage(error) };
     } finally {
-      googleDrive.releaseDatabaseRestore();
+      if (restorePrepared) googleDrive.releaseDatabaseRestore();
     }
   });
 

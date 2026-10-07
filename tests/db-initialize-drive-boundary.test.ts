@@ -109,6 +109,19 @@ async function run(): Promise<void> {
     'an unresolvable boundary still blocks Drive work that was not an explicit reset',
   );
 
+  const activeInitialize = googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
+  await assert.rejects(
+    googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true }),
+    (error: any) => error?.code === 'conflict',
+    'a concurrent initialize cannot clear an active reset boundary',
+  );
+  await activeInitialize;
+  googleDrive.releaseDatabaseRestore();
+
+  writeStaleIntent();
+  writeBoundToken();
+  googleDrive.start();
+
   const recoverySourcePath = path.join(testDir, 'committed-recovery.db');
   fs.writeFileSync(recoverySourcePath, 'replacement snapshot');
   const replacement = databaseModule.beginDatabaseReplacementJournal(recoverySourcePath, 'reset');

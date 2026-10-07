@@ -294,6 +294,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                       cart.setExpectedPaymentMethod(method.name, method.id);
                       return;
                     }
+                    if (customId === cart.expectedPaymentMethodId) return;
                   }
                   cart.setExpectedPaymentMethod(selected, null);
                 }}
@@ -309,6 +310,10 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                       <option key={method.id} value={`custom:${method.id}`}>{method.name}</option>
                     ))}
                   </optgroup>
+                )}
+                {cart.expectedPaymentMethodId !== null
+                  && !customPaymentMethods.some((method) => method.id === cart.expectedPaymentMethodId) && (
+                  <option value={`custom:${cart.expectedPaymentMethodId}`}>{cart.expectedPaymentMethod || tCommon('unknown')}</option>
                 )}
               </select>
             </label>

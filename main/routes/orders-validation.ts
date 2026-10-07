@@ -83,6 +83,9 @@ export function resolveExpectedPaymentMethodIdentity(
   if (!method) {
     throw new Error('expected_payment_method_id must reference an active payment method');
   }
+  if (methodName !== undefined && methodName !== null && typeof methodName !== 'string') {
+    throw new Error('expected_payment_method must be a string');
+  }
   const suppliedName = typeof methodName === 'string' ? methodName.trim() : '';
   if (suppliedName && suppliedName.toLowerCase() !== method.name.toLowerCase()) {
     throw new Error('expected_payment_method does not match expected_payment_method_id');

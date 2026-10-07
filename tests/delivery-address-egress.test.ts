@@ -347,6 +347,7 @@ test('delivery details: a custom method identity survives names that collide wit
       { expected_payment_method_id: 0 },
       { expected_payment_method_id: String(pendingId) },
       { expected_payment_method_id: pendingId, expected_payment_method: 'Card' },
+      { expected_payment_method_id: pendingId, expected_payment_method: 7 },
     ]) {
       const rejected = await createDelivery(details);
       assert.equal(rejected.status, 400, `${JSON.stringify(details)} is refused`);

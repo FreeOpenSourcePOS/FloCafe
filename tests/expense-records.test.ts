@@ -709,6 +709,14 @@ function runServiceChecks(db: any): void {
   assertEqualOrThrow(voidedSource.voided_by, actor, 'the source records who replaced it');
   assertEqualOrThrow(voidedSource.amount_minor, 50000, 'the source keeps its original amount');
   assertEqualOrThrow(voidedSource.category_name, replaceSource.category_name, 'the source keeps its original category label');
+  assertOrThrow(
+    !service.listExpenses(db, { categoryId: rentId, status: 'voided' }).expenses.some((row: any) => row.id === replaceSource.id),
+    'a replaced source is excluded from status=voided',
+  );
+  assertOrThrow(
+    service.listExpenses(db, { categoryId: rentId, status: 'replaced' }).expenses.some((row: any) => row.id === replaceSource.id),
+    'a replaced source is present in status=replaced',
+  );
   assertEqualOrThrow(
     Number((db.prepare(`SELECT COUNT(*) AS count FROM expense_mutations WHERE idempotency_key = 'replace-source'`).get() as { count: number }).count),
     1,
@@ -717,6 +725,8 @@ function runServiceChecks(db: any): void {
   const replaceReplay = service.replaceExpense(db, replaceSource.id, { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-source' });
   assertEqualOrThrow(replaceReplay.replayed, true, 'a replayed replacement returns the committed result');
   assertEqualOrThrow(replaceReplay.body.expense.id, replaced.body.expense.id, 'a replayed replacement never creates a second record');
+  const replaceReplayNoCurr = service.replaceExpense(db, replaceSource.id, { ...replaceFields, currency_code: undefined, actorUserId: actor, idempotencyKey: 'replace-source' });
+  assertEqualOrThrow(replaceReplayNoCurr.replayed, true, 'replaying replacement with omitted currency replays the store-currency receipt');
   expectError(() => service.replaceExpense(db, replaceSource.id, { ...replaceFields, reason: 'Again', actorUserId: actor, idempotencyKey: 'replace-again' }), 409, 'a replaced source cannot be replaced twice', 'expense_replaced');
   expectError(() => service.replaceExpense(db, voidTarget.id, { ...replaceFields, reason: 'Voided', actorUserId: actor, idempotencyKey: 'replace-voided' }), 409, 'a voided expense cannot be replaced', 'expense_voided');
   expectError(() => service.replaceExpense(db, 'missing-expense', { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-missing' }), 404, 'replacing an unknown expense is a 404');

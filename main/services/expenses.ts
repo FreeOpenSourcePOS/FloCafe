@@ -472,7 +472,9 @@ function buildExpenseFilterSql(filters: ExpenseListFilters): ExpenseFilterSql {
     throw badRequest(`status must be one of: ${EXPENSE_STATUS_FILTERS.join(', ')}`);
   }
   if (status === 'active') conditions.push('e.voided_at IS NULL');
-  else if (status === 'voided') conditions.push('e.voided_at IS NOT NULL');
+  else if (status === 'voided') {
+    conditions.push('e.voided_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)');
+  }
   else if (status === 'replaced') {
     conditions.push('e.voided_at IS NOT NULL AND EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)');
   }
@@ -779,13 +781,16 @@ function expenseMutationFields(input: ExpenseWriteFields): Record<string, unknow
     const normalized = normalizeText(value);
     return normalized === '' ? null : normalized;
   };
+  const storeCurrency = tenantRegionalSnapshot().currency;
+  const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
+  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === '' || rawCurrency === storeCurrency
+    ? storeCurrency
+    : rawCurrency;
   return {
     category_id: normalizeText(input.category_id),
     description: normalizeText(input.description),
     amount_minor: input.amount_minor,
-    currency_code: input.currency_code === undefined || input.currency_code === null || input.currency_code === ''
-      ? null
-      : typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code,
+    currency_code: canonicalCurrency,
     incurred_on: input.incurred_on,
     payee: normalizeOptionalText(input.payee),
     notes: normalizeOptionalText(input.notes),

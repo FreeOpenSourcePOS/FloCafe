@@ -115,7 +115,7 @@ including LAN addresses.
 
 ## Main API (`:3001`)
 
-`registerRoutes` in [`main/routes/index.ts`](../../main/routes/index.ts) mounts 36 routers under 37
+`registerRoutes` in [`main/routes/index.ts`](../../main/routes/index.ts) mounts 38 routers under 39
 paths. `staffRoutes` is the same router mounted at both `/api/staff` and `/api/users`, so the two
 prefixes expose an identical surface. Seven further endpoints are registered inline on `app` in that
 same file, outside any router, and are listed under
@@ -359,10 +359,10 @@ converts currencies or assumes a minor-unit factor.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/context` | `expenses.view` | none | `{ currency_code, business_date, cash_session_open }` — store currency, store business date, and whether a shift is open. |
+| `GET` | `/context` | `expenses.view` | none | `{ currency_code, business_date, cash_session_open }`: store currency, store business date, and whether a shift is open. |
 | `GET` | `/categories` | `expenses.view` | query: `?include_inactive` | `{ categories, truncated }`. Deactivated categories stay readable for history and never accept a new expense. |
 | `POST` | `/categories` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `name`, optional `is_active` (defaults to `true`) | `201 { category }`. Names are unique after trimming, case-insensitively. |
-| `PATCH` | `/categories/:id` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `name` and/or `is_active` | `{ category }`. Explicit values only — there is no toggle — and renaming never rewrites the category label snapshotted on existing expenses. |
+| `PATCH` | `/categories/:id` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `name` and/or `is_active` | `{ category }`. Explicit values only - there is no toggle - and renaming never rewrites the category label snapshotted on existing expenses. |
 | `GET` | `/` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?status`, `?currency`, `?limit`, `?cursor` | `{ expenses, limit, maxLimit, nextCursor? }`, newest `incurred_on` first with a stable id tiebreak. `status` is `active` (default), `voided`, `replaced`, or `all`; `limit` defaults to 50 and caps at 100. |
 | `GET` | `/summary` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?currency` | `{ basis, filters, groups, totals }`; SQL aggregation over every matching expense, not just the fetched page. |
 | `GET` | `/:id` | `expenses.view` | path: `id`; query: `?payments_limit`, `?payments_cursor` | `{ expense, payments, paymentsNextCursor? }`; payments are newest first, with reversals kept as their own entries. |

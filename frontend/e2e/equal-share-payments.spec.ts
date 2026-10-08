@@ -370,6 +370,45 @@ test.describe('equal share payments', () => {
     expect(printRequests).toEqual([]);
   });
 
+  test('an IRR Toman share advances after its stored amount is paid', async ({ page, request }) => {
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const productId = await createProduct(request, await activeCategoryId(request), `Equal share Toman ${suffix}`, 100000.01);
+    try {
+      const order = await createCheck(request, productId, 'Equal share Toman display', 3);
+      await page.route('**/api/auth/login', async (route) => {
+        const response = await route.fetch();
+        const data = await response.json() as { tenants: Record<string, unknown>[]; [key: string]: unknown };
+        await route.fulfill({
+          response,
+          json: {
+            ...data,
+            tenants: data.tenants.map((tenant) => ({
+              ...tenant,
+              country: 'IR',
+              currency: 'IRR',
+              currency_display: 'toman',
+              number_digits: 'latin',
+            })),
+          },
+        });
+      });
+
+      await login(page);
+      await openOrderCheckout(page, order.order_number);
+      await openEqualShare(page);
+      await setPayers(page, '3');
+      await applyShareTo(page, 'Cash');
+
+      const payment = await submitPayment(page);
+      expect(payment.status).toBe(200);
+      expect(payment.payments).toEqual([{ method: 'cash', amount: 33333.34 }]);
+      await expect(payerCount(page)).toHaveValue('2');
+    } finally {
+      await page.unroute('**/api/auth/login');
+      await request.delete(`${BASE}/api/products/${productId}`, { headers: managerHeaders });
+    }
+  });
+
   test('payer count stays fixed while an equal-share payment is pending', async ({ page, request }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share pending payment', 3);
     await login(page);
@@ -396,6 +435,7 @@ test.describe('equal share payments', () => {
       await expect(payerCount(page)).toBeDisabled();
       await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
       await expect(page.getByTitle('Cash', { exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
       await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
     } finally {
       releaseRequest();
@@ -776,6 +816,109 @@ test.describe('equal share payments', () => {
     expect(recordedPayments(settled).map((payment) => payment.amount)).toEqual([33.34]);
     expect(minorAmount(settled.balance)).toBe(66.66);
     await expect(payerCount(page)).toHaveValue('2');
+  });
+
+  test('a committed payment with a lost response is frozen and replays exactly', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const order = await createCheck(request, fixture.productId, 'Equal share lost response', 3);
+    const keys: (string | undefined)[] = [];
+    const bodies: unknown[] = [];
+    page.on('request', (browserRequest) => {
+      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+        keys.push(browserRequest.headers()['idempotency-key']);
+        bodies.push(browserRequest.postDataJSON());
+      }
+    });
+
+    await login(page);
+    await openOrderCheckout(page, order.order_number);
+    const [bill] = await readBills(request, order.id);
+    await openEqualShare(page);
+    await setPayers(page, '3');
+    await applyShareTo(page, 'Cash');
+
+    // The request reaches the real backend and commits, but the browser never
+    // receives the response. This is the shape the old suite never covered:
+    // aborting before forwarding only exercises a request that never committed.
+    let forwarded = 0;
+    await page.route('**/api/bills/*/payments', async (route) => {
+      const response = await route.fetch();
+      expect(response.status(), 'the backend accepts and commits the share').toBe(200);
+      forwarded += 1;
+      await route.abort('failed');
+    });
+
+    await page.getByRole('button', { name: /^Pay / }).click();
+    await page.getByRole('button', { name: 'Pay', exact: true }).click();
+    await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
+
+    // The server committed the share even though the page saw a failure.
+    const committed = await readBill(request, bill.id);
+    expect(forwarded, 'the payment was forwarded exactly once').toBe(1);
+    expect(recordedPayments(committed).map((payment) => payment.amount), 'exactly one share committed').toEqual([33.34]);
+    expect(minorAmount(committed.balance)).toBe(66.66);
+
+    // The outcome is unknown to the page, so the attempt is frozen: the draft
+    // cannot be edited into a different request that would reuse the key.
+    expect(await tenderAmount(page, 'Cash')).toBe('33.34');
+    await expect(payerCount(page)).toHaveValue('3');
+    await expect(payerCount(page)).toBeDisabled();
+    await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeDisabled();
+    await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
+
+    // An exact retry replays the same request with the same key instead of
+    // submitting a changed one-and-only-amount against the committed record.
+    await page.unroute('**/api/bills/*/payments');
+    const retry = await submitPayment(page);
+    expect(retry.status, 'the replay resolves to the committed outcome').toBe(200);
+    expect(keys).toHaveLength(2);
+    expect(keys[1], 'the retry reuses the uncertain attempt key').toBe(keys[0]);
+    expect(bodies[1], 'the retry sends the identical request body').toEqual(bodies[0]);
+    expect(retry.payments).toEqual([{ method: 'cash', amount: 33.34 }]);
+    expect(minorAmount(retry.body.bill!.balance)).toBe(66.66);
+
+    // Exactly one payer retires, the tender clears, and the ledger keeps one entry.
+    await expect(payerCount(page)).toHaveValue('2');
+    expect(await tenderAmount(page, 'Cash')).toBe('');
+    const settled = await readBill(request, bill.id);
+    expect(recordedPayments(settled).map((payment) => payment.amount)).toEqual([33.34]);
+    expect(minorAmount(settled.paid_amount)).toBe(33.34);
+    expect(minorAmount(settled.balance)).toBe(66.66);
+  });
+
+  test('a definitive rejection lets the cashier edit the draft again', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    const order = await createCheck(request, fixture.productId, 'Equal share definitive rejection', 2);
+
+    await login(page);
+    await openOrderCheckout(page, order.order_number);
+    const [bill] = await readBills(request, order.id);
+    await openEqualShare(page);
+    await setPayers(page, '2');
+    await applyShareTo(page, 'Cash');
+
+    // A validation rejection proves nothing committed, so the draft unfreezes.
+    await page.route('**/api/bills/*/payments', (route) => route.fulfill({
+      status: 400,
+      json: { error: 'Payment amount is required for split payments' },
+    }));
+    await page.getByRole('button', { name: /^Pay / }).click();
+    await page.getByRole('button', { name: 'Pay', exact: true }).click();
+    await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15_000 });
+    await expect(payerCount(page), 'a definitive rejection unlocks the payer count').toBeEnabled();
+    await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeEnabled();
+
+    // The next submission commits normally; the earlier rejection is not an
+    // uncertain outcome and must not leak into this attempt's record.
+    await page.unroute('**/api/bills/*/payments');
+    const retry = await submitPayment(page);
+    expect(retry.status).toBe(200);
+    expect(retry.payments).toEqual([{ method: 'cash', amount: 50 }]);
+    const settled = await readBill(request, bill.id);
+    expect(recordedPayments(settled).map((payment) => payment.amount)).toEqual([50]);
+    expect(minorAmount(settled.balance)).toBe(50);
   });
 
   test('the POS table checkout collects the same equal shares', async ({ page, request }) => {

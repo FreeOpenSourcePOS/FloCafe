@@ -348,6 +348,70 @@ async function main() {
   );
   console.log('  ✓ held charge selections survive hold, fetch, overwrite, and resume');
 
+  // ── Caller sequencing: a resume that starts on another cart type ────────
+  // The cart store deliberately clears the charge selections on a real
+  // order-type change, so a restore handler must settle the target type before
+  // it installs the saved selections. These assertions pin both orders: the
+  // load-then-switch sequence is the defect the Orders/POS handlers used to
+  // run, and the switch-then-load sequence is the corrected caller contract.
+  const resumeSelections = (store: typeof useCartStore) => {
+    store.getState().loadItems(
+      selectionItems, 'table-sequence', null, 2, 'no sugar', 'held-sequence',
+      ['service_charge'], ['optional_packing'],
+    );
+  };
+
+  useCartStore.getState().clearCart();
+  useCartStore.getState().setOrderType('takeaway');
+  resumeSelections(useCartStore);
+  useCartStore.getState().setOrderType('dine_in');
+  assert.deepEqual(
+    Array.from(useCartStore.getState().waivedChargeIds),
+    [],
+    'loading the saved selections before the type change drops the saved waivers',
+  );
+  assert.deepEqual(
+    Array.from(useCartStore.getState().optedInChargeIds),
+    [],
+    'loading the saved selections before the type change drops the saved opt-ins',
+  );
+
+  for (const startingType of ['takeaway', 'delivery', 'online'] as const) {
+    useCartStore.getState().clearCart();
+    useCartStore.getState().setOrderType(startingType);
+    useCartStore.getState().setOrderType('dine_in');
+    resumeSelections(useCartStore);
+    assert.equal(useCartStore.getState().orderType, 'dine_in', `a ${startingType} cart resumes as dine-in`);
+    assert.deepEqual(
+      Array.from(useCartStore.getState().waivedChargeIds),
+      ['service_charge'],
+      `a resume from ${startingType} keeps the saved waivers`,
+    );
+    assert.deepEqual(
+      Array.from(useCartStore.getState().optedInChargeIds),
+      ['optional_packing'],
+      `a resume from ${startingType} keeps the saved opt-ins`,
+    );
+    assert.equal(useCartStore.getState().tableId, 'table-sequence', `a resume from ${startingType} keeps the table`);
+    assert.equal(useCartStore.getState().heldOrderId, 'held-sequence', `a resume from ${startingType} keeps the held-order identity`);
+    assert.equal(useCartStore.getState().guestCount, 2, `a resume from ${startingType} keeps the guest count`);
+    assert.equal(useCartStore.getState().orderNotes, 'no sugar', `a resume from ${startingType} keeps the notes`);
+  }
+
+  // A legacy hold without selection arrays resumes with empty selections.
+  useCartStore.getState().clearCart();
+  useCartStore.getState().setOrderType('delivery');
+  useCartStore.getState().setOrderType('dine_in');
+  useCartStore.getState().loadItems(selectionItems, 'table-legacy-resume', null, 1, '', 'held-legacy-resume');
+  assert.deepEqual(Array.from(useCartStore.getState().waivedChargeIds), [], 'a legacy resume has no waived charges');
+  assert.deepEqual(Array.from(useCartStore.getState().optedInChargeIds), [], 'a legacy resume has no opted-in charges');
+
+  // A genuine order-type change still resets the selections.
+  useCartStore.getState().setOrderType('delivery');
+  assert.deepEqual(Array.from(useCartStore.getState().waivedChargeIds), [], 'a real type change still resets the waivers');
+  assert.deepEqual(Array.from(useCartStore.getState().optedInChargeIds), [], 'a real type change still resets the opt-ins');
+  console.log('  ✓ a resume from another cart type keeps the saved charge selections');
+
   console.log('\n✅ Held-order client store regression tests passed');
 }
 

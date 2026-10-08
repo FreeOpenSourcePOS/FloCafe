@@ -127,8 +127,13 @@ const SYNTHETIC_CUSTOMER_PREFIX = 'Scroll Layout Customer';
 const SYNTHETIC_CUSTOMER_COUNT = 30;
 
 interface SyntheticMenu {
-  categoryIds: string[];
+  /** Products seeded in order. */
   productIds: string[];
+  /** Categories and products created by this invocation: its cleanup owns these. */
+  ownedCategoryIds: string[];
+  /** Pre-existing fixture-prefix rows that were reused: cleanup must keep them. */
+  reusedCategoryIds: string[];
+  ownedProductIds: string[];
 }
 
 /**
@@ -140,21 +145,26 @@ interface SyntheticMenu {
 async function seedSyntheticMenu(
   api: APIRequestContext,
   categoryCount = SYNTHETIC_CATEGORY_COUNT,
+  minimumOwnedProductCount = 0,
 ): Promise<SyntheticMenu> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
   const categoriesResponse = await api.get(`${BASE}/api/categories`, { headers });
   expect(categoriesResponse.status(), 'categories are readable for seeding').toBe(200);
   const categories = (await categoriesResponse.json()).categories as { id: string; name: string }[];
-  const categoryIds = categories
+  const reusedCategoryIds = categories
     .filter((category) => category.name.startsWith(SYNTHETIC_CATEGORY_PREFIX))
     .map((category) => category.id);
-  for (let index = categoryIds.length; index < categoryCount; index += 1) {
+  const ownedCategoryIds: string[] = [];
+  const seededCategoryIds = [...reusedCategoryIds];
+  for (let index = seededCategoryIds.length; index < categoryCount; index += 1) {
     const response = await api.post(`${BASE}/api/categories`, {
       headers,
       data: { name: `${SYNTHETIC_CATEGORY_PREFIX} ${String(index + 1).padStart(2, '0')}` },
     });
     expect(response.status(), `synthetic category ${index + 1} is created`).toBe(201);
-    categoryIds.push((await response.json()).category.id as string);
+    const createdId = (await response.json()).category.id as string;
+    ownedCategoryIds.push(createdId);
+    seededCategoryIds.push(createdId);
   }
 
   const productsResponse = await api.get(`${BASE}/api/products?active=1`, { headers });
@@ -163,26 +173,42 @@ async function seedSyntheticMenu(
   const productIds = products
     .filter((product) => product.name.startsWith(SYNTHETIC_PRODUCT_PREFIX))
     .map((product) => product.id);
+  const ownedProductIds: string[] = [];
   const existingNames = new Set(products.map((product) => product.name));
-  for (let index = 0; index < SYNTHETIC_PRODUCT_COUNT; index += 1) {
+  for (
+    let index = 0;
+    index < SYNTHETIC_PRODUCT_COUNT || ownedProductIds.length < minimumOwnedProductCount;
+    index += 1
+  ) {
     const name = `${SYNTHETIC_PRODUCT_PREFIX} ${String(index + 1).padStart(3, '0')}`;
     if (existingNames.has(name)) continue;
     const response = await api.post(`${BASE}/api/products`, {
       headers,
-      data: { name, category_id: categoryIds[index % categoryIds.length], price: 25 },
+      data: { name, category_id: seededCategoryIds[index % seededCategoryIds.length], price: 25 },
     });
     expect(response.status(), `synthetic product ${name} is created`).toBe(201);
-    productIds.push((await response.json()).product.id as string);
+    const createdId = (await response.json()).product.id as string;
+    ownedProductIds.push(createdId);
+    productIds.push(createdId);
   }
-  return { categoryIds, productIds };
+  return { productIds, ownedCategoryIds, reusedCategoryIds, ownedProductIds };
 }
 
-/** delete_all drops the category together with the products seeded under it. */
+/**
+ * Cleanup removes exactly the rows this invocation created: its products first
+ * (whatever category they landed in), then the now-empty categories it made. A
+ * reused category and any product already under it belong to another run and
+ * survive this cleanup.
+ */
 async function removeSyntheticMenu(api: APIRequestContext, menu: SyntheticMenu): Promise<void> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
-  for (const id of menu.categoryIds) {
-    const response = await api.delete(`${BASE}/api/categories/${id}?action=delete_all`, { headers });
-    expect(response.status(), 'synthetic category is removed with its products').toBe(200);
+  for (const id of menu.ownedProductIds) {
+    const response = await api.delete(`${BASE}/api/products/${id}`, { headers });
+    expect(response.status(), 'synthetic product is removed').toBe(200);
+  }
+  for (const id of menu.ownedCategoryIds) {
+    const response = await api.delete(`${BASE}/api/categories/${id}`, { headers });
+    expect(response.status(), 'synthetic category is removed').toBe(200);
   }
 }
 
@@ -404,18 +430,19 @@ test.describe('checkout controls stay visible while catalog and cart content scr
 /**
  * Fixtures only ever add rows with a stable name, so a re-run reuses whatever
  * a previous attempt created (the shared server caps category, add-on group
- * and customer writes at 60 per minute) and teardown removes only what is
- * still there for this run.
+ * and customer writes at 60 per minute). Teardown removes only the rows this
+ * invocation created: a reused row belongs to whoever made it.
  */
 async function seedSyntheticAddonGroups(api: APIRequestContext): Promise<string[]> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
   const response = await api.get(`${BASE}/api/addon-groups`, { headers });
   expect(response.status(), 'add-on groups are readable for seeding').toBe(200);
   const existing = (await response.json()).addon_groups as { id: string; name: string }[];
-  const ids = existing
+  const reusedCount = existing
     .filter((group) => group.name.startsWith(SYNTHETIC_ADDON_GROUP_PREFIX))
-    .map((group) => group.id);
-  for (let index = ids.length; index < SYNTHETIC_ADDON_GROUP_COUNT; index += 1) {
+    .length;
+  const ownedIds: string[] = [];
+  for (let index = reusedCount; index < SYNTHETIC_ADDON_GROUP_COUNT; index += 1) {
     const created = await api.post(`${BASE}/api/addon-groups`, {
       headers,
       data: {
@@ -426,9 +453,9 @@ async function seedSyntheticAddonGroups(api: APIRequestContext): Promise<string[
       },
     });
     expect(created.status(), `synthetic add-on group ${index + 1} is created`).toBe(201);
-    ids.push((await created.json()).addon_group.id as string);
+    ownedIds.push((await created.json()).addon_group.id as string);
   }
-  return ids;
+  return ownedIds;
 }
 
 async function removeSyntheticAddonGroups(api: APIRequestContext, ids: string[]): Promise<void> {
@@ -440,58 +467,75 @@ async function removeSyntheticAddonGroups(api: APIRequestContext, ids: string[])
 }
 
 interface SyntheticInventory {
+  /** Supplies created by this invocation; the cleanup owns exactly these. */
   supplyIds: string[];
   recipeProductIds: string[];
 }
 
 /** Supplies fill the Supplies tab, one movement per supply fills Movements,
- * and a recipe per synthetic product gives the Recipes tab tall rows. */
+ * and recipes on owned products give the Recipes tab tall rows. */
 async function seedSyntheticInventory(
   api: APIRequestContext,
-  productIds: string[],
+  ownedProductIds: string[],
 ): Promise<SyntheticInventory> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
   const suppliesResponse = await api.get(`${BASE}/api/supplies?include_inactive=true`, { headers });
   expect(suppliesResponse.status(), 'supplies are readable for seeding').toBe(200);
   const supplies = (await suppliesResponse.json()).supplies as { id: string; name: string }[];
-  const supplyIds = supplies
-    .filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX))
-    .map((supply) => supply.id);
-  for (let index = supplyIds.length; index < SYNTHETIC_SUPPLY_COUNT; index += 1) {
-    const created = await api.post(`${BASE}/api/supplies`, {
-      headers,
-      data: {
-        name: `${SYNTHETIC_SUPPLY_PREFIX} ${String(index + 1).padStart(2, '0')}`,
-        base_unit: 'each',
-        stock_quantity: 20,
-        low_stock_threshold: null,
-      },
-    });
-    expect(created.status(), `synthetic supply ${index + 1} is created`).toBe(201);
-    supplyIds.push((await created.json()).supply.id as string);
-  }
-
-  const movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
+  const seededSupplies = supplies.filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX));
+  const seededSupplyIds = seededSupplies.map((supply) => supply.id);
+  const existingSupplyNames = new Set(supplies.map((supply) => supply.name));
+  const supplyIds: string[] = [];
+  let nextSupplyIndex = 1;
+  let movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
   expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
-  const recorded = new Set(
+  let recorded = new Set(
     ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
   );
-  for (const supplyId of supplyIds) {
-    if (recorded.has(supplyId)) continue;
-    const created = await api.post(`${BASE}/api/supplies/${supplyId}/movements`, {
-      headers,
-      data: { movement_type: 'receive', quantity: 5, unit: 'each' },
-    });
-    expect(created.status(), 'synthetic movement is recorded').toBe(201);
+  let recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
+  while (recordedSyntheticSupplyCount < SYNTHETIC_SUPPLY_COUNT && supplyIds.length < SYNTHETIC_SUPPLY_COUNT) {
+    const needed = Math.min(
+      SYNTHETIC_SUPPLY_COUNT - recordedSyntheticSupplyCount,
+      SYNTHETIC_SUPPLY_COUNT - supplyIds.length,
+    );
+    for (let index = 0; index < needed; index += 1) {
+      let name = `${SYNTHETIC_SUPPLY_PREFIX} ${String(nextSupplyIndex).padStart(2, '0')}`;
+      while (existingSupplyNames.has(name)) {
+        nextSupplyIndex += 1;
+        name = `${SYNTHETIC_SUPPLY_PREFIX} ${String(nextSupplyIndex).padStart(2, '0')}`;
+      }
+      existingSupplyNames.add(name);
+      nextSupplyIndex += 1;
+      const created = await api.post(`${BASE}/api/supplies`, {
+        headers,
+        data: {
+          name,
+          base_unit: 'each',
+          stock_quantity: 20,
+          low_stock_threshold: null,
+        },
+      });
+      expect(created.status(), `synthetic supply ${name} is created`).toBe(201);
+      const createdId = (await created.json()).supply.id as string;
+      supplyIds.push(createdId);
+      seededSupplyIds.push(createdId);
+    }
+
+    movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
+    expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
+    recorded = new Set(
+      ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
+    );
+    recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
   }
 
-  const recipeProductIds = productIds.slice(0, SYNTHETIC_RECIPE_COUNT);
+  const recipeProductIds = ownedProductIds.slice(0, SYNTHETIC_RECIPE_COUNT);
   for (const productId of recipeProductIds) {
     const saved = await api.put(`${BASE}/api/recipes/product/${productId}`, {
       headers,
       data: {
         yield_quantity: 1,
-        items: [{ supply_id: supplyIds[0], quantity: 1, unit: 'each' }],
+        items: [{ supply_id: seededSupplyIds[0], quantity: 1, unit: 'each' }],
       },
     });
     expect(saved.status(), 'synthetic recipe is saved').toBe(200);
@@ -551,8 +595,8 @@ test.describe('management lists keep their controls visible while records scroll
     try {
       await seedSyntheticCustomers(api);
       addonGroupIds = await seedSyntheticAddonGroups(api);
-      menu = await seedSyntheticMenu(api, MANAGEMENT_CATEGORY_COUNT);
-      inventory = await seedSyntheticInventory(api, menu.productIds);
+      menu = await seedSyntheticMenu(api, MANAGEMENT_CATEGORY_COUNT, SYNTHETIC_RECIPE_COUNT);
+      inventory = await seedSyntheticInventory(api, menu.ownedProductIds);
     } finally {
       await api.dispose();
     }
@@ -866,6 +910,110 @@ test.describe('management lists keep their controls visible while records scroll
 });
 
 /**
+ * A run may reuse a fixture-prefix category another attempt left behind, but
+ * its teardown must remove only what it created. This case seats a pre-existing
+ * fixture-prefix category with its own product, runs the menu seed/cleanup pair
+ * over it, and requires both to survive while the seed's own rows are gone.
+ */
+test.describe('layout fixtures only delete what they created', () => {
+  const SENTINEL_CATEGORY = `${SYNTHETIC_CATEGORY_PREFIX} 99 Sentinel`;
+  const SENTINEL_PRODUCT = `${SYNTHETIC_PRODUCT_PREFIX} 999`;
+  let sentinelCategoryId = '';
+  let ownedSentinelCategoryId: string | undefined;
+  let ownedSentinelProductId: string | undefined;
+
+  const headers = () => ({ Authorization: `Bearer ${getE2eToken()}` });
+
+  async function findCategory(api: APIRequestContext, name: string) {
+    const response = await api.get(`${BASE}/api/categories`, { headers: headers() });
+    expect(response.status(), 'categories are readable').toBe(200);
+    return ((await response.json()).categories as { id: string; name: string }[])
+      .find((category) => category.name === name);
+  }
+
+  async function findProduct(api: APIRequestContext, name: string) {
+    const response = await api.get(`${BASE}/api/products?active=1`, { headers: headers() });
+    expect(response.status(), 'products are readable').toBe(200);
+    return ((await response.json()).products as { id: string; name: string; category_id: string }[])
+      .find((product) => product.name === name);
+  }
+
+  test.beforeAll(async () => {
+    const api = await request.newContext();
+    try {
+      const existingCategory = await findCategory(api, SENTINEL_CATEGORY);
+      if (existingCategory) {
+        sentinelCategoryId = existingCategory.id;
+      } else {
+        const created = await api.post(`${BASE}/api/categories`, {
+          headers: headers(),
+          data: { name: SENTINEL_CATEGORY },
+        });
+        expect(created.status(), 'the sentinel category is created').toBe(201);
+        ownedSentinelCategoryId = (await created.json()).category.id as string;
+        sentinelCategoryId = ownedSentinelCategoryId;
+      }
+      if (!(await findProduct(api, SENTINEL_PRODUCT))) {
+        const created = await api.post(`${BASE}/api/products`, {
+          headers: headers(),
+          data: { name: SENTINEL_PRODUCT, category_id: sentinelCategoryId, price: 25 },
+        });
+        expect(created.status(), 'the sentinel product is created').toBe(201);
+        ownedSentinelProductId = (await created.json()).product.id as string;
+      }
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  test.afterAll(async () => {
+    const api = await request.newContext();
+    try {
+      if (ownedSentinelProductId) {
+        await api.delete(`${BASE}/api/products/${ownedSentinelProductId}`, { headers: headers() });
+      }
+      if (ownedSentinelCategoryId) {
+        await api.delete(`${BASE}/api/categories/${ownedSentinelCategoryId}`, { headers: headers() });
+      }
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  test('a reused category and its pre-existing product survive a seed and cleanup cycle', async () => {
+    const api = await request.newContext();
+    try {
+      const menu = await seedSyntheticMenu(api, 2);
+      expect(menu.reusedCategoryIds, 'the sentinel is reused, not re-created').toContain(sentinelCategoryId);
+      expect(menu.ownedCategoryIds, 'the seed owns what it created').not.toContain(sentinelCategoryId);
+
+      await removeSyntheticMenu(api, menu);
+
+      const survivor = await findCategory(api, SENTINEL_CATEGORY);
+      expect(survivor, 'the reused category survives the cleanup').toBeTruthy();
+      expect(survivor!.id).toBe(sentinelCategoryId);
+      const product = await findProduct(api, SENTINEL_PRODUCT);
+      expect(product, 'the pre-existing product under the reused category survives').toBeTruthy();
+      expect(product!.category_id, 'the surviving product keeps its category').toBe(sentinelCategoryId);
+
+      // The seed's own rows are gone, so repeat runs stay isolated.
+      const remainingCategories = (await (await api.get(`${BASE}/api/categories`, { headers: headers() })).json())
+        .categories as { id: string }[];
+      for (const id of menu.ownedCategoryIds) {
+        expect(remainingCategories.map((category) => category.id), 'an owned category is removed').not.toContain(id);
+      }
+      const remainingProducts = (await (await api.get(`${BASE}/api/products?active=1`, { headers: headers() })).json())
+        .products as { id: string }[];
+      for (const id of menu.ownedProductIds) {
+        expect(remainingProducts.map((candidate) => candidate.id), 'an owned product is removed').not.toContain(id);
+      }
+    } finally {
+      await api.dispose();
+    }
+  });
+});
+
+/**
  * The customer-facing order display polls /api/orders every three seconds. The
  * specs below serve that one endpoint from an in-memory list so the number of
  * tiles per section is exact and can change between polls; the rest of the
@@ -1072,5 +1220,175 @@ test.describe('customer display keeps its headers visible over independently scr
     await expect(page.getByText('Connection problem — retrying…'), 'the connection error is reported')
       .toBeVisible({ timeout: 15000 });
     await expect(page.getByText('No orders currently being prepared'), 'the sections survive the error state').toBeVisible();
+  });
+});
+
+/**
+ * Entering the Movements tab starts a fresh first-page request, but the cursor
+ * from the previous visit stayed live until that request resolved. Clicking
+ * Load more inside that window started a second request that superseded the
+ * refresh, so the older page was appended and the fresh receipts were dropped.
+ * These tests hold the responses open to exercise that exact window, and pin
+ * the recovery contract: the refresh owns the cursor until it resolves.
+ */
+test.describe('inventory movements refresh owns the pagination cursor', () => {
+  const movement = (id: number, supplyName: string) => ({
+    id,
+    supply_id: `movement-supply-${id}`,
+    supply_name: supplyName,
+    movement_type: 'receive',
+    quantity_delta: 1,
+    unit: 'each',
+    stock_after: 1,
+    reason: null,
+    actor_name: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+  });
+
+  test('a held first-page refresh cannot append an older page', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+
+    const requestedCursors: (string | null)[] = [];
+    let firstPageCount = 0;
+    let releaseRefresh = () => {};
+    let signalRefresh = () => {};
+    const refreshStarted = new Promise<void>((resolve) => { signalRefresh = resolve; });
+    await page.route('**/api/supplies/movements*', async (route) => {
+      const beforeId = new URL(route.request().url()).searchParams.get('before_id');
+      requestedCursors.push(beforeId);
+      if (beforeId) {
+        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        return;
+      }
+      firstPageCount += 1;
+      if (firstPageCount === 1) {
+        await route.fulfill({ json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } });
+        return;
+      }
+      // The re-entry refresh stays unresolved until the test releases it.
+      await new Promise<void>((resolve) => { releaseRefresh = resolve; signalRefresh(); });
+      await route.fulfill({ json: { movements: [movement(300, 'NEW PAGE MOVEMENT')], nextCursor: 888 } });
+    });
+
+    await page.goto(`${BASE}/inventory`);
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('OLD PAGE MOVEMENT')).toBeVisible();
+
+    // Leave and re-enter: the fresh first page is now blocked mid-flight.
+    await page.getByRole('tab', { name: 'Recipes' }).click();
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await refreshStarted;
+    expect(firstPageCount, 'the re-entry refresh has started').toBe(2);
+
+    // The stale cursor must not offer a page while that refresh is unresolved.
+    await expect(
+      page.getByRole('button', { name: 'Load more' }),
+      'the old cursor is hidden until the refresh resolves',
+    ).toHaveCount(0);
+
+    releaseRefresh();
+    await expect(page.getByText('NEW PAGE MOVEMENT'), 'the fresh page wins').toBeVisible();
+    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the outdated page is replaced').toHaveCount(0);
+
+    // Normal pagination resumes on the fresh cursor.
+    await page.getByRole('button', { name: 'Load more' }).click();
+    await expect(page.getByText('SECOND PAGE MOVEMENT')).toBeVisible();
+    await expect(page.getByText('NEW PAGE MOVEMENT')).toBeVisible();
+    expect(requestedCursors, 'the stale 999 cursor was never requested').toEqual([null, null, '888']);
+  });
+
+  test('a failed first-page refresh does not leave the old cursor live', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+
+    let firstPageCount = 0;
+    await page.route('**/api/supplies/movements*', async (route) => {
+      if (new URL(route.request().url()).searchParams.get('before_id')) {
+        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        return;
+      }
+      firstPageCount += 1;
+      if (firstPageCount === 1) {
+        await route.fulfill({ json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } });
+        return;
+      }
+      await route.fulfill({ status: 500, json: { error: 'Internal server error' } });
+    });
+
+    await page.goto(`${BASE}/inventory`);
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('OLD PAGE MOVEMENT')).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Recipes' }).click();
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('Failed to load inventory')).toBeVisible({ timeout: 15_000 });
+
+    // The refresh failed, so its cursor cannot silently authorize an old page.
+    await expect(
+      page.getByRole('button', { name: 'Load more' }),
+      'a failed refresh invalidates the stale cursor',
+    ).toHaveCount(0);
+  });
+
+  test('a failed older movement page can be retried with the same cursor', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+
+    const requestedCursors: (string | null)[] = [];
+    let olderPageAttempts = 0;
+    await page.route('**/api/supplies/movements*', async (route) => {
+      const beforeId = new URL(route.request().url()).searchParams.get('before_id');
+      requestedCursors.push(beforeId);
+      if (!beforeId) {
+        await route.fulfill({ json: { movements: [movement(100, 'FIRST PAGE MOVEMENT')], nextCursor: 999 } });
+        return;
+      }
+      olderPageAttempts += 1;
+      if (olderPageAttempts === 1) {
+        await route.fulfill({ status: 500, json: { error: 'Internal server error' } });
+        return;
+      }
+      await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+    });
+
+    await page.goto(`${BASE}/inventory`);
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('FIRST PAGE MOVEMENT')).toBeVisible();
+
+    const loadMore = page.getByRole('button', { name: 'Load more' });
+    await loadMore.click();
+    await expect(page.getByText('Failed to load inventory')).toBeVisible();
+    await expect(loadMore).toBeVisible();
+    await loadMore.click();
+
+    await expect(page.getByText('SECOND PAGE MOVEMENT')).toBeVisible();
+    expect(requestedCursors).toEqual([null, '999', '999']);
+  });
+
+  test('a movement search change clears the list and its cursor', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+
+    let firstPageCount = 0;
+    await page.route('**/api/supplies/movements*', async (route) => {
+      if (new URL(route.request().url()).searchParams.get('before_id')) {
+        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        return;
+      }
+      firstPageCount += 1;
+      await route.fulfill(firstPageCount === 1
+        ? { json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } }
+        : { json: { movements: [movement(300, 'FILTERED PAGE MOVEMENT')], nextCursor: null } });
+    });
+
+    await page.goto(`${BASE}/inventory`);
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('OLD PAGE MOVEMENT')).toBeVisible();
+
+    await page.getByPlaceholder('Search').first().fill('filtered');
+    await expect(page.getByText('FILTERED PAGE MOVEMENT')).toBeVisible();
+    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the unfiltered page is dropped').toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 });

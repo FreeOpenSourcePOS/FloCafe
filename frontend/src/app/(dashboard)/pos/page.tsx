@@ -978,6 +978,9 @@ export default function POSPage() {
     try {
       const held = await heldOrders.restoreOrder(tableId);
       if (held) {
+        // Settle the target type first so the type change cannot clear the saved
+        // charge selections that loadItems installs afterwards.
+        cart.setOrderType('dine_in');
         cart.loadItems(
           held.items,
           tableId,
@@ -988,7 +991,6 @@ export default function POSPage() {
           held.waivedChargeIds,
           held.optedInChargeIds,
         );
-        cart.setOrderType('dine_in');
       } else {
         await heldOrders.fetchHeldOrders();
         toast.error(t('loadOrderFailed'));

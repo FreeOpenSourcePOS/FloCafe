@@ -5788,6 +5788,82 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 108,
+    name: 'add_expense_records',
+    up: () => {
+      // Additive only: expense categories, immutable expenses, their
+      // payment/reversal ledger, and the idempotency receipts that make the
+      // expense mutations replayable. No existing table is touched.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS expense_categories (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          name_key TEXT NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          updated_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_categories_name_key
+          ON expense_categories(name_key);
+
+        CREATE TABLE IF NOT EXISTS expenses (
+          id TEXT PRIMARY KEY,
+          category_id TEXT NOT NULL REFERENCES expense_categories(id),
+          category_name TEXT NOT NULL,
+          description TEXT NOT NULL,
+          payee TEXT,
+          notes TEXT,
+          amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+          currency_code TEXT NOT NULL CHECK (length(currency_code) = 3),
+          incurred_on TEXT NOT NULL CHECK (incurred_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          replaces_expense_id TEXT REFERENCES expenses(id),
+          voided_at TEXT,
+          voided_by TEXT REFERENCES users(id),
+          void_reason TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_replaces_unique
+          ON expenses(replaces_expense_id) WHERE replaces_expense_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_expenses_incurred ON expenses(incurred_on, id);
+        CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id, incurred_on, id);
+
+        CREATE TABLE IF NOT EXISTS expense_payments (
+          id TEXT PRIMARY KEY,
+          expense_id TEXT NOT NULL REFERENCES expenses(id),
+          amount_minor INTEGER NOT NULL CHECK (amount_minor > 0),
+          method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'bank_transfer', 'other')),
+          business_date TEXT NOT NULL CHECK (business_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          reversal_of TEXT REFERENCES expense_payments(id),
+          reason TEXT,
+          cash_movement_id INTEGER REFERENCES cash_drawer_movements(id),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          CHECK ((reversal_of IS NULL AND reason IS NULL) OR (reversal_of IS NOT NULL AND reason IS NOT NULL))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_payments_reversal_unique
+          ON expense_payments(reversal_of) WHERE reversal_of IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_payments_cash_movement
+          ON expense_payments(cash_movement_id) WHERE cash_movement_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_expense_payments_expense
+          ON expense_payments(expense_id, created_at, id);
+
+        CREATE TABLE IF NOT EXISTS expense_mutations (
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          idempotency_key TEXT NOT NULL,
+          operation TEXT NOT NULL,
+          resource_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (actor_user_id, idempotency_key)
+        );
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

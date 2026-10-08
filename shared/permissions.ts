@@ -72,6 +72,10 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'refunds.initiate', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
   { id: 'payment-methods.view', area: 'payments', defaultRoles: ALL_STAFF, configurable: true, risk: 'standard' },
   { id: 'payment-methods.manage', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  { id: 'expenses.view', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'standard' },
+  { id: 'expenses.manage', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  { id: 'expenses.pay', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  { id: 'expenses.reverse', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
 
   { id: 'cash.shifts.view', area: 'cash', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'cash.shifts.open', area: 'cash', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },

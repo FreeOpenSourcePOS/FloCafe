@@ -29,16 +29,12 @@ A held cart is a snapshot of the renderer's cart, not an order. `POST /api/held-
 ticket exists. A table holds at most one cart: posting again for the same table replaces the stored
 row, returning a new `ho-` id.
 
-`DELETE /api/held-orders/:tableId?heldOrderId=...` deletes only when the expected id still matches
-and reports `{ success: true, deleted: false }` for a stale id or a request without one, so a
-concurrent resume cannot delete a newer cart. The table returns to `available` only while it is
-still `held`; a table already carrying a created order is left alone.
-
 The POS resume path is [`frontend/src/store/held-orders.ts`](../../frontend/src/store/held-orders.ts)
 plus the POS page at `frontend/src/app/(dashboard)/pos/page.tsx`: the store deletes the persisted
 hold before returning its cached cart, which the page then loads into the renderer for checkout.
 Order creation happens later. If checkout or order creation fails after the restore, the hold is
-already gone and the cart remains only in renderer memory.
+already gone and the cart remains only in renderer memory. The held-order API reference describes
+the delete guard and table update.
 
 Cart decisions travel with the hold as ids (`waivedChargeIds`, `optedInChargeIds`) and are handed to
 the charges engine when the order is created, which stays authoritative about which of them apply.
@@ -67,8 +63,8 @@ Everything monetary is resolved server-side inside one transaction:
   other charges, rounded to the currency's decimal places. A total whose minor-unit
   value would leave the safe-integer range is rejected instead of being stored lossily.
 
-Order numbers are allocated inside the transaction. With an `Idempotency-Key` header, the same
-request body replays the stored response (`200`) and a different body under the same key is a `409`.
+Order numbers are allocated inside the transaction. Request replay follows the
+[order API idempotency contract](../reference/api.md#orders).
 The order starts `pending` with its totals snapshotted, and a `dine_in` order with a table marks the
 table `occupied`.
 
@@ -108,8 +104,9 @@ re-syncs its totals, discount, and charges from the order and recomputes `balanc
 `total`, `paid_amount`, `balance`, and `payment_status`; payable rounding may add a `round_off`
 adjustment for packs that define one.
 
-A bill can be split into 2 to 20 checks before it is touched. Each check keeps its own payments and
-balances, and an order completes only once every bill of the order is settled.
+A split order can have multiple bills, each with its own payments and balance. An order completes
+only once every bill of the order is settled; the API reference documents split eligibility and
+limits.
 
 ## Payments
 
@@ -168,28 +165,15 @@ enabled, excluding the share funded by wallet points.
 
 ## Order status
 
-`PATCH /api/orders/:id/status` moves the order through:
-
-| From | Allowed targets |
-| --- | --- |
-| `pending` | `preparing`, `ready`, `served`, `completed`, `cancelled` |
-| `preparing` | `ready`, `served`, `completed`, `cancelled` |
-| `ready` | `served`, `completed`, `cancelled` |
-| `served` | `completed`, `cancelled` |
-| `completed` | none, terminal |
-| `cancelled` | none, terminal |
-
-Repeating the current status is a no-op. Cancelling an order that is past `pending`, or that has any
-item in progress, requires a manager PIN. Kitchen item status is a separate surface
-(`/api/order-items`); see the [API reference](../reference/api.md#order-item-status).
+`PATCH /api/orders/:id/status` advances the order through preparation, service, and terminal
+statuses. Its allowed transitions, no-op rule, and cancellation approval requirements are in the
+[API reference](../reference/api.md#orders). Kitchen item status is a separate surface
+(`/api/order-items`); see [order-item status](../reference/api.md#order-item-status).
 
 ## Refunds
 
 `POST /api/refunds` reverses part or all of a paid bill. Cash refunds follow the same shift gate as
-cash payments, and refunds require a manager PIN, narrowed to an owner-only PIN once the order is
-more than an hour old. After that one-hour window, a refund is refused with `409` once the order's
-own business day has ended; refunds within the first hour are not blocked by this cutoff. Store-credit
-refunds need loyalty enabled and a customer on the bill. The approval rules are in
+cash payments. Refund approval tiers, cutoff, and store-credit requirements are in
 [product invariants](../reference/product-invariants.md#refunds-and-staff-approval-pins).
 
 ## Failure behaviour

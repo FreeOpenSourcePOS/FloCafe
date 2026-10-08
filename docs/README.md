@@ -39,6 +39,7 @@ How the system is put together and why its boundaries sit where they do.
 | [internationalization.md](architecture/internationalization.md) | The message catalogue, the language registry, the loader, and the derived print-label table. |
 | [regional-settings.md](architecture/regional-settings.md) | How country and currency become a regional snapshot, and who consumes it. |
 | [taxation.md](architecture/taxation.md) | The single tax calculation path, category resolution, rounding, and pack activation. |
+| [order-lifecycle.md](architecture/order-lifecycle.md) | Held carts, order pricing, discounts, bill generation, payments, settlement, and refunds. |
 | [cloud-integrations.md](architecture/cloud-integrations.md) | The optional network features, what each talks to, and how each degrades offline. |
 
 ## Reference

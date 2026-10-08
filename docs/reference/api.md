@@ -267,6 +267,9 @@ Router: `main/routes/kitchen-stations.ts`. Full path: `/api/kitchen-stations`.
 
 Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 
+The cart-to-payment path these endpoints drive - held carts, the pricing pipeline, discounts, bills,
+and settlement - is in [Order lifecycle](../architecture/order-lifecycle.md).
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `orders.read` (default roles: `ROLE_ACCESS.sales`) + order read limiter | query: `?status`, `?type`, `?today`, `?start_date`, `?end_date`, `?table_id`, `?before_id`, `?per_page`, `?search` | `{ orders, nextCursor? }`, newest page first. `?before_id` pages backwards. `?search` matches order number, customer name, or phone before pagination. |
@@ -316,6 +319,11 @@ Router: `main/routes/order-items.ts`. Full path: `/api/order-items`.
 
 Router: `main/routes/held-orders.ts`. Full path: `/api/held-orders`.
 
+A held cart is a cart snapshot, not an order: nothing is priced and no stock is deducted. Resuming
+is a client round trip - create the order from the held items, then delete the hold - and the delete
+releases the table only while it is still `held`. See
+[Order lifecycle](../architecture/order-lifecycle.md#cart-and-held-carts).
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.sales` + held-order read limiter | none | Held carts in `updated_at` order, each with `waivedChargeIds` and `optedInChargeIds`; a hold saved without them reads back as an empty list. A row whose stored selection JSON is damaged is still returned with empty selections. |
@@ -326,6 +334,9 @@ Router: `main/routes/held-orders.ts`. Full path: `/api/held-orders`.
 
 Router: `main/routes/bills.ts`. Full path: `/api/bills`.
 
+Bill generation, settlement, and completion are described end to end in
+[Order lifecycle](../architecture/order-lifecycle.md#bills).
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.ownerManagerCashier` | query: `?status`, `?order_id`, `?customer_id`, `?today`, `?per_page`, `?limit`, `?offset` | `{ bills, pagination }`. |
@@ -333,8 +344,8 @@ Router: `main/routes/bills.ts`. Full path: `/api/bills`.
 | `GET` | `/order/:orderId` | `ROLE_ACCESS.ownerManagerCashier` | path: `orderId` | - |
 | `POST` | `/generate` | `ROLE_ACCESS.ownerManagerCashier` | body: `order_id` | Creates or returns the bill for `order_id`. |
 | `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries and the resulting split group is capped at 20 checks. An unpaid untouched dine-in check is divided by allocating every active order item quantity; a split-group child may be divided again while it stays unpaid with no payment recorded, keeping its bill id, bill number and group, while paid siblings keep their own rows and payments. `400` when a request does not allocate exactly the source's own quantities. `403` when `split_checks_enabled` is off. `409` when the source has a recorded payment, a legacy already-split bill is re-split, the source has no divisible allocation, or the resulting split group would exceed 20 checks. |
-| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | Body is a single payment line; `customer_id` is read off it. Honours `Idempotency-Key`; a key reused for a different request returns `409`. |
-| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | Body `payments` is an array applied in one transaction. Honours `Idempotency-Key`. |
+| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | Body is a single payment line; `customer_id` is read off it, and the amount may be omitted to settle the remaining balance. Honours `Idempotency-Key`; a key reused for a different request returns `409`. Cash needs an open shift when `require_open_shift` is on, and undelivered kitchen items block settlement with `409 KITCHEN_ITEMS_UNDELIVERED` unless `override_pin` overrides it. Settling the last unpaid bill of the order completes the order and releases its table. |
+| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | Body `payments` is an array of up to 100 lines applied in one transaction; a batch with more than one line needs an explicit `amount` on every line. Honours `Idempotency-Key`; the same key with a different request returns `409`. The cash-shift and kitchen-delivery gates of the single-line endpoint apply. |
 | `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | `409` when the order is cancelled. |
 | `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
 | `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |

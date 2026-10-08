@@ -267,11 +267,14 @@ Router: `main/routes/kitchen-stations.ts`. Full path: `/api/kitchen-stations`.
 
 Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 
+The cart-to-payment path these endpoints drive - held carts, the pricing pipeline, discounts, bills,
+and settlement - is in [Order lifecycle](../architecture/order-lifecycle.md).
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `orders.read` (default roles: `ROLE_ACCESS.sales`) + order read limiter | query: `?status`, `?type`, `?today`, `?start_date`, `?end_date`, `?table_id`, `?before_id`, `?per_page`, `?search` | `{ orders, nextCursor? }`, newest page first. `?before_id` pages backwards. `?search` matches order number, customer name, or phone before pagination. |
 | `GET` | `/:id` | `orders.read` (default roles: `ROLE_ACCESS.sales`) + order read limiter | path: `id` | `{ ...order, items, table }`. |
-| `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`, `delivery_address`, `expected_payment_method`, `expected_payment_method_id`, `delivery_note`; header: `Idempotency-Key` | `201` with the created order. Honours an `Idempotency-Key` header; reusing a key with a different body returns `409`. `expected_payment_method` and `delivery_note` are stored only for `type: 'delivery'`: without an id, the method keeps its legacy string/sentinel resolution (`unknown` by default, `pending`, `cash`, `card`, or an active custom method name), and is never recorded as a payment; `400` for any other method or a note over 200 characters. A custom method whose name matches a built-in or sentinel needs its id to be identified as custom. An optional `expected_payment_method_id` must be a positive safe integer naming an **active** configured method; the server stores its canonical name and requires any supplied non-empty name to match case-insensitively. Invalid, unknown, or inactive ids return `400`. The id is a historical marker, not a foreign key, so renaming or deleting the method later never rewrites an order; only `orders.expected_payment_method_id` decides that the stored name prints literally on a delivery slip. Non-delivery orders persist both expected-method fields as `null`. An item's `variant_id` is required when the product has active variants, and `400` when it names an unknown, foreign, or inactive variant; `unit_price` is never taken from the client. |
+| `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`, `delivery_address`, `expected_payment_method`, `expected_payment_method_id`, `delivery_note`; header: `Idempotency-Key` | `201` with the created order. Repeating the same request body with an `Idempotency-Key` returns its stored response; reusing the key with a different body returns `409`. `expected_payment_method` and `delivery_note` are stored only for `type: 'delivery'`: without an id, the method keeps its legacy string/sentinel resolution (`unknown` by default, `pending`, `cash`, `card`, or an active custom method name), and is never recorded as a payment; `400` for any other method or a note over 200 characters. A custom method whose name matches a built-in or sentinel needs its id to be identified as custom. An optional `expected_payment_method_id` must be a positive safe integer naming an **active** configured method; the server stores its canonical name and requires any supplied non-empty name to match case-insensitively. Invalid, unknown, or inactive ids return `400`. The id is a historical marker, not a foreign key, so renaming or deleting the method later never rewrites an order; only `orders.expected_payment_method_id` decides that the stored name prints literally on a delivery slip. Non-delivery orders persist both expected-method fields as `null`. An item's `variant_id` is required when the product has active variants, and `400` when it names an unknown, foreign, or inactive variant; `unit_price` is never taken from the client. |
 | `POST` | `/:id/items` | `ROLE_ACCESS.sales` + order write limiter | path: `id`; body: `items`, `special_instructions`; header: `Idempotency-Key` | Appends items and returns the recomputed order. Honours `Idempotency-Key`. Items resolve a `variant_id` under the same rules as order creation, priced with `variant.online_price` when the order carries an `online_platform`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.orderStatus` + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. |
 | `PATCH` | `/:id/customer` | `ROLE_ACCESS.ownerManager` + order write limiter | path: `id`; body: `customer_id` | - |
@@ -316,25 +319,31 @@ Router: `main/routes/order-items.ts`. Full path: `/api/order-items`.
 
 Router: `main/routes/held-orders.ts`. Full path: `/api/held-orders`.
 
+Held-cart behavior and the POS resume sequence are described in
+[Order lifecycle](../architecture/order-lifecycle.md#cart-and-held-carts).
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.sales` + held-order read limiter | none | Held carts in `updated_at` order, each with `waivedChargeIds` and `optedInChargeIds`; a hold saved without them reads back as an empty list. A row whose stored selection JSON is damaged is still returned with empty selections. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + held-order write limiter | body: held-cart fields plus optional `waivedChargeIds`, `optedInChargeIds` | `{ success, id }`. Selections are bounded charge ids (`CHARGE_ID_PATTERN`, `MAX_CHARGE_ID_LENGTH`) and are deduplicated; an omitted, null, or empty list means no choices, and a malformed list is a `400` that leaves the stored cart untouched. Unknown but well-formed ids persist, because the charges engine decides applicability when the order is created. |
-| `DELETE` | `/:tableId` | `ROLE_ACCESS.sales` + held-order write limiter | path: `tableId`; query: `?heldOrderId` | `?heldOrderId` selects one of several holds on the table. |
+| `DELETE` | `/:tableId` | `ROLE_ACCESS.sales` + held-order write limiter | path: `tableId`; query: `?heldOrderId` | `heldOrderId` must match the table's current hold; a missing or stale id returns `{ success: true, deleted: false }`. A successful deletion sets the table to `available` only if it is still `held`. |
 
 ### Bills
 
 Router: `main/routes/bills.ts`. Full path: `/api/bills`.
+
+Bill generation, settlement, and completion are described end to end in
+[Order lifecycle](../architecture/order-lifecycle.md#bills).
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | `ROLE_ACCESS.ownerManagerCashier` | query: `?status`, `?order_id`, `?customer_id`, `?today`, `?per_page`, `?limit`, `?offset` | `{ bills, pagination }`. |
 | `GET` | `/:id` | `ROLE_ACCESS.ownerManagerCashier` | path: `id` | - |
 | `GET` | `/order/:orderId` | `ROLE_ACCESS.ownerManagerCashier` | path: `orderId` | - |
-| `POST` | `/generate` | `ROLE_ACCESS.ownerManagerCashier` | body: `order_id` | Creates or returns the bill for `order_id`. |
+| `POST` | `/generate` | `ROLE_ACCESS.ownerManagerCashier` | body: `order_id` | See [Order lifecycle](../architecture/order-lifecycle.md#bills) for bill creation and re-sync behavior. |
 | `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries and the resulting split group is capped at 20 checks. An unpaid untouched dine-in check is divided by allocating every active order item quantity; a split-group child may be divided again while it stays unpaid with no payment recorded, keeping its bill id, bill number and group, while paid siblings keep their own rows and payments. `400` when a request does not allocate exactly the source's own quantities. `403` when `split_checks_enabled` is off. `409` when the source has a recorded payment, a legacy already-split bill is re-split, the source has no divisible allocation, or the resulting split group would exceed 20 checks. |
-| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | Body is a single payment line; `customer_id` is read off it. Honours `Idempotency-Key`; a key reused for a different request returns `409`. |
-| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | Body `payments` is an array applied in one transaction. Honours `Idempotency-Key`. |
+| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
+| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
 | `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | `409` when the order is cancelled. |
 | `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
 | `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |
@@ -347,7 +356,7 @@ Router: `main/routes/refunds.ts`. Full path: `/api/refunds`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `bill_id`, `order_item_id`, `amount`, `reason`, `approver_id`, `manager_id`, `method`, `shift_id`, `override_pin`; header: `Idempotency-Key` | Creates a refund against `bill_id`, or a single `order_item_id`. `approver_id` must resolve to an active owner or manager whose Staff Approval PIN matches `override_pin`. `409` once the business day is closed. Honours `Idempotency-Key`. |
+| `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `bill_id`, `order_item_id`, `amount`, `reason`, `approver_id`, `manager_id`, `method`, `shift_id`, `override_pin`; header: `Idempotency-Key` | Creates a refund against `bill_id`, or a single `order_item_id`. Approval tiers and cutoff are documented in [product invariants](product-invariants.md#refunds-and-staff-approval-pins). Honours `Idempotency-Key`. |
 | `GET` | `/` | `ROLE_ACCESS.ownerManagerCashier` | query: `?bill_id`, `?limit`, `?offset` | Refund rows, newest first. |
 
 ### Expenses

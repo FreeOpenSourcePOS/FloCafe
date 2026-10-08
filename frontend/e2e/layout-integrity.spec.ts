@@ -482,38 +482,51 @@ async function seedSyntheticInventory(
   const suppliesResponse = await api.get(`${BASE}/api/supplies?include_inactive=true`, { headers });
   expect(suppliesResponse.status(), 'supplies are readable for seeding').toBe(200);
   const supplies = (await suppliesResponse.json()).supplies as { id: string; name: string }[];
-  const seededSupplyIds = supplies
-    .filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX))
-    .map((supply) => supply.id);
+  const seededSupplies = supplies.filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX));
+  const seededSupplyIds = seededSupplies.map((supply) => supply.id);
+  const existingSupplyNames = new Set(supplies.map((supply) => supply.name));
   const supplyIds: string[] = [];
-  for (let index = seededSupplyIds.length; index < SYNTHETIC_SUPPLY_COUNT; index += 1) {
-    const created = await api.post(`${BASE}/api/supplies`, {
-      headers,
-      data: {
-        name: `${SYNTHETIC_SUPPLY_PREFIX} ${String(index + 1).padStart(2, '0')}`,
-        base_unit: 'each',
-        stock_quantity: 20,
-        low_stock_threshold: null,
-      },
-    });
-    expect(created.status(), `synthetic supply ${index + 1} is created`).toBe(201);
-    const createdId = (await created.json()).supply.id as string;
-    supplyIds.push(createdId);
-    seededSupplyIds.push(createdId);
-  }
-
-  const movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
+  let nextSupplyIndex = 1;
+  let movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
   expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
-  const recorded = new Set(
+  let recorded = new Set(
     ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
   );
-  for (const supplyId of seededSupplyIds) {
-    if (recorded.has(supplyId)) continue;
-    const created = await api.post(`${BASE}/api/supplies/${supplyId}/movements`, {
-      headers,
-      data: { movement_type: 'receive', quantity: 5, unit: 'each' },
-    });
-    expect(created.status(), 'synthetic movement is recorded').toBe(201);
+  let recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
+  while (recordedSyntheticSupplyCount < SYNTHETIC_SUPPLY_COUNT && supplyIds.length < SYNTHETIC_SUPPLY_COUNT) {
+    const needed = Math.min(
+      SYNTHETIC_SUPPLY_COUNT - recordedSyntheticSupplyCount,
+      SYNTHETIC_SUPPLY_COUNT - supplyIds.length,
+    );
+    for (let index = 0; index < needed; index += 1) {
+      let name = `${SYNTHETIC_SUPPLY_PREFIX} ${String(nextSupplyIndex).padStart(2, '0')}`;
+      while (existingSupplyNames.has(name)) {
+        nextSupplyIndex += 1;
+        name = `${SYNTHETIC_SUPPLY_PREFIX} ${String(nextSupplyIndex).padStart(2, '0')}`;
+      }
+      existingSupplyNames.add(name);
+      nextSupplyIndex += 1;
+      const created = await api.post(`${BASE}/api/supplies`, {
+        headers,
+        data: {
+          name,
+          base_unit: 'each',
+          stock_quantity: 20,
+          low_stock_threshold: null,
+        },
+      });
+      expect(created.status(), `synthetic supply ${name} is created`).toBe(201);
+      const createdId = (await created.json()).supply.id as string;
+      supplyIds.push(createdId);
+      seededSupplyIds.push(createdId);
+    }
+
+    movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
+    expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
+    recorded = new Set(
+      ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
+    );
+    recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
   }
 
   const recipeProductIds = ownedProductIds.slice(0, SYNTHETIC_RECIPE_COUNT);

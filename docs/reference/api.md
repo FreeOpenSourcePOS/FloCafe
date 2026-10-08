@@ -361,21 +361,21 @@ converts currencies or assumes a minor-unit factor.
 | --- | --- | --- | --- | --- |
 | `GET` | `/context` | `expenses.view` | none | `{ currency_code, business_date, cash_session_open }` — store currency, store business date, and whether a shift is open. |
 | `GET` | `/categories` | `expenses.view` | query: `?include_inactive` | `{ categories, truncated }`. Deactivated categories stay readable for history and never accept a new expense. |
-| `POST` | `/categories` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `name`, `is_active` | `201 { category }`. Names are unique after trimming, case-insensitively. |
+| `POST` | `/categories` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `name`, optional `is_active` (defaults to `true`) | `201 { category }`. Names are unique after trimming, case-insensitively. |
 | `PATCH` | `/categories/:id` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `name` and/or `is_active` | `{ category }`. Explicit values only — there is no toggle — and renaming never rewrites the category label snapshotted on existing expenses. |
 | `GET` | `/` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?status`, `?currency`, `?limit`, `?cursor` | `{ expenses, limit, maxLimit, nextCursor? }`, newest `incurred_on` first with a stable id tiebreak. `status` is `active` (default), `voided`, `replaced`, or `all`; `limit` defaults to 50 and caps at 100. |
 | `GET` | `/summary` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?currency` | `{ basis, filters, groups, totals }`; SQL aggregation over every matching expense, not just the fetched page. |
 | `GET` | `/:id` | `expenses.view` | path: `id`; query: `?payments_limit`, `?payments_cursor` | `{ expense, payments, paymentsNextCursor? }`; payments are newest first, with reversals kept as their own entries. |
 | `POST` | `/` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `category_id`, `description`, `amount_minor`, `incurred_on`, optional `currency_code`, `payee`, `notes` | `201 { expense }`. A new expense never starts paid, `replaces_expense_id` cannot be set here, and a supplied `currency_code` must match the store currency. |
-| `POST` | `/:id/void` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `reason` | `{ expense }`. Requires net paid of zero and preserves the original amount, creator, and timestamps. |
+| `POST` | `/:id/void` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `reason` | `{ expense }`. Requires net paid of zero, preserves the original expense fields and `created_at`, and adds void metadata. |
 | `POST` | `/:id/replace` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: replacement fields plus `reason` | `201 { expense, replaced_expense_id }`. Voids the source and creates the linked replacement in one transaction; a source can be replaced once. |
 
 Mutation bodies are hashed into an immutable fingerprint under the authenticated actor and the
 `Idempotency-Key`: replaying the same key with the same normalized request returns the committed
 result (with an `Idempotent-Replay: true` header) without writing again, and reusing a key for a
 different operation, resource, or payload is a `409`. Replays resolve before current balance,
-category, currency, or session checks, while current access is still enforced, and only committed
-mutations are recorded.
+category, or currency checks, while current access is still enforced, and only committed mutations
+are recorded.
 
 `incurred_on` is a validated Gregorian `YYYY-MM-DD` business-date label: it may precede today (a
 closed day is fine) and may not be in the future, so audit timestamps record the real creation

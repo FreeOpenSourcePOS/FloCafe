@@ -127,7 +127,7 @@ const SYNTHETIC_CUSTOMER_PREFIX = 'Scroll Layout Customer';
 const SYNTHETIC_CUSTOMER_COUNT = 30;
 
 interface SyntheticMenu {
-  /** Products seeded in order; recipes are saved on the first entries. */
+  /** Products seeded in order. */
   productIds: string[];
   /** Categories and products created by this invocation: its cleanup owns these. */
   ownedCategoryIds: string[];
@@ -145,6 +145,7 @@ interface SyntheticMenu {
 async function seedSyntheticMenu(
   api: APIRequestContext,
   categoryCount = SYNTHETIC_CATEGORY_COUNT,
+  minimumOwnedProductCount = 0,
 ): Promise<SyntheticMenu> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
   const categoriesResponse = await api.get(`${BASE}/api/categories`, { headers });
@@ -174,7 +175,11 @@ async function seedSyntheticMenu(
     .map((product) => product.id);
   const ownedProductIds: string[] = [];
   const existingNames = new Set(products.map((product) => product.name));
-  for (let index = 0; index < SYNTHETIC_PRODUCT_COUNT; index += 1) {
+  for (
+    let index = 0;
+    index < SYNTHETIC_PRODUCT_COUNT || ownedProductIds.length < minimumOwnedProductCount;
+    index += 1
+  ) {
     const name = `${SYNTHETIC_PRODUCT_PREFIX} ${String(index + 1).padStart(3, '0')}`;
     if (existingNames.has(name)) continue;
     const response = await api.post(`${BASE}/api/products`, {
@@ -468,20 +473,20 @@ interface SyntheticInventory {
 }
 
 /** Supplies fill the Supplies tab, one movement per supply fills Movements,
- * and a recipe per synthetic product gives the Recipes tab tall rows. */
+ * and recipes on owned products give the Recipes tab tall rows. */
 async function seedSyntheticInventory(
   api: APIRequestContext,
-  productIds: string[],
+  ownedProductIds: string[],
 ): Promise<SyntheticInventory> {
   const headers = { Authorization: `Bearer ${getE2eToken()}` };
   const suppliesResponse = await api.get(`${BASE}/api/supplies?include_inactive=true`, { headers });
   expect(suppliesResponse.status(), 'supplies are readable for seeding').toBe(200);
   const supplies = (await suppliesResponse.json()).supplies as { id: string; name: string }[];
-  const reusedSupplyIds = supplies
+  const seededSupplyIds = supplies
     .filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX))
     .map((supply) => supply.id);
   const supplyIds: string[] = [];
-  for (let index = reusedSupplyIds.length; index < SYNTHETIC_SUPPLY_COUNT; index += 1) {
+  for (let index = seededSupplyIds.length; index < SYNTHETIC_SUPPLY_COUNT; index += 1) {
     const created = await api.post(`${BASE}/api/supplies`, {
       headers,
       data: {
@@ -494,7 +499,7 @@ async function seedSyntheticInventory(
     expect(created.status(), `synthetic supply ${index + 1} is created`).toBe(201);
     const createdId = (await created.json()).supply.id as string;
     supplyIds.push(createdId);
-    reusedSupplyIds.push(createdId);
+    seededSupplyIds.push(createdId);
   }
 
   const movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
@@ -502,7 +507,7 @@ async function seedSyntheticInventory(
   const recorded = new Set(
     ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
   );
-  for (const supplyId of reusedSupplyIds) {
+  for (const supplyId of seededSupplyIds) {
     if (recorded.has(supplyId)) continue;
     const created = await api.post(`${BASE}/api/supplies/${supplyId}/movements`, {
       headers,
@@ -511,13 +516,13 @@ async function seedSyntheticInventory(
     expect(created.status(), 'synthetic movement is recorded').toBe(201);
   }
 
-  const recipeProductIds = productIds.slice(0, SYNTHETIC_RECIPE_COUNT);
+  const recipeProductIds = ownedProductIds.slice(0, SYNTHETIC_RECIPE_COUNT);
   for (const productId of recipeProductIds) {
     const saved = await api.put(`${BASE}/api/recipes/product/${productId}`, {
       headers,
       data: {
         yield_quantity: 1,
-        items: [{ supply_id: supplyIds[0], quantity: 1, unit: 'each' }],
+        items: [{ supply_id: seededSupplyIds[0], quantity: 1, unit: 'each' }],
       },
     });
     expect(saved.status(), 'synthetic recipe is saved').toBe(200);
@@ -577,8 +582,8 @@ test.describe('management lists keep their controls visible while records scroll
     try {
       await seedSyntheticCustomers(api);
       addonGroupIds = await seedSyntheticAddonGroups(api);
-      menu = await seedSyntheticMenu(api, MANAGEMENT_CATEGORY_COUNT);
-      inventory = await seedSyntheticInventory(api, menu.productIds);
+      menu = await seedSyntheticMenu(api, MANAGEMENT_CATEGORY_COUNT, SYNTHETIC_RECIPE_COUNT);
+      inventory = await seedSyntheticInventory(api, menu.ownedProductIds);
     } finally {
       await api.dispose();
     }
@@ -901,6 +906,8 @@ test.describe('layout fixtures only delete what they created', () => {
   const SENTINEL_CATEGORY = `${SYNTHETIC_CATEGORY_PREFIX} 99 Sentinel`;
   const SENTINEL_PRODUCT = `${SYNTHETIC_PRODUCT_PREFIX} 999`;
   let sentinelCategoryId = '';
+  let ownedSentinelCategoryId: string | undefined;
+  let ownedSentinelProductId: string | undefined;
 
   const headers = () => ({ Authorization: `Bearer ${getE2eToken()}` });
 
@@ -930,7 +937,8 @@ test.describe('layout fixtures only delete what they created', () => {
           data: { name: SENTINEL_CATEGORY },
         });
         expect(created.status(), 'the sentinel category is created').toBe(201);
-        sentinelCategoryId = (await created.json()).category.id as string;
+        ownedSentinelCategoryId = (await created.json()).category.id as string;
+        sentinelCategoryId = ownedSentinelCategoryId;
       }
       if (!(await findProduct(api, SENTINEL_PRODUCT))) {
         const created = await api.post(`${BASE}/api/products`, {
@@ -938,6 +946,7 @@ test.describe('layout fixtures only delete what they created', () => {
           data: { name: SENTINEL_PRODUCT, category_id: sentinelCategoryId, price: 25 },
         });
         expect(created.status(), 'the sentinel product is created').toBe(201);
+        ownedSentinelProductId = (await created.json()).product.id as string;
       }
     } finally {
       await api.dispose();
@@ -947,10 +956,12 @@ test.describe('layout fixtures only delete what they created', () => {
   test.afterAll(async () => {
     const api = await request.newContext();
     try {
-      const product = await findProduct(api, SENTINEL_PRODUCT);
-      if (product) await api.delete(`${BASE}/api/products/${product.id}`, { headers: headers() });
-      const category = await findCategory(api, SENTINEL_CATEGORY);
-      if (category) await api.delete(`${BASE}/api/categories/${category.id}`, { headers: headers() });
+      if (ownedSentinelProductId) {
+        await api.delete(`${BASE}/api/products/${ownedSentinelProductId}`, { headers: headers() });
+      }
+      if (ownedSentinelCategoryId) {
+        await api.delete(`${BASE}/api/categories/${ownedSentinelCategoryId}`, { headers: headers() });
+      }
     } finally {
       await api.dispose();
     }

@@ -94,6 +94,17 @@ input[type="number"] {
   }
 }
 
+/* Short viewports: management pages drop their bounded list windows so pinned
+ * headers and tabs cannot leave their records in an unusable strip. */
+@media (max-height: 560px) {
+  .dashboard-scroll-shell,
+  .dashboard-scroll-frame,
+  .dashboard-scroll-pane {
+    display: block;
+    height: auto;
+  }
+}
+
 /* Desktop title bar: native-overlay mode supplies the caption buttons through
  * Electron; html-fallback mode mounts equivalent controls in the renderer.
  * The safe-area env values exclude native buttons and update on geometrychange;

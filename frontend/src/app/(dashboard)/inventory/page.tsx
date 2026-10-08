@@ -332,8 +332,8 @@ export default function InventoryPage() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
+    <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
@@ -343,15 +343,15 @@ export default function InventoryPage() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col">
+        <TabsList className="shrink-0">
           <TabsTrigger value="supplies">{t('tabSupplies')}</TabsTrigger>
           <TabsTrigger value="recipes">{t('tabRecipes')}</TabsTrigger>
           <TabsTrigger value="movements">{t('tabMovements')}</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="supplies">
-          <div className="flex flex-wrap items-center gap-3 mb-4">
+        <TabsContent value="supplies" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
               <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -370,7 +370,7 @@ export default function InventoryPage() {
             </label>
           </div>
 
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div data-testid="inventory-supplies-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
@@ -423,8 +423,8 @@ export default function InventoryPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="recipes">
-          <div className="relative mb-4 max-w-sm">
+        <TabsContent value="recipes" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="relative mb-4 max-w-sm shrink-0">
             <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)}
@@ -432,7 +432,7 @@ export default function InventoryPage() {
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
             />
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div data-testid="inventory-recipes-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
@@ -474,8 +474,8 @@ export default function InventoryPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="movements">
-          <div className="relative mb-4 max-w-sm">
+        <TabsContent value="movements" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="relative mb-4 max-w-sm shrink-0">
             <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text" value={movementSearch} onChange={(e) => {
@@ -488,7 +488,7 @@ export default function InventoryPage() {
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
             />
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div data-testid="inventory-movements-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>

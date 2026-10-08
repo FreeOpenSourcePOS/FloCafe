@@ -773,14 +773,22 @@ function requireReason(value: unknown): string {
 }
 
 function expenseMutationFields(input: ExpenseWriteFields): Record<string, unknown> {
+  const normalizeText = (value: unknown) => typeof value === 'string' ? value.trim() : value;
+  const normalizeOptionalText = (value: unknown) => {
+    if (value === undefined || value === null) return null;
+    const normalized = normalizeText(value);
+    return normalized === '' ? null : normalized;
+  };
   return {
-    category_id: input.category_id,
-    description: input.description,
+    category_id: normalizeText(input.category_id),
+    description: normalizeText(input.description),
     amount_minor: input.amount_minor,
-    currency_code: input.currency_code ?? null,
+    currency_code: input.currency_code === undefined || input.currency_code === null || input.currency_code === ''
+      ? null
+      : typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code,
     incurred_on: input.incurred_on,
-    payee: input.payee ?? null,
-    notes: input.notes ?? null,
+    payee: normalizeOptionalText(input.payee),
+    notes: normalizeOptionalText(input.notes),
   };
 }
 

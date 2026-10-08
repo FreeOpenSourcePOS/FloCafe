@@ -394,7 +394,13 @@ function runServiceChecks(db: any): void {
     ...overrides,
   });
 
-  const created = service.createExpense(db, createInput());
+  const created = service.createExpense(db, createInput({
+    category_id: ` ${rentId} `,
+    description: ' October rent ',
+    currency_code: ' thb ',
+    payee: ' Landlord ',
+    notes: ' Q4 payment ',
+  }));
   assertEqualOrThrow(created.status, 201, 'expense create returns 201');
   assertEqualOrThrow(created.body.expense.paid_minor, 0, 'a new expense never starts paid');
   assertEqualOrThrow(created.body.expense.due_minor, 1500000, 'the full amount is due on a new expense');
@@ -406,7 +412,7 @@ function runServiceChecks(db: any): void {
   assertOrThrow(created.body.expense.id.startsWith('exp_'), 'expense ids use the repo UUID convention');
   const rentExpenseId = created.body.expense.id;
 
-  const createReplay = service.createExpense(db, createInput());
+  const createReplay = service.createExpense(db, createInput({ currency_code: 'THB' }));
   assertEqualOrThrow(createReplay.replayed, true, 'the same expense key and payload replays the committed result');
   assertEqualOrThrow(createReplay.body.expense.id, rentExpenseId, 'the replay returns the original expense id');
   expectError(() => service.createExpense(db, createInput({ amount_minor: 999 })), 409, 'a reused expense key with a changed amount conflicts', 'idempotency_conflict');
@@ -669,11 +675,29 @@ function runServiceChecks(db: any): void {
 
   // ── Replace: one atomic void-and-create, linked both ways ──
   const replaceSource = service.createExpense(db, createInput({ description: 'Wrong amount', amount_minor: 50000, idempotencyKey: 'exp-replace-source' })).body.expense;
-  const replaceFields = { category_id: rentId, description: 'Corrected amount', amount_minor: 75000, incurred_on: today, reason: 'Original amount was wrong' };
+  const replaceFields = {
+    category_id: rentId,
+    description: 'Corrected amount',
+    amount_minor: 75000,
+    currency_code: 'THB',
+    incurred_on: today,
+    payee: 'Vendor',
+    notes: 'Correction',
+    reason: 'Original amount was wrong',
+  };
   expectError(() => service.replaceExpense(db, replaceSource.id, { ...replaceFields, reason: ' '.repeat(2), actorUserId: actor, idempotencyKey: 'replace-no-reason' }), 400, 'a replacement without a reason is rejected');
   expectError(() => service.replaceExpense(db, rentExpenseId, { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-paid' }), 409, 'an expense with unreversed payments cannot be replaced', 'expense_has_payments');
 
-  const replaced = service.replaceExpense(db, replaceSource.id, { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-source' });
+  const replaced = service.replaceExpense(db, replaceSource.id, {
+    ...replaceFields,
+    category_id: ` ${rentId} `,
+    description: ' Corrected amount ',
+    currency_code: ' thb ',
+    payee: ' Vendor ',
+    notes: ' Correction ',
+    actorUserId: actor,
+    idempotencyKey: 'replace-source',
+  });
   assertEqualOrThrow(replaced.status, 201, 'replace returns the new expense');
   assertEqualOrThrow(replaced.body.replaced_expense_id, replaceSource.id, 'replace names the voided source');
   assertEqualOrThrow(replaced.body.expense.replaces_expense_id, replaceSource.id, 'the replacement links back to its source');

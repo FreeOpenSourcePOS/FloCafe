@@ -35,9 +35,10 @@ concurrent resume cannot delete a newer cart. The table returns to `available` o
 still `held`; a table already carrying a created order is left alone.
 
 The POS resume path is [`frontend/src/store/held-orders.ts`](../../frontend/src/store/held-orders.ts)
-plus the POS page at `frontend/src/app/(dashboard)/pos/page.tsx`: restore the cart into the renderer,
-create the order with those items, then delete the hold. The delete is cleanup after the sale, so a
-failure there does not fail the order.
+plus the POS page at `frontend/src/app/(dashboard)/pos/page.tsx`: the store deletes the persisted
+hold before returning its cached cart, which the page then loads into the renderer for checkout.
+Order creation happens later. If checkout or order creation fails after the restore, the hold is
+already gone and the cart remains only in renderer memory.
 
 Cart decisions travel with the hold as ids (`waivedChargeIds`, `optedInChargeIds`) and are handed to
 the charges engine when the order is created, which stays authoritative about which of them apply.
@@ -78,9 +79,9 @@ settings:
 
 | Surface | Endpoint | Notes |
 | --- | --- | --- |
-| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal. |
-| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line, rejected on cancelled, voided, or refunded items. |
-| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and the order together; rejected on a paid or split bill. |
+| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills return `409`, and completed or cancelled orders return `400`. |
+| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
+| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills and cancelled orders return `409`. A completed order can still be discounted while its bill is unpaid. |
 
 Common rules, enforced in the handlers:
 
@@ -96,8 +97,6 @@ Common rules, enforced in the handlers:
   currency, so tax is charged on the discounted amount.
 - Applying a discount to an order that has an unpaid bill re-syncs the bill's totals and balance.
   A `discount_value` of `0` clears the discount.
-- Completed or cancelled orders reject discounts (`400`), and a split or refunded bill rejects them
-  (`409`).
 
 ## Bills
 
@@ -121,12 +120,14 @@ same fields:
 - `amount`: a number in major units with no more decimal places than the currency allows. A
   single-line payment may omit it to settle the remaining balance; a multi-line batch requires every
   amount.
-- `transaction_id`: the external reference for one settlement, unique per method and bill. Reusing it
-  on another bill is a `409`, reusing it twice in one request is a `400`, and replaying the identical
-  line returns the committed bill without writing again.
+- `transaction_id`: an external reference scoped to its payment method. Reusing it on another bill is
+  a `409`; repeating it for the same method twice in a new multi-line batch is also a `409`, while
+  reusing it across methods in that batch is a `400`. Replaying an identical committed payment
+  returns the bill without writing again.
 - `notes` (up to 1024 characters) and other metadata, bounded to 8192 bytes per line.
-- `customer_id`: must match the bill's customer. Wallet payments require an associated customer with
-  enough points.
+- `customer_id`: if neither the bill nor order has a customer, a non-wallet payment may attach one;
+  if either already has an associated customer, a different id is a `400`. Wallet payments require a
+  customer already associated with the bill or order, with enough points.
 - `override_pin`: the manager override described below.
 
 Non-cash lines can never exceed the balance (`400`). Cash is applied up to the amount still owed and

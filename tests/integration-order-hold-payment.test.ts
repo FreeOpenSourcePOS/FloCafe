@@ -84,7 +84,7 @@ async function main() {
     assertEqualOrThrow(hold.status, 200, 'the cart is held');
     assertEqualOrThrow(hold.data.success, true, 'the hold reports success');
     assertOrThrow(typeof hold.data.id === 'string' && hold.data.id.startsWith('ho-'), 'the hold returns its identity');
-    let heldOrderId = hold.data.id as string;
+    const firstHeldOrderId = hold.data.id as string;
     assertEqualOrThrow(tableStatus('tbl-flow-1'), 'held', 'holding marks the table as held');
 
     const heldList = await api(baseUrl, '/api/held-orders', { headers: authHeader });
@@ -115,21 +115,40 @@ async function main() {
       headers: authHeader,
     });
     assertEqualOrThrow(rehold.status, 200, 'holding the same table again is accepted');
-    heldOrderId = rehold.data.id as string;
+    const heldOrderId = rehold.data.id as string;
+    assertOrThrow(firstHeldOrderId !== heldOrderId, 're-holding assigns a new hold id');
     const afterRehold = await api(baseUrl, '/api/held-orders', { headers: authHeader });
     assertEqualOrThrow(afterRehold.data.orders.length, 1, 're-holding replaces the table cart instead of adding one');
     assertEqualOrThrow(afterRehold.data.orders[0].guestCount, 3, 'the replaced cart carries the newer values');
 
+    const staleDelete = await api(baseUrl, `/api/held-orders/tbl-flow-1?heldOrderId=${firstHeldOrderId}`, { method: 'DELETE', headers: authHeader });
+    assertEqualOrThrow(staleDelete.status, 200, 'a stale delete is still a success response');
+    assertEqualOrThrow(staleDelete.data.deleted, false, 'a stale delete removes nothing');
+    const holdAfterStaleDelete = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    assertEqualOrThrow(holdAfterStaleDelete.data.orders.length, 1, 'a stale id leaves the newer cart in place');
+    assertEqualOrThrow(holdAfterStaleDelete.data.orders[0].id, heldOrderId, 'the newer hold id remains current');
+
     // ── B. Resuming creates the order and clears the hold ────────────────
     console.log('\nB. Resume the hold into an order');
+    const resumedHold = afterRehold.data.orders[0];
+    const deleteHold = await api(baseUrl, `/api/held-orders/tbl-flow-1?heldOrderId=${heldOrderId}`, { method: 'DELETE', headers: authHeader });
+    assertEqualOrThrow(deleteHold.status, 200, 'the hold is deleted before the cart is loaded');
+    assertEqualOrThrow(deleteHold.data.deleted, true, 'the restore removes the persisted cart');
+    const holdsAfterRestore = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    assertEqualOrThrow(holdsAfterRestore.data.orders.length, 0, 'the restored cart is no longer persisted');
+    assertEqualOrThrow(tableStatus('tbl-flow-1'), 'available', 'restoring the held cart releases the held table');
+
     const orderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
         type: 'dine_in',
         table_id: 'tbl-flow-1',
-        guest_count: 3,
-        special_instructions: 'No onions',
-        items: heldCartItems.map((item) => ({ product_id: item.product.id, quantity: item.quantity })),
+        customer_id: resumedHold.customerId,
+        guest_count: resumedHold.guestCount,
+        special_instructions: resumedHold.orderNotes,
+        waived_charge_ids: resumedHold.waivedChargeIds,
+        opted_in_charge_ids: resumedHold.optedInChargeIds,
+        items: resumedHold.items.map((item: any) => ({ product_id: item.product.id, quantity: item.quantity, addons: item.addons })),
       },
       headers: authHeader,
     });
@@ -138,14 +157,6 @@ async function main() {
     assertEqualOrThrow(orderRes.data.order.status, 'pending', 'the order starts pending');
     assertEqualOrThrow(tableStatus('tbl-flow-1'), 'occupied', 'creating a dine-in order occupies the table');
 
-    const deleteHold = await api(baseUrl, `/api/held-orders/tbl-flow-1?heldOrderId=${heldOrderId}`, { method: 'DELETE', headers: authHeader });
-    assertEqualOrThrow(deleteHold.status, 200, 'the consumed hold is deleted');
-    assertEqualOrThrow(deleteHold.data.deleted, true, 'the delete removes the cart');
-    assertEqualOrThrow(tableStatus('tbl-flow-1'), 'occupied', 'clearing the hold does not free an occupied table');
-
-    const staleDelete = await api(baseUrl, `/api/held-orders/tbl-flow-1?heldOrderId=${heldOrderId}`, { method: 'DELETE', headers: authHeader });
-    assertEqualOrThrow(staleDelete.status, 200, 'a stale delete is still a success response');
-    assertEqualOrThrow(staleDelete.data.deleted, false, 'a stale delete removes nothing');
     const unguardedDelete = await api(baseUrl, '/api/held-orders/tbl-flow-1', { method: 'DELETE', headers: authHeader });
     assertEqualOrThrow(unguardedDelete.data.deleted, false, 'a delete without the expected hold id is a no-op');
 

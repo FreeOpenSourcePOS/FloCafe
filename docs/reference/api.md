@@ -115,7 +115,7 @@ including LAN addresses.
 
 ## Main API (`:3001`)
 
-`registerRoutes` in [`main/routes/index.ts`](../../main/routes/index.ts) mounts 36 routers under 37
+`registerRoutes` in [`main/routes/index.ts`](../../main/routes/index.ts) mounts 38 routers under 39
 paths. `staffRoutes` is the same router mounted at both `/api/staff` and `/api/users`, so the two
 prefixes expose an identical surface. Seven further endpoints are registered inline on `app` in that
 same file, outside any router, and are listed under
@@ -349,6 +349,42 @@ Router: `main/routes/refunds.ts`. Full path: `/api/refunds`.
 | --- | --- | --- | --- | --- |
 | `POST` | `/` | `ROLE_ACCESS.ownerManager` | body: `bill_id`, `order_item_id`, `amount`, `reason`, `approver_id`, `manager_id`, `method`, `shift_id`, `override_pin`; header: `Idempotency-Key` | Creates a refund against `bill_id`, or a single `order_item_id`. `approver_id` must resolve to an active owner or manager whose Staff Approval PIN matches `override_pin`. `409` once the business day is closed. Honours `Idempotency-Key`. |
 | `GET` | `/` | `ROLE_ACCESS.ownerManagerCashier` | query: `?bill_id`, `?limit`, `?offset` | Refund rows, newest first. |
+
+### Expenses
+
+Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expenses.view`; every
+mutation needs `expenses.manage` **and** `expenses.view`, so an actor can always read back the row
+they wrote. Amounts are integer minor units in the expense's own `currency_code`; no endpoint
+converts currencies or assumes a minor-unit factor.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/context` | `expenses.view` | none | `{ currency_code, business_date, cash_session_open }`: store currency, store business date, and whether a shift is open. |
+| `GET` | `/categories` | `expenses.view` | query: `?include_inactive` | `{ categories, truncated }`. Deactivated categories stay readable for history and never accept a new expense. |
+| `POST` | `/categories` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `name`, optional `is_active` (defaults to `true`) | `201 { category }`. Names are unique after trimming, case-insensitively. |
+| `PATCH` | `/categories/:id` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `name` and/or `is_active` | `{ category }`. Explicit values only - there is no toggle - and renaming never rewrites the category label snapshotted on existing expenses. |
+| `GET` | `/` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?status`, `?currency`, `?limit`, `?cursor` | `{ expenses, limit, maxLimit, nextCursor? }`, newest `incurred_on` first with a stable id tiebreak. `status` is `active` (default), `voided`, `replaced`, or `all`; `limit` defaults to 50 and caps at 100. |
+| `GET` | `/summary` | `expenses.view` | query: `?from`, `?to`, `?category_id`, `?currency` | `{ basis, filters, groups, totals }`; SQL aggregation over every matching expense, not just the fetched page. |
+| `GET` | `/:id` | `expenses.view` | path: `id`; query: `?payments_limit`, `?payments_cursor` | `{ expense, payments, paymentsNextCursor? }`; payments are newest first, with reversals kept as their own entries. |
+| `POST` | `/` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `category_id`, `description`, `amount_minor`, `incurred_on`, optional `currency_code`, `payee`, `notes` | `201 { expense }`. A new expense never starts paid, `replaces_expense_id` cannot be set here, and a supplied `currency_code` must match the store currency. |
+| `POST` | `/:id/void` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `reason` | `{ expense }`. Requires net paid of zero, preserves the original expense fields and `created_at`, and adds void metadata. |
+| `POST` | `/:id/replace` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: replacement fields plus `reason` | `201 { expense, replaced_expense_id }`. Voids the source and creates the linked replacement in one transaction; a source can be replaced once. |
+
+Mutation bodies are hashed into an immutable fingerprint under the authenticated actor and the
+`Idempotency-Key`: replaying the same key with the same normalized request returns the committed
+result (with an `Idempotent-Replay: true` header) without writing again, and reusing a key for a
+different operation, resource, or payload is a `409`. Replays resolve before current balance,
+category, or currency checks, while current access is still enforced, and only committed mutations
+are recorded.
+
+`incurred_on` is a validated Gregorian `YYYY-MM-DD` business-date label: it may precede today (a
+closed day is fine) and may not be in the future, so audit timestamps record the real creation
+time rather than a midnight back-dated one. The summary covers active expenses incurred inside the inclusive range and reports current net paid
+and due against them, grouped by currency and category, so a payment recorded after the range still
+counts as paid to date. Those are not payments-made-in-period figures, they are never subtracted
+from sales reports, and voided or replaced expenses stay out of the headline totals while remaining
+readable through the `status` history filter. Recording and reversing expense payments are not part
+of this surface yet; the ledger reads already reflect `expense_payments` rows.
 
 ### Payment methods
 
@@ -986,18 +1022,18 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 294 HTTP route registrations across 293 distinct rows, and one WebSocket contract:
+This page lists 304 HTTP route registrations across 303 distinct rows, and one WebSocket contract:
 
-- `267` on the main API: 259 router registrations, 7 inline registrations in `main/routes/index.ts`,
+- `277` on the main API: 269 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
 - `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19
   are mutually exclusive `GET /` handlers under one path, which is why 19 registrations render as 18
   rows.
 
-Every one of the 293 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 157 of them: 131 main-API endpoints,
-all 8 KDS-server routes, and the 18 Server App routes. The remaining 136 main-API endpoints are
+Every one of the 303 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 167 of them: 141 main-API endpoints,
+all 8 KDS-server routes, and the 18 Server App routes. The remaining 146 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in
 `main/routes/` is authoritative for them. A `-` in the Response column means that, not that the

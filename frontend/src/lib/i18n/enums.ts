@@ -91,6 +91,11 @@ export const PERMISSION_LABEL_KEYS = {
   'payment-methods.view': 'paymentMethodsView',
   'payment-methods.manage': 'paymentMethodsManage',
 
+  'expenses.view': 'expensesView',
+  'expenses.manage': 'expensesManage',
+  'expenses.pay': 'expensesPay',
+  'expenses.reverse': 'expensesReverse',
+
   'cash.shifts.view': 'cashShiftsView',
   'cash.shifts.open': 'shiftOpen',
   'cash.shifts.close': 'shiftClose',

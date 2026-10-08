@@ -92,6 +92,10 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Payments | Apply bill discounts and mark bills printed | ✓ | ✓ | — | — | — |
 | Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Payments | Manage payment methods | ✓ | ✓ | — | — | — |
+| Payments | View expenses and balances | ✓ | ✓ | — | — | — |
+| Payments | Create and correct expense records | ✓ | ✓ | — | — | — |
+| Payments | Record expense payments | ✓ | ✓ | — | — | — |
+| Payments | Reverse expense payments | ✓ | ✓ | — | — | — |
 | Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
 | Payments | Open a cash shift | ✓ | ✓ | ✓ | — | — |
 | Payments | Close own cash shift (owner/manager can close any) | ✓ | ✓ | ✓ | — | — |
@@ -169,6 +173,12 @@ create orders" row above — can view and act on every order, including ones oth
 There is no per-order `user_id` check anywhere in the authorization model. Restriction is by
 permission and, for kitchen operations, by KDS stage, station, and category. Accountability comes
 from audit attribution, not from hiding orders between staff.
+
+**Expenses.** Expense records are store-wide: `expenses.view` reads them, and `expenses.manage`
+together with view writes, voids, and replaces them. There is no per-expense ownership check, and
+every mutation is attributed to the authenticated actor. `expenses.pay` and `expenses.reverse` are
+separate configurable ids for payment and reversal authority, so neither is implied by the manage
+grant. The [Expenses API reference](api.md#expenses) lists the expense operations exposed over HTTP.
 
 **Server App.** The standalone Server App is gated by `server-app.use`, shipped by default to
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than

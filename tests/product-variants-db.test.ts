@@ -205,10 +205,17 @@ function main() {
     (migration: any) => migration.name === 'add_variant_recipe_multiplier',
   );
   assert.ok(portionMigration, 'the variant recipe-portion migration is registered');
+  // No migration name is pinned as the tail: any later migration would make
+  // that literal stale. What matters is that the portion migration is applied
+  // by the time a fresh install reaches the tail, exactly once.
   assert.equal(
-    MIGRATIONS[MIGRATIONS.length - 1].name,
-    'add_variant_recipe_multiplier',
-    'the portion migration is the newest registry entry',
+    MIGRATIONS.filter((migration: any) => migration.name === 'add_variant_recipe_multiplier').length,
+    1,
+    'the portion migration is registered exactly once',
+  );
+  assert.ok(
+    portionMigration.version <= MIGRATIONS[MIGRATIONS.length - 1].version,
+    'a fresh install applies the portion migration before the registry tail',
   );
   db.prepare(`INSERT INTO product_variants (id, product_id, name, price, stock_quantity, track_inventory, is_active, created_at, updated_at)
     VALUES ('var-portion', 'latte', 'Half portion', 200, 4, 1, 1, ?, ?)`).run(stamp, stamp);

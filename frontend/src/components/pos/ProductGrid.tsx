@@ -113,7 +113,7 @@ export default function ProductGrid({
             className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
-        <div className="flex flex-wrap gap-2 pb-1">
+        <div data-testid="pos-category-row" className="flex flex-nowrap gap-2 pb-1 overflow-x-auto">
           <button
             onClick={() => setSelectedCategory(null)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
@@ -146,7 +146,9 @@ export default function ProductGrid({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
+      {/* min-h-0 overrides the content-based automatic minimum size, so a long
+          catalog scrolls inside the grid instead of growing past the viewport. */}
+      <div data-testid="pos-catalog-scroll" className="flex-1 min-h-0 overflow-y-auto pb-20 md:pb-0">
         <div className={`grid gap-3 ${
           sidebarOpen 
             ? 'grid-cols-4' 

@@ -144,8 +144,8 @@ export default function CustomersPage() {
   };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
+    <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 justify-between items-center mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold text-foreground">{tNav('customers')}</h1>
           {filter === 'invalid_phones' && (
@@ -160,7 +160,7 @@ export default function CustomersPage() {
         <Button onClick={openAdd}><Plus size={16} className="me-1" /> {tCustomer('add')}</Button>
       </div>
 
-      <div className="relative mb-4">
+      <div className="relative mb-4 shrink-0">
         <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
@@ -169,7 +169,7 @@ export default function CustomersPage() {
         />
       </div>
 
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div data-testid="customers-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
         <table className="w-full">
           <thead className="bg-muted">
             <tr>

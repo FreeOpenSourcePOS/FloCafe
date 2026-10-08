@@ -64,15 +64,15 @@ export default function CustomerDisplayPage() {
 
   if (authLoading || !user || !currentTenant) {
     return (
-      <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
+      <main className="flex h-screen min-h-0 flex-col items-center justify-center bg-slate-950 text-white">
         <div className="text-slate-400">Loading…</div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white p-6 md:p-10 select-none">
-      <header className="max-w-7xl mx-auto flex items-end justify-between gap-4 mb-8">
+    <main className="flex h-screen min-h-0 flex-col bg-slate-950 text-white p-6 md:p-10 select-none">
+      <header className="max-w-7xl mx-auto flex shrink-0 items-end justify-between gap-4 mb-8">
         <div>
           <div className="text-2xl md:text-3xl font-bold tracking-tight">{currentTenant.business_name}</div>
           <div className="text-slate-400 mt-1 text-sm md:text-base">Order status</div>
@@ -85,13 +85,13 @@ export default function CustomerDisplayPage() {
       {loading ? (
         <div className="max-w-7xl mx-auto text-center text-slate-400 py-20">Loading orders…</div>
       ) : (
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
-          <section className="rounded-3xl bg-blue-950/60 border border-blue-900/70 overflow-hidden">
-            <div className="px-6 py-5 bg-blue-900/50 border-b border-blue-800/60">
+        <div className="max-w-7xl mx-auto grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto md:overflow-hidden">
+          <section className="rounded-3xl bg-blue-950/60 border border-blue-900/70 overflow-hidden flex flex-col md:min-h-0">
+            <div className="px-6 py-5 bg-blue-900/50 border-b border-blue-800/60 shrink-0">
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide">PREPARING</h1>
               <p className="text-blue-200/70 mt-1">We are preparing your order</p>
             </div>
-            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div data-testid="customer-display-preparing-scroll" className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4 md:flex-1 md:min-h-0 md:overflow-y-auto">
               {preparing.length === 0 ? (
                 <div className="col-span-full py-12 text-center text-slate-500 text-lg">No orders currently being prepared</div>
               ) : preparing.map((order) => (
@@ -103,12 +103,12 @@ export default function CustomerDisplayPage() {
             </div>
           </section>
 
-          <section className="rounded-3xl bg-emerald-950/60 border border-emerald-900/70 overflow-hidden">
-            <div className="px-6 py-5 bg-emerald-900/50 border-b border-emerald-800/60">
+          <section className="rounded-3xl bg-emerald-950/60 border border-emerald-900/70 overflow-hidden flex flex-col md:min-h-0">
+            <div className="px-6 py-5 bg-emerald-900/50 border-b border-emerald-800/60 shrink-0">
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide">READY FOR PICKUP</h1>
               <p className="text-emerald-200/70 mt-1">Please collect your order</p>
             </div>
-            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div data-testid="customer-display-ready-scroll" className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4 md:flex-1 md:min-h-0 md:overflow-y-auto">
               {ready.length === 0 ? (
                 <div className="col-span-full py-12 text-center text-slate-500 text-lg">No orders are ready yet</div>
               ) : ready.map((order) => (

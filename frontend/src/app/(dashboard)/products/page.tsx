@@ -709,8 +709,8 @@ export default function ProductsPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
+      <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="relative w-full sm:max-w-xs">
           <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -735,8 +735,12 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabType)}>
-        <TabsList className="mb-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as TabType)}
+        className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col"
+      >
+        <TabsList className="mb-6 shrink-0">
           <TabsTrigger value="products">
             <Package size={16} /> {t('tabProducts')}
           </TabsTrigger>
@@ -750,8 +754,8 @@ export default function ProductsPage() {
           )}
         </TabsList>
 
-        <TabsContent value="products">
-          <div className="flex justify-end gap-2 mb-4">
+        <TabsContent value="products" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 justify-end gap-2 mb-4">
             {isOwnerOrManager && taxCategories.length > 0 && (
               <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
                 {t('assignTaxCategory')}
@@ -769,7 +773,7 @@ export default function ProductsPage() {
           </div>
 
       {/* Product Table */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div data-testid="products-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
         <table className="w-full">
           <thead className="bg-muted">
             <tr>
@@ -1355,8 +1359,8 @@ export default function ProductsPage() {
       )}
         </TabsContent>
 
-        <TabsContent value="categories">
-          <div className="flex justify-end gap-2 mb-4">
+        <TabsContent value="categories" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
@@ -1364,7 +1368,7 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addCategory')}
             </Button>
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div data-testid="categories-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
@@ -1478,8 +1482,8 @@ export default function ProductsPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="addons">
-          <div className="flex justify-end gap-2 mb-4">
+        <TabsContent value="addons" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('addons')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
@@ -1487,7 +1491,7 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addAddonGroup')}
             </Button>
           </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div data-testid="addons-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>

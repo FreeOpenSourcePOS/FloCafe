@@ -14,8 +14,8 @@ flowchart LR
   Order -->|"PATCH /discount, /items, /status"| Order
   Order -->|"POST /api/bills/generate"| Bill["bills row<br/>payment_status = unpaid"]
   Bill -->|"POST /api/bills/:id/payment(s)"| Settled["partial or paid"]
-  Settled -->|"last unpaid bill of the order settled"| Done["orders.status = completed<br/>table released"]
-  Settled -->|"POST /api/refunds"| Refund["refunds row<br/>bill refunded"]
+  Settled -->|"last unpaid bill settles; order is not terminal"| Done["orders.status = completed<br/>dine-in table released"]
+  Settled -->|"POST /api/refunds"| Refund["refunds row<br/>bill partially_refunded or refunded"]
 ```
 
 The endpoint tables, authorization gates, and rate limits are in the
@@ -180,9 +180,11 @@ cash payments. Refund approval tiers, cutoff, and store-credit requirements are 
 
 All of the stages above run against the local SQLite database, so the whole lifecycle works offline.
 Duplicate submissions are guarded by the `Idempotency-Key` header (orders, payments, refunds),
-`transaction_id` uniqueness, and the database's own constraints. Each mutation commits inside a
-single `withTxn` transaction, so a failure at any step leaves no partial order, bill, or ledger line
-behind. A closed business day does not block new orders or new payments; it blocks cash-drawer
+`transaction_id` uniqueness, and the database's own constraints. Mutations that update order,
+held-order, bill, payment, or refund state use `withTxn` for their database writes. Bill
+print-status updates run outside this transaction. A failure in a wrapped mutation rolls back its
+database writes, so it leaves no partial order, bill, or ledger line behind. A closed business day
+does not block new orders or new payments; it blocks cash-drawer
 movements, and refunds have their own end-of-business-day cutoff described above.
 
 ## Verification

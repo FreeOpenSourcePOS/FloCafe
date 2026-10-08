@@ -1098,8 +1098,10 @@ export default function OrdersPage() {
     }
   };
 
+  // Every layout anchors its content to the page height so the title, status
+  // tabs and filters stay on screen while the order content scrolls below them.
   return (
-    <div className={ordersLayout === 'split' ? 'h-full min-h-0 flex flex-col gap-4' : 'space-y-4'}>
+    <div className="h-full min-h-0 flex flex-col gap-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
@@ -1185,7 +1187,7 @@ export default function OrdersPage() {
             <p>{tOrders('heldEmpty')}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+          <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
             {Object.values(heldOrdersStore.orders).map((heldOrder) => (
               <div key={heldOrder.tableId} className="bg-card rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
                  <div className="p-4 border-b border-border bg-blue-50/50 flex justify-between items-center">
@@ -1333,7 +1335,7 @@ export default function OrdersPage() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
           {filteredOrders.map((order) => (
             <OrderCard
               key={order.id}
@@ -1394,7 +1396,7 @@ export default function OrdersPage() {
         </div>
       )}
       {filters.search.trim() && tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
-        <div className="text-center py-3 border-t border-border">
+        <div className="shrink-0 text-center py-3 border-t border-border">
           <Button variant="outline" size="sm" onClick={() => fetchOrders(nextOrdersCursor)} disabled={loadingMoreOrders}>
             {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
           </Button>

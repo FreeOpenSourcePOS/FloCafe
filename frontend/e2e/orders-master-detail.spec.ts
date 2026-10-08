@@ -1,6 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setLanguage } from './helpers/test-auth';
+import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setLanguage, setOrdersLayout } from './helpers/test-auth';
+import { elementTop, expectPinned, innermostScrollableAncestor } from './helpers/layout';
 
 /**
  * Orders master/detail split view (#639) — DEFAULT layout coverage.
@@ -167,5 +168,108 @@ test.describe('orders master/detail is the default layout', () => {
     await page.getByRole('button', { name: 'Back' }).click();
     await expect(masterRow).toBeVisible();
     await expect(page.getByText(PLACEHOLDER)).toBeHidden();
+  });
+});
+
+/**
+ * The cards layout is the mode where the merchant report applies: its content
+ * used to share the dashboard page scroll, so the title, status tabs, search
+ * and filters left the screen as soon as an order list grew. These tests hold
+ * the controls in place and prove the cards region owns the scroll.
+ */
+test.describe('orders cards layout keeps controls visible while order cards scroll', () => {
+  let originalLayout: 'split' | 'cards' | null = null;
+
+  test.afterEach(async ({ page }) => {
+    if (!originalLayout) return;
+    await setOrdersLayout(page, originalLayout);
+    originalLayout = null;
+  });
+
+  /** A dozen takeaway orders overflow one desktop card panel; six overflow a phone. */
+  async function createScrollFixtureOrders(page: Page, count: number): Promise<void> {
+    const loginResponse = await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: 'manager@flo.local', password: E2E_PASSWORD },
+    });
+    expect(loginResponse.ok(), 'fixture login succeeds').toBeTruthy();
+    const { access_token: token } = await loginResponse.json();
+    for (let index = 0; index < count; index += 1) {
+      const response = await page.request.post(`${BASE}/api/orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          type: 'takeaway',
+          special_instructions: `Card scroll fixture ${index}`,
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(response.ok(), `scroll fixture order ${index} is created`).toBeTruthy();
+    }
+  }
+
+  async function expectControlsPinnedWhileCardsScroll(page: Page, label: string): Promise<void> {
+    const title = page.getByRole('heading', { name: 'Orders' });
+    const search = page.getByPlaceholder('Search by order number, name, or phone…');
+    const statusTab = page.getByRole('button', { name: 'All', exact: true });
+    await expect(title, `${label}: title renders`).toBeVisible();
+    await expect(search, `${label}: search renders`).toBeVisible();
+    await expect(statusTab, `${label}: status tabs render`).toBeVisible();
+
+    const pinned = {
+      title: await elementTop(title, `${label} Orders title`),
+      search: await elementTop(search, `${label} search field`),
+      tab: await elementTop(statusTab, `${label} status tab`),
+    };
+
+    const cards = page.locator('div.bg-card.rounded-xl');
+    await expect(cards.first(), `${label}: order cards render`).toBeVisible();
+    const lastCard = cards.last();
+
+    const scroller = await innermostScrollableAncestor(lastCard);
+    const scrolled = await scroller.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    expect(scrolled, `${label}: order cards scroll inside a bounded content region`).toBeGreaterThan(0);
+
+    expectPinned(await elementTop(title, `${label} Orders title`), pinned.title, `${label} Orders title`);
+    expectPinned(await elementTop(search, `${label} search field`), pinned.search, `${label} search field`);
+    expectPinned(await elementTop(statusTab, `${label} status tab`), pinned.tab, `${label} status tab`);
+
+    const viewport = page.viewportSize();
+    expect(viewport, `${label}: viewport is set`).not.toBeNull();
+    const lastBox = await lastCard.boundingBox();
+    expect(lastBox, `${label}: last order card has bounds`).not.toBeNull();
+    expect(lastBox!.y, `${label}: last order card is inside the viewport`).toBeGreaterThanOrEqual(-1);
+    expect(
+      lastBox!.y + lastBox!.height,
+      `${label}: the last order card is reachable`,
+    ).toBeLessThanOrEqual(viewport!.height + 1);
+
+    // The filters remain usable after the scroll, and the pinned row stays put
+    // while the filter refetches the list.
+    await search.fill('scroll fixture');
+    await expect(search, `${label}: search accepts input after scrolling`).toHaveValue('scroll fixture');
+    await search.fill('');
+    expectPinned(await elementTop(title, `${label} Orders title`), pinned.title, `${label} Orders title`);
+  }
+
+  test('desktop: the title, tabs, search and filters stay pinned while cards scroll', async ({ page }) => {
+    await login(page);
+    originalLayout = await readOrdersLayout(page);
+    await setOrdersLayout(page, 'cards');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await createScrollFixtureOrders(page, 12);
+    await page.goto(`${BASE}/orders`);
+    await expectControlsPinnedWhileCardsScroll(page, 'desktop');
+  });
+
+  test('phone: the title, tabs, search and filters stay pinned while cards scroll', async ({ page }) => {
+    await login(page);
+    originalLayout = await readOrdersLayout(page);
+    await setOrdersLayout(page, 'cards');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await createScrollFixtureOrders(page, 8);
+    await page.goto(`${BASE}/orders`);
+    await expectControlsPinnedWhileCardsScroll(page, 'phone');
   });
 });

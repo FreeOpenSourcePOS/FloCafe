@@ -78,6 +78,22 @@ input[type="number"] {
   touch-action: manipulation;
 }
 
+/* Short viewports: the cart column becomes the single scroll owner, so order
+ * type, totals and checkout stay reachable however long the item list is. */
+@media (max-height: 560px) {
+  .pos-cart-shell {
+    overflow-y: auto;
+  }
+
+  .pos-cart-shell > * {
+    flex: 0 0 auto;
+  }
+
+  .pos-cart-items {
+    overflow-y: visible;
+  }
+}
+
 /* Desktop title bar: native-overlay mode supplies the caption buttons through
  * Electron; html-fallback mode mounts equivalent controls in the renderer.
  * The safe-area env values exclude native buttons and update on geometrychange;

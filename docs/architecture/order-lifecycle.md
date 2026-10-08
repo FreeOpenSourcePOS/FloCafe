@@ -64,7 +64,7 @@ Everything monetary is resolved server-side inside one transaction:
   columns; non-standard charges are added to the total. The snapshot rules are in
   [product invariants](../reference/product-invariants.md#applied-charge-snapshots-stay-with-existing-orders).
 - The total is the discounted subtotal plus exclusive tax plus delivery, packaging, service, and
-  other charges, rounded to the currency's decimal places in `decimal.js`. A total whose minor-unit
+  other charges, rounded to the currency's decimal places. A total whose minor-unit
   value would leave the safe-integer range is rejected instead of being stored lossily.
 
 Order numbers are allocated inside the transaction. With an `Idempotency-Key` header, the same
@@ -96,7 +96,9 @@ Common rules, enforced in the handlers:
 - The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
   currency, so tax is charged on the discounted amount.
 - Applying a discount to an order that has an unpaid bill re-syncs the bill's totals and balance.
-  A `discount_value` of `0` clears the discount.
+  A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
+  subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
+  `discount_value`.
 
 ## Bills
 
@@ -124,7 +126,8 @@ same fields:
   a `409`; repeating it for the same method twice in a new multi-line batch is also a `409`, while
   reusing it across methods in that batch is a `400`. Replaying an identical committed payment
   returns the bill without writing again.
-- `notes` (up to 1024 characters) and other metadata, bounded to 8192 bytes per line.
+- `notes` (up to 1024 UTF-16 code units); serialized payment-line JSON is limited to 8192 UTF-16
+  code units.
 - `customer_id`: if neither the bill nor order has a customer, a non-wallet payment may attach one;
   if either already has an associated customer, a different id is a `400`. Wallet payments require a
   customer already associated with the bill or order, with enough points.
@@ -143,9 +146,10 @@ Two gates sit between a valid request and the write:
   resolves to cash) needs an open shift, or the request is a `409`. The check runs after replay
   detection, so a committed payment can be re-read with the same key after its shift closed. A cash
   ledger line records the open `cash_session_id`.
-- **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, paying while
-  kitchen items are still undelivered is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a
-  manager PIN is supplied as `override_pin`. The override is recorded in the order audit log.
+- **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, `kds_enabled`
+  is not `false`, and `billing_type` is not `prepaid`, paying while kitchen items are undelivered
+  is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a manager PIN is supplied as `override_pin`.
+  The override is recorded in the order audit log.
 
 A paid bill refuses further payment (`400`) and a refunded bill refuses it with `409`. The response
 carries the updated bill plus the wallet and loyalty effects; `bill.payment_details` is the
@@ -183,9 +187,9 @@ item in progress, requires a manager PIN. Kitchen item status is a separate surf
 
 `POST /api/refunds` reverses part or all of a paid bill. Cash refunds follow the same shift gate as
 cash payments, and refunds require a manager PIN, narrowed to an owner-only PIN once the order is
-more than an hour old. A refund is refused with `409` once the order's own business day
-has ended, so a completed order can only be refunded inside its business day. Store-credit refunds
-need loyalty enabled and a customer on the bill. The approval rules are in
+more than an hour old. After that one-hour window, a refund is refused with `409` once the order's
+own business day has ended; refunds within the first hour are not blocked by this cutoff. Store-credit
+refunds need loyalty enabled and a customer on the bill. The approval rules are in
 [product invariants](../reference/product-invariants.md#refunds-and-staff-approval-pins).
 
 ## Failure behaviour

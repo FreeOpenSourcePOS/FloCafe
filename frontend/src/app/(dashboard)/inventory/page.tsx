@@ -166,7 +166,10 @@ export default function InventoryPage() {
       setNextCursor(data.nextCursor ?? null);
       movementResolvedSequence.current = requestSequence;
     } catch {
-      if (requestSequence === movementRequestSequence.current) toast.error(t('loadFailed'));
+      if (requestSequence === movementRequestSequence.current) {
+        movementResolvedSequence.current = requestSequence;
+        toast.error(t('loadFailed'));
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey, movementSearch]);

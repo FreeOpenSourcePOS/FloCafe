@@ -370,6 +370,45 @@ test.describe('equal share payments', () => {
     expect(printRequests).toEqual([]);
   });
 
+  test('an IRR Toman share advances after its stored amount is paid', async ({ page, request }) => {
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const productId = await createProduct(request, await activeCategoryId(request), `Equal share Toman ${suffix}`, 100000.01);
+    try {
+      const order = await createCheck(request, productId, 'Equal share Toman display', 3);
+      await page.route('**/api/auth/login', async (route) => {
+        const response = await route.fetch();
+        const data = await response.json() as { tenants: Record<string, unknown>[]; [key: string]: unknown };
+        await route.fulfill({
+          response,
+          json: {
+            ...data,
+            tenants: data.tenants.map((tenant) => ({
+              ...tenant,
+              country: 'IR',
+              currency: 'IRR',
+              currency_display: 'toman',
+              number_digits: 'latin',
+            })),
+          },
+        });
+      });
+
+      await login(page);
+      await openOrderCheckout(page, order.order_number);
+      await openEqualShare(page);
+      await setPayers(page, '3');
+      await applyShareTo(page, 'Cash');
+
+      const payment = await submitPayment(page);
+      expect(payment.status).toBe(200);
+      expect(payment.payments).toEqual([{ method: 'cash', amount: 33333.34 }]);
+      await expect(payerCount(page)).toHaveValue('2');
+    } finally {
+      await page.unroute('**/api/auth/login');
+      await request.delete(`${BASE}/api/products/${productId}`, { headers: managerHeaders });
+    }
+  });
+
   test('payer count stays fixed while an equal-share payment is pending', async ({ page, request }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share pending payment', 3);
     await login(page);
@@ -396,6 +435,7 @@ test.describe('equal share payments', () => {
       await expect(payerCount(page)).toBeDisabled();
       await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeDisabled();
       await expect(page.getByTitle('Cash', { exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
       await expect(page.locator('[aria-label="Numeric keypad"]')).toHaveCount(0);
     } finally {
       releaseRequest();
@@ -811,6 +851,7 @@ test.describe('equal share payments', () => {
     await page.getByRole('button', { name: /^Pay / }).click();
     await page.getByRole('button', { name: 'Pay', exact: true }).click();
     await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
 
     // The server committed the share even though the page saw a failure.
     const committed = await readBill(request, bill.id);

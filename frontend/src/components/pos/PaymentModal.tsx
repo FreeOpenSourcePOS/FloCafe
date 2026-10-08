@@ -582,7 +582,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const attemptTotalMinor = (attempt: PendingPaymentAttempt) => attempt.lines.reduce(
-    (sum, line) => sum + toMinorUnits(toStoredUnit(Number(line.amount) || 0)),
+    (sum, line) => sum + toMinorUnits(Number(line.amount) || 0),
     0,
   );
 
@@ -818,6 +818,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
           </div>
           <button
             onClick={onClose}
+            disabled={processing || attemptLocked}
             className="touch-target rounded-full bg-muted hover:bg-muted active:bg-muted text-muted-foreground transition-colors"
             aria-label={t('close')}
           >

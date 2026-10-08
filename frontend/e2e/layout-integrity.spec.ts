@@ -1318,6 +1318,41 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     ).toHaveCount(0);
   });
 
+  test('a failed older movement page can be retried with the same cursor', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+
+    const requestedCursors: (string | null)[] = [];
+    let olderPageAttempts = 0;
+    await page.route('**/api/supplies/movements*', async (route) => {
+      const beforeId = new URL(route.request().url()).searchParams.get('before_id');
+      requestedCursors.push(beforeId);
+      if (!beforeId) {
+        await route.fulfill({ json: { movements: [movement(100, 'FIRST PAGE MOVEMENT')], nextCursor: 999 } });
+        return;
+      }
+      olderPageAttempts += 1;
+      if (olderPageAttempts === 1) {
+        await route.fulfill({ status: 500, json: { error: 'Internal server error' } });
+        return;
+      }
+      await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+    });
+
+    await page.goto(`${BASE}/inventory`);
+    await page.getByRole('tab', { name: 'Movements' }).click();
+    await expect(page.getByText('FIRST PAGE MOVEMENT')).toBeVisible();
+
+    const loadMore = page.getByRole('button', { name: 'Load more' });
+    await loadMore.click();
+    await expect(page.getByText('Failed to load inventory')).toBeVisible();
+    await expect(loadMore).toBeVisible();
+    await loadMore.click();
+
+    await expect(page.getByText('SECOND PAGE MOVEMENT')).toBeVisible();
+    expect(requestedCursors).toEqual([null, '999', '999']);
+  });
+
   test('a movement search change clears the list and its cursor', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);

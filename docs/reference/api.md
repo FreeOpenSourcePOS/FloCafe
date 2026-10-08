@@ -320,8 +320,9 @@ Router: `main/routes/order-items.ts`. Full path: `/api/order-items`.
 Router: `main/routes/held-orders.ts`. Full path: `/api/held-orders`.
 
 A held cart is a cart snapshot, not an order: nothing is priced and no stock is deducted. Resuming
-is a client round trip - create the order from the held items, then delete the hold - and the delete
-releases the table only while it is still `held`. See
+is a client round trip - the POS deletes the persisted hold, then loads the cached items into the
+renderer; checkout creates the order later. The delete releases the table only while it is still
+`held`. See
 [Order lifecycle](../architecture/order-lifecycle.md#cart-and-held-carts).
 
 | Method | Path | Authorization | Parameters | Response |

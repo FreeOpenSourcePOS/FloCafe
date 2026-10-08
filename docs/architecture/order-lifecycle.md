@@ -10,7 +10,7 @@ renderer; the reasoning is in
 flowchart LR
   Cart["Cart in the renderer"] -->|"POST /api/held-orders"| Held["held_orders row<br/>tables.status = held"]
   Cart -->|"POST /api/orders"| Order["orders row<br/>status = pending"]
-  Held -->|"restore cart, POST /api/orders,<br/>DELETE the hold"| Order
+  Held -->|"DELETE the hold, then restore cached cart"| Cart
   Order -->|"PATCH /discount, /items, /status"| Order
   Order -->|"POST /api/bills/generate"| Bill["bills row<br/>payment_status = unpaid"]
   Bill -->|"POST /api/bills/:id/payment(s)"| Settled["partial or paid"]

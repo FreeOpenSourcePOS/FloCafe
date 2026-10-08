@@ -6,8 +6,8 @@
  * order-level discount rescales tax, the bill is settled in installments, and
  * the order completes only once the bill is paid. It also pins the hold
  * cleanup contract (stale deletes are no-ops), the discount cap, the cash-shift
- * gate, cash over-tender change, and an idempotent payment replay after the
- * shift closed.
+ * and kitchen-delivery gates, cash over-tender change, and an idempotent payment
+ * replay after the shift closed.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/integration-order-hold-payment.test.ts
  */
@@ -26,7 +26,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct, seedTable,
+  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
   installAndActivateTestTaxPack,
   api, assertOrThrow, assertEqualOrThrow, assertIncludesOrThrow, assertGreaterThanOrThrow,
   getResults, closeDatabase, getDatabase, now,
@@ -48,7 +48,8 @@ async function main() {
   const db = initTestDb();
   installAndActivateTestTaxPack(db, testTaxPack);
 
-  const { authHeader } = seedOwnerUser(db) as { authHeader: AuthHeader };
+  const { authHeader, userId } = seedOwnerUser(db) as { authHeader: AuthHeader; userId: string };
+  const manager = seedManagerUser(db);
   seedCategory(db, 'cat-flow', 'Flow Test Menu');
   seedProduct(db, 'prod-flow-a', 'cat-flow', 'Cappuccino', 500, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
   seedProduct(db, 'prod-flow-b', 'cat-flow', 'Sandwich', 300, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
@@ -257,8 +258,8 @@ async function main() {
     });
     assertEqualOrThrow(lateDiscount.status, 400, 'a completed order cannot be discounted afterwards');
 
-    // ── E. Cash over-tender, the shift gate, and replay after close ──────
-    console.log('\nE. Cash gate and replay after the shift closed');
+    // ── E. Payment gates, cash over-tender, and replay after close ────────
+    console.log('\nE. Payment gates and replay after the shift closed');
     const cashOrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: { type: 'takeaway', items: [{ product_id: 'prod-flow-a', quantity: 1 }] },
@@ -278,13 +279,32 @@ async function main() {
     const gatedBill = await api(baseUrl, `/api/bills/${cashBillRes.data.bill.id}`, { headers: authHeader });
     assertEqualOrThrow(gatedBill.data.bill.paid_amount, 0, 'the rejected cash payment leaves no ledger line');
 
-    const ungatedCard = await api(baseUrl, `/api/bills/${cashBillRes.data.bill.id}/payment`, {
+    setSetting('require_kitchen_delivered_before_settlement', 'true');
+    setSetting('kds_enabled', 'true');
+    const gatedKitchenPayment = await api(baseUrl, `/api/bills/${cashBillRes.data.bill.id}/payment`, {
       method: 'POST',
       body: { method: 'card', amount: 525 },
-      headers: { ...authHeader, 'Idempotency-Key': 'flow-ungated-card' },
+      headers: { ...authHeader, 'Idempotency-Key': 'flow-kitchen-gate' },
     });
-    assertEqualOrThrow(ungatedCard.status, 200, 'a non-cash tender is not gated by the shift setting');
-    assertEqualOrThrow(ungatedCard.data.bill.payment_status, 'paid', 'the card tender settles the bill');
+    assertEqualOrThrow(gatedKitchenPayment.status, 409, 'undelivered kitchen items block a single payment');
+    assertEqualOrThrow(gatedKitchenPayment.data.code, 'KITCHEN_ITEMS_UNDELIVERED', 'the kitchen gate returns its stable code');
+    assertEqualOrThrow((db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(cashBillRes.data.bill.id) as { paid_amount: number }).paid_amount, 0, 'the kitchen gate leaves the bill unpaid');
+
+    const kitchenOverride = await api(baseUrl, `/api/bills/${cashBillRes.data.bill.id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'card', amount: 525 }], override_pin: '1234' },
+      headers: { ...authHeader, 'Idempotency-Key': 'flow-kitchen-override' },
+    });
+    assertEqualOrThrow(kitchenOverride.status, 200, 'a valid manager PIN overrides the kitchen gate for a payment batch');
+    assertEqualOrThrow(kitchenOverride.data.kitchenDeliveryOverridden, true, 'the response records the kitchen override');
+    assertEqualOrThrow(kitchenOverride.data.bill.payment_status, 'paid', 'the override settles the bill');
+    const kitchenOverrideAudit = db.prepare("SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'")
+      .get(cashOrderRes.data.order.id) as { actor_user_id: string; details_json: string } | undefined;
+    assertOrThrow(Boolean(kitchenOverrideAudit), 'the kitchen override is recorded in the order audit log');
+    assertEqualOrThrow(kitchenOverrideAudit?.actor_user_id, userId, 'the audit attributes the override to the authenticated actor');
+    assertEqualOrThrow(JSON.parse(kitchenOverrideAudit?.details_json || '{}').manager_user_id, manager.userId, 'the audit identifies the approving manager');
+    assertOrThrow(!JSON.stringify(kitchenOverride.data.bill.payment_details).includes('1234'), 'the manager PIN is not stored with payment details');
+    setSetting('require_kitchen_delivered_before_settlement', 'false');
 
     const sessionDb = db.prepare("INSERT INTO cash_sessions (opened_by, opened_at, opening_float_cents, status) VALUES (?, ?, 0, 'open')")
       .run('owner-test-001', now());

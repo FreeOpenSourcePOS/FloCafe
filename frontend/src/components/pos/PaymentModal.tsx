@@ -62,6 +62,20 @@ type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { 
 // was sized from so a later change can withdraw it.
 type AppliedEqualShare = { index: number; amountMinor: number; amountInput: string; balanceMinor: number; payers: number };
 
+// One payment request frozen at submission. The backend hashes the bill, the
+// payment lines and the customer, so a retry that changes any of them conflicts
+// with the key already recorded for a committed attempt.
+type PendingPaymentAttempt = {
+  billId: string | number;
+  key: string;
+  zeroBalance: boolean;
+  lines: { method: string; amount: number | null; payment_method_id?: number }[];
+  customerId: string | number | null;
+};
+
+// Must match the conflict thrown by main/routes/bills.ts for a reused key.
+const IDEMPOTENCY_CONFLICT_ERROR = 'Idempotency-Key was already used for a different payment request';
+
 // Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 1;
 
@@ -109,10 +123,6 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
-  const idempotencyKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    idempotencyKeyRef.current = null;
-  }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -144,6 +154,25 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
+
+  // An attempt whose outcome is unknown keeps its key and its exact request:
+  // its retry must replay the same bill, lines and customer, so the draft that
+  // produced it stays frozen until the outcome is known.
+  const pendingAttemptRef = useRef<PendingPaymentAttempt | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<PendingPaymentAttempt | null>(null);
+  // An attempt only locks the bill it was made for; another check inherits
+  // nothing from it.
+  const attemptLocked = pendingAttempt !== null && pendingAttempt.billId === bill.id;
+  const inFlightRef = useRef(false);
+  const lockAttempt = (attempt: PendingPaymentAttempt | null) => {
+    pendingAttemptRef.current = attempt;
+    setPendingAttempt(attempt);
+  };
+  useEffect(() => {
+    // Selecting another bill never replays the previous check's request.
+    pendingAttemptRef.current = null;
+    inFlightRef.current = false;
+  }, [bill.id]);
 
   const charges = useChargesStore((s) => s.charges);
   const loadCharges = useChargesStore((s) => s.load);
@@ -191,7 +220,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     && (bill.split_group_id
       ? (!bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems))
       : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');
-  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !applyingDiscount && !chargeStateUncertain;
+  const canEditCharges = tenantCan(currentTenant, 'bills.discount.apply') && canToggleCharges && !processing && !applyingDiscount && !chargeStateUncertain && !attemptLocked;
   const addableCharges = applicableCharges.filter(
     (charge) => !charge.is_default_active && !appliedCharges.some((applied) => applied.id === charge.id),
   );
@@ -262,7 +291,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   // Proportionally update payment inputs when remaining balance changes,
   // unless cashier has already edited inputs manually.
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
-  if (!paymentsTouched && remaining !== syncedRemaining) {
+  if (!paymentsTouched && !attemptLocked && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
     const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     if (totalAllocated > 0) {
@@ -343,7 +372,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
 
   const applyEqualShare = (index: number) => {
     const shareMinor = equalShareShares[0];
-    if (processing || shareMinor === undefined || tenderHasConflict(index)) return;
+    if (processing || attemptLocked || shareMinor === undefined || tenderHasConflict(index)) return;
     const amountInput = String(toDisplayUnit(minorToStored(shareMinor)));
     setPaymentsTouched(true);
     setPayments((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, amount: amountInput } : row));
@@ -389,12 +418,14 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   }
 
   const updatePaymentAmount = (idx: number, value: string) => {
+    if (attemptLocked) return;
     setPaymentsTouched(true);
     setAppliedEqualShare((current) => (current?.index === idx ? null : current));
     setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
   const allocateRemainingTo = (idx: number) => {
+    if (attemptLocked) return;
     const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
     const dueStored = Math.max(0, remaining - allocatedElsewhere);
     const dueDisplay = toDisplayUnit(dueStored);
@@ -412,7 +443,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         : '';
 
   const updateActiveAmount = (value: string) => {
-    if (!amountTarget) return;
+    if (!amountTarget || attemptLocked) return;
     if (amountTarget.kind === 'payment') {
       updatePaymentAmount(amountTarget.index, value);
       return;
@@ -461,7 +492,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
-    if (applyingDiscount || processing || updatingChargeId || chargeStateUncertain) return;
+    if (applyingDiscount || processing || updatingChargeId || chargeStateUncertain || attemptLocked) return;
     const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
       toast.error(t('discountInvalid'));
@@ -515,7 +546,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   };
 
   const handleOpenSplitCheck = async () => {
-    if (openingSplitCheck) return;
+    if (openingSplitCheck || attemptLocked) return;
     setOpeningSplitCheck(true);
     try {
       // The bill endpoint answers with this check's own projection, so a
@@ -550,8 +581,145 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     else onClose();
   };
 
+  const attemptTotalMinor = (attempt: PendingPaymentAttempt) => attempt.lines.reduce(
+    (sum, line) => sum + toMinorUnits(toStoredUnit(Number(line.amount) || 0)),
+    0,
+  );
+
+  /** Snapshots the draft fields the backend hashes into the request fingerprint. */
+  const buildPendingAttempt = (): PendingPaymentAttempt => {
+    const splitLines = payments
+      .map((p) => ({
+        method: p.payment_method_id === undefined ? p.method : 'custom',
+        ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
+        amount: toStoredUnit(parseFloat(p.amount) || 0),
+      }))
+      .filter((p) => p.amount > 0 && !isNaN(p.amount));
+    if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
+    const zeroBalance = remainingMinor === 0 && splitLines.length === 0;
+    return {
+      billId: bill.id,
+      key: createPaymentIdempotencyKey(),
+      zeroBalance,
+      lines: zeroBalance ? [{ method: 'cash', amount: null }] : splitLines,
+      customerId: effectiveCustomerId,
+    };
+  };
+
+  /**
+   * Sends one frozen attempt. A known outcome releases it (and a committed
+   * partial payment starts a fresh key next time); anything uncertain keeps the
+   * attempt and its key, so Pay replays the identical request.
+   */
+  const submitPaymentAttempt = async (attempt: PendingPaymentAttempt) => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    setProcessing(true);
+    try {
+      const res = await api.post(
+        attempt.zeroBalance ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
+        attempt.zeroBalance
+          ? {
+              method: attempt.lines[0].method,
+              amount: attempt.lines[0].amount,
+              customer_id: attempt.customerId,
+              override_pin: kitchenOverridePin || undefined,
+            }
+          : {
+              payments: attempt.lines,
+              customer_id: attempt.customerId,
+              override_pin: kitchenOverridePin || undefined,
+            },
+        { headers: { 'Idempotency-Key': attempt.key } },
+      );
+      const updatedBill = res.data?.bill as Bill | undefined;
+      if (!updatedBill) {
+        // A 2xx without a bill is no evidence of an outcome: replay the attempt.
+        toast.error(t('paymentFailed'));
+        return;
+      }
+      lockAttempt(null);
+      setKitchenOverrideRequired(false);
+      if (updatedBill.payment_status !== 'paid') {
+        if (onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
+        // Only a committed equal share retires its payer, and only once.
+        if (updatedBill.payment_status === 'partial'
+          && appliedEqualShare
+          && attemptTotalMinor(attempt) === appliedEqualShare.amountMinor) {
+          advanceEqualShare(appliedEqualShare);
+        }
+        if (updatedBill.payment_status === 'partial') {
+          toast.success(t('paymentRecorded'));
+        } else {
+          toast.error(t('paymentIncomplete', {
+            amount: currencyFmt(Number(updatedBill.balance) || 0),
+          }));
+        }
+        return;
+      }
+      const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
+      setPointsEarned(earned);
+      if (res.data?.kitchenDeliveryOverridden) {
+        toast.success(t('kitchenDeliveryOverrideSuccess'));
+      } else if (earned > 0) {
+        toast.success(t('paymentRecordedWithPoints', { points: earned }));
+      } else {
+        toast.success(t('paymentRecorded'));
+      }
+      setJustPaid(true);
+    } catch (error: unknown) {
+      const response = (error as {
+        response?: {
+          status?: number;
+          data?: { code?: string; error?: string; undeliveredCount?: number; undeliveredItems?: unknown };
+        };
+      } | null)?.response;
+      const payload = response?.data;
+      if (payload?.code === 'KITCHEN_ITEMS_UNDELIVERED') {
+        // The kitchen gate runs before any write: nothing committed, and the
+        // cashier must be able to retry with a manager PIN.
+        lockAttempt(null);
+        setKitchenOverrideRequired(true);
+        setKitchenOverridePin('');
+        setKitchenUndeliveredCount(Number(payload.undeliveredCount) || 0);
+        setKitchenUndeliveredItems(Array.isArray(payload.undeliveredItems) ? payload.undeliveredItems : []);
+        setKitchenDeliveryError('');
+      } else if (payload?.error === 'Invalid manager PIN') {
+        // A definitive challenge rejection: no payment was recorded.
+        lockAttempt(null);
+        setKitchenOverrideRequired(true);
+        setKitchenOverridePin('');
+        setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
+      } else if (
+        response?.status === undefined
+        || response.status >= 500
+        || payload?.error === IDEMPOTENCY_CONFLICT_ERROR
+      ) {
+        // No response, a server fault, or a key already recorded for another
+        // request: the outcome is unknown, so the attempt stays frozen and the
+        // retry replays it rather than issuing a new charge.
+        toast.error(t('paymentFailed'));
+      } else {
+        // A definitive 4xx rejection cannot have committed: the draft is
+        // editable again and the next Pay starts a new attempt.
+        lockAttempt(null);
+        toast.error(t('paymentFailed'));
+      }
+    } finally {
+      inFlightRef.current = false;
+      setProcessing(false);
+    }
+  };
+
   const handlePay = async () => {
-    if (processing || applyingDiscount || updatingChargeId || chargeStateUncertain) return;
+    if (processing || applyingDiscount || updatingChargeId || chargeStateUncertain || inFlightRef.current) return;
+    // An unresolved attempt is replayed exactly: same bill, lines, customer and
+    // key. Resubmitting the live draft here is the hazard this guards.
+    const unresolved = pendingAttemptRef.current;
+    if (unresolved && unresolved.billId === bill.id) {
+      await submitPaymentAttempt(unresolved);
+      return;
+    }
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -594,80 +762,9 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         return;
       }
     }
-    setProcessing(true);
-    try {
-      const splitLines = payments
-        .map((p) => ({
-          method: p.payment_method_id === undefined ? p.method : 'custom',
-          ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
-          amount: toStoredUnit(parseFloat(p.amount) || 0),
-        }))
-        .filter((p) => p.amount > 0 && !isNaN(p.amount));
-      if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
-      const zeroBalanceSettlement = remainingMinor === 0 && splitLines.length === 0;
-
-      // Atomic call ensures all split payment lines succeed together
-      // or fail together without leaving partial payments.
-      const idempotencyKey = idempotencyKeyRef.current || createPaymentIdempotencyKey();
-      idempotencyKeyRef.current = idempotencyKey;
-      const res = await api.post(
-        zeroBalanceSettlement ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
-        zeroBalanceSettlement
-          ? { method: 'cash', amount: null, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined }
-          : { payments: splitLines, customer_id: effectiveCustomerId, override_pin: kitchenOverridePin || undefined },
-        { headers: { 'Idempotency-Key': idempotencyKey } },
-      );
-      const updatedBill = res.data?.bill as Bill | undefined;
-      setKitchenOverrideRequired(false);
-      if (!updatedBill || updatedBill.payment_status !== 'paid') {
-        // This request committed a partial payment, so the next attempt is a
-        // new request and must not reuse the completed request's hash.
-        if (updatedBill) idempotencyKeyRef.current = null;
-        if (updatedBill && onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
-        // Only a committed equal share retires its payer; an uncertain or
-        // different outcome keeps the applied share and its idempotency key.
-        if (updatedBill?.payment_status === 'partial'
-          && appliedEqualShare
-          && totalPaymentMinor === appliedEqualShare.amountMinor) {
-          advanceEqualShare(appliedEqualShare);
-        }
-        if (updatedBill?.payment_status === 'partial') {
-          toast.success(t('paymentRecorded'));
-        } else {
-          toast.error(t('paymentIncomplete', {
-            amount: currencyFmt(Number(updatedBill?.balance) || 0),
-          }));
-        }
-        return;
-      }
-      const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
-      setPointsEarned(earned);
-      if (res.data?.kitchenDeliveryOverridden) {
-        toast.success(t('kitchenDeliveryOverrideSuccess'));
-      } else if (earned > 0) {
-        toast.success(t('paymentRecordedWithPoints', { points: earned }));
-      } else {
-        toast.success(t('paymentRecorded'));
-      }
-      setJustPaid(true);
-    } catch (error: unknown) {
-      const response = (error as { response?: { data?: { code?: string; error?: string; undeliveredCount?: number; undeliveredItems?: unknown } } } | null)?.response?.data;
-      if (response?.code === 'KITCHEN_ITEMS_UNDELIVERED') {
-        setKitchenOverrideRequired(true);
-        setKitchenOverridePin('');
-        setKitchenUndeliveredCount(Number(response.undeliveredCount) || 0);
-        setKitchenUndeliveredItems(Array.isArray(response.undeliveredItems) ? response.undeliveredItems : []);
-        setKitchenDeliveryError('');
-      } else if (response?.error === 'Invalid manager PIN') {
-        setKitchenOverrideRequired(true);
-        setKitchenOverridePin('');
-        setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
-      } else {
-        toast.error(t('paymentFailed'));
-      }
-    } finally {
-      setProcessing(false);
-    }
+    const attempt = buildPendingAttempt();
+    lockAttempt(attempt);
+    await submitPaymentAttempt(attempt);
   };
 
   const tenantForShare = {
@@ -895,6 +992,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (
                     <button
+                      disabled={processing || attemptLocked}
                       onClick={() => { setDiscountType('percentage'); }}
                       className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
@@ -904,6 +1002,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   )}
                   {isDiscountTypeAllowed(discountMode, 'amount') && (
                     <button
+                      disabled={processing || attemptLocked}
                       onClick={() => { setDiscountType('amount'); }}
                       className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
@@ -918,6 +1017,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   <input
                     type="number"
                     value={discountValue}
+                    disabled={processing || attemptLocked}
                     onFocus={() => setAmountTarget({ kind: 'discount' })}
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
@@ -931,6 +1031,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 <input
                   type="text"
                   value={discountReason}
+                  disabled={processing || attemptLocked}
                   onChange={(e) => setDiscountReason(e.target.value)}
                   placeholder={t('discountReasonPlaceholder')}
                   className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
@@ -939,6 +1040,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   <input
                     type="password"
                     value={discountPin}
+                    disabled={processing || attemptLocked}
                     onChange={(e) => setDiscountPin(e.target.value)}
                     placeholder={t('managerPin')}
                     maxLength={6}
@@ -947,7 +1049,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 )}
                 <Button
                   onClick={() => handleApplyDiscount()}
-                  disabled={processing || applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
+                  disabled={processing || applyingDiscount || attemptLocked || discountValue === '' || isNaN(parseFloat(discountValue))}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   {applyingDiscount
@@ -955,7 +1057,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
                 </Button>
                 {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" className="w-full" disabled={processing || applyingDiscount} onClick={async () => {
+                  <Button variant="outline" className="w-full" disabled={processing || applyingDiscount || attemptLocked} onClick={async () => {
                     if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
                   }}>
                     {t('remove')}
@@ -998,8 +1100,11 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                       step={1}
                       inputMode="numeric"
                       value={equalSharePayers}
-                      disabled={processing}
-                      onChange={(event) => setEqualSharePayers(event.target.value)}
+                      disabled={processing || attemptLocked}
+                      onChange={(event) => {
+                        if (attemptLocked) return;
+                        setEqualSharePayers(event.target.value);
+                      }}
                       className="min-h-9 w-20 rounded-lg border border-border bg-card px-2 py-1 text-end text-sm font-semibold outline-none focus:ring-2 focus:ring-brand"
                     />
                   </div>
@@ -1038,7 +1143,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                             key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`}
                             variant="outline"
                             size="sm"
-                            disabled={processing || tenderHasConflict(idx)}
+                            disabled={processing || attemptLocked || tenderHasConflict(idx)}
                             onClick={() => applyEqualShare(idx)}
                           >
                             {t('equalShareApplyTo', { method: tenderLabel(payment) })}
@@ -1061,7 +1166,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               const isAppliedShare = appliedEqualShare?.index === idx;
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="space-y-1">
                 <div className="flex min-h-12">
-                  <button type="button" title={label} disabled={processing} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
+                  <button type="button" title={label} disabled={processing || attemptLocked} onClick={() => { if (attemptLocked) return; setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                     {Icon && <Icon size={15} />}
                     <span className="truncate">{label}</span>
                   </button>
@@ -1070,7 +1175,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     <input
                       type="number"
                       value={payment.amount}
-                      disabled={processing}
+                      disabled={processing || attemptLocked}
                       onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                       onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                       placeholder="0.00"
@@ -1122,7 +1227,8 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
               <div className="flex min-h-12">
-                <button type="button" disabled={processing || walletBalance <= 0} onClick={() => {
+                <button type="button" disabled={processing || attemptLocked || walletBalance <= 0} onClick={() => {
+                  if (attemptLocked) return;
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
@@ -1139,6 +1245,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                     value={walletAmount}
                     onFocus={() => setAmountTarget({ kind: 'wallet' })}
                     onChange={(e) => {
+                      if (attemptLocked) return;
                       const v = e.target.value;
                       const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
                       const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
@@ -1146,7 +1253,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                       setWalletAmount(clamped);
                     }}
                     placeholder="0.00"
-                    disabled={processing || walletBalance <= 0}
+                    disabled={processing || attemptLocked || walletBalance <= 0}
                     inputMode="decimal"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
                     step={inputCurrencyStep}
@@ -1158,7 +1265,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
-          {amountTarget && !processing && (
+          {amountTarget && !processing && !attemptLocked && (
             <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
@@ -1212,7 +1319,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                 <Button
                   variant="outline"
                   onClick={handleOpenSplitCheck}
-                  disabled={openingSplitCheck || processing}
+                  disabled={openingSplitCheck || processing || attemptLocked}
                   className="w-full"
                   size="lg"
                 >

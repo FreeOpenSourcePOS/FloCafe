@@ -1214,6 +1214,10 @@ export default function OrdersPage() {
                       try {
                         const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
                         if (held) {
+                          // Settle the target type first: a real type change clears
+                          // the charge selections, so installing them afterwards is
+                          // what preserves the resumed cart's waivers and opt-ins.
+                          cartStore.setOrderType('dine_in');
                           cartStore.loadItems(
                             held.items,
                             heldOrder.tableId,
@@ -1224,7 +1228,6 @@ export default function OrdersPage() {
                             held.waivedChargeIds,
                             held.optedInChargeIds,
                           );
-                          cartStore.setOrderType('dine_in');
                           router.push('/pos');
                         } else {
                           await heldOrdersStore.fetchHeldOrders();

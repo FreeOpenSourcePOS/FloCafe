@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { request, test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setLanguage, setOrdersLayout } from './helpers/test-auth';
 import { elementTop, expectPinned, innermostScrollableAncestor } from './helpers/layout';
@@ -271,5 +271,156 @@ test.describe('orders cards layout keeps controls visible while order cards scro
     await createScrollFixtureOrders(page, 8);
     await page.goto(`${BASE}/orders`);
     await expectControlsPinnedWhileCardsScroll(page, 'phone');
+  });
+});
+
+/**
+ * A held cart remembers the charge choices the cashier made. Resuming it from
+ * the Orders screen runs the restore handler while the cart still holds another
+ * order type, and a real type change clears those choices by design — so the
+ * handler has to settle the target type before it installs the saved
+ * selections. Loading first then switching un-waives the automatic fee and drops
+ * the opted-in optional fee, changing the amount the cashier would collect.
+ */
+test.describe('a held cart resumed from another order type keeps its charge selections', () => {
+  const AUTO_CHARGE = { id: 'e2e_resume_auto', name: 'E2E Resume Auto Fee' };
+  const OPT_CHARGE = { id: 'e2e_resume_opt', name: 'E2E Resume Optional Fee' };
+  let table: { id: string; number: string };
+  let chargesBefore: unknown[] = [];
+  let businessBefore: Record<string, unknown> = {};
+
+  const headers = () => ({ Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` });
+
+  test.beforeAll(async () => {
+    const api = await request.newContext();
+    try {
+      const chargesResponse = await api.get(`${BASE}/api/settings/charges`, { headers: headers() });
+      expect(chargesResponse.ok(), 'the charge settings are readable').toBeTruthy();
+      chargesBefore = (await chargesResponse.json()).charges as unknown[];
+      const saved = await api.put(`${BASE}/api/settings/charges`, {
+        headers: headers(),
+        data: {
+          charges: [
+            {
+              id: AUTO_CHARGE.id, name: AUTO_CHARGE.name, type: 'fixed', value: 3,
+              calculation_basis: 'gross',
+              order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+              is_optional: true, is_default_active: true, is_active: true,
+            },
+            {
+              id: OPT_CHARGE.id, name: OPT_CHARGE.name, type: 'fixed', value: 5,
+              calculation_basis: 'gross',
+              order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+              is_optional: true, is_default_active: false, is_active: true,
+            },
+          ],
+        },
+      });
+      expect(saved.ok(), 'the two fixture charges are saved').toBeTruthy();
+
+      const businessResponse = await api.get(`${BASE}/api/settings/business`, { headers: headers() });
+      expect(businessResponse.ok(), 'the business settings are readable').toBeTruthy();
+      const business = await businessResponse.json();
+      businessBefore = { billing_type: business.billing_type, tables_required: business.tables_required };
+      const switched = await api.put(`${BASE}/api/settings/business`, {
+        headers: headers(),
+        data: { billing_type: 'postpaid', tables_required: true },
+      });
+      expect(switched.ok(), `holding needs postpaid table service (got ${switched.status()})`).toBeTruthy();
+
+      const number = `Rsm${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const tableResponse = await api.post(`${BASE}/api/tables`, {
+        headers: headers(),
+        data: { number, name: number, capacity: 4, floor: 'Ground' },
+      });
+      expect(tableResponse.status(), 'the fixture table is created').toBe(201);
+      table = { id: (await tableResponse.json()).table.id as string, number };
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  test.afterAll(async () => {
+    const api = await request.newContext();
+    try {
+      await api.put(`${BASE}/api/settings/charges`, { headers: headers(), data: { charges: chargesBefore } });
+      await api.put(`${BASE}/api/settings/business`, { headers: headers(), data: businessBefore });
+      if (table) await api.post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: headers() }).catch(() => undefined);
+    } finally {
+      await api.dispose();
+    }
+  });
+
+  test('the waived automatic fee and the opted-in optional fee come back with the resumed cart', async ({ page }) => {
+    await login(page);
+    await page.goto(`${BASE}/pos`);
+
+    // Dine-in on the fixture table, with the fixture fees offered on the cart.
+    await page.getByRole('button', { name: /Dine in/i }).first().click();
+    await page.getByRole('button', { name: /Select Table/i }).first().click();
+    const picker = page.locator('.fixed.inset-0').last();
+    await expect(picker).toBeVisible();
+    await picker.getByRole('button').filter({ hasText: new RegExp(table.number) }).first().click();
+
+    await page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
+    const confirmAdd = page.getByRole('button', { name: /^Add to Cart/ });
+    await confirmAdd.first().click();
+    await expect(confirmAdd.first()).toBeHidden();
+
+    // The cashier waives the automatic fee and opts in to the optional one.
+    const chargeRows = page.getByTestId('cart-charges');
+    await expect(chargeRows).toBeVisible();
+    await chargeRows.getByRole('button', { name: 'Waive', exact: true }).click();
+    await chargeRows.getByRole('button', { name: 'Add', exact: true }).click();
+    const autoRow = chargeRows.locator(':scope > div').filter({ hasText: AUTO_CHARGE.name });
+    const optRow = chargeRows.locator(':scope > div').filter({ hasText: OPT_CHARGE.name });
+    await expect(autoRow.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
+    await expect(optRow.getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+
+    // Park the cart on the held table, then start a fresh cart on another type.
+    await page.getByRole('button', { name: 'Hold', exact: true }).click();
+    await expect(page.getByText(`Order held for ${table.number}`)).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Takeaway', exact: true }).click();
+
+    // Resume from Orders over client-side navigation, so the in-memory
+    // takeaway cart survives into the restore handler (a full page load would
+    // rebuild the cart as dine-in and hide the ordering hazard).
+    await page.getByRole('link', { name: 'Orders', exact: true }).first().click();
+    await expect(page).toHaveURL(/\/orders/);
+    await page.getByRole('button', { name: 'Held', exact: true }).first().click();
+    const resume = page.getByRole('button', { name: /Resume in POS/i }).first();
+    await expect(resume, 'the held order offers a resume action').toBeVisible({ timeout: 20_000 });
+    await resume.click();
+    await expect(page).toHaveURL(/\/pos/);
+
+    // The saved choices are back: the type change must not have cleared them.
+    const resumedCharges = page.getByTestId('cart-charges');
+    await expect(resumedCharges).toBeVisible();
+    await expect(
+      resumedCharges.locator(':scope > div').filter({ hasText: AUTO_CHARGE.name }).getByRole('button', { name: 'Apply', exact: true }),
+      'the waived automatic fee comes back waived',
+    ).toBeVisible();
+    await expect(
+      resumedCharges.locator(':scope > div').filter({ hasText: OPT_CHARGE.name }).getByRole('button', { name: 'Remove', exact: true }),
+      'the opted-in optional fee comes back applied',
+    ).toBeVisible();
+
+    // Placing the order proves the same choices reached the backend total.
+    await page.getByRole('button', { name: 'Place Order', exact: true }).click();
+    await expect(page.getByText(/Order #.* placed!/).first()).toBeVisible({ timeout: 15_000 });
+
+    const listResponse = await page.request.get(`${BASE}/api/orders?table_id=${table.id}`, { headers: headers() });
+    expect(listResponse.ok(), 'the placed order is readable').toBeTruthy();
+    const orders = (await listResponse.json()).orders as { charges_breakdown: string | null }[];
+    expect(orders, 'exactly one order was placed on the fixture table').toHaveLength(1);
+    const applied = JSON.parse(orders[0].charges_breakdown || '[]') as { id: string; amount: number; waived: boolean }[];
+    const auto = applied.find((charge) => charge.id === AUTO_CHARGE.id);
+    const opt = applied.find((charge) => charge.id === OPT_CHARGE.id);
+    expect(auto, 'the automatic fee is part of the order charges').toBeTruthy();
+    expect(auto!.waived, 'the automatic fee stays waived on the placed order').toBe(true);
+    expect(Number(auto!.amount), 'a waived fee contributes nothing').toBe(0);
+    expect(opt, 'the optional fee is part of the order charges').toBeTruthy();
+    expect(opt!.waived, 'the optional fee stays applied on the placed order').toBe(false);
+    expect(Number(opt!.amount), 'the optional fee keeps its configured amount').toBe(5);
   });
 });

@@ -86,6 +86,10 @@ export default function InventoryPage() {
   const [movements, setMovements] = useState<SupplyMovement[]>([]);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const movementRequestSequence = useRef(0);
+  // Sequence of the last resolved movement request: pagination only appends to
+  // the list that request produced, so a click racing a first-page refresh
+  // cannot resurrect an older page.
+  const movementResolvedSequence = useRef(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [recipeSearch, setRecipeSearch] = useState('');
@@ -108,7 +112,12 @@ export default function InventoryPage() {
   const [deletingSupply, setDeletingSupply] = useState<Supply | null>(null);
   const [deletingRecipe, setDeletingRecipe] = useState<Recipe | null>(null);
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // A first-page refresh owns the movement cursor: leaving it live here would
+  // let Load more supersede the refresh and append an older page.
+  const refresh = useCallback(() => {
+    setNextCursor(null);
+    setRefreshKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     if (!canManage) return;
@@ -145,6 +154,7 @@ export default function InventoryPage() {
   }, [tab, refreshKey, canManage]);
 
   const loadMovements = useCallback(async (cursor?: number | null) => {
+    if (movementResolvedSequence.current !== movementRequestSequence.current) return;
     const requestSequence = ++movementRequestSequence.current;
     try {
       const params: Record<string, string | number> = { per_page: 50 };
@@ -154,6 +164,7 @@ export default function InventoryPage() {
       if (requestSequence !== movementRequestSequence.current) return;
       setMovements((prev) => (cursor ? [...prev, ...(data.movements || [])] : data.movements || []));
       setNextCursor(data.nextCursor ?? null);
+      movementResolvedSequence.current = requestSequence;
     } catch {
       if (requestSequence === movementRequestSequence.current) toast.error(t('loadFailed'));
     }
@@ -171,6 +182,7 @@ export default function InventoryPage() {
         if (requestSequence !== movementRequestSequence.current) return;
         setMovements(data.movements || []);
         setNextCursor(data.nextCursor ?? null);
+        movementResolvedSequence.current = requestSequence;
       })
       .catch((err: unknown) => {
         if (requestSequence === movementRequestSequence.current && !(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
@@ -343,7 +355,10 @@ export default function InventoryPage() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col">
+      <Tabs value={tab} onValueChange={(value) => {
+        if (value === 'movements') setNextCursor(null);
+        setTab(value);
+      }} className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col">
         <TabsList className="shrink-0">
           <TabsTrigger value="supplies">{t('tabSupplies')}</TabsTrigger>
           <TabsTrigger value="recipes">{t('tabRecipes')}</TabsTrigger>

@@ -380,15 +380,17 @@ or assumes a minor-unit factor.
 | `POST` | `/` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `category_id`, `description`, `amount_minor`, `incurred_on`, optional `currency_code`, `payee`, `notes` | `201 { expense }`. A new expense never starts paid, `replaces_expense_id` cannot be set here, and a supplied `currency_code` must match the store currency. |
 | `POST` | `/:id/void` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `reason` | `{ expense }`. Requires net paid of zero, preserves the original expense fields and `created_at`, and adds void metadata. |
 | `POST` | `/:id/replace` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: replacement fields plus `reason` | `201 { expense, replaced_expense_id }`. Voids the source and creates the linked replacement in one transaction; a source can be replaced once. |
-| `POST` | `/:id/payments` | `expenses.view` + `expenses.pay`, plus `cash.movements.manage` when `method` is `cash`; header `Idempotency-Key` | path: `id`; body: `amount_minor`, `method` (`cash`, `card`, `bank_transfer`, `other`), optional `reference`, `currency_code` | `201 { expense, payment }`. Amounts are positive minor units that may not exceed the current due; a supplied `currency_code` must match the expense. A cash payment needs a real open shift regardless of `require_open_shift` and writes exactly one linked Pay Out. |
-| `POST` | `/:id/payments/:paymentId/reverse` | `expenses.view` + `expenses.reverse`, plus `cash.movements.manage` when the reversed payment was cash; header `Idempotency-Key` | path: `id`, `paymentId`; body: `reason` | `201 { expense, payment }`. Copies the committed payment's amount and method, is allowed once per payment, and leaves the original payment and its drawer movement untouched; a cash reversal needs today's open shift and writes one linked Pay In. |
+| `POST` | `/:id/payments` | `expenses.view` + `expenses.pay`, plus `cash.movements.manage` when `method` is `cash`; header `Idempotency-Key` | path: `id`; body: `amount_minor`, `method` (`cash`, `card`, `bank_transfer`, `other`), optional `reference`, `currency_code` | `201 { expense, payment }`. Amounts are positive minor units that may not exceed the current due; a supplied `currency_code` must match the expense. New payments require the expense currency to match the current store currency or return `409 currency_mismatch`. A cash payment needs a real open shift regardless of `require_open_shift` and writes exactly one linked Pay Out. |
+| `POST` | `/:id/payments/:paymentId/reverse` | `expenses.view` + `expenses.reverse`, plus `cash.movements.manage` when the reversed payment was cash; header `Idempotency-Key` | path: `id`, `paymentId`; body: `reason` | `201 { expense, payment }`. Copies the committed payment's amount and method, requires the expense currency to match the current store currency (`409 currency_mismatch` otherwise), is allowed once per payment, and leaves the original payment and its drawer movement untouched; a cash reversal needs today's open shift and writes one linked Pay In. |
 
 Mutation bodies are hashed into an immutable fingerprint under the authenticated actor and the
 `Idempotency-Key`: replaying the same key with the same normalized request returns the committed
 result (with an `Idempotent-Replay: true` header) without writing again, and reusing a key for a
 different operation, resource, or payload is a `409`. Replays resolve before current balance,
 category, or currency checks, while current access is still enforced, and only committed mutations
-are recorded.
+are recorded. Omitted currency on expense creation or replacement resolves against the committed
+expense snapshot during replay, so it remains equivalent to that explicit currency after regional
+settings change.
 
 `incurred_on` is a validated Gregorian `YYYY-MM-DD` business-date label: it may precede today (a
 closed day is fine) and may not be in the future, so audit timestamps record the real creation

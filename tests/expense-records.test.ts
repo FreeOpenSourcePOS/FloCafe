@@ -415,6 +415,20 @@ function runServiceChecks(db: any): void {
   const createReplay = service.createExpense(db, createInput({ currency_code: 'THB' }));
   assertEqualOrThrow(createReplay.replayed, true, 'the same expense key and payload replays the committed result');
   assertEqualOrThrow(createReplay.body.expense.id, rentExpenseId, 'the replay returns the original expense id');
+
+  // Creating an expense with currency omitted replays committed record even after store currency switches
+  const omittedInput = createInput({ idempotencyKey: 'exp-omitted-curr', currency_code: undefined, amount_minor: 50000 });
+  const omittedCreated = service.createExpense(db, omittedInput);
+  assertEqualOrThrow(omittedCreated.status, 201, 'expense created with omitted currency');
+  setSetting('currency', 'JPY');
+  const omittedReplay = service.createExpense(db, omittedInput);
+  assertEqualOrThrow(omittedReplay.replayed, true, 'omitted currency_code replays committed expense after store currency switch');
+  assertEqualOrThrow(omittedReplay.body.expense.id, omittedCreated.body.expense.id, 'omitted currency replay returns committed id');
+  const explicitReplay = service.createExpense(db, { ...omittedInput, currency_code: ' thb ' });
+  assertEqualOrThrow(explicitReplay.replayed, true, 'the original explicit currency is equivalent to omission after currency changes');
+  expectError(() => service.createExpense(db, { ...omittedInput, currency_code: 'JPY' }), 409, 'a changed explicit creation currency conflicts', 'idempotency_conflict');
+  setSetting('currency', 'THB');
+
   expectError(() => service.createExpense(db, createInput({ amount_minor: 999 })), 409, 'a reused expense key with a changed amount conflicts', 'idempotency_conflict');
   expectError(() => service.createExpense(db, createInput({ idempotencyKey: 'exp-rent-other', replaces_expense_id: rentExpenseId })), 400, 'replace linkage cannot be set through create');
 
@@ -599,7 +613,8 @@ function runServiceChecks(db: any): void {
 
   // ── Summary: SQL aggregation over every matching expense, not just the fetched page ──
   const rangeFrom = historicalDate;
-  const summary = service.summarizeExpenses(db, { from: rangeFrom, to: today, categoryId: rentId });
+  const rangeTo = storeDate > today ? storeDate : today;
+  const summary = service.summarizeExpenses(db, { from: rangeFrom, to: rangeTo, categoryId: rentId });
   assertEqualOrThrow(summary.basis, 'active_expenses_incurred_in_range_paid_to_date', 'the summary labels its paid-to-date basis');
   assertEqualOrThrow(summary.filters.status, 'active', 'the summary always reports its active-expense basis');
   assertEqualOrThrow(summary.groups.length, 3, 'the summary groups by currency and category');
@@ -670,7 +685,7 @@ function runServiceChecks(db: any): void {
     'voided expenses stay readable through the history filter',
   );
   const activeThbAfterVoid = Number((db.prepare(`SELECT COUNT(*) AS count FROM expenses WHERE category_id = ? AND voided_at IS NULL AND currency_code = 'THB'`).get(rentId) as { count: number }).count);
-  const afterVoidThbGroup = service.summarizeExpenses(db, { from: historicalDate, to: today, categoryId: rentId }).groups.find((row: any) => row.currency_code === 'THB');
+  const afterVoidThbGroup = service.summarizeExpenses(db, { from: historicalDate, to: rangeTo, categoryId: rentId }).groups.find((row: any) => row.currency_code === 'THB');
   assertEqualOrThrow(afterVoidThbGroup.expense_count, activeThbAfterVoid, 'voided expenses leave the headline totals');
 
   // ── Replace: one atomic void-and-create, linked both ways ──
@@ -725,8 +740,12 @@ function runServiceChecks(db: any): void {
   const replaceReplay = service.replaceExpense(db, replaceSource.id, { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-source' });
   assertEqualOrThrow(replaceReplay.replayed, true, 'a replayed replacement returns the committed result');
   assertEqualOrThrow(replaceReplay.body.expense.id, replaced.body.expense.id, 'a replayed replacement never creates a second record');
+  setSetting('currency', 'JPY');
   const replaceReplayNoCurr = service.replaceExpense(db, replaceSource.id, { ...replaceFields, currency_code: undefined, actorUserId: actor, idempotencyKey: 'replace-source' });
-  assertEqualOrThrow(replaceReplayNoCurr.replayed, true, 'replaying replacement with omitted currency replays the store-currency receipt');
+  assertEqualOrThrow(replaceReplayNoCurr.replayed, true, 'replaying replacement with omitted currency survives a store currency change');
+  assertEqualOrThrow(replaceReplayNoCurr.body.expense.id, replaced.body.expense.id, 'replacement replay returns the committed replacement id');
+  expectError(() => service.replaceExpense(db, replaceSource.id, { ...replaceFields, currency_code: 'JPY', actorUserId: actor, idempotencyKey: 'replace-source' }), 409, 'changing the explicit replacement currency conflicts', 'idempotency_conflict');
+  setSetting('currency', 'THB');
   expectError(() => service.replaceExpense(db, replaceSource.id, { ...replaceFields, reason: 'Again', actorUserId: actor, idempotencyKey: 'replace-again' }), 409, 'a replaced source cannot be replaced twice', 'expense_replaced');
   expectError(() => service.replaceExpense(db, voidTarget.id, { ...replaceFields, reason: 'Voided', actorUserId: actor, idempotencyKey: 'replace-voided' }), 409, 'a voided expense cannot be replaced', 'expense_voided');
   expectError(() => service.replaceExpense(db, 'missing-expense', { ...replaceFields, actorUserId: actor, idempotencyKey: 'replace-missing' }), 404, 'replacing an unknown expense is a 404');
@@ -751,6 +770,19 @@ function runServiceChecks(db: any): void {
     'a rolled-back replacement records no receipt',
   );
 
+  const omittedReplaceInput = { ...replaceFields, currency_code: undefined, actorUserId: actor, idempotencyKey: 'replace-omitted' };
+  const omittedReplacement = service.replaceExpense(db, rollbackSource.id, omittedReplaceInput);
+  const rowsBeforeReplay = Number(db.prepare('SELECT COUNT(*) AS count FROM expenses').get().count);
+  setSetting('currency', 'JPY');
+  closeDatabase();
+  initDatabase();
+  const reopenedDb = getDatabase();
+  const replacementAfterReopen = service.replaceExpense(reopenedDb, rollbackSource.id, omittedReplaceInput);
+  assertEqualOrThrow(replacementAfterReopen.replayed, true, 'an omitted-currency replacement replays after reopening the database and changing currency');
+  assertEqualOrThrow(replacementAfterReopen.body.expense.id, omittedReplacement.body.expense.id, 'persisted replacement replay returns its original id');
+  assertEqualOrThrow(service.createExpense(reopenedDb, omittedInput).body.expense.id, omittedCreated.body.expense.id, 'persisted create replay returns its original id');
+  assertEqualOrThrow(Number(reopenedDb.prepare('SELECT COUNT(*) AS count FROM expenses').get().count), rowsBeforeReplay, 'persisted replays add no expense records');
+
   // ── Expense workflows leave sales, stock, and drawer rows untouched ──
-  assertEqualOrThrow(JSON.stringify(countRows(db)), JSON.stringify(ledgerBefore), 'recording expenses never changes sales, stock, or drawer tables');
+  assertEqualOrThrow(JSON.stringify(countRows(reopenedDb)), JSON.stringify(ledgerBefore), 'recording expenses never changes sales, stock, or drawer tables');
 }

@@ -181,9 +181,14 @@ async function main(): Promise<number> {
   assertEqualOrThrow(cashReplay.replayed, true, 'a committed cash payment replays after its session closed');
   assertEqualOrThrow(countRows('cash_drawer_movements'), movementsBefore + 1, 'a cash replay writes no second movement');
 
-  // A currency change after the expense was recorded blocks only the cash path.
+  // A currency change after the expense was recorded blocks all new settlements and reversals.
   setSetting('currency', 'USD');
   expectError(() => service.recordExpensePayment(db, cashTarget.id, { amount_minor: 1000, method: 'cash', actorUserId: actor, idempotencyKey: 'pay-cash-foreign' }), 409, 'a cash payment in a mismatched store currency is rejected', 'currency_mismatch');
+  for (const method of ['card', 'bank_transfer', 'other']) {
+    expectError(() => service.recordExpensePayment(db, cashTarget.id, { amount_minor: 1000, method, actorUserId: actor, idempotencyKey: `pay-${method}-foreign` }), 409, `a ${method} payment in a mismatched store currency is rejected`, 'currency_mismatch');
+  }
+  expectError(() => service.reverseExpensePayment(db, payTarget.id, card1.body.payment.id, { reason: 'Wrong currency now', actorUserId: actor, idempotencyKey: 'rev-card-foreign' }), 409, 'a non-cash reversal in a mismatched store currency is rejected', 'currency_mismatch');
+  expectError(() => service.reverseExpensePayment(db, cashTarget.id, cash1.body.payment.id, { reason: 'Wrong currency now', actorUserId: actor, idempotencyKey: 'rev-foreign' }), 409, 'a reversal in a mismatched store currency is rejected', 'currency_mismatch');
   setSetting('currency', 'INR');
 
   // A closed business day refuses new drawer money even while a session is open.
@@ -222,8 +227,10 @@ async function main(): Promise<number> {
   assertEqualOrThrow(cardReversal.body.expense.paid_minor, 75000, 'net paid drops by the reversed amount');
   assertEqualOrThrow(cardReversal.body.expense.due_minor, 25000, 'due reconciles after the reversal');
 
+  setSetting('currency', 'USD');
   const reversalReplay = service.reverseExpensePayment(db, payTarget.id, cardPaymentId, { reason: 'Slip was for a different vendor', actorUserId: actor, idempotencyKey: 'rev-card-1' });
-  assertEqualOrThrow(reversalReplay.replayed, true, 'a replayed reversal returns the committed result');
+  setSetting('currency', 'INR');
+  assertEqualOrThrow(reversalReplay.replayed, true, 'a committed reversal replays after store currency changes');
   expectError(() => service.reverseExpensePayment(db, payTarget.id, cardPaymentId, { reason: 'Different', actorUserId: actor, idempotencyKey: 'rev-card-1' }), 409, 'a reused reversal key with a changed reason conflicts', 'idempotency_conflict');
   expectError(() => service.reverseExpensePayment(db, payTarget.id, cardPaymentId, { reason: 'Again', actorUserId: actor, idempotencyKey: 'rev-card-2' }), 409, 'an already reversed payment cannot be reversed again', 'payment_already_reversed');
   expectError(() => service.reverseExpensePayment(db, payTarget.id, cardReversal.body.payment.id, { reason: 'Undo the undo', actorUserId: actor, idempotencyKey: 'rev-reversal' }), 409, 'a reversal entry cannot itself be reversed', 'reversal_not_reversible');

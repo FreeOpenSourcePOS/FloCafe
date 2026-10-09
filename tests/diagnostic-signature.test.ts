@@ -25,6 +25,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   deriveDiagnosticSignature, deriveDiagnosticTemplate, errorClassOf, classClauseSummary,
 } = require('../main/lib/diagnostic-signature');
+const { serializeOperationFailure, isOperationReference } = require('../main/lib/operation-failure');
 const {
   assertOrThrow, assertEqualOrThrow, getResults, closeDatabase,
 } = require('./helpers/test-setup');
@@ -315,6 +316,74 @@ function main() {
     const template = deriveDiagnosticTemplate(message);
     assertOrThrow(!/<[A-Z]/.test(template), `no placeholder can start with a capital letter: ${template}`);
   }
+
+  console.log('\n15. Operation failures serialize only exact registered tuples and safe facts');
+  const correlationId = '2d867e6d-2d83-46a8-b317-ea14e6817c4a';
+  const stockFailure = serializeOperationFailure({
+    capture_point: 'fc.backend.order.create.stock_validation',
+    outcome: 'not_applied',
+    correlation_id: correlationId,
+    facts: {},
+  });
+  assertEqualOrThrow(stockFailure?.reason_code, 'order.stock_insufficient', 'the registered stock reason is derived from the capture point');
+  assertEqualOrThrow(stockFailure?.operation, 'order.create', 'the registered operation is derived from the capture point');
+  assertEqualOrThrow(stockFailure?.stage, 'validation', 'the registered stage is derived from the capture point');
+  assertEqualOrThrow(stockFailure?.classification, 'expected_rejection', 'the registered class is derived from the capture point');
+  assertEqualOrThrow(stockFailure?.correlation_id, correlationId, 'a UUID operation reference is preserved');
+  assertOrThrow(isOperationReference(correlationId), 'the operation reference is a UUIDv4');
+  assertOrThrow(!isOperationReference('customer-42'), 'arbitrary correlation text is rejected');
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.order.create.stock_validation', outcome: 'unknown', facts: {} }),
+    null,
+    'a tuple cannot claim an outcome the registry forbids',
+  );
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.order.create.stock_validation', outcome: 'not_applied', facts: { product_name: 'secret' } }),
+    null,
+    'unknown free-text facts reject the whole event',
+  );
+  for (const key of ['constructor', 'toString', '__proto__']) {
+    const hostileFacts = JSON.parse(`{"${key}":"secret"}`);
+    let serialized: unknown;
+    try {
+      serialized = serializeOperationFailure({
+        capture_point: 'fc.backend.order.create.stock_validation', outcome: 'not_applied', facts: hostileFacts,
+      });
+    } catch (error) {
+      serialized = error;
+    }
+    assertEqualOrThrow(serialized, null, `prototype key ${key} is rejected without throwing`);
+  }
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.order.create.missing', outcome: 'not_applied', facts: {} }),
+    null,
+    'an unregistered capture point is rejected',
+  );
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.order.create.stock_validation', outcome: 'applied', facts: {} }),
+    null,
+    'an outcome outside the registered tuple is rejected',
+  );
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.diagnostics.delivery.queue_gap', outcome: 'partial', facts: { gap_count: 100001, gap_reason: 'queue_eviction' } }),
+    null,
+    'unbounded loss counters are rejected instead of clamped',
+  );
+  const printerFailure = serializeOperationFailure({
+    capture_point: 'fc.backend.printer.receipt.queue', outcome: 'unknown',
+    facts: { kind: 'receipt', failure_class: 'timeout', connection_type: 'network' },
+  });
+  assertEqualOrThrow(printerFailure?.facts.kind, 'receipt', 'printer facts are restricted to the selected capture point');
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.printer.receipt.queue', outcome: 'unknown', facts: { kind: 'kot' } }),
+    null,
+    'a receipt capture point cannot claim a KOT kind',
+  );
+  assertEqualOrThrow(
+    serializeOperationFailure({ capture_point: 'fc.backend.printer.receipt.queue', outcome: 'unknown', facts: {} }),
+    null,
+    'a printer capture without its required kind is rejected',
+  );
 
   console.log('\n' + '='.repeat(56));
   const results = getResults();

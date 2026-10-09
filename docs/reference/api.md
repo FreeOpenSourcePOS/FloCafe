@@ -568,6 +568,12 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `GET` | `/:key` | `ROLE_ACCESS.allStaff` + settings read limiter | path: `key` | One setting. Registered after every named route, so a named key resolves to its named handler. |
 | `PUT` | `/:key` | `ROLE_ACCESS.ownerManager` + settings write limiter | path: `key`; body: `value` | Body `value`. Only the allow-listed non-sensitive keys are accepted; sensitive keys need their named route. `key: currency` returns `409 currency_change_requires_reset` on any value change. |
 
+`diagnostics_consent` and `diagnostics_transmission_enabled` are owner/manager-writable Boolean
+settings. Both must be enabled for automatic diagnostics delivery. The consent choice synchronizes
+to FloAdmin with an idempotent change ID; a remote opt-out is retained across startup reconciliation.
+`telemetry_enabled` independently controls anonymous usage telemetry and is also required when
+diagnostics use the anonymous collector.
+
 ### Tax packs
 
 Router: `main/routes/tax-packs.ts`. Full path: `/api/tax-packs`.
@@ -686,10 +692,12 @@ Router: `main/routes/diagnostics.ts`. Full path: `/api/diagnostics`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/event` | `ROLE_ACCESS.allStaff` + diagnostics write limiter | none | Consent-gated diagnostic event intake. |
-| `GET` | `/recent` | `ROLE_ACCESS.allStaff` | query: `?limit` (clamped to 200) | `{ failures: [ ... ] }`, the locally captured failures, newest first. |
-| `DELETE` | `/recent` | `ROLE_ACCESS.ownerManager` (`settings.manage`) | none | `{ removed }`, the number of local failures dropped. Nothing has been transmitted, so nothing is withdrawn. |
-| `GET` | `/support-bundle` | `ROLE_ACCESS.allStaff` | query: `?limit` (clamped to 200), `?category` | `{ bundle: { system, recent_failures } }` for the copy-for-support action. Never carries the raw log tail. |
+| `POST` | `/event` | `support.use` + diagnostics write limiter | body: legacy event fields | Local-only legacy event intake; free-form messages are never automatically transmitted. |
+| `POST` | `/capture` | authenticated API caller + diagnostics write limiter | body: `capture_point`, `operation_id`, `outcome`, optional allowlisted `facts` | `202` with the server-registered reason, operation, stage, classification, outcome, and correlation ID; rejects unregistered points or invalid fields. |
+| `GET` | `/health` | `support.use` | none | Safe consent, transport, queue, rejection, and delivery-gap state without report bytes or error text. |
+| `GET` | `/recent` | `support.use` | query: `?limit` (clamped to 200) | `{ failures: [ ... ] }`, locally captured failures, newest first. |
+| `DELETE` | `/recent` | `settings.manage` | none | `{ removed }`, the number of local failures dropped. This clears local evidence only. |
+| `GET` | `/support-bundle` | `support.use` | query: `?limit` (clamped to 200), `?category` | `{ bundle: { system, recent_failures } }` for copy-for-support. Never carries the raw log tail. |
 
 ### Database
 

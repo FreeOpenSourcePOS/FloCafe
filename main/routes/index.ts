@@ -1,4 +1,5 @@
-import { Express } from 'express';
+import { Express, Request } from 'express';
+import { randomUUID } from 'crypto';
 import { authRoutes } from './auth';
 import { requireAnyPermission, requirePermission } from '../services/authorization';
 import { categoryRoutes } from './categories';
@@ -42,6 +43,7 @@ import { getDatabase, getSettingValue, getCachedPairingCode, setCachedPairingCod
 
 import { getActiveCountryPack } from '../services/tax';
 import { cloudSync } from '../services/cloud-sync';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';
@@ -66,6 +68,30 @@ function mobilePairingErrorMessage(error: any): string {
 const inlineCustomerLookupRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 export function registerRoutes(app: Express): void {
+  app.use((req: Request, res, next) => {
+    res.once('finish', () => {
+      const request = req as Request & { diagnosticsCaptured?: boolean };
+      const requestPath = req.path.toLowerCase();
+      if (res.statusCode < 500 || !requestPath.startsWith('/api/')
+        || requestPath.startsWith('/api/diagnostics') || request.diagnosticsCaptured) return;
+      try {
+        const operationId = req.get('x-operation-id');
+        const failure = serializeOperationFailure({
+          capture_point: 'fc.backend.http.unhandled',
+          outcome: 'unknown',
+          correlation_id: isOperationReference(operationId) ? operationId : randomUUID(),
+        });
+        if (failure) {
+          request.diagnosticsCaptured = true;
+          cloudSync.captureOperationFailure(failure);
+        }
+      } catch {
+        // Diagnostics are best-effort and must not disrupt a completed response.
+      }
+    });
+    next();
+  });
+
   // Auth routes
   app.use('/api/auth', authRoutes);
 

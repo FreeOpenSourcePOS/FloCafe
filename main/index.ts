@@ -33,7 +33,7 @@ import {
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
-import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
+import { telemetry } from './services/telemetry';
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
@@ -452,7 +452,6 @@ let lastWindowLoadFailure: {
 // Self-healing GPU fallback: relaunch with --disable-gpu after repeated crashes.
 let shouldDisableGpuOnRelaunch = false;
 let consecutiveRendererCrashes = 0;
-let consecutiveGpuCrashes = 0;
 const GPU_FALLBACK_CRASH_THRESHOLD = 2;
 // Reset crash counters only after a window stays up for this duration.
 const RENDERER_STABILITY_RESET_MS = 30_000;
@@ -603,21 +602,15 @@ async function showRuntimeStuckDialog(reason: string): Promise<void> {
 
   if (response !== 0) return;
 
-  const sent = await sendTelemetryEvent('runtime_relaunch_exhausted', {
-    reason,
-    services,
-    errorCode: lastWindowLoadFailure?.errorCode,
-    errorDescription: lastWindowLoadFailure?.errorDescription,
-    validatedURL: lastWindowLoadFailure?.validatedURL,
-  }).catch(() => false);
+  cloudSync.captureOperationFailure({
+    capture_point: 'fc.electron.runtime.relaunch_exhausted',
+    outcome: 'unknown',
+  });
 
   await dialog.showMessageBox({
-    type: sent ? 'info' : 'warning',
+    type: 'info',
     title: 'Flo',
-    message: sent
-      ? 'Diagnostic report sent. Thank you.'
-      : 'Could not send the diagnostic report (diagnostics may be disabled in ' +
-        'Settings > Privacy, or there is no internet connection).',
+    message: 'Diagnostic captured. If sharing is enabled and this device is online, it will be sent automatically.',
     buttons: ['Quit'],
   });
 }
@@ -844,7 +837,6 @@ function createWindow(): void {
     rendererStabilityResetTimer = setTimeout(() => {
       rendererStabilityResetTimer = null;
       consecutiveRendererCrashes = 0;
-      consecutiveGpuCrashes = 0;
     }, RENDERER_STABILITY_RESET_MS);
   });
 
@@ -855,12 +847,13 @@ function createWindow(): void {
     if (details.reason !== 'clean-exit') {
       // Crash invalidated stability; cancel reset timer.
       clearRendererStabilityResetTimer();
-      // Report telemetry event for hard renderer crash.
-      void sendTelemetryEvent('renderer_process_gone', {
-        reason: details.reason,
-        exitCode: details.exitCode,
-        consecutiveCrashCount: ++consecutiveRendererCrashes,
-      });
+      if (!isQuitting && !isShutdownRequested()) {
+        consecutiveRendererCrashes++;
+        cloudSync.captureOperationFailure({
+          capture_point: 'fc.electron.renderer.process_gone',
+          outcome: 'unknown',
+        });
+      }
       if (consecutiveRendererCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
         shouldDisableGpuOnRelaunch = true;
         log.error(
@@ -1017,20 +1010,15 @@ function registerChildProcessCrashTelemetry(): void {
       !isQuitting &&
       !isShutdownRequested();
     if (isGpuFailure) {
-      // Cancel stability reset timer and increment GPU crash count.
+      // Cancel the stability reset timer after a GPU crash.
       clearRendererStabilityResetTimer();
-      consecutiveGpuCrashes++;
     }
-    void sendTelemetryEvent('child_process_gone', {
-      type: details.type,
-      reason: details.reason,
-      exitCode: details.exitCode,
-      systemErrorCode,
-      serviceName: details.serviceName,
-      consecutiveGpuCrashCount: isGpuFailure ? consecutiveGpuCrashes : undefined,
-    }).catch((error) => {
-      log.error('[Process] Failed to report child-process failure:', error);
-    });
+    if (details.reason !== 'clean-exit' && !isQuitting && !isShutdownRequested()) {
+      cloudSync.captureOperationFailure({
+        capture_point: 'fc.electron.child.process_gone',
+        outcome: 'unknown',
+      });
+    }
     if (isGpuFailure) {
       // Hardware acceleration fallback after GPU process crash.
       shouldDisableGpuOnRelaunch = true;
@@ -1670,18 +1658,14 @@ async function initialize(): Promise<void> {
     }
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
-    // Report fatal startup error to telemetry on a best-effort basis.
+    // Capture only a safe classification; exception text can contain business data.
     try {
-      const payload: Record<string, unknown> = {
-        error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
-      };
-      if (error instanceof SchemaVersionMismatchError) {
-        payload.db_schema_version = error.dbVersion;
-        payload.app_schema_version = error.appVersion;
-      }
-      await sendTelemetryEvent('startup_failed', payload);
-    } catch (telemetryError) {
-      console.error('[Flo] Failed to report startup error via telemetry:', telemetryError);
+      cloudSync.captureOperationFailure({
+        capture_point: 'fc.electron.startup.failure',
+        outcome: 'not_applied',
+      });
+    } catch (diagnosticError) {
+      console.error('[Flo] Failed to capture startup failure:', diagnosticError);
     }
 
     isQuitting = true;
@@ -1805,19 +1789,21 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
 process.on('uncaughtException', (error) => {
   log.error('[Flo] Uncaught exception:', error);
   console.error('[Flo] Uncaught exception:', error);
-  void sendTelemetryEvent('main_uncaught_exception', {
-    message: error?.message?.slice(0, 500),
-    stack: error?.stack?.slice(0, 4000),
-  });
+  if (!isQuitting && !isShutdownRequested()) {
+    cloudSync.captureOperationFailure({
+      capture_point: 'fc.electron.main.uncaught',
+      outcome: 'unknown',
+    });
+  }
 });
 
 process.on('unhandledRejection', (reason) => {
   log.error('[Flo] Unhandled rejection:', reason);
   console.error('[Flo] Unhandled rejection:', reason);
-  const message = reason instanceof Error ? reason.message : String(reason);
-  const stack = reason instanceof Error ? reason.stack : undefined;
-  void sendTelemetryEvent('main_unhandled_rejection', {
-    message: message?.slice(0, 500),
-    stack: stack?.slice(0, 4000),
-  });
+  if (!isQuitting && !isShutdownRequested()) {
+    cloudSync.captureOperationFailure({
+      capture_point: 'fc.electron.main.unhandled_rejection',
+      outcome: 'unknown',
+    });
+  }
 });

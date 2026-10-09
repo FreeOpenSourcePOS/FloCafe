@@ -30,9 +30,7 @@ import {
 } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
 import { correlationId, type FloErrorCode } from '../errors';
-import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
-import { randomUUID } from 'crypto';
 import { printLabel } from '../print/print-labels.generated';
 import { receiptChargeLines } from '../../shared/charges';
 import type { PrintConceptId } from '../../shared/print/concepts';
@@ -169,8 +167,6 @@ export type PrintResult = {
   printerStatus?: number;
   warnings?: PrintWarning[];
 };
-
-const FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC = 'Receipt not printed: unsupported financial row';
 
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
 export type DispatchResult = {
@@ -1357,53 +1353,18 @@ export async function printDeliverySlipDetailed(
 function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: PrintResult): void {
   let connectionType = 'unknown';
   try {
-    connectionType = getPrinterConfig()?.connection_type || 'unknown';
-  } catch {
-    /* best-effort only */
-  }
+    const configured = getPrinterConfig()?.connection_type;
+    if (configured === 'network' || configured === 'usb' || configured === 'webusb') connectionType = configured;
+  } catch { /* best-effort only */ }
 
   const failureClass = result.failureClass || classifyPrintFailure(result.detail);
-  void sendEvent('print_failed', {
-    kind,
-    code: result.code,
-    stage: result.stage,
-    connection_type: connectionType,
+  const pointStage = failureClass === 'timeout' ? 'timeout' : 'queue';
+  cloudSync.captureOperationFailure({
+    capture_point: `fc.backend.printer.${kind}.${pointStage}`,
+    outcome: result.stage === 'prepare' ? 'not_applied' : 'unknown',
     correlation_id: result.correlationId,
-    failure_class: failureClass,
-    ...(result.platformErrorCode !== undefined
-      ? { platform_error_code: result.platformErrorCode }
-      : {}),
-    ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
+    facts: { connection_type: connectionType, failure_class: failureClass, kind },
   });
-
-  try {
-    const message = hasFinancialPrintWarning(result.warnings || [])
-      ? FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC
-      : (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300);
-    cloudSync.reportDiagnostic({
-      event_id: randomUUID(),
-      event_code: result.code || `print.${kind}.failed`,
-      severity: 'error',
-      correlation_id: result.correlationId,
-      message,
-      metadata: {
-        connection_type: connectionType,
-        kind,
-        os_platform: process.platform,
-        failure_class: failureClass,
-        ...(result.platformErrorCode !== undefined
-          ? { platform_error_code: result.platformErrorCode }
-          : {}),
-        ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
-        ...(result.driverName ? { driver_name: result.driverName.slice(0, 160) } : {}),
-        ...(result.printerStatus !== undefined ? { printer_status: result.printerStatus } : {}),
-      },
-      occurred_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    // Ignore telemetry errors to avoid masking the real printer failure.
-    console.error('[Printer] reportDiagnostic failed (non-fatal):', err);
-  }
 }
 
 /** Typed adapters used by API callers while legacy boolean callers migrate. */

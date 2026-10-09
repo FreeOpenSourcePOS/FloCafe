@@ -66,6 +66,7 @@ interface ChargeOrderRow {
   charges_breakdown: string | null;
 }
 import { sendEvent } from '../services/telemetry';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import {
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
@@ -73,6 +74,36 @@ import {
 } from '../countries';
 
 const router = Router();
+
+function structuredBillFailure(
+  req: Request,
+  capturePoint: string,
+  error: string,
+  displayCode?: string,
+  outcome: 'not_applied' | 'applied' | 'unknown' = 'not_applied',
+): Record<string, unknown> {
+  const header = req.get('x-operation-id');
+  const correlationId = isOperationReference(header) ? header : randomUUID();
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome,
+    correlation_id: correlationId,
+    ...(displayCode ? { facts: { display_code: displayCode } } : {}),
+  });
+  if (!failure) return { error };
+  (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
+  cloudSync.captureOperationFailure(failure);
+  return {
+    error,
+    reason_code: failure.reason_code,
+    operation: failure.operation,
+    stage: failure.stage,
+    classification: failure.classification,
+    outcome: failure.outcome,
+    correlation_id: failure.correlation_id,
+    ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
+  };
+}
 
 function checkKitchenDeliveryStatus(
   db: ReturnType<typeof getDatabase>,
@@ -598,17 +629,18 @@ router.get('/order/:orderId', requirePermission('bills.read'), (req: Request, re
 });
 
 router.post('/generate', requirePermission('bills.generate'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const { order_id } = req.body;
 
     if (!order_id) {
-      return res.status(400).json({ error: 'Order ID is required' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.generate.validation', 'Order ID is required'));
     }
 
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(order_id) as any;
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json(structuredBillFailure(req, 'fc.backend.bill.generate.validation', 'Order not found'));
     }
 
     const result = withTxn(() => {
@@ -699,13 +731,21 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
       return { bill: newBill, isNew: true };
     });
+    operationCommitted = true;
 
     notifyOrderUpdated();
     const orderWithItems = getOrderWithItems(db, order_id, Number(result.bill.id));
     res.status(result.isNew ? 201 : 200).json({ bill: { ...result.bill, order: orderWithItems } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json(structuredBillFailure(
+      req,
+      operationCommitted ? 'fc.backend.bill.generate.completion' : 'fc.backend.bill.generate.failure',
+      error.statusCode ? error.message : 'Internal server error',
+      undefined,
+      operationCommitted ? 'applied' : 'unknown',
+    ));
   }
 });
 
@@ -2290,10 +2330,11 @@ function applyPaymentBatch(
 }
 
 router.post('/:id/payment', requirePermission('payments.take'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const payment = req.body;
     if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
-      return res.status(400).json({ error: 'Payment body must be an object' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment body must be an object'));
     }
     const db = getDatabase();
     const { override_pin, ...paymentLine } = payment;
@@ -2303,6 +2344,7 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
       paymentIdempotencyKey(req), requestHash, String((req as any).user.userId), override_pin,
       req.ip || req.socket.remoteAddress || 'unknown',
     ));
+    operationCommitted = true;
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
@@ -2312,8 +2354,15 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill payment failed:', error);
-    res.status(statusCode).json({
-      error: statusCode >= 500 ? 'Bill payment failed' : error.message,
+    return res.status(statusCode).json({
+      ...structuredBillFailure(
+        req,
+        operationCommitted ? 'fc.backend.payment.create.completion'
+          : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
+        statusCode >= 500 ? 'Bill payment failed' : error.message,
+        undefined,
+        operationCommitted ? 'applied' : 'not_applied',
+      ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
     });
   }
@@ -2321,14 +2370,15 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
 
 // Atomic split-payment batch endpoint applying payment lines in a single transaction.
 router.post('/:id/payments', requirePermission('payments.take'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return res.status(400).json({ error: 'Payment batch body must be an object' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment batch body must be an object'));
     }
     const { payments, customer_id: bodyCustomerId, override_pin } = body;
     if (!Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json({ error: 'payments must be a non-empty array' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'payments must be a non-empty array'));
     }
 
     const db = getDatabase();
@@ -2338,6 +2388,7 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
       paymentIdempotencyKey(req), requestHash, String((req as any).user.userId), override_pin,
       req.ip || req.socket.remoteAddress || 'unknown',
     ));
+    operationCommitted = true;
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
@@ -2346,37 +2397,32 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
     res.json(result);
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
-    const errorMessage = String(error.message || '');
-    const isCustomerMismatch = errorMessage === 'Payment customer does not match the bill customer';
     console.error('[API] Batch bill payment failed:', error);
-    if (statusCode >= 500 || isCustomerMismatch) {
-      try {
-        cloudSync.reportDiagnostic({
-          event_id: randomUUID(),
-          event_code: 'payment.batch.failed',
-          severity: 'error',
-          metadata: { status: statusCode, stage: 'payment_batch' },
-          occurred_at: new Date().toISOString(),
-        }, error);
-      } catch { /* diagnostics must never mask the original failure */ }
-    }
-    res.status(statusCode).json({
-      error: statusCode >= 500 ? 'Bill payment failed' : error.message,
+    return res.status(statusCode).json({
+      ...structuredBillFailure(
+        req,
+        operationCommitted ? 'fc.backend.payment.create.completion'
+          : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
+        statusCode >= 500 ? 'Bill payment failed' : error.message,
+        undefined,
+        operationCommitted ? 'applied' : 'not_applied',
+      ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
     });
   }
 });
 
 router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const { type, value, reason } = req.body;
 
     if (!type || !['percentage', 'amount'].includes(type)) {
-      return res.status(400).json({ error: 'Valid discount type is required (percentage, amount)' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Valid discount type is required (percentage, amount)', 'invalid_type'));
     }
 
     if (value === undefined || typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      return res.status(400).json({ error: 'Valid discount value is required' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Valid discount value is required', 'invalid_value'));
     }
 
     const db = getDatabase();
@@ -2386,13 +2432,13 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     }
 
     if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
-      return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Cannot apply discount to a refunded bill', 'refunded'));
     }
     if (bill.payment_status === 'paid') {
-      return res.status(400).json({ error: 'Cannot apply discount to a paid bill' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Cannot apply discount to a paid bill', 'paid'));
     }
     if (bill.split_group_id) {
-      return res.status(409).json({ error: 'Apply discounts before splitting a bill' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Apply discounts before splitting a bill', 'split_check'));
     }
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
     if (!order) {
@@ -2400,7 +2446,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     }
 
     if (order.status === 'cancelled') {
-      return res.status(409).json({ error: 'Discounts cannot be changed on a cancelled order' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Discounts cannot be changed on a cancelled order', 'order_not_discountable'));
     }
 
     // Check if approval is required
@@ -2440,25 +2486,25 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     // Check discount mode
     const discountMode = getSettingValue('discount_mode') || 'percentage';
     if (discountMode === 'none') {
-      return res.status(400).json({ error: 'Discounts are disabled' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Discounts are disabled', 'disabled'));
     }
     if (discountMode === 'flat' && type === 'percentage') {
-      return res.status(400).json({ error: 'Percentage discounts are disabled' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Percentage discounts are disabled', 'type_disabled'));
     }
     if (discountMode === 'percentage' && type === 'amount') {
-      return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', 'Flat amount discounts are disabled', 'type_disabled'));
     }
 
     // Check against limits from settings (0 = no limit)
     if (type === 'percentage') {
       const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
       if (maxPercentage > 0 && value > maxPercentage) {
-        return res.status(400).json({ error: `discount value exceeds maximum percentage of ${maxPercentage}` });
+        return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', `discount value exceeds maximum percentage of ${maxPercentage}`, 'limit_exceeded'));
       }
     } else {
       const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
       if (maxAmount > 0 && value > maxAmount) {
-        return res.status(400).json({ error: `discount value exceeds maximum amount of ${maxAmount}` });
+        return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.discount.validation', `discount value exceeds maximum amount of ${maxAmount}`, 'limit_exceeded'));
       }
     }
 
@@ -2557,13 +2603,21 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
     });
+    operationCommitted = true;
 
     notifyOrderUpdated();
     res.json({ bill: updatedBill });
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill discount failed:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    const message = statusCode >= 500 ? 'Internal server error' : error.message;
+    if (statusCode === 404 && !operationCommitted) return res.status(statusCode).json({ error: message });
+    const point = operationCommitted
+      ? 'fc.backend.bill.discount.completion'
+      : statusCode >= 500 ? 'fc.backend.bill.discount.persistence' : 'fc.backend.bill.discount.validation';
+    return res.status(statusCode).json(structuredBillFailure(
+      req, point, message, operationCommitted ? undefined : error.diagnosticCode, operationCommitted ? 'applied' : 'not_applied',
+    ));
   }
 });
 

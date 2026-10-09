@@ -105,8 +105,8 @@ async function main() {
   assertEqualOrThrow(outboxAfter, outboxBefore, 'reading the screen queues nothing for transmission');
   assertEqualOrThrow(
     (getDatabase().prepare("SELECT value FROM settings WHERE key = 'diagnostics_transmission_enabled'").get() as { value: string }).value,
-    'false',
-    'the transmission setting is still off after the operator used the screen',
+    'true',
+    'reading the screen does not change the one-time enabled transmission default',
   );
 
   console.log('\n5. A print failure whose message redacts to a placeholder still reads as a reason');

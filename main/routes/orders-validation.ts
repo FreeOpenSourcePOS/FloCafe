@@ -99,11 +99,11 @@ export function validateProductQuantity(
 ): asserts quantity is number {
   const productName = product.name || 'product';
   if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
-    throw Object.assign(new Error(`Invalid quantity for ${productName}: must be a positive number`), { statusCode: 400 });
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: must be a positive number`), { statusCode: 400, diagnosticCode: 'quantity_invalid' });
   }
   if (Number.isInteger(quantity)) return;
   if (!['kg', 'g', 'lb', 'ml', 'cl', 'l', 'fl oz', 'oz'].includes(product.sale_unit || 'each') || Number(product.allow_fractional_quantity) !== 1) {
-    throw Object.assign(new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`), { statusCode: 400 });
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`), { statusCode: 400, diagnosticCode: 'quantity_invalid' });
   }
 
   const precision = Number.isInteger(product.weight_precision)
@@ -111,6 +111,6 @@ export function validateProductQuantity(
     : 3;
   const scale = 10 ** precision;
   if (Math.abs(quantity * scale - Math.round(quantity * scale)) > 1e-8) {
-    throw Object.assign(new Error(`Invalid quantity for ${productName}: use at most ${precision} decimal places`), { statusCode: 400 });
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: use at most ${precision} decimal places`), { statusCode: 400, diagnosticCode: 'quantity_invalid' });
   }
 }

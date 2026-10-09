@@ -1298,9 +1298,9 @@ export function isDiagnosticsConsentEnabled(): boolean {
   return getSettingValue('diagnostics_consent') !== 'false';
 }
 
-/** Automatic transmission of captured diagnostics; off until an operator turns it on. */
+/** Automatic transmission is separate from capture and is disabled by either diagnostics consent gate. */
 export function isDiagnosticsTransmissionEnabled(): boolean {
-  return getSettingValue('diagnostics_transmission_enabled') === 'true';
+  return isDiagnosticsConsentEnabled() && getSettingValue('diagnostics_transmission_enabled') === 'true';
 }
 
 /** Kitchen Display System on/off switch. Defaults to enabled. */
@@ -2700,6 +2700,8 @@ export type RestoreOutboxState = {
   cloud: Record<string, unknown>[];
   support: Record<string, unknown>[];
   diagnostics: Record<string, unknown>[];
+  diagnosticsAggregates?: Record<string, unknown>[];
+  diagnosticsGaps?: Record<string, unknown>[];
   /** Device-local failure log; present on restores that predate it. */
   local?: Record<string, unknown>[];
 };
@@ -2711,6 +2713,11 @@ const RESTORE_PROTECTED_SETTING_KEYS = [
   'telemetry_enabled',
   'diagnostics_consent',
   'diagnostics_transmission_enabled',
+  'diagnostics_settings_explicit',
+  'diagnostics_consent_sync_pending',
+  'diagnostics_consent_change_id',
+  'diagnostics_consent_revision',
+  'diagnostics_consent_remote_initialized',
   'mobile_pairing_code',
   'mobile_pairing_code_expires_at',
 ];
@@ -2775,10 +2782,18 @@ export function captureRestoreOutboxState(dbInstance: Database.Database): Restor
   const local = dbInstance
     .prepare('SELECT * FROM local_diagnostics ORDER BY id ASC')
     .all() as Record<string, unknown>[];
+  const diagnosticsAggregates = dbInstance
+    .prepare('SELECT * FROM diagnostics_hourly_aggregates ORDER BY window_start, aggregate_key')
+    .all() as Record<string, unknown>[];
+  const diagnosticsGaps = dbInstance
+    .prepare('SELECT * FROM diagnostics_delivery_gaps ORDER BY reason_code')
+    .all() as Record<string, unknown>[];
   return {
     cloud: pending('cloud_sync_outbox'),
     support: pending('support_ticket_outbox'),
     diagnostics: pending('store_diagnostics_outbox'),
+    diagnosticsAggregates,
+    diagnosticsGaps,
     local,
   };
 }
@@ -2788,7 +2803,7 @@ export function mergeRestoreOutboxState(
   state: RestoreOutboxState,
 ): void {
   dbInstance.exec(
-    'DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox; DELETE FROM local_diagnostics',
+    'DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox; DELETE FROM local_diagnostics; DELETE FROM diagnostics_hourly_aggregates; DELETE FROM diagnostics_delivery_gaps',
   );
   const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
     (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
@@ -2825,8 +2840,8 @@ export function mergeRestoreOutboxState(
       row.delivered_at || null,
     );
   const diagnostics = dbInstance.prepare(`INSERT OR REPLACE INTO store_diagnostics_outbox
-    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at, transport, permanent_failure)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const row of state.diagnostics)
     diagnostics.run(
       row.event_id,
@@ -2838,6 +2853,41 @@ export function mergeRestoreOutboxState(
       row.created_at || now(),
       row.updated_at || now(),
       row.delivered_at || null,
+      row.transport || 'signed',
+      row.permanent_failure ? 1 : 0,
+    );
+  const aggregate = dbInstance.prepare(`INSERT INTO diagnostics_hourly_aggregates
+    (aggregate_key, capture_point, reason_code, classification, operation, stage, outcome, window_start,
+     count, first_occurred_at, last_occurred_at, app_version, app_build, platform, examples_json, facts_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.diagnosticsAggregates || [])
+    aggregate.run(
+      row.aggregate_key,
+      row.capture_point,
+      row.reason_code,
+      row.classification,
+      row.operation,
+      row.stage,
+      row.outcome,
+      row.window_start,
+      row.count,
+      row.first_occurred_at,
+      row.last_occurred_at,
+      row.app_version,
+      row.app_build,
+      row.platform,
+      row.examples_json || '[]',
+      row.facts_json || '{}',
+      row.updated_at || now(),
+    );
+  const gap = dbInstance.prepare(`INSERT INTO diagnostics_delivery_gaps (reason_code, count, first_occurred_at, last_occurred_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+  for (const row of state.diagnosticsGaps || [])
+    gap.run(
+      row.reason_code,
+      row.count,
+      row.first_occurred_at || now(),
+      row.last_occurred_at || now(),
+      row.updated_at || now(),
     );
   const local = dbInstance.prepare(`INSERT INTO local_diagnostics
     (event_code, severity, error_class, signature, summary, metadata_json, occurred_at, created_at)
@@ -6973,6 +7023,80 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       // payment rows stay valid unchanged.
       if (!getColumns(db, 'expense_payments').includes('reference')) {
         db.exec('ALTER TABLE expense_payments ADD COLUMN reference TEXT');
+      }
+    },
+  },
+  {
+    version: 110,
+    name: 'enable_safe_diagnostics_transmission_once',
+    up: () => {
+      const getSetting = (key: string) => (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+      const consent = getSetting('diagnostics_consent');
+      const explicit = getSetting('diagnostics_settings_explicit') === 'true';
+      const transmission = getSetting('diagnostics_transmission_enabled');
+      insertSettingIfMissing('diagnostics_settings_explicit', 'false');
+      insertSettingIfMissing('diagnostics_consent_sync_pending', 'false');
+      if (consent === 'false') {
+        upsertSetting('diagnostics_settings_explicit', 'true');
+        upsertSetting('diagnostics_consent_sync_pending', 'true');
+      } else if (explicit && transmission === 'false') {
+        upsertSetting('diagnostics_consent_sync_pending', 'true');
+      } else if (!explicit) {
+        // Legacy false had no reliable provenance; enable once unless the
+        // merchant had explicitly refused diagnostics consent.
+        upsertSetting('diagnostics_transmission_enabled', 'true');
+      }
+      if (getSetting('diagnostics_consent_sync_pending') === 'true' && !getSetting('diagnostics_consent_change_id')) {
+        upsertSetting('diagnostics_consent_change_id', crypto.randomUUID());
+      }
+    },
+  },
+  {
+    version: 111,
+    name: 'add_hourly_diagnostics_aggregates_and_delivery_gaps',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS diagnostics_hourly_aggregates (
+          aggregate_key TEXT PRIMARY KEY,
+          capture_point TEXT NOT NULL,
+          reason_code TEXT NOT NULL,
+          classification TEXT NOT NULL CHECK (classification IN ('expected_rejection', 'unexpected_failure')),
+          operation TEXT NOT NULL,
+          stage TEXT NOT NULL,
+          outcome TEXT NOT NULL CHECK (outcome IN ('not_applied', 'applied', 'partial', 'unknown', 'not_applicable')),
+          window_start TEXT NOT NULL,
+          count INTEGER NOT NULL CHECK (count > 0),
+          first_occurred_at TEXT NOT NULL,
+          last_occurred_at TEXT NOT NULL,
+          app_version TEXT NOT NULL,
+          app_build TEXT NOT NULL,
+          platform TEXT NOT NULL CHECK (platform IN ('win32', 'darwin', 'linux', 'unknown')),
+          examples_json TEXT NOT NULL DEFAULT '[]',
+          facts_json TEXT NOT NULL DEFAULT '{}',
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_diagnostics_hourly_window
+          ON diagnostics_hourly_aggregates(window_start, updated_at);
+        CREATE TABLE IF NOT EXISTS diagnostics_delivery_gaps (
+          reason_code TEXT PRIMARY KEY CHECK (reason_code IN ('queue_eviction', 'permanent_rejection', 'invalid_ack', 'report_id_mismatch', 'local_retention')),
+          count INTEGER NOT NULL CHECK (count >= 0),
+          first_occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          last_occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    version: 112,
+    name: 'pin_diagnostics_transport_and_permanent_rejections',
+    up: () => {
+      const columns = getColumns(db, 'store_diagnostics_outbox');
+      if (!columns.includes('transport')) {
+        db.exec("ALTER TABLE store_diagnostics_outbox ADD COLUMN transport TEXT NOT NULL DEFAULT 'signed'");
+      }
+      if (!columns.includes('permanent_failure')) {
+        db.exec('ALTER TABLE store_diagnostics_outbox ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0 CHECK (permanent_failure IN (0, 1))');
       }
     },
   },

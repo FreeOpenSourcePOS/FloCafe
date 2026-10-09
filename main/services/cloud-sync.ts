@@ -3,12 +3,14 @@
 import * as crypto from 'crypto';
 import * as os from 'os';
 import type BetterSqlite3 from 'better-sqlite3';
+import { app } from 'electron';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
 import { getInstallSource, getRunMode } from './telemetry';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isTelemetryEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 import { classClauseSummary, deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
@@ -280,6 +282,8 @@ function recordLocalDiagnostic(db: BetterSqlite3.Database, entry: Omit<LocalDiag
     timestamp,
   );
   // No delivery state here, so oldest-first is the only sensible eviction.
+  const overflow = ((db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count) - DIAGNOSTIC_LOG_MAX_ROWS;
+  if (overflow > 0) addDiagnosticsDeliveryGap(db, 'local_retention', overflow);
   evictOldestDiagnostics(db, 'local_diagnostics', DIAGNOSTIC_LOG_MAX_ROWS);
 }
 
@@ -296,13 +300,243 @@ function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagno
 function evictOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
   const overflow = ((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count) - max;
   if (overflow <= 0) return;
+  const rows = db.prepare(`
+    SELECT rowid, payload, status FROM store_diagnostics_outbox
+     ORDER BY CASE status WHEN 'delivered' THEN 0 ELSE 1 END, rowid ASC
+     LIMIT ?
+  `).all(overflow) as Array<{ rowid: number; payload: string; status: string }>;
+  const remove = db.prepare('DELETE FROM store_diagnostics_outbox WHERE rowid = ?');
+  for (const row of rows) {
+    if (row.status !== 'delivered') addDiagnosticsDeliveryGap(db, 'queue_eviction', diagnosticPayloadCount(row.payload));
+    remove.run(row.rowid);
+  }
+}
+
+function evictDeliveredOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
+  const overflow = ((db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered'").get() as { count: number }).count)
+    - max;
+  if (overflow <= 0) return;
+  db.prepare(`DELETE FROM store_diagnostics_outbox WHERE rowid IN (
+    SELECT rowid FROM store_diagnostics_outbox WHERE status = 'delivered' ORDER BY rowid ASC LIMIT ?
+  )`).run(overflow);
+}
+
+const DIAGNOSTICS_GAP_REASONS = ['queue_eviction', 'permanent_rejection', 'invalid_ack', 'report_id_mismatch', 'local_retention'] as const;
+type DiagnosticsGapReason = typeof DIAGNOSTICS_GAP_REASONS[number];
+
+function addDiagnosticsDeliveryGap(db: BetterSqlite3.Database, reason: DiagnosticsGapReason, count: number): void {
+  if (!Number.isSafeInteger(count) || count <= 0) return;
+  const timestamp = diagnosticUtcTimestamp();
   db.prepare(`
-    DELETE FROM store_diagnostics_outbox WHERE rowid IN (
-      SELECT rowid FROM store_diagnostics_outbox
-       ORDER BY CASE status WHEN 'delivered' THEN 0 ELSE 1 END, rowid ASC
-       LIMIT ?
-    )
-  `).run(overflow);
+    INSERT INTO diagnostics_delivery_gaps (reason_code, count, first_occurred_at, last_occurred_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(reason_code) DO UPDATE SET count = count + excluded.count,
+      last_occurred_at = excluded.last_occurred_at, updated_at = excluded.updated_at
+  `).run(reason, count, timestamp, timestamp, now());
+}
+
+function diagnosticPayloadCount(payload: string): number {
+  try {
+    const value = JSON.parse(payload) as { schema_version?: unknown; count?: unknown };
+    return value.schema_version === 2 && Number.isSafeInteger(value.count) && (value.count as number) > 0
+      ? value.count as number
+      : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function canonicalDiagnosticFacts(facts: Record<string, number | string>): Record<string, number | string> {
+  return Object.fromEntries(Object.entries(facts).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function diagnosticOccurrenceTime(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 64) return diagnosticUtcTimestamp();
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || timestamp > Date.now() + 86_400_000 || timestamp < Date.now() - 365 * 86_400_000) {
+    return diagnosticUtcTimestamp();
+  }
+  return diagnosticUtcTimestamp(timestamp);
+}
+
+function diagnosticUtcTimestamp(timestamp = Date.now()): string {
+  return new Date(timestamp).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function diagnosticWindowStart(occurredAt: string): string {
+  const date = new Date(occurredAt);
+  date.setUTCMinutes(0, 0, 0);
+  return diagnosticUtcTimestamp(date.getTime());
+}
+
+function diagnosticBuildIdentity(): string {
+  try {
+    const value = require('./build-identity').getBuildIdentity() as unknown;
+    return typeof value === 'string' && /^[A-Za-z0-9._:+-]{1,64}$/.test(value) ? value : 'unknown';
+  } catch { return 'unknown'; }
+}
+
+function diagnosticAppVersion(): string {
+  try {
+    const value = app.getVersion();
+    return /^[A-Za-z0-9._:+-]{1,64}$/.test(value) ? value : 'unknown';
+  } catch { return 'unknown'; }
+}
+
+function parseRetryAfterMs(value: string): number | null {
+  const seconds = Number(value.trim());
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(Number.MAX_SAFE_INTEGER, seconds * 1000);
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : null;
+}
+
+type DiagnosticAggregateRow = {
+  aggregate_key: string;
+  capture_point: string;
+  reason_code: string;
+  classification: string;
+  operation: string;
+  stage: string;
+  outcome: string;
+  window_start: string;
+  count: number;
+  first_occurred_at: string;
+  last_occurred_at: string;
+  app_version: string;
+  app_build: string;
+  platform: string;
+  examples_json: string;
+  facts_json: string;
+};
+
+type DiagnosticTransport = 'signed' | 'anonymous';
+const DIAGNOSTIC_REPORT_MAX_COUNT = 100_000;
+
+function parseBoundedExamples(json: string): string[] {
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed)
+      ? parsed.filter((value) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)).slice(0, 3)
+      : [];
+  } catch { return []; }
+}
+
+function parseBoundedFacts(json: string): Record<string, number | string> | null {
+  try {
+    const value = JSON.parse(json);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch { return null; }
+}
+
+function enqueueDiagnosticReport(
+  db: BetterSqlite3.Database,
+  report: Record<string, unknown>,
+  transport: DiagnosticTransport,
+  preservePending = false,
+): boolean {
+  const timestamp = now();
+  if (preservePending) {
+    evictDeliveredOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS - 1);
+    const queued = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
+    if (queued >= DIAGNOSTIC_LOG_MAX_ROWS) return false;
+  } else {
+    evictOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS - 1);
+  }
+  const payload = transport === 'anonymous'
+    ? JSON.stringify({ ...report, examples: [] })
+    : JSON.stringify(report);
+  db.prepare(`INSERT INTO store_diagnostics_outbox
+    (event_id, payload, status, created_at, updated_at, transport, permanent_failure)
+    VALUES (?, ?, 'pending', ?, ?, ?, 0)`)
+    .run(report.report_id, payload, timestamp, timestamp, transport);
+  return true;
+}
+
+function sealDiagnosticAggregates(db: BetterSqlite3.Database, transport: DiagnosticTransport): void {
+  const aggregates = db.prepare('SELECT * FROM diagnostics_hourly_aggregates ORDER BY window_start, updated_at LIMIT ?')
+    .all(DIAGNOSTIC_LOG_MAX_ROWS) as DiagnosticAggregateRow[];
+  for (const row of aggregates) {
+    const facts = parseBoundedFacts(row.facts_json);
+    const failure = serializeOperationFailure({ capture_point: row.capture_point, outcome: row.outcome, facts });
+    if (!failure || failure.reason_code !== row.reason_code || failure.operation !== row.operation || failure.stage !== row.stage
+      || failure.classification !== row.classification || !Number.isSafeInteger(row.count) || row.count <= 0) {
+      addDiagnosticsDeliveryGap(db, 'local_retention', Number.isSafeInteger(row.count) && row.count > 0 ? row.count : 1);
+      db.prepare('DELETE FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').run(row.aggregate_key);
+      continue;
+    }
+    let remaining = row.count;
+    const examples = parseBoundedExamples(row.examples_json);
+    while (remaining > 0) {
+      const count = Math.min(remaining, DIAGNOSTIC_REPORT_MAX_COUNT);
+      enqueueDiagnosticReport(db, {
+        schema_version: 2,
+        report_id: crypto.randomUUID(),
+        reason_code: failure.reason_code,
+        classification: failure.classification,
+        operation: failure.operation,
+        stage: failure.stage,
+        outcome: failure.outcome,
+        capture_point: failure.capture_point,
+        count,
+        window_start: row.window_start,
+        first_occurred_at: row.first_occurred_at,
+        last_occurred_at: row.last_occurred_at,
+        app_version: row.app_version,
+        app_build: row.app_build,
+        platform: row.platform,
+        examples: examples.map((correlation_id) => ({ correlation_id })),
+        facts: failure.facts,
+      }, transport);
+      remaining -= count;
+    }
+    db.prepare('DELETE FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').run(row.aggregate_key);
+  }
+}
+
+function sealDiagnosticGaps(db: BetterSqlite3.Database, transport: DiagnosticTransport): void {
+  const gaps = db.prepare('SELECT * FROM diagnostics_delivery_gaps WHERE count > 0 ORDER BY reason_code').all() as Array<{
+    reason_code: DiagnosticsGapReason; count: number; first_occurred_at: string; last_occurred_at: string;
+  }>;
+  for (const gap of gaps) {
+    let remaining = gap.count;
+    while (remaining > 0) {
+      const count = Math.min(remaining, DIAGNOSTIC_REPORT_MAX_COUNT);
+      const failure = serializeOperationFailure({
+        capture_point: 'fc.diagnostics.delivery.queue_gap',
+        outcome: 'partial',
+        facts: { gap_count: count, gap_reason: gap.reason_code },
+      });
+      if (!failure) return;
+      const observedAt = diagnosticUtcTimestamp();
+      const enqueued = enqueueDiagnosticReport(db, {
+        schema_version: 2,
+        report_id: crypto.randomUUID(),
+        reason_code: failure.reason_code,
+        classification: failure.classification,
+        operation: failure.operation,
+        stage: failure.stage,
+        outcome: failure.outcome,
+        capture_point: failure.capture_point,
+        count,
+        window_start: diagnosticWindowStart(observedAt),
+        first_occurred_at: observedAt,
+        last_occurred_at: observedAt,
+        app_version: diagnosticAppVersion(),
+        app_build: diagnosticBuildIdentity(),
+        platform: ['win32', 'darwin', 'linux'].includes(process.platform) ? process.platform : 'unknown',
+        examples: [],
+        facts: failure.facts,
+      }, transport, true);
+      if (!enqueued) return;
+      remaining -= count;
+      if (remaining === 0) {
+        db.prepare('DELETE FROM diagnostics_delivery_gaps WHERE reason_code = ?').run(gap.reason_code);
+      } else {
+        db.prepare(`UPDATE diagnostics_delivery_gaps SET count = ?, updated_at = ? WHERE reason_code = ?`)
+          .run(remaining, now(), gap.reason_code);
+      }
+    }
+  }
 }
 
 function safeParseMetadata(json: string): Record<string, unknown> | undefined {
@@ -495,6 +729,10 @@ export class CloudSyncService {
       this.outboxTimer = setInterval(() => this.runBackground(this.flushOutbox(), 'outbox flush'), OUTBOX_INTERVAL_MS);
       this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush');
       this.supportOutboxTimer = setInterval(() => this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush'), OUTBOX_INTERVAL_MS);
+    }
+    const canSendDiagnostics = isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled()
+      && ((cfg.sync_enabled && Boolean(cfg.api_key)) || isTelemetryEnabled());
+    if (canSendDiagnostics) {
       this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
       this.diagnosticsOutboxTimer = setInterval(() => this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush'), OUTBOX_INTERVAL_MS);
     }
@@ -979,18 +1217,166 @@ export class CloudSyncService {
     }, signal);
   }
 
-  /** Synchronizes the merchant's Tier 2 diagnostics consent preference with FloAdmin. */
+  /** Persists and synchronizes an explicit local diagnostics choice. */
   async setDiagnosticsConsent(enabled: boolean, signal?: AbortSignal): Promise<void> {
+    const db = getDatabase();
+    const existingPending = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true';
+    const existingChangeId = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_change_id'").get() as { value: string } | undefined)?.value;
+    const changeId = existingPending && isOperationReference(existingChangeId) ? existingChangeId : crypto.randomUUID();
+    db.transaction(() => {
+      db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_settings_explicit', 'true', ?)
+        ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+      db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_sync_pending', 'true', ?)
+        ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+      db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_change_id', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(changeId, now());
+    })();
+    const requestedEnabled = enabled && isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled();
+    await this.postDiagnosticsConsent(requestedEnabled, changeId, false, signal);
+  }
+
+  private async postDiagnosticsConsent(
+    enabled: boolean,
+    changeId: string,
+    initializeIfUnconfigured: boolean,
+    signal?: AbortSignal,
+  ): Promise<{ enabled: boolean; revision: number } | null> {
     try {
+      const db = getDatabase();
+      const body = {
+        schema_version: 2,
+        enabled,
+        change_id: changeId,
+        ...(initializeIfUnconfigured ? { initialize_if_unconfigured: true } : {}),
+      };
       const res = await this.signedFetch('/api/pos/diagnostics-consent', {
         method: 'POST',
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(body),
         signal,
       });
-      await this.drainResponse(res);
+      const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+      const keys = data && Object.keys(data).sort().join(',');
+      if (res.status === 409 && keys === 'disposition,enabled,reason_code,revision,schema_version'
+        && data?.schema_version === 2 && data.disposition === 'rejected' && data.enabled === false
+        && data.reason_code === 'deletion_pending' && Number.isSafeInteger(data.revision)
+        && (data.revision as number) >= 0) {
+        const currentChangeId = (getDatabase().prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_change_id'").get() as { value: string } | undefined)?.value;
+        if (currentChangeId !== changeId) return null;
+        db.transaction(() => {
+          for (const [key, value] of [
+            ['diagnostics_consent', 'false'],
+            ['diagnostics_transmission_enabled', 'false'],
+            ['diagnostics_settings_explicit', 'true'],
+            ['diagnostics_consent_sync_pending', 'false'],
+            ['diagnostics_consent_remote_initialized', 'true'],
+            ['diagnostics_consent_revision', String(data.revision)],
+          ]) {
+            db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+              .run(key, value, now());
+          }
+        })();
+        return { enabled: false, revision: data.revision as number };
+      }
+      if (!res.ok || data?.schema_version !== 2 || data.disposition !== 'accepted'
+        || keys !== 'disposition,enabled,revision,schema_version'
+        || typeof data.enabled !== 'boolean' || !Number.isSafeInteger(data.revision) || (data.revision as number) < 0
+        || (!initializeIfUnconfigured && data.enabled !== enabled)) {
+        log.debug('[CloudSync] diagnostics consent acknowledgment was invalid');
+        return null;
+      }
+      const currentChangeId = (getDatabase().prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_change_id'").get() as { value: string } | undefined)?.value;
+      if (currentChangeId !== changeId) return null;
+      db.prepare(`UPDATE settings SET value = 'false', updated_at = ?
+        WHERE key = 'diagnostics_consent_sync_pending'
+          AND EXISTS (SELECT 1 FROM settings WHERE key = 'diagnostics_consent_change_id' AND value = ?)`)
+        .run(now(), changeId);
+      if (initializeIfUnconfigured && !data.enabled) {
+        db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', 'false', ?)
+          ON CONFLICT(key) DO UPDATE SET value = 'false', updated_at = excluded.updated_at`).run(now());
+        db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_settings_explicit', 'true', ?)
+          ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+      }
+      db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_revision', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+        .run(String(data.revision), now());
+      db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_remote_initialized', 'true', ?)
+        ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+      return { enabled: data.enabled, revision: data.revision as number };
     } catch (err) {
       if (signal?.aborted) throw err;
-      log.debug('[CloudSync] diagnostics consent sync failed (non-fatal):', (err as Error).message);
+      log.debug('[CloudSync] diagnostics consent sync failed (non-fatal)');
+      return null;
+    }
+  }
+
+  private async reconcileDiagnosticsConsent(): Promise<boolean> {
+    const db = getDatabase();
+    const cfg = this.loadSettings(false);
+    if (!cfg?.api_key || !cfg.sync_enabled || isCloudDeletionBlocking(cfg.cloud_deletion_status)) return false;
+    const pending = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true';
+    if (pending) {
+      const changeId = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_change_id'").get() as { value: string } | undefined)?.value;
+      if (!isOperationReference(changeId)) return false;
+      const explicit = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_settings_explicit'").get() as { value: string } | undefined)?.value === 'true';
+      const initialized = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_remote_initialized'").get() as { value: string } | undefined)?.value === 'true';
+      const response = await this.postDiagnosticsConsent(
+        isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled(),
+        changeId,
+        !explicit && !initialized,
+      );
+      if (!response) return false;
+      const stillPending = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true';
+      return !stillPending && response.enabled && isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled();
+    }
+
+    try {
+      const res = await this.signedFetch('/api/pos/diagnostics-consent', { method: 'GET' });
+      const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+      if (!res.ok || data?.schema_version !== 2 || typeof data.enabled !== 'boolean'
+        || Object.keys(data).sort().join(',') !== 'enabled,initialized,revision,schema_version'
+        || !Number.isSafeInteger(data.revision) || (data.revision as number) < 0 || typeof data.initialized !== 'boolean') return false;
+      const explicit = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_settings_explicit'").get() as { value: string } | undefined)?.value === 'true';
+      if (explicit && (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled())) {
+        const changeId = crypto.randomUUID();
+        db.transaction(() => {
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_sync_pending', 'true', ?)
+            ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_change_id', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(changeId, now());
+        })();
+        const response = await this.postDiagnosticsConsent(false, changeId, false);
+        return response?.enabled === false && !((db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true');
+      }
+      if (!data.initialized) {
+        const eligibleForDefault = !explicit && isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled();
+        const changeId = crypto.randomUUID();
+        db.transaction(() => {
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_sync_pending', 'true', ?)
+            ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_change_id', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(changeId, now());
+        })();
+        const response = await this.postDiagnosticsConsent(eligibleForDefault, changeId, eligibleForDefault);
+        return response?.enabled === true && isDiagnosticsTransmissionEnabled();
+      }
+      db.transaction(() => {
+        db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .run(data.enabled ? 'true' : 'false', now());
+        if (!data.enabled) {
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_settings_explicit', 'true', ?)
+            ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+        }
+        db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_revision', ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
+          .run(String(data.revision), now());
+        db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_remote_initialized', 'true', ?)
+          ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+      })();
+      return data.enabled && isDiagnosticsTransmissionEnabled();
+    } catch {
+      return false;
     }
   }
 
@@ -1088,9 +1474,8 @@ export class CloudSyncService {
     return this.supportFlushPromise;
   }
 
-  // Local capture always; queueing only when transmission is on and a cloud key
-  // could deliver it. `error` is the thrown value, from which the signature is
-  // derived, so the raw exception text is never stored.
+  // Legacy event capture remains local. Automatic transmission uses the closed
+  // v2 operation registry so source-derived signatures never enter the outbox.
   reportDiagnostic(input: DiagnosticEventInput, error?: unknown): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     if (!isAllowedDiagnosticEventCode(input.event_code)) return;
@@ -1138,19 +1523,147 @@ export class CloudSyncService {
         metadata,
         occurred_at: sanitized.occurred_at,
       }, timestamp);
-      if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
-      // A till with no key or no sync can never deliver this row, so queueing it
-      // would only accumulate rows nothing will ever send.
-      const cfg = this.settings ?? this.loadSettings();
-      if (!cfg?.sync_enabled || !cfg.api_key) return;
-      db.prepare(`
-        INSERT OR IGNORE INTO store_diagnostics_outbox
-          (event_id, payload, status, created_at, updated_at)
-        VALUES (?, ?, 'pending', ?, ?)
-      `).run(sanitized.event_id, JSON.stringify(sanitized), timestamp, timestamp);
-      evictOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS);
-      this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
     }), 'diagnostic enqueue', (enqueueError) => this.markError((enqueueError as Error).message));
+  }
+
+  /** Capture a registry-approved occurrence into the bounded local hourly aggregate. */
+  captureOperationFailure(input: {
+    capture_point: unknown;
+    outcome: unknown;
+    correlation_id?: unknown;
+    facts?: unknown;
+    occurred_at?: unknown;
+  }): void {
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+    const failure = serializeOperationFailure(input);
+    if (!failure) return;
+    const occurredAt = diagnosticOccurrenceTime(input.occurred_at);
+    const windowStart = diagnosticWindowStart(occurredAt);
+    const appVersion = diagnosticAppVersion();
+    const appBuild = diagnosticBuildIdentity();
+    const platform = ['win32', 'darwin', 'linux'].includes(process.platform) ? process.platform : 'unknown';
+    const facts = canonicalDiagnosticFacts(failure.facts);
+    const aggregateKey = sha256Hex(JSON.stringify([
+      failure.operation, failure.stage, failure.reason_code, failure.capture_point, failure.outcome,
+      windowStart, appVersion, appBuild, platform, facts,
+    ]));
+    const timestamp = now();
+
+    this.runBackground(this.withDatabaseRequest(() => {
+      if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+      const db = getDatabase();
+      const safeMetadata = {
+        capture_point: failure.capture_point,
+        operation: failure.operation,
+        stage: failure.stage,
+        reason_code: failure.reason_code,
+        classification: failure.classification,
+        outcome: failure.outcome,
+        ...(failure.correlation_id ? { correlation_id: failure.correlation_id } : {}),
+        ...facts,
+      };
+      const displaySummary = `${failure.operation} failed during ${failure.stage} (${failure.reason_code}).`;
+      const transaction = db.transaction(() => {
+        recordLocalDiagnostic(db, {
+          event_code: failure.reason_code,
+          severity: failure.classification === 'expected_rejection' ? 'warn' : 'error',
+          error_class: failure.classification,
+          signature: `${failure.operation}:${failure.stage}:${failure.reason_code}`,
+          summary: displaySummary,
+          metadata: safeMetadata,
+          occurred_at: occurredAt,
+        }, timestamp);
+
+        const existing = db.prepare('SELECT * FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').get(aggregateKey) as {
+          count: number; first_occurred_at: string; last_occurred_at: string; examples_json: string;
+        } | undefined;
+        if (existing) {
+          if (!Number.isSafeInteger(existing.count) || existing.count >= Number.MAX_SAFE_INTEGER) {
+            addDiagnosticsDeliveryGap(db, 'local_retention', 1);
+            return;
+          }
+          let examples: string[] = [];
+          try {
+            const parsed = JSON.parse(existing.examples_json);
+            if (Array.isArray(parsed)) examples = parsed.filter((item) => typeof item === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item)).slice(0, 3);
+          } catch { /* keep the bounded example list empty */ }
+          if (failure.correlation_id && !examples.includes(failure.correlation_id) && examples.length < 3) examples.push(failure.correlation_id);
+          db.prepare(`UPDATE diagnostics_hourly_aggregates
+            SET count = count + 1, first_occurred_at = MIN(first_occurred_at, ?),
+                last_occurred_at = MAX(last_occurred_at, ?), examples_json = ?, updated_at = ?
+            WHERE aggregate_key = ?`).run(occurredAt, occurredAt, JSON.stringify(examples), timestamp, aggregateKey);
+          return;
+        }
+
+        const aggregateCount = (db.prepare('SELECT COUNT(*) AS count FROM diagnostics_hourly_aggregates').get() as { count: number }).count;
+        if (aggregateCount >= DIAGNOSTIC_LOG_MAX_ROWS) {
+          addDiagnosticsDeliveryGap(db, 'local_retention', 1);
+          return;
+        }
+        db.prepare(`INSERT INTO diagnostics_hourly_aggregates (
+          aggregate_key, capture_point, reason_code, classification, operation, stage, outcome,
+          window_start, count, first_occurred_at, last_occurred_at, app_version, app_build, platform,
+          examples_json, facts_json, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .run(
+            aggregateKey, failure.capture_point, failure.reason_code, failure.classification,
+            failure.operation, failure.stage, failure.outcome, windowStart, occurredAt, occurredAt,
+            appVersion, appBuild, platform,
+            JSON.stringify(failure.correlation_id ? [failure.correlation_id] : []), JSON.stringify(facts), timestamp,
+          );
+      });
+      transaction();
+      const cfg = this.loadSettings(false);
+      if (isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled()
+        && ((cfg?.sync_enabled && cfg.api_key) || isTelemetryEnabled())) {
+        this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
+      }
+    }), 'diagnostic capture', (captureError) => this.markError((captureError as Error).message));
+  }
+
+  /** Safe counts for the diagnostics screen; never includes report bytes or raw errors. */
+  listDiagnosticDeliveryHealth(): {
+    effective_consent: boolean;
+    transmission_enabled: boolean;
+    consent_sync_pending: boolean;
+    delayed: boolean;
+    transport: 'signed' | 'anonymous' | 'local' | 'disabled';
+    pending_reports: number;
+    pending_occurrences: number;
+    pending_aggregates: number;
+    pending_aggregate_occurrences: number;
+    permanently_rejected_reports: number;
+    gaps: Array<{ reason_code: DiagnosticsGapReason; count: number }>;
+  } {
+    const db = getDatabase();
+    const reports = db.prepare(`SELECT payload FROM store_diagnostics_outbox WHERE status IN ('pending', 'failed', 'sending') AND permanent_failure = 0`).all() as Array<{ payload: string }>;
+    const permanent = db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE permanent_failure = 1').get() as { count: number };
+    const pendingAggregate = db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(count), 0) AS occurrences FROM diagnostics_hourly_aggregates').get() as { count: number; occurrences: number };
+    const gaps = db.prepare('SELECT reason_code, count FROM diagnostics_delivery_gaps WHERE count > 0 ORDER BY reason_code').all() as Array<{ reason_code: DiagnosticsGapReason; count: number }>;
+    const effectiveConsent = isDiagnosticsConsentEnabled();
+    const transmissionEnabled = isDiagnosticsTransmissionEnabled();
+    const consentSyncPending = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true';
+    const cfg = this.loadSettings(false);
+    const transport: 'signed' | 'anonymous' | 'local' | 'disabled' = !effectiveConsent || !transmissionEnabled
+      ? 'disabled'
+      : cfg?.sync_enabled && cfg.api_key
+        ? 'signed'
+        : isTelemetryEnabled() ? 'anonymous' : 'local';
+    const pendingOccurrences = reports.reduce((sum, row) => sum + diagnosticPayloadCount(row.payload), 0);
+    const delayed = reports.length > 0 || pendingAggregate.count > 0 || gaps.length > 0;
+    return {
+      effective_consent: effectiveConsent,
+      transmission_enabled: transmissionEnabled,
+      consent_sync_pending: consentSyncPending,
+      delayed,
+      transport,
+      pending_reports: reports.length,
+      pending_occurrences: pendingOccurrences,
+      pending_aggregates: pendingAggregate.count,
+      pending_aggregate_occurrences: pendingAggregate.occurrences,
+      permanently_rejected_reports: permanent.count,
+      gaps,
+    };
   }
 
   /** Recent locally captured failures, newest first, for the diagnostics screen. */
@@ -1190,56 +1703,103 @@ export class CloudSyncService {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return Promise.resolve();
     if (this.diagnosticsFlushPromise) return this.diagnosticsFlushPromise;
     const run = this.withDatabaseRequest(async () => {
-    if (this.cloudDeletionInProgress || this.shutdownRequested || !isDiagnosticsConsentEnabled()) return;
-    if (!isDiagnosticsTransmissionEnabled()) return;
-    const cfg = this.settings ?? this.loadSettings();
-    if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+    const cfg = this.loadSettings(false);
+    if (!cfg || isCloudDeletionBlocking(cfg.cloud_deletion_status) || this.diagnosticsFlushing) return;
+    const signedAvailable = cfg.sync_enabled && Boolean(cfg.api_key);
+    const transport: DiagnosticTransport | null = signedAvailable
+      ? 'signed'
+      : isTelemetryEnabled() ? 'anonymous' : null;
+    if (!transport) return;
+    if (signedAvailable && !await this.reconcileDiagnosticsConsent()) return;
+    if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
+    if (transport === 'anonymous' && !isTelemetryEnabled()) return;
     this.diagnosticsFlushing = true;
     try {
     const db = getDatabase();
-    db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
+    db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending' AND permanent_failure = 0").run(now(), now());
+    db.transaction(() => {
+      sealDiagnosticAggregates(db, transport);
+      sealDiagnosticGaps(db, transport);
+    })();
     const rows = db.prepare(`
       SELECT * FROM store_diagnostics_outbox
        WHERE status IN ('pending', 'failed')
+         AND permanent_failure = 0
          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
        ORDER BY created_at ASC LIMIT 20
-    `).all(now()) as Array<{ event_id: string; payload: string; attempt_count: number }>;
+    `).all(now()) as Array<{ event_id: string; payload: string; attempt_count: number; transport: string }>;
     if (rows.length === 0) return;
 
-    try {
-      for (const row of rows) {
-        db.prepare(`UPDATE store_diagnostics_outbox SET status = 'sending', updated_at = ? WHERE event_id = ?`)
-          .run(now(), row.event_id);
-        const res = await this.signedFetch('/api/pos/diagnostics', {
-          method: 'POST',
-          body: row.payload,
-        });
-        await this.drainResponse(res);
-        if (this.cloudDeletionInProgress || this.shutdownRequested) return;
-        if (!res.ok) throw new Error(`diagnostic event submission failed (${res.status})`);
-        db.prepare(`
-          UPDATE store_diagnostics_outbox
-             SET status = 'delivered', delivered_at = ?, updated_at = ?, last_error = NULL
-           WHERE event_id = ?
-        `).run(now(), now(), row.event_id);
+    for (const row of rows) {
+      if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+      if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
+      const currentCfg = this.loadSettings(false);
+      if (!currentCfg || isCloudDeletionBlocking(currentCfg.cloud_deletion_status)) return;
+      const rowTransport: DiagnosticTransport = row.transport === 'anonymous' ? 'anonymous' : 'signed';
+      if (rowTransport === 'signed' && (!currentCfg.sync_enabled || !currentCfg.api_key)) continue;
+      if (rowTransport === 'anonymous' && !isTelemetryEnabled()) continue;
+      db.prepare(`UPDATE store_diagnostics_outbox SET status = 'sending', updated_at = ? WHERE event_id = ?`)
+        .run(now(), row.event_id);
+      try {
+        const report = JSON.parse(row.payload) as Record<string, unknown>;
+        if (report.schema_version === 2) {
+          if (rowTransport === 'anonymous') {
+            const { sendAnonymousDiagnosticReport } = require('./telemetry') as typeof import('./telemetry');
+            const delivery = await sendAnonymousDiagnosticReport(report);
+            const disposition = delivery.disposition;
+            if (disposition === 'accepted' || disposition === 'duplicate') {
+              this.markDiagnosticReportDelivered(db, row.event_id);
+            } else if (disposition === 'rejected') {
+              this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'permanent_rejection');
+            } else if (disposition === 'invalid_ack') {
+              this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'invalid_ack');
+            } else if (disposition === 'report_id_mismatch') {
+              this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'report_id_mismatch');
+            } else {
+              this.retryDiagnosticReport(db, row.event_id, row.attempt_count, 'network_error', delivery.retry_after_ms);
+              break;
+            }
+            continue;
+          }
+          const response = await this.signedFetch('/api/pos/diagnostics/v2', {
+            method: 'POST', body: row.payload,
+          });
+          const ack = await response.json().catch(() => null) as Record<string, unknown> | null;
+          if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+          const ackKeys = ack && Object.keys(ack).sort().join(',');
+          const validMatchingReportId = Boolean(ack && isOperationReference(ack.report_id) && ack.report_id === row.event_id);
+          if (ack && isOperationReference(ack.report_id) && ack.report_id !== row.event_id) {
+            this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'report_id_mismatch');
+          } else if (ack && ackKeys === 'disposition,report_id,schema_version'
+            && ack.schema_version === 2 && (ack.disposition === 'accepted' || ack.disposition === 'duplicate')
+            && validMatchingReportId && response.ok) {
+            this.markDiagnosticReportDelivered(db, row.event_id);
+          } else if (ack && ackKeys === 'disposition,report_id,schema_version'
+            && ack.schema_version === 2 && ack.disposition === 'consent_disabled'
+            && validMatchingReportId && response.ok) {
+            db.prepare(`UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'diagnostics_consent'`).run(now());
+            db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_settings_explicit'`).run(now());
+            db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_consent_remote_initialized'`).run(now());
+            db.prepare(`UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'diagnostics_consent_sync_pending'`).run(now());
+            db.prepare(`UPDATE store_diagnostics_outbox SET status = 'pending', next_attempt_at = NULL, updated_at = ? WHERE event_id = ?`).run(now(), row.event_id);
+            return;
+          } else if (ack && ackKeys === 'disposition,report_id,schema_version'
+            && ack.schema_version === 2 && ack.disposition === 'rejected' && validMatchingReportId) {
+            this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'permanent_rejection');
+          } else if (response.status === 408 || response.status === 429 || response.status >= 500) {
+            this.retryDiagnosticReport(db, row.event_id, row.attempt_count, `http_${response.status}`, response.headers.get('retry-after'));
+            break;
+          } else {
+            this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'invalid_ack');
+          }
+        } else {
+          this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'local_retention');
+        }
+      } catch {
+        if (!this.shutdownRequested) this.retryDiagnosticReport(db, row.event_id, row.attempt_count, 'network_error');
+        break;
       }
-    } catch (err) {
-      if (this.shutdownRequested) return;
-      const message = (err as Error).message;
-      const rowsToFail = db.prepare(`SELECT event_id, attempt_count FROM store_diagnostics_outbox WHERE status = 'sending'`).all() as Array<{ event_id: string; attempt_count: number }>;
-      for (const row of rowsToFail) {
-        const attempts = row.attempt_count + 1;
-        const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
-        // Format timestamp with space to match SQLite now() lexicographical comparison.
-        const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
-        db.prepare(`
-          UPDATE store_diagnostics_outbox
-             SET status = 'failed', attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
-           WHERE event_id = ?
-        `).run(attempts, nextAttemptAt, message, now(), row.event_id);
-      }
-      // Non-fatal, same as support tickets: diagnostics must never surface a
-      // connectivity error as if it were a cloud-sync problem to the merchant.
     }
     } finally {
       this.diagnosticsFlushing = false;
@@ -1247,6 +1807,41 @@ export class CloudSyncService {
     });
     this.diagnosticsFlushPromise = run.finally(() => { this.diagnosticsFlushPromise = null; });
     return this.diagnosticsFlushPromise;
+  }
+
+  private markDiagnosticReportDelivered(db: BetterSqlite3.Database, eventId: string): void {
+    db.prepare(`UPDATE store_diagnostics_outbox
+      SET status = 'delivered', delivered_at = ?, updated_at = ?, last_error = NULL, next_attempt_at = NULL
+      WHERE event_id = ?`).run(now(), now(), eventId);
+  }
+
+  private markDiagnosticReportRejected(db: BetterSqlite3.Database, eventId: string, payload: string, reason: DiagnosticsGapReason): void {
+    db.transaction(() => {
+      const report = safeJsonParse(payload) as { capture_point?: unknown } | null;
+      if (report?.capture_point !== 'fc.diagnostics.delivery.queue_gap') {
+        addDiagnosticsDeliveryGap(db, reason, diagnosticPayloadCount(payload));
+      }
+      db.prepare(`UPDATE store_diagnostics_outbox
+        SET status = 'failed', permanent_failure = 1, next_attempt_at = NULL, last_error = ?, updated_at = ?
+        WHERE event_id = ?`).run(reason, now(), eventId);
+    })();
+  }
+
+  private retryDiagnosticReport(
+    db: BetterSqlite3.Database,
+    eventId: string,
+    attemptCount: number,
+    reason: string,
+    retryAfter?: string | number | null,
+  ): void {
+    const attempts = attemptCount + 1;
+    const exponentialDelay = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
+    const retryAfterMs = typeof retryAfter === 'number' ? retryAfter : retryAfter ? parseRetryAfterMs(retryAfter) : null;
+    const delay = retryAfterMs === null ? exponentialDelay : Math.max(exponentialDelay, Math.min(60 * 60_000, retryAfterMs));
+    const nextAttemptAt = new Date(Date.now() + delay).toISOString().replace('T', ' ').replace(/\..*$/, '');
+    db.prepare(`UPDATE store_diagnostics_outbox
+      SET status = 'failed', attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
+      WHERE event_id = ?`).run(attempts, nextAttemptAt, reason, now(), eventId);
   }
 
   /** Generate or rotate the RevFlo pairing code for this store. */

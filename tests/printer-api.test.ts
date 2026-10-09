@@ -375,13 +375,17 @@ async function runTests() {
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert(transportConnections === 0 && transportBytes === 0, 'unsupported financial refusal opens no transport or sends bytes');
 
-    const originalReportDiagnostic = cloudSync.reportDiagnostic;
+    const originalCaptureOperationFailure = cloudSync.captureOperationFailure;
     let diagnostic: any;
-    cloudSync.reportDiagnostic = (input: any) => { diagnostic = input; };
+    cloudSync.captureOperationFailure = (input: any) => { diagnostic = input; };
     const detailed = await printReceiptDetailed(...printArgs);
-    cloudSync.reportDiagnostic = originalReportDiagnostic;
+    cloudSync.captureOperationFailure = originalCaptureOperationFailure;
     assert(detailed.stage === 'prepare', 'unsupported financial refusal is reported at prepare stage');
-    assert(diagnostic?.message === 'Receipt not printed: unsupported financial row', 'diagnostic message omits receipt row text');
+    assert(diagnostic?.capture_point === 'fc.backend.printer.receipt.queue', 'printer failures use the registered receipt capture point');
+    assert(diagnostic?.outcome === 'not_applied', 'a prepare-stage printer refusal confirms no print was applied');
+    assert(diagnostic?.facts?.kind === 'receipt', 'the capture identifies only the bounded receipt kind');
+    assert(diagnostic?.facts?.failure_class === 'unsupported', 'the capture includes the safe printer failure class');
+    assert(!JSON.stringify(diagnostic).includes('کافه'), 'no receipt text enters the automatic diagnostic capture');
     await new Promise<void>((resolve, reject) => transportServer.close((error) => error ? reject(error) : resolve()));
   }
 

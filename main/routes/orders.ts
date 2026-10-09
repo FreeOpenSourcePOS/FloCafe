@@ -27,6 +27,7 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -37,6 +38,36 @@ const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, s
 const orderItemCancelRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;
+
+function structuredOperationFailure(
+  req: Request,
+  capturePoint: string,
+  outcome: 'not_applied' | 'applied',
+  error: string,
+  displayCode?: string,
+): Record<string, unknown> {
+  const header = req.get('x-operation-id');
+  const correlationId = isOperationReference(header) ? header : randomUUID();
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome,
+    correlation_id: correlationId,
+    ...(displayCode ? { facts: { display_code: displayCode } } : {}),
+  });
+  if (!failure) return { error };
+  (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
+  cloudSync.captureOperationFailure(failure);
+  return {
+    error,
+    reason_code: failure.reason_code,
+    operation: failure.operation,
+    stage: failure.stage,
+    classification: failure.classification,
+    outcome: failure.outcome,
+    correlation_id: failure.correlation_id,
+    ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
+  };
+}
 
 /**
  * Resolves the unified engine's charges for an order, carrying forward the
@@ -78,18 +109,6 @@ function resolveEngineCharges(order: EngineChargeOrderRow, subtotal: number, dis
     },
     chargesJson: serializeAppliedCharges(resolved.charges),
   };
-}
-
-function reportOrderCreateFailure(status: number, itemCount: number, stage: 'inventory_validation' | 'order_insert', error?: unknown): void {
-  try {
-    cloudSync.reportDiagnostic({
-      event_id: randomUUID(),
-      event_code: 'order.create.failed',
-      severity: 'error',
-      metadata: { stage, status, item_count: itemCount },
-      occurred_at: new Date().toISOString(),
-    }, error);
-  } catch { /* diagnostics must never mask the original failure */ }
 }
 
 function orderIdempotencyKey(req: Request): string | null {
@@ -625,6 +644,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 });
 
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address, expected_payment_method, expected_payment_method_id, delivery_note, waived_charge_ids, opted_in_charge_ids } = body;
@@ -638,19 +658,25 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     const authenticatedUserId = (req as any).user.userId;
 
     if (!Array.isArray(items) || items.length === 0) {
-      // A client validation failure, not a fault: there is no exception to derive from.
-      reportOrderCreateFailure(400, 0, 'order_insert');
-      return res.status(400).json({ error: 'At least one item is required' });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', 'At least one item is required',
+      ));
     }
     if (items.length > MAX_ORDER_ITEMS) {
-      return res.status(400).json({ error: `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request` });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request`,
+      ));
     }
 
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
-      return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', 'Valid type is required (dine_in, takeaway, delivery, online)',
+      ));
     }
     if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
-      return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', 'guest_count must be a whole number between 1 and 99',
+      ));
     }
 
     let pkgCharge: number;
@@ -665,30 +691,34 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         ? error.statusCode
         : 400;
       const message = error instanceof Error ? error.message : 'Invalid charge amount';
-      return res.status(statusCode).json({ error: message });
+      return res.status(statusCode).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', message,
+      ));
     }
 
     // Cashier charge decisions taken in the cart travel with the order, so the
     // engine applies them instead of resetting to the merchant defaults.
     if ([waived_charge_ids, opted_in_charge_ids].some((list) => list !== undefined && list !== null
       && (!Array.isArray(list) || list.some((entry) => typeof entry !== 'string')))) {
-      return res.status(400).json({ error: 'waived_charge_ids and opted_in_charge_ids must be arrays of charge ids' });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', 'waived_charge_ids and opted_in_charge_ids must be arrays of charge ids',
+      ));
     }
     const waivedChargeIds = (waived_charge_ids || []) as string[];
     const optedInChargeIds = (opted_in_charge_ids || []) as string[];
 
     if (online_platform !== undefined && online_platform !== null && typeof online_platform !== 'string') {
-      return res.status(400).json({ error: 'online_platform must be a string' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.create.other_validation', 'not_applied', 'online_platform must be a string'));
     }
     if (external_order_id !== undefined && external_order_id !== null && typeof external_order_id !== 'string') {
-      return res.status(400).json({ error: 'external_order_id must be a string' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.create.other_validation', 'not_applied', 'external_order_id must be a string'));
     }
     if (delivery_address !== undefined && delivery_address !== null && typeof delivery_address !== 'string') {
-      return res.status(400).json({ error: 'delivery_address must be a string' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.create.other_validation', 'not_applied', 'delivery_address must be a string'));
     }
     const deliveryAddress = typeof delivery_address === 'string' ? delivery_address.trim() || null : null;
     if (delivery_note !== undefined && delivery_note !== null && typeof delivery_note !== 'string') {
-      return res.status(400).json({ error: 'delivery_note must be a string' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.create.other_validation', 'not_applied', 'delivery_note must be a string'));
     }
     // Courier-only details: other order types never store them.
     const isDelivery = type === 'delivery';
@@ -729,7 +759,9 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         expectedPaymentMethod = null;
       }
     } catch (err: unknown) {
-      return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid delivery details' });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', err instanceof Error ? err.message : 'Invalid delivery details',
+      ));
     }
 
     try {
@@ -739,7 +771,9 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
       }
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      return res.status(400).json(structuredOperationFailure(
+        req, 'fc.backend.order.create.other_validation', 'not_applied', err.message,
+      ));
     }
     const result = withTxn(() => {
       if (idempotencyKey) {
@@ -980,6 +1014,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       }
       return { order, orderItems, idempotentReplay: false };
     });
+    operationCommitted = true;
 
     if (!result.idempotentReplay) {
       notifyKdsUpdate();
@@ -999,17 +1034,24 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     console.error('[Orders] Create error:', error);
     console.error("[API] Internal error:", error);
     const statusCode = error.statusCode || 500;
-    reportOrderCreateFailure(
-      statusCode,
-      Array.isArray(req.body?.items) ? req.body.items.length : 0,
-      error.message === 'Insufficient stock' ? 'inventory_validation' : 'order_insert',
-      error,
-    );
-    res.status(statusCode).json({ error: error.statusCode ? error.message : "Internal server error" });
+    const point = operationCommitted
+      ? 'fc.backend.order.create.completion'
+      : error?.diagnosticCode === 'quantity_invalid'
+        ? 'fc.backend.order.create.quantity_validation'
+        : error instanceof InventoryServiceError && error.statusCode === 400
+          ? 'fc.backend.order.create.stock_validation'
+          : statusCode >= 500
+            ? 'fc.backend.order.create.persistence'
+            : 'fc.backend.order.create.other_validation';
+    return res.status(statusCode).json(structuredOperationFailure(
+      req, point, operationCommitted ? 'applied' : 'not_applied',
+      error.statusCode ? error.message : 'Internal server error',
+    ));
   }
 });
 
 router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const db = getDatabase();
     const body = req.body || {};
@@ -1032,10 +1074,10 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'At least one item is required' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.append.validation', 'not_applied', 'At least one item is required'));
     }
     if (items.length > MAX_ORDER_ITEMS) {
-      return res.status(400).json({ error: `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request` });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.append.validation', 'not_applied', `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request`));
     }
 
     // Get settings
@@ -1248,6 +1290,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       }
       return { updatedOrder, updatedItems, replayResponse: null };
     });
+    operationCommitted = true;
 
     if (result.replayResponse) return res.json(result.replayResponse);
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
@@ -1256,7 +1299,13 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    const statusCode = error.statusCode || 500;
+    const message = error.statusCode ? error.message : 'Internal server error';
+    if (statusCode === 404 && !operationCommitted) return res.status(statusCode).json({ error: message });
+    const point = operationCommitted
+      ? 'fc.backend.order.append.completion'
+      : statusCode >= 500 ? 'fc.backend.order.append.persistence' : 'fc.backend.order.append.validation';
+    return res.status(statusCode).json(structuredOperationFailure(req, point, operationCommitted ? 'applied' : 'not_applied', message));
   }
 });
 
@@ -1599,6 +1648,7 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requirePermission(
 });
 
 router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.discount.apply'), (req: Request, res: Response) => {
+  let operationCommitted = false;
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1606,24 +1656,24 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
       return res.status(404).json({ error: 'Order not found' });
     }
     if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
+      return res.status(409).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'Discounts cannot be changed after a check has been split', 'split_check'));
     }
 
     // Cannot apply discount to completed or cancelled orders
     if (['completed', 'cancelled'].includes(order.status)) {
-      return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'Cannot apply discount to a completed or cancelled order', 'order_not_discountable'));
     }
 
     const { discount_type, discount_value, discount_reason } = req.body || {};
 
     // Validate discount_type
     if (discount_value !== 0 && (!discount_type || !['percentage', 'amount'].includes(discount_type))) {
-      return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'discount_type must be "percentage" or "amount"', 'invalid_type'));
     }
 
     // Validate discount_value is a non-negative finite number
     if (discount_value === undefined || discount_value === null || typeof discount_value !== 'number' || discount_value < 0 || !Number.isFinite(discount_value)) {
-      return res.status(400).json({ error: 'discount_value must be a non-negative number' });
+      return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'discount_value must be a non-negative number', 'invalid_value'));
     }
 
     // Check if approval is required
@@ -1653,13 +1703,13 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
     if (discount_value > 0) {
       const discountMode = getSettingValue('discount_mode') || 'percentage';
       if (discountMode === 'none') {
-        return res.status(400).json({ error: 'Discounts are disabled' });
+        return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'Discounts are disabled', 'disabled'));
       }
       if (discountMode === 'flat' && discount_type === 'percentage') {
-        return res.status(400).json({ error: 'Percentage discounts are disabled' });
+        return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'Percentage discounts are disabled', 'type_disabled'));
       }
       if (discountMode === 'percentage' && discount_type === 'amount') {
-        return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+        return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', 'Flat amount discounts are disabled', 'type_disabled'));
       }
     }
 
@@ -1668,12 +1718,12 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
       if (discount_type === 'percentage') {
         const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
         if (maxPercentage > 0 && discount_value > maxPercentage) {
-          return res.status(400).json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
+          return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', `discount_value exceeds maximum percentage of ${maxPercentage}`, 'limit_exceeded'));
         }
       } else if (discount_type === 'amount') {
         const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
         if (maxAmount > 0 && discount_value > maxAmount) {
-          return res.status(400).json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
+          return res.status(400).json(structuredOperationFailure(req, 'fc.backend.order.discount.validation', 'not_applied', `discount_value exceeds maximum amount of ${maxAmount}`, 'limit_exceeded'));
         }
       }
     }
@@ -1692,13 +1742,13 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
-        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), { statusCode: 400 });
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), { statusCode: 400, diagnosticCode: 'order_not_discountable' });
       }
       const refundedBill = db.prepare(
         `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
       ).get(req.params.id);
       if (refundedBill) {
-        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), { statusCode: 409 });
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), { statusCode: 409, diagnosticCode: 'refunded' });
       }
 
       const customer = currentOrder.customer_id
@@ -1786,12 +1836,22 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       return updatedOrder;
     });
+    operationCommitted = true;
 
     notifyOrderUpdated();
     res.json({ order: result });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    const statusCode = error.statusCode || 500;
+    const message = error.statusCode ? error.message : 'Internal server error';
+    if (statusCode === 404 && !operationCommitted) return res.status(statusCode).json({ error: message });
+    const point = operationCommitted
+      ? 'fc.backend.order.discount.completion'
+      : statusCode >= 500 ? 'fc.backend.order.discount.persistence' : 'fc.backend.order.discount.validation';
+    return res.status(statusCode).json(structuredOperationFailure(
+      req, point, operationCommitted ? 'applied' : 'not_applied', message,
+      operationCommitted ? undefined : error.diagnosticCode,
+    ));
   }
 });
 

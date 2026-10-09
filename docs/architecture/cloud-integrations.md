@@ -70,69 +70,39 @@ it degrades to `dev` rather than throwing.
 
 ## Store-attributed diagnostics
 
-A second, separate channel that attaches store identity to a diagnostic report. It has a local tier
-and a transmission tier, and only the second one can send anything.
+Diagnostics have a local support view and a separate automatic aggregate channel. Capture does not
+depend on either transmission setting. The local `local_diagnostics` log is capped at 200 rows and
+is available to staff with `support.use`; clearing it removes only local evidence. The legacy
+`POST /api/diagnostics/event` intake remains for older callers, but is local-only and does not enqueue
+its message or metadata for automatic transmission.
 
-**Local capture is not consent-gated.** Every accepted failure is written to the `local_diagnostics`
-table, whether or not the merchant has agreed to anything, because nothing there leaves the till.
-Support → Diagnostics renders that table, and the copy-for-support bundle is built from
-`buildSystemDiagnostics()` - the same builder the support-ticket path uses - plus the recent
-failures. The raw log tail is deliberately **not** part of that bundle: the log contains whatever
-the application logged, including order and customer detail, so it is a separate, visibly labelled
-control the operator turns on after seeing what it is.
+Automatic reports come from the closed capture registry in
+[`main/lib/operation-failure.ts`](../../main/lib/operation-failure.ts). A report contains the
+registered reason, operation, stage, classification, outcome, count, bounded time window, optional
+UUID correlation references, and allowlisted facts. It contains no exception text, SQL, request path,
+customer, order, or payment data. Frontend captures cover client-owned transport, recovery, and retry
+storage failures; backend routes record authoritative operation failures. Legacy source-derived
+signatures remain local support evidence and are never sent through the v2 automatic channel.
 
-**What is stored is a derived signature, never the raw exception message.** The message is customer
-data's most likely hiding place, so
-[`main/lib/diagnostic-signature.ts`](../../main/lib/diagnostic-signature.ts) reduces it to a
-template: the error class, plus the message with literal values replaced by typed placeholders
-(`<string>`, `<number>`, `<id>`, `<path>`, `<url>`) and anything that cannot be confidently classified
-dropped. A URL is matched as a whole structure rather than as a substring, so a host cannot survive by
-standing before or after other text; the pattern is deliberately over-inclusive, and a dotted name that
-is not really a host is redacted too. Two tills failing the same way therefore produce byte-identical
-text, which is what makes grouping possible. `deriveDiagnosticSignature()` is the only code path that
-derives the stored text, and it derives it only; it never reads the metadata.
+Reports are aggregated by UTC hour, sealed with immutable report IDs, and stored in
+`store_diagnostics_outbox` before sending. The outbox holds at most 200 rows, and each flush sends at
+most 20 reports. If reports are evicted, permanently rejected, or cannot be acknowledged, bounded
+delivery-gap counters remain visible locally and are retried as safe aggregate reports when space is
+available. Retries honor server `Retry-After` hints up to one hour. A report with an invalid or
+mismatched acknowledgment is retained as a visible permanent rejection.
 
-**The operator summary is not the signature.** `signature` is the grouping key and is whatever the
-template reduced to, placeholder stack included. `summary` is what an operator and a support ticket
-read, and a template with fewer than three real words is not shown: on Windows, PowerShell wraps a
-whole .NET exception in `Exception calling "SendRaw" ...: "..."`, so the informative payload is one
-quoted span and redacts to `<string> with <string> <string>`, and no widening of the allowlist can
-change that. For such a case the summary is rebuilt from the already projected `metadata` - a fixed
-reason per print `failure_class` in `PRINT_FAILURE_REASON`
-([`main/services/cloud-sync.ts`](../../main/services/cloud-sync.ts)), otherwise the per-error-class
-clause on its own. There is still no per-event-code phrase table; the print reasons are keyed to a
-closed enum the classifier already produces and already persists, every reason is a fixed
-source-controlled phrase, and none of them carries source text, so the guarantee is strictly stronger
-than the template it replaces. The signature is deliberately left alone: deriving it from
-`failure_class` too would churn the grouping of every till that has already reported.
+**Transmission gates.** Automatic delivery requires both `diagnostics_consent` and
+`diagnostics_transmission_enabled`. The one-time upgrade migration enables transmission for
+unconfigured legacy installs while preserving an explicit refusal; a fresh install receives the same
+enabled default. A merchant can opt out through Settings. Consent changes synchronize with FloAdmin
+using an idempotent change ID, and remote opt-out takes precedence over startup initialization. Cloud
+deletion blocks all diagnostics delivery. With a configured signed cloud connection reports go to
+FloAdmin. Without one, they use the anonymous collector only when `telemetry_enabled` is also on;
+otherwise they remain local. Consent and transmission are separate from anonymous usage telemetry.
 
-**Transmission is off by default.** Two settings gate it and both must hold:
-
-- `diagnostics_consent` - the merchant's privacy decision, unchanged, and shipped on.
-- `diagnostics_transmission_enabled` - whether captured failures are sent automatically. Shipped
-  **off**, and no release in this series turns it on.
-
-**A support ticket is not diagnostics.** A ticket the merchant raises and sends is a separate
-outbox, a separate code path, and unaffected by either setting above.
-
-**Known limits of the derivation, stated rather than hidden.** The guarantee is per token, not per
-message. A token survives if it is a quoted string, a number, an identifier, a path, a known
-structural word, or a schema reference inside a SQL phrase. Two consequences: a value made
-*entirely* of structural words ("Table Key", "Order Only") cannot be told apart from the fixed
-phrase around it and survives; and the projected `metadata` (for example `route`) is copied into
-the bundle as the existing allowlist already projects it, so a client that supplies its own
-`server.internal_error` metadata controls that one field. A third: redaction can succeed so
-completely that nothing readable is left - a message that arrives as one quoted span, a bare host, or
-a couple of stray prepositions - which is why the summary falls back to a fixed reason instead of
-showing the fragments. That costs detail, never safety. The reasons are English, as every summary
-and class clause already was; storing a code and translating at render time remains the better long-term
-design and is deliberately not done here, because it changes the stored contract.
-**Offline behaviour.** With transmission on, diagnostics are queued in the
-`store_diagnostics_outbox` table and flushed in the background. With no cloud key or with cloud
-sync off, nothing is enqueued at all: such a till can never deliver the row, so queueing it would
-only accumulate rows nothing will ever send. Both the local log and the outbox are capped at
-`DIAGNOSTIC_LOG_MAX_ROWS` (200) on write, evicting the oldest row first, so neither can grow without
-bound between reads.
+`GET /api/diagnostics/health` returns only typed queue counts, delivery-gap counts, consent state,
+transport, and delayed status. It does not return report bytes or local error text. Support tickets
+remain a separate user-initiated channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 

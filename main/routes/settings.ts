@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
+import { randomUUID } from 'crypto';
 import { getDatabase, getSettingValue, now } from '../db';
 import {
   cloudSync,
@@ -1542,7 +1543,6 @@ router.put(
           return res.status(400).json({ error: `${key} must be a boolean` });
         }
       }
-
       for (const key of OPTIONAL_PRINTING_BOOLEAN_KEYS) {
         if (values[key] !== undefined && typeof values[key] !== 'boolean') {
           return res.status(400).json({ error: `${key} must be a boolean` });
@@ -1689,6 +1689,10 @@ router.put(
         return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
       }
       let valueToPersist: unknown = value;
+      const diagnosticsChoice =
+        req.params.key === 'diagnostics_consent' ||
+        req.params.key === 'diagnostics_transmission_enabled';
+      if (diagnosticsChoice) valueToPersist = boolFlag(value);
       if (req.params.key === 'currency') {
         valueToPersist = typeof value === 'string' ? value.trim().toUpperCase() : value;
         if (!isSyntacticallyValidCurrencyCode(valueToPersist)) {
@@ -1706,6 +1710,21 @@ router.put(
         valueToPersist = validation.stored;
       }
       const db = getDatabase();
+      if (
+        diagnosticsChoice &&
+        valueToPersist === 'true' &&
+        [
+          'pending',
+          'processing',
+          'approved',
+          'completed',
+          'deleted',
+          'failed',
+          'unknown',
+        ].includes(getAllSettings(db).cloud_deletion_status || '')
+      ) {
+        return res.status(409).json({ error: 'cloud_deletion_pending' });
+      }
       if (req.params.key === 'currency') {
         const currentCurrency = getAllSettings(db).currency || '';
         if (valueToPersist !== currentCurrency) {
@@ -1747,10 +1766,30 @@ router.put(
         }
       }
 
-      db.prepare(`
+      const saveSetting = db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(req.params.key, valueToPersist as string, now());
+    `);
+    if (diagnosticsChoice) {
+      const changeId = randomUUID();
+      db.transaction(() => {
+        saveSetting.run(req.params.key, valueToPersist as string, now());
+        db.prepare(`
+          INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_settings_explicit', 'true', ?)
+          ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at
+        `).run(now());
+        db.prepare(`
+          INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_sync_pending', 'true', ?)
+          ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at
+        `).run(now());
+        db.prepare(`
+          INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_change_id', ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        `).run(changeId, now());
+      })();
+    } else {
+      saveSetting.run(req.params.key, valueToPersist as string, now());
+    }
 
       // Sync legacy anonymous_data_consent mirror with canonical telemetry_enabled.
       if (req.params.key === 'telemetry_enabled') {
@@ -1760,9 +1799,11 @@ router.put(
       `).run(value, now());
       }
 
-      // Best-effort push of diagnostics consent to FloAdmin.
-      if (req.params.key === 'diagnostics_consent') {
-        void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
+      // Best-effort push of the effective diagnostics permission to FloAdmin.
+      if (diagnosticsChoice) {
+        const settings = getAllSettings(db);
+        const enabled = settings.diagnostics_consent !== 'false' && settings.diagnostics_transmission_enabled === 'true';
+        void cloudSync.setDiagnosticsConsent(enabled);
       }
       if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
         void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });

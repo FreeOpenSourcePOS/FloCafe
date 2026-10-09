@@ -40,6 +40,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { getRunMode, getInstallSource, linuxPackageFromOsRelease, sendEvent } = require('../main/services/telemetry');
+const { resolveBuildIdentity } = require('../main/services/build-identity');
 
 /** What the host's own distro resolves to, so the fall-through case stays exact on any runner. */
 function hostLinuxPackage(): string {
@@ -100,6 +101,16 @@ async function main() {
   for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
 
   console.log('Telemetry run mode and install source detection');
+
+  assert.equal(resolveBuildIdentity({
+    schema_version: 1,
+    build_id: '0123456789abcdef0123456789abcdef01234567',
+    source_commit: '0123456789abcdef0123456789abcdef01234567',
+  }, true), '0123456789abcdef0123456789abcdef01234567', 'a matching embedded source commit survives validation');
+  assert.equal(resolveBuildIdentity({ schema_version: 1, build_id: 'custom', source_commit: null }, true), 'custom', 'dirty builds are marked custom');
+  assert.equal(resolveBuildIdentity(undefined, true), 'unknown', 'missing embedded metadata cannot claim a release identity');
+  assert.equal(resolveBuildIdentity({ schema_version: 1, build_id: 'dev', source_commit: null }, false), 'dev', 'unpackaged builds are labeled dev');
+  assert.equal(resolveBuildIdentity({ schema_version: 1, build_id: '0123456789abcdef0123456789abcdef01234567', source_commit: null }, true), 'unknown', 'an unmatched build id cannot claim its source commit');
 
   // ── Non-Electron hosts degrade to dev instead of throwing ──────────────────
   assert.deepEqual(

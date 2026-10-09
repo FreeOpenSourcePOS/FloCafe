@@ -22,9 +22,10 @@ import { isOrdersLayout } from './routes/settings';
 import { googleDrive } from './services/google-drive';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
-import { sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
 import log from 'electron-log/main';
+import { randomUUID } from 'crypto';
+import { cloudSync } from './services/cloud-sync';
 
 // Cap on the log content attached to a support ticket (most recent bytes only).
 const LOG_TAIL_MAX_BYTES = 200_000;
@@ -583,18 +584,15 @@ export function registerIpcHandlers(
     }
   });
 
-  // Reports a caught renderer-side exception via anonymous telemetry.
-  handle('report-renderer-error', async (event, report: unknown) => {
-    const r = report as { message?: unknown; stack?: unknown; digest?: unknown; route?: unknown } | null;
-    const clamp = (value: unknown, max: number): string | undefined =>
-      typeof value === 'string' ? value.slice(0, max) : undefined;
-    const sent = await sendTelemetryEvent('renderer_error', {
-      message: clamp(r?.message, 500),
-      stack: clamp(r?.stack, 4000),
-      digest: clamp(r?.digest, 200),
-      route: clamp(r?.route, 200),
+  // Renderer failures are classified locally; message, stack, digest and route
+  // can contain business data and are never sent automatically.
+  handle('report-renderer-error', async () => {
+    cloudSync.captureOperationFailure({
+      capture_point: 'fc.electron.renderer.exception',
+      outcome: 'unknown',
+      correlation_id: randomUUID(),
     });
-    return { success: sent };
+    return { success: true };
   });
 
   // Printers

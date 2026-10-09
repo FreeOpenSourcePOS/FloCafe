@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import expressRateLimit from 'express-rate-limit';
 import { requirePermission } from '../services/authorization';
 import { cloudSync, DiagnosticEventInput, DIAGNOSTIC_LOG_MAX_ROWS, isAllowedDiagnosticEventCode } from '../services/cloud-sync';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { buildSystemDiagnostics, resolveCategory } from './support-ticket';
 
 const router = Router();
@@ -22,6 +23,18 @@ const MAX_METADATA_JSON_BYTES = 4096;
 const MAX_METADATA_DEPTH = 3;
 const MAX_METADATA_KEYS = 40;
 const MAX_METADATA_STRING_CHARS = 300;
+const FRONTEND_CAPTURE_POINTS = new Set([
+  'fc.frontend.pos.order.create.transport',
+  'fc.frontend.pos.order.create.recovery',
+  'fc.frontend.pos.payment.create.transport',
+  'fc.frontend.pos.payment.create.recovery',
+  'fc.frontend.pos.order.create.retry_storage',
+  'fc.frontend.pos.order.create.retry_cleanup',
+  'fc.frontend.pos.payment.create.retry_storage',
+  'fc.frontend.pos.payment.create.retry_cleanup',
+  'fc.frontend.pos.order.append.retry_storage',
+  'fc.frontend.pos.order.append.retry_cleanup',
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -93,6 +106,45 @@ router.post('/event', requirePermission('support.use'), diagnosticsWriteRateLimi
     cloudSync.reportDiagnostic(event);
   } catch { /* diagnostics must never mask the original failure */ }
   res.status(202).json({ queued: true });
+});
+
+// Cashier transport/recovery events are client-owned. Backend write failures are
+// captured at their authoritative boundary and must not be reported here again.
+router.post('/capture', diagnosticsWriteRateLimit, (req: Request, res: Response) => {
+  const raw = isPlainObject(req.body) ? req.body : {};
+  const capturePoint = raw.capture_point;
+  const hasFacts = raw.facts !== undefined;
+  if (Object.keys(raw).sort().join(',') !== (hasFacts ? 'capture_point,facts,operation_id,outcome' : 'capture_point,operation_id,outcome')
+    || typeof capturePoint !== 'string' || !FRONTEND_CAPTURE_POINTS.has(capturePoint)
+    || typeof raw.outcome !== 'string' || !isOperationReference(raw.operation_id)) {
+    return res.status(400).json({ error: 'Invalid diagnostic capture' });
+  }
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome: raw.outcome,
+    correlation_id: raw.operation_id,
+    ...(hasFacts ? { facts: raw.facts } : {}),
+  });
+  if (!failure) return res.status(400).json({ error: 'Invalid diagnostic capture' });
+  cloudSync.captureOperationFailure({
+    capture_point: failure.capture_point,
+    outcome: failure.outcome,
+    correlation_id: failure.correlation_id,
+    facts: failure.facts,
+  });
+  return res.status(202).json({
+    captured: true,
+    reason_code: failure.reason_code,
+    operation: failure.operation,
+    stage: failure.stage,
+    classification: failure.classification,
+    outcome: failure.outcome,
+    correlation_id: failure.correlation_id,
+  });
+});
+
+router.get('/health', requirePermission('support.use'), (_req: Request, res: Response) => {
+  res.json(cloudSync.listDiagnosticDeliveryHealth());
 });
 
 // Local read for the diagnostics screen; nothing here is transmitted.

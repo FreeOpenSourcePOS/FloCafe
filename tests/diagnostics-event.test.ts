@@ -1,9 +1,5 @@
 /**
- * Diagnostics event ingestion tests: POST /api/diagnostics/event validation,
- * authz, consent gating, metadata bounds, plus backend operational reporting
- * (order.create.failed, payment.batch.failed) and POS checkout failure
- * resilience when telemetry dispatch fails.
- *
+ * Diagnostics ingestion, safe frontend captures, and authoritative order failures.
  * Usage: node tests/run-electron-node-test.cjs tests/diagnostics-event.test.ts
  */
 const Module = require('module');
@@ -11,77 +7,30 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const http = require('http');
 const crypto = require('crypto');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-diagnostics-event-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') {
-    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => '2.9.5' } };
-  }
+  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => '3.12.22' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedProduct, seedTable, seedCategory, seedCustomer,
-  api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
+  api, assert, assertEqual, getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
-const { registerRoutes } = require('../main/routes/index');
+  const { registerRoutes } = require('../main/routes/index');
+const { cloudSync } = require('../main/services/cloud-sync');
 
-function countDiagnostics(db: any, eventCode?: string): number {
-  const rows = db.prepare('SELECT payload FROM store_diagnostics_outbox').all() as Array<{ payload: string }>;
-  if (!eventCode) return rows.length;
-  return rows.filter((row) => {
-    try { return JSON.parse(row.payload).event_code === eventCode; } catch { return false; }
-  }).length;
+function latestLocalDiagnostic(db: any, reasonCode: string): any | null {
+  const row = db.prepare('SELECT * FROM local_diagnostics WHERE event_code = ? ORDER BY id DESC LIMIT 1').get(reasonCode) as any;
+  if (!row) return null;
+  let metadata = {};
+  try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch { /* malformed rows are not test evidence */ }
+  return { ...row, metadata };
 }
 
-function findDiagnostic(db: any, eventCode: string): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
-  for (const row of rows) {
-    try {
-      const payload = JSON.parse(row.payload);
-      if (payload.event_code === eventCode) return { ...payload, status: row.status };
-    } catch { /* skip corrupt */ }
-  }
-  return null;
-}
-
-function findDiagnosticByStage(db: any, eventCode: string, stage: string): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
-  for (const row of rows) {
-    try {
-      const payload = JSON.parse(row.payload);
-      if (payload.event_code === eventCode && payload.metadata?.stage === stage) return { ...payload, status: row.status };
-    } catch { /* skip corrupt */ }
-  }
-  return null;
-}
-
-function findDiagnosticByStageAndHttpStatus(db: any, eventCode: string, stage: string, status: number): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
-  for (const row of rows) {
-    try {
-      const payload = JSON.parse(row.payload);
-      if (payload.event_code === eventCode
-        && payload.metadata?.stage === stage
-        && payload.metadata?.status === status) return { ...payload, status: row.status };
-    } catch { /* skip corrupt */ }
-  }
-  return null;
-}
-
-function findDiagnosticByStageAndStatus(db: any, eventCode: string, stage: string, status: number, itemCount: number): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
-  for (const row of rows) {
-    try {
-      const payload = JSON.parse(row.payload);
-      if (payload.event_code === eventCode
-        && payload.metadata?.stage === stage
-        && payload.metadata?.status === status
-        && payload.metadata?.item_count === itemCount) return { ...payload, status: row.status };
-    } catch { /* skip corrupt */ }
-  }
-  return null;
+function countLocalDiagnostics(db: any): number {
+  return (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count;
 }
 
 async function main() {
@@ -94,36 +43,20 @@ async function main() {
   seedCategory(db, 'cat-1', 'Menu');
   seedProduct(db, 'p1', 'cat-1', 'Espresso', 3.5, { track_inventory: true, stock_quantity: 0 });
   seedProduct(db, 'p2', 'cat-1', 'Latte', 4.5);
-
-  const app = createApp({});
-  registerRoutes(app);
-  const { baseUrl, server } = await startServer(app);
-
-  // The outbox is only the transmission path, and transmission now requires an
-  // explicit setting plus a cloud key and sync that could actually deliver the
-  // row. A till without those never enqueues, so this suite configures a
-  // loopback endpoint that accepts the POST: that is what lets it assert the
-  // enqueue, the payload projection, and the delivery in one pass. The
-  // default-off and no-key paths are asserted in diagnostics-outbox-bounds.test.ts.
-  const cloudStub = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end('{}');
-  });
-  await new Promise<void>((resolve) => cloudStub.listen(0, '127.0.0.1', resolve));
-  const cloudStubUrl = `http://127.0.0.1:${(cloudStub.address() as { port: number }).port}`;
   const setSetting = (key: string, value: string) => db.prepare(
     `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
   ).run(key, value, now());
-  setSetting('diagnostics_transmission_enabled', 'true');
-  setSetting('cloud_server_url', cloudStubUrl);
-  setSetting('cloud_api_key', 'test-diagnostics-key');
-  setSetting('cloud_sync_enabled', '1');
-  setSetting('cloud_registration_status', 'registered');
-  setSetting('cloud_services_disabled_by_user', 'false');
+  setSetting('diagnostics_consent', 'false');
+  setSetting('diagnostics_transmission_enabled', 'false');
+  setSetting('telemetry_enabled', 'false');
+  setSetting('cloud_sync_enabled', '0');
+  setSetting('cloud_api_key', '');
 
-  // Enqueue is async (withDatabaseRequest + runBackground); drain by spinning
-  // the event loop until a row appears or the deadline passes.
+  const app = createApp({});
+  registerRoutes(app);
+  app.get('/api/test-unhandled-diagnostic', (_req: any, res: any) => res.status(500).json({ error: 'synthetic failure' }));
+  const { baseUrl, server } = await startServer(app);
   const settle = async (predicate: () => boolean, timeoutMs = 3000) => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -134,346 +67,268 @@ async function main() {
   };
 
   try {
-    console.log('\n1. Valid diagnostic event is accepted (202) and lands in store_diagnostics_outbox as pending');
-    const eventId = crypto.randomUUID();
-    const okRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
+    console.log('\n1. Legacy event ingestion keeps derived evidence local');
+    const beforeLocal = (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count;
+    const eventResponse = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST', headers: owner.authHeader,
       body: {
-        event_id: eventId,
-        event_code: 'order.place.failed',
-        severity: 'error',
-        message: 'The order could not be completed on this device',
-        metadata: { detail: 'The order could not be completed on this device', status: null, stage: 'order_place' },
-        occurred_at: new Date().toISOString(),
+        event_code: 'order.place.failed', severity: 'error',
+        message: 'UNIQUE constraint failed: orders.customer_id for customer Synthetic Person',
+        metadata: { stage: 'order_place', detail: 'sensitive order detail' },
       },
     });
-    assertEqual(okRes.status, 202, 'a well-formed event is accepted with 202');
-    const queued = await settle(() => (findDiagnostic(db, 'order.place.failed')?.status || '') === 'delivered', 5000);
-    assert(queued, 'the event is written to store_diagnostics_outbox and delivered');
-    const row = findDiagnostic(db, 'order.place.failed');
-    assertEqual(row?.status, 'delivered', 'the outbox row reaches delivered once a deliverable cloud endpoint is configured');
-    assert(row?.event_id && /^[0-9a-f-]{36}$/i.test(row.event_id), 'event_id is a server-generated UUID');
-    assertEqual(row?.severity, 'error', 'severity is preserved');
-    // WHAT WAS DECIDED BEFORE: every diagnostic message was overwritten with a
-    // fixed string from a nine-entry table keyed by event_code. That was a
-    // deliberate privacy decision - the raw exception message is exactly where
-    // customer data appears, so it must never be stored or transmitted.
-    //
-    // WHY IT WAS RIGHT THEN: it was structural, not a filter, so the first field
-    // anyone added to the payload could not leak.
-    //
-    // WHAT REPLACED IT: a derived signature instead of a constant. The stored
-    // message is now the error class plus the message with literal values
-    // replaced by typed placeholders, so "no such table: orders" survives as
-    // "Error: no such table: orders" and two tills failing the same way produce
-    // identical text. The privacy property is kept and is now per token rather
-    // than per message: a literal that classifies as a quoted string, a number,
-    // an identifier or a path becomes a placeholder, and anything that does not
-    // classify is dropped. A message made only of structural words is
-    // indistinguishable from the fixed phrase around it and is kept, which is a
-    // known limit recorded in main/lib/diagnostic-signature.ts. The submitted
-    // message below is product-authored prose containing no literal, so the
-    // whole sentence survives - which is exactly the diagnostic content the
-    // constant threw away.
-    assertEqual(
-      row?.message,
-      'Error: The order could not be completed on this device',
-      'the stored message is the derived signature of the submitted message, not a constant',
-    );
-    assertEqual(row?.metadata.stage, 'order_place', 'metadata is stored');
-    assertEqual(row?.metadata.detail, undefined, 'unapproved free-form metadata is not persisted');
+    assertEqual(eventResponse.status, 202, 'a supported legacy event is accepted');
+    assert(await settle(() => (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count > beforeLocal), 'the event is available in the local diagnostics log');
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count, 0, 'legacy free-form events never enter the automatic outbox');
+    const eventRow = latestLocalDiagnostic(db, 'order.place.failed');
+    assertEqual(eventRow?.metadata?.stage, 'order_place', 'event-specific safe metadata survives local projection');
+    assertEqual(eventRow?.metadata?.detail, undefined, 'unapproved free-form metadata is removed');
 
-    console.log('\n2. Unauthenticated and malformed requests are rejected without writing anything');
-    const unauth = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      body: { event_code: 'order.place.failed', severity: 'error' },
+    console.log('\n1b. Event authentication, schema, severity, code, and metadata bounds remain enforced');
+    const beforeRejected = countLocalDiagnostics(db);
+    const unauthenticated = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST', body: { event_code: 'order.place.failed', severity: 'error' },
     });
-    assertEqual(unauth.status, 401, 'unauthenticated requests are rejected with 401');
-
+    assertEqual(unauthenticated.status, 401, 'unauthenticated event writes are rejected');
     const malformed = await fetch(`${baseUrl}/api/diagnostics/event`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...owner.authHeader },
-      body: '{not json',
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...owner.authHeader }, body: '{not json',
     });
-    assertEqual(malformed.status, 400, 'malformed JSON is rejected with 400');
-
-    const missingCode = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { severity: 'error' },
-    });
-    assertEqual(missingCode.status, 400, 'a missing event_code is rejected with 400');
-
-    const badSeverity = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'order.place.failed', severity: 'fatal' },
-    });
-    assertEqual(badSeverity.status, 400, 'an unknown severity is rejected with 400');
-
-    const badCode = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'Order Place Failed!', severity: 'error' },
-    });
-    assertEqual(badCode.status, 400, 'a non dot-namespaced event_code is rejected with 400');
-    const unsupportedCode = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'order.place.unapproved', severity: 'error' },
-    });
-    assertEqual(unsupportedCode.status, 400, 'an otherwise well-formed but unsupported event_code is rejected with 400');
-    const before = countDiagnostics(db);
-    const noBody = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: {},
-    });
-    assertEqual(noBody.status, 400, 'an empty payload is rejected with 400');
-    assertEqual(countDiagnostics(db), before, 'no outbox rows were written by rejected requests');
-    for (const [eventCode, message] of [
-      ['order.place.rejected', 'Error'],
-      ['order.place.unreachable', 'Error'],
-      ['order.place.storage_unavailable', 'Error'],
-    ] as const) {
-      const supported = await api(baseUrl, '/api/diagnostics/event', {
-        method: 'POST',
-        headers: owner.authHeader,
-        body: { event_code: eventCode, severity: 'warn' },
+    assertEqual(malformed.status, 400, 'malformed JSON is rejected');
+    const invalidEvents = [
+      {},
+      { event_code: 'order.place.failed' },
+      { event_code: 'order.place.failed', severity: 'fatal' },
+      { event_code: 'Order Place Failed!', severity: 'error' },
+      { event_code: 'order.place.unapproved', severity: 'error' },
+      { event_code: 'order.place.failed', severity: 'error', metadata: 'not-an-object' },
+      { event_code: 'order.place.failed', severity: 'error', metadata: [1, 2, 3] },
+    ];
+    for (const invalid of invalidEvents) {
+      const invalidResponse = await api(baseUrl, '/api/diagnostics/event', {
+        method: 'POST', headers: owner.authHeader, body: invalid,
       });
-      assertEqual(supported.status, 202, `${eventCode} is accepted`);
-      assert(await settle(() => findDiagnostic(db, eventCode) !== null), `${eventCode} is enqueued`);
-      // No constant phrase per event code any more: with no message to derive
-      // from, the stored signature is the bare error class. Under the old
-      // constant-message behaviour this was the per-code approved string
-      // ('Order rejected', 'Order server unreachable', ...), so this assertion
-      // cannot pass under the behaviour it replaces.
-      assertEqual(findDiagnostic(db, eventCode)?.message, message, `${eventCode} stores the derived signature, not a per-code constant`);
+      assertEqual(invalidResponse.status, 400, 'malformed event contract is rejected');
     }
-
-    console.log('\n3. Boundary: the stored message is the derived signature; oversized metadata is rejected');
-    const longMessage = 'M'.repeat(500);
-    const clampRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'payment.batch.failed', severity: 'warn', message: longMessage },
-    });
-    assertEqual(clampRes.status, 202, 'an event with an over-long message is still accepted');
-    const clamped = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
-    assert(clamped, 'the clamped event is enqueued');
-    const clampedRow = findDiagnostic(db, 'payment.batch.failed');
-    assertEqual(clampedRow?.message, 'Error', 'an over-long unclassifiable message reduces to the bare class, not to stored literal text');
-    assert(!String(clampedRow?.message).includes('MMM'), 'the 500-character literal is not stored at all');
-
     const hugeMetadata: Record<string, string> = {};
     for (let i = 0; i < 40; i++) hugeMetadata[`key_${i}`] = 'X'.repeat(300);
-    const oversizeRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
+    const oversized = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST', headers: owner.authHeader,
       body: { event_code: 'payment.batch.failed', severity: 'error', metadata: hugeMetadata },
     });
-    assertEqual(oversizeRes.status, 400, 'metadata beyond the size cap is rejected with 400');
+    assertEqual(oversized.status, 400, 'metadata beyond the byte cap is rejected');
+    assertEqual(countLocalDiagnostics(db), beforeRejected, 'rejected event payloads do not create local rows');
 
-    console.log('\n4. Depth clamp: nested structures beyond depth 3 are trimmed, not rejected');
-    const nested = { route: '/api/orders', method: 'GET', a: { b: { c: { d: { e: 'too deep' } } } }, keep: 'shallow' };
-    const depthRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'server.internal_error', severity: 'info', metadata: nested },
+    const nestedMetadata = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST', headers: owner.authHeader,
+      body: { event_code: 'server.internal_error', severity: 'error', metadata: {
+        route: '/api/orders', method: 'POST', status: 503, keep: 'unapproved', a: { b: { c: { d: 'trimmed' } } },
+      } },
     });
-    assertEqual(depthRes.status, 202, 'a deeply nested metadata payload is accepted after trimming');
-    const depthQueued = await settle(() => findDiagnostic(db, 'server.internal_error') !== null);
-    assert(depthQueued, 'the depth-trimmed event is enqueued');
-    const depthRow = findDiagnostic(db, 'server.internal_error');
-    assertEqual(depthRow?.metadata.route, '/api/orders', 'approved server route survives projection');
-    assertEqual(depthRow?.metadata.method, 'GET', 'approved server metadata survives projection');
-    assertEqual(depthRow?.metadata.keep, undefined, 'unapproved metadata is dropped');
-    assertEqual(depthRow?.metadata.a, undefined, 'nested metadata is dropped');
+    assertEqual(nestedMetadata.status, 202, 'deep metadata is trimmed to its safe event-specific projection');
+    assert(await settle(() => latestLocalDiagnostic(db, 'server.internal_error') !== null), 'projected metadata is available locally');
+    const projected = latestLocalDiagnostic(db, 'server.internal_error')?.metadata;
+    assertEqual(projected?.route, '/api/orders', 'the allowlisted route field survives');
+    assertEqual(projected?.method, 'POST', 'the allowlisted method field survives');
+    assertEqual(projected?.status, 503, 'the allowlisted status field survives');
+    assertEqual(projected?.keep, undefined, 'unapproved metadata is removed');
+    assertEqual(projected?.a, undefined, 'nested unapproved metadata is removed');
 
-    console.log('\n5. Consent toggle: diagnostics_consent=false keeps the local capture and sends nothing');
-    const consentBefore = countDiagnostics(db);
-    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', 'false', ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(now());
-    const consentOff = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'order.place.failed', severity: 'error' },
-    });
-    assertEqual(consentOff.status, 202, 'the endpoint still acknowledges the event while consent is off');
-    await settle(() => false, 400); // allow any in-flight enqueue to run
-    const localWithConsentOff = (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count;
-    assert(localWithConsentOff > 0, 'the failure is still captured locally for the screen while consent is off');
-    assertEqual(
-      (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_transmission_enabled'").get() as { value: string }).value,
-      'true',
-      'precondition: transmission is on for this suite, so the consent gate is what is under test',
-    );
-    assertEqual(countDiagnostics(db), consentBefore, 'no row was written while diagnostics consent was disabled');
-    db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_consent'`).run(now());
-
-    console.log('\n6. order.create.failed: missing-item validation is enqueued (order still 400)');
-    const missingItemsRes = await api(baseUrl, '/api/orders', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { table_id: 'diag-table-1', type: 'dine_in' },
-    });
-    assertEqual(missingItemsRes.status, 400, 'missing-item order is rejected with 400');
-    const missingItemsQueued = await settle(() => {
-      const row = findDiagnosticByStage(db, 'order.create.failed', 'order_insert');
-      return row?.metadata.status === 400 && row?.metadata.item_count === 0;
-    });
-    assert(missingItemsQueued, 'order.create.failed is enqueued for missing-item validation');
-
-    console.log('\n7. order.create.failed: insufficient-stock rejection is enqueued (order still 400)');
-    const stockRes = await api(baseUrl, '/api/orders', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: {
-        table_id: 'diag-table-1',
-        type: 'dine_in',
-        items: [{ product_id: 'p1', quantity: 5 }],
-      },
-    });
-    assert(stockRes.status >= 400, `insufficient stock order is rejected (got ${stockRes.status})`);
-    const stockQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'inventory_validation', 400, 1) !== null);
-    assert(stockQueued, 'order.create.failed is enqueued on inventory failure');
-    const stockDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'inventory_validation', 400, 1);
-    assertEqual(stockDiag?.metadata.status, stockRes.status, 'diagnostic metadata carries the HTTP status');
-    assertEqual(stockDiag?.metadata.item_count, 1, 'diagnostic metadata carries the product count');
-    assertEqual(stockDiag?.metadata.stage, 'inventory_validation', 'inventory failures report the inventory stage');
-    assertEqual(stockDiag?.status_ignored, undefined, 'row status remains driven by the outbox');
-
-    console.log('\n8. order.create.failed: other create failures (missing product) are also reported');
-    const badOrderRes = await api(baseUrl, '/api/orders', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { type: 'dine_in', items: [{ product_id: 'missing-product', quantity: 1 }], table_id: 'diag-table-1' },
-    });
-    // An unknown product_id is a client error the merchant can act on, so the
-    // route rejects it with 404 rather than a 500 internal error.
-    assertEqual(badOrderRes.status, 404, 'order with unknown product is rejected with 404');
-    // The diagnostic reports the status the request actually produced, so a
-    // reported status that drifts from the response leaves nothing to find here.
-    const badOrderQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', badOrderRes.status, 1) !== null);
-    assert(badOrderQueued, 'order.create.failed is enqueued for other create failures too');
-    const badOrderDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', badOrderRes.status, 1);
-    assertEqual(badOrderDiag?.metadata.status, badOrderRes.status, 'diagnostic metadata carries the HTTP status');
-    assertEqual(badOrderDiag?.metadata.stage, 'order_insert', 'non-inventory failures report the order_insert stage');
-    assertEqual(badOrderDiag?.metadata.item_count, 1, 'diagnostic metadata carries the product count');
-
-    console.log('\n9. payment.batch.failed: unexpected 500 from applyPaymentBatch is enqueued');
-    const diagOrder = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
-      VALUES ('ORD-DIAG-1', 'dine_in', 'pending', 10, 10, ?, ?)`).run(now(), now());
-    const diagBill = db.prepare(`INSERT INTO bills (order_id, bill_number, subtotal, discount_amount, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
-      VALUES (?, 'INV-DIAG-1', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(diagOrder.lastInsertRowid, now(), now());
-    const billId = String(diagBill.lastInsertRowid);
-    db.prepare(`CREATE TRIGGER diag_force_payment_failure BEFORE UPDATE ON bills
-      BEGIN SELECT RAISE(ABORT, 'forced payment failure'); END`).run();
-    try {
-      const payFail = await api(baseUrl, `/api/bills/${billId}/payments`, {
-        method: 'POST',
-        headers: owner.authHeader,
-        body: { payments: [{ method: 'cash', amount: 10 }] },
-      });
-      assertEqual(payFail.status, 500, 'the forced payment failure surfaces as 500');
-      const payQueued = await settle(() => findDiagnosticByStage(db, 'payment.batch.failed', 'payment_batch') !== null);
-      assert(payQueued, 'payment.batch.failed is enqueued on a 500');
-      const payDiag = findDiagnosticByStage(db, 'payment.batch.failed', 'payment_batch');
-      assertEqual(payDiag?.metadata.status, 500, 'payment diagnostic metadata carries the HTTP status');
-      assertEqual(payDiag?.metadata.stage, 'payment_batch', 'payment diagnostic reports the payment_batch stage');
-    } finally {
-      db.prepare('DROP TRIGGER diag_force_payment_failure').run();
-    }
-
-    console.log('\n10. payment.batch.failed: customer mismatch validation is enqueued while the request remains 400');
-    seedCustomer(db, 'diag-customer-a', 'Diagnostic Customer A');
-    seedCustomer(db, 'diag-customer-b', 'Diagnostic Customer B');
-    const mismatchOrder = db.prepare(`INSERT INTO orders (order_number, customer_id, type, status, subtotal, total, created_at, updated_at)
-      VALUES ('ORD-DIAG-MISMATCH', 'diag-customer-a', 'dine_in', 'pending', 10, 10, ?, ?)`).run(now(), now());
-    const mismatchBill = db.prepare(`INSERT INTO bills (order_id, bill_number, customer_id, subtotal, discount_amount, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
-      VALUES (?, 'INV-DIAG-MISMATCH', 'diag-customer-a', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(mismatchOrder.lastInsertRowid, now(), now());
-    const mismatchRes = await api(baseUrl, `/api/bills/${mismatchBill.lastInsertRowid}/payments`, {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { customer_id: 'diag-customer-b', payments: [{ method: 'cash', amount: 10 }] },
-    });
-    assertEqual(mismatchRes.status, 400, 'a payment for a different customer is rejected with 400');
-    const mismatchQueued = await settle(() => findDiagnosticByStageAndHttpStatus(db, 'payment.batch.failed', 'payment_batch', 400) !== null);
-    assert(mismatchQueued, 'payment.batch.failed is enqueued for a customer mismatch');
-    const mismatchDiag = findDiagnosticByStageAndHttpStatus(db, 'payment.batch.failed', 'payment_batch', 400);
-    assertEqual(mismatchDiag?.metadata.status, 400, 'customer mismatch diagnostic metadata carries the HTTP status');
-    assert(String(mismatchDiag?.message).startsWith('Error: '), 'customer mismatch diagnostic stores a derived signature');
-    assert(
-      mismatchDiag?.message !== 'Payment batch failed',
-      'customer mismatch diagnostic no longer stores the per-code constant',
-    );
-    assert(!/does not match/.test(String(mismatchDiag?.message)), 'the raw exception text is not stored verbatim');
-
-    console.log('\n11. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
-    // Mirror of frontend reportOrderFailure: dispatch failure is swallowed and
-    // the local support state is independent of the telemetry request.
-    let telemetryFailed = false;
-    let localSupportShown = false;
-    const reportOrderFailure = (entry: { code: string; message: string; detail: string; status: number | null }) => {
-      localSupportShown = true;
-      void Promise.reject(new Error('telemetry down')).catch(() => { telemetryFailed = true; });
-    };
-    reportOrderFailure({ code: 'order.place.failed', message: 'Failed to process order', detail: 'The order could not be completed on this device', status: null });
-    await new Promise((resolve) => setImmediate(resolve));
-    assert(localSupportShown, 'local support prompt is staged regardless of telemetry outcome');
-    assert(telemetryFailed, 'telemetry dispatch failure is caught and swallowed');
-
-    console.log('\n12. Validation hardening: non-object metadata rejected; messages and keys are controlled');
-    const primitiveMeta = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'order.place.failed', severity: 'info', metadata: 'not-an-object' },
-    });
-    assertEqual(primitiveMeta.status, 400, 'a primitive root metadata value is rejected with 400');
-    const arrayMeta = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'order.place.failed', severity: 'info', metadata: [1, 2, 3] },
-    });
-    assertEqual(arrayMeta.status, 400, 'an array root metadata value is rejected with 400');
-
-    const paddedRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
-      body: { event_code: 'payment.batch.failed', severity: 'warn', message: '   padded failure message   ' },
-    });
-    assertEqual(paddedRes.status, 202, 'an event with a padded message is accepted');
-    const paddedQueued = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
-    const paddedRow = findDiagnostic(db, 'payment.batch.failed');
-    assert(paddedQueued, 'the padded-message event is enqueued');
-    assertEqual(paddedRow?.message, 'Error', 'a free-form message with no classifiable literal reduces to the bare class');
-    assert(paddedRow?.message !== 'Payment batch failed', 'free-form message is not replaced with the per-code constant');
-
-    const protoRes = await api(baseUrl, '/api/diagnostics/event', {
-      method: 'POST',
-      headers: owner.authHeader,
+    const prototypeMetadata = await fetch(`${baseUrl}/api/diagnostics/event`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...owner.authHeader },
       body: '{"event_code":"print.receipt.failed","severity":"info","metadata":{"__proto__":{"polluted":true},"kind":"receipt"}}',
     });
-    assertEqual(protoRes.status, 202, 'metadata containing a __proto__ key is accepted');
-    const protoQueued = await settle(() => findDiagnostic(db, 'print.receipt.failed') !== null);
-    assert(protoQueued, 'the __proto__-bearing event is enqueued');
-    const protoRow = findDiagnostic(db, 'print.receipt.failed');
-    assertEqual(protoRow?.metadata.kind, 'receipt', 'approved metadata survives alongside a dropped __proto__ key');
-    assert(!Object.prototype.hasOwnProperty.call(protoRow?.metadata || {}, '__proto__'), 'the __proto__ key is not persisted as an own property');
-    assertEqual((protoRow?.metadata as any)?.polluted, undefined, 'metadata carries no prototype-chain pollution');
+    assertEqual(prototypeMetadata.status, 202, 'prototype-shaped metadata does not break valid event capture');
+    assert(await settle(() => latestLocalDiagnostic(db, 'print.receipt.failed') !== null), 'prototype-shaped metadata is processed');
+    const prototypeRow = latestLocalDiagnostic(db, 'print.receipt.failed');
+    assertEqual(prototypeRow?.metadata?.kind, 'receipt', 'safe print metadata remains');
+    assertEqual(Object.prototype.hasOwnProperty.call(prototypeRow?.metadata || {}, '__proto__'), false, 'the prototype key is not persisted');
+
+    console.log('\n2. The frontend capture boundary accepts only its closed safe contract');
+    const operationId = crypto.randomUUID();
+    const response = await api(baseUrl, '/api/diagnostics/capture', {
+      method: 'POST', headers: owner.authHeader,
+      body: {
+        capture_point: 'fc.frontend.pos.order.create.transport', operation_id: operationId,
+        outcome: 'unknown', facts: { failure_class: 'offline' },
+      },
+    });
+    const body = response.data;
+    assertEqual(response.status, 202, 'a registered frontend transport failure is accepted');
+    assertEqual(body.reason_code, 'request.transport_failed', 'the response gives a stable reason code');
+    assertEqual(body.operation, 'order.create', 'the operation comes from the server registry');
+    assertEqual(body.stage, 'submission', 'the stage comes from the server registry');
+    assertEqual(body.classification, 'unexpected_failure', 'the response includes the closed failure class');
+    assertEqual(body.outcome, 'unknown', 'the supplied allowlisted outcome is echoed');
+    assertEqual(body.correlation_id, operationId, 'the caller operation UUID is retained for recovery');
+
+    const invalidRequests = [
+      { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: 'bad-id', outcome: 'unknown', facts: { failure_class: 'offline' } },
+      { capture_point: 'fc.backend.order.create.stock_validation', operation_id: crypto.randomUUID(), outcome: 'not_applied' },
+      { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: crypto.randomUUID(), outcome: 'applied', facts: { failure_class: 'offline' } },
+      { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: crypto.randomUUID(), outcome: 'unknown', facts: { failure_class: 'offline', customer_name: 'Synthetic Person' } },
+      { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: crypto.randomUUID(), outcome: 'unknown', facts: { failure_class: 'raw exception text' } },
+      { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: crypto.randomUUID(), outcome: 'unknown', extra: 'rejected' },
+    ];
+    for (const invalid of invalidRequests) {
+      const invalidResponse = await api(baseUrl, '/api/diagnostics/capture', {
+        method: 'POST', headers: owner.authHeader, body: invalid,
+      });
+      assertEqual(invalidResponse.status, 400, 'an invalid UUID, point, outcome, fact, or extra field is rejected');
+    }
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count, 0, 'capture remains local while both delivery gates are off');
+
+    console.log('\n3. Health returns typed delivery state without failure text');
+    const healthResponse = await api(baseUrl, '/api/diagnostics/health', { headers: owner.authHeader });
+    const health = healthResponse.data;
+    assertEqual(healthResponse.status, 200, 'support staff can read diagnostics health');
+    assertEqual(typeof health.effective_consent, 'boolean', 'consent is an explicit boolean');
+    assertEqual(typeof health.transmission_enabled, 'boolean', 'the local transmission gate is separate');
+    assertEqual(health.transport, 'disabled', 'transport reflects both delivery gates');
+    assertEqual(typeof health.pending_reports, 'number', 'health contains a safe pending count');
+    assertEqual(health.last_error, undefined, 'health never exposes local error text');
+
+    const genericFailure = await api(baseUrl, '/api/test-unhandled-diagnostic', { headers: owner.authHeader });
+    assertEqual(genericFailure.status, 500, 'an unexpected route failure keeps its HTTP response');
+    assert(await settle(() => latestLocalDiagnostic(db, 'server.unhandled_error') !== null), 'the central API boundary captures caught route failures');
+    const genericRow = latestLocalDiagnostic(db, 'server.unhandled_error');
+    assertEqual(genericRow?.metadata?.operation, 'api.request', 'the central fallback uses a safe generic operation');
+    assertEqual(genericRow?.metadata?.stage, 'handling', 'the central fallback uses the server-owned stage');
+    assertEqual(genericRow?.metadata?.outcome, 'unknown', 'the central fallback does not infer whether a mutation committed');
+    assertEqual(JSON.stringify(genericRow?.metadata).includes('/api/test-unhandled-diagnostic'), false, 'the request path is never included in the fallback payload');
+    const originalCapture = cloudSync.captureOperationFailure;
+    cloudSync.captureOperationFailure = () => { throw new Error('capture unavailable'); };
+    const captureFailureResponse = await api(baseUrl, '/api/test-unhandled-diagnostic', { headers: owner.authHeader });
+    cloudSync.captureOperationFailure = originalCapture;
+    assertEqual(captureFailureResponse.status, 500, 'a diagnostics failure cannot interrupt an already completed API response');
+
+    console.log('\n4. Order quantity and stock rejection produce distinct backend-authoritative reasons');
+    const quantityId = crypto.randomUUID();
+    const quantityResponse = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': quantityId },
+      body: { table_id: 'diag-table-1', type: 'dine_in', items: [{ product_id: 'p2', quantity: 0 }] },
+    });
+    const quantityBody = quantityResponse.data;
+    assertEqual(quantityResponse.status, 400, 'invalid quantity remains a client validation error');
+    assertEqual(quantityBody.reason_code, 'order.quantity_invalid', 'quantity failures have their own stable reason');
+    assertEqual(quantityBody.operation, 'order.create', 'quantity failure names order creation');
+    assertEqual(quantityBody.stage, 'validation', 'quantity failure names validation');
+    assertEqual(quantityBody.classification, 'expected_rejection', 'quantity failure is an expected rejection');
+    assertEqual(quantityBody.outcome, 'not_applied', 'the rejected order was not applied');
+    assertEqual(quantityBody.correlation_id, quantityId, 'the route echoes the action UUID');
+    assert(await settle(() => latestLocalDiagnostic(db, 'order.quantity_invalid') !== null), 'the quantity reason is recorded locally');
+
+    const stockId = crypto.randomUUID();
+    const stockResponse = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': stockId },
+      body: { table_id: 'diag-table-1', type: 'dine_in', items: [{ product_id: 'p1', quantity: 5 }] },
+    });
+    const stockBody = stockResponse.data;
+    assertEqual(stockResponse.status, 400, 'insufficient stock remains a client validation error');
+    assertEqual(stockBody.reason_code, 'order.stock_insufficient', 'stock failures have their own stable reason');
+    assertEqual(stockBody.classification, 'expected_rejection', 'stock failure is an expected rejection');
+    assertEqual(stockBody.outcome, 'not_applied', 'the rejected order was not applied');
+    assertEqual(stockBody.correlation_id, stockId, 'stock validation preserves the same action UUID');
+    assert(await settle(() => latestLocalDiagnostic(db, 'order.stock_insufficient') !== null), 'the stock reason is recorded locally');
+
+    const missingBillOperationId = crypto.randomUUID();
+    const missingBillResponse = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': missingBillOperationId },
+      body: { order_id: 999999999 },
+    });
+    assertEqual(missingBillResponse.status, 404, 'bill generation preserves the missing-order response');
+    assertEqual(missingBillResponse.data.reason_code, 'bill.order_unavailable', 'missing-order bill rejection has its own stable reason');
+    assertEqual(missingBillResponse.data.operation, 'bill.generate', 'missing-order rejection names bill generation');
+    assertEqual(missingBillResponse.data.stage, 'validation', 'missing-order rejection names validation');
+    assertEqual(missingBillResponse.data.classification, 'expected_rejection', 'missing-order rejection is expected');
+    assertEqual(missingBillResponse.data.outcome, 'not_applied', 'an unavailable order cannot produce a bill');
+    assertEqual(missingBillResponse.data.correlation_id, missingBillOperationId, 'bill rejection preserves the action UUID');
+    assert(await settle(() => latestLocalDiagnostic(db, 'bill.order_unavailable') !== null), 'the unavailable-order reason is recorded locally');
+
+    console.log('\n4b. Payment validation, rollback, and post-commit outcomes follow persisted state');
+    const paymentOrderId = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('DIAG-PAYMENT-ROLLBACK', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now()).lastInsertRowid;
+    const rollbackBillId = db.prepare(`INSERT INTO bills (order_id, bill_number, subtotal, discount_amount, tax_amount, total,
+      paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES (?, 'DIAG-PAYMENT-ROLLBACK', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(paymentOrderId, now(), now()).lastInsertRowid;
+    db.prepare(`CREATE TRIGGER diagnostics_force_payment_rollback BEFORE UPDATE ON bills
+      WHEN OLD.id = ${Number(rollbackBillId)} BEGIN SELECT RAISE(ABORT, 'private database error details'); END`).run();
+    const rollbackId = crypto.randomUUID();
+    const rollbackResponse = await api(baseUrl, `/api/bills/${rollbackBillId}/payments`, {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': rollbackId },
+      body: { payments: [{ method: 'cash', amount: 10 }] },
+    });
+    db.prepare('DROP TRIGGER diagnostics_force_payment_rollback').run();
+    assertEqual(rollbackResponse.status, 500, 'a database failure remains a server error');
+    assertEqual(rollbackResponse.data.reason_code, 'persistence.failed', 'payment database failures use the persistence reason');
+    assertEqual(rollbackResponse.data.operation, 'payment.create', 'the failed operation is payment creation');
+    assertEqual(rollbackResponse.data.stage, 'persistence', 'the failure stage is persistence');
+    assertEqual(rollbackResponse.data.outcome, 'not_applied', 'the transaction rollback proves the payment was not applied');
+    assertEqual(rollbackResponse.data.correlation_id, rollbackId, 'the operation UUID is echoed');
+    const rollbackBill = db.prepare('SELECT paid_amount, payment_details FROM bills WHERE id = ?').get(rollbackBillId) as { paid_amount: number; payment_details: string | null };
+    assertEqual(rollbackBill.paid_amount, 0, 'the bill remains unpaid after rollback');
+    assertEqual(rollbackBill.payment_details, null, 'no partial payment detail remains after rollback');
+    assert(await settle(() => latestLocalDiagnostic(db, 'persistence.failed') !== null), 'the failed payment is captured in the local diagnostics row');
+
+    seedCustomer(db, 'diag-customer-a', 'Synthetic Customer A');
+    seedCustomer(db, 'diag-customer-b', 'Synthetic Customer B');
+    const mismatchOrderId = db.prepare(`INSERT INTO orders (order_number, customer_id, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('DIAG-PAYMENT-MISMATCH', 'diag-customer-a', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now()).lastInsertRowid;
+    const mismatchBillId = db.prepare(`INSERT INTO bills (order_id, bill_number, customer_id, subtotal, discount_amount, tax_amount, total,
+      paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES (?, 'DIAG-PAYMENT-MISMATCH', 'diag-customer-a', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(mismatchOrderId, now(), now()).lastInsertRowid;
+    const mismatchResponse = await api(baseUrl, `/api/bills/${mismatchBillId}/payments`, {
+      method: 'POST', headers: owner.authHeader,
+      body: { customer_id: 'diag-customer-b', payments: [{ method: 'cash', amount: 10 }] },
+    });
+    assertEqual(mismatchResponse.status, 400, 'a customer mismatch remains a validation rejection');
+    assertEqual(mismatchResponse.data.reason_code, 'payment.invalid', 'payment validation has a distinct reason from order quantity or stock');
+    assertEqual(mismatchResponse.data.classification, 'expected_rejection', 'payment validation is an expected rejection');
+    assertEqual(mismatchResponse.data.outcome, 'not_applied', 'the mismatched payment was not applied');
+    assertEqual((db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(mismatchBillId) as { paid_amount: number }).paid_amount, 0, 'the mismatched bill remains unpaid');
+    assert(await settle(() => latestLocalDiagnostic(db, 'payment.invalid') !== null), 'payment validation is retained as a local typed reason');
+
+    const completionOrderId = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('DIAG-PAYMENT-COMPLETION', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now()).lastInsertRowid;
+    const completionBillId = db.prepare(`INSERT INTO bills (order_id, bill_number, subtotal, discount_amount, tax_amount, total,
+      paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES (?, 'DIAG-PAYMENT-COMPLETION', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(completionOrderId, now(), now()).lastInsertRowid;
+    const kds = require('../main/services/kds');
+    const priorNotifyOrderUpdated = kds.notifyOrderUpdated;
+    kds.notifyOrderUpdated = () => { throw new Error('private notification failure'); };
+    try {
+      const completionResponse = await api(baseUrl, `/api/bills/${completionBillId}/payments`, {
+        method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
+        body: { payments: [{ method: 'cash', amount: 5 }] },
+      });
+      assertEqual(completionResponse.status, 500, 'a post-commit notification error is surfaced');
+      assertEqual(completionResponse.data.reason_code, 'operation.completion_failed', 'post-commit errors have a completion reason');
+      assertEqual(completionResponse.data.stage, 'completion', 'the response distinguishes completion from persistence');
+      assertEqual(completionResponse.data.outcome, 'applied', 'the response reports the proven committed payment');
+      assertEqual((db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(completionBillId) as { paid_amount: number }).paid_amount, 5, 'the committed payment remains persisted');
+      assert(await settle(() => latestLocalDiagnostic(db, 'operation.completion_failed') !== null), 'post-commit completion failure is captured locally');
+    } finally {
+      kds.notifyOrderUpdated = priorNotifyOrderUpdated;
+    }
+
+    console.log('\n5. No raw request or exception contents enter the v2 queue');
+    const automaticRows = JSON.stringify({
+      outbox: db.prepare('SELECT payload FROM store_diagnostics_outbox').all(),
+      aggregates: db.prepare('SELECT facts_json FROM diagnostics_hourly_aggregates').all(),
+    });
+    assert(!automaticRows.includes('Synthetic Person'), 'customer text is absent from every automatic diagnostic payload');
+    assert(!automaticRows.includes('Synthetic Customer A'), 'payment customer data is absent from automatic diagnostics');
+    assert(!automaticRows.includes('sensitive order detail'), 'unapproved event metadata is absent from automatic diagnostics');
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count, 0, 'no raw diagnostic payload was queued');
 
     console.log('\n' + '='.repeat(56));
     const results = getResults();
     console.log(`${results.passed} passed, ${results.failed} failed`);
-    cloudStub.close();
     server.close();
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });
     process.exit(results.failed > 0 ? 1 : 0);
   } catch (error) {
     console.error('Test suite crashed:', error);
-    cloudStub.close();
     server.close();
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

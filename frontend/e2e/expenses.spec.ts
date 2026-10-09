@@ -13,10 +13,9 @@ const STAMP = Date.now();
 const CATEGORY_NAME = `E2E Expense Category ${STAMP}`;
 const DESCRIPTION = `E2E Expense ${STAMP}`;
 const EXPENSE_MINOR = 2500;
-// The e2e fixture is pinned to TH/THB, so a rendered 25.00 reads as 2,500.00.
-// Match the digits without the tenant's grouping/currency decoration.
-const FULL_AMOUNT = /500\.00/;
-const ZERO_AMOUNT = /0\.00/;
+// The e2e fixture is pinned to TH/THB, so 2,500 minor units render as 25.00.
+const FULL_AMOUNT = /(^|\D)25\.00(\D|$)/;
+const ZERO_AMOUNT = /(^|\D)0\.00(\D|$)/;
 
 let categoryId = '';
 let ownerToken = '';

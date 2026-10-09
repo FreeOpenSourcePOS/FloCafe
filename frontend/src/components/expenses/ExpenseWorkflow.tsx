@@ -14,6 +14,8 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useAmountFormat } from '@/hooks/useAmountFormat';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { displayAmountToCents } from '@/lib/money';
+import { getCurrencyMinorUnitFactor } from '@/lib/countries';
+import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import {
   clearExpenseAttempt,
   isUnresolvedExpenseFailure,
@@ -138,6 +140,7 @@ export default function ExpenseWorkflow({
   const setAttempt = (next: ExpenseAttemptSnapshot | null) => setAttemptState({ attempt: next, storageBlocked: false });
   // The freshly loaded record wins over the list row once it is that same record.
   const record = detail && detail.id === expense?.id ? detail : expense;
+  const fmtMinor = (amountMinor: number) => fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
 
   /** Replacing copies the source values into the fresh form. */
   const openReplace = () => {
@@ -226,6 +229,7 @@ export default function ExpenseWorkflow({
       });
       persistExpenseAttempt(snapshot);
     } catch {
+      setAttemptState({ attempt: null, storageBlocked: true });
       setErrors({ form: t('attemptStorageBlocked') });
       return null;
     }
@@ -235,16 +239,14 @@ export default function ExpenseWorkflow({
       const response = await api.post(path, body, {
         headers: { 'Idempotency-Key': snapshot.idempotencyKey },
       });
-      clearExpenseAttempt();
-      setAttempt(null);
+      if (clearExpenseAttempt()) setAttempt(null);
       return { data: response.data, snapshot };
     } catch (error) {
       if (isUnresolvedExpenseFailure(error)) {
         setErrors({ form: t('attemptNotice') });
         return null;
       }
-      clearExpenseAttempt();
-      setAttempt(null);
+      if (clearExpenseAttempt()) setAttempt(null);
       setErrors({ form: t('saveFailed') });
       return null;
     } finally {
@@ -260,78 +262,16 @@ export default function ExpenseWorkflow({
       const response = await api.post(attempt.path, attempt.body, {
         headers: { 'Idempotency-Key': attempt.idempotencyKey },
       });
-      clearExpenseAttempt();
+      if (clearExpenseAttempt()) setAttempt(null);
       resolveCommitted(attempt, response.data as Record<string, unknown>);
     } catch (error) {
       if (!isUnresolvedExpenseFailure(error)) {
-        clearExpenseAttempt();
-        setAttempt(null);
+        if (clearExpenseAttempt()) setAttempt(null);
         setErrors({ form: t('saveFailed') });
       }
     } finally {
       setBusy(false);
     }
-  };
-
-  /** Read-only resolution: asks the server what it holds, never writes. */
-  const checkCurrentRecord = async () => {
-    if (!attempt) return;
-    setBusy(true);
-    try {
-      if (attempt.kind === 'expense.create') {
-        const incurred = String(attempt.body.incurred_on ?? '');
-        const { data } = await api.get('/expenses', {
-          params: { from: incurred, to: incurred, status: 'active', limit: 100 },
-        });
-        const match = (data.expenses as ExpenseRecord[]).find((row) => row.description === attempt.body.description
-          && row.amount_minor === attempt.body.amount_minor
-          && (row.payee ?? null) === (attempt.body.payee ?? null));
-        if (!match) {
-          setErrors({ form: t('attemptNotFound') });
-          return;
-        }
-        clearExpenseAttempt();
-        setAttempt(null);
-        toast.success(t('attemptFound'));
-        onChanged();
-        onSaved(match);
-        return;
-      }
-      if (!attempt.expenseId) return;
-      const { data } = await api.get(`/expenses/${attempt.expenseId}`, { params: { payments_limit: 100 } });
-      const ledger = (data.payments ?? []) as ExpensePaymentRecord[];
-      const committed = isCommitted(attempt, data.expense as ExpenseRecord, ledger);
-      if (!committed) {
-        setErrors({ form: t('attemptNotFound') });
-        return;
-      }
-      clearExpenseAttempt();
-      setAttempt(null);
-      toast.success(t('attemptFound'));
-      onChanged();
-      void loadDetail();
-    } catch {
-      setErrors({ form: t('detailLoadFailed') });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** True when the server already holds the result the unresolved attempt asked for. */
-  const isCommitted = (
-    snapshot: ExpenseAttemptSnapshot,
-    current: ExpenseRecord,
-    ledger: ExpensePaymentRecord[],
-  ): boolean => {
-    if (snapshot.kind === 'expense.void') return current.status === 'voided';
-    if (snapshot.kind === 'expense.replace') return current.status === 'replaced';
-    if (snapshot.kind === 'expense.payment') {
-      return ledger.some((row) => row.reversal_of === null
-        && row.amount_minor === snapshot.body.amount_minor
-        && row.method === snapshot.body.method
-        && (row.reference ?? null) === (snapshot.body.reference ?? null));
-    }
-    return ledger.some((row) => row.reversal_of === snapshot.paymentId);
   };
 
   /** Applies a committed response: refresh from the server, keep the committed id. */
@@ -420,7 +360,7 @@ export default function ExpenseWorkflow({
       return;
     }
     if (cents > record.due_minor) {
-      setErrors({ amount: t('exceedsDue', { amount: fmt(record.due_minor) }) });
+      setErrors({ amount: t('exceedsDue', { amount: fmtMinor(record.due_minor) }) });
       focusAmount();
       return;
     }
@@ -482,7 +422,9 @@ export default function ExpenseWorkflow({
     if (!newCategoryName.trim()) return;
     setBusy(true);
     try {
-      const { data } = await api.post('/expenses/categories', { name: newCategoryName.trim() });
+      const { data } = await api.post('/expenses/categories', { name: newCategoryName.trim() }, {
+        headers: { 'Idempotency-Key': createPaymentIdempotencyKey() },
+      });
       const created = data.category as ExpenseCategory;
       onCategoryCreated(created);
       setCategoryId(created.id);
@@ -496,11 +438,12 @@ export default function ExpenseWorkflow({
   };
 
   const open = mode === 'create' ? 'create' : view;
-  const locked = attempt !== null;
+  const locked = attempt !== null || attemptState.storageBlocked;
   const payments = detail && detail.id === expense?.id ? detail.payments : [];
   const paymentsCursor = detail && detail.id === expense?.id ? detail.paymentsNextCursor : null;
   const hasUnreversedPayments = (record?.paid_minor ?? 0) !== 0;
   const cashBlocked = paymentMethod === 'cash' && (!canMoveDrawer || !context.cash_session_open);
+  const cashReversalBlocked = reversalTarget?.method === 'cash' && (!canMoveDrawer || !context.cash_session_open);
 
   const fieldError = (key: keyof FieldErrors) => errors[key]
     ? <p className="mt-1 text-xs text-red-600" role="alert">{errors[key]}</p>
@@ -551,13 +494,10 @@ export default function ExpenseWorkflow({
               aria-live="polite"
             >
               <p>{errors.form ?? (attemptState.storageBlocked ? t('attemptStorageBlocked') : t('attemptNotice'))}</p>
-              {locked && (
+              {attempt && (
                 <div className="mt-2 flex gap-2">
                   <Button type="button" size="sm" onClick={retryAttempt} disabled={busy} data-testid="expense-attempt-retry">
                     {t('attemptRetry')}
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={checkCurrentRecord} disabled={busy} data-testid="expense-attempt-check">
-                    {t('attemptCheck')}
                   </Button>
                 </div>
               )}
@@ -697,7 +637,7 @@ export default function ExpenseWorkflow({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{tCommon('amount')}</dt>
-                  <dd className="font-semibold">{fmt(record.amount_minor)} <span className="text-xs font-normal text-muted-foreground">{record.currency_code}</span></dd>
+                  <dd className="font-semibold">{fmtMinor(record.amount_minor)} <span className="text-xs font-normal text-muted-foreground">{record.currency_code}</span></dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('incurredOn')}</dt>
@@ -713,11 +653,11 @@ export default function ExpenseWorkflow({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('netPaid')}</dt>
-                  <dd data-testid="expense-detail-paid">{fmt(record.paid_minor)}</dd>
+                  <dd data-testid="expense-detail-paid">{fmtMinor(record.paid_minor)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('due')}</dt>
-                  <dd data-testid="expense-detail-due">{fmt(record.due_minor)}</dd>
+                  <dd data-testid="expense-detail-due">{fmtMinor(record.due_minor)}</dd>
                 </div>
                 {record.payee && (
                   <div>
@@ -751,7 +691,7 @@ export default function ExpenseWorkflow({
                     <li key={payment.id} className="flex items-center justify-between gap-2 py-2" data-testid="expense-payment-row">
                       <div className="text-sm">
                         <p className={payment.reversal_of ? 'text-red-600' : 'text-foreground'}>
-                          {payment.reversal_of ? '−' : '+'}{fmt(payment.amount_minor)}{' '}
+                          {payment.reversal_of ? '−' : '+'}{fmtMinor(payment.amount_minor)}{' '}
                           <span className="text-muted-foreground">
                             {payment.method === 'cash' ? tPos('methodCash') : payment.method === 'card' ? tPos('methodCard') : payment.method === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther')}
                           </span>
@@ -837,7 +777,7 @@ export default function ExpenseWorkflow({
               </div>
               <p className="rounded-lg bg-muted p-3 text-sm" data-testid="expense-payment-review">
                 {t('reviewPayment', {
-                  amount: fmt(displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, minorFactor) ?? 0),
+                  amount: fmtMinor(displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, minorFactor) ?? 0),
                   method: paymentMethod === 'cash' ? tPos('methodCash') : paymentMethod === 'card' ? tPos('methodCard') : paymentMethod === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther'),
                 })}
               </p>
@@ -853,13 +793,15 @@ export default function ExpenseWorkflow({
             <div className="space-y-3" data-testid="expense-reversal-form">
               <p className="text-sm" data-testid="expense-reversal-confirm">
                 {t('reversalConfirm', {
-                  amount: fmt(reversalTarget.amount_minor),
+                  amount: fmtMinor(reversalTarget.amount_minor),
                   method: reversalTarget.method === 'cash' ? tPos('methodCash') : reversalTarget.method === 'card' ? tPos('methodCard') : reversalTarget.method === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther'),
                 })}
               </p>
               {reversalTarget.method === 'cash' && (
                 <>
                   <p className="text-sm text-muted-foreground">{t('cashReversalNotice')}</p>
+                  {!canMoveDrawer && <p className="text-sm text-muted-foreground">{t('cashUnavailable')}</p>}
+                  {!context.cash_session_open && <p className="text-sm text-muted-foreground">{t('cashSessionClosed')}</p>}
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -963,7 +905,7 @@ export default function ExpenseWorkflow({
               </Button>
             )}
             {open === 'reverse' && (
-              <Button type="button" onClick={submitReversal} disabled={busy || locked} data-testid="expense-reversal-submit">
+              <Button type="button" onClick={submitReversal} disabled={busy || locked || cashReversalBlocked} data-testid="expense-reversal-submit">
                 {t('reversalTitle')}
               </Button>
             )}

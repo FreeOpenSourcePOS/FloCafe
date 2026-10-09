@@ -40,6 +40,7 @@ export default function ExpensesPage() {
   const tOrders = useTranslations('orders');
   const { currentTenant, refreshAuthContext } = useAuthStore();
   const fmt = useFormatCurrency();
+  const fmtMinor = (amountMinor: number, currencyCode: string) => fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
 
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
 
@@ -51,7 +52,7 @@ export default function ExpensesPage() {
   const [page, setPage] = useState<{ key: string; rows: ExpenseRecord[]; cursor: string | null }>(
     { key: '', rows: [], cursor: null },
   );
-  const [summary, setSummary] = useState<ExpenseSummary | null>(null);
+  const [summary, setSummary] = useState<{ key: string; data: ExpenseSummary } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export default function ExpensesPage() {
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   const filterKey = filters ? JSON.stringify(filters) : '';
+  const currentSummary = summary?.key === filterKey ? summary.data : null;
   const stale = !filters || page.key !== filterKey;
   const expenses = stale ? [] : page.rows;
   const nextCursor = stale ? null : page.cursor;
@@ -137,7 +139,7 @@ export default function ExpensesPage() {
     api.get('/expenses/summary', { params: summaryParams, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setSummary(data as ExpenseSummary);
+        setSummary({ key, data: data as ExpenseSummary });
       })
       .catch(() => { /* the list surfaces the failure; the summary is supplementary */ });
 
@@ -177,9 +179,9 @@ export default function ExpensesPage() {
   const currencyOptions = useMemo(() => {
     const codes = new Set<string>();
     if (context?.currency_code) codes.add(context.currency_code);
-    summary?.totals.forEach((total) => codes.add(total.currency_code));
+    currentSummary?.totals.forEach((total) => codes.add(total.currency_code));
     return Array.from(codes);
-  }, [context, summary]);
+  }, [context, currentSummary]);
 
   const updateFilter = (patch: Partial<Filters>) => {
     setFilters((current) => (current ? { ...current, ...patch } : current));
@@ -279,28 +281,28 @@ export default function ExpensesPage() {
       </div>
 
       <div className="mb-3 shrink-0 space-y-2" data-testid="expense-summary">
-        {(summary?.totals ?? []).map((total) => (
+        {(currentSummary?.totals ?? []).map((total) => (
           <div key={total.currency_code} className="flex flex-wrap gap-3">
             <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-incurred">
               <p className="text-xs text-muted-foreground">{t('incurred')} · {total.currency_code}</p>
-              <p className="text-lg font-bold">{fmt(total.incurred_minor)}</p>
+              <p className="text-lg font-bold">{fmtMinor(total.incurred_minor, total.currency_code)}</p>
             </div>
             <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-paid">
               <p className="text-xs text-muted-foreground">{t('paidToDate')}</p>
-              <p className="text-lg font-bold">{fmt(total.net_paid_minor)}</p>
+              <p className="text-lg font-bold">{fmtMinor(total.net_paid_minor, total.currency_code)}</p>
             </div>
             <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-due">
               <p className="text-xs text-muted-foreground">{t('due')}</p>
-              <p className="text-lg font-bold">{fmt(total.due_minor)}</p>
+              <p className="text-lg font-bold">{fmtMinor(total.due_minor, total.currency_code)}</p>
             </div>
           </div>
         ))}
         <p className="text-xs text-muted-foreground" data-testid="expense-summary-basis">{t('summaryBasis')}</p>
-        {(summary?.groups ?? []).length > 0 && (
+        {(currentSummary?.groups ?? []).length > 0 && (
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" data-testid="expense-summary-groups">
-            {summary?.groups.map((group) => (
+            {currentSummary?.groups.map((group) => (
               <li key={`${group.currency_code}-${group.category_id}`}>
-                {group.category_name} · {fmt(group.due_minor)} {group.currency_code}
+                {group.category_name} · {fmtMinor(group.due_minor, group.currency_code)} {group.currency_code}
               </li>
             ))}
           </ul>
@@ -330,9 +332,9 @@ export default function ExpensesPage() {
                   <p className="text-xs text-muted-foreground">{expense.category_name}</p>
                 </td>
                 <td className="p-3 text-sm text-muted-foreground">{expense.payee || '—'}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm">{fmt(expense.amount_minor)}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm">{fmt(expense.paid_minor)}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm font-medium">{fmt(expense.due_minor)}</td>
+                <td className="whitespace-nowrap p-3 text-end text-sm">{fmtMinor(expense.amount_minor, expense.currency_code)}</td>
+                <td className="whitespace-nowrap p-3 text-end text-sm">{fmtMinor(expense.paid_minor, expense.currency_code)}</td>
+                <td className="whitespace-nowrap p-3 text-end text-sm font-medium">{fmtMinor(expense.due_minor, expense.currency_code)}</td>
                 <td className="p-3 text-sm">
                   {expense.status === 'active' ? tCommon('active') : expense.status === 'voided' ? t('statusVoided') : t('statusReplaced')}
                 </td>

@@ -30,9 +30,7 @@ export interface ExpenseAttemptSnapshot {
   createdAt: string;
 }
 
-/** Raised when attempt state cannot be read or written. Callers must not send
- * the mutation when this is thrown: an unreadable slot may hold a committed
- * request that a fresh key would duplicate. */
+/** Raised when attempt storage is unavailable or already holds a submission. */
 export class ExpenseAttemptStorageError extends Error {
   constructor() {
     super('Expense attempt storage is unavailable');
@@ -76,9 +74,8 @@ export function newExpenseAttempt(input: {
 }
 
 /**
- * Reads the slot for the given actor and store. Another actor's unresolved
- * attempt is "not mine" rather than damage: it is left where it is so their
- * retry still resolves, and this session never submits under their key.
+ * Reads the slot for the given actor and store. A mismatched attempt remains
+ * untouched so its owner can retry, and this session never submits under its key.
  */
 export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAttemptSnapshot | null {
   let raw: string | null;
@@ -95,11 +92,11 @@ export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAt
     throw new ExpenseAttemptStorageError();
   }
   if (!isSnapshot(parsed)) throw new ExpenseAttemptStorageError();
-  if (parsed.actorId !== actorId || parsed.tenantId !== tenantId) return null;
+  if (parsed.actorId !== actorId || parsed.tenantId !== tenantId) throw new ExpenseAttemptStorageError();
   return parsed;
 }
 
-/** Persists the snapshot before the request leaves the device, verified by read-back. */
+/** Persists to an empty slot before the request leaves the device, verified by read-back. */
 export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
   let serialized: string;
   try {
@@ -110,6 +107,7 @@ export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
   let stored = false;
   try {
     const storage = attemptStorage();
+    if (storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) !== null) throw new ExpenseAttemptStorageError();
     storage.setItem(EXPENSE_ATTEMPT_STORAGE_KEY, serialized);
     stored = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) === serialized;
   } catch {

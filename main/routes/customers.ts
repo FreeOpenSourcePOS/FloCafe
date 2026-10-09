@@ -3,6 +3,8 @@ import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
 import { requirePermission } from '../services/authorization';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import { validateCustomerAddress } from './orders-validation';
 import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
@@ -18,6 +20,34 @@ export function parseCustomer(c: any): any {
 const router = Router();
 const customerReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const customerWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+
+function captureCustomerValidation(
+  capturePoint: 'fc.backend.customer.create.validation' | 'fc.backend.customer.update.validation',
+  validationCode: 'name_required' | 'phone_invalid' | 'address_invalid',
+): void {
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change customer validation responses.
+  }
+}
+
+function captureCustomerPaginationRejection(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.customer.list.pagination_invalid',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change customer query validation.
+  }
+}
 
 function invalidPhonePredicate(alias = ''): string {
   const prefix = alias ? `${alias}.` : '';
@@ -271,10 +301,12 @@ router.get('/', customerReadRateLimit, requirePermission('customers.view'), (req
     if (req.query.per_page !== undefined) {
       const rawPerPage = String(req.query.per_page).trim();
       if (!/^\d+$/.test(rawPerPage)) {
+        captureCustomerPaginationRejection();
         return res.status(400).json({ error: 'Invalid per_page parameter. Must be a positive integer.' });
       }
       const parsed = parseInt(rawPerPage, 10);
       if (!Number.isFinite(parsed) || parsed <= 0) {
+        captureCustomerPaginationRejection();
         return res.status(400).json({ error: 'Invalid per_page parameter. Must be a positive integer.' });
       }
       const limit = Math.min(parsed, 500);
@@ -385,6 +417,7 @@ router.post('/', customerWriteRateLimit, requirePermission('customers.create'), 
     const { phone, name, email, address, notes, country_code } = req.body;
 
     if (!name || !name.trim()) {
+      captureCustomerValidation('fc.backend.customer.create.validation', 'name_required');
       return res.status(400).json({ message: 'Name is required' });
     }
 
@@ -395,6 +428,7 @@ router.post('/', customerWriteRateLimit, requirePermission('customers.create'), 
     try {
       validateCustomerAddress(db, address === undefined || address === null ? null : String(address));
     } catch (err: unknown) {
+      captureCustomerValidation('fc.backend.customer.create.validation', 'address_invalid');
       return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid address' });
     }
 
@@ -406,6 +440,7 @@ router.post('/', customerWriteRateLimit, requirePermission('customers.create'), 
       const tenantCountry = getSettingValue('country') || '';
       const parsed = parsePhoneE164(finalPhone, tenantCountry);
       if (!parsed) {
+        captureCustomerValidation('fc.backend.customer.create.validation', 'phone_invalid');
         return res.status(400).json({ message: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
       }
       finalPhone = parsed.e164;
@@ -438,6 +473,15 @@ router.post('/', customerWriteRateLimit, requirePermission('customers.create'), 
           const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(existing.id);
           return res.status(201).json({ customer });
         } else {
+          const failure = serializeOperationFailure({
+            capture_point: 'fc.backend.customer.duplicate_phone',
+            outcome: 'not_applied',
+          });
+          try {
+            if (failure) cloudSync.captureOperationFailure(failure);
+          } catch {
+            // Diagnostics cannot change the duplicate-customer response.
+          }
           return res.status(409).json({ message: 'Customer with this phone already exists' });
         }
       }
@@ -491,6 +535,7 @@ router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), 
         const tenantCountry = getSettingValue('country') || '';
         const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
         if (!parsed) {
+          captureCustomerValidation('fc.backend.customer.update.validation', 'phone_invalid');
           return res.status(400).json({ error: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
         }
         finalPhone = parsed.e164;
@@ -499,6 +544,15 @@ router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), 
         const phoneDigits = stripPhoneDigits(finalPhone);
         const existing = db.prepare('SELECT id FROM customers WHERE phone_digits = ? AND id != ?').get(phoneDigits, req.params.id) as any;
         if (existing) {
+          const failure = serializeOperationFailure({
+            capture_point: 'fc.backend.customer.duplicate_phone',
+            outcome: 'not_applied',
+          });
+          try {
+            if (failure) cloudSync.captureOperationFailure(failure);
+          } catch {
+            // Diagnostics cannot change the duplicate-customer response.
+          }
           return res.status(409).json({ error: 'Customer with this phone already exists' });
         }
       }
@@ -510,6 +564,7 @@ router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), 
     if (name !== undefined) {
       const trimmedName = String(name).trim();
       if (!trimmedName) {
+        captureCustomerValidation('fc.backend.customer.update.validation', 'name_required');
         return res.status(400).json({ error: 'Name is required' });
       }
       finalName = trimmedName;
@@ -525,6 +580,7 @@ router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), 
       try {
         validateCustomerAddress(db, finalAddress);
       } catch (err: any) {
+        captureCustomerValidation('fc.backend.customer.update.validation', 'address_invalid');
         return res.status(400).json({ error: err.message });
       }
     }

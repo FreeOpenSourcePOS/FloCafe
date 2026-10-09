@@ -3,6 +3,8 @@ import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { randomUUID } from 'node:crypto';
 import { requirePermission } from '../services/authorization';
 import { adjustProductStock } from '../services/inventory';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import {
   RegionalNotConfiguredError,
@@ -14,6 +16,32 @@ import {
 import { toCsvRow } from '../lib/csv';
 
 const router = Router();
+
+function captureInvalidMenuCsvInput(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.menu_csv.import.invalid_input',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change CSV import responses.
+  }
+}
+
+function captureMenuCsvRowRejections(failedCount: number, changedCount: number): void {
+  if (failedCount === 0) return;
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.menu_csv.import.row_rejections',
+    outcome: changedCount > 0 ? 'partial' : 'not_applied',
+    facts: { failed_count: failedCount, changed_count: changedCount },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change CSV import responses.
+  }
+}
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
@@ -203,6 +231,7 @@ function csvImportErrorResponse(res: Response, error: unknown): Response {
     return res.status(409).json({ error: 'regional_not_configured' });
   }
   if (error instanceof CsvImportError) {
+    captureInvalidMenuCsvInput();
     return res.status(error.statusCode).json({
       error: error.message,
       errors: [error.message],
@@ -385,13 +414,19 @@ router.get('/export/addons', requirePermission('catalog.import-export'), (_req: 
 router.post('/import/categories', requirePermission('catalog.import-export'), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
-    if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
+    if (typeof csv !== 'string' || !csv) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'No CSV data provided' });
+    }
 
     const rows = toObjects(parseCSV(csv));
-    if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
+    if (!rows.length) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'CSV has no data rows' });
+    }
 
     const db = getDatabase();
-    let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0;
+    let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0, changedRows = 0;
     const errors: string[] = [];
 
     db.transaction(() => { for (let i = 0; i < rows.length; i++) {
@@ -417,8 +452,10 @@ router.post('/import/categories', requirePermission('catalog.import-export'), (r
       ).run(randomUUID(), r.name, slug, r.description || null, r.color || null, r.icon || null,
         sortOrder.value, now(), now());
       created++;
+      changedRows++;
     } })();
 
+    captureMenuCsvRowRejections(failed, changedRows);
     res.json({ created, updated, reactivated, skipped, failed, errors });
   } catch (err: any) {
     return csvImportErrorResponse(res, err);
@@ -428,14 +465,20 @@ router.post('/import/categories', requirePermission('catalog.import-export'), (r
 router.post('/import/products', requirePermission('catalog.import-export'), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
-    if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
+    if (typeof csv !== 'string' || !csv) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'No CSV data provided' });
+    }
 
     const parsedCsv = parseCSV(csv);
     const headers = new Set((parsedCsv[0] || []).map((header) => header.trim().toLowerCase()));
     const hasTaxCategoryColumn = headers.has('tax_category');
     const hasTaxBehaviorColumn = headers.has('tax_behavior');
     const rows = toObjects(parsedCsv);
-    if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
+    if (!rows.length) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'CSV has no data rows' });
+    }
 
     const db = getDatabase();
 
@@ -452,7 +495,7 @@ router.post('/import/products', requirePermission('catalog.import-export'), (req
     const taxCategoryIds = new Set(activePack.categories.map((category) => category.id));
     const regionalSnapshot = currentRegionalSnapshot();
 
-    let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0;
+    let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0, changedRows = 0;
     const errors: string[] = [];
 
     db.transaction(() => { for (let i = 0; i < rows.length; i++) {
@@ -551,6 +594,7 @@ router.post('/import/products', requirePermission('catalog.import-export'), (req
           cbPercent, tagsJson, isActive, sku, now(), r.id);
         if (existing.is_active === 0 && isActive === 1) reactivated++;
         else updated++;
+        changedRows++;
         continue;
       }
 
@@ -567,8 +611,10 @@ router.post('/import/products', requirePermission('catalog.import-export'), (req
       ).run(generateShortId('products'), r.name, categoryId, price, r.description || null,
         cost, 'none', 0, taxCategoryId, taxBehavior || 'country_default', cbPercent, tagsJson, isActive, sku, now(), now());
       created++;
+      changedRows++;
     } })();
 
+    captureMenuCsvRowRejections(failed, changedRows);
     res.json({ created, updated, reactivated, skipped, failed, errors });
   } catch (err: any) {
     return csvImportErrorResponse(res, err);
@@ -578,7 +624,10 @@ router.post('/import/products', requirePermission('catalog.import-export'), (req
 router.post('/import/addons', requirePermission('catalog.import-export'), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
-    if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
+    if (typeof csv !== 'string' || !csv) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'No CSV data provided' });
+    }
 
     const parsedCsv = parseCSV(csv);
     const headers = new Set((parsedCsv[0] || []).map((header) => header.trim().toLowerCase()));
@@ -589,14 +638,17 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
     const hasStockQuantityColumn = headers.has('stock_quantity');
     const hasLowStockThresholdColumn = headers.has('low_stock_threshold');
     const rows = toObjects(parsedCsv);
-    if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
+    if (!rows.length) {
+      captureInvalidMenuCsvInput();
+      return res.status(400).json({ error: 'CSV has no data rows' });
+    }
 
     const db = getDatabase();
     const regionalSnapshot = currentRegionalSnapshot();
     const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     let groupsCreated = 0, groupsUpdated = 0, addonsCreated = 0;
     let groupsReactivated = 0, addonsReactivated = 0;
-    let skipped = 0, failed = 0;
+    let skipped = 0, failed = 0, changedRows = 0;
     const errors: string[] = [];
     const groupCache: Record<string, string> = {};
     type AddonGroupImportPlan = {
@@ -662,6 +714,7 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
 
     db.transaction(() => { for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
+      let rowChanged = false;
       if (!r.group_name || !r.addon_name) {
         failed++;
         errors.push(`Row ${i + 2}: missing group_name or addon_name`);
@@ -743,11 +796,13 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
               `UPDATE addon_groups SET is_required = ?, min_selection = ?, max_selection = ?, is_active = 1, updated_at = ? WHERE id = ?`,
             ).run(isRequired, minSelection, maxSelection, now(), groupId);
             groupsReactivated++;
+            rowChanged = true;
           } else if (settingsChanged) {
             db.prepare(
               `UPDATE addon_groups SET is_required = ?, min_selection = ?, max_selection = ?, updated_at = ? WHERE id = ?`,
             ).run(isRequired, minSelection, maxSelection, now(), groupId);
             groupsUpdated++;
+            rowChanged = true;
           }
         } else {
           groupId = randomUUID();
@@ -757,6 +812,7 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
           ).run(groupId, r.group_name, hasGroupRequiredColumn && isTruthy(r.group_required) ? 1 : 0,
             hasGroupMinColumn ? minResult.value : 0, hasGroupMaxColumn ? maxResult.value : 1, now(), now());
           groupsCreated++;
+          rowChanged = true;
         }
         groupCache[key] = groupId;
       }
@@ -776,12 +832,14 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
           ).run(price, hasTrackInventoryColumn ? 1 : 0, trackInventory,
             hasLowStockThresholdColumn ? 1 : 0, lowStockThreshold, now(), addonExists.id);
           addonsReactivated++;
+          rowChanged = true;
           if (hasStockQuantityColumn) {
             applyImportedAddonStock(db, addonExists.id, stockQuantity, 'manual_adjustment', addonExists.id, actorUserId);
           }
         } else {
           skipped++;
         }
+        if (rowChanged) changedRows++;
         continue;
       }
 
@@ -794,8 +852,10 @@ router.post('/import/addons', requirePermission('catalog.import-export'), (req: 
         applyImportedAddonStock(db, addonId, stockQuantity, 'opening_balance', addonId, actorUserId);
       }
       addonsCreated++;
+      changedRows++;
     } })();
 
+    captureMenuCsvRowRejections(failed, changedRows);
     const created = groupsCreated + addonsCreated;
     const reactivated = groupsReactivated + addonsReactivated;
     res.json({

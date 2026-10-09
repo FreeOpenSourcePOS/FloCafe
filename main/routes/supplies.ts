@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
 import {
+  SupplyServiceError,
   SupplyMovementType,
   createSupply,
   getSupply,
@@ -11,6 +12,9 @@ import {
   softDeleteSupply,
   updateSupply,
 } from '../services/supplies';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
+import { UnitConversionError } from '../services/units';
 
 const router = Router();
 const MANUAL_MOVEMENT_TYPES: Array<'receive' | 'count' | 'adjustment' | 'waste'> = ['receive', 'count', 'adjustment', 'waste'];
@@ -20,15 +24,61 @@ function sendError(res: Response, error: unknown): void {
   const details = error as { statusCode?: unknown; message?: unknown };
   const statusCode = Number.isInteger(details.statusCode) ? details.statusCode as number : 500;
   if (statusCode >= 500) console.error('[API] Internal error:', error);
+  if (error instanceof SupplyServiceError && error.diagnosticCode && error.diagnosticCode !== 'recipe_linked') {
+    captureSupplyValidation(error.diagnosticCode);
+  } else if (error instanceof UnitConversionError) {
+    captureSupplyValidation(error.diagnosticCode);
+  }
   res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : details.message });
+}
+
+function captureSupplyValidation(validationCode: string): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.supply.validation',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change supply validation responses.
+  }
+}
+
+function captureSupplyMovementQueryRejection(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.supply.movement_query.invalid',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change supply query validation.
+  }
+}
+
+class SupplyQueryValidationError extends Error {
+  readonly statusCode = 400;
 }
 
 function queryString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > 128) {
-    throw Object.assign(new Error(`${field} must be a non-empty string of at most 128 characters`), { statusCode: 400 });
+    throw new SupplyQueryValidationError(`${field} must be a non-empty string of at most 128 characters`);
   }
   return value.trim();
+}
+
+function captureSupplyDeleteBlocked(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.supply.delete.recipe_linked',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change supply deletion behavior.
+  }
 }
 
 router.get('/', requirePermission('supplies.manage'), (req: Request, res: Response) => {
@@ -68,6 +118,7 @@ router.get('/movements', requirePermission('supplies.manage'), (req: Request, re
     const supplyId = queryString(req.query.supply_id, 'supply_id');
     const movementType = queryString(req.query.movement_type, 'movement_type') as SupplyMovementType | undefined;
     if (movementType && !ALL_MOVEMENT_TYPES.includes(movementType)) {
+      captureSupplyMovementQueryRejection();
       return res.status(400).json({ error: 'movement_type is invalid' });
     }
     const search = queryString(req.query.search, 'search');
@@ -76,6 +127,7 @@ router.get('/movements', requirePermission('supplies.manage'), (req: Request, re
       ? undefined
       : typeof rawBeforeId === 'string' && /^\d+$/.test(rawBeforeId) ? Number(rawBeforeId) : NaN;
     if (beforeId !== undefined && (!Number.isSafeInteger(beforeId) || beforeId <= 0)) {
+      captureSupplyMovementQueryRejection();
       return res.status(400).json({ error: 'before_id must be a positive integer' });
     }
     const rawPerPage = req.query.per_page;
@@ -90,6 +142,7 @@ router.get('/movements', requirePermission('supplies.manage'), (req: Request, re
       ...(page.nextCursor !== null && { nextCursor: page.nextCursor }),
     });
   } catch (error: unknown) {
+    if (error instanceof SupplyQueryValidationError) captureSupplyMovementQueryRejection();
     sendError(res, error);
   }
 });
@@ -122,6 +175,9 @@ router.delete('/:id', requirePermission('supplies.manage'), (req: Request, res: 
     softDeleteSupply(getDatabase(), String(req.params.id));
     res.json({ success: true });
   } catch (error: unknown) {
+    if (error instanceof SupplyServiceError && error.diagnosticCode === 'recipe_linked') {
+      captureSupplyDeleteBlocked();
+    }
     sendError(res, error);
   }
 });
@@ -133,6 +189,7 @@ router.post('/:id/movements', requirePermission('supplies.manage'), (req: Reques
     const body = req.body || {};
     const movementType = body.movement_type;
     if (!MANUAL_MOVEMENT_TYPES.includes(movementType)) {
+      captureSupplyValidation('movement_type_invalid');
       return res.status(400).json({ error: 'movement_type must be one of: receive, count, adjustment, waste' });
     }
     const movement = recordSupplyMovement(getDatabase(), {

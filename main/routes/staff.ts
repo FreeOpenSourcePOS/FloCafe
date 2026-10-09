@@ -6,6 +6,8 @@ import { getDatabase, now } from '../db';
 import { validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
 import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
 import { AdministrationUnreachableError, assertAdministrationReachable } from '../services/authorization';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { isValidEmail } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
@@ -20,6 +22,47 @@ const requireStaffWrite = requireAnyPermission('staff.operational.manage', 'staf
 
 const VALID_ROLES: readonly string[] = ROLE_KEYS;
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
+
+function captureAdministrationAccessGuard(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.staff.administration_access_guard',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change a protected staff decision.
+  }
+}
+
+function captureStaffValidation(
+  capturePoint: 'fc.backend.staff.create.validation' | 'fc.backend.staff.update.validation',
+  validationCode: string,
+): void {
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change staff validation responses.
+  }
+}
+
+function captureStaffTargetAccessDenied(action: string): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.staff.target_access_denied',
+    outcome: 'not_applied',
+    facts: { action },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change staff authorization decisions.
+  }
+}
 
 function canModifyTargetStaff(requesterId: string, targetRole: string): boolean {
   if (hasRole(targetRole, ROLE_ACCESS.ownerManager)) {
@@ -119,22 +162,28 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
     const normalizedStationIds = normalizeStationIds(station_ids);
 
     if (!name || !normalizedEmail || !password || !role) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'required_fields');
       return res.status(400).json({ error: 'name, email, password, and role are required' });
     }
     if (!isValidEmail(normalizedEmail)) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'email_invalid');
       return res.status(400).json({ error: 'Enter a valid email address' });
     }
     if (!validatePassword(password)) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'password_policy');
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
     if (!VALID_ROLES.includes(role)) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'role_invalid');
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
     if (normalizedStationIds === null) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'station_list_invalid');
       return res.status(400).json({ error: 'station_ids must contain at most 100 valid station IDs' });
     }
     if (role !== 'chef' && normalizedStationIds.length > 0) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'station_role_mismatch');
       return res.status(400).json({ error: 'Kitchen stations can only be assigned to chef accounts' });
     }
 
@@ -146,6 +195,7 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
     // that same cashier.
     const requiredToCreate = isOperationalRole(role) ? 'staff.operational.manage' : 'staff.privileged.manage';
     if (!hasPermission(requesterId, requiredToCreate)) {
+      captureStaffTargetAccessDenied('create_target');
       return res.status(403).json({
         error: isOperationalRole(role)
           ? 'This account cannot create operational staff accounts'
@@ -154,9 +204,11 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'pin_role_mismatch');
       return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
+      captureStaffValidation('fc.backend.staff.create.validation', 'pin_invalid');
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
@@ -164,6 +216,15 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) {
+      const failure = serializeOperationFailure({
+        capture_point: 'fc.backend.staff.duplicate_email',
+        outcome: 'not_applied',
+      });
+      try {
+        if (failure) cloudSync.captureOperationFailure(failure);
+      } catch {
+        // Diagnostics cannot change the duplicate-email response.
+      }
       return res.status(400).json({ error: 'Email already in use' });
     }
 
@@ -171,6 +232,7 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
       const placeholders = normalizedStationIds.map(() => '?').join(',');
       const activeStations = db.prepare(`SELECT id FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`).all(...normalizedStationIds);
       if (activeStations.length !== normalizedStationIds.length) {
+        captureStaffValidation('fc.backend.staff.create.validation', 'station_unavailable');
         return res.status(400).json({ error: 'One or more station_ids do not match an active kitchen station' });
       }
     }
@@ -219,6 +281,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     const db = getDatabase();
 
     if (is_active !== undefined) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'status_change_requires_action');
       return res.status(400).json({ error: 'Use /deactivate or /reactivate endpoints to change account status' });
     }
 
@@ -229,40 +292,57 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
 
     const requesterId = (req as any).user.userId;
     if (!canModifyTargetStaff(requesterId, member.role)) {
+      captureStaffTargetAccessDenied('update_privileged');
       return res.status(403).json({ error: 'This account cannot modify privileged staff accounts' });
     }
 
     if (role !== undefined) {
       if (!VALID_ROLES.includes(role)) {
+        captureStaffValidation('fc.backend.staff.update.validation', 'role_invalid');
         return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
       }
       if (role !== member.role && !hasPermission(requesterId, 'staff.privileged.manage')) {
+        captureStaffTargetAccessDenied('role_change');
         return res.status(403).json({ error: 'Only owners can change roles' });
       }
     }
 
     const targetRole = role ?? member.role;
     if (isOperationalRole(targetRole) && hasNonEmptyPin(pin)) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'pin_role_mismatch');
       return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'pin_invalid');
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
     if (emailProvided && !normalizedEmail) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'email_missing');
       return res.status(400).json({ error: 'email is required' });
     }
     if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'email_invalid');
       return res.status(400).json({ error: 'Enter a valid email address' });
     }
     if (normalizedEmail && normalizedEmail !== member.email) {
       const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(normalizedEmail, req.params.id);
       if (existing) {
+        const failure = serializeOperationFailure({
+          capture_point: 'fc.backend.staff.update.duplicate_email',
+          outcome: 'not_applied',
+        });
+        try {
+          if (failure) cloudSync.captureOperationFailure(failure);
+        } catch {
+          // Diagnostics cannot change the duplicate-email response.
+        }
         return res.status(400).json({ error: 'Email already in use' });
       }
     }
 
     if (password && !validatePassword(password)) {
+      captureStaffValidation('fc.backend.staff.update.validation', 'password_policy');
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
@@ -316,6 +396,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );
     if (result.changes === 0) {
+      captureAdministrationAccessGuard();
       return res.status(400).json({ error: 'Cannot change the role of the last active owner. Create or promote another active owner first.' });
     }
     invalidateUserAuthCache(req.params.id as string);
@@ -327,6 +408,7 @@ router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Respo
     res.json({ staff: updated });
   } catch (error: any) {
     if (error instanceof AdministrationUnreachableError) {
+      captureAdministrationAccessGuard();
       return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
     }
     console.error("[API] Internal error:", error);
@@ -343,6 +425,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
     if (member.is_active === 0) return res.status(400).json({ error: 'Already deactivated' });
 
     if (!canModifyTargetStaff((req as any).user.userId, member.role)) {
+      captureStaffTargetAccessDenied('deactivate_privileged');
       return res.status(403).json({ error: 'This account cannot deactivate or reactivate privileged staff accounts' });
     }
 
@@ -359,6 +442,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
         AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
     `).run(changedAt, changedAt, req.params.id);
     if (result.changes === 0) {
+      captureAdministrationAccessGuard();
       return res.status(400).json({ error: 'Cannot deactivate the last owner account' });
     }
     invalidateUserAuthCache(req.params.id as string);
@@ -368,6 +452,7 @@ router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) 
     res.json({ staff: updated });
   } catch (error: any) {
     if (error instanceof AdministrationUnreachableError) {
+      captureAdministrationAccessGuard();
       return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
     }
     console.error("[API] Internal error:", error);
@@ -383,6 +468,7 @@ router.post('/:id/reactivate', requireStaffWrite, (req: Request, res: Response) 
     if (member.is_active === 1) return res.status(400).json({ error: 'Already active' });
 
     if (!canModifyTargetStaff((req as any).user.userId, member.role)) {
+      captureStaffTargetAccessDenied('reactivate_privileged');
       return res.status(403).json({ error: 'This account cannot deactivate or reactivate privileged staff accounts' });
     }
 

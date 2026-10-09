@@ -3,12 +3,39 @@ import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
 import { hasPermission, requirePermission } from '../services/authorization';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { adjustProductStock } from '../services/inventory';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
 const router = Router();
+
+function captureSelectionBoundsRejection(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.addon_group.selection_bounds',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change the add-on selection response.
+  }
+}
+
+function captureAddonGroupInputValidation(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.addon_group.input_validation',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change add-on validation responses.
+  }
+}
+
 const addonGroupReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const addonGroupWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
@@ -118,6 +145,7 @@ function applyAddonStockAdjustment(
 
 function validationErrorResponse(res: Response, errors: FieldErrors): Response | null {
   if (Object.keys(errors).length === 0) return null;
+  captureAddonGroupInputValidation();
   return res.status(400).json({ errors });
 }
 
@@ -269,14 +297,17 @@ router.post('/', addonGroupWriteRateLimit, requirePermission('catalog.manage'), 
     if (validationResponse) return validationResponse;
     const boundsError = validateSelectionBounds(min, max, activeAddonCount);
     if (boundsError) {
+      captureSelectionBoundsRejection();
       return res.status(400).json({ errors: boundsError });
     }
     const taxBehaviorError = invalidTaxBehavior(normalizedAddons);
     if (taxBehaviorError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxBehaviorError });
     }
     const taxCategoryError = invalidTaxCategory(normalizedAddons);
     if (taxCategoryError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxCategoryError });
     }
 
@@ -373,14 +404,17 @@ router.put('/:id', addonGroupWriteRateLimit, requirePermission('catalog.manage')
       : (db.prepare('SELECT COUNT(*) as count FROM addons WHERE addon_group_id = ? AND is_active = 1').get(req.params.id) as { count: number }).count;
     const boundsError = validateSelectionBounds(effectiveMin, effectiveMax, activeAddonCount);
     if (boundsError) {
+      captureSelectionBoundsRejection();
       return res.status(400).json({ errors: boundsError });
     }
     const taxBehaviorError = invalidTaxBehavior(normalizedAddons || undefined);
     if (taxBehaviorError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxBehaviorError });
     }
     const taxCategoryError = invalidTaxCategory(normalizedAddons || undefined);
     if (taxCategoryError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxCategoryError });
     }
 
@@ -489,10 +523,12 @@ router.post('/:groupId/addons', addonGroupWriteRateLimit, requirePermission('cat
     const validationResponse = validationErrorResponse(res, errors);
     if (validationResponse) return validationResponse;
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
     const taxCategoryError = invalidTaxCategory([{ tax_category_id }]);
     if (taxCategoryError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxCategoryError });
     }
 
@@ -502,12 +538,14 @@ router.post('/:groupId/addons', addonGroupWriteRateLimit, requirePermission('cat
       return res.status(404).json({ error: 'Addon group not found' });
     }
     if (!(group as any).is_active) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: 'Cannot add add-ons to an inactive group' });
     }
     if (addonActive) {
       const activeAddonCount = (db.prepare('SELECT COUNT(*) as count FROM addons WHERE addon_group_id = ? AND is_active = 1').get(req.params.groupId) as { count: number }).count + 1;
       const boundsError = validateSelectionBounds((group as any).min_selection, (group as any).max_selection, activeAddonCount);
       if (boundsError) {
+        captureSelectionBoundsRejection();
         return res.status(400).json({ errors: boundsError });
       }
     }
@@ -550,10 +588,12 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
     const validationResponse = validationErrorResponse(res, errors);
     if (validationResponse) return validationResponse;
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
     const taxCategoryError = invalidTaxCategory([{ tax_category_id }]);
     if (taxCategoryError) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: taxCategoryError });
     }
 
@@ -564,6 +604,7 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
     }
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.groupId);
     if (!group || !(group as any).is_active) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: 'Cannot update add-ons for an inactive group' });
     }
 
@@ -602,6 +643,7 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePermiss
     });
     if (updatedAtomically !== true) {
       if (updatedAtomically === false) return res.status(404).json({ error: 'Addon not found' });
+      captureSelectionBoundsRejection();
       return res.status(400).json({ errors: updatedAtomically });
     }
 
@@ -618,6 +660,7 @@ router.delete('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePerm
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.groupId);
     if (!group || !(group as any).is_active) {
+      captureAddonGroupInputValidation();
       return res.status(400).json({ error: 'Cannot delete add-ons from an inactive group' });
     }
     const addon = db.prepare('SELECT * FROM addons WHERE id = ? AND addon_group_id = ?').get(req.params.addonId, req.params.groupId) as { is_active: number } | undefined;
@@ -638,6 +681,7 @@ router.delete('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requirePerm
     });
     if (deletedAtomically !== true) {
       if (deletedAtomically === false) return res.status(404).json({ error: 'Addon not found' });
+      captureSelectionBoundsRejection();
       return res.status(400).json({ errors: deletedAtomically });
     }
     res.json({ message: 'Addon deleted' });

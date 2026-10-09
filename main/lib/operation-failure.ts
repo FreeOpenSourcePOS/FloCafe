@@ -83,6 +83,37 @@ const KDS_ITEM_STATUS_DISPLAY_CODES = [
   'category_scope_denied', 'station_scope_denied', 'orphaned_order', 'status_conflict',
   'item_unavailable',
 ] as const;
+const RECIPE_VALIDATION_CODES = [
+  'product_missing', 'items_missing', 'supply_id_missing', 'duplicate_supply', 'supply_missing',
+  'quantity_invalid', 'unit_invalid', 'yield_invalid',
+] as const;
+const STAFF_CREATE_VALIDATION_CODES = [
+  'required_fields', 'email_invalid', 'password_policy', 'role_invalid', 'station_list_invalid',
+  'station_role_mismatch', 'pin_role_mismatch', 'pin_invalid', 'station_unavailable',
+] as const;
+const STAFF_UPDATE_VALIDATION_CODES = [
+  'status_change_requires_action', 'role_invalid', 'role_change_forbidden', 'pin_role_mismatch',
+  'pin_invalid', 'email_missing', 'email_invalid', 'password_policy',
+] as const;
+const STAFF_TARGET_ACTIONS = [
+  'create_target', 'update_privileged', 'role_change', 'deactivate_privileged', 'reactivate_privileged',
+] as const;
+const CUSTOMER_VALIDATION_CODES = ['name_required', 'phone_invalid', 'address_invalid'] as const;
+const CATEGORY_VALIDATION_CODES = ['name_required', 'addon_group_ids_invalid'] as const;
+const CATEGORY_DELETE_CODES = ['requires_resolution', 'action_invalid', 'target_invalid', 'target_cycle', 'self_target'] as const;
+const AUTHORIZATION_INPUT_CODES = ['invalid_role', 'invalid_overrides', 'missing_revision'] as const;
+const PRODUCT_VALIDATION_CODES = [
+  'required_fields', 'numeric_fields', 'weighted_fields', 'cashback_invalid', 'tax_behavior_invalid',
+  'tax_category_invalid', 'image_url_invalid', 'inventory_link_invalid', 'category_invalid',
+  'dietary_tags_invalid', 'variants_invalid', 'barcode_conflict', 'addon_groups_invalid',
+] as const;
+const PRODUCT_STOCK_VALIDATION_CODES = ['action_required', 'action_invalid', 'quantity_invalid'] as const;
+const SUPPLY_VALIDATION_CODES = [
+  'name_required', 'name_too_long', 'unit_invalid', 'quantity_invalid', 'threshold_invalid',
+  'movement_reason_required', 'movement_reason_too_long', 'movement_type_invalid', 'movement_quantity_invalid',
+  'movement_zero', 'movement_negative',
+] as const;
+const REPORT_RANGE_CODES = ['invalid_format', 'reversed_range', 'date_and_range_conflict'] as const;
 
 /** Closed capture registry; new event tuples must be added here and to the cloud receiver. */
 export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] = [
@@ -545,6 +576,194 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
         'queue_eviction', 'permanent_rejection', 'invalid_ack', 'report_id_mismatch', 'local_retention',
       ], required: true },
     },
+  },
+  {
+    capture_point: 'fc.backend.staff.administration_access_guard',
+    reason_code: 'staff.administration_invariant', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.customer.duplicate_phone',
+    reason_code: 'customer.duplicate_phone', operation: 'customer.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.product.delete.inventory_target',
+    reason_code: 'product.delete_blocked', operation: 'product.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.staff.duplicate_email',
+    reason_code: 'staff.email_conflict', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.auth.recovery.owner_state_changed',
+    reason_code: 'auth.owner_state_changed', operation: 'auth.session', stage: 'recovery',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.authorization.administration_guard',
+    reason_code: 'authorization.administration_invariant', operation: 'authorization.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.authorization.self_lockout_guard',
+    reason_code: 'authorization.self_lockout_prevented', operation: 'authorization.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.authorization.revision_conflict',
+    reason_code: 'authorization.revision_conflict', operation: 'authorization.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.category.parent_reference_invalid',
+    reason_code: 'category.parent_reference_invalid', operation: 'category.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.category.parent_cycle',
+    reason_code: 'category.parent_cycle', operation: 'category.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.addon_group.selection_bounds',
+    reason_code: 'addon_group.selection_bounds_invalid', operation: 'addon_group.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.inventory.movement_query.invalid',
+    reason_code: 'inventory.query_rejected', operation: 'inventory.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.supply.delete.recipe_linked',
+    reason_code: 'supply.delete_blocked', operation: 'supplies.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.recipe.save.invalid_component',
+    reason_code: 'recipe.component_invalid', operation: 'recipe.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: RECIPE_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.reports.financial_summary.date_range',
+    reason_code: 'reports.date_range_invalid', operation: 'report.generate', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.menu_csv.import.invalid_input',
+    reason_code: 'catalog_import.invalid_input', operation: 'catalog.import', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.menu_csv.import.row_rejections',
+    reason_code: 'catalog_import.rows_rejected', operation: 'catalog.import', stage: 'import',
+    classification: 'expected_rejection', outcomes: ['not_applied', 'partial'],
+    facts: {
+      failed_count: { type: 'integer', min: 1, max: 10000, required: true },
+      changed_count: { type: 'integer', min: 0, max: 10000, required: true },
+    },
+  },
+  {
+    capture_point: 'fc.backend.staff.create.validation',
+    reason_code: 'staff.input_rejected', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: STAFF_CREATE_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.staff.update.validation',
+    reason_code: 'staff.input_rejected', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: STAFF_UPDATE_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.staff.target_access_denied',
+    reason_code: 'permission.denied', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { action: { type: 'enum', values: STAFF_TARGET_ACTIONS, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.staff.update.duplicate_email',
+    reason_code: 'staff.email_conflict', operation: 'staff.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.customer.create.validation',
+    reason_code: 'customer.input_rejected', operation: 'customer.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: CUSTOMER_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.customer.update.validation',
+    reason_code: 'customer.input_rejected', operation: 'customer.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: CUSTOMER_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.customer.list.pagination_invalid',
+    reason_code: 'customer.query_rejected', operation: 'customer.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.category.save.validation',
+    reason_code: 'category.input_rejected', operation: 'category.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: CATEGORY_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.category.delete.action_rejected',
+    reason_code: 'category.delete_rejected', operation: 'category.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: CATEGORY_DELETE_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.addon_group.input_validation',
+    reason_code: 'addon_group.input_rejected', operation: 'addon_group.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.authorization.input_validation',
+    reason_code: 'authorization.input_rejected', operation: 'authorization.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: AUTHORIZATION_INPUT_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.product.create.validation',
+    reason_code: 'product.input_rejected', operation: 'product.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: PRODUCT_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.product.update.validation',
+    reason_code: 'product.input_rejected', operation: 'product.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: PRODUCT_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.product.stock.validation',
+    reason_code: 'product.stock_input_rejected', operation: 'product.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: PRODUCT_STOCK_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.supply.movement_query.invalid',
+    reason_code: 'supply.query_rejected', operation: 'supplies.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.supply.validation',
+    reason_code: 'supply.input_rejected', operation: 'supplies.manage', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: SUPPLY_VALIDATION_CODES, required: true } },
+  },
+  {
+    capture_point: 'fc.backend.reports.date_range.invalid',
+    reason_code: 'reports.date_range_invalid', operation: 'report.generate', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { validation_code: { type: 'enum', values: REPORT_RANGE_CODES, required: true } },
   },
   {
     capture_point: 'fc.backend.http.unhandled',

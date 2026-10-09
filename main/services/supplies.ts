@@ -8,14 +8,28 @@ import {
 } from './units';
 
 export type SupplyMovementType = 'receive' | 'count' | 'adjustment' | 'waste' | 'recipe_depletion' | 'recipe_restore';
+export type SupplyServiceDiagnosticCode =
+  | 'recipe_linked'
+  | 'name_required'
+  | 'name_too_long'
+  | 'quantity_invalid'
+  | 'unit_invalid'
+  | 'threshold_invalid'
+  | 'movement_reason_required'
+  | 'movement_reason_too_long'
+  | 'movement_quantity_invalid'
+  | 'movement_zero'
+  | 'movement_negative';
 
 export class SupplyServiceError extends Error {
   readonly statusCode: number;
+  readonly diagnosticCode?: SupplyServiceDiagnosticCode;
 
-  constructor(statusCode: number, message: string) {
+  constructor(statusCode: number, message: string, diagnosticCode?: SupplyServiceDiagnosticCode) {
     super(message);
     this.name = 'SupplyServiceError';
     this.statusCode = statusCode;
+    this.diagnosticCode = diagnosticCode;
   }
 }
 
@@ -77,18 +91,22 @@ function newId(): string {
 function assertReason(input: RecordMovementInput): string | null {
   const reason = input.reason === undefined || input.reason === null ? null : String(input.reason).trim();
   if ((input.movementType === 'adjustment' || input.movementType === 'waste') && !reason) {
-    throw new SupplyServiceError(400, 'reason is required for adjustment and waste movements');
+    throw new SupplyServiceError(400, 'reason is required for adjustment and waste movements', 'movement_reason_required');
   }
   if (reason && reason.length > 500) {
-    throw new SupplyServiceError(400, 'reason is too long');
+    throw new SupplyServiceError(400, 'reason is too long', 'movement_reason_too_long');
   }
   return reason || null;
 }
 
-function normalizeQuantity(value: unknown, field = 'quantity'): number {
+function normalizeQuantity(
+  value: unknown,
+  field = 'quantity',
+  diagnosticCode: 'quantity_invalid' | 'threshold_invalid' | 'movement_quantity_invalid' = 'quantity_invalid',
+): number {
   const quantity = typeof value === 'string' ? Number(value) : value;
   if (typeof quantity !== 'number' || !Number.isFinite(quantity)) {
-    throw new SupplyServiceError(400, `${field} must be a finite number`);
+    throw new SupplyServiceError(400, `${field} must be a finite number`, diagnosticCode);
   }
   return quantity;
 }
@@ -139,13 +157,13 @@ export function listSupplies(
 
 export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSupplyInput): SupplyRecord {
   const name = String(input.name || '').trim();
-  if (!name) throw new SupplyServiceError(400, 'name is required');
-  if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
+  if (!name) throw new SupplyServiceError(400, 'name is required', 'name_required');
+  if (name.length > 200) throw new SupplyServiceError(400, 'name is too long', 'name_too_long');
   const baseUnit = assertSupplyUnit(input.baseUnit, 'base_unit');
   const stockQuantity = input.stockQuantity === undefined ? 0 : roundQuantity(normalizeQuantity(input.stockQuantity, 'stock_quantity'));
   if (input.lowStockThreshold !== undefined && input.lowStockThreshold !== null) {
-    const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold');
-    if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative');
+    const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold', 'threshold_invalid');
+    if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative', 'threshold_invalid');
   }
   const lowStockThreshold = input.lowStockThreshold === undefined || input.lowStockThreshold === null
     ? null
@@ -186,15 +204,15 @@ export function updateSupply(
 ): SupplyRecord {
   const supply = getSupply(db, id);
   const name = input.name === undefined ? supply.name : String(input.name).trim();
-  if (!name) throw new SupplyServiceError(400, 'name is required');
-  if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
+  if (!name) throw new SupplyServiceError(400, 'name is required', 'name_required');
+  if (name.length > 200) throw new SupplyServiceError(400, 'name is too long', 'name_too_long');
   let lowStockThreshold: number | null = supply.low_stock_threshold;
   if (input.lowStockThreshold !== undefined) {
     if (input.lowStockThreshold === null) {
       lowStockThreshold = null;
     } else {
-      const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold');
-      if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative');
+      const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold', 'threshold_invalid');
+      if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative', 'threshold_invalid');
       lowStockThreshold = roundQuantity(threshold);
     }
   }
@@ -209,7 +227,7 @@ export function updateSupply(
 export function softDeleteSupply(db: ReturnType<typeof getDatabase>, id: string): void {
   getSupply(db, id);
   const linkedRecipe = db.prepare('SELECT 1 FROM recipe_items WHERE supply_id = ? LIMIT 1').get(id);
-  if (linkedRecipe) throw new SupplyServiceError(409, 'Cannot delete a supply used by a recipe');
+  if (linkedRecipe) throw new SupplyServiceError(409, 'Cannot delete a supply used by a recipe', 'recipe_linked');
   const timestamp = now();
   db.prepare('UPDATE supplies SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
     .run(timestamp, timestamp, id);
@@ -238,7 +256,7 @@ export function applySupplyStockChange(
   const unit = options.unit === undefined ? supply.base_unit : assertSupplyUnit(options.unit, 'unit');
   const deltaInBase = convertQuantity(options.quantityDelta, unit, supply.base_unit);
   if (deltaInBase === 0 && options.movementType !== 'count') {
-    throw new SupplyServiceError(400, 'quantity_delta is too small to change stock');
+    throw new SupplyServiceError(400, 'quantity_delta is too small to change stock', 'movement_zero');
   }
 
   const stockBefore = Number(supply.stock_quantity);
@@ -272,7 +290,7 @@ export function applySupplyStockChange(
 function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
   const supply = getSupply(db, input.supplyId);
   if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required');
-  const quantity = normalizeQuantity(input.quantity);
+  const quantity = normalizeQuantity(input.quantity, 'quantity', 'movement_quantity_invalid');
   const unit = input.unit === undefined ? supply.base_unit : assertSupplyUnit(input.unit, 'unit');
   const reason = assertReason(input);
   const timestamp = input.createdAt || now();
@@ -280,19 +298,19 @@ function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: Re
   let delta: number;
   switch (input.movementType) {
     case 'receive':
-      if (quantity <= 0) throw new SupplyServiceError(400, 'receive quantity must be positive');
+      if (quantity <= 0) throw new SupplyServiceError(400, 'receive quantity must be positive', quantity === 0 ? 'movement_zero' : 'movement_negative');
       delta = convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'waste':
-      if (quantity <= 0) throw new SupplyServiceError(400, 'waste quantity must be positive');
+      if (quantity <= 0) throw new SupplyServiceError(400, 'waste quantity must be positive', quantity === 0 ? 'movement_zero' : 'movement_negative');
       delta = -convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'adjustment':
-      if (quantity === 0) throw new SupplyServiceError(400, 'adjustment quantity must be non-zero');
+      if (quantity === 0) throw new SupplyServiceError(400, 'adjustment quantity must be non-zero', 'movement_zero');
       delta = convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'count': {
-      if (quantity < 0) throw new SupplyServiceError(400, 'count quantity must be non-negative');
+      if (quantity < 0) throw new SupplyServiceError(400, 'count quantity must be non-negative', 'movement_negative');
       const target = convertQuantity(quantity, unit, supply.base_unit);
       delta = roundQuantity(target - Number(supply.stock_quantity));
       break;

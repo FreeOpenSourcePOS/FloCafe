@@ -84,6 +84,15 @@ customer, order, or payment data. Frontend captures cover client-owned transport
 storage failures; backend routes record authoritative operation failures. Legacy source-derived
 signatures remain local support evidence and are never sent through the v2 automatic channel.
 
+Backend capture points cover typed staff validation and administration safeguards, recovery races,
+permission administration and input validation, customer validation and phone conflicts, product and
+stock validation, category validation and delete safeguards, add-on validation and selection bounds,
+inventory and supply movement queries, supply and recipe validation, linked-supply deletion, and
+report date-range validation. Menu CSV imports capture malformed input and row rejections with only
+bounded failed and changed-row counts; the outcome is `partial` only when the import actually changed
+at least one row. Routine login failures, authentication middleware rejections, and ordinary empty query
+results are not capture points. The typed list and exact tuple rules live in the source registry.
+
 Reports are aggregated by UTC hour, sealed with immutable report IDs, and stored in
 `store_diagnostics_outbox` before sending. The outbox holds at most 200 rows, and each flush sends at
 most 20 reports. If reports are evicted, permanently rejected, or cannot be acknowledged, bounded

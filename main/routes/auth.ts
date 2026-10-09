@@ -14,6 +14,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
 import { effectivePermissionRevision, hasActiveAdministrator, resolveEffectivePermissions } from '../services/authorization';
+import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
 
@@ -542,6 +543,15 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       `).run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
     })();
     if (updated.changes === 0) {
+      const failure = serializeOperationFailure({
+        capture_point: 'fc.backend.auth.recovery.owner_state_changed',
+        outcome: 'not_applied',
+      });
+      try {
+        if (failure) cloudSync.captureOperationFailure(failure);
+      } catch {
+        // Diagnostics cannot change the recovery conflict response.
+      }
       return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
     }
     invalidateUserAuthCache(user.id);

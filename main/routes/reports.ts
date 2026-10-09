@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import Decimal from 'decimal.js';
 import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp,
@@ -30,6 +32,31 @@ import {
 } from '../services/cash-close-export';
 
 const router = Router();
+
+function captureFinancialSummaryDateRangeRejection(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.reports.financial_summary.date_range',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change report validation responses.
+  }
+}
+
+function captureReportsDateRangeRejection(validationCode: 'invalid_format' | 'reversed_range' | 'date_and_range_conflict'): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.reports.date_range.invalid',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change report validation responses.
+  }
+}
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -218,9 +245,11 @@ router.get('/financial-summary', requirePermission('reports.financial.view'), (r
     const endDate = reportDate(req.query.end_date, startDate);
     if ((req.query.start_date !== undefined && reportDate(req.query.start_date, '') === '')
       || (req.query.end_date !== undefined && reportDate(req.query.end_date, '') === '')) {
+      captureFinancialSummaryDateRangeRejection();
       return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
     }
     if (startDate > endDate) {
+      captureFinancialSummaryDateRangeRejection();
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     const [start] = reportDayBounds(startDate);
@@ -282,6 +311,7 @@ router.get('/tax-components', requirePermission('reports.view'), (req: Request, 
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
+      captureReportsDateRangeRejection('reversed_range');
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     const windowStart = reportDayBounds(startDate)[0];
@@ -330,6 +360,7 @@ router.get('/sales', requirePermission('reports.view'), (req: Request, res: Resp
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
+      captureReportsDateRangeRejection('reversed_range');
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     // #208: half-open UTC ranges so the orders/bills indexes apply instead
@@ -389,6 +420,7 @@ router.get('/topProducts', requirePermission('reports.view'), (req: Request, res
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
+      captureReportsDateRangeRejection('reversed_range');
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     const requestedLimit = Number(req.query.limit);
@@ -425,15 +457,19 @@ router.get('/recentOrders', requirePermission('reports.view'), (req: Request, re
     const startDate = req.query.start_date === undefined ? undefined : reportDate(req.query.start_date, '');
     const endDate = req.query.end_date === undefined ? undefined : reportDate(req.query.end_date, '');
     if (req.query.date !== undefined && !date) {
+      captureReportsDateRangeRejection('invalid_format');
       return res.status(400).json({ error: 'date must use YYYY-MM-DD format' });
     }
     if ((req.query.start_date !== undefined && !startDate) || (req.query.end_date !== undefined && !endDate)) {
+      captureReportsDateRangeRejection('invalid_format');
       return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
     }
     if (date && (startDate || endDate)) {
+      captureReportsDateRangeRejection('date_and_range_conflict');
       return res.status(400).json({ error: 'date cannot be combined with start_date or end_date' });
     }
     if (startDate && endDate && startDate > endDate) {
+      captureReportsDateRangeRejection('reversed_range');
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
 

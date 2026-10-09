@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, generateShortId } from '../db';
 import { requirePermission } from '../services/authorization';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
 const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -82,22 +84,72 @@ function slugForName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
 
-function validateParentCategory(db: ReturnType<typeof getDatabase>, parentId: unknown, categoryId?: string): string | null {
+function validateParentCategory(
+  db: ReturnType<typeof getDatabase>,
+  parentId: unknown,
+  categoryId?: string,
+): { kind: 'reference_invalid' | 'cycle'; message: string } | null {
   if (parentId === null || parentId === undefined || parentId === '') return null;
-  if (typeof parentId !== 'string') return 'parent_id must be a string or null';
-  if (categoryId && parentId === categoryId) return 'Category cannot be its own parent';
+  if (typeof parentId !== 'string') return { kind: 'reference_invalid', message: 'parent_id must be a string or null' };
+  if (categoryId && parentId === categoryId) return { kind: 'cycle', message: 'Category cannot be its own parent' };
 
   let current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(parentId) as any;
-  if (!current) return 'Parent category not found or inactive';
+  if (!current) return { kind: 'reference_invalid', message: 'Parent category not found or inactive' };
 
   const seen = new Set<string>();
   while (current?.parent_id) {
-    if (categoryId && current.parent_id === categoryId) return 'Category parent cannot create a cycle';
-    if (seen.has(current.parent_id)) return 'Category tree already contains a cycle';
+    if (categoryId && current.parent_id === categoryId) return { kind: 'cycle', message: 'Category parent cannot create a cycle' };
+    if (seen.has(current.parent_id)) return { kind: 'cycle', message: 'Category tree already contains a cycle' };
     seen.add(current.parent_id);
     current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(current.parent_id) as any;
   }
   return null;
+}
+
+function captureParentCategoryRejection(kind: 'reference_invalid' | 'cycle'): void {
+  const failure = serializeOperationFailure({
+    capture_point: kind === 'cycle' ? 'fc.backend.category.parent_cycle' : 'fc.backend.category.parent_reference_invalid',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change the category validation response.
+  }
+}
+
+function captureCategoryValidation(validationCode: 'name_required' | 'addon_group_ids_invalid'): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.category.save.validation',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change category validation responses.
+  }
+}
+
+function captureCategoryDeleteRejection(
+  validationCode: 'requires_resolution' | 'action_invalid' | 'target_invalid' | 'target_cycle' | 'self_target',
+): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.category.delete.action_rejected',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change category deletion responses.
+  }
+}
+
+class CategoryDeleteValidationError extends Error {
+  constructor(readonly validationCode: 'action_invalid' | 'target_invalid' | 'target_cycle' | 'self_target', message: string) {
+    super(message);
+  }
 }
 
 function isDescendantCategory(db: ReturnType<typeof getDatabase>, categoryId: string, possibleDescendantId: string): boolean {
@@ -216,17 +268,20 @@ function createCategory(req: Request, res: Response) {
 
     const categoryName = normalizeCategoryName(name);
     if (!categoryName) {
+      captureCategoryValidation('name_required');
       return res.status(400).json({ error: 'Name is required' });
     }
 
     const db = getDatabase();
     const parentError = validateParentCategory(db, parent_id);
     if (parentError) {
-      return res.status(400).json({ error: parentError });
+      captureParentCategoryRejection(parentError.kind);
+      return res.status(400).json({ error: parentError.message });
     }
 
     const addonGroupValidation = validateCategoryAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
+      captureCategoryValidation('addon_group_ids_invalid');
       return res.status(400).json({ error: addonGroupValidation.error });
     }
 
@@ -281,12 +336,14 @@ function updateCategory(req: Request, res: Response) {
     const hasName = hasOwn(req.body, 'name');
     const categoryName = hasName ? normalizeCategoryName(name) : null;
     if (hasName && !categoryName) {
+      captureCategoryValidation('name_required');
       return res.status(400).json({ error: 'Name is required' });
     }
     if (hasOwn(req.body, 'parent_id')) {
       const parentError = validateParentCategory(db, parent_id, categoryId);
       if (parentError) {
-        return res.status(400).json({ error: parentError });
+        captureParentCategoryRejection(parentError.kind);
+        return res.status(400).json({ error: parentError.message });
       }
     }
 
@@ -294,6 +351,7 @@ function updateCategory(req: Request, res: Response) {
       ? validateCategoryAddonGroupIds(db, addon_group_ids, categoryId)
       : {};
     if (addonGroupValidation.error) {
+      captureCategoryValidation('addon_group_ids_invalid');
       return res.status(400).json({ error: addonGroupValidation.error });
     }
 
@@ -372,6 +430,7 @@ function deleteCategory(req: Request, res: Response) {
     ).get(categoryId) as { count: number };
 
     if ((productCount > 0 || childCount > 0) && !action) {
+      captureCategoryDeleteRejection('requires_resolution');
       return res.status(400).json({
         error: 'Category has active product(s) or child categories. Choose an action.',
         productCount,
@@ -381,12 +440,12 @@ function deleteCategory(req: Request, res: Response) {
 
     const deleteCategory = db.transaction(() => {
       if (action === 'reassign') {
-        if (!reassign_to) throw new Error('reassign_to is required for reassign action');
-        if (reassign_to === categoryId) throw new Error('Cannot reassign a category to itself');
+        if (!reassign_to) throw new CategoryDeleteValidationError('target_invalid', 'reassign_to is required for reassign action');
+        if (reassign_to === categoryId) throw new CategoryDeleteValidationError('self_target', 'Cannot reassign a category to itself');
         const targetCategory = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL').get(reassign_to);
-        if (!targetCategory) throw new Error('Target category not found or deleted');
+        if (!targetCategory) throw new CategoryDeleteValidationError('target_invalid', 'Target category not found or deleted');
         if (isDescendantCategory(db, categoryId, reassign_to)) {
-          throw new Error('Cannot reassign a category to one of its descendants');
+          throw new CategoryDeleteValidationError('target_cycle', 'Cannot reassign a category to one of its descendants');
         }
         db.prepare('UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
           .run(reassign_to, now(), categoryId);
@@ -400,13 +459,14 @@ function deleteCategory(req: Request, res: Response) {
       } else if (!action && productCount === 0 && childCount === 0) {
         // Empty categories have no dependent rows to resolve.
       } else {
-        throw new Error('Invalid action. Must be reassign or delete_all.');
+        throw new CategoryDeleteValidationError('action_invalid', 'Invalid action. Must be reassign or delete_all.');
       }
       db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now(), now(), categoryId);
     });
     try {
       deleteCategory();
     } catch (error: any) {
+      if (error instanceof CategoryDeleteValidationError) captureCategoryDeleteRejection(error.validationCode);
       return res.status(400).json({ error: error.message });
     }
     res.json({ message: 'Category deleted' });

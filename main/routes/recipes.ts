@@ -1,13 +1,27 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
-import { deleteRecipe, getRecipeByProduct, listRecipes, saveRecipe } from '../services/recipes';
+import { deleteRecipe, getRecipeByProduct, listRecipes, RecipeServiceError, saveRecipe } from '../services/recipes';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
 
 function sendError(res: Response, error: unknown): void {
   const details = error as { statusCode?: unknown; message?: unknown };
   const statusCode = Number.isInteger(details.statusCode) ? details.statusCode as number : 500;
+  if (error instanceof RecipeServiceError && error.diagnosticCode) {
+    const failure = serializeOperationFailure({
+      capture_point: 'fc.backend.recipe.save.invalid_component',
+      outcome: 'not_applied',
+      facts: { validation_code: error.diagnosticCode },
+    });
+    try {
+      if (failure) cloudSync.captureOperationFailure(failure);
+    } catch {
+      // Diagnostics cannot change the recipe validation response.
+    }
+  }
   if (statusCode >= 500) console.error('[API] Internal error:', error);
   res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : details.message });
 }

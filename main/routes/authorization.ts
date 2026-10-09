@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, now, verifyPin } from '../db';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { requirePermission } from '../services/authorization';
 import {
   AdministrationUnreachableError,
@@ -26,6 +28,28 @@ import { isRole, ROLE_KEYS, type Role } from '../../shared/role-permissions';
 const router = Router();
 const MAX_OVERRIDES = PERMISSION_DEFINITIONS.length;
 
+function captureAuthorizationRejection(capturePoint: string): void {
+  const failure = serializeOperationFailure({ capture_point: capturePoint, outcome: 'not_applied' });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change an authorization decision.
+  }
+}
+
+function captureAuthorizationInputRejection(validationCode: 'invalid_role' | 'invalid_overrides' | 'missing_revision'): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.authorization.input_validation',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change permission configuration responses.
+  }
+}
+
 type OverrideInput = { permission_id?: unknown; effect?: unknown };
 
 function actorId(req: Request): string {
@@ -45,6 +69,7 @@ function preflightOverrides(req: Request, res: Response, candidate: PermissionOv
     assertAdministrationReachable(getDatabase(), candidate);
   } catch (error) {
     if (!(error instanceof AdministrationUnreachableError)) throw error;
+    captureAuthorizationRejection('fc.backend.authorization.administration_guard');
     res.status(400).json({ error: error.message, code: 'administration_unreachable' });
     return true;
   }
@@ -69,6 +94,7 @@ function preflightOverrides(req: Request, res: Response, candidate: PermissionOv
     // would lock the owner out of the one action that lets them continue.
     const pinHash = (getDatabase().prepare('SELECT pin_hash FROM users WHERE id = ?').get(actor) as { pin_hash: string | null } | undefined)?.pin_hash;
     if (!pinHash) {
+      captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
       res.status(409).json({
         error: 'Set a PIN on your own account in Staff before removing your own administrative access.',
         code: 'self_privilege_change_factor_unavailable',
@@ -79,9 +105,11 @@ function preflightOverrides(req: Request, res: Response, candidate: PermissionOv
     const presented = req.body?.override_pin;
     if (verifyPin(pinHash, presented)) return false;
     if (presented) {
+      captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
       res.status(403).json({ error: 'Invalid owner PIN', code: 'self_privilege_change_factor_invalid' });
       return true;
     }
+    captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
     res.status(428).json({ error: error.message, code: 'self_privilege_change_requires_factor', requires: 'pin' });
     return true;
   }
@@ -175,11 +203,21 @@ router.get('/roles', (_req: Request, res: Response) => {
 
 router.put('/roles/:role', (req: Request, res: Response) => {
   const role = String(req.params.role);
-  if (!isRole(role)) return res.status(400).json({ error: 'Invalid role', code: 'invalid_role' });
+  if (!isRole(role)) {
+    captureAuthorizationInputRejection('invalid_role');
+    return res.status(400).json({ error: 'Invalid role', code: 'invalid_role' });
+  }
   const overrides = parseOverrides(req.body?.overrides);
-  if (!overrides) return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
-  if (typeof req.body?.revision !== 'string') return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  if (!overrides) {
+    captureAuthorizationInputRejection('invalid_overrides');
+    return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
+  }
+  if (typeof req.body?.revision !== 'string') {
+    captureAuthorizationInputRejection('missing_revision');
+    return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  }
   if (req.body.revision !== rolePermissionRevision(role)) {
+    captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
     return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', role: rolePayload(role) });
   }
 
@@ -225,9 +263,16 @@ router.put('/users/:userId', (req: Request, res: Response) => {
   const userId = String(req.params.userId);
   if (!userPayload(userId)) return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
   const overrides = parseOverrides(req.body?.overrides);
-  if (!overrides) return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
-  if (typeof req.body?.revision !== 'string') return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  if (!overrides) {
+    captureAuthorizationInputRejection('invalid_overrides');
+    return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
+  }
+  if (typeof req.body?.revision !== 'string') {
+    captureAuthorizationInputRejection('missing_revision');
+    return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  }
   if (req.body.revision !== userPermissionRevision(userId)) {
+    captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
     return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', user: userPayload(userId) });
   }
 
@@ -257,8 +302,12 @@ router.delete('/users/:userId/overrides', (req: Request, res: Response) => {
   const userId = String(req.params.userId);
   const payload = userPayload(userId);
   if (!payload) return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
-  if (typeof req.body?.revision !== 'string') return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  if (typeof req.body?.revision !== 'string') {
+    captureAuthorizationInputRejection('missing_revision');
+    return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
+  }
   if (req.body.revision !== payload.revision) {
+    captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
     return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', user: payload });
   }
   const actor = actorId(req);

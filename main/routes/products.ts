@@ -5,6 +5,8 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import { adjustProductStock } from '../services/inventory';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
@@ -12,6 +14,37 @@ import * as net from 'net';
 import { asyncHandler } from '../middleware/async-handler';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
+
+function captureProductValidation(
+  capturePoint: 'fc.backend.product.create.validation' | 'fc.backend.product.update.validation',
+  validationCode: 'required_fields' | 'numeric_fields' | 'weighted_fields' | 'cashback_invalid' | 'tax_behavior_invalid'
+    | 'tax_category_invalid' | 'image_url_invalid' | 'inventory_link_invalid' | 'category_invalid'
+    | 'dietary_tags_invalid' | 'variants_invalid' | 'barcode_conflict' | 'addon_groups_invalid',
+): void {
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change product validation responses.
+  }
+}
+
+function captureProductStockValidation(validationCode: 'action_required' | 'action_invalid' | 'quantity_invalid'): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.product.stock.validation',
+    outcome: 'not_applied',
+    facts: { validation_code: validationCode },
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change stock validation responses.
+  }
+}
 
 /** Resolves hostname and rejects loopback/private/metadata/reserved IPs (SSRF guard). */
 async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
@@ -1206,38 +1239,53 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     const productName = normalizeRequiredName(name);
 
     if (!productName || price === undefined) {
+      captureProductValidation('fc.backend.product.create.validation', 'required_fields');
       return res.status(400).json({ error: 'Name and price are required' });
     }
     const numericError = validateProductNumericFields(req.body, true);
-    if (numericError) return res.status(400).json({ error: numericError });
+    if (numericError) {
+      captureProductValidation('fc.backend.product.create.validation', 'numeric_fields');
+      return res.status(400).json({ error: numericError });
+    }
     const weightedFieldError = validateWeightedProductFields(req.body);
-    if (weightedFieldError) return res.status(400).json({ error: weightedFieldError });
+    if (weightedFieldError) {
+      captureProductValidation('fc.backend.product.create.validation', 'weighted_fields');
+      return res.status(400).json({ error: weightedFieldError });
+    }
 
     if (cb_percent !== undefined && cb_percent !== null) {
       if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
+        captureProductValidation('fc.backend.product.create.validation', 'cashback_invalid');
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
     }
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      captureProductValidation('fc.backend.product.create.validation', 'tax_behavior_invalid');
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
     const taxCategoryError = validateTaxCategoryId(tax_category_id);
     if (taxCategoryError) {
+      captureProductValidation('fc.backend.product.create.validation', 'tax_category_invalid');
       return res.status(400).json({ error: taxCategoryError });
     }
 
     // Validate image_url at write time (server-side security boundary)
     const imageValidation = validateImageUrl(image_url);
     if (!imageValidation.valid) {
+      captureProductValidation('fc.backend.product.create.validation', 'image_url_invalid');
       return res.status(400).json({ error: imageValidation.error });
     }
 
     const db = getDatabase();
     const inventoryLinkError = validateInventoryLinkFields(db, req.body);
-    if (inventoryLinkError) return res.status(400).json({ error: inventoryLinkError });
+    if (inventoryLinkError) {
+      captureProductValidation('fc.backend.product.create.validation', 'inventory_link_invalid');
+      return res.status(400).json({ error: inventoryLinkError });
+    }
     const categoryError = validateCategoryId(db, category_id);
     if (categoryError) {
+      captureProductValidation('fc.backend.product.create.validation', 'category_invalid');
       return res.status(400).json({ error: categoryError });
     }
 
@@ -1245,10 +1293,12 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     // uses: a scan must resolve to exactly one sellable thing.
     const dietaryTagValidation = normalizeDietaryTags(dietary_tags);
     if (dietaryTagValidation.error) {
+      captureProductValidation('fc.backend.product.create.validation', 'dietary_tags_invalid');
       return res.status(400).json({ error: dietaryTagValidation.error });
     }
     const normalizedVariants = variants === undefined ? undefined : normalizeVariants(db, variants);
     if (normalizedVariants?.error) {
+      captureProductValidation('fc.backend.product.create.validation', 'variants_invalid');
       return res.status(400).json({ error: normalizedVariants.error });
     }
     const barcodeError = validateCatalogBarcodes(db, {
@@ -1263,6 +1313,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
       deactivatedVariantIds: [],
     });
     if (barcodeError) {
+      captureProductValidation('fc.backend.product.create.validation', 'barcode_conflict');
       return res.status(400).json({ error: barcodeError });
     }
 
@@ -1271,6 +1322,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
+      captureProductValidation('fc.backend.product.create.validation', 'addon_groups_invalid');
       return res.status(400).json({ error: addonGroupValidation.error });
     }
     const normalizedAddonGroupIds = addonGroupValidation.ids;
@@ -1367,32 +1419,46 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     const hasName = hasOwn(req.body, 'name');
     const productName = hasName ? normalizeRequiredName(name) : null;
     if (hasName && !productName) {
+      captureProductValidation('fc.backend.product.update.validation', 'required_fields');
       return res.status(400).json({ error: 'Name is required' });
     }
 
     const numericError = validateProductNumericFields(req.body, false);
-    if (numericError) return res.status(400).json({ error: numericError });
+    if (numericError) {
+      captureProductValidation('fc.backend.product.update.validation', 'numeric_fields');
+      return res.status(400).json({ error: numericError });
+    }
     const weightedFieldError = validateWeightedProductFields(req.body, product);
-    if (weightedFieldError) return res.status(400).json({ error: weightedFieldError });
+    if (weightedFieldError) {
+      captureProductValidation('fc.backend.product.update.validation', 'weighted_fields');
+      return res.status(400).json({ error: weightedFieldError });
+    }
     const inventoryLinkError = validateInventoryLinkFields(db, req.body, String(req.params.id));
-    if (inventoryLinkError) return res.status(400).json({ error: inventoryLinkError });
+    if (inventoryLinkError) {
+      captureProductValidation('fc.backend.product.update.validation', 'inventory_link_invalid');
+      return res.status(400).json({ error: inventoryLinkError });
+    }
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      captureProductValidation('fc.backend.product.update.validation', 'tax_behavior_invalid');
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
 
     if (cb_percent !== undefined && cb_percent !== null) {
       if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
+        captureProductValidation('fc.backend.product.update.validation', 'cashback_invalid');
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
     }
     const taxCategoryError = validateTaxCategoryId(tax_category_id);
     if (taxCategoryError) {
+      captureProductValidation('fc.backend.product.update.validation', 'tax_category_invalid');
       return res.status(400).json({ error: taxCategoryError });
     }
     if (hasOwn(req.body, 'category_id')) {
       const categoryError = validateCategoryId(db, category_id);
       if (categoryError) {
+        captureProductValidation('fc.backend.product.update.validation', 'category_invalid');
         return res.status(400).json({ error: categoryError });
       }
     }
@@ -1401,18 +1467,21 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     if ('image_url' in req.body) {
       const imageValidation = validateImageUrl(image_url);
       if (!imageValidation.valid) {
+        captureProductValidation('fc.backend.product.update.validation', 'image_url_invalid');
         return res.status(400).json({ error: imageValidation.error });
       }
     }
 
     const dietaryTagValidation = normalizeDietaryTags(dietary_tags);
     if (dietaryTagValidation.error) {
+      captureProductValidation('fc.backend.product.update.validation', 'dietary_tags_invalid');
       return res.status(400).json({ error: dietaryTagValidation.error });
     }
     const normalizedVariants = hasOwn(req.body, 'variants')
       ? normalizeVariants(db, variants, String(req.params.id))
       : {};
     if (normalizedVariants.error) {
+      captureProductValidation('fc.backend.product.update.validation', 'variants_invalid');
       return res.status(400).json({ error: normalizedVariants.error });
     }
     // A barcode held by a variant this write deactivates becomes free. The
@@ -1444,6 +1513,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       ],
     });
     if (barcodeError) {
+      captureProductValidation('fc.backend.product.update.validation', 'barcode_conflict');
       return res.status(400).json({ error: barcodeError });
     }
 
@@ -1483,6 +1553,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids, String(req.params.id));
     if (addonGroupValidation.error) {
+      captureProductValidation('fc.backend.product.update.validation', 'addon_groups_invalid');
       return res.status(400).json({ error: addonGroupValidation.error });
     }
     const normalizedAddonGroupIds = addonGroupValidation.ids;
@@ -1627,6 +1698,15 @@ router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: R
        WHERE v.inventory_product_id = ? AND v.is_active = 1 AND p.deleted_at IS NULL LIMIT 1`,
     ).get(req.params.id);
     if (linkedBy || linkedByVariant) {
+      const failure = serializeOperationFailure({
+        capture_point: 'fc.backend.product.delete.inventory_target',
+        outcome: 'not_applied',
+      });
+      try {
+        if (failure) cloudSync.captureOperationFailure(failure);
+      } catch {
+        // Diagnostics cannot change the inventory-link protection.
+      }
       return res.status(409).json({ error: 'Cannot delete a product that is the inventory target for another product or product variant. Remove the inventory link first.' });
     }
 
@@ -1643,13 +1723,16 @@ router.post('/:id/stock', requirePermission('inventory.manage'), (req: Request, 
     const { action, quantity } = req.body;
 
     if (!action || quantity === undefined) {
+      captureProductStockValidation('action_required');
       return res.status(400).json({ error: 'Action and quantity are required' });
     }
 
     if (!['set', 'increase', 'decrease'].includes(action)) {
+      captureProductStockValidation('action_invalid');
       return res.status(400).json({ error: 'Invalid action. Use: set, increase, decrease' });
     }
     if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity < 0) {
+      captureProductStockValidation('quantity_invalid');
       return res.status(400).json({ error: 'quantity must be a non-negative number' });
     }
     const adjustmentReason = stockReason(req.body.reason, 'Manual stock adjustment');

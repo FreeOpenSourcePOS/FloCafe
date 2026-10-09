@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
+import { cloudSync } from '../services/cloud-sync';
+import { serializeOperationFailure } from '../lib/operation-failure';
 import { InventoryMovementType, listInventoryMovements } from '../services/inventory';
 
 const router = Router();
@@ -9,9 +11,21 @@ const MOVEMENT_TYPES: InventoryMovementType[] = ['sale', 'cancel_restore', 'adju
 function queryString(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > 128) {
-    throw Object.assign(new Error(`${field} must be a non-empty string of at most 128 characters`), { statusCode: 400 });
+    throw Object.assign(new Error(`${field} must be a non-empty string of at most 128 characters`), { statusCode: 400, diagnosticCode: 'invalid_query' });
   }
   return value.trim();
+}
+
+function captureInventoryQueryRejection(): void {
+  const failure = serializeOperationFailure({
+    capture_point: 'fc.backend.inventory.movement_query.invalid',
+    outcome: 'not_applied',
+  });
+  try {
+    if (failure) cloudSync.captureOperationFailure(failure);
+  } catch {
+    // Diagnostics cannot change the movement query response.
+  }
 }
 
 router.get('/movements', requirePermission('inventory.view'), (req: Request, res: Response) => {
@@ -22,6 +36,7 @@ router.get('/movements', requirePermission('inventory.view'), (req: Request, res
     const referenceId = queryString(req.query.reference_id, 'reference_id');
     const movementType = queryString(req.query.movement_type, 'movement_type') as InventoryMovementType | undefined;
     if (movementType && !MOVEMENT_TYPES.includes(movementType)) {
+      captureInventoryQueryRejection();
       return res.status(400).json({ error: 'movement_type is invalid' });
     }
 
@@ -30,6 +45,7 @@ router.get('/movements', requirePermission('inventory.view'), (req: Request, res
       ? undefined
       : typeof rawBeforeId === 'string' && /^\d+$/.test(rawBeforeId) ? Number(rawBeforeId) : NaN;
     if (beforeId !== undefined && (!Number.isSafeInteger(beforeId) || beforeId <= 0)) {
+      captureInventoryQueryRejection();
       return res.status(400).json({ error: 'before_id must be a positive integer' });
     }
 
@@ -55,6 +71,9 @@ router.get('/movements', requirePermission('inventory.view'), (req: Request, res
   } catch (error: unknown) {
     const details = error as { statusCode?: unknown; message?: unknown };
     const statusCode = Number.isInteger(details.statusCode) ? details.statusCode as number : 500;
+    if (details.statusCode === 400 && (error as { diagnosticCode?: unknown }).diagnosticCode === 'invalid_query') {
+      captureInventoryQueryRejection();
+    }
     if (statusCode >= 500) console.error('[API] Internal error:', error);
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : details.message });
   }

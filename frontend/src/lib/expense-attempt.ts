@@ -41,8 +41,10 @@ export class ExpenseAttemptStorageError extends Error {
 }
 
 export function withExpenseAttemptLock<T>(operation: () => Promise<T>): Promise<T> {
-  if (typeof navigator === 'undefined' || !navigator.locks) throw new ExpenseAttemptStorageError();
-  return navigator.locks.request(EXPENSE_ATTEMPT_STORAGE_KEY, { ifAvailable: true }, (lock) => {
+  if (typeof navigator === 'undefined' || !navigator.locks) {
+    return operation();
+  }
+  return navigator.locks.request(EXPENSE_ATTEMPT_STORAGE_KEY, (lock) => {
     if (!lock) throw new ExpenseAttemptStorageError();
     return operation();
   }) as Promise<T>;

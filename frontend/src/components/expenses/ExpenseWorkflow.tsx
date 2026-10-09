@@ -301,6 +301,7 @@ export default function ExpenseWorkflow({
   /** Applies a committed response: refresh from the server, keep the committed id. */
   const resolveCommitted = (snapshot: ExpenseAttemptSnapshot, data: Record<string, unknown>) => {
     setErrors({});
+    setView('main');
     onChanged();
     if (snapshot.kind === 'expense.create' || snapshot.kind === 'expense.replace') {
       const saved = data.expense as ExpenseRecord;
@@ -311,7 +312,6 @@ export default function ExpenseWorkflow({
     if (snapshot.kind === 'expense.void') toast.success(t('voidedNotice'));
     if (snapshot.kind === 'expense.payment') toast.success(t('paymentRecorded'));
     if (snapshot.kind === 'expense.payment.reverse') toast.success(t('reversalRecorded'));
-    setView('main');
     void loadDetail();
   };
 

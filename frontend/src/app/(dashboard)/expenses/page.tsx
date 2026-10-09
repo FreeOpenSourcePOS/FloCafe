@@ -66,12 +66,21 @@ export default function ExpensesPage() {
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
-  const filterKey = filters ? JSON.stringify(filters) : '';
+  const filterKey = filters ? JSON.stringify([filters, refreshKey]) : '';
   const requestKey = filters ? JSON.stringify([filters, refreshKey]) : '';
   const currentSummary = summary?.key === filterKey ? summary.data : null;
   const stale = !filters || page.key !== requestKey;
   const expenses = stale ? [] : page.rows;
   const nextCursor = stale ? null : page.cursor;
+
+  const refreshContext = useCallback(async () => {
+    try {
+      const { data } = await api.get('/expenses/context');
+      setContext(data as ExpenseContext);
+    } catch {
+      // Background context refresh failure is non-blocking
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -101,10 +110,15 @@ export default function ExpensesPage() {
   }, [refreshAuthContext, t]);
 
   useEffect(() => {
+    const handleFocus = () => { void refreshContext(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [refreshContext]);
+
+  useEffect(() => {
     if (!filters) return;
     const seq = ++requestSeq.current;
     const controller = new AbortController();
-    const key = JSON.stringify(filters);
     const pageKey = JSON.stringify([filters, refreshKey]);
 
     const params = {
@@ -141,7 +155,7 @@ export default function ExpensesPage() {
     api.get('/expenses/summary', { params: summaryParams, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setSummary({ key, data: data as ExpenseSummary });
+        setSummary({ key: pageKey, data: data as ExpenseSummary });
       })
       .catch(() => { /* the list surfaces the failure; the summary is supplementary */ });
 
@@ -203,7 +217,10 @@ export default function ExpensesPage() {
         <h1 className="text-2xl font-bold text-foreground">{tNav('expenses')}</h1>
         {tenantCan(currentTenant, 'expenses.manage') && (
           <Button
-            onClick={() => setWorkflow({ mode: 'create', expense: null })}
+            onClick={() => {
+              void refreshContext();
+              setWorkflow({ mode: 'create', expense: null });
+            }}
             disabled={!context}
             data-testid="expense-add"
           >
@@ -344,7 +361,10 @@ export default function ExpensesPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setWorkflow({ mode: 'detail', expense })}
+                    onClick={() => {
+                      void refreshContext();
+                      setWorkflow({ mode: 'detail', expense });
+                    }}
                     data-testid="expense-open-detail"
                   >
                     {t('openDetail')}
@@ -374,6 +394,7 @@ export default function ExpensesPage() {
 
       {workflow && context && (
         <ExpenseWorkflow
+          key={`${workflow.mode}:${workflow.expense?.id ?? 'new'}`}
           mode={workflow.mode}
           expense={workflow.expense}
           categories={categories}

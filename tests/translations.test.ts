@@ -891,6 +891,7 @@ function filFallbackErrors(filFlat: Record<string, string>, enFlat: Record<strin
  * tokens or identical words.
  */
 const DE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'expenses.status', // "Status" is the German word
   'dashboard.exportCsv', // format label "CSV (.csv)"
   'dashboard.exportXlsx', // format label "Excel (.xlsx)"
   'auth.countryThailand',
@@ -1311,7 +1312,8 @@ function koFallbackErrors(koFlat: Record<string, string>, enFlat: Record<string,
 /** Indonesian translation safeguards. */
 const ID_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.appTitle', 'common.brandName', 'common.logoAlt', 'settings.revflo', 'setup.finedineLabel',
-  'auth.email', 'auth.recoverPinLabel', 'kds.connectionPolling', 'kds.emptyColumn', 'kds.viewKanban',
+  'auth.email', 'auth.recoverPinLabel', 'expenses.status', // "Status" is the Indonesian word
+  'kds.connectionPolling', 'kds.emptyColumn', 'kds.viewKanban',
   'nav.kds', 'nav.pos', 'nav.whatsapp', 'nav.heapLabel', 'nav.portLabel', 'nav.serverLabel',
   'pos.orderTypeOnline', 'printTest.escpos', 'printTest.item', 'printTest.paperWidth58',
   'printTest.paperWidth80', 'print.hsn', 'print.zReport.paymentCount', 'print.zReport.amount',
@@ -1353,6 +1355,7 @@ const NL_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.appTitle', 'common.brandName', 'common.logoAlt', 'common.percentage',
   'common.timeHoursMinutes', 'common.timeMinutes', 'dashboard.minutesValue', 'dashboard.title',
   'dashboard.exportXlsx', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
+  'expenses.status', // "Status" is the Dutch word
   'inventory.product', 'kds.addonsLabel', 'kds.connectionLive', 'kds.emptyColumn', 'kds.viewKanban',
   'permissionMatrix.areas.apps', // "apps" is a loanword in Dutch
   'nav.dashboard', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online', 'pos.addonPrice',

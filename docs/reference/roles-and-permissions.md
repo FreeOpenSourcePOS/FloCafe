@@ -180,8 +180,11 @@ every mutation is attributed to the authenticated actor. `expenses.pay` and `exp
 separate configurable ids for payment and reversal authority, so neither is implied by the manage
 grant. Cash payments and cash reversals also need `cash.movements.manage` and a real open shift,
 because each writes one linked drawer movement; that session requirement is deliberate and does not
-follow the configurable `require_open_shift` gate. The [Expenses API reference](api.md#expenses)
-lists the expense operations exposed over HTTP.
+follow the configurable `require_open_shift` gate. `expenses.view` also gates the Expenses page and
+its navigation entry; the page offers payment, reversal, void, and replacement only when the
+matching grant is present, and it never opens a shift or grants a permission on the operator's
+behalf. The [Expenses API reference](api.md#expenses) lists the expense operations exposed over
+HTTP.
 
 **Server App.** The standalone Server App is gated by `server-app.use`, shipped by default to
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than

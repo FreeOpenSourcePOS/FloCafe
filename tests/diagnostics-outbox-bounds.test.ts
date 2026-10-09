@@ -136,7 +136,13 @@ async function main() {
   db.prepare('DELETE FROM store_diagnostics_outbox').run();
   const totalWrites = DIAGNOSTIC_LOG_MAX_ROWS + 25;
   const writtenIds: string[] = [];
-  const captureAt = (index: number) => new Date(Date.now() - (totalWrites - index) * 60 * 60_000).toISOString();
+  const captureBase = Date.now();
+  const captureAt = (index: number) => new Date(captureBase - (totalWrites - index) * 60 * 60_000).toISOString();
+  const expectedHour = (index: number) => {
+    const hour = new Date(captureAt(index));
+    hour.setUTCMinutes(0, 0, 0);
+    return hour.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  };
   const localHas = (id: string) => (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics WHERE metadata_json LIKE ?').get(`%${id}%`) as { count: number }).count === 1;
   // Every write is awaited on a unique marker rather than on a row count: the
   // local log always keeps the newest rows, so a marker is present exactly once
@@ -170,23 +176,24 @@ async function main() {
     await (cloudSync as any).flushDiagnosticsOutbox();
   }
   assertOrThrow(countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS, 'after 25 overflow writes the outbox is still exactly at its cap, so none exceeded it');
-  assertOrThrow(
-    (db.prepare('SELECT COUNT(*) AS count FROM diagnostics_delivery_gaps WHERE reason_code = ? AND count > 0').get('queue_eviction') as { count: number }).count === 1,
-    'evicting undelivered reports leaves a persistent queue-eviction gap',
+  assertEqualOrThrow(countRows(db, 'diagnostics_hourly_aggregates'), 25, 'new occurrences remain in the bounded aggregate table while the full queue is pending');
+  assertEqualOrThrow(
+    (db.prepare("SELECT COALESCE(SUM(count), 0) AS count FROM diagnostics_delivery_gaps WHERE reason_code = 'queue_eviction'").get() as { count: number }).count,
+    0,
+    'a full pending queue does not cause avoidable report eviction',
+  );
+  assertEqualOrThrow(
+    (db.prepare("SELECT COALESCE(SUM(count), 0) AS count FROM diagnostics_delivery_gaps WHERE reason_code = 'local_retention'").get() as { count: number }).count,
+    25,
+    'the bounded local detail log still records its 25 evicted rows',
   );
   assertEqualOrThrow(countRows(db, 'local_diagnostics'), DIAGNOSTIC_LOG_MAX_ROWS, 'the local failure log is capped at 200 rows');
 
   // Eviction policy: oldest first among rows that are equally eligible.
   const survivingWindows = (db.prepare('SELECT payload FROM store_diagnostics_outbox ORDER BY rowid ASC').all() as Array<{ payload: string }>)
     .map((row) => JSON.parse(row.payload).window_start);
-  const capturedHour = (id: string) => {
-    const row = db.prepare('SELECT occurred_at FROM local_diagnostics WHERE metadata_json LIKE ? ORDER BY id DESC LIMIT 1').get(`%${id}%`) as { occurred_at: string } | undefined;
-    const hour = new Date(row?.occurred_at || 0);
-    hour.setUTCMinutes(0, 0, 0);
-    return hour.toISOString().replace(/\.\d{3}Z$/, 'Z');
-  };
-  assertEqualOrThrow(survivingWindows[0], capturedHour(writtenIds[25]), 'the oldest surviving report is the first write after the 25 evicted to stay under the cap');
-  assertEqualOrThrow(survivingWindows.at(-1), capturedHour(writtenIds[totalWrites - 1]), 'the newest outbox report is the most recent write');
+  assertEqualOrThrow(survivingWindows[0], expectedHour(0), 'the oldest pending report remains queued while the queue is full');
+  assertEqualOrThrow(survivingWindows.at(-1), expectedHour(DIAGNOSTIC_LOG_MAX_ROWS - 1), 'the queue contains only the original reports, without sacrificing pending evidence');
   const oldestLocal = db.prepare('SELECT id FROM local_diagnostics ORDER BY id ASC LIMIT 1').get() as { id: number };
   const newestLocal = db.prepare('SELECT id FROM local_diagnostics ORDER BY id DESC LIMIT 1').get() as { id: number };
   assertEqualOrThrow(newestLocal.id - oldestLocal.id + 1, DIAGNOSTIC_LOG_MAX_ROWS, 'the local log holds a contiguous window of the newest 200 writes');
@@ -195,6 +202,8 @@ async function main() {
   await drain(db);
   db.prepare('DELETE FROM local_diagnostics').run();
   db.prepare('DELETE FROM store_diagnostics_outbox').run();
+  db.prepare('DELETE FROM diagnostics_hourly_aggregates').run();
+  db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
   setSetting(db, 'diagnostics_transmission_enabled', 'true');
   setSetting(db, 'diagnostics_consent', 'true');
   setSetting(db, 'telemetry_enabled', 'true');
@@ -228,13 +237,14 @@ async function main() {
     "SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE event_id LIKE ?",
   ).get(prefix) as { count: number }).count;
   assertEqualOrThrow(countPrefix('delivered-%'), 0, 'the 10 newer delivered rows were evicted before any undelivered row');
-  assertEqualOrThrow(countPrefix('undelivered-%'), 175, 'only 15 of the 190 older undelivered rows were sacrificed, and never to a delivered row');
+  assertEqualOrThrow(countPrefix('undelivered-%'), 190, 'new diagnostic reports never evict older pending reports');
   assertOrThrow(
     !db.prepare("SELECT event_id FROM store_diagnostics_outbox WHERE event_id LIKE 'delivered-%'").get(),
-    'an undelivered failure was never discarded while a newer delivered row survived',
+    'delivered rows are reclaimed to make room before new reports are deferred',
   );
+  assertEqualOrThrow(countRows(db, 'diagnostics_hourly_aggregates'), 15, 'reports that do not fit remain in the bounded aggregate table');
 
-  console.log('\n3c. An overflow gap reaches the collector after a full queue drains, without a new capture');
+  console.log('\n3c. Local retention gaps reach the collector after a full queue drains, without a new capture');
   await drain(db);
   db.prepare('DELETE FROM local_diagnostics').run();
   db.prepare('DELETE FROM store_diagnostics_outbox').run();
@@ -243,26 +253,27 @@ async function main() {
   db.prepare('DELETE FROM local_diagnostics').run();
   process.env.FLO_MATRIX_OFFLINE = '1';
   const overflowWrites = DIAGNOSTIC_LOG_MAX_ROWS + 5;
+  const overflowCaptureBase = Date.now();
   for (let i = 0; i < overflowWrites; i++) {
     const eventId = crypto.randomUUID();
     cloudSync.captureOperationFailure({
       capture_point: 'fc.backend.order.create.persistence', outcome: 'not_applied',
-      correlation_id: eventId, occurred_at: captureAt(i),
+      correlation_id: eventId, occurred_at: new Date(overflowCaptureBase - (overflowWrites - i) * 60 * 60_000).toISOString(),
     });
     assertOrThrow(await settle(() => localHas(eventId)), `offline overflow capture ${i + 1} completed`);
     await (cloudSync as any).flushDiagnosticsOutbox();
   }
   assertEqualOrThrow(countRows(db, 'store_diagnostics_outbox'), DIAGNOSTIC_LOG_MAX_ROWS, 'the offline queue remains capped at 200');
   assertEqualOrThrow(
-    (db.prepare("SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'queue_eviction'").get() as { count: number }).count,
+    (db.prepare("SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'local_retention'").get() as { count: number }).count,
     5,
-    'the five evicted occurrences remain visible as a gap',
+    'five local detail rows aged out of the bounded log remain visible as a gap',
   );
-  const acceptedPoints: string[] = [];
+  assertEqualOrThrow(countRows(db, 'diagnostics_hourly_aggregates'), 5, 'overflow occurrences remain in the bounded hourly aggregate table');
+  const originalReportIds = (db.prepare('SELECT event_id FROM store_diagnostics_outbox').all() as Array<{ event_id: string }>).map((row) => row.event_id);
   const acceptedGapReasons: string[] = [];
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body || '{}'));
-    acceptedPoints.push(body.payload.report.capture_point);
     if (body.payload.report.capture_point === 'fc.diagnostics.delivery.queue_gap') {
       acceptedGapReasons.push(body.payload.report.facts.gap_reason);
     }
@@ -272,26 +283,89 @@ async function main() {
   }) as unknown as typeof fetch;
   delete process.env.FLO_MATRIX_OFFLINE;
   db.prepare("UPDATE store_diagnostics_outbox SET status = 'pending', next_attempt_at = NULL, attempt_count = 0 WHERE permanent_failure = 0").run();
-  for (let i = 0; i < 20 && (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status IN ('pending', 'failed') AND permanent_failure = 0").get() as { count: number }).count > 0; i++) {
+  const originalPendingCount = () => {
+    const placeholders = originalReportIds.map(() => '?').join(',');
+    return (db.prepare(`SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE event_id IN (${placeholders}) AND status IN ('pending', 'failed')`).get(...originalReportIds) as { count: number }).count;
+  };
+  for (let i = 0; i < 20 && originalPendingCount() > 0; i++) {
     await (cloudSync as any).flushDiagnosticsOutbox();
   }
   assertEqualOrThrow(
-    (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status IN ('pending', 'failed') AND permanent_failure = 0").get() as { count: number }).count,
+    originalPendingCount(),
     0,
-    'all original reports drain while the loss count remains locally queued',
+    'the original offline reports drain before the retained aggregate and gap snapshots',
   );
-  assertEqualOrThrow(acceptedPoints.includes('fc.diagnostics.delivery.queue_gap'), false, 'the full queue initially prevents a gap report');
-  for (let i = 0; i < 4 && !acceptedGapReasons.includes('queue_eviction'); i++) {
-    await (cloudSync as any).flushDiagnosticsOutbox();
-  }
-  assertOrThrow(acceptedGapReasons.includes('queue_eviction'), 'later flushes send the queue-eviction gap after making room for all pending gap categories, with no new occurrence');
+  assertEqualOrThrow(acceptedGapReasons.length, 0, 'gap reports wait behind older queued reports');
   assertEqualOrThrow(
-    (db.prepare("SELECT COALESCE(SUM(count), 0) AS count FROM diagnostics_delivery_gaps WHERE reason_code = 'queue_eviction'").get() as { count: number }).count,
+    (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status IN ('pending', 'failed') AND payload LIKE '%fc.diagnostics.delivery.queue_gap%'").get() as { count: number }).count,
+    1,
+    'a gap report remains pending after the older reports have drained',
+  );
+  await (cloudSync as any).flushDiagnosticsOutbox();
+  assertOrThrow(acceptedGapReasons.includes('local_retention'), 'a subsequent flush delivers the gap snapshot without a new capture');
+  assertEqualOrThrow(
+    (db.prepare("SELECT COALESCE(SUM(count), 0) AS count FROM diagnostics_delivery_gaps WHERE reason_code = 'local_retention'").get() as { count: number }).count,
     0,
-    'the acknowledged queue-eviction snapshot clears its local counter',
+    'the acknowledged local-retention snapshot clears its local counter',
   );
 
-  console.log('\n3d. Both anonymous and signed retry paths honor a one-hour Retry-After');
+  console.log('\n3d. Aggregate and gap sealing work stays bounded and gives gaps a delivery slot');
+  db.prepare('DELETE FROM store_diagnostics_outbox').run();
+  db.prepare('DELETE FROM diagnostics_hourly_aggregates').run();
+  db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
+  setSetting(db, 'diagnostics_consent', 'true');
+  setSetting(db, 'diagnostics_transmission_enabled', 'true');
+  setSetting(db, 'telemetry_enabled', 'true');
+  setSetting(db, 'cloud_sync_enabled', '0');
+  setSetting(db, 'cloud_api_key', '');
+  setSetting(db, 'cloud_deletion_status', '');
+  delete process.env.FLO_MATRIX_OFFLINE;
+  const extremeCount = Number.MAX_SAFE_INTEGER;
+  const aggregateAt = new Date();
+  aggregateAt.setUTCMinutes(0, 0, 0);
+  const aggregateWindow = aggregateAt.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const aggregateFirst = new Date(aggregateAt.getTime() + 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const aggregateLast = new Date(aggregateAt.getTime() + 120_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  db.prepare(`INSERT INTO diagnostics_hourly_aggregates (
+    aggregate_key, capture_point, reason_code, classification, operation, stage, outcome,
+    window_start, count, first_occurred_at, last_occurred_at, app_version, app_build, platform,
+    examples_json, facts_json, updated_at
+  ) VALUES ('extreme-aggregate', 'fc.backend.order.create.persistence', 'persistence.failed',
+    'unexpected_failure', 'order.create', 'persistence', 'not_applied', ?, ?, ?, ?, '3.12.22', 'dev', 'unknown', '[]', '{}', ?)`)
+    .run(aggregateWindow, extremeCount, aggregateFirst, aggregateLast, now());
+  db.prepare('INSERT INTO diagnostics_delivery_gaps (reason_code, count, updated_at) VALUES (\'local_retention\', ?, ?)')
+    .run(extremeCount, now());
+  const sealedCounts: number[] = [];
+  const sealedPoints: string[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || '{}'));
+    sealedCounts.push(body.payload.report.count);
+    sealedPoints.push(body.payload.report.capture_point);
+    return new Response(JSON.stringify({ schema_version: 2, report_id: body.payload.report.report_id, disposition: 'accepted' }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+  await (cloudSync as any).flushDiagnosticsOutbox();
+  assertEqualOrThrow(sealedCounts.length, 20, 'one flush seals no more than the 20-report batch budget');
+  assertOrThrow(sealedCounts.every((count) => count === 100_000), 'each sealed extreme-count report respects the 100,000 occurrence cap');
+  assertEqualOrThrow(sealedPoints.filter((point) => point === 'fc.backend.order.create.persistence').length, 19, 'the aggregate keeps most of the bounded flush budget');
+  assertEqualOrThrow(sealedPoints.filter((point) => point === 'fc.diagnostics.delivery.queue_gap').length, 1, 'a pending gap receives one report slot before the aggregate is exhausted');
+  assertEqualOrThrow(
+    (db.prepare("SELECT count FROM diagnostics_hourly_aggregates WHERE aggregate_key = 'extreme-aggregate'").get() as { count: number }).count,
+    extremeCount - 1_900_000,
+    'unsealed aggregate occurrences remain locally accounted for after one fair bounded flush',
+  );
+  assertEqualOrThrow(
+    (db.prepare("SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'local_retention'").get() as { count: number }).count,
+    extremeCount - 100_000,
+    'unsealed gap occurrences remain locally accounted for after one bounded flush',
+  );
+  db.prepare('DELETE FROM store_diagnostics_outbox').run();
+  db.prepare('DELETE FROM diagnostics_hourly_aggregates').run();
+  db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
+  globalThis.fetch = originalFetch;
+
+  console.log('\n3e. Both anonymous and signed retry paths honor a one-hour Retry-After');
   const retryEventId = crypto.randomUUID();
   globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': '3600' } })) as unknown as typeof fetch;
   cloudSync.captureOperationFailure({
@@ -306,36 +380,59 @@ async function main() {
   assertOrThrow(anonymousRetryAt >= Date.now() + 3_590_000, 'anonymous retry does not run early at the 30-minute exponential cap');
 
   db.prepare('DELETE FROM store_diagnostics_outbox').run();
+  db.prepare('DELETE FROM diagnostics_hourly_aggregates').run();
+  db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
   setSetting(db, 'cloud_sync_enabled', '1');
   setSetting(db, 'cloud_api_key', 'synthetic-test-key');
   setSetting(db, 'cloud_server_url', 'https://example.invalid');
   setSetting(db, 'cloud_registration_status', 'registered');
   setSetting(db, 'cloud_services_disabled_by_user', 'false');
   const priorSignedFetch = (cloudSync as any).signedFetch;
+  const signedReportBodies: string[] = [];
+  const signedStatuses = [429, 503];
   (cloudSync as any).signedFetch = async (url: string, options: RequestInit = {}) => {
     if (url === '/api/pos/diagnostics-consent') {
       return new Response(JSON.stringify({ schema_version: 2, enabled: true, revision: 1, initialized: true }), { status: 200 });
     }
-    return new Response('{}', { status: 429, headers: { 'Retry-After': '3600' } });
+    signedReportBodies.push(String(options.body || ''));
+    return new Response(JSON.stringify({ schema_version: 2, report_id: crypto.randomUUID(), disposition: 'accepted' }), {
+      status: signedStatuses.shift() || 503, headers: { 'Retry-After': '3600' },
+    });
   };
   const signedRetryEventId = crypto.randomUUID();
+  setSetting(db, 'diagnostics_transmission_enabled', 'false');
   cloudSync.captureOperationFailure({
     capture_point: 'fc.backend.order.create.stock_validation', outcome: 'not_applied',
     correlation_id: signedRetryEventId, occurred_at: captureAt(overflowWrites + 2),
   });
   assertOrThrow(await settle(() => localHas(signedRetryEventId)), 'the signed retry probe is captured');
+  setSetting(db, 'diagnostics_transmission_enabled', 'true');
   await (cloudSync as any).flushDiagnosticsOutbox();
-  const signedRetry = db.prepare("SELECT next_attempt_at FROM store_diagnostics_outbox WHERE status = 'failed' AND transport = 'signed' AND last_error = 'http_429' ORDER BY created_at DESC LIMIT 1").get() as { next_attempt_at: string } | undefined;
+  const signedRetry = db.prepare("SELECT event_id, payload, next_attempt_at, permanent_failure FROM store_diagnostics_outbox WHERE status = 'failed' AND transport = 'signed' AND last_error = 'http_429' ORDER BY created_at DESC LIMIT 1").get() as { event_id: string; payload: string; next_attempt_at: string; permanent_failure: number } | undefined;
   assertOrThrow(Boolean(signedRetry?.next_attempt_at), 'a signed 429 remains queued');
   const signedRetryAt = Date.parse(`${signedRetry!.next_attempt_at.replace(' ', 'T')}Z`);
   assertOrThrow(signedRetryAt >= Date.now() + 3_590_000, 'signed retry honors the full one-hour server hint');
+  assertEqualOrThrow(signedRetry?.permanent_failure, 0, 'a misleading mismatched ack cannot make a signed 429 permanent');
+  assertEqualOrThrow(JSON.parse(signedRetry!.payload).report_id, signedRetry?.event_id, 'the retry row keeps its frozen report UUID');
+  const frozenSignedPayload = signedRetry!.payload;
+  db.prepare('UPDATE store_diagnostics_outbox SET next_attempt_at = NULL WHERE event_id = ?').run(signedRetry!.event_id);
+  await (cloudSync as any).flushDiagnosticsOutbox();
+  assertEqualOrThrow(signedReportBodies.length, 2, 'the retry reaches the sender again after the test advances its deadline');
+  assertEqualOrThrow(signedReportBodies[0], frozenSignedPayload, 'the first signed attempt sends the frozen report bytes');
+  assertEqualOrThrow(signedReportBodies[1], frozenSignedPayload, 'a misleading 503 ack retries the same frozen report bytes');
+  const signedAfter503 = db.prepare('SELECT payload, next_attempt_at, permanent_failure, last_error FROM store_diagnostics_outbox WHERE event_id = ?').get(signedRetry!.event_id) as { payload: string; next_attempt_at: string; permanent_failure: number; last_error: string };
+  assertEqualOrThrow(signedAfter503.payload, frozenSignedPayload, 'the signed 503 preserves report identity and count');
+  assertEqualOrThrow(signedAfter503.last_error, 'http_503', 'a signed 503 remains retryable despite the mismatched ack');
+  assertEqualOrThrow(signedAfter503.permanent_failure, 0, 'a signed 503 does not create a permanent rejection');
+  const signedRetry503At = Date.parse(`${signedAfter503.next_attempt_at.replace(' ', 'T')}Z`);
+  assertOrThrow(signedRetry503At >= Date.now() + 3_590_000, 'signed 503 honors the full one-hour server hint');
   (cloudSync as any).signedFetch = priorSignedFetch;
   globalThis.fetch = originalFetch;
   setSetting(db, 'cloud_sync_enabled', '0');
   setSetting(db, 'cloud_api_key', '');
   process.env.FLO_MATRIX_OFFLINE = '1';
 
-  console.log('\n3e. A restore keeps this device\'s own failure log and drops the incoming one');
+  console.log('\n3f. A restore keeps this device\'s own failure log and drops the incoming one');
   db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
   db.prepare(`INSERT INTO store_diagnostics_outbox (
     event_id, payload, status, next_attempt_at, created_at, updated_at, transport, permanent_failure
@@ -422,6 +519,9 @@ async function main() {
   setSetting(db, 'diagnostics_settings_explicit', 'true');
   setSetting(db, 'diagnostics_consent_sync_pending', 'true');
   setSetting(db, 'diagnostics_consent_remote_initialized', 'true');
+  setSetting(db, 'cloud_sync_enabled', '1');
+  setSetting(db, 'cloud_api_key', 'synthetic-health-test-key');
+  assertEqualOrThrow(cloudSync.listDiagnosticDeliveryHealth().transport, 'disabled', 'a pending signed consent acknowledgment is not reported as transmitting');
   const preserved = captureRestoreProtectedSettings(db);
   const capturedState = preserved.find((state: any) => state.key === 'diagnostics_transmission_enabled');
   assertOrThrow(Boolean(capturedState), 'the transmission setting is captured for restore');
@@ -564,6 +664,7 @@ async function main() {
   assertEqualOrThrow(anonymousBodies.length, 1, 'anonymous startup does not send without diagnostics consent');
   setSetting(db, 'diagnostics_consent', 'true');
   setSetting(db, 'cloud_deletion_status', 'pending');
+  assertEqualOrThrow(cloudSync.listDiagnosticDeliveryHealth().transport, 'disabled', 'pending cloud deletion is shown as blocked diagnostics transport');
   const deletionPendingId = crypto.randomUUID();
   cloudSync.captureOperationFailure({
     capture_point: 'fc.backend.order.create.stock_validation', outcome: 'not_applied',

@@ -411,6 +411,7 @@ type DiagnosticAggregateRow = {
 
 type DiagnosticTransport = 'signed' | 'anonymous';
 const DIAGNOSTIC_REPORT_MAX_COUNT = 100_000;
+const DIAGNOSTIC_FLUSH_BATCH = 20;
 
 function parseBoundedExamples(json: string): string[] {
   try {
@@ -436,9 +437,14 @@ function enqueueDiagnosticReport(
 ): boolean {
   const timestamp = now();
   if (preservePending) {
-    evictDeliveredOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS - 1);
     const queued = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
-    if (queued >= DIAGNOSTIC_LOG_MAX_ROWS) return false;
+    const needed = Math.max(0, queued - (DIAGNOSTIC_LOG_MAX_ROWS - 1));
+    if (needed > 0) {
+      const delivered = (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered'").get() as { count: number }).count;
+      evictDeliveredOutboxDiagnostics(db, Math.max(0, delivered - needed));
+    }
+    const queuedAfterDeliveredEviction = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
+    if (queuedAfterDeliveredEviction >= DIAGNOSTIC_LOG_MAX_ROWS) return false;
   } else {
     evictOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS - 1);
   }
@@ -452,7 +458,8 @@ function enqueueDiagnosticReport(
   return true;
 }
 
-function sealDiagnosticAggregates(db: BetterSqlite3.Database, transport: DiagnosticTransport): void {
+function sealDiagnosticAggregates(db: BetterSqlite3.Database, transport: DiagnosticTransport, reportBudget: number): number {
+  if (reportBudget <= 0) return 0;
   const aggregates = db.prepare('SELECT * FROM diagnostics_hourly_aggregates ORDER BY window_start, updated_at LIMIT ?')
     .all(DIAGNOSTIC_LOG_MAX_ROWS) as DiagnosticAggregateRow[];
   for (const row of aggregates) {
@@ -466,9 +473,9 @@ function sealDiagnosticAggregates(db: BetterSqlite3.Database, transport: Diagnos
     }
     let remaining = row.count;
     const examples = parseBoundedExamples(row.examples_json);
-    while (remaining > 0) {
+    while (remaining > 0 && reportBudget > 0) {
       const count = Math.min(remaining, DIAGNOSTIC_REPORT_MAX_COUNT);
-      enqueueDiagnosticReport(db, {
+      const enqueued = enqueueDiagnosticReport(db, {
         schema_version: 2,
         report_id: crypto.randomUUID(),
         reason_code: failure.reason_code,
@@ -486,20 +493,29 @@ function sealDiagnosticAggregates(db: BetterSqlite3.Database, transport: Diagnos
         platform: row.platform,
         examples: examples.map((correlation_id) => ({ correlation_id })),
         facts: failure.facts,
-      }, transport);
+      }, transport, true);
+      if (!enqueued) break;
       remaining -= count;
+      reportBudget -= 1;
     }
-    db.prepare('DELETE FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').run(row.aggregate_key);
+    if (remaining === 0) {
+      db.prepare('DELETE FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').run(row.aggregate_key);
+    } else {
+      db.prepare('UPDATE diagnostics_hourly_aggregates SET count = ? WHERE aggregate_key = ?').run(remaining, row.aggregate_key);
+    }
+    if (reportBudget === 0) return 0;
   }
+  return reportBudget;
 }
 
-function sealDiagnosticGaps(db: BetterSqlite3.Database, transport: DiagnosticTransport): void {
+function sealDiagnosticGaps(db: BetterSqlite3.Database, transport: DiagnosticTransport, reportBudget: number): void {
+  if (reportBudget <= 0) return;
   const gaps = db.prepare('SELECT * FROM diagnostics_delivery_gaps WHERE count > 0 ORDER BY reason_code').all() as Array<{
     reason_code: DiagnosticsGapReason; count: number; first_occurred_at: string; last_occurred_at: string;
   }>;
   for (const gap of gaps) {
     let remaining = gap.count;
-    while (remaining > 0) {
+    while (remaining > 0 && reportBudget > 0) {
       const count = Math.min(remaining, DIAGNOSTIC_REPORT_MAX_COUNT);
       const failure = serializeOperationFailure({
         capture_point: 'fc.diagnostics.delivery.queue_gap',
@@ -527,15 +543,17 @@ function sealDiagnosticGaps(db: BetterSqlite3.Database, transport: DiagnosticTra
         examples: [],
         facts: failure.facts,
       }, transport, true);
-      if (!enqueued) return;
+      if (!enqueued) break;
       remaining -= count;
-      if (remaining === 0) {
-        db.prepare('DELETE FROM diagnostics_delivery_gaps WHERE reason_code = ?').run(gap.reason_code);
-      } else {
-        db.prepare(`UPDATE diagnostics_delivery_gaps SET count = ?, updated_at = ? WHERE reason_code = ?`)
-          .run(remaining, now(), gap.reason_code);
-      }
+      reportBudget -= 1;
     }
+    if (remaining === 0) {
+      db.prepare('DELETE FROM diagnostics_delivery_gaps WHERE reason_code = ?').run(gap.reason_code);
+    } else {
+      db.prepare(`UPDATE diagnostics_delivery_gaps SET count = ?, updated_at = ? WHERE reason_code = ?`)
+        .run(remaining, now(), gap.reason_code);
+    }
+    if (reportBudget === 0) return;
   }
 }
 
@@ -1644,9 +1662,12 @@ export class CloudSyncService {
     const transmissionEnabled = isDiagnosticsTransmissionEnabled();
     const consentSyncPending = (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_consent_sync_pending'").get() as { value: string } | undefined)?.value === 'true';
     const cfg = this.loadSettings(false);
-    const transport: 'signed' | 'anonymous' | 'local' | 'disabled' = !effectiveConsent || !transmissionEnabled
+    const signedAvailable = Boolean(cfg?.sync_enabled && cfg.api_key);
+    const transportBlocked = this.cloudDeletionInProgress || isCloudDeletionBlocking(cfg?.cloud_deletion_status || '')
+      || (signedAvailable && consentSyncPending);
+    const transport: 'signed' | 'anonymous' | 'local' | 'disabled' = !effectiveConsent || !transmissionEnabled || transportBlocked
       ? 'disabled'
-      : cfg?.sync_enabled && cfg.api_key
+      : signedAvailable
         ? 'signed'
         : isTelemetryEnabled() ? 'anonymous' : 'local';
     const pendingOccurrences = reports.reduce((sum, row) => sum + diagnosticPayloadCount(row.payload), 0);
@@ -1719,16 +1740,23 @@ export class CloudSyncService {
     const db = getDatabase();
     db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending' AND permanent_failure = 0").run(now(), now());
     db.transaction(() => {
-      sealDiagnosticAggregates(db, transport);
-      sealDiagnosticGaps(db, transport);
+      const hasAggregates = (db.prepare('SELECT 1 FROM diagnostics_hourly_aggregates LIMIT 1').get() as { 1: number } | undefined) !== undefined;
+      const hasGaps = (db.prepare('SELECT 1 FROM diagnostics_delivery_gaps WHERE count > 0 LIMIT 1').get() as { 1: number } | undefined) !== undefined;
+      const aggregateBudget = hasAggregates && hasGaps ? DIAGNOSTIC_FLUSH_BATCH - 1 : DIAGNOSTIC_FLUSH_BATCH;
+      const aggregateBudgetRemaining = sealDiagnosticAggregates(db, transport, aggregateBudget);
+      const aggregateReportsCreated = aggregateBudget - aggregateBudgetRemaining;
+      const gapBudget = hasAggregates && hasGaps
+        ? Math.min(1, DIAGNOSTIC_FLUSH_BATCH - aggregateReportsCreated)
+        : DIAGNOSTIC_FLUSH_BATCH - aggregateReportsCreated;
+      sealDiagnosticGaps(db, transport, gapBudget);
     })();
     const rows = db.prepare(`
       SELECT * FROM store_diagnostics_outbox
        WHERE status IN ('pending', 'failed')
          AND permanent_failure = 0
          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-       ORDER BY created_at ASC LIMIT 20
-    `).all(now()) as Array<{ event_id: string; payload: string; attempt_count: number; transport: string }>;
+       ORDER BY created_at ASC LIMIT ?
+    `).all(now(), DIAGNOSTIC_FLUSH_BATCH) as Array<{ event_id: string; payload: string; attempt_count: number; transport: string }>;
     if (rows.length === 0) return;
 
     for (const row of rows) {
@@ -1769,7 +1797,10 @@ export class CloudSyncService {
           if (this.cloudDeletionInProgress || this.shutdownRequested) return;
           const ackKeys = ack && Object.keys(ack).sort().join(',');
           const validMatchingReportId = Boolean(ack && isOperationReference(ack.report_id) && ack.report_id === row.event_id);
-          if (ack && isOperationReference(ack.report_id) && ack.report_id !== row.event_id) {
+          if (response.status === 408 || response.status === 429 || response.status >= 500) {
+            this.retryDiagnosticReport(db, row.event_id, row.attempt_count, `http_${response.status}`, response.headers.get('retry-after'));
+            break;
+          } else if (ack && isOperationReference(ack.report_id) && ack.report_id !== row.event_id) {
             this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'report_id_mismatch');
           } else if (ack && ackKeys === 'disposition,report_id,schema_version'
             && ack.schema_version === 2 && (ack.disposition === 'accepted' || ack.disposition === 'duplicate')
@@ -1787,9 +1818,6 @@ export class CloudSyncService {
           } else if (ack && ackKeys === 'disposition,report_id,schema_version'
             && ack.schema_version === 2 && ack.disposition === 'rejected' && validMatchingReportId) {
             this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'permanent_rejection');
-          } else if (response.status === 408 || response.status === 429 || response.status >= 500) {
-            this.retryDiagnosticReport(db, row.event_id, row.attempt_count, `http_${response.status}`, response.headers.get('retry-after'));
-            break;
           } else {
             this.markDiagnosticReportRejected(db, row.event_id, row.payload, 'invalid_ack');
           }

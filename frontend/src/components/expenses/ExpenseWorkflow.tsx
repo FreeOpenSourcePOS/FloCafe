@@ -22,6 +22,7 @@ import {
   newExpenseAttempt,
   persistExpenseAttempt,
   readExpenseAttempt,
+  withExpenseAttemptLock,
   type ExpenseAttemptKind,
   type ExpenseAttemptSnapshot,
 } from '@/lib/expense-attempt';
@@ -216,38 +217,45 @@ export default function ExpenseWorkflow({
     options: { paymentId?: string | null } = {},
   ): Promise<{ data: Record<string, unknown>; snapshot: ExpenseAttemptSnapshot } | null> => {
     if (!user || !currentTenant) return null;
-    let snapshot: ExpenseAttemptSnapshot;
-    try {
-      snapshot = newExpenseAttempt({
-        kind,
-        path,
-        expenseId: expense?.id ?? null,
-        paymentId: options.paymentId ?? null,
-        body,
-        actorId: user.id,
-        tenantId: currentTenant.id,
-      });
-      persistExpenseAttempt(snapshot);
-    } catch {
-      setAttemptState({ attempt: null, storageBlocked: true });
-      setErrors({ form: t('attemptStorageBlocked') });
-      return null;
-    }
-    setAttempt(snapshot);
+    let persisted = false;
     setBusy(true);
     try {
-      const response = await api.post(path, body, {
-        headers: { 'Idempotency-Key': snapshot.idempotencyKey },
+      return await withExpenseAttemptLock(async () => {
+        const snapshot = newExpenseAttempt({
+          kind,
+          path,
+          expenseId: expense?.id ?? null,
+          paymentId: options.paymentId ?? null,
+          body,
+          actorId: user.id,
+          tenantId: currentTenant.id,
+        });
+        persistExpenseAttempt(snapshot);
+        persisted = true;
+        setAttempt(snapshot);
+        try {
+          const response = await api.post(path, body, {
+            headers: { 'Idempotency-Key': snapshot.idempotencyKey },
+          });
+          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          return { data: response.data, snapshot };
+        } catch (error) {
+          if (isUnresolvedExpenseFailure(error)) {
+            setErrors({ form: t('attemptNotice') });
+            return null;
+          }
+          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          setErrors({ form: t('saveFailed') });
+          return null;
+        }
       });
-      if (clearExpenseAttempt()) setAttempt(null);
-      return { data: response.data, snapshot };
-    } catch (error) {
-      if (isUnresolvedExpenseFailure(error)) {
+    } catch {
+      if (!persisted) {
+        setAttemptState((current) => current.attempt ? current : { attempt: null, storageBlocked: true });
+        setErrors({ form: t('attemptStorageBlocked') });
+      } else {
         setErrors({ form: t('attemptNotice') });
-        return null;
       }
-      if (clearExpenseAttempt()) setAttempt(null);
-      setErrors({ form: t('saveFailed') });
       return null;
     } finally {
       setBusy(false);
@@ -257,16 +265,32 @@ export default function ExpenseWorkflow({
   /** Replays the stored submission under its original key and payload. */
   const retryAttempt = async () => {
     if (!attempt) return;
+    const snapshot = attempt;
     setBusy(true);
     try {
-      const response = await api.post(attempt.path, attempt.body, {
-        headers: { 'Idempotency-Key': attempt.idempotencyKey },
+      const data = await withExpenseAttemptLock(async () => {
+        const stored = readExpenseAttempt(snapshot.actorId, snapshot.tenantId);
+        if (!stored || stored.idempotencyKey !== snapshot.idempotencyKey) throw new Error('Expense attempt changed');
+        try {
+          const response = await api.post(snapshot.path, snapshot.body, {
+            headers: { 'Idempotency-Key': snapshot.idempotencyKey },
+          });
+          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          return response.data as Record<string, unknown>;
+        } catch (error) {
+          const status = (error as { response?: { status?: unknown } })?.response?.status;
+          if (!isUnresolvedExpenseFailure(error) && status !== 401 && status !== 403) {
+            if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          }
+          throw error;
+        }
       });
-      if (clearExpenseAttempt()) setAttempt(null);
-      resolveCommitted(attempt, response.data as Record<string, unknown>);
+      resolveCommitted(snapshot, data);
     } catch (error) {
-      if (!isUnresolvedExpenseFailure(error)) {
-        if (clearExpenseAttempt()) setAttempt(null);
+      const status = (error as { response?: { status?: unknown } })?.response?.status;
+      if (isUnresolvedExpenseFailure(error) || status === 401 || status === 403) {
+        setErrors({ form: t('attemptNotice') });
+      } else {
         setErrors({ form: t('saveFailed') });
       }
     } finally {

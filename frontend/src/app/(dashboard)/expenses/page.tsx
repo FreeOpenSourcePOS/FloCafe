@@ -67,8 +67,9 @@ export default function ExpensesPage() {
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   const filterKey = filters ? JSON.stringify(filters) : '';
+  const requestKey = filters ? JSON.stringify([filters, refreshKey]) : '';
   const currentSummary = summary?.key === filterKey ? summary.data : null;
-  const stale = !filters || page.key !== filterKey;
+  const stale = !filters || page.key !== requestKey;
   const expenses = stale ? [] : page.rows;
   const nextCursor = stale ? null : page.cursor;
 
@@ -104,6 +105,7 @@ export default function ExpensesPage() {
     const seq = ++requestSeq.current;
     const controller = new AbortController();
     const key = JSON.stringify(filters);
+    const pageKey = JSON.stringify([filters, refreshKey]);
 
     const params = {
       ...(filters.from ? { from: filters.from } : {}),
@@ -123,7 +125,7 @@ export default function ExpensesPage() {
     api.get('/expenses', { params: { ...params, limit: LIST_PAGE_SIZE }, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
-        setPage({ key, rows: data.expenses ?? [], cursor: data.nextCursor ?? null });
+        setPage({ key: pageKey, rows: data.expenses ?? [], cursor: data.nextCursor ?? null });
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -150,7 +152,7 @@ export default function ExpensesPage() {
     if (!filters || !nextCursor) return;
     setLoadingMore(true);
     const seq = requestSeq.current;
-    const key = JSON.stringify(filters);
+    const key = JSON.stringify([filters, refreshKey]);
     try {
       const { data } = await api.get('/expenses', {
         params: {

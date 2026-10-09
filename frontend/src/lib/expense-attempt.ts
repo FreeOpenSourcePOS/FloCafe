@@ -38,6 +38,14 @@ export class ExpenseAttemptStorageError extends Error {
   }
 }
 
+export function withExpenseAttemptLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (typeof navigator === 'undefined' || !navigator.locks) throw new ExpenseAttemptStorageError();
+  return navigator.locks.request(EXPENSE_ATTEMPT_STORAGE_KEY, { ifAvailable: true }, (lock) => {
+    if (!lock) throw new ExpenseAttemptStorageError();
+    return operation();
+  });
+}
+
 function attemptStorage(): Storage {
   if (typeof window === 'undefined' || !window.localStorage) throw new ExpenseAttemptStorageError();
   return window.localStorage;
@@ -117,9 +125,13 @@ export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
 }
 
 /** Clears the slot once the mutation is known to be committed or rejected. */
-export function clearExpenseAttempt(): boolean {
+export function clearExpenseAttempt(idempotencyKey: string): boolean {
   try {
     const storage = attemptStorage();
+    const raw = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
+    if (raw === null) return true;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isSnapshot(parsed) || parsed.idempotencyKey !== idempotencyKey) return false;
     storage.removeItem(EXPENSE_ATTEMPT_STORAGE_KEY);
     return storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) === null;
   } catch {

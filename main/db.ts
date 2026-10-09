@@ -5864,6 +5864,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 109,
+    name: 'add_expense_payment_reference',
+    up: () => {
+      // Optional operator reference on a recorded expense payment (slip,
+      // transfer, or receipt number). Nullable and additive, so existing
+      // payment rows stay valid unchanged.
+      if (!getColumns(db, 'expense_payments').includes('reference')) {
+        db.exec('ALTER TABLE expense_payments ADD COLUMN reference TEXT');
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

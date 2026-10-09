@@ -361,10 +361,12 @@ Router: `main/routes/refunds.ts`. Full path: `/api/refunds`.
 
 ### Expenses
 
-Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expenses.view`; every
-mutation needs `expenses.manage` **and** `expenses.view`, so an actor can always read back the row
-they wrote. Amounts are integer minor units in the expense's own `currency_code`; no endpoint
-converts currencies or assumes a minor-unit factor.
+Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expenses.view`. Expense
+creation, voiding, and replacement need `expenses.manage` **and** `expenses.view`, while payment and
+reversal mutations need `expenses.pay` and `expenses.reverse` (alongside `expenses.view`, plus
+`cash.movements.manage` for cash methods) so an actor can always read back the row they touched.
+Amounts are integer minor units in the expense's own `currency_code`; no endpoint converts currencies
+or assumes a minor-unit factor.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
@@ -378,6 +380,8 @@ converts currencies or assumes a minor-unit factor.
 | `POST` | `/` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | body: `category_id`, `description`, `amount_minor`, `incurred_on`, optional `currency_code`, `payee`, `notes` | `201 { expense }`. A new expense never starts paid, `replaces_expense_id` cannot be set here, and a supplied `currency_code` must match the store currency. |
 | `POST` | `/:id/void` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: `reason` | `{ expense }`. Requires net paid of zero, preserves the original expense fields and `created_at`, and adds void metadata. |
 | `POST` | `/:id/replace` | `expenses.manage` + `expenses.view`; header `Idempotency-Key` | path: `id`; body: replacement fields plus `reason` | `201 { expense, replaced_expense_id }`. Voids the source and creates the linked replacement in one transaction; a source can be replaced once. |
+| `POST` | `/:id/payments` | `expenses.view` + `expenses.pay`, plus `cash.movements.manage` when `method` is `cash`; header `Idempotency-Key` | path: `id`; body: `amount_minor`, `method` (`cash`, `card`, `bank_transfer`, `other`), optional `reference`, `currency_code` | `201 { expense, payment }`. Amounts are positive minor units that may not exceed the current due; a supplied `currency_code` must match the expense. A cash payment needs a real open shift regardless of `require_open_shift` and writes exactly one linked Pay Out. |
+| `POST` | `/:id/payments/:paymentId/reverse` | `expenses.view` + `expenses.reverse`, plus `cash.movements.manage` when the reversed payment was cash; header `Idempotency-Key` | path: `id`, `paymentId`; body: `reason` | `201 { expense, payment }`. Copies the committed payment's amount and method, is allowed once per payment, and leaves the original payment and its drawer movement untouched; a cash reversal needs today's open shift and writes one linked Pay In. |
 
 Mutation bodies are hashed into an immutable fingerprint under the authenticated actor and the
 `Idempotency-Key`: replaying the same key with the same normalized request returns the committed
@@ -392,8 +396,11 @@ time rather than a midnight back-dated one. The summary covers active expenses i
 and due against them, grouped by currency and category, so a payment recorded after the range still
 counts as paid to date. Those are not payments-made-in-period figures, they are never subtracted
 from sales reports, and voided or replaced expenses stay out of the headline totals while remaining
-readable through the `status` history filter. Recording and reversing expense payments are not part
-of this surface yet; the ledger reads already reflect `expense_payments` rows.
+readable through the `status` history filter. Payments settle against the immutable ledger and are
+never edited in place: a reversal is a separate reasoned row that copies the original amount and
+method, and cash is always corrected by that reversal: `POST /api/cash-closures/movements/:id/void`
+refuses a drawer movement that backs an expense payment or reversal, so the original Pay Out is
+never voided out from under the ledger.
 
 ### Payment methods
 

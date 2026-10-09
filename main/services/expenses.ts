@@ -1,19 +1,20 @@
 /**
  * Expense records: categories, immutable expenses, the payment/reversal
- * ledger reads, and the idempotent mutation contract behind them.
+ * ledger, and the idempotent mutation contract behind them.
  *
  * Money lives in integer minor units with a currency snapshot on the expense;
  * nothing here converts currencies or infers an amount from a display string.
- * Payment/reversal writes arrive in a later work order — this module already
- * owns the read math (net paid = payments minus reversals) and the batch
- * transaction they will join.
+ * Net paid is derived from the ledger (payments minus reversals), and a cash
+ * payment or reversal writes exactly one linked drawer movement inside the
+ * same transaction.
  */
 import { createHash, randomUUID } from 'crypto';
 import {
   getDatabase, getSettingValue, localDateInTimezone, now, tenantBusinessDayStartTime, withTxn,
 } from '../db';
 import { resolveRegionalSnapshot } from '../countries';
-import { getOpenSession } from './shift-session-gate';
+import { getOpenSession, type CashSessionRow } from './shift-session-gate';
+import { MAX_MOVEMENT_REASON_LENGTH, insertCashDrawerMovement } from './cash-drawer-movements';
 
 type ExpenseDb = ReturnType<typeof getDatabase>;
 
@@ -87,6 +88,7 @@ export interface ExpensePaymentRecord {
   business_date: string;
   reversal_of: string | null;
   reason: string | null;
+  reference: string | null;
   cash_movement_id: number | null;
   created_by: string;
   created_at: string;
@@ -761,10 +763,16 @@ function netPaidMinor(db: ExpenseDb, expenseId: string): number {
   return requireSafeTotal(Number(row.net_paid), 'Expense paid total');
 }
 
-function requireUnpaidOpenExpense(db: ExpenseDb, id: string): void {
+/** Only an open (not voided, not replaced) expense may change its ledger. */
+function requireActiveExpense(db: ExpenseDb, id: string): ExpenseRecord {
   const expense = getExpense(db, id);
   if (expense.status === 'replaced') throw conflict('Expense was already replaced', 'expense_replaced');
   if (expense.voided_at) throw conflict('Expense is already voided', 'expense_voided');
+  return expense;
+}
+
+function requireUnpaidOpenExpense(db: ExpenseDb, id: string): void {
+  requireActiveExpense(db, id);
   if (netPaidMinor(db, id) !== 0) {
     throw conflict('Expense has recorded payments; reverse them before voiding or replacing', 'expense_has_payments');
   }
@@ -870,6 +878,180 @@ export function replaceExpense(
       db.prepare('UPDATE expenses SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?')
         .run(now(), input.actorUserId, reason, id);
       return { status: 201, body: { expense: getExpense(db, replacementId), replaced_expense_id: id } };
+    },
+  ));
+}
+
+// ── Payment and reversal writes ──────────────────────────────────────────────
+
+const REFERENCE_LIMIT = 200;
+
+export function normalizeExpensePaymentMethod(value: unknown): ExpensePaymentMethod {
+  if (value !== 'cash' && value !== 'card' && value !== 'bank_transfer' && value !== 'other') {
+    throw badRequest('method must be one of: cash, card, bank_transfer, other');
+  }
+  return value;
+}
+
+/** The committed ledger entry for one expense/payment pair, or a 404. */
+export function getExpensePayment(db: ExpenseDb, expenseId: string, paymentId: string): ExpensePaymentRecord {
+  const row = db.prepare('SELECT * FROM expense_payments WHERE id = ? AND expense_id = ?')
+    .get(paymentId, expenseId) as ExpensePaymentRecord | undefined;
+  if (!row) throw new ExpenseServiceError(404, 'Expense payment not found');
+  return row;
+}
+
+/**
+ * The client sends the currency it reviewed the payment under; the snapshot on
+ * the expense stays authoritative so a stale dialog cannot settle in another.
+ */
+function requireExpectedCurrency(value: unknown, expected: string): void {
+  if (value === undefined || value === null || value === '') return;
+  if (requireCurrencyCode(value) !== expected) {
+    throw badRequest(`currency_code must match the expense currency (${expected})`);
+  }
+}
+
+/** Cash entries move real drawer money, so they need a real open session. */
+function requireOpenSessionForCashEntry(db: ExpenseDb): CashSessionRow {
+  const session = getOpenSession(db);
+  if (!session) {
+    throw conflict('No open cash session: open a shift before moving drawer money for an expense', 'cash_session_required');
+  }
+  return session;
+}
+
+/** The drawer holds today's store currency; an older expense in another currency cannot use it. */
+function requireStoreCurrencyForCashEntry(expense: ExpenseRecord): void {
+  const storeCurrency = tenantRegionalSnapshot().currency;
+  if (expense.currency_code !== storeCurrency) {
+    throw conflict(`A cash expense entry needs the expense currency to match the store currency (${storeCurrency})`, 'currency_mismatch');
+  }
+}
+
+/** Drawer-ledger text for the movement a cash entry writes, bounded for the column. */
+function expensePaymentReason(prefix: string, expense: ExpenseRecord): string {
+  return `${prefix}: ${expense.description}`.slice(0, MAX_MOVEMENT_REASON_LENGTH);
+}
+
+interface ExpensePaymentWriteFields {
+  amount_minor?: unknown;
+  method?: unknown;
+  reference?: unknown;
+  currency_code?: unknown;
+}
+
+function paymentMutationFields(input: ExpensePaymentWriteFields, expenseCurrency: string): Record<string, unknown> {
+  const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
+  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
+    ? expenseCurrency
+    : rawCurrency;
+  return {
+    amount_minor: input.amount_minor,
+    method: input.method,
+    reference: typeof input.reference === 'string' ? input.reference.trim() || null : input.reference ?? null,
+    currency_code: canonicalCurrency,
+  };
+}
+
+/** Records money settled against the expense; the ledger row is never edited in place. */
+export function recordExpensePayment(
+  db: ExpenseDb,
+  expenseId: string,
+  input: ExpensePaymentWriteFields & { actorUserId: string; idempotencyKey?: string | null },
+): MutationOutcome<{ expense: ExpenseRecord; payment: ExpensePaymentRecord }> {
+  return withTxn(() => {
+    const expense = getExpense(db, expenseId);
+    return runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'record_expense_payment',
+        resourceId: expenseId,
+        fields: paymentMutationFields(input, expense.currency_code),
+      },
+      () => {
+        requireActiveExpense(db, expenseId);
+        const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
+      const method = normalizeExpensePaymentMethod(input.method);
+      const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
+      requireExpectedCurrency(input.currency_code, expense.currency_code);
+      if (amountMinor > expense.due_minor) throw conflict('Payment exceeds the amount due', 'expense_overpaid');
+      const businessDate = currentBusinessDate();
+      let cashMovementId: number | null = null;
+      if (method === 'cash') {
+        requireStoreCurrencyForCashEntry(expense);
+        const session = requireOpenSessionForCashEntry(db);
+        cashMovementId = insertCashDrawerMovement(db, {
+          businessDate,
+          movementType: 'pay_out',
+          amountCents: amountMinor,
+          reason: expensePaymentReason('Expense payment', expense),
+          createdBy: input.actorUserId,
+          cashSessionId: session.id,
+        });
+      }
+      const id = `exppay_${randomUUID()}`;
+      db.prepare(`
+        INSERT INTO expense_payments (
+          id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
+      `).run(id, expenseId, amountMinor, method, businessDate, reference, cashMovementId, input.actorUserId, now());
+      return { status: 201, body: { expense: getExpense(db, expenseId), payment: getExpensePayment(db, expenseId, id) } };
+    });
+  });
+}
+
+/**
+ * A reversal is a reasoned second ledger row that copies the committed
+ * payment's amount and method. The original row and its drawer movement are
+ * left untouched, and a cash reversal moves today's drawer once.
+ */
+export function reverseExpensePayment(
+  db: ExpenseDb,
+  expenseId: string,
+  paymentId: string,
+  input: { reason?: unknown; actorUserId: string; idempotencyKey?: string | null },
+): MutationOutcome<{ expense: ExpenseRecord; payment: ExpensePaymentRecord }> {
+  const reason = requireReason(input.reason);
+  return withTxn(() => runExpenseMutation(
+    db,
+    {
+      actorUserId: input.actorUserId,
+      idempotencyKey: input.idempotencyKey ?? null,
+      operation: 'reverse_expense_payment',
+      resourceId: paymentId,
+      fields: { reason },
+    },
+    () => {
+      const expense = requireActiveExpense(db, expenseId);
+      const payment = getExpensePayment(db, expenseId, paymentId);
+      if (payment.reversal_of !== null) throw conflict('A reversal entry cannot be reversed', 'reversal_not_reversible');
+      if (db.prepare('SELECT id FROM expense_payments WHERE reversal_of = ? LIMIT 1').get(paymentId)) {
+        throw conflict('This payment has already been reversed', 'payment_already_reversed');
+      }
+      const businessDate = currentBusinessDate();
+      let cashMovementId: number | null = null;
+      if (payment.method === 'cash') {
+        requireStoreCurrencyForCashEntry(expense);
+        const session = requireOpenSessionForCashEntry(db);
+        cashMovementId = insertCashDrawerMovement(db, {
+          businessDate,
+          movementType: 'pay_in',
+          amountCents: payment.amount_minor,
+          reason: expensePaymentReason('Expense payment reversal', expense),
+          createdBy: input.actorUserId,
+          cashSessionId: session.id,
+        });
+      }
+      const id = `exppay_${randomUUID()}`;
+      db.prepare(`
+        INSERT INTO expense_payments (
+          id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+      `).run(id, expenseId, payment.amount_minor, payment.method, businessDate, paymentId, reason, cashMovementId, input.actorUserId, now());
+      return { status: 201, body: { expense: getExpense(db, expenseId), payment: getExpensePayment(db, expenseId, id) } };
     },
   ));
 }

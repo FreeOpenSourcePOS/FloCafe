@@ -40,6 +40,12 @@ import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
 import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCash } from '../services/shift-session-gate';
+import {
+  MAX_MOVEMENT_REASON_LENGTH,
+  closedDayExists,
+  insertCashDrawerMovement,
+  type CashDrawerMovementType,
+} from '../services/cash-drawer-movements';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
@@ -54,10 +60,7 @@ import { resolveReceiptLanguages, type ReceiptLanguagePolicy } from '../../share
 
 const router = Router();
 const MAX_NOTES_LENGTH = 500;
-const MAX_MOVEMENT_REASON_LENGTH = 500;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-type CashDrawerMovementType = 'opening_float' | 'pay_in' | 'pay_out' | 'safe_drop';
 
 interface CashDrawerMovementRow {
   id: number;
@@ -156,12 +159,6 @@ function validateMovementReason(raw: unknown, required: boolean): string | null 
   if (required && reason.length === 0) throw httpError('reason is required', 400);
   if (reason.length > MAX_MOVEMENT_REASON_LENGTH) throw httpError('reason is too long', 400);
   return reason || null;
-}
-
-function closedDayExists(db: ReturnType<typeof getDatabase>, businessDate: string): boolean {
-  return !!db.prepare(
-    `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`,
-  ).get(businessDate);
 }
 
 function listCashDrawerMovements(
@@ -772,14 +769,15 @@ router.post('/movements', requirePermission('cash.movements.manage'), (req: Requ
     // Shift enforcement (#279): every movement touches the drawer.
     requireOpenSessionForCash(db);
     const id = withTxn(() => {
-      if (closedDayExists(db, businessDate)) throw httpError('This day is already closed', 409);
       try {
-        const result = db.prepare(`
-          INSERT INTO cash_drawer_movements (
-            business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(businessDate, movementType, amountCents, reason, createdBy, now(), getOpenSession(db)?.id ?? NO_CASH_SESSION_ID);
-        return Number(result.lastInsertRowid);
+        return insertCashDrawerMovement(db, {
+          businessDate,
+          movementType,
+          amountCents,
+          reason,
+          createdBy,
+          cashSessionId: getOpenSession(db)?.id ?? NO_CASH_SESSION_ID,
+        });
       } catch (error: any) {
         if (String(error?.message || '').includes('cash_drawer_one_opening_float')
           || (movementType === 'opening_float' && String(error?.message || '').includes('cash_drawer_movements.business_date'))) {
@@ -816,6 +814,11 @@ router.post('/movements/:id/void', requirePermission('cash.movements.void'), (re
       if (!movement) throw httpError('Cash movement not found', 404);
       if (movement.voided_at) throw httpError('Cash movement is already voided', 409);
       if (closedDayExists(db, movement.business_date)) throw httpError('This day is already closed', 409);
+      // Money moved by an expense entry is corrected through the expense
+      // ledger: the reversal writes the offsetting row and keeps this link.
+      if (db.prepare('SELECT id FROM expense_payments WHERE cash_movement_id = ? LIMIT 1').get(id)) {
+        throw httpError('This movement belongs to an expense payment; reverse the payment from the expense ledger instead', 409);
+      }
       db.prepare(`
         UPDATE cash_drawer_movements
         SET voided_at = ?, voided_by = ?, void_reason = ?

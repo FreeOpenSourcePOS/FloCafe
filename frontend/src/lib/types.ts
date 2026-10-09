@@ -325,6 +325,99 @@ export interface KitchenStation {
   sort_order: number;
 }
 
+// ── Expenses ─────────────────────────────────────────────────────────────────
+// Mirrors main/services/expenses.ts. Amounts are integer minor units in each
+// record's own currency_code; the UI never converts between currencies.
+
+export type ExpenseStatus = 'active' | 'voided' | 'replaced';
+export type ExpenseStatusFilter = ExpenseStatus | 'all';
+export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other';
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExpenseRecord {
+  id: string;
+  category_id: string;
+  category_name: string;
+  description: string;
+  payee: string | null;
+  notes: string | null;
+  amount_minor: number;
+  currency_code: string;
+  incurred_on: string;
+  created_by: string;
+  created_at: string;
+  replaces_expense_id: string | null;
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+  status: ExpenseStatus;
+  paid_minor: number;
+  due_minor: number;
+}
+
+export interface ExpensePaymentRecord {
+  id: string;
+  expense_id: string;
+  amount_minor: number;
+  method: ExpensePaymentMethod;
+  business_date: string;
+  reversal_of: string | null;
+  reason: string | null;
+  reference: string | null;
+  cash_movement_id: number | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ExpenseSummaryGroup {
+  currency_code: string;
+  category_id: string;
+  category_name: string;
+  expense_count: number;
+  incurred_minor: number;
+  net_paid_minor: number;
+  due_minor: number;
+}
+
+export interface ExpenseSummaryTotals {
+  currency_code: string;
+  expense_count: number;
+  incurred_minor: number;
+  net_paid_minor: number;
+  due_minor: number;
+}
+
+export interface ExpenseSummary {
+  basis: 'active_expenses_incurred_in_range_paid_to_date';
+  filters: {
+    from: string | null;
+    to: string | null;
+    category_id: string | null;
+    currency_code: string | null;
+    status: 'active';
+  };
+  groups: ExpenseSummaryGroup[];
+  totals: ExpenseSummaryTotals[];
+}
+
+export interface ExpenseContext {
+  currency_code: string;
+  business_date: string;
+  cash_session_open: boolean;
+}
+
+export interface ExpenseDetail extends ExpenseRecord {
+  payments: ExpensePaymentRecord[];
+  paymentsNextCursor: string | null;
+}
+
 // Cart types for POS
 export interface CartItem {
   id: string;

@@ -22,6 +22,7 @@ import {
   Moon,
   Monitor,
   Boxes,
+  Receipt,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -74,6 +75,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, permission: 'whatsapp.use', businessTypes: null },
   { href: '/products', labelKey: 'products', icon: Package, permission: 'catalog.manage', businessTypes: null },
   { href: '/inventory', labelKey: 'inventory', icon: Boxes, permission: 'inventory.view', businessTypes: null },
+  { href: '/expenses', labelKey: 'expenses', icon: Receipt, permission: 'expenses.view', businessTypes: null },
   { href: '/tables', labelKey: 'tables', icon: Grid3X3, permission: 'tables.view', businessTypes: ['restaurant'] },
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, permission: 'kitchen.stations.manage', businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, permission: 'customers.view', businessTypes: null },

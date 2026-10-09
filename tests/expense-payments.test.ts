@@ -183,9 +183,8 @@ async function main(): Promise<number> {
 
   // A currency change after the expense was recorded blocks all new settlements and reversals.
   setSetting('currency', 'USD');
-  expectError(() => service.recordExpensePayment(db, cashTarget.id, { amount_minor: 1000, method: 'cash', actorUserId: actor, idempotencyKey: 'pay-cash-foreign' }), 409, 'a cash payment in a mismatched store currency is rejected', 'currency_mismatch');
-  for (const method of ['card', 'bank_transfer', 'other']) {
-    expectError(() => service.recordExpensePayment(db, cashTarget.id, { amount_minor: 1000, method, actorUserId: actor, idempotencyKey: `pay-${method}-foreign` }), 409, `a ${method} payment in a mismatched store currency is rejected`, 'currency_mismatch');
+  for (const method of ['cash', 'card', 'bank_transfer', 'other']) {
+    expectError(() => service.recordExpensePayment(db, cashTarget.id, { amount_minor: 1000, method, currency_code: 'USD', actorUserId: actor, idempotencyKey: `pay-${method}-foreign` }), 409, `a ${method} payment in a mismatched store currency is rejected even when the caller supplies USD`, 'currency_mismatch');
   }
   expectError(() => service.reverseExpensePayment(db, payTarget.id, card1.body.payment.id, { reason: 'Wrong currency now', actorUserId: actor, idempotencyKey: 'rev-card-foreign' }), 409, 'a non-cash reversal in a mismatched store currency is rejected', 'currency_mismatch');
   expectError(() => service.reverseExpensePayment(db, cashTarget.id, cash1.body.payment.id, { reason: 'Wrong currency now', actorUserId: actor, idempotencyKey: 'rev-foreign' }), 409, 'a reversal in a mismatched store currency is rejected', 'currency_mismatch');

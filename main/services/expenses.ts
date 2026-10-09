@@ -981,8 +981,8 @@ export function recordExpensePayment(
         const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
       const method = normalizeExpensePaymentMethod(input.method);
       const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
-      requireExpectedCurrency(input.currency_code, expense.currency_code);
       requireStoreCurrency(expense);
+      requireExpectedCurrency(input.currency_code, expense.currency_code);
       if (amountMinor > expense.due_minor) throw conflict('Payment exceeds the amount due', 'expense_overpaid');
       const businessDate = currentBusinessDate();
       let cashMovementId: number | null = null;

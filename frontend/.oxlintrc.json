@@ -24,6 +24,14 @@
     {
       "name": "next-js",
       "specifier": "@next/eslint-plugin-next"
+    },
+    {
+      "name": "react-js",
+      "specifier": "eslint-plugin-react"
+    },
+    {
+      "name": "react-hooks-js",
+      "specifier": "eslint-plugin-react-hooks"
     }
   ],
   "rules": {
@@ -34,6 +42,7 @@
     "react/jsx-no-undef": "error",
     "react/no-children-prop": "error",
     "react/no-danger-with-children": "error",
+    "react-js/no-deprecated": "error",
     "react/no-direct-mutation-state": "error",
     "react/no-find-dom-node": "error",
     "react/no-is-mounted": "error",
@@ -54,6 +63,9 @@
     "react-hooks/error-boundaries": "error",
     "react-hooks/set-state-in-render": "error",
     "react-hooks/unsupported-syntax": "warn",
+    "react-hooks-js/config": "error",
+    "react-hooks-js/gating": "error",
+    "react-hooks-js/purity": "error",
     "@next/next/google-font-display": "warn",
     "@next/next/google-font-preconnect": "warn",
     "@next/next/next-script-for-ga": "warn",
@@ -137,6 +149,6 @@
     "build/",
     "next-env.d.ts",
     "node_modules/",
-    "**/*.d.ts"
+    "src/types/receipt-printer-encoder.d.ts"
   ]
 }

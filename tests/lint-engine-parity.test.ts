@@ -127,23 +127,75 @@ fixtures(
   },
 );
 
-// ── Frontend: hooks rules, suppressions, and the deliberate img exception ────
+// ── Frontend: React rules, suppressions, and the deliberate img exception ───
 
-console.log('Testing frontend hooks rules, suppressions, and the img exception...');
+console.log('Testing frontend React rules, suppressions, and the img exception...');
 
 fixtures(
   {
     'frontend/src/__lint_parity_hooks.tsx':
       "import { useEffect, useState } from 'react';\n\nexport function HooksFixture({ value }: { value: number }) {\n  const [state, setState] = useState(value);\n  useEffect(() => {\n    setState(value);\n  }, [value]);\n  return <div>{state}</div>;\n}\n",
+    'frontend/src/__lint_parity_deprecated.tsx':
+      "import React from 'react';\n\nexport class DeprecatedFixture extends React.Component {\n  componentWillMount() {}\n  render() { return null; }\n}\n",
+    'frontend/src/__lint_parity_deprecated_suppressed.tsx':
+      "import React from 'react';\n\nexport class DeprecatedSuppressedFixture extends React.Component {\n  // eslint-disable-next-line react-js/no-deprecated -- fixture suppression\n  componentWillMount() {}\n  render() { return null; }\n}\n",
+    'frontend/src/__lint_parity_purity.tsx':
+      'export function PurityFixture() {\n  return <div>{Date.now()}</div>;\n}\n',
     'frontend/src/__lint_parity_deps.tsx':
       "import { useEffect } from 'react';\n\nexport function DepsFixture({ value }: { value: number }) {\n  useEffect(() => {\n    void value;\n  }, []);\n  return <p />;\n}\n",
     'frontend/src/__lint_parity_deps_suppressed.tsx':
       "import { useEffect } from 'react';\n\nexport function DepsSuppressed({ value }: { value: number }) {\n  useEffect(() => {\n    void value;\n    // eslint-disable-next-line react-hooks/exhaustive-deps -- fixture suppression\n  }, []);\n  return <p />;\n}\n",
     'frontend/src/__lint_parity_img.tsx': 'export function ImgFixture() {\n  return <img src="/logo.png" alt="" />;\n}\n',
     'frontend/e2e/__lint_parity_e2e.spec.ts': 'export const violation: any = 1;\n',
+    'frontend/.lint_parity_config.json': JSON.stringify({
+      jsPlugins: [{ name: 'react-hooks-js', specifier: 'eslint-plugin-react-hooks' }],
+      rules: { 'react-hooks-js/config': ['error', { target: 'not-a-target' }] },
+    }),
+    'frontend/.lint_parity_gating.json': JSON.stringify({
+      jsPlugins: [{ name: 'react-hooks-js', specifier: 'eslint-plugin-react-hooks' }],
+      rules: { 'react-hooks-js/gating': ['error', { dynamicGating: { source: 'featureFlags' } }] },
+    }),
+    'frontend/src/__lint_parity_compiler_config.tsx':
+      'export function CompilerConfigFixture() {\n  return <div />;\n}\n',
+    'frontend/src/__lint_parity_compiler_gating.tsx':
+      'export function CompilerGatingFixture() {\n  "use memo if(not-valid)";\n  return <div />;\n}\n',
   },
   () => {
     const run = (relative: string) => runOxlint(frontendOxlint, frontendDir, [relative]);
+
+    const deprecated = run('src/__lint_parity_deprecated.tsx');
+    assert.strictEqual(deprecated.diagnostics.length, 1, 'deprecated React APIs must be reported');
+    assert.strictEqual(deprecated.diagnostics[0].code, 'react-js(no-deprecated)');
+    assert.strictEqual(deprecated.diagnostics[0].severity, 'error');
+
+    const deprecatedSuppressed = run('src/__lint_parity_deprecated_suppressed.tsx');
+    assert.strictEqual(deprecatedSuppressed.diagnostics.length, 0, 'JS-plugin rules must honor eslint-disable directives');
+
+    const purity = run('src/__lint_parity_purity.tsx');
+    assert.strictEqual(purity.diagnostics.length, 1, 'the prior React Hooks purity rule must remain active');
+    assert.strictEqual(purity.diagnostics[0].code, 'react-hooks-js(purity)');
+    assert.strictEqual(purity.diagnostics[0].severity, 'error');
+
+    const config = runOxlint(frontendOxlint, frontendDir, [
+      '--config',
+      '.lint_parity_config.json',
+      'src/__lint_parity_compiler_config.tsx',
+    ]);
+    assert.strictEqual(config.status, 1, 'invalid React Compiler options must fail lint');
+    assert.ok(
+      config.diagnostics.some((d) => d.severity === 'error' && /Not a valid target/.test(d.message)),
+      'invalid React Compiler options must report their failure',
+    );
+
+    const gating = runOxlint(frontendOxlint, frontendDir, [
+      '--config',
+      '.lint_parity_gating.json',
+      'src/__lint_parity_compiler_gating.tsx',
+    ]);
+    assert.ok(
+      gating.diagnostics.some((d) => d.code === 'react-hooks-js(gating)' && d.severity === 'error'),
+      'invalid React Compiler gating options must be reported',
+    );
 
     const hooks = run('src/__lint_parity_hooks.tsx');
     assert.strictEqual(hooks.diagnostics.length, 1, 'the hooks fixture must report exactly one diagnostic');
@@ -173,31 +225,47 @@ fixtures(
   },
 );
 
-// ── Frontend: file scope, ignores, and the documented declaration-file gap ───
+// ── Frontend: file scope, ignores, and declaration coverage ─────────────────
 
 console.log('Testing frontend file scope and ignore behavior...');
 
 const generatedFixture = 'frontend/.next/__lint_parity_generated.ts';
-fixtures({ [generatedFixture]: 'export const generated: any = 1;\n' }, () => {
-  const listed = spawnSync(frontendOxlint, ['.', '--debug=files'], {
-    cwd: frontendDir,
-    encoding: 'utf8',
-    shell: process.platform === 'win32',
-  }).stdout;
-  const files = listed
-    .split('\n')
-    .map((line) => line.trim().replace(/^\.\//, ''))
-    .filter((line) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(line));
-  assert.ok(files.length > 250, `frontend lint must cover the renderer, e2e, and config sources (saw ${files.length})`);
-  assert.ok(files.includes('next.config.ts'), 'frontend config files stay linted');
-  assert.ok(files.includes('playwright.config.ts'), 'frontend test config files stay linted');
-  assert.ok(files.some((file) => file.startsWith('e2e/')), 'frontend e2e specs stay linted');
-  assert.ok(!files.includes(generatedFixture.replace(/^frontend\//, '')), 'generated .next/ output stays ignored');
-  assert.ok(
-    !files.includes('src/types/receipt-printer-encoder.d.ts'),
-    'declaration files stay excluded: Oxlint reports a false TS(2309) for the ambient module declaration tsc accepts',
-  );
-});
+const declarationFixture = 'frontend/src/types/__lint_parity_declaration.d.ts';
+fixtures(
+  {
+    [generatedFixture]: 'export const generated: any = 1;\n',
+    [declarationFixture]: 'export declare const declarationFixture: any;\n',
+  },
+  () => {
+    const listed = spawnSync(frontendOxlint, ['.', '--debug=files'], {
+      cwd: frontendDir,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    }).stdout;
+    const files = listed
+      .split('\n')
+      .map((line) => line.trim().replace(/^\.\//, ''))
+      .filter((line) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(line));
+    assert.ok(files.length > 250, `frontend lint must cover the renderer, e2e, and config sources (saw ${files.length})`);
+    assert.ok(files.includes('next.config.ts'), 'frontend config files stay linted');
+    assert.ok(files.includes('playwright.config.ts'), 'frontend test config files stay linted');
+    assert.ok(files.some((file) => file.startsWith('e2e/')), 'frontend e2e specs stay linted');
+    assert.ok(!files.includes(generatedFixture.replace(/^frontend\//, '')), 'generated .next/ output stays ignored');
+    assert.ok(files.includes('src/lib/i18n/messages.d.ts'), 'renderer message declarations stay linted');
+    assert.ok(files.includes('src/types/webusb.d.ts'), 'WebUSB declarations stay linted');
+    assert.ok(files.includes('src/types/electron.d.ts'), 'Electron declarations stay linted');
+    assert.ok(
+      !files.includes('src/types/receipt-printer-encoder.d.ts'),
+      'only the ambient receipt declaration with the false TS(2309) stays excluded',
+    );
+
+    const declaration = runOxlint(frontendOxlint, frontendDir, ['src/types/__lint_parity_declaration.d.ts']);
+    assert.strictEqual(declaration.diagnostics.length, 1, 'declaration files must receive ordinary TypeScript rules');
+    assert.strictEqual(declaration.diagnostics[0].code, 'typescript(no-explicit-any)');
+    assert.strictEqual(declaration.diagnostics[0].severity, 'error');
+    assert.strictEqual(declaration.status, 1);
+  },
+);
 
 // ── The warning budget gate cannot pass on errors, crashes, or garbage ───────
 
@@ -207,13 +275,14 @@ const budgetFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-lint-budget-'))
 try {
   const fixtureScripts = path.join(budgetFixture, 'scripts', 'ci');
   const fixtureBin = path.join(budgetFixture, 'bin');
+  const fixtureBudgetPath = path.join(fixtureScripts, 'lint-budget.json');
   const fakeNpxScript = path.join(fixtureBin, 'fake-npx.cjs');
   const fakeNpxPath = path.join(fixtureBin, process.platform === 'win32' ? 'npx.cmd' : 'npx');
   fs.mkdirSync(fixtureScripts, { recursive: true });
   fs.mkdirSync(fixtureBin, { recursive: true });
   fs.mkdirSync(path.join(budgetFixture, 'frontend'), { recursive: true });
   fs.copyFileSync(path.join(rootDir, 'scripts', 'ci', 'check-lint-budget.cjs'), path.join(fixtureScripts, 'check-lint-budget.cjs'));
-  fs.writeFileSync(path.join(fixtureScripts, 'lint-budget.json'), JSON.stringify({ backend: 2, frontend: 1 }));
+  fs.writeFileSync(fixtureBudgetPath, JSON.stringify({ backend: 2, frontend: 1 }));
 
   const fakeNpxSource = `'use strict';
 const scope = process.argv.includes('main/') ? 'FLO_FAKE_BACKEND' : 'FLO_FAKE_FRONTEND';
@@ -231,6 +300,12 @@ if (mode.startsWith('warn:')) {
   process.exitCode = 1;
 } else if (mode === 'error-zero-exit') {
   bump(1, 'error', 'typescript(no-explicit-any)');
+  process.exitCode = 0;
+} else if (mode === 'missing-severity') {
+  diagnostics.push({ code: 'unknown', filename: 'fixture.ts', message: 'missing severity' });
+  process.exitCode = 0;
+} else if (mode === 'unknown-severity') {
+  diagnostics.push({ code: 'unknown', filename: 'fixture.ts', message: 'unknown severity', severity: 'fatal' });
   process.exitCode = 0;
 } else if (mode === 'malformed') {
   process.stdout.write('Failed to parse oxlint configuration file.\\n');
@@ -282,6 +357,14 @@ if (mode !== 'malformed' && mode !== 'no-output') {
   const errorWithoutExitCode = runBudget('error-zero-exit', 'warn:1');
   assert.strictEqual(errorWithoutExitCode.status, 1, 'error diagnostics must fail even when the linter exits zero');
 
+  const missingSeverity = runBudget('missing-severity', 'warn:1');
+  assert.strictEqual(missingSeverity.status, 1, 'missing diagnostic severities must fail closed');
+  assert.match(missingSeverity.stderr, /invalid diagnostic severity for backend/);
+
+  const unknownSeverity = runBudget('unknown-severity', 'warn:1');
+  assert.strictEqual(unknownSeverity.status, 1, 'unknown diagnostic severities must fail closed');
+  assert.match(unknownSeverity.stderr, /invalid diagnostic severity for backend/);
+
   const malformed = runBudget('malformed', 'warn:1');
   assert.strictEqual(malformed.status, 1, 'a malformed report must fail instead of counting as zero warnings');
   assert.match(malformed.stderr, /did not report valid JSON for backend/);
@@ -292,6 +375,21 @@ if (mode !== 'malformed' && mode !== 'no-output') {
 
   const silent = runBudget('no-output', 'warn:1');
   assert.strictEqual(silent.status, 1, 'a linter that produces nothing must fail');
+
+  fs.writeFileSync(fixtureBudgetPath, JSON.stringify({ backend: 2 }));
+  const missingLimit = runBudget('ok', 'ok');
+  assert.strictEqual(missingLimit.status, 1, 'missing scope budgets must fail closed');
+  assert.match(missingLimit.stderr, /Invalid lint warning budget for frontend/);
+
+  fs.writeFileSync(fixtureBudgetPath, JSON.stringify({ backend: -1, frontend: 1 }));
+  const negativeLimit = runBudget('ok', 'ok');
+  assert.strictEqual(negativeLimit.status, 1, 'negative scope budgets must fail closed');
+  assert.match(negativeLimit.stderr, /Invalid lint warning budget for backend/);
+
+  fs.writeFileSync(fixtureBudgetPath, '{"backend":1e309,"frontend":1}');
+  const infiniteLimit = runBudget('ok', 'ok');
+  assert.strictEqual(infiniteLimit.status, 1, 'non-finite scope budgets must fail closed');
+  assert.match(infiniteLimit.stderr, /Invalid lint warning budget for backend/);
 
   const realBudget = spawnSync('npm', ['run', 'lint:budget'], {
     cwd: rootDir,

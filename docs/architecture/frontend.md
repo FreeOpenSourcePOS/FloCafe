@@ -547,11 +547,11 @@ with its severity, so a rule runs only because the config lists it. Explicit `an
 under `main/` and an error under `shared/`, which is also where the pure-kernel import boundary is
 enforced at error severity.
 
-Three renderer details are deliberate. `@next/next/no-img-element` stays off because the static
-export cannot use `next/image`. `@next/eslint-plugin-next` is loaded as an Oxlint JS plugin for
-`no-location-assign-relative-destination`, which Oxlint has no native rule for. Files matching
-`*.d.ts` are outside the Oxlint scope: Oxlint reports a false `TS(2309)` for an ambient module
-declaration that ends in `export =`, which `tsc` accepts.
+Renderer declarations are linted except `next-env.d.ts` and
+`src/types/receipt-printer-encoder.d.ts`. Oxlint reports a false `TS(2309)` for that ambient module
+declaration ending in `export =`, which `tsc` accepts. `@next/next/no-img-element` stays off because
+the static export cannot use `next/image`. The React and React Hooks rules without compatible
+native implementations use the versions from the prior lockfile through Oxlint's JS plugin bridge.
 
 `npm run lint:budget` reads the Oxlint JSON report for each scope and fails on an error-severity
 diagnostic, on a run whose report it cannot read, and on warnings above

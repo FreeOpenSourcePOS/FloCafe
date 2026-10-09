@@ -537,3 +537,23 @@ frontend/src/
 
 `npm run build:frontend` is the check that catches a server-side construct: it is the only build
 that switches the export target on, so run it rather than a bare `next dev`.
+
+### Lint engine
+
+Oxlint lints both scopes, pinned to an exact version in each `package.json`. `npm run lint:backend`
+runs `main/` and `shared/` against the root `.oxlintrc.json`; `npm run lint` adds the renderer
+against `frontend/.oxlintrc.json`. Both configs switch every Oxlint category off and name each rule
+with its severity, so a rule runs only because the config lists it. Explicit `any` is a warning
+under `main/` and an error under `shared/`, which is also where the pure-kernel import boundary is
+enforced at error severity.
+
+Three renderer details are deliberate. `@next/next/no-img-element` stays off because the static
+export cannot use `next/image`. `@next/eslint-plugin-next` is loaded as an Oxlint JS plugin for
+`no-location-assign-relative-destination`, which Oxlint has no native rule for. Files matching
+`*.d.ts` are outside the Oxlint scope: Oxlint reports a false `TS(2309)` for an ambient module
+declaration that ends in `export =`, which `tsc` accepts.
+
+`npm run lint:budget` reads the Oxlint JSON report for each scope and fails on an error-severity
+diagnostic, on a run whose report it cannot read, and on warnings above
+`scripts/ci/lint-budget.json`. Those limits are ceilings that ratchet down manually as warnings are
+fixed incidentally, not targets to spend.

@@ -361,10 +361,12 @@ Router: `main/routes/refunds.ts`. Full path: `/api/refunds`.
 
 ### Expenses
 
-Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expenses.view`; every
-mutation needs `expenses.manage` **and** `expenses.view`, so an actor can always read back the row
-they wrote. Amounts are integer minor units in the expense's own `currency_code`; no endpoint
-converts currencies or assumes a minor-unit factor.
+Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expenses.view`. Expense
+creation, voiding, and replacement need `expenses.manage` **and** `expenses.view`, while payment and
+reversal mutations need `expenses.pay` and `expenses.reverse` (alongside `expenses.view`, plus
+`cash.movements.manage` for cash methods) so an actor can always read back the row they touched.
+Amounts are integer minor units in the expense's own `currency_code`; no endpoint converts currencies
+or assumes a minor-unit factor.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |

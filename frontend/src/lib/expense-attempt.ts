@@ -43,7 +43,7 @@ export function withExpenseAttemptLock<T>(operation: () => Promise<T>): Promise<
   return navigator.locks.request(EXPENSE_ATTEMPT_STORAGE_KEY, { ifAvailable: true }, (lock) => {
     if (!lock) throw new ExpenseAttemptStorageError();
     return operation();
-  });
+  }) as Promise<T>;
 }
 
 function attemptStorage(): Storage {

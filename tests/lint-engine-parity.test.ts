@@ -291,4 +291,252 @@ if (mode !== 'malformed' && mode !== 'no-output') {
   fs.rmSync(budgetFixture, { recursive: true, force: true });
 }
 
-console.log('Lint engine parity verified.');
+// ── Formatter: pinned version and both scopes' configuration ──────────────────
+
+console.log('Testing the Oxfmt pins and configuration files...');
+
+const backendOxfmt = path.join(rootDir, 'node_modules', '.bin', process.platform === 'win32' ? 'oxfmt.cmd' : 'oxfmt');
+const frontendOxfmt = path.join(frontendDir, 'node_modules', '.bin', process.platform === 'win32' ? 'oxfmt.cmd' : 'oxfmt');
+
+function runOxfmt(binary: string, cwd: string, args: string[]) {
+  const result = spawnSync(binary, args, { cwd, encoding: 'utf8' });
+  assert.ok(!result.error, `oxfmt must be runnable at ${binary}: ${result.error?.message}`);
+  return result;
+}
+
+const readText = (absolute: string) => fs.readFileSync(absolute, 'utf8');
+const parseVersion = (stdout: string) => (stdout.match(/Version:\s*(\S+)/) || [])[1];
+
+const rootPackage = JSON.parse(readText(path.join(rootDir, 'package.json')));
+const frontendPackage = JSON.parse(readText(path.join(frontendDir, 'package.json')));
+const rootScripts = rootPackage.scripts;
+const rootConfigPath = path.join(rootDir, '.oxfmtrc.json');
+const frontendConfigPath = path.join(frontendDir, '.oxfmtrc.json');
+const rootConfig = JSON.parse(readText(rootConfigPath));
+const frontendConfig = JSON.parse(readText(frontendConfigPath));
+
+assert.match(rootPackage.devDependencies.oxfmt, /^\d+\.\d+\.\d+$/, 'the root package must pin an exact Oxfmt version');
+assert.strictEqual(
+  frontendPackage.devDependencies.oxfmt,
+  rootPackage.devDependencies.oxfmt,
+  'both packages must pin the same exact Oxfmt version',
+);
+
+const rootOxfmtVersion = runOxfmt(backendOxfmt, rootDir, ['--version']);
+const frontendOxfmtVersion = runOxfmt(frontendOxfmt, frontendDir, ['--version']);
+assert.strictEqual(rootOxfmtVersion.status, 0, 'the root Oxfmt binary must run');
+assert.strictEqual(frontendOxfmtVersion.status, 0, 'the frontend Oxfmt binary must run');
+assert.strictEqual(
+  parseVersion(rootOxfmtVersion.stdout),
+  rootPackage.devDependencies.oxfmt,
+  'npm run format:backend must resolve the pinned root install',
+);
+assert.strictEqual(
+  parseVersion(frontendOxfmtVersion.stdout),
+  frontendPackage.devDependencies.oxfmt,
+  'the standalone frontend format command must resolve its own pinned install',
+);
+
+for (const [scope, configPath, config] of [
+  ['root', rootConfigPath, rootConfig],
+  ['frontend', frontendConfigPath, frontendConfig],
+] as const) {
+  const label = `${scope} .oxfmtrc.json`;
+  assert.strictEqual(config.printWidth, 100, `${label} keeps the 100-column target`);
+  assert.strictEqual(config.tabWidth, 2, `${label} keeps two-space indentation`);
+  assert.strictEqual(config.useTabs, false, `${label} keeps spaces over tabs`);
+  assert.strictEqual(config.semi, true, `${label} keeps semicolons`);
+  assert.strictEqual(config.singleQuote, true, `${label} keeps single quotes in JS/TS`);
+  assert.strictEqual(config.sortImports, false, `${label} must not reorder executable imports`);
+  assert.strictEqual(config.sortPackageJson, false, `${label} must not reorder package.json keys`);
+  assert.strictEqual(config.sortTailwindcss, false, `${label} must not reorder Tailwind classes`);
+  assert.ok(Array.isArray(config.ignorePatterns) && config.ignorePatterns.length > 0, `${label} must list its exclusions`);
+  assert.ok(
+    fs.existsSync(path.join(path.dirname(configPath), config.$schema)),
+    `${label} must point editors at the installed configuration schema`,
+  );
+}
+
+assert.ok(
+  rootConfig.ignorePatterns.includes('tests/fixtures/') &&
+    rootConfig.ignorePatterns.includes('main/print/print-labels.generated.ts'),
+  'the root scope must exclude committed fixtures and the generated print-label table',
+);
+assert.ok(
+  frontendConfig.ignorePatterns.includes('src/lib/i18n/messages/'),
+  'the frontend scope must exclude the translation catalogues',
+);
+
+// ── Formatter: check/write, idempotence, and preserved import and class order ──
+
+console.log('Testing Oxfmt check/write behavior on owned fixtures...');
+
+const backendFixture = 'main/__fmt_behavior.ts';
+const rendererFixture = 'frontend/src/__fmt_behavior.tsx';
+
+fixtures(
+  {
+    [backendFixture]:
+      'import zeta from \'zeta-package\';\nimport \'./side-effect-package\';\nimport alpha from \'alpha-package\';\n\nexport const behavior={alpha:"one",beta:2,gamma:"three",delta:"four",epsilon:"five",size:"extra-large-option-name"}\n\nexport function outer() {\n    return behavior.alpha;\n}\n',
+    [rendererFixture]: 'export function Card(){return <div className="p-4 flex items-center gap-2">{\'label\'}</div>}\n',
+  },
+  () => {
+    const backendAbsolute = path.join(rootDir, backendFixture);
+    const rendererAbsolute = path.join(rootDir, rendererFixture);
+    const backendBefore = readText(backendAbsolute);
+    const rendererBefore = readText(rendererAbsolute);
+
+    const unformattedCheck = runOxfmt(backendOxfmt, rootDir, ['--check', backendFixture]);
+    assert.strictEqual(unformattedCheck.status, 1, 'an unformatted maintained source must fail --check');
+    assert.strictEqual(readText(backendAbsolute), backendBefore, '--check must not modify the source');
+
+    const write = runOxfmt(backendOxfmt, rootDir, [backendFixture]);
+    assert.strictEqual(write.status, 0, `writing the fixture must succeed: ${write.stderr}`);
+    const backendFormatted = readText(backendAbsolute);
+    assert.notStrictEqual(backendFormatted, backendBefore, 'the write must apply the formatter');
+    assert.match(backendFormatted, /alpha: 'one'/, 'single quotes and object spacing come from the root config');
+    assert.match(
+      backendFormatted,
+      /\nexport function outer\(\) \{\n  return behavior\.alpha;\n\}/,
+      'the root config must apply the two-space indent',
+    );
+    assert.ok(
+      backendFormatted.split('\n').every((line) => line.length <= 100),
+      'printWidth 100 must wrap lines that exceed the target',
+    );
+    assert.deepStrictEqual(
+      backendFormatted.split('\n').filter((line) => line.startsWith('import ')),
+      ["import zeta from 'zeta-package';", "import './side-effect-package';", "import alpha from 'alpha-package';"],
+      'import order and side-effect positions must survive formatting',
+    );
+
+    const stable = readText(backendAbsolute);
+    runOxfmt(backendOxfmt, rootDir, [backendFixture]);
+    assert.strictEqual(readText(backendAbsolute), stable, 'a repeated write must be byte-stable');
+
+    const formattedCheck = runOxfmt(backendOxfmt, rootDir, ['--check', backendFixture]);
+    assert.strictEqual(formattedCheck.status, 0, 'a formatted source must pass --check');
+
+    const rendererCheck = runOxfmt(frontendOxfmt, frontendDir, ['--check', 'src/__fmt_behavior.tsx']);
+    assert.strictEqual(rendererCheck.status, 1, 'an unformatted renderer source must fail the frontend check');
+    assert.strictEqual(readText(rendererAbsolute), rendererBefore, 'the frontend check must not modify the source');
+
+    const rendererWrite = runOxfmt(frontendOxfmt, frontendDir, ['src/__fmt_behavior.tsx']);
+    assert.strictEqual(rendererWrite.status, 0, `writing the renderer fixture must succeed: ${rendererWrite.stderr}`);
+    const rendererFormatted = readText(rendererAbsolute);
+    assert.match(rendererFormatted, /className="p-4 flex items-center gap-2"/, 'JSX attributes keep double quotes');
+    assert.deepStrictEqual(
+      (rendererFormatted.match(/className="([^"]+)"/) || [])[1]?.split(' '),
+      ['p-4', 'flex', 'items-center', 'gap-2'],
+      'Tailwind classes must keep their authored order',
+    );
+    assert.match(rendererFormatted, /\{'label'\}/, 'JSX expression containers use the configured single quotes');
+    assert.strictEqual(
+      runOxfmt(frontendOxfmt, frontendDir, ['--check', 'src/__fmt_behavior.tsx']).status,
+      0,
+      'the formatted renderer fixture must pass --check',
+    );
+  },
+);
+
+const packageFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-oxfmt-package-'));
+try {
+  const packageFixturePath = path.join(packageFixtureDir, 'package.json');
+  fs.writeFileSync(packageFixturePath, '{ "zeta": 1, "alpha": 2 }\n');
+  const keyOrderRun = runOxfmt(backendOxfmt, packageFixtureDir, ['-c', rootConfigPath, 'package.json']);
+  assert.strictEqual(keyOrderRun.status, 0, `formatting a package.json fixture must succeed: ${keyOrderRun.stderr}`);
+  const sortedFixture = readText(packageFixturePath);
+  assert.ok(
+    sortedFixture.indexOf('"zeta"') < sortedFixture.indexOf('"alpha"'),
+    'sortPackageJson must stay disabled so package manifests keep their authored key order',
+  );
+} finally {
+  fs.rmSync(packageFixtureDir, { recursive: true, force: true });
+}
+
+// ── Formatter: generated tables, fixtures, and catalogues stay untouched ──────
+
+console.log('Testing the formatter exclusions...');
+
+fixtures({ 'tests/fixtures/__fmt_ignored.ts': 'export const ignored={alpha:"one"}\n' }, () => {
+  const absolute = path.join(rootDir, 'tests/fixtures/__fmt_ignored.ts');
+  const before = readText(absolute);
+  const ignoredRun = runOxfmt(backendOxfmt, rootDir, ['tests/fixtures/__fmt_ignored.ts']);
+  assert.strictEqual(ignoredRun.status, 2, 'a fully ignored target set must be reported instead of formatted');
+  assert.match(ignoredRun.stderr, /excluded by ignore rules/, 'the run must explain why nothing was formatted');
+  assert.strictEqual(readText(absolute), before, 'committed fixtures must never be rewritten');
+});
+
+const generatedAbsolute = path.join(rootDir, 'main/print/print-labels.generated.ts');
+const generatedBefore = readText(generatedAbsolute);
+const generatedRun = runOxfmt(backendOxfmt, rootDir, ['--check', 'main/print/print-labels.generated.ts']);
+assert.strictEqual(generatedRun.status, 2, 'the generated print-label table must stay outside the formatter scope');
+assert.strictEqual(readText(generatedAbsolute), generatedBefore, 'the generated print-label table must stay byte-identical');
+
+const catalogueAbsolute = path.join(frontendDir, 'src/lib/i18n/messages/en.json');
+const catalogueBefore = readText(catalogueAbsolute);
+const catalogueRun = runOxfmt(frontendOxfmt, frontendDir, ['--check', 'src/lib/i18n/messages/en.json']);
+assert.strictEqual(catalogueRun.status, 2, 'translation catalogues must stay outside the frontend formatter scope');
+assert.strictEqual(readText(catalogueAbsolute), catalogueBefore, 'translation catalogues must stay byte-identical');
+
+// ── Formatter: command scope, package composition, and check-only safety ─────
+
+console.log('Testing the formatter command scope and check-only behavior...');
+
+assert.strictEqual(
+  rootScripts.format,
+  'npm run format:backend && npm --prefix frontend run format',
+  'the root format command must compose both packages',
+);
+assert.strictEqual(
+  rootScripts['format:check'],
+  'npm run format:check:backend && npm --prefix frontend run format:check',
+  'the root format:check must compose both check commands',
+);
+
+const backendTargets = String(rootScripts['format:backend']).replace(/^oxfmt\s+/, '').split(/\s+/);
+assert.ok(backendTargets.length >= 4, 'the backend formatter must name its targets explicitly');
+assert.ok(
+  backendTargets.every((target) => !target.startsWith('frontend')),
+  'root formatting must never reach into frontend/',
+);
+assert.match(
+  String(rootScripts['format:check:backend']),
+  /^oxfmt --check /,
+  'the backend check command must run Oxfmt in check mode',
+);
+
+const frontendTargets = String(frontendPackage.scripts.format).replace(/^oxfmt\s+/, '').split(/\s+/);
+assert.ok(
+  frontendTargets.includes('src/') && frontendTargets.includes('e2e/'),
+  'the frontend formatter must name the renderer and e2e scope',
+);
+assert.strictEqual(
+  String(frontendPackage.scripts['format:check']),
+  `oxfmt --check ${frontendTargets.join(' ')}`,
+  'the frontend check must mirror the write targets',
+);
+assert.doesNotMatch(String(rootScripts.lint), /--fix/, 'lint must not rewrite sources');
+assert.doesNotMatch(String(frontendPackage.scripts.lint), /--fix/, 'frontend lint must not rewrite sources');
+
+const sampleSource = path.join(rootDir, 'dev-server.js');
+const sampleBefore = readText(sampleSource);
+const commandCheck = spawnSync('npm', ['run', 'format:check:backend'], { cwd: rootDir, encoding: 'utf8' });
+assert.ok(
+  commandCheck.status === 0 || commandCheck.status === 1,
+  `format:check:backend must run cleanly (status ${commandCheck.status}): ${commandCheck.stderr}`,
+);
+assert.doesNotMatch(commandCheck.stderr, /Failed to parse configuration/, 'the root config must parse');
+assert.strictEqual(readText(sampleSource), sampleBefore, 'the check command must never write sources');
+
+const commandCheckFrontend = spawnSync('npm', ['--prefix', 'frontend', 'run', 'format:check'], {
+  cwd: rootDir,
+  encoding: 'utf8',
+});
+assert.ok(
+  commandCheckFrontend.status === 0 || commandCheckFrontend.status === 1,
+  `the frontend check command must run cleanly (status ${commandCheckFrontend.status}): ${commandCheckFrontend.stderr}`,
+);
+assert.doesNotMatch(commandCheckFrontend.stderr, /Failed to parse configuration/, 'the frontend config must parse');
+
+console.log('Lint engine parity and formatter behavior verified.');

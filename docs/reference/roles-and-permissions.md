@@ -178,7 +178,10 @@ from audit attribution, not from hiding orders between staff.
 together with view writes, voids, and replaces them. There is no per-expense ownership check, and
 every mutation is attributed to the authenticated actor. `expenses.pay` and `expenses.reverse` are
 separate configurable ids for payment and reversal authority, so neither is implied by the manage
-grant. The [Expenses API reference](api.md#expenses) lists the expense operations exposed over HTTP.
+grant. Cash payments and cash reversals also need `cash.movements.manage` and a real open shift,
+because each writes one linked drawer movement; that session requirement is deliberate and does not
+follow the configurable `require_open_shift` gate. The [Expenses API reference](api.md#expenses)
+lists the expense operations exposed over HTTP.
 
 **Server App.** The standalone Server App is gated by `server-app.use`, shipped by default to
 `server`, `manager`, and `owner`. When the feature is disabled its routes return 404 rather than

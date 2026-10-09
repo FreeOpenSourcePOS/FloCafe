@@ -202,7 +202,7 @@ function main(): void {
     ],
     expense_payments: [
       'id', 'expense_id', 'amount_minor', 'method', 'business_date', 'reversal_of', 'reason',
-      'cash_movement_id', 'created_by', 'created_at',
+      'reference', 'cash_movement_id', 'created_by', 'created_at',
     ],
     expense_mutations: ['actor_user_id', 'idempotency_key', 'operation', 'resource_id', 'request_hash', 'response_json', 'created_at'],
   };
@@ -530,7 +530,7 @@ function runServiceChecks(db: any): void {
   assertEqualOrThrow(service.getExpenseContext(db).cash_session_open, true, 'context reports the fixture open cash session');
   assertEqualOrThrow(Object.keys(service.getExpenseContext(db)).sort().join(','), 'business_date,cash_session_open,currency_code', 'context exposes only currency, business date, and drawer state');
 
-  // ── Payment ledger reads: seeded rows only — this work order exposes no payment writes ──
+  // ── Payment ledger reads: seeded rows only, independent of the write path ──
   const insertSeedPayment = (id: string, amountMinor: number, method: string, createdAt: string, extra: { reversalOf?: string; reason?: string; expenseId?: string } = {}) =>
     db.prepare(`INSERT INTO expense_payments (id, expense_id, amount_minor, method, business_date, reversal_of, reason, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)

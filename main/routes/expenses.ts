@@ -16,11 +16,15 @@ import {
   createExpenseCategory,
   getExpense,
   getExpenseContext,
+  getExpensePayment,
   listExpenseCategories,
   listExpensePayments,
   listExpenses,
+  normalizeExpensePaymentMethod,
   normalizeIdempotencyKey,
+  recordExpensePayment,
   replaceExpense,
+  reverseExpensePayment,
   summarizeExpenses,
   updateExpenseCategory,
   voidExpense,
@@ -59,6 +63,30 @@ function requireExpenseWrite(req: Request, res: Response, next: NextFunction): v
     return;
   }
   next();
+}
+
+/** Payments and reversals are separate authorities layered on top of read access. */
+function requireExpenseAuthority(permissionId: 'expenses.pay' | 'expenses.reverse') {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const id = String((req as AuthedRequest).user?.userId || '');
+    if (!id) {
+      res.status(401).json({ error: 'Authentication required', code: 'authentication_required' });
+      return;
+    }
+    if (!hasPermission(id, 'expenses.view') || !hasPermission(id, permissionId)) {
+      res.status(403).json({ error: 'Insufficient permissions', code: 'permission_denied' });
+      return;
+    }
+    next();
+  };
+}
+
+/** Cash entries move drawer money, so they also need live drawer authority. */
+function requireCashDrawerAuthority(req: Request, needsDrawer: boolean): void {
+  if (!needsDrawer) return;
+  if (!hasPermission(actorId(req as AuthedRequest), 'cash.movements.manage')) {
+    throw new ExpenseServiceError(403, 'Insufficient permissions', 'permission_denied');
+  }
 }
 
 function queryString(value: unknown, field: string): string | undefined {
@@ -219,6 +247,42 @@ router.post('/:id/replace', requireExpenseWrite, (req: Request, res: Response) =
   try {
     const outcome = replaceExpense(getDatabase(), String(req.params.id), {
       ...(req.body || {}),
+      actorUserId: actorId(req as AuthedRequest),
+      idempotencyKey: requireIdempotencyKey(req),
+    });
+    if (outcome.replayed) res.set('Idempotent-Replay', 'true');
+    res.status(outcome.status).json(outcome.body);
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+/** Amounts settle against the immutable ledger; a cash entry also writes a linked Pay Out. */
+router.post('/:id/payments', requireExpenseAuthority('expenses.pay'), (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    requireCashDrawerAuthority(req, normalizeExpensePaymentMethod(body.method) === 'cash');
+    const outcome = recordExpensePayment(getDatabase(), String(req.params.id), {
+      ...body,
+      actorUserId: actorId(req as AuthedRequest),
+      idempotencyKey: requireIdempotencyKey(req),
+    });
+    if (outcome.replayed) res.set('Idempotent-Replay', 'true');
+    res.status(outcome.status).json(outcome.body);
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+/** Reversals copy the committed payment; a correction is never an in-place edit. */
+router.post('/:id/payments/:paymentId/reverse', requireExpenseAuthority('expenses.reverse'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const expenseId = String(req.params.id);
+    const paymentId = String(req.params.paymentId);
+    requireCashDrawerAuthority(req, getExpensePayment(db, expenseId, paymentId).method === 'cash');
+    const outcome = reverseExpensePayment(db, expenseId, paymentId, {
+      reason: (req.body || {}).reason,
       actorUserId: actorId(req as AuthedRequest),
       idempotencyKey: requireIdempotencyKey(req),
     });

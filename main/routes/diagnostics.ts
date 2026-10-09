@@ -30,6 +30,7 @@ const FRONTEND_CAPTURE_POINTS = new Set([
   'fc.frontend.pos.payment.create.recovery',
   'fc.frontend.pos.order.create.retry_storage',
   'fc.frontend.pos.order.create.retry_cleanup',
+  'fc.client.order.create.retry_state_update',
   'fc.frontend.pos.payment.create.retry_storage',
   'fc.frontend.pos.payment.create.retry_cleanup',
   'fc.frontend.pos.order.append.retry_storage',

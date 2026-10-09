@@ -56,7 +56,7 @@ function structuredOperationFailure(
   });
   if (!failure) return { error };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
-  cloudSync.captureOperationFailure(failure);
+  try { cloudSync.captureOperationFailure(failure); } catch { /* Diagnostics must not affect order handling. */ }
   return {
     error,
     reason_code: failure.reason_code,

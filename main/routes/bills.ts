@@ -92,7 +92,7 @@ function structuredBillFailure(
   });
   if (!failure) return { error };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
-  cloudSync.captureOperationFailure(failure);
+  try { cloudSync.captureOperationFailure(failure); } catch { /* Diagnostics must not affect billing. */ }
   return {
     error,
     reason_code: failure.reason_code,
@@ -103,6 +103,10 @@ function structuredBillFailure(
     correlation_id: failure.correlation_id,
     ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
   };
+}
+
+function paymentValidationError(message: string, displayCode: string, statusCode = 400): Error & { statusCode: number; displayCode: string } {
+  return Object.assign(new Error(message), { statusCode, displayCode });
 }
 
 function checkKitchenDeliveryStatus(
@@ -1989,24 +1993,28 @@ interface PreparedPayment {
 
 function validatePaymentFields(payment: PaymentInput, index: number, currency: string): void {
   if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
-    throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+    throw paymentValidationError(`Unsupported payment method at line ${index + 1}`, 'payment_input_invalid');
   }
-  if (!payment.method) throw Object.assign(new Error('Payment method is required'), { statusCode: 400 });
-  if (typeof payment.method !== 'string' || payment.method.length > 60) throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+  if (!payment.method) throw paymentValidationError('Payment method is required', 'payment_input_invalid');
+  if (typeof payment.method !== 'string' || payment.method.length > 60) throw paymentValidationError(`Unsupported payment method at line ${index + 1}`, 'payment_input_invalid');
   if (payment.method === 'custom' && !Number.isSafeInteger(Number(payment.payment_method_id))) {
-    throw Object.assign(new Error(`Custom payment method is required at line ${index + 1}`), { statusCode: 400 });
+    throw paymentValidationError(`Custom payment method is required at line ${index + 1}`, 'payment_method_unavailable');
   }
   if (JSON.stringify(payment).length > MAX_PAYMENT_METADATA_BYTES) {
-    throw Object.assign(new Error(`Payment metadata at line ${index + 1} is too large`), { statusCode: 400 });
+    throw paymentValidationError(`Payment metadata at line ${index + 1} is too large`, 'payment_input_invalid');
   }
   for (const [field, maxLength] of [['transaction_id', 256], ['notes', 1024] ] as const) {
     const value = payment[field];
     if (value !== undefined && (typeof value !== 'string' || value.length > maxLength || (field === 'transaction_id' && value.trim() === ''))) {
-      throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
+      throw paymentValidationError(`${field} is invalid or too long`, 'payment_input_invalid');
     }
   }
   if (payment.amount !== undefined && payment.amount !== null) {
-    paymentAmountMinorUnits(payment.amount, currency);
+    try {
+      paymentAmountMinorUnits(payment.amount, currency);
+    } catch (error) {
+      throw paymentValidationError(error instanceof Error ? error.message : 'Payment amount is invalid', 'payment_input_invalid');
+    }
   }
 }
 
@@ -2042,8 +2050,8 @@ function preparePaymentBatch(
 ): { bill: any; prepared: PreparedPayment[]; existingPayments: any[]; effectiveCustomerId: string | null; idempotentReplay?: boolean } {
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!bill) throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
-  if (!Array.isArray(payments) || payments.length === 0) throw Object.assign(new Error('payments must be a non-empty array'), { statusCode: 400 });
-  if (payments.length > MAX_PAYMENT_LINES) throw Object.assign(new Error(`A maximum of ${MAX_PAYMENT_LINES} payment lines is allowed`), { statusCode: 400 });
+  if (!Array.isArray(payments) || payments.length === 0) throw paymentValidationError('payments must be a non-empty array', 'payment_input_invalid');
+  if (payments.length > MAX_PAYMENT_LINES) throw paymentValidationError(`A maximum of ${MAX_PAYMENT_LINES} payment lines is allowed`, 'payment_input_invalid');
   let existingPayments: any[] = [];
   if (bill.payment_details) {
     try {
@@ -2063,7 +2071,7 @@ function preparePaymentBatch(
     const configured = payment.method === 'custom'
       ? db.prepare('SELECT id, name FROM payment_methods WHERE id = ? AND is_active = 1').get(payment.payment_method_id) as any
       : db.prepare('SELECT id, name FROM payment_methods WHERE lower(name) = lower(?) AND is_active = 1').get(payment.method) as any;
-    if (!configured) throw Object.assign(new Error(`Unsupported or inactive custom payment method at line ${index + 1}`), { statusCode: 400 });
+    if (!configured) throw paymentValidationError(`Unsupported or inactive custom payment method at line ${index + 1}`, 'payment_method_unavailable');
     return { ...payment, method: configured.name, payment_method_id: Number(configured.id) };
   });
   const requestedCustomerId = bodyCustomerId === undefined || bodyCustomerId === null || bodyCustomerId === ''
@@ -2072,15 +2080,15 @@ function preparePaymentBatch(
   const order = db.prepare('SELECT customer_id FROM orders WHERE id = ?').get(bill.order_id) as { customer_id?: string | number | null } | undefined;
   const associatedCustomerId = bill.customer_id || order?.customer_id || null;
   if (requestedCustomerId && associatedCustomerId && String(associatedCustomerId) !== requestedCustomerId) {
-    throw Object.assign(new Error('Payment customer does not match the bill customer'), { statusCode: 400 });
+    throw paymentValidationError('Payment customer does not match the bill customer', 'customer_mismatch');
   }
   const usesWallet = resolvedPayments.some((payment) => payment.method === 'wallet');
   if (usesWallet && !associatedCustomerId) {
-    throw Object.assign(new Error('Wallet payment requires a customer associated with the bill'), { statusCode: 400 });
+    throw paymentValidationError('Wallet payment requires a customer associated with the bill', 'wallet_customer_required');
   }
   const effectiveCustomerId = associatedCustomerId ? String(associatedCustomerId) : requestedCustomerId;
   if (effectiveCustomerId && !db.prepare('SELECT id FROM customers WHERE id = ?').get(effectiveCustomerId)) {
-    throw Object.assign(new Error('Customer not found'), { statusCode: 400 });
+    throw paymentValidationError('Customer not found', 'customer_unavailable');
   }
   const existingTransactionKeys = new Set(existingPayments.map(paymentTransactionKey).filter(Boolean));
   const existingTransactionPayments = new Map<string, any>();
@@ -2095,7 +2103,7 @@ function preparePaymentBatch(
     const methodKey = candidate.payment_method_id === undefined ? candidate.method : `custom:${candidate.payment_method_id}`;
     const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(methodKey, candidate.transaction_id) as { bill_id: string } | undefined;
     if (reference && String(reference.bill_id) !== String(billId)) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
+      throw paymentValidationError('Payment transaction_id has already been used for another bill', 'transaction_reference_used', 409);
     }
     if (reference) existingTransactionKeys.add(transactionKey);
   }
@@ -2106,7 +2114,7 @@ function preparePaymentBatch(
     const methodKey = payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`;
     const previousMethod = transactionMethods.get(payment.transaction_id);
     if (previousMethod && previousMethod !== methodKey) {
-      throw Object.assign(new Error('A transaction_id cannot be reused across payment methods in one batch'), { statusCode: 400 });
+      throw paymentValidationError('A transaction_id cannot be reused across payment methods in one batch', 'transaction_reference_reused');
     }
     transactionMethods.set(payment.transaction_id, methodKey);
   }
@@ -2121,14 +2129,14 @@ function preparePaymentBatch(
   const seenTransactionKeys = new Set<string>();
   for (const key of requestTransactionKeys) {
     if (key && (seenTransactionKeys.has(key) || existingTransactionKeys.has(key))) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for this bill'), { statusCode: 409 });
+      throw paymentValidationError('Payment transaction_id has already been used for this bill', 'transaction_reference_reused', 409);
     }
     if (key) seenTransactionKeys.add(key);
   }
   if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
-    throw Object.assign(new Error('Cannot accept payment on a refunded bill'), { statusCode: 409 });
+    throw paymentValidationError('Cannot accept payment on a refunded bill', 'bill_refunded', 409);
   }
-  if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
+  if (bill.payment_status === 'paid') throw paymentValidationError('Bill is already paid', 'bill_already_paid');
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
   if (remainingCents <= 0) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId };
@@ -2140,7 +2148,7 @@ function preparePaymentBatch(
     const amount = amountValue === undefined
       ? (supportsOmittedAmount ? remainingCents : undefined)
       : paymentAmountMinorUnits(amountValue, currency);
-    if (amount === undefined) throw Object.assign(new Error('Payment amount is required for split payments'), { statusCode: 400 });
+    if (amount === undefined) throw paymentValidationError('Payment amount is required for split payments', 'amount_required');
     const normalizedPayment: PaymentInput = {
       method: String(payment.method),
       ...(payment.payment_method_id !== undefined ? { payment_method_id: payment.payment_method_id } : {}),
@@ -2154,7 +2162,7 @@ function preparePaymentBatch(
     };
   });
   const nonCashCents = raw.filter((line) => !isCashTender(db, line.payment)).reduce((sum, line) => sum + line.requestedCents, 0);
-  if (nonCashCents > remainingCents) throw Object.assign(new Error('Non-cash payment exceeds the bill balance'), { statusCode: 400 });
+  if (nonCashCents > remainingCents) throw paymentValidationError('Non-cash payment exceeds the bill balance', 'non_cash_exceeds_balance');
   const cashRequiredCents = remainingCents - nonCashCents;
   // Partial payments remain supported. Cash is allocated up to the amount
   // needed after non-cash lines; a short tender simply leaves a partial bill.
@@ -2164,18 +2172,18 @@ function preparePaymentBatch(
     const applied = Math.min(line.requestedCents, cashLeft);
     cashLeft -= applied;
     if (applied === 0 && line.payment.transaction_id) {
-      throw Object.assign(new Error('A zero-applied cash line cannot carry a transaction_id'), { statusCode: 400 });
+      throw paymentValidationError('A zero-applied cash line cannot carry a transaction_id', 'cash_reference_zero_applied');
     }
     return { payment: line.payment, amountCents: applied, tenderedCents: line.requestedCents, changeCents: line.requestedCents - applied, amountOmitted: line.amountOmitted };
   }).filter((line) => line.amountCents > 0);
 
   if (prepared.some((line) => line.payment.method === 'wallet')) {
-    if (!effectiveCustomerId) throw Object.assign(new Error('Customer association is required for wallet payment'), { statusCode: 400 });
+    if (!effectiveCustomerId) throw paymentValidationError('Customer association is required for wallet payment', 'wallet_customer_required');
     const credits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(effectiveCustomerId) as { total: number };
     const debits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`).get(effectiveCustomerId) as { total: number };
     const walletPoints = Math.max(0, Number(credits.total) - Number(debits.total));
     const pointsRequired = prepared.filter((line) => line.payment.method === 'wallet').reduce((sum, line) => sum + line.amountCents, 0) / minorFactor * LOYALTY_REDEMPTION_RATE;
-    if (walletPoints < pointsRequired) throw Object.assign(new Error(`Insufficient wallet balance. Available: ${walletPoints} points, Required: ${pointsRequired}`), { statusCode: 400 });
+    if (walletPoints < pointsRequired) throw paymentValidationError(`Insufficient wallet balance. Available: ${walletPoints} points, Required: ${pointsRequired}`, 'wallet_insufficient');
   }
   return { bill, prepared, existingPayments, effectiveCustomerId };
 }
@@ -2221,7 +2229,7 @@ function applyPaymentBatch(
     `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { bill_id: string; request_hash: string; response_json: string } | undefined;
     if (prior) {
       if (String(prior.bill_id) !== String(billId) || prior.request_hash !== requestHash) {
-        throw Object.assign(new Error('Idempotency-Key was already used for a different payment request'), { statusCode: 409 });
+        throw paymentValidationError('Idempotency-Key was already used for a different payment request', 'idempotency_conflict', 409);
       }
       try {
         return JSON.parse(prior.response_json);
@@ -2240,6 +2248,7 @@ function applyPaymentBatch(
   if (!kitchenStatus.allowed) {
     throw Object.assign(new Error('Kitchen items must be delivered before billing'), {
       statusCode: 409,
+      displayCode: 'kitchen_undelivered',
       code: 'KITCHEN_ITEMS_UNDELIVERED',
       undeliveredCount: kitchenStatus.count,
       undeliveredItems: kitchenStatus.items,
@@ -2334,7 +2343,7 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
   try {
     const payment = req.body;
     if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
-      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment body must be an object'));
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment body must be an object', 'payment_input_invalid'));
     }
     const db = getDatabase();
     const { override_pin, ...paymentLine } = payment;
@@ -2360,7 +2369,7 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
         operationCommitted ? 'fc.backend.payment.create.completion'
           : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
         statusCode >= 500 ? 'Bill payment failed' : error.message,
-        undefined,
+        statusCode >= 500 ? undefined : error.displayCode,
         operationCommitted ? 'applied' : 'not_applied',
       ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
@@ -2374,11 +2383,11 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
   try {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment batch body must be an object'));
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'Payment batch body must be an object', 'payment_input_invalid'));
     }
     const { payments, customer_id: bodyCustomerId, override_pin } = body;
     if (!Array.isArray(payments) || payments.length === 0) {
-      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'payments must be a non-empty array'));
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.payment.create.validation', 'payments must be a non-empty array', 'payment_input_invalid'));
     }
 
     const db = getDatabase();
@@ -2404,7 +2413,7 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
         operationCommitted ? 'fc.backend.payment.create.completion'
           : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
         statusCode >= 500 ? 'Bill payment failed' : error.message,
-        undefined,
+        statusCode >= 500 ? undefined : error.displayCode,
         operationCommitted ? 'applied' : 'not_applied',
       ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),

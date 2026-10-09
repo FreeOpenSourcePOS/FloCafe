@@ -33,6 +33,16 @@ function countLocalDiagnostics(db: any): number {
   return (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count;
 }
 
+function createPaymentBill(db: any, label: string, options: { total?: number; paidAmount?: number; status?: string; customerId?: string } = {}): number {
+  const total = options.total ?? 10;
+  const orderId = db.prepare(`INSERT INTO orders (order_number, customer_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES (?, ?, 'takeaway', 'pending', ?, ?, ?, ?)`).run(label, options.customerId ?? null, total, total, now(), now()).lastInsertRowid;
+  return Number(db.prepare(`INSERT INTO bills (order_id, bill_number, customer_id, subtotal, discount_amount, tax_amount, total,
+    paid_amount, balance, payment_status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)`)
+    .run(orderId, label, options.customerId ?? null, total, total, options.paidAmount ?? 0, total - (options.paidAmount ?? 0), options.status ?? 'unpaid', now(), now()).lastInsertRowid);
+}
+
 async function main() {
   console.log('Diagnostics Event Ingestion Tests');
   console.log('='.repeat(56));
@@ -161,6 +171,16 @@ async function main() {
     assertEqual(body.outcome, 'unknown', 'the supplied allowlisted outcome is echoed');
     assertEqual(body.correlation_id, operationId, 'the caller operation UUID is retained for recovery');
 
+    const retryStateOperationId = crypto.randomUUID();
+    const retryStateResponse = await api(baseUrl, '/api/diagnostics/capture', {
+      method: 'POST', headers: owner.authHeader,
+      body: { capture_point: 'fc.client.order.create.retry_state_update', operation_id: retryStateOperationId, outcome: 'applied' },
+    });
+    assertEqual(retryStateResponse.status, 202, 'a confirmed order retry-state persistence failure is accepted');
+    assertEqual(retryStateResponse.data.reason_code, 'order.retry_state_failed', 'retry-state failure has its own stable reason');
+    assertEqual(retryStateResponse.data.outcome, 'applied', 'retry-state failure reports the confirmed order outcome');
+    assertEqual(retryStateResponse.data.correlation_id, retryStateOperationId, 'retry-state capture preserves the order operation UUID');
+
     const invalidRequests = [
       { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: 'bad-id', outcome: 'unknown', facts: { failure_class: 'offline' } },
       { capture_point: 'fc.backend.order.create.stock_validation', operation_id: crypto.randomUUID(), outcome: 'not_applied' },
@@ -216,6 +236,19 @@ async function main() {
     assertEqual(quantityBody.outcome, 'not_applied', 'the rejected order was not applied');
     assertEqual(quantityBody.correlation_id, quantityId, 'the route echoes the action UUID');
     assert(await settle(() => latestLocalDiagnostic(db, 'order.quantity_invalid') !== null), 'the quantity reason is recorded locally');
+
+    const throwingCapture = cloudSync.captureOperationFailure;
+    cloudSync.captureOperationFailure = () => { throw new Error('local diagnostics unavailable'); };
+    try {
+      const uncapturedQuantity = await api(baseUrl, '/api/orders', {
+        method: 'POST', headers: owner.authHeader,
+        body: { table_id: 'diag-table-1', type: 'dine_in', items: [{ product_id: 'p2', quantity: 0 }] },
+      });
+      assertEqual(uncapturedQuantity.status, 400, 'a failed diagnostics write cannot mask order validation');
+      assertEqual(uncapturedQuantity.data.reason_code, 'order.quantity_invalid', 'the original order rejection is returned when diagnostics fails');
+    } finally {
+      cloudSync.captureOperationFailure = throwingCapture;
+    }
 
     const stockId = crypto.randomUUID();
     const stockResponse = await api(baseUrl, '/api/orders', {
@@ -282,10 +315,91 @@ async function main() {
     });
     assertEqual(mismatchResponse.status, 400, 'a customer mismatch remains a validation rejection');
     assertEqual(mismatchResponse.data.reason_code, 'payment.invalid', 'payment validation has a distinct reason from order quantity or stock');
+    assertEqual(mismatchResponse.data.display_code, 'customer_mismatch', 'payment customer mismatch has a safe distinct display code');
     assertEqual(mismatchResponse.data.classification, 'expected_rejection', 'payment validation is an expected rejection');
     assertEqual(mismatchResponse.data.outcome, 'not_applied', 'the mismatched payment was not applied');
     assertEqual((db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(mismatchBillId) as { paid_amount: number }).paid_amount, 0, 'the mismatched bill remains unpaid');
     assert(await settle(() => latestLocalDiagnostic(db, 'payment.invalid') !== null), 'payment validation is retained as a local typed reason');
+    assertEqual(latestLocalDiagnostic(db, 'payment.invalid')?.metadata?.display_code, 'customer_mismatch', 'the local payment event retains only the safe display code');
+    cloudSync.captureOperationFailure = () => { throw new Error('local diagnostics unavailable'); };
+    try {
+      const uncapturedPayment = await api(baseUrl, `/api/bills/${mismatchBillId}/payments`, {
+        method: 'POST', headers: owner.authHeader,
+        body: { customer_id: 'diag-customer-b', payments: [{ method: 'cash', amount: 10 }] },
+      });
+      assertEqual(uncapturedPayment.status, 400, 'a failed diagnostics write cannot mask payment validation');
+      assertEqual(uncapturedPayment.data.display_code, 'customer_mismatch', 'the safe payment validation code survives diagnostics failure');
+    } finally {
+      cloudSync.captureOperationFailure = throwingCapture;
+    }
+
+    console.log('\n4c. Payment validation codes identify actual bill, wallet, reference, and idempotency branches');
+    const rejectedPayment = async (billId: number, body: any, headers: Record<string, string> = {}) => api(baseUrl, `/api/bills/${billId}/payments`, {
+      method: 'POST', headers: { ...owner.authHeader, ...headers }, body,
+    });
+    const assertPaymentCode = async (response: any, code: string) => {
+      assertEqual(response.status >= 400 && response.status < 500, true, `${code} remains a payment validation response`);
+      assertEqual(response.data.display_code, code, `${code} is assigned by its payment branch`);
+      await settle(() => latestLocalDiagnostic(db, 'payment.invalid')?.metadata?.display_code === code);
+      assertEqual(latestLocalDiagnostic(db, 'payment.invalid')?.metadata?.display_code, code, `${code} is captured as a safe local fact`);
+    };
+
+    const paidBillId = createPaymentBill(db, 'DIAG-PAYMENT-PAID', { status: 'paid', paidAmount: 10 });
+    await assertPaymentCode(await rejectedPayment(paidBillId, { payments: [{ method: 'card', amount: 1 }] }), 'bill_already_paid');
+    const refundedBillId = createPaymentBill(db, 'DIAG-PAYMENT-REFUNDED', { status: 'refunded' });
+    await assertPaymentCode(await rejectedPayment(refundedBillId, { payments: [{ method: 'card', amount: 1 }] }), 'bill_refunded');
+
+    const noCustomerWalletBillId = createPaymentBill(db, 'DIAG-PAYMENT-WALLET-NO-CUSTOMER');
+    await assertPaymentCode(await rejectedPayment(noCustomerWalletBillId, { payments: [{ method: 'wallet', amount: 1 }] }), 'wallet_customer_required');
+    const unavailableCustomerBillId = createPaymentBill(db, 'DIAG-PAYMENT-CUSTOMER-MISSING');
+    await assertPaymentCode(await rejectedPayment(unavailableCustomerBillId, { customer_id: 'missing-diagnostic-customer', payments: [{ method: 'card', amount: 1 }] }), 'customer_unavailable');
+    const walletBillId = createPaymentBill(db, 'DIAG-PAYMENT-WALLET-EMPTY', { customerId: 'diag-customer-a' });
+    await assertPaymentCode(await rejectedPayment(walletBillId, { payments: [{ method: 'wallet', amount: 1 }] }), 'wallet_insufficient');
+
+    const missingAmountBillId = createPaymentBill(db, 'DIAG-PAYMENT-AMOUNT-MISSING');
+    await assertPaymentCode(await rejectedPayment(missingAmountBillId, { payments: [{ method: 'cash', amount: 1 }, { method: 'card' }] }), 'amount_required');
+    const overBalanceBillId = createPaymentBill(db, 'DIAG-PAYMENT-OVER-BALANCE');
+    await assertPaymentCode(await rejectedPayment(overBalanceBillId, { payments: [{ method: 'card', amount: 11 }] }), 'non_cash_exceeds_balance');
+    const invalidAmountBillId = createPaymentBill(db, 'DIAG-PAYMENT-INVALID-AMOUNT');
+    await assertPaymentCode(await rejectedPayment(invalidAmountBillId, { payments: [{ method: 'card', amount: -1 }] }), 'payment_input_invalid');
+    const unavailableMethodBillId = createPaymentBill(db, 'DIAG-PAYMENT-METHOD-MISSING');
+    await assertPaymentCode(await rejectedPayment(unavailableMethodBillId, { payments: [{ method: 'custom', payment_method_id: 987654, amount: 1 }] }), 'payment_method_unavailable');
+
+    const zeroAppliedCashBillId = createPaymentBill(db, 'DIAG-PAYMENT-ZERO-CASH');
+    await assertPaymentCode(await rejectedPayment(zeroAppliedCashBillId, { payments: [
+      { method: 'cash', amount: 10 }, { method: 'cash', amount: 1, transaction_id: 'diag-zero-cash-ref' },
+    ] }), 'cash_reference_zero_applied');
+    const duplicateReferenceBillId = createPaymentBill(db, 'DIAG-PAYMENT-DUPLICATE-REF');
+    await assertPaymentCode(await rejectedPayment(duplicateReferenceBillId, { payments: [
+      { method: 'card', amount: 1, transaction_id: 'diag-duplicate-ref' },
+      { method: 'card', amount: 1, transaction_id: 'diag-duplicate-ref' },
+    ] }), 'transaction_reference_reused');
+    const referenceSourceBillId = createPaymentBill(db, 'DIAG-PAYMENT-REF-SOURCE');
+    const referenceSource = await rejectedPayment(referenceSourceBillId, { payments: [{ method: 'card', amount: 1, transaction_id: 'diag-used-ref' }] });
+    assertEqual(referenceSource.status, 200, 'the first transaction reference is accepted');
+    const referenceTargetBillId = createPaymentBill(db, 'DIAG-PAYMENT-REF-TARGET');
+    await assertPaymentCode(await rejectedPayment(referenceTargetBillId, { payments: [{ method: 'card', amount: 1, transaction_id: 'diag-used-ref' }] }), 'transaction_reference_used');
+
+    const idempotencyBillId = createPaymentBill(db, 'DIAG-PAYMENT-IDEMPOTENCY');
+    const idempotencyKey = 'diagnostics-payment-idempotency';
+    const idempotencyFirst = await rejectedPayment(idempotencyBillId, { payments: [{ method: 'card', amount: 1 }] }, { 'Idempotency-Key': idempotencyKey });
+    assertEqual(idempotencyFirst.status, 200, 'the initial idempotent payment is committed');
+    await assertPaymentCode(await rejectedPayment(idempotencyBillId, { payments: [{ method: 'card', amount: 2 }] }, { 'Idempotency-Key': idempotencyKey }), 'idempotency_conflict');
+
+    const kitchenBillId = createPaymentBill(db, 'DIAG-PAYMENT-KITCHEN');
+    const kitchenOrderId = (db.prepare('SELECT order_id FROM bills WHERE id = ?').get(kitchenBillId) as { order_id: number }).order_id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'p2', 'Latte', 4.5, 1, 4.5, 0, 4.5, 'pending', ?, ?)`).run(kitchenOrderId, now(), now());
+    setSetting('require_kitchen_delivered_before_settlement', 'true');
+    setSetting('kds_enabled', 'true');
+    setSetting('billing_type', 'postpaid');
+    await assertPaymentCode(await rejectedPayment(kitchenBillId, { payments: [{ method: 'card', amount: 1 }] }), 'kitchen_undelivered');
+    setSetting('require_kitchen_delivered_before_settlement', 'false');
+
+    const diagnosticRows = JSON.stringify(db.prepare('SELECT event_code, metadata_json FROM local_diagnostics').all());
+    assert(!diagnosticRows.includes('diag-customer-a'), 'payment captures never include customer identifiers');
+    assert(!diagnosticRows.includes('diag-used-ref'), 'payment captures never include transaction references');
+    assert(!diagnosticRows.includes('Available: 0 points'), 'payment captures never include wallet balance text');
 
     const completionOrderId = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES ('DIAG-PAYMENT-COMPLETION', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now()).lastInsertRowid;
@@ -295,6 +409,8 @@ async function main() {
     const kds = require('../main/services/kds');
     const priorNotifyOrderUpdated = kds.notifyOrderUpdated;
     kds.notifyOrderUpdated = () => { throw new Error('private notification failure'); };
+    const completionDiagnosticsBefore = (db.prepare("SELECT COUNT(*) AS count FROM local_diagnostics WHERE event_code = 'operation.completion_failed'").get() as { count: number }).count;
+    cloudSync.captureOperationFailure = () => { throw new Error('local diagnostics unavailable'); };
     try {
       const completionResponse = await api(baseUrl, `/api/bills/${completionBillId}/payments`, {
         method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
@@ -305,9 +421,10 @@ async function main() {
       assertEqual(completionResponse.data.stage, 'completion', 'the response distinguishes completion from persistence');
       assertEqual(completionResponse.data.outcome, 'applied', 'the response reports the proven committed payment');
       assertEqual((db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(completionBillId) as { paid_amount: number }).paid_amount, 5, 'the committed payment remains persisted');
-      assert(await settle(() => latestLocalDiagnostic(db, 'operation.completion_failed') !== null), 'post-commit completion failure is captured locally');
+      assertEqual((db.prepare("SELECT COUNT(*) AS count FROM local_diagnostics WHERE event_code = 'operation.completion_failed'").get() as { count: number }).count, completionDiagnosticsBefore, 'a failed diagnostics sink does not alter post-commit handling');
     } finally {
       kds.notifyOrderUpdated = priorNotifyOrderUpdated;
+      cloudSync.captureOperationFailure = throwingCapture;
     }
 
     console.log('\n5. No raw request or exception contents enter the v2 queue');

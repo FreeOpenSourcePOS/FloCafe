@@ -39,6 +39,12 @@ const DISCOUNT_DISPLAY_CODES = [
   'invalid_type', 'invalid_value', 'disabled', 'type_disabled', 'limit_exceeded',
   'order_not_discountable', 'bill_not_discountable', 'split_check', 'refunded', 'paid',
 ] as const;
+const PAYMENT_DISPLAY_CODES = [
+  'transaction_reference_used', 'transaction_reference_reused', 'bill_refunded', 'bill_already_paid',
+  'customer_mismatch', 'customer_unavailable', 'wallet_customer_required', 'amount_required',
+  'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient',
+  'kitchen_undelivered', 'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
+] as const;
 
 /** Closed capture registry; new event tuples must be added here and to the cloud receiver. */
 export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] = [
@@ -141,9 +147,15 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
+    capture_point: 'fc.client.order.create.retry_state_update',
+    reason_code: 'order.retry_state_failed', operation: 'order.create', stage: 'retry_state',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.backend.payment.create.validation',
     reason_code: 'payment.invalid', operation: 'payment.create', stage: 'validation',
-    classification: 'expected_rejection', outcomes: ['not_applied'], facts: NO_FACTS,
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: PAYMENT_DISPLAY_CODES } },
   },
   {
     capture_point: 'fc.backend.payment.create.persistence',

@@ -150,13 +150,15 @@ above: the merchant has nothing to claim. The message is reachable from the mobi
 endpoint, so this is shipped behaviour, not dead text. Treat it as a product-copy bug to raise
 separately, not as a description of how registration works.
 
-**Billing never blocks on the cloud.** A paid bill calls `cloudSync.reportDiagnostic()` on a
-best-effort basis. A cloud failure cannot fail a sale.
+**Payment outcomes stay local-authoritative.** Payment routes capture typed diagnostics only after
+the operation's outcome is known. A rollback is recorded as not applied; a notification failure
+after commit is recorded as applied. Captures are queued asynchronously, and delivery does not
+participate in the bill transaction or change its financial result.
 
-**Offline behaviour.** `reload()` starts three interval flushers, for the sync outbox, the support
-ticket outbox, and the diagnostics outbox. They are independent timers; one failing does not stop
-the others, and each is a no-op without a configured API key. The diagnostics flusher additionally
-refuses to send unless `diagnostics_transmission_enabled` is on.
+**Offline behaviour.** `reload()` starts the signed sync and support-ticket flushers when cloud sync
+is configured. The diagnostics flusher runs when consent and transmission are enabled and either a
+signed connection or permitted anonymous telemetry is available. It uses its own timer and does not
+require an API key for the anonymous path. A failure in one flusher does not stop the others.
 
 **Deletion and recovery.** A deletion request puts the store into `deletion_pending` or `deleted`.
 `isCloudDeletionBlocking()` reports whether the current status blocks normal cloud work, and while

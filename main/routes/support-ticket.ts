@@ -8,6 +8,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
 import { getHttpRequestSignal } from '../shutdown';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { isOperationReference, serializeOperationFailure, type OperationFailure } from '../lib/operation-failure';
 
 const router = Router();
 
@@ -120,6 +121,28 @@ async function submitTicketHandler(req: Request, res: Response) {
   const message = String(body.message || '').trim().slice(0, 20000);
   if (!subject || !message) return res.status(400).json({ error: 'subject and message are required' });
 
+  let operationFailure: OperationFailure | undefined;
+  if (body.operation_failure !== undefined) {
+    const candidate = body.operation_failure;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return res.status(400).json({ error: 'invalid operation_failure' });
+    }
+    const suppliedFailure = candidate as Record<string, unknown>;
+    if (Object.keys(suppliedFailure).some((key) => !['capture_point', 'operation_id', 'outcome', 'facts'].includes(key))) {
+      return res.status(400).json({ error: 'invalid operation_failure' });
+    }
+    if (!isOperationReference(suppliedFailure.operation_id) || body.correlation_id !== suppliedFailure.operation_id) {
+      return res.status(400).json({ error: 'operation_failure must match correlation_id' });
+    }
+    operationFailure = serializeOperationFailure({
+      capture_point: suppliedFailure.capture_point,
+      outcome: suppliedFailure.outcome,
+      correlation_id: suppliedFailure.operation_id,
+      ...(Object.hasOwn(suppliedFailure, 'facts') ? { facts: suppliedFailure.facts } : {}),
+    }) || undefined;
+    if (!operationFailure) return res.status(400).json({ error: 'invalid operation_failure' });
+  }
+
   const clientTicketId = typeof body.client_ticket_id === 'string' && CLIENT_TICKET_ID_RE.test(body.client_ticket_id)
     ? body.client_ticket_id : randomUUID();
   const eventCode = String(body.event_code || '').slice(0, 64) || undefined;
@@ -147,6 +170,7 @@ async function submitTicketHandler(req: Request, res: Response) {
   const suppliedDiagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
     ? body.diagnostics : {};
   const diagnostics = { ...suppliedDiagnostics, ...buildSystemDiagnostics(req, category) };
+  if (operationFailure) diagnostics.operation_failure = operationFailure;
   if (JSON.stringify(diagnostics).length > 15000) return res.status(400).json({ error: 'diagnostics are too large' });
 
   const logTail = typeof body.log_tail === 'string' && body.log_tail.trim()
@@ -159,7 +183,7 @@ async function submitTicketHandler(req: Request, res: Response) {
     message,
     severity,
     event_code: eventCode || `support.${category}`,
-    correlation_id: String(body.correlation_id || '').slice(0, 64) || undefined,
+    correlation_id: operationFailure?.correlation_id || String(body.correlation_id || '').slice(0, 64) || undefined,
     contact_name: String(body.contact_name || profile.contact_name).trim().slice(0, 255) || undefined,
     contact_email: contactEmail || undefined,
     contact_phone: contactPhone,

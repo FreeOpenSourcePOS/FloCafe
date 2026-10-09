@@ -208,6 +208,36 @@ nothing: the 200,000-byte cap, the 7-day window, and the absent-not-null semanti
 by the suite, and a change to any of them would not be caught. This is a coverage gap, not a
 statement that the behaviour is wrong.
 
+### Linking a ticket to a known operation failure
+
+When a cashier opens help from a structured failure, `POST /api/support-ticket` may include a
+top-level `operation_failure` object:
+
+```json
+{
+  "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
+  "client_ticket_id": "a stable UUID for this ticket submission",
+  "operation_failure": {
+    "capture_point": "fc.backend.payment.create.validation",
+    "operation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "outcome": "not_applied",
+    "facts": { "display_code": "customer_mismatch" }
+  }
+}
+```
+
+`operation_id` must be a UUID and must exactly match the top-level `correlation_id`. The server
+validates the capture point, outcome, and optional facts against its closed operation-failure
+registry, then stores the normalized tuple under `diagnostics.operation_failure`. The normalized
+tuple contains the server-owned reason, operation, stage, classification, outcome, correlation ID,
+and validated facts; callers cannot supply or override those fields. Invalid or unregistered
+context is rejected without queuing a ticket. `client_ticket_id` remains the independent replay key,
+so retrying the same ticket does not replace its original correlation or operation context.
+
+Tickets without `operation_failure` retain the existing manual-help contract. The optional
+structured context does not add raw automatic logs or change the permission required to submit a
+support ticket.
+
 ## Error taxonomy and correlation
 
 [`main/errors.ts`](../../main/errors.ts) gives every network operation a `FloErrorCode` and a
@@ -222,8 +252,10 @@ statement that the behaviour is wrong.
 - `errorDetails(error, fallbackCode)` reads a code and correlation id off any thrown value, falling
   back to a supplied code and a fresh correlation id, and always returns a `message`.
 
-The same tuple is what a support ticket carries in `correlation_id`, capped at 64 characters, so a
-merchant-reported ticket can be matched to a log line.
+Operation failures use a separate closed registry in `main/lib/operation-failure.ts`. A support
+ticket can carry its validated operation UUID in `correlation_id` and the normalized tuple in
+`diagnostics.operation_failure`, allowing staff to link the report to the same operation without
+deriving context from ticket text.
 
 ## Verification
 

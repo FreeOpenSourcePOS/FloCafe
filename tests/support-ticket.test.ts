@@ -66,6 +66,49 @@ async function main() {
     assert(typeof payload.diagnostics.app_version === 'string' && payload.diagnostics.app_version.length > 0,
       'diagnostics embed the app version');
 
+    console.log('\n2. A known operation failure is linked through a validated support context');
+    const operationId = require('crypto').randomUUID();
+    const linkedTicketId = '44444444-5555-6666-7777-888888888888';
+    const linkedTicket = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST', headers: owner.authHeader,
+      body: {
+        client_ticket_id: linkedTicketId,
+        subject: 'Payment was rejected',
+        message: 'Please help me understand this payment result.',
+        correlation_id: operationId,
+        operation_failure: {
+          capture_point: 'fc.backend.payment.create.validation', operation_id: operationId,
+          outcome: 'not_applied', facts: { display_code: 'customer_mismatch' },
+        },
+        diagnostics: { manual_context: 'cashier supplied technical detail' },
+      },
+    });
+    assertEqual(linkedTicket.status, 202, 'a registry-valid support context is accepted');
+    const linkedPayload = JSON.parse((db.prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?').get(linkedTicketId) as { payload: string }).payload);
+    assertEqual(linkedPayload.correlation_id, operationId, 'the support ticket uses the operation UUID as correlation_id');
+    assertEqual(linkedTicket.data.client_ticket_id, linkedTicketId, 'the client ticket ID remains a separate replay key');
+    assertEqual(linkedPayload.diagnostics.operation_failure.reason_code, 'payment.invalid', 'the server derives the failure reason from its registry');
+    assertEqual(linkedPayload.diagnostics.operation_failure.operation, 'payment.create', 'the server derives the operation from its registry');
+    assertEqual(linkedPayload.diagnostics.operation_failure.facts.display_code, 'customer_mismatch', 'the allowlisted payment fact is retained');
+    assertEqual(linkedPayload.diagnostics.manual_context, 'cashier supplied technical detail', 'manual diagnostics remain available alongside structured context');
+
+    const linkedReplayId = require('crypto').randomUUID();
+    const linkedReplay = await api(baseUrl, '/api/support-ticket', {
+      method: 'POST', headers: owner.authHeader,
+      body: {
+        client_ticket_id: linkedTicketId, subject: 'Changed retry text', message: 'This should not replace the first ticket.',
+        correlation_id: linkedReplayId,
+        operation_failure: {
+          capture_point: 'fc.backend.payment.create.validation', operation_id: linkedReplayId,
+          outcome: 'not_applied', facts: { display_code: 'wallet_insufficient' },
+        },
+      },
+    });
+    assertEqual(linkedReplay.status, 202, 'retrying a linked ticket remains accepted');
+    const preservedLinkedPayload = JSON.parse((db.prepare('SELECT payload FROM support_ticket_outbox WHERE client_ticket_id = ?').get(linkedTicketId) as { payload: string }).payload);
+    assertEqual(preservedLinkedPayload.correlation_id, operationId, 'a ticket retry cannot replace its original operation correlation');
+    assertEqual(preservedLinkedPayload.diagnostics.operation_failure.facts.display_code, 'customer_mismatch', 'a ticket retry cannot replace the original structured failure');
+
     console.log('\n2. GET status reflects the outbox row');
     const statusRes = await api(baseUrl, `/api/support-ticket/${clientTicketId}/status`, { headers: owner.authHeader });
     assertEqual(statusRes.status, 200, 'status lookup succeeds for a known ticket');
@@ -111,6 +154,25 @@ async function main() {
       body: { subject: 'x', message: 'y', contact_email: 'not-an-email' },
     });
     assertEqual(badEmail.status, 400, 'an invalid contact_email is rejected');
+
+    const invalidOperationId = require('crypto').randomUUID();
+    const malformedOperationFailures = [
+      { correlation_id: invalidOperationId, operation_failure: { capture_point: 'fc.backend.payment.create.validation', operation_id: 'bad-id', outcome: 'not_applied' } },
+      { correlation_id: require('crypto').randomUUID(), operation_failure: { capture_point: 'fc.backend.payment.create.validation', operation_id: invalidOperationId, outcome: 'not_applied' } },
+      { correlation_id: invalidOperationId, operation_failure: { capture_point: 'fc.backend.not_registered', operation_id: invalidOperationId, outcome: 'not_applied' } },
+      { correlation_id: invalidOperationId, operation_failure: { capture_point: 'fc.backend.payment.create.validation', operation_id: invalidOperationId, outcome: 'applied' } },
+      { correlation_id: invalidOperationId, operation_failure: { capture_point: 'fc.backend.payment.create.validation', operation_id: invalidOperationId, outcome: 'not_applied', facts: { display_code: 'raw error text' } } },
+      { correlation_id: invalidOperationId, operation_failure: { capture_point: 'fc.backend.payment.create.validation', operation_id: invalidOperationId, outcome: 'not_applied', extra: true } },
+    ];
+    const beforeInvalidContext = (db.prepare('SELECT COUNT(*) AS count FROM support_ticket_outbox').get() as { count: number }).count;
+    for (const malformed of malformedOperationFailures) {
+      const invalidContext = await api(baseUrl, '/api/support-ticket', {
+        method: 'POST', headers: owner.authHeader,
+        body: { subject: 'invalid context', message: 'this ticket must not queue', ...malformed },
+      });
+      assertEqual(invalidContext.status, 400, 'malformed or unregistered operation context is rejected');
+    }
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM support_ticket_outbox').get() as { count: number }).count, beforeInvalidContext, 'invalid operation contexts never create queued support tickets');
 
     console.log('\n5. An unrecognized category silently falls back to "general" rather than failing');
     const unknownCategoryRes = await api(baseUrl, '/api/support-ticket', {

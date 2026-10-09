@@ -59,6 +59,24 @@ const REFUND_DISPLAY_CODES = [
   'nothing_to_refund', 'amount_exceeds_refundable', 'approver_pin_required', 'pin_rate_limited',
   'approver_pin_invalid', 'cash_session_required',
 ] as const;
+const CASH_SESSION_OPEN_DISPLAY_CODES = ['opening_float_invalid', 'session_already_open'] as const;
+const CASH_SESSION_CLOSE_DISPLAY_CODES = [
+  'session_id_invalid', 'counted_cash_invalid', 'session_unavailable', 'session_already_closed',
+  'session_owner_required', 'unpaid_bills_remaining',
+] as const;
+const CASH_MOVEMENT_CREATE_DISPLAY_CODES = [
+  'business_date_invalid', 'future_business_date', 'movement_type_invalid', 'amount_invalid',
+  'reason_required', 'reason_invalid', 'reason_too_long', 'cash_session_required',
+  'day_already_closed', 'opening_float_exists',
+] as const;
+const CASH_MOVEMENT_VOID_DISPLAY_CODES = [
+  'movement_id_invalid', 'reason_required', 'reason_invalid', 'reason_too_long',
+  'movement_unavailable', 'movement_already_voided', 'day_already_closed',
+] as const;
+const CASH_DAY_CLOSE_DISPLAY_CODES = [
+  'business_date_invalid', 'future_business_date', 'amount_invalid', 'notes_too_long',
+  'day_already_closed', 'opening_float_mismatch',
+] as const;
 
 /** Closed capture registry; new event tuples must be added here and to the cloud receiver. */
 export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] = [
@@ -187,6 +205,11 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
+    capture_point: 'fc.client.bill.generate.retry_state_update',
+    reason_code: 'bill.retry_state_failed', operation: 'bill.generate', stage: 'retry_state',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.backend.payment.create.validation',
     reason_code: 'payment.invalid', operation: 'payment.create', stage: 'validation',
     classification: 'expected_rejection', outcomes: ['not_applied'],
@@ -268,6 +291,86 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
   {
     capture_point: 'fc.backend.payment.refund.completion',
     reason_code: 'operation.completion_failed', operation: 'payment.refund', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.session.open.validation',
+    reason_code: 'cash.session_rejected', operation: 'cash.session.open', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: CASH_SESSION_OPEN_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.cash.session.open.persistence',
+    reason_code: 'persistence.failed', operation: 'cash.session.open', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.session.open.completion',
+    reason_code: 'operation.completion_failed', operation: 'cash.session.open', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.session.close.validation',
+    reason_code: 'cash.session_rejected', operation: 'cash.session.close', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: CASH_SESSION_CLOSE_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.cash.session.close.persistence',
+    reason_code: 'persistence.failed', operation: 'cash.session.close', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.session.close.completion',
+    reason_code: 'operation.completion_failed', operation: 'cash.session.close', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.create.validation',
+    reason_code: 'cash.movement_rejected', operation: 'cash.movement.create', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: CASH_MOVEMENT_CREATE_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.create.persistence',
+    reason_code: 'persistence.failed', operation: 'cash.movement.create', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.create.completion',
+    reason_code: 'operation.completion_failed', operation: 'cash.movement.create', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.void.validation',
+    reason_code: 'cash.movement_rejected', operation: 'cash.movement.void', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: CASH_MOVEMENT_VOID_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.void.persistence',
+    reason_code: 'persistence.failed', operation: 'cash.movement.void', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.movement.void.completion',
+    reason_code: 'operation.completion_failed', operation: 'cash.movement.void', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.day.close.validation',
+    reason_code: 'cash.day_close_rejected', operation: 'cash.day.close', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: CASH_DAY_CLOSE_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.cash.day.close.persistence',
+    reason_code: 'persistence.failed', operation: 'cash.day.close', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.cash.day.close.completion',
+    reason_code: 'operation.completion_failed', operation: 'cash.day.close', stage: 'completion',
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {

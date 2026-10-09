@@ -43,6 +43,7 @@ const {
   dayBoundsInTimezone, localDateInTimezone, parseDbTimestamp, nextZNumber,
 } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
+const { cloudSync } = require('../main/services/cloud-sync');
 const { cashClosureRoutes } = require('../main/routes/cash-closures');
 const { reportRoutes } = require('../main/routes/reports');
 const { getCurrencyFractionDigits, resolveTenantCurrency } = require('../main/countries');
@@ -74,6 +75,24 @@ function assertEqual(actual: any, expected: any, message: string) {
     failed++;
     console.error(`  ✗ ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
+}
+
+function latestDiagnostic(db: any, reasonCode: string): any | null {
+  const row = db.prepare('SELECT * FROM local_diagnostics WHERE event_code = ? ORDER BY id DESC LIMIT 1').get(reasonCode) as any;
+  if (!row) return null;
+  let metadata = {};
+  try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch { /* malformed rows are not test evidence */ }
+  return { ...row, metadata };
+}
+
+async function waitForDiagnostic(db: any, reasonCode: string, matches: (metadata: any) => boolean): Promise<any | null> {
+  const deadline = Date.now() + 3000;
+  let row = latestDiagnostic(db, reasonCode);
+  while ((!row || !matches(row.metadata)) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    row = latestDiagnostic(db, reasonCode);
+  }
+  return row && matches(row.metadata) ? row : null;
 }
 
 function isNativeAbiMismatch(error: any): boolean {
@@ -208,8 +227,15 @@ async function main() {
     console.log('\n2. Validation');
     {
       const futureLocal = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const future = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({ business_date: futureLocal, opening_float_cents: 0, counted_cash_cents: 0 });
+      const future = await request(app).post('/api/cash-closures')
+        .set('x-operation-id', '55555555-5555-4555-8555-555555555555')
+        .set('Authorization', `Bearer ${ownerToken}`).send({ business_date: futureLocal, opening_float_cents: 0, counted_cash_cents: 0 });
       assertEqual(future.status, 400, `future date → 400 (got ${future.status})`);
+      assertEqual(future.body?.reason_code, 'cash.day_close_rejected', 'future date rejection has a stable day-close reason');
+      assertEqual(future.body?.display_code, 'future_business_date', 'future date guard uses its exact safe enum');
+      assertEqual(future.body?.correlation_id, '55555555-5555-4555-8555-555555555555', 'future date rejection keeps the action UUID');
+      const futureDiagnostic = await waitForDiagnostic(db, 'cash.day_close_rejected', (metadata) => metadata.display_code === 'future_business_date');
+      assertEqual(futureDiagnostic?.metadata?.display_code, 'future_business_date', 'day-close diagnostic stores only the safe date enum');
       const malformed = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({ business_date: '2026-9-5', opening_float_cents: 0, counted_cash_cents: 0 });
       assertEqual(malformed.status, 400, `malformed date → 400 (got ${malformed.status})`);
       const negativeFloat = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({ business_date: '2026-09-05', opening_float_cents: -1, counted_cash_cents: 0 });
@@ -446,10 +472,16 @@ async function main() {
       // (business_date) WHERE scope='day' turns the second POST into 409.
       const dayBBase = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
       const dayA = new Date(dayBBase.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      const dup = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({
-        business_date: dayA, opening_float_cents: 0, counted_cash_cents: 0,
-      });
+      const dup = await request(app).post('/api/cash-closures')
+        .set('x-operation-id', '66666666-6666-4666-8666-666666666666')
+        .set('Authorization', `Bearer ${ownerToken}`).send({
+          business_date: dayA, opening_float_cents: 0, counted_cash_cents: 0,
+        });
       assertEqual(dup.status, 409, `duplicate day close → 409 (got ${dup.status})`);
+      assertEqual(dup.body?.display_code, 'day_already_closed', 'duplicate close uses the closed-day guard code');
+      assertEqual(dup.body?.outcome, 'not_applied', 'duplicate close is confirmed not applied');
+      const duplicateDiagnostic = await waitForDiagnostic(db, 'cash.day_close_rejected', (metadata) => metadata.display_code === 'day_already_closed');
+      assertEqual(duplicateDiagnostic?.metadata?.display_code, 'day_already_closed', 'duplicate close stores only the safe guard enum');
     }
 
     console.log('\n8. F4: tax_components_json carries DisplayTaxComponent[] with correct sums');
@@ -1617,8 +1649,12 @@ async function main() {
     console.log('\n20. Cash drawer movements: pay-in/pay-out/safe-drop, audit voids, and close integration');
     {
       const movementDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const diagnosticsProbeDate = '2000-01-01';
       const movementBody = (movement_type: string, amount_cents: number, reason?: string) => ({
         business_date: movementDate, movement_type, amount_cents, ...(reason ? { reason } : {}),
+      });
+      const diagnosticsMovementBody = (movement_type: string, amount_cents: number, reason?: string) => ({
+        business_date: diagnosticsProbeDate, movement_type, amount_cents, ...(reason ? { reason } : {}),
       });
       const forbiddenMovement = await request(app)
         .post('/api/cash-closures/movements')
@@ -1633,9 +1669,15 @@ async function main() {
 
       const nullAmount = await request(app)
         .post('/api/cash-closures/movements')
+        .set('x-operation-id', '77777777-7777-4777-8777-777777777777')
         .set('Authorization', `Bearer ${cashierToken}`)
         .send({ ...movementBody('pay_in', 0, 'invalid'), amount_cents: null });
       assertEqual(nullAmount.status, 400, `null movement amount is rejected (got ${nullAmount.status})`);
+      assertEqual(nullAmount.body?.reason_code, 'cash.movement_rejected', 'movement validation has a stable reason');
+      assertEqual(nullAmount.body?.display_code, 'amount_invalid', 'movement amount guard uses its safe enum');
+      assertEqual(nullAmount.body?.correlation_id, '77777777-7777-4777-8777-777777777777', 'movement validation keeps the action UUID');
+      const amountDiagnostic = await waitForDiagnostic(db, 'cash.movement_rejected', (metadata) => metadata.display_code === 'amount_invalid');
+      assertEqual(amountDiagnostic?.metadata?.display_code, 'amount_invalid', 'movement capture stores only the safe amount enum');
 
       const opening = await request(app)
         .post('/api/cash-closures/movements')
@@ -1644,9 +1686,104 @@ async function main() {
       assertEqual(opening.status, 201, `cashier can record an opening float without a reason (got ${opening.status})`);
       const duplicateOpening = await request(app)
         .post('/api/cash-closures/movements')
+        .set('x-operation-id', '88888888-8888-4888-8888-888888888888')
         .set('Authorization', `Bearer ${cashierToken}`)
         .send(movementBody('opening_float', 20000));
       assertEqual(duplicateOpening.status, 409, `duplicate active opening float is rejected (got ${duplicateOpening.status})`);
+      assertEqual(duplicateOpening.body?.display_code, 'opening_float_exists', 'duplicate opening float receives its guarded code');
+
+      db.prepare(`CREATE TRIGGER diagnostics_cash_movement_rollback BEFORE INSERT ON cash_drawer_movements
+        WHEN NEW.reason = 'diagnostics_failure_probe' BEGIN SELECT RAISE(ABORT, 'private drawer details'); END`).run();
+      const beforeRollbackMovements = Number((db.prepare(`SELECT COUNT(*) AS count FROM cash_drawer_movements WHERE business_date = ? AND reason = 'diagnostics_failure_probe'`).get(diagnosticsProbeDate) as any).count);
+      const rollbackMovement = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('x-operation-id', '99999999-9999-4999-8999-999999999999')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(diagnosticsMovementBody('pay_in', 500, 'diagnostics_failure_probe'));
+      db.prepare('DROP TRIGGER diagnostics_cash_movement_rollback').run();
+      assertEqual(rollbackMovement.status, 500, 'movement persistence failure remains a server error');
+      assertEqual(rollbackMovement.body?.reason_code, 'persistence.failed', 'movement rollback has a persistence reason');
+      assertEqual(rollbackMovement.body?.outcome, 'not_applied', 'failed insert remains not applied');
+      assertEqual(rollbackMovement.body?.error, 'Internal server error', 'private database text is not returned');
+      assertEqual(Number((db.prepare(`SELECT COUNT(*) AS count FROM cash_drawer_movements WHERE business_date = ? AND reason = 'diagnostics_failure_probe'`).get(diagnosticsProbeDate) as any).count), beforeRollbackMovements, 'rolled-back movement leaves no row');
+      const rollbackDiagnostic = await waitForDiagnostic(db, 'persistence.failed', (metadata) => metadata.operation === 'cash.movement.create' && metadata.outcome === 'not_applied');
+      assertEqual(rollbackDiagnostic?.metadata?.operation, 'cash.movement.create', 'rollback diagnostic names the real write operation');
+      assertEqual(JSON.stringify(rollbackDiagnostic?.metadata || {}).includes('diagnostics_failure_probe'), false, 'movement reason text stays out of the local diagnostic facts');
+
+      const originalCapture = cloudSync.captureOperationFailure;
+      cloudSync.captureOperationFailure = () => { throw new Error('private diagnostics sink failure'); };
+      let sinkFailureResponse: any;
+      try {
+        sinkFailureResponse = await request(app)
+          .post('/api/cash-closures/movements')
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send(diagnosticsMovementBody('pay_in', 100, 'capture_failure_probe'));
+      } finally {
+        cloudSync.captureOperationFailure = originalCapture;
+      }
+      assertEqual(sinkFailureResponse.status, 201, 'a failed diagnostics sink cannot block a valid movement');
+      assertEqual(Number((db.prepare(`SELECT COUNT(*) AS count FROM cash_drawer_movements WHERE business_date = ? AND reason = 'capture_failure_probe'`).get(diagnosticsProbeDate) as any).count), 1, 'the movement remains persisted when diagnostics capture throws');
+
+      const responsePrototype = app.response;
+      const originalJson = responsePrototype.json;
+      let failMovementResponseOnce = true;
+      responsePrototype.json = function (body: unknown) {
+        if (failMovementResponseOnce) {
+          failMovementResponseOnce = false;
+          throw new Error('synthetic movement response failure');
+        }
+        return originalJson.call(this, body);
+      };
+      let completionMovement: any;
+      try {
+        completionMovement = await request(app)
+          .post('/api/cash-closures/movements')
+          .set('x-operation-id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+          .set('Authorization', `Bearer ${cashierToken}`)
+          .send(diagnosticsMovementBody('pay_in', 100, 'completion_probe'));
+      } finally {
+        responsePrototype.json = originalJson;
+      }
+      assertEqual(completionMovement.status, 500, 'post-commit response failure remains visible');
+      assertEqual(completionMovement.body?.reason_code, 'operation.completion_failed', 'post-commit failure uses completion stage');
+      assertEqual(completionMovement.body?.operation, 'cash.movement.create', 'post-commit movement failure identifies the action');
+      assertEqual(completionMovement.body?.outcome, 'applied', 'post-commit movement failure reports the persisted outcome');
+      assertEqual(Number((db.prepare(`SELECT COUNT(*) AS count FROM cash_drawer_movements WHERE business_date = ? AND reason = 'completion_probe'`).get(diagnosticsProbeDate) as any).count), 1, 'post-commit response failure leaves the movement row committed');
+      const completionDiagnostic = await waitForDiagnostic(db, 'operation.completion_failed', (metadata) => metadata.operation === 'cash.movement.create' && metadata.outcome === 'applied');
+      assertEqual(completionDiagnostic?.metadata?.operation, 'cash.movement.create', 'completion diagnostic records the committed operation');
+      assertEqual(JSON.stringify(completionDiagnostic?.metadata || {}).includes('completion_probe'), false, 'movement reason text stays out of the completion diagnostic');
+
+      const voidFixture = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(diagnosticsMovementBody('pay_in', 300, 'void_completion_source'));
+      assertEqual(voidFixture.status, 201, 'void completion fixture is created');
+      const voidResponsePrototype = app.response;
+      const originalVoidJson = voidResponsePrototype.json;
+      let failVoidResponseOnce = true;
+      voidResponsePrototype.json = function (body: unknown) {
+        if (failVoidResponseOnce) {
+          failVoidResponseOnce = false;
+          throw new Error('synthetic movement void response failure');
+        }
+        return originalVoidJson.call(this, body);
+      };
+      let completionVoid: any;
+      try {
+        completionVoid = await request(app)
+          .post(`/api/cash-closures/movements/${voidFixture.body?.movement?.id}/void`)
+          .set('x-operation-id', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({ reason: 'void_completion_probe' });
+      } finally {
+        voidResponsePrototype.json = originalVoidJson;
+      }
+      assertEqual(completionVoid.status, 500, 'post-commit void response failure remains visible');
+      assertEqual(completionVoid.body?.operation, 'cash.movement.void', 'post-commit void failure identifies the action');
+      assertEqual(completionVoid.body?.outcome, 'applied', 'post-commit void failure reports the committed outcome');
+      assert(!!(db.prepare('SELECT voided_at FROM cash_drawer_movements WHERE id = ?').get(voidFixture.body?.movement?.id) as any)?.voided_at, 'post-commit void response failure leaves the movement voided');
+      const voidDiagnostic = await waitForDiagnostic(db, 'operation.completion_failed', (metadata) => metadata.operation === 'cash.movement.void' && metadata.outcome === 'applied');
+      assertEqual(voidDiagnostic?.metadata?.correlation_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'void completion capture retains its action UUID');
 
       const payIn = await request(app)
         .post('/api/cash-closures/movements')
@@ -1707,6 +1844,33 @@ async function main() {
         .set('Authorization', `Bearer ${cashierToken}`)
         .send(movementBody('pay_in', 100, 'too late'));
       assertEqual(afterClose.status, 409, `movement writes are blocked after close (got ${afterClose.status})`);
+
+      const dayCloseResponsePrototype = app.response;
+      const originalDayCloseJson = dayCloseResponsePrototype.json;
+      let failDayCloseResponseOnce = true;
+      dayCloseResponsePrototype.json = function (body: unknown) {
+        if (failDayCloseResponseOnce) {
+          failDayCloseResponseOnce = false;
+          throw new Error('synthetic day-close response failure');
+        }
+        return originalDayCloseJson.call(this, body);
+      };
+      let completionDayClose: any;
+      try {
+        completionDayClose = await request(app)
+          .post('/api/cash-closures')
+          .set('x-operation-id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+          .set('Authorization', `Bearer ${ownerToken}`)
+          .send({ business_date: '2000-02-01', opening_float_cents: 0, counted_cash_cents: 0 });
+      } finally {
+        dayCloseResponsePrototype.json = originalDayCloseJson;
+      }
+      assertEqual(completionDayClose.status, 500, 'post-commit day-close response failure remains visible');
+      assertEqual(completionDayClose.body?.operation, 'cash.day.close', 'post-commit day-close failure identifies the action');
+      assertEqual(completionDayClose.body?.outcome, 'applied', 'post-commit day-close failure reports the committed result');
+      assertEqual(Number((db.prepare(`SELECT COUNT(*) AS count FROM cash_closures WHERE scope = 'day' AND business_date = '2000-02-01'`).get() as any).count), 1, 'post-commit day-close failure leaves its snapshot persisted');
+      const dayCloseDiagnostic = await waitForDiagnostic(db, 'operation.completion_failed', (metadata) => metadata.operation === 'cash.day.close' && metadata.outcome === 'applied');
+      assertEqual(dayCloseDiagnostic?.metadata?.correlation_id, 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'day-close completion capture keeps its action UUID');
     }
 
   } finally {

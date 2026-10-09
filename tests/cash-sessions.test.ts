@@ -47,6 +47,24 @@ function assert(condition: boolean, message: string) {
   }
 }
 
+function latestDiagnostic(db: any, reasonCode: string): any | null {
+  const row = db.prepare('SELECT * FROM local_diagnostics WHERE event_code = ? ORDER BY id DESC LIMIT 1').get(reasonCode) as any;
+  if (!row) return null;
+  let metadata = {};
+  try { metadata = row.metadata_json ? JSON.parse(row.metadata_json) : {}; } catch { /* malformed rows are not test evidence */ }
+  return { ...row, metadata };
+}
+
+async function waitForDiagnostic(db: any, reasonCode: string, matches: (metadata: any) => boolean): Promise<any | null> {
+  const deadline = Date.now() + 3000;
+  let row = latestDiagnostic(db, reasonCode);
+  while ((!row || !matches(row.metadata)) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    row = latestDiagnostic(db, reasonCode);
+  }
+  return row && matches(row.metadata) ? row : null;
+}
+
 function isNativeAbiMismatch(error: any): boolean {
   return (
     error?.code === 'ERR_DLOPEN_FAILED' &&
@@ -137,6 +155,19 @@ async function main() {
     cashier2Token = token('cashier2-sess', 'cashier2-sess@test.local', 'cashier');
     const serverToken = token('server-sess', 'server-sess@test.local', 'server');
 
+    const invalidOpen = await request(app).post('/api/cash-sessions/open')
+      .set('x-operation-id', '11111111-1111-4111-8111-111111111111')
+      .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: -1 });
+    assert(invalidOpen.status === 400, 'negative opening float remains a validation response (400)');
+    assert(invalidOpen.body?.reason_code === 'cash.session_rejected', 'opening float rejection has a stable reason');
+    assert(invalidOpen.body?.operation === 'cash.session.open' && invalidOpen.body?.stage === 'validation', 'opening float rejection identifies the action and stage');
+    assert(invalidOpen.body?.classification === 'expected_rejection' && invalidOpen.body?.outcome === 'not_applied', 'opening float rejection records a non-applied expected outcome');
+    assert(invalidOpen.body?.display_code === 'opening_float_invalid', 'opening float code comes from the guarded field');
+    assert(invalidOpen.body?.correlation_id === '11111111-1111-4111-8111-111111111111', 'opening float rejection retains the action UUID');
+    const openDiagnostic = await waitForDiagnostic(db, 'cash.session_rejected', (metadata) => metadata.display_code === 'opening_float_invalid');
+    assert(openDiagnostic?.metadata?.display_code === 'opening_float_invalid', 'only the safe opening-float enum is stored locally');
+    assert((db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions WHERE status = 'open'`).get() as any).c === 0, 'invalid opening float does not create a session');
+
     const openRes = await request(app).post('/api/cash-sessions/open')
       .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 5000 });
     assert(openRes.status === 200, 'cashier opens a session (200)');
@@ -144,8 +175,10 @@ async function main() {
     assert(typeof sessionId === 'number', 'open returns a session id');
 
     const doubleOpen = await request(app).post('/api/cash-sessions/open')
+      .set('x-operation-id', '22222222-2222-4222-8222-222222222222')
       .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 100 });
     assert(doubleOpen.status === 409, 'second open while one is open is 409');
+    assert(doubleOpen.body?.display_code === 'session_already_open', 'second open records the active-session guard');
 
     const serverOpen = await request(app).post('/api/cash-sessions/open')
       .set('Authorization', `Bearer ${serverToken}`).send({ opening_float_cents: 100 });
@@ -182,6 +215,34 @@ async function main() {
       .set('Authorization', `Bearer ${cashierToken}`);
     assert(after.status === 200, 'no current session after close (200)');
     assert(after.body === null, 'current returns null when no shift is open');
+
+    const completionOpen = await request(app).post('/api/cash-sessions/open')
+      .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 200 });
+    assert(completionOpen.status === 200, 'completion fixture session opens');
+    const responsePrototype = app.response;
+    const originalJson = responsePrototype.json;
+    let failCloseResponseOnce = true;
+    responsePrototype.json = function (body: unknown) {
+      if (failCloseResponseOnce) {
+        failCloseResponseOnce = false;
+        throw new Error('synthetic session close response failure');
+      }
+      return originalJson.call(this, body);
+    };
+    let completionClose: any;
+    try {
+      completionClose = await request(app).post(`/api/cash-sessions/${completionOpen.body?.id}/close`)
+        .set('x-operation-id', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+        .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 200 });
+    } finally {
+      responsePrototype.json = originalJson;
+    }
+    assert(completionClose.status === 500, 'post-commit close response failure remains visible');
+    assert(completionClose.body?.reason_code === 'operation.completion_failed', 'post-commit shift close uses the completion reason');
+    assert(completionClose.body?.operation === 'cash.session.close' && completionClose.body?.outcome === 'applied', 'post-commit shift close reports the proven applied outcome');
+    assert((db.prepare('SELECT status FROM cash_sessions WHERE id = ?').get(completionOpen.body?.id) as any)?.status === 'closed', 'post-commit close failure leaves the session closed');
+    const closeDiagnostic = await waitForDiagnostic(db, 'operation.completion_failed', (metadata) => metadata.operation === 'cash.session.close' && metadata.outcome === 'applied');
+    assert(closeDiagnostic?.metadata?.correlation_id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'local completion capture retains the operation UUID');
   }
 
   // ── Section 3: enforcement (default off) ──────────────────────────────
@@ -402,9 +463,13 @@ async function main() {
   db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(past(3600_000), guardId);
   const guardBill = seedUnpaidBill('guard');
   const blockedClose = await request(app).post(`/api/cash-sessions/${guardId}/close`)
+    .set('x-operation-id', '33333333-3333-4333-8333-333333333333')
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
   assert(blockedClose.status === 409, 'close with an unpaid bill in-window is 409');
   assert(/unpaid/i.test(String(blockedClose.body?.error || '')), '409 names unpaid bills');
+  assert(blockedClose.body?.display_code === 'unpaid_bills_remaining', 'unpaid close guard is typed without uploading the count');
+  const unpaidCloseDiagnostic = await waitForDiagnostic(db, 'cash.session_rejected', (metadata) => metadata.display_code === 'unpaid_bills_remaining');
+  assert(unpaidCloseDiagnostic?.metadata?.display_code === 'unpaid_bills_remaining', 'cash close stores only the safe unpaid guard code');
   const payGuard = await request(app).post(`/api/bills/${guardBill}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 50 });
   assert(payGuard.status === 200, 'unpaid bill can still be paid (200)');
@@ -566,8 +631,11 @@ async function main() {
     .set('Authorization', `Bearer ${cashier2Token}`).send({ opening_float_cents: 0 });
   assert(otherCashierOpen.status === 200, 'second cashier opens a session (200)');
   const otherCashierClose = await request(app).post(`/api/cash-sessions/${otherCashierOpen.body?.id}/close`)
+    .set('x-operation-id', '44444444-4444-4444-8444-444444444444')
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
   assert(otherCashierClose.status === 403, 'cashier cannot close another cashier session (403)');
+  assert(otherCashierClose.body?.display_code === 'session_owner_required', 'the cashier ownership guard receives a safe action code');
+  assert(otherCashierClose.body?.correlation_id === '44444444-4444-4444-8444-444444444444', 'the owner-guard diagnostic retains the action UUID');
   const otherCashierRow = db.prepare('SELECT status FROM cash_sessions WHERE id = ?').get(otherCashierOpen.body?.id) as any;
   assert(otherCashierRow?.status === 'open', 'rejected cross-cashier close leaves the session open');
   const otherCashierTidy = await request(app).post(`/api/cash-sessions/${otherCashierOpen.body?.id}/close`)

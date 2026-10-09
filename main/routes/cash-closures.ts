@@ -31,6 +31,7 @@
  * extension door is intentionally unused by this endpoint; session-style
  * closes arrive as separate rows with a different `scope` value.
  */
+import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
@@ -57,10 +58,42 @@ import {
 } from '../services/tax-components';
 import { Z_REPORT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import { resolveReceiptLanguages, type ReceiptLanguagePolicy } from '../../shared/print';
+import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import { cloudSync } from '../services/cloud-sync';
 
 const router = Router();
 const MAX_NOTES_LENGTH = 500;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function cashOperationFailurePayload(
+  req: Request,
+  errorMessage: string,
+  capturePoint: string,
+  outcome: 'not_applied' | 'applied' | 'unknown',
+  displayCode?: string,
+): Record<string, unknown> {
+  const header = req.get('x-operation-id');
+  const correlationId = isOperationReference(header) ? header : randomUUID();
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome,
+    correlation_id: correlationId,
+    ...(displayCode ? { facts: { display_code: displayCode } } : {}),
+  });
+  if (!failure) return { error: errorMessage };
+  (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
+  try { cloudSync.captureOperationFailure(failure); } catch { /* Diagnostics must not affect cash handling. */ }
+  return {
+    error: errorMessage,
+    reason_code: failure.reason_code,
+    operation: failure.operation,
+    stage: failure.stage,
+    classification: failure.classification,
+    outcome: failure.outcome,
+    correlation_id: failure.correlation_id,
+    ...(failure.facts.display_code ? { display_code: failure.facts.display_code } : {}),
+  };
+}
 
 interface CashDrawerMovementRow {
   id: number;
@@ -77,8 +110,8 @@ interface CashDrawerMovementRow {
   void_reason: string | null;
 }
 
-function httpError(message: string, statusCode: number): Error {
-  return Object.assign(new Error(message), { statusCode });
+function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
+  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
 }
 
 // Resolves through the country profile when the stored timezone is missing
@@ -102,7 +135,7 @@ function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {
 
 function validateBusinessDate(raw: unknown): string {
   if (typeof raw !== 'string' || !ISO_DATE_RE.test(raw)) {
-    throw httpError('business_date must use YYYY-MM-DD format', 400);
+    throw httpError('business_date must use YYYY-MM-DD format', 400, 'business_date_invalid');
   }
   // Real-calendar-date guard: `Date.UTC(2026, 1, 30)` silently rolls over
   // into March, so a regex match is not enough. Round-trip the parsed
@@ -116,7 +149,7 @@ function validateBusinessDate(raw: unknown): string {
     roundTrip.getUTCMonth() + 1 !== month ||
     roundTrip.getUTCDate() !== day
   ) {
-    throw httpError('business_date is not a real calendar date', 400);
+    throw httpError('business_date is not a real calendar date', 400, 'business_date_invalid');
   }
   // Tenant-local business date, not the host UTC clock: a date that is
   // "today" in the store's configured timezone and cutoff must never be
@@ -124,40 +157,40 @@ function validateBusinessDate(raw: unknown): string {
   // ISO date arithmetic on the YYYY-MM-DD string is timezone-safe.
   const todayLocal = localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
   if (raw > todayLocal) {
-    throw httpError('business_date cannot be in the future', 400);
+    throw httpError('business_date cannot be in the future', 400, 'future_business_date');
   }
   return raw;
 }
 
 function validateCents(raw: unknown, field: string, allowZero = true): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw)) {
-    throw httpError(`${field} must be an integer`, 400);
+    throw httpError(`${field} must be an integer`, 400, 'amount_invalid');
   }
   if (raw < 0 || (!allowZero && raw === 0)) {
-    throw httpError(`${field} must be >= ${allowZero ? 0 : 1}`, 400);
+    throw httpError(`${field} must be >= ${allowZero ? 0 : 1}`, 400, 'amount_invalid');
   }
   if (!Number.isSafeInteger(raw)) {
-    throw httpError(`${field} is out of range`, 400);
+    throw httpError(`${field} is out of range`, 400, 'amount_invalid');
   }
   return raw;
 }
 
 function validateMovementType(raw: unknown): CashDrawerMovementType {
   if (raw !== 'opening_float' && raw !== 'pay_in' && raw !== 'pay_out' && raw !== 'safe_drop') {
-    throw httpError('movement_type is invalid', 400);
+    throw httpError('movement_type is invalid', 400, 'movement_type_invalid');
   }
   return raw;
 }
 
 function validateMovementReason(raw: unknown, required: boolean): string | null {
   if (raw === undefined || raw === null) {
-    if (required) throw httpError('reason is required', 400);
+    if (required) throw httpError('reason is required', 400, 'reason_required');
     return null;
   }
-  if (typeof raw !== 'string') throw httpError('reason must be a string', 400);
+  if (typeof raw !== 'string') throw httpError('reason must be a string', 400, 'reason_invalid');
   const reason = raw.trim();
-  if (required && reason.length === 0) throw httpError('reason is required', 400);
-  if (reason.length > MAX_MOVEMENT_REASON_LENGTH) throw httpError('reason is too long', 400);
+  if (required && reason.length === 0) throw httpError('reason is required', 400, 'reason_required');
+  if (reason.length > MAX_MOVEMENT_REASON_LENGTH) throw httpError('reason is too long', 400, 'reason_too_long');
   return reason || null;
 }
 
@@ -757,6 +790,8 @@ router.get('/movements', requirePermission('cash.movements.manage'), (req: Reque
 });
 
 router.post('/movements', requirePermission('cash.movements.manage'), (req: Request, res: Response) => {
+  let operationCommitted = false;
+  let transactionBodyCompleted = false;
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
@@ -769,8 +804,9 @@ router.post('/movements', requirePermission('cash.movements.manage'), (req: Requ
     // Shift enforcement (#279): every movement touches the drawer.
     requireOpenSessionForCash(db);
     const id = withTxn(() => {
+      let movementId: number;
       try {
-        return insertCashDrawerMovement(db, {
+        movementId = insertCashDrawerMovement(db, {
           businessDate,
           movementType,
           amountCents,
@@ -779,13 +815,19 @@ router.post('/movements', requirePermission('cash.movements.manage'), (req: Requ
           cashSessionId: getOpenSession(db)?.id ?? NO_CASH_SESSION_ID,
         });
       } catch (error: any) {
+        if (error.code === 'day_closed') {
+          throw httpError('This day is already closed', 409, 'day_already_closed');
+        }
         if (String(error?.message || '').includes('cash_drawer_one_opening_float')
           || (movementType === 'opening_float' && String(error?.message || '').includes('cash_drawer_movements.business_date'))) {
-          throw httpError('An opening float is already recorded for this day', 409);
+          throw httpError('An opening float is already recorded for this day', 409, 'opening_float_exists');
         }
         throw error;
       }
+      transactionBodyCompleted = true;
+      return movementId;
     });
+    operationCommitted = true;
     const movement = db.prepare(`
       SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
       FROM cash_drawer_movements m
@@ -797,23 +839,33 @@ router.post('/movements', requirePermission('cash.movements.manage'), (req: Requ
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Movement create error:', error);
-    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+    const payload = operationCommitted
+      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.completion', 'applied')
+      : status >= 500
+        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
+        : error.diagnosticCode
+          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.validation', 'not_applied', error.diagnosticCode)
+          : { error: safeMessage };
+    res.status(status).json(payload);
   }
 });
 
 router.post('/movements/:id/void', requirePermission('cash.movements.void'), (req: Request, res: Response) => {
+  let operationCommitted = false;
+  let transactionBodyCompleted = false;
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) throw httpError('id must be a positive integer', 400);
+    if (!Number.isInteger(id) || id <= 0) throw httpError('id must be a positive integer', 400, 'movement_id_invalid');
     const reason = validateMovementReason(req.body?.reason, true);
     const voidedBy = String((req as any).user?.userId || '');
     if (!voidedBy) throw httpError('Authentication required', 401);
     const db = getDatabase();
     withTxn(() => {
       const movement = db.prepare(`SELECT * FROM cash_drawer_movements WHERE id = ?`).get(id) as { business_date: string; voided_at: string | null } | undefined;
-      if (!movement) throw httpError('Cash movement not found', 404);
-      if (movement.voided_at) throw httpError('Cash movement is already voided', 409);
-      if (closedDayExists(db, movement.business_date)) throw httpError('This day is already closed', 409);
+      if (!movement) throw httpError('Cash movement not found', 404, 'movement_unavailable');
+      if (movement.voided_at) throw httpError('Cash movement is already voided', 409, 'movement_already_voided');
+      if (closedDayExists(db, movement.business_date)) throw httpError('This day is already closed', 409, 'day_already_closed');
       // Money moved by an expense entry is corrected through the expense
       // ledger: the reversal writes the offsetting row and keeps this link.
       if (db.prepare('SELECT id FROM expense_payments WHERE cash_movement_id = ? LIMIT 1').get(id)) {
@@ -824,7 +876,9 @@ router.post('/movements/:id/void', requirePermission('cash.movements.void'), (re
         SET voided_at = ?, voided_by = ?, void_reason = ?
         WHERE id = ? AND voided_at IS NULL
       `).run(now(), voidedBy, reason, id);
+      transactionBodyCompleted = true;
     });
+    operationCommitted = true;
     const movement = db.prepare(`
       SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
       FROM cash_drawer_movements m
@@ -836,18 +890,28 @@ router.post('/movements/:id/void', requirePermission('cash.movements.void'), (re
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Movement void error:', error);
-    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+    const payload = operationCommitted
+      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.completion', 'applied')
+      : status >= 500
+        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
+        : error.diagnosticCode
+          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.validation', 'not_applied', error.diagnosticCode)
+          : { error: safeMessage };
+    res.status(status).json(payload);
   }
 });
 
 router.post('/', requirePermission('cash.day-close'), (req: Request, res: Response) => {
+  let operationCommitted = false;
+  let transactionBodyCompleted = false;
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
     const requestedOpeningFloatCents = validateCents(body.opening_float_cents, 'opening_float_cents');
     const countedCashCents = validateCents(body.counted_cash_cents, 'counted_cash_cents');
     if (typeof body.notes === 'string' && body.notes.length > MAX_NOTES_LENGTH) {
-      throw httpError('notes is too long', 400);
+      throw httpError('notes is too long', 400, 'notes_too_long');
     }
     const notes = typeof body.notes === 'string' ? body.notes : null;
     const closedBy = String((req as any).user?.userId || '');
@@ -865,12 +929,12 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`
       ).get(businessDate);
       if (existing) {
-        throw httpError('This day is already closed', 409);
+        throw httpError('This day is already closed', 409, 'day_already_closed');
       }
 
       const recordedOpeningFloatCents = activeOpeningFloatCents(db, businessDate);
       if (recordedOpeningFloatCents !== null && recordedOpeningFloatCents !== requestedOpeningFloatCents) {
-        throw httpError('The opening float already recorded for this day does not match', 409);
+        throw httpError('The opening float already recorded for this day does not match', 409, 'opening_float_mismatch');
       }
       if (recordedOpeningFloatCents === null) {
         db.prepare(`
@@ -931,7 +995,7 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         // INSERT — the partial index turns this into a clean 409.
         const msg = String(err?.message || '');
         if (msg.includes('UNIQUE') || msg.includes('cash_closures_one_day')) {
-          throw httpError('This day is already closed', 409);
+          throw httpError('This day is already closed', 409, 'day_already_closed');
         }
         throw err;
       }
@@ -940,6 +1004,7 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day'`
       ).get(businessDate) as { id: number }).id);
 
+      transactionBodyCompleted = true;
       return {
         id,
         scope: 'day',
@@ -968,12 +1033,21 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         created_at: createdAt,
       };
     });
+    operationCommitted = true;
 
     res.status(201).json({ zReport: result });
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Internal error:', error);
-    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+    const payload = operationCommitted
+      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.completion', 'applied')
+      : status >= 500
+        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
+        : error.diagnosticCode
+          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.validation', 'not_applied', error.diagnosticCode)
+          : { error: safeMessage };
+    res.status(status).json(payload);
   }
 });
 

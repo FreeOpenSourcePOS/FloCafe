@@ -639,11 +639,17 @@ export function summarizeExpenses(db: ExpenseDb, filters: ExpenseListFilters = {
  */
 function runExpenseMutation<T>(
   db: ExpenseDb,
-  input: { actorUserId: string; idempotencyKey: string | null; operation: string; resourceId: string; fields: unknown },
+  input: { actorUserId: string; idempotencyKey: string | null; operation: string; resourceId: string; fields: Record<string, unknown> },
   work: () => { status: number; body: T },
 ): MutationOutcome<T> {
   const key = input.idempotencyKey;
-  const hash = key ? expenseRequestHash(input.operation, input.resourceId, input.fields) : null;
+  const requestHash = (body: T) => {
+    const currency = (body as { expense?: ExpenseRecord }).expense?.currency_code;
+    const fields = input.fields.currency_code === null && currency
+      ? { ...input.fields, currency_code: currency }
+      : input.fields;
+    return expenseRequestHash(input.operation, input.resourceId, fields);
+  };
   if (key) {
     const existing = db.prepare(`
       SELECT operation, resource_id, request_hash, response_json
@@ -652,15 +658,15 @@ function runExpenseMutation<T>(
       | { operation: string; resource_id: string; request_hash: string; response_json: string }
       | undefined;
     if (existing) {
-      if (existing.operation !== input.operation || existing.resource_id !== input.resourceId || existing.request_hash !== hash) {
+      const stored = JSON.parse(existing.response_json) as { status: number; body: T };
+      if (existing.operation !== input.operation || existing.resource_id !== input.resourceId || existing.request_hash !== requestHash(stored.body)) {
         throw conflict('Idempotency-Key was already used for a different expense request', 'idempotency_conflict');
       }
-      const stored = JSON.parse(existing.response_json) as { status: number; body: T };
       return { status: stored.status, body: stored.body, replayed: true };
     }
   }
   const outcome = work();
-  if (key && hash) {
+  if (key) {
     db.prepare(`
       INSERT INTO expense_mutations (actor_user_id, idempotency_key, operation, resource_id, request_hash, response_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -669,7 +675,7 @@ function runExpenseMutation<T>(
       key,
       input.operation,
       input.resourceId,
-      hash,
+      requestHash(outcome.body),
       JSON.stringify({ status: outcome.status, body: outcome.body }),
       now(),
     );
@@ -789,10 +795,9 @@ function expenseMutationFields(input: ExpenseWriteFields): Record<string, unknow
     const normalized = normalizeText(value);
     return normalized === '' ? null : normalized;
   };
-  const storeCurrency = tenantRegionalSnapshot().currency;
   const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
-  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === '' || rawCurrency === storeCurrency
-    ? storeCurrency
+  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
+    ? null
     : rawCurrency;
   return {
     category_id: normalizeText(input.category_id),
@@ -921,11 +926,11 @@ function requireOpenSessionForCashEntry(db: ExpenseDb): CashSessionRow {
   return session;
 }
 
-/** The drawer holds today's store currency; an older expense in another currency cannot use it. */
-function requireStoreCurrencyForCashEntry(expense: ExpenseRecord): void {
+/** Settlements require the expense currency to match the active store currency. */
+function requireStoreCurrency(expense: ExpenseRecord): void {
   const storeCurrency = tenantRegionalSnapshot().currency;
   if (expense.currency_code !== storeCurrency) {
-    throw conflict(`A cash expense entry needs the expense currency to match the store currency (${storeCurrency})`, 'currency_mismatch');
+    throw conflict(`Expense settlements require the expense currency to match the store currency (${storeCurrency})`, 'currency_mismatch');
   }
 }
 
@@ -977,11 +982,11 @@ export function recordExpensePayment(
       const method = normalizeExpensePaymentMethod(input.method);
       const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
       requireExpectedCurrency(input.currency_code, expense.currency_code);
+      requireStoreCurrency(expense);
       if (amountMinor > expense.due_minor) throw conflict('Payment exceeds the amount due', 'expense_overpaid');
       const businessDate = currentBusinessDate();
       let cashMovementId: number | null = null;
       if (method === 'cash') {
-        requireStoreCurrencyForCashEntry(expense);
         const session = requireOpenSessionForCashEntry(db);
         cashMovementId = insertCashDrawerMovement(db, {
           businessDate,
@@ -1031,10 +1036,10 @@ export function reverseExpensePayment(
       if (db.prepare('SELECT id FROM expense_payments WHERE reversal_of = ? LIMIT 1').get(paymentId)) {
         throw conflict('This payment has already been reversed', 'payment_already_reversed');
       }
+      requireStoreCurrency(expense);
       const businessDate = currentBusinessDate();
       let cashMovementId: number | null = null;
       if (payment.method === 'cash') {
-        requireStoreCurrencyForCashEntry(expense);
         const session = requireOpenSessionForCashEntry(db);
         cashMovementId = insertCashDrawerMovement(db, {
           businessDate,

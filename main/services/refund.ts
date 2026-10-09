@@ -43,8 +43,8 @@ export interface RefundResult {
   bill: any;
 }
 
-function httpError(message: string, statusCode: number): Error {
-  return Object.assign(new Error(message), { statusCode });
+function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
+  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
 }
 
 /** Returns the refundable balance for a bill in integer minor units. */
@@ -81,7 +81,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     `).get(req.createdByUserId, req.idempotencyKey) as { bill_id: string; request_hash: string; response_json: string } | undefined;
     if (prior) {
       if (String(prior.bill_id) !== String(req.billId) || prior.request_hash !== req.requestHash) {
-        throw httpError('Idempotency-Key was already used for a different refund request', 409);
+        throw httpError('Idempotency-Key was already used for a different refund request', 409, 'idempotency_conflict');
       }
       try {
         return JSON.parse(prior.response_json);
@@ -91,12 +91,17 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     }
   }
 
-  requireOpenSessionForCashTender(db, [{ method: req.method }]);
+  try {
+    requireOpenSessionForCashTender(db, [{ method: req.method }]);
+  } catch (error) {
+    Object.assign(error as object, { diagnosticCode: 'cash_session_required' });
+    throw error;
+  }
 
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId) as any;
-  if (!bill) throw httpError('Bill not found', 404);
+  if (!bill) throw httpError('Bill not found', 404, 'bill_unavailable');
   const order = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(bill.order_id) as { created_at: string } | undefined;
-  if (!order) throw httpError('Order not found', 404);
+  if (!order) throw httpError('Order not found', 404, 'order_unavailable');
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
   if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
   const nowMs = Date.now();
@@ -119,7 +124,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
     const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);
     if (nowMs >= parseDbTimestamp(businessDayEnd).getTime()) {
-      throw httpError('Refund window has expired. Completed orders can only be refunded within the same business day.', 409);
+      throw httpError('Refund window has expired. Completed orders can only be refunded within the same business day.', 409, 'refund_window_expired');
     }
     lateRefund = true;
   }
@@ -131,57 +136,57 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   let item: any = null;
   if (req.orderItemId != null) {
     item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.orderItemId) as any;
-    if (!item) throw httpError('Order item not found', 404);
+    if (!item) throw httpError('Order item not found', 404, 'item_unavailable');
     if (String(item.order_id) !== String(bill.order_id)) {
-      throw httpError("Item does not belong to this bill's order", 400);
+      throw httpError("Item does not belong to this bill's order", 400, 'item_bill_mismatch');
     }
     if (bill.split_group_id) {
       const allocation = db.prepare(`
         SELECT quantity FROM bill_items WHERE bill_id = ? AND order_item_id = ?
       `).get(bill.id, item.id) as { quantity: number } | undefined;
       if (!allocation) {
-        throw httpError('Item is not allocated to this split bill', 400);
+        throw httpError('Item is not allocated to this split bill', 400, 'split_item_unallocated');
       }
       if (Number(allocation.quantity) !== Number(item.quantity)) {
-        throw httpError('Partially allocated split items cannot be refunded as a whole item', 409);
+        throw httpError('Partially allocated split items cannot be refunded as a whole item', 409, 'split_item_partial');
       }
     }
     if (!REFUND_ITEM_ELIGIBLE_STATUSES.includes(item.status)) {
-      throw httpError('Item is not eligible for refund', 409);
+      throw httpError('Item is not eligible for refund', 409, 'item_status_ineligible');
     }
     const itemAmountCents = Math.round(Number(item.total) * minorFactor);
     if (amountCents !== undefined && amountCents !== itemAmountCents) {
-      throw httpError("Refund amount does not match the item's refundable total", 400);
+      throw httpError("Refund amount does not match the item's refundable total", 400, 'item_amount_mismatch');
     }
     amountCents = itemAmountCents;
   }
 
   if (amountCents === undefined || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
-    throw httpError('Refund amount is required', 400);
+    throw httpError('Refund amount is required', 400, 'amount_required');
   }
   if (!req.method || typeof req.method !== 'string' || req.method.length > 60) {
-    throw httpError('Refund method is required', 400);
+    throw httpError('Refund method is required', 400, 'method_required');
   }
   const isStoreCreditRefund = req.method === 'wallet';
   if (isStoreCreditRefund) {
     const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
-    if (!loyaltyEnabled) throw httpError('Store credit is not enabled', 400);
-    if (!bill.customer_id) throw httpError('Customer association is required for a store-credit refund', 400);
+    if (!loyaltyEnabled) throw httpError('Store credit is not enabled', 400, 'wallet_disabled');
+    if (!bill.customer_id) throw httpError('Customer association is required for a store-credit refund', 400, 'wallet_customer_required');
   }
 
   const { paidCents, refundedCents, refundableCents } = getRefundableBalance(db, req.billId, currency);
-  if (refundableCents <= 0) throw httpError('Bill has nothing left to refund', 400);
-  if (amountCents > refundableCents) throw httpError('Refund amount exceeds the refundable balance', 400);
+  if (refundableCents <= 0) throw httpError('Bill has nothing left to refund', 400, 'nothing_to_refund');
+  if (amountCents > refundableCents) throw httpError('Refund amount exceeds the refundable balance', 400, 'amount_exceeds_refundable');
 
   if (!req.overridePin) {
-    throw httpError(lateRefund ? 'Owner PIN required to process a refund on a completed order' : 'Manager PIN required to process a refund', 400);
+    throw httpError(lateRefund ? 'Owner PIN required to process a refund on a completed order' : 'Manager PIN required to process a refund', 400, 'approver_pin_required');
   }
   const rateLimitKey = `pin:${req.clientIp}:refund`;
   if (!req.checkPinRateLimit(rateLimitKey)) {
-    throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
+    throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429, 'pin_rate_limited');
   }
   const approver = resolveRefundApprover(db, req.overridePin, req.approverId, lateRefund);
-  if (!approver) throw httpError(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN', 403);
+  if (!approver) throw httpError(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN', 403, 'approver_pin_invalid');
 
   const timestamp = now();
 

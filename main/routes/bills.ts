@@ -2640,61 +2640,63 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
  * others.
  */
 router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+  let operationCommitted = false;
+  let transactionBodyCompleted = false;
   try {
     const chargeId = String((req.body || {}).charge_id || '').trim().toLowerCase();
     if (!chargeId) {
-      return res.status(400).json({ error: 'charge_id is required' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'charge_id is required', 'charge_required'));
     }
 
     const db = getDatabase();
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as ChargeBillRow | undefined;
     if (!bill) {
-      return res.status(404).json({ error: 'Bill not found' });
+      return res.status(404).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Bill not found', 'bill_not_found'));
     }
     if (bill.split_group_id) {
-      return res.status(409).json({ error: 'Charges on a split check cannot be changed' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charges on a split check cannot be changed', 'split_check'));
     }
     if (bill.payment_status === 'paid' || Number(bill.paid_amount || 0) > 0) {
-      return res.status(409).json({ error: 'Charges cannot be changed on a paid bill' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charges cannot be changed on a paid bill', 'bill_paid'));
     }
     if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
-      return res.status(409).json({ error: 'Charges cannot be changed on a refunded bill' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charges cannot be changed on a refunded bill', 'bill_refunded'));
     }
 
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as ChargeOrderRow | undefined;
     if (!order) {
-      return res.status(404).json({ error: 'Order not found' });
+      return res.status(404).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Order not found', 'order_not_found'));
     }
 
     if (order.status === 'cancelled') {
-      return res.status(409).json({ error: 'Charges cannot be changed on a cancelled order' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charges cannot be changed on a cancelled order', 'order_cancelled'));
     }
 
     const definitions = getChargeDefinitions();
     const definition = definitions.find((candidate) => candidate.id === chargeId);
     if (!definition || !definition.is_active) {
-      return res.status(404).json({ error: 'Charge not found' });
+      return res.status(404).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charge not found', 'charge_unavailable'));
     }
     if (!definition.order_types.includes(order.type)) {
-      return res.status(409).json({ error: 'Charge does not apply to this order type' });
+      return res.status(409).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'Charge does not apply to this order type', 'order_type_unsupported'));
     }
 
     const waivedRequested = (req.body || {}).waived;
     const appliedRequested = (req.body || {}).applied;
     if (waivedRequested === undefined && appliedRequested === undefined) {
-      return res.status(400).json({ error: 'waived or applied is required' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'waived or applied is required', 'change_required'));
     }
     if (waivedRequested !== undefined && typeof waivedRequested !== 'boolean') {
-      return res.status(400).json({ error: 'waived must be a boolean' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'waived must be a boolean', 'invalid_change_type'));
     }
     if (appliedRequested !== undefined && typeof appliedRequested !== 'boolean') {
-      return res.status(400).json({ error: 'applied must be a boolean' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'applied must be a boolean', 'invalid_change_type'));
     }
     if (waivedRequested === true && !definition.is_optional) {
-      return res.status(400).json({ error: 'This charge cannot be waived' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'This charge cannot be waived', 'charge_not_waivable'));
     }
     if (appliedRequested === false && definition.is_default_active) {
-      return res.status(400).json({ error: 'This charge is applied automatically' });
+      return res.status(400).json(structuredBillFailure(req, 'fc.backend.bill.charge.validation', 'This charge is applied automatically', 'charge_always_applied'));
     }
 
     const existingBreakdown = bill.charges_breakdown ?? order.charges_breakdown;
@@ -2767,15 +2769,28 @@ router.patch('/:id/charges', requirePermission('bills.discount.apply'), (req: Re
         total,
       }, getSettingValue('country') || '');
 
-      return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id));
+      const updatedBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id));
+      transactionBodyCompleted = true;
+      return updatedBill;
     });
+    operationCommitted = true;
 
     notifyOrderUpdated();
     res.json({ bill: updated });
   } catch (error) {
     const statusCode = (error as { statusCode?: number }).statusCode || 500;
     console.error('[API] Bill charge update failed:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : (error as Error).message });
+    const outcome = operationCommitted ? 'applied' : transactionBodyCompleted ? 'unknown' : 'not_applied';
+    const capturePoint = operationCommitted
+      ? 'fc.backend.bill.charge.completion'
+      : 'fc.backend.bill.charge.persistence';
+    res.status(statusCode).json(structuredBillFailure(
+      req,
+      capturePoint,
+      statusCode >= 500 ? 'Internal server error' : (error as Error).message,
+      undefined,
+      outcome,
+    ));
   }
 });
 

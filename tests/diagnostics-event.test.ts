@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-diagnostics-event-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => '3.12.22' } };
@@ -181,6 +182,26 @@ async function main() {
     assertEqual(retryStateResponse.data.outcome, 'applied', 'retry-state failure reports the confirmed order outcome');
     assertEqual(retryStateResponse.data.correlation_id, retryStateOperationId, 'retry-state capture preserves the order operation UUID');
 
+    const additionalFrontendCaptures = [
+      { capture_point: 'fc.client.payment.create.retry_state_update', outcome: 'applied', reason_code: 'payment.retry_state_failed', operation: 'payment.create', stage: 'retry_state' },
+      { capture_point: 'fc.frontend.pos.order.create.held_cleanup', outcome: 'applied', reason_code: 'order.held_state.cleanup_failed', operation: 'order.create', stage: 'cleanup' },
+      { capture_point: 'fc.frontend.pos.payment.create.held_cleanup', outcome: 'applied', reason_code: 'order.held_state.cleanup_failed', operation: 'payment.create', stage: 'cleanup' },
+      { capture_point: 'fc.frontend.pos.order.append.transport', outcome: 'unknown', reason_code: 'request.transport_failed', operation: 'order.append', stage: 'submission', facts: { failure_class: 'offline' } },
+      { capture_point: 'fc.frontend.pos.order.append.recovery', outcome: 'unknown', reason_code: 'request.outcome_unknown', operation: 'order.append', stage: 'recovery' },
+    ];
+    for (const capture of additionalFrontendCaptures) {
+      const operationId = crypto.randomUUID();
+      const captureResponse = await api(baseUrl, '/api/diagnostics/capture', {
+        method: 'POST', headers: owner.authHeader,
+        body: { capture_point: capture.capture_point, operation_id: operationId, outcome: capture.outcome, ...(capture.facts ? { facts: capture.facts } : {}) },
+      });
+      assertEqual(captureResponse.status, 202, `${capture.capture_point} is accepted as a client-owned occurrence`);
+      assertEqual(captureResponse.data.reason_code, capture.reason_code, `${capture.capture_point} has its registered reason`);
+      assertEqual(captureResponse.data.operation, capture.operation, `${capture.capture_point} has its registered operation`);
+      assertEqual(captureResponse.data.stage, capture.stage, `${capture.capture_point} has its registered stage`);
+      assertEqual(captureResponse.data.correlation_id, operationId, `${capture.capture_point} retains the operation UUID`);
+    }
+
     const invalidRequests = [
       { capture_point: 'fc.frontend.pos.order.create.transport', operation_id: 'bad-id', outcome: 'unknown', facts: { failure_class: 'offline' } },
       { capture_point: 'fc.backend.order.create.stock_validation', operation_id: crypto.randomUUID(), outcome: 'not_applied' },
@@ -276,6 +297,204 @@ async function main() {
     assertEqual(missingBillResponse.data.outcome, 'not_applied', 'an unavailable order cannot produce a bill');
     assertEqual(missingBillResponse.data.correlation_id, missingBillOperationId, 'bill rejection preserves the action UUID');
     assert(await settle(() => latestLocalDiagnostic(db, 'bill.order_unavailable') !== null), 'the unavailable-order reason is recorded locally');
+
+    console.log('\n4a. Bill charge changes report distinct validation and persisted outcomes');
+    setSetting('custom_charges', JSON.stringify([
+      { id: 'optional_fee', name: 'Optional fee', type: 'fixed', value: 1, calculation_basis: 'gross', order_types: ['takeaway'], is_optional: true, is_default_active: true, is_active: true },
+      { id: 'mandatory_fee', name: 'Mandatory fee', type: 'fixed', value: 1, calculation_basis: 'gross', order_types: ['takeaway'], is_optional: false, is_default_active: true, is_active: true },
+      { id: 'dine_in_fee', name: 'Dine-in fee', type: 'fixed', value: 1, calculation_basis: 'gross', order_types: ['dine_in'], is_optional: true, is_default_active: false, is_active: true },
+    ]));
+    const assertBillChargeValidation = async (billId: string | number, body: Record<string, unknown>, displayCode: string, status: number) => {
+      const operationId = crypto.randomUUID();
+      const beforeDiagnostics = countLocalDiagnostics(db);
+      const response = await api(baseUrl, `/api/bills/${billId}/charges`, {
+        method: 'PATCH', headers: { ...owner.authHeader, 'x-operation-id': operationId }, body,
+      });
+      assertEqual(response.status, status, `${displayCode} preserves its existing HTTP status`);
+      assertEqual(response.data.reason_code, 'bill.charge_rejected', `${displayCode} has a stable charge reason`);
+      assertEqual(response.data.operation, 'bill.charge.update', `${displayCode} identifies the charge operation`);
+      assertEqual(response.data.stage, 'validation', `${displayCode} identifies validation`);
+      assertEqual(response.data.classification, 'expected_rejection', `${displayCode} is an expected rejection`);
+      assertEqual(response.data.outcome, 'not_applied', `${displayCode} confirms the charge change was not applied`);
+      assertEqual(response.data.display_code, displayCode, `${displayCode} is the branch-assigned safe display code`);
+      assertEqual(response.data.correlation_id, operationId, `${displayCode} preserves the action UUID`);
+      assert(await settle(() => countLocalDiagnostics(db) > beforeDiagnostics), `${displayCode} is captured locally`);
+      assertEqual(latestLocalDiagnostic(db, 'bill.charge_rejected')?.metadata?.display_code, displayCode, `${displayCode} stores only its safe enum fact`);
+    };
+    const simpleChargeBill = createPaymentBill(db, 'DIAG-CHARGE-SIMPLE');
+    await assertBillChargeValidation(simpleChargeBill, {}, 'charge_required', 400);
+    await assertBillChargeValidation(999999999, { charge_id: 'optional_fee', waived: true }, 'bill_not_found', 404);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'missing_fee', waived: true }, 'charge_unavailable', 404);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'dine_in_fee', applied: true }, 'order_type_unsupported', 409);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'optional_fee' }, 'change_required', 400);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'optional_fee', waived: 'true' }, 'invalid_change_type', 400);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'mandatory_fee', waived: true }, 'charge_not_waivable', 400);
+    await assertBillChargeValidation(simpleChargeBill, { charge_id: 'mandatory_fee', applied: false }, 'charge_always_applied', 400);
+
+    const splitChargeBill = createPaymentBill(db, 'DIAG-CHARGE-SPLIT');
+    db.prepare('UPDATE bills SET split_group_id = ? WHERE id = ?').run('diag-charge-split', splitChargeBill);
+    await assertBillChargeValidation(splitChargeBill, { charge_id: 'optional_fee', waived: true }, 'split_check', 409);
+    const paidChargeBill = createPaymentBill(db, 'DIAG-CHARGE-PAID', { paidAmount: 1, status: 'partial' });
+    await assertBillChargeValidation(paidChargeBill, { charge_id: 'optional_fee', waived: true }, 'bill_paid', 409);
+    const refundedChargeBill = createPaymentBill(db, 'DIAG-CHARGE-REFUNDED', { status: 'refunded' });
+    await assertBillChargeValidation(refundedChargeBill, { charge_id: 'optional_fee', waived: true }, 'bill_refunded', 409);
+    const cancelledChargeBill = createPaymentBill(db, 'DIAG-CHARGE-CANCELLED');
+    const cancelledOrderId = (db.prepare('SELECT order_id FROM bills WHERE id = ?').get(cancelledChargeBill) as { order_id: number }).order_id;
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(cancelledOrderId);
+    await assertBillChargeValidation(cancelledChargeBill, { charge_id: 'optional_fee', waived: true }, 'order_cancelled', 409);
+    const missingOrderChargeBill = createPaymentBill(db, 'DIAG-CHARGE-MISSING-ORDER');
+    const missingOrderId = `missing-${missingOrderChargeBill}`;
+    db.pragma('foreign_keys = OFF');
+    db.prepare('UPDATE bills SET order_id = ? WHERE id = ?').run(missingOrderId, missingOrderChargeBill);
+    db.pragma('foreign_keys = ON');
+    await assertBillChargeValidation(missingOrderChargeBill, { charge_id: 'optional_fee', waived: true }, 'order_not_found', 404);
+    db.prepare('DELETE FROM bills WHERE id = ?').run(missingOrderChargeBill);
+
+    const rollbackChargeBill = createPaymentBill(db, 'DIAG-CHARGE-ROLLBACK');
+    const rollbackChargeOrderId = (db.prepare('SELECT order_id FROM bills WHERE id = ?').get(rollbackChargeBill) as { order_id: number }).order_id;
+    db.prepare(`CREATE TRIGGER diagnostics_force_bill_charge_rollback BEFORE UPDATE ON orders
+      WHEN OLD.id = ${Number(rollbackChargeOrderId)} BEGIN SELECT RAISE(ABORT, 'private charge failure details'); END`).run();
+    const rollbackChargeResponse = await api(baseUrl, `/api/bills/${rollbackChargeBill}/charges`, {
+      method: 'PATCH', headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
+      body: { charge_id: 'optional_fee', waived: true },
+    });
+    db.prepare('DROP TRIGGER diagnostics_force_bill_charge_rollback').run();
+    assertEqual(rollbackChargeResponse.status, 500, 'charge persistence failure remains a server error');
+    assertEqual(rollbackChargeResponse.data.reason_code, 'persistence.failed', 'rolled-back charge persistence has the persistence reason');
+    assertEqual(rollbackChargeResponse.data.operation, 'bill.charge.update', 'charge persistence failure identifies the charge operation');
+    assertEqual(rollbackChargeResponse.data.outcome, 'not_applied', 'the SQLite transaction rollback proves the charge change was not applied');
+    assertEqual((db.prepare('SELECT charges_breakdown FROM orders WHERE id = ?').get(rollbackChargeOrderId) as { charges_breakdown: string | null }).charges_breakdown, null, 'rollback leaves the order charge snapshot unchanged');
+
+    const completionChargeBill = createPaymentBill(db, 'DIAG-CHARGE-COMPLETION');
+    const responsePrototype = (app as any).response;
+    const originalJson = responsePrototype.json;
+    let failChargeResponseOnce = true;
+    responsePrototype.json = function (body: unknown) {
+      if (failChargeResponseOnce) {
+        failChargeResponseOnce = false;
+        throw new Error('synthetic response completion failure');
+      }
+      return originalJson.call(this, body);
+    };
+    let completionChargeResponse: any;
+    try {
+      completionChargeResponse = await api(baseUrl, `/api/bills/${completionChargeBill}/charges`, {
+        method: 'PATCH', headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
+        body: { charge_id: 'optional_fee', waived: true },
+      });
+    } finally {
+      responsePrototype.json = originalJson;
+    }
+    assertEqual(completionChargeResponse.status, 500, 'post-commit response failure remains visible');
+    assertEqual(completionChargeResponse.data.reason_code, 'operation.completion_failed', 'post-commit charge failure has a completion reason');
+    assertEqual(completionChargeResponse.data.operation, 'bill.charge.update', 'completion failure identifies the charge operation');
+    assertEqual(completionChargeResponse.data.outcome, 'applied', 'the completed transaction is reported as applied');
+    const completionChargeSnapshot = JSON.parse((db.prepare('SELECT charges_breakdown FROM orders WHERE id = ?').get((db.prepare('SELECT order_id FROM bills WHERE id = ?').get(completionChargeBill) as { order_id: number }).order_id) as { charges_breakdown: string }).charges_breakdown);
+    assertEqual(completionChargeSnapshot.find((charge: any) => charge.id === 'optional_fee')?.waived, true, 'the persisted charge change survives the post-commit response failure');
+
+    console.log('\n4aa. Refund failures preserve operation context and transaction outcomes');
+    setSetting('require_open_shift', 'false');
+    db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync('1234', 10), owner.userId);
+    const assertRefundFailure = async (body: Record<string, unknown>, displayCode: string, status: number, headers: Record<string, string> = {}) => {
+      const operationId = crypto.randomUUID();
+      const beforeDiagnostics = countLocalDiagnostics(db);
+      const response = await api(baseUrl, '/api/refunds', {
+        method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': operationId, ...headers }, body,
+      });
+      assertEqual(response.status, status, `${displayCode} preserves the refund HTTP status`);
+      assertEqual(response.data.reason_code, 'refund.rejected', `${displayCode} has a stable refund reason`);
+      assertEqual(response.data.operation, 'payment.refund', `${displayCode} identifies refund processing`);
+      assertEqual(response.data.stage, 'validation', `${displayCode} identifies validation`);
+      assertEqual(response.data.classification, 'expected_rejection', `${displayCode} is an expected rejection`);
+      assertEqual(response.data.outcome, 'not_applied', `${displayCode} proves no refund was committed`);
+      assertEqual(response.data.display_code, displayCode, `${displayCode} is assigned by the refund guard`);
+      assertEqual(response.data.correlation_id, operationId, `${displayCode} preserves the operation UUID`);
+      assert(await settle(() => countLocalDiagnostics(db) > beforeDiagnostics), `${displayCode} is retained locally`);
+      assertEqual(latestLocalDiagnostic(db, 'refund.rejected')?.metadata?.display_code, displayCode, `${displayCode} stores only its safe enum fact`);
+      return response;
+    };
+    await assertRefundFailure({}, 'bill_id_required', 400);
+    await assertRefundFailure({ bill_id: 1, order_item_id: 'bad', amount: 1 }, 'order_item_id_invalid', 400);
+    await assertRefundFailure({ bill_id: 1, amount: '1.234' }, 'amount_invalid', 400);
+    await assertRefundFailure({ bill_id: 1, amount: 1, approver_id: owner.userId, reason: 'x'.repeat(501) }, 'reason_too_long', 400);
+    const approverRequired = await assertRefundFailure({ bill_id: 1, amount: 1 }, 'approver_required', 400);
+    assertEqual(approverRequired.data.code, 'APPROVER_REQUIRED', 'the existing approver error code remains intact');
+    const approverConflict = await assertRefundFailure({ bill_id: 1, amount: 1, approver_id: 'owner-a', manager_id: 'owner-b' }, 'approver_conflict', 400);
+    assertEqual(approverConflict.data.code, 'APPROVER_CONFLICT', 'the existing approver conflict code remains intact');
+    await assertRefundFailure({ bill_id: 1, amount: 1, approver_id: owner.userId }, 'idempotency_key_invalid', 400, { 'Idempotency-Key': 'x'.repeat(129) });
+    await assertRefundFailure({ bill_id: 999999998, amount: 1, method: 'card', approver_id: owner.userId }, 'bill_unavailable', 404);
+    const missingOrderRefundBill = createPaymentBill(db, 'DIAG-REFUND-MISSING-ORDER');
+    db.pragma('foreign_keys = OFF');
+    db.prepare('UPDATE bills SET order_id = ? WHERE id = ?').run(`refund-order-${missingOrderRefundBill}`, missingOrderRefundBill);
+    db.pragma('foreign_keys = ON');
+    await assertRefundFailure({ bill_id: missingOrderRefundBill, amount: 1, method: 'card', approver_id: owner.userId }, 'order_unavailable', 404);
+    db.prepare('DELETE FROM bills WHERE id = ?').run(missingOrderRefundBill);
+
+    const idempotentRefundBill = createPaymentBill(db, 'DIAG-REFUND-IDEMPOTENCY', { paidAmount: 10, status: 'paid' });
+    const idempotentRefundBody = { bill_id: idempotentRefundBill, amount: 2, method: 'cash', approver_id: owner.userId, override_pin: '1234' };
+    const firstIdempotentRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST', headers: { ...owner.authHeader, 'Idempotency-Key': 'diagnostics-refund-key' }, body: idempotentRefundBody,
+    });
+    assertEqual(firstIdempotentRefund.status, 201, 'the first refund request commits');
+    const refundReplayConflict = await assertRefundFailure(
+      { ...idempotentRefundBody, amount: 3 }, 'idempotency_conflict', 409, { 'Idempotency-Key': 'diagnostics-refund-key' },
+    );
+    assertEqual(refundReplayConflict.data.outcome, 'not_applied', 'a conflicting idempotency replay does not apply a second refund');
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(idempotentRefundBill) as { count: number }).count, 1, 'the idempotency conflict leaves one refund row');
+
+    const rollbackRefundBill = createPaymentBill(db, 'DIAG-REFUND-ROLLBACK', { paidAmount: 10, status: 'paid' });
+    db.prepare(`CREATE TRIGGER diagnostics_force_refund_rollback BEFORE INSERT ON refunds
+      WHEN NEW.bill_id = ${rollbackRefundBill} BEGIN SELECT RAISE(ABORT, 'private refund failure details'); END`).run();
+    const rollbackRefundId = crypto.randomUUID();
+    const rollbackRefundResponse = await api(baseUrl, '/api/refunds', {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': rollbackRefundId },
+      body: { bill_id: rollbackRefundBill, amount: 2, method: 'cash', approver_id: owner.userId, override_pin: '1234' },
+    });
+    db.prepare('DROP TRIGGER diagnostics_force_refund_rollback').run();
+    assertEqual(rollbackRefundResponse.status, 500, 'a database error remains a server response');
+    assertEqual(rollbackRefundResponse.data.reason_code, 'persistence.failed', 'the rolled-back refund uses a persistence reason');
+    assertEqual(rollbackRefundResponse.data.stage, 'persistence', 'the failed refund identifies its persistence stage');
+    assertEqual(rollbackRefundResponse.data.outcome, 'not_applied', 'the transaction rollback proves no refund was committed');
+    assertEqual(rollbackRefundResponse.data.correlation_id, rollbackRefundId, 'the refund persistence failure preserves its action UUID');
+    assertEqual((db.prepare('SELECT payment_status FROM bills WHERE id = ?').get(rollbackRefundBill) as { payment_status: string }).payment_status, 'paid', 'the bill remains paid after refund rollback');
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(rollbackRefundBill) as { count: number }).count, 0, 'rollback leaves no refund row');
+
+    const completionRefundBill = createPaymentBill(db, 'DIAG-REFUND-COMPLETION', { paidAmount: 10, status: 'paid' });
+    const refundResponsePrototype = (app as any).response;
+    const originalRefundJson = refundResponsePrototype.json;
+    let failRefundResponseOnce = true;
+    refundResponsePrototype.json = function (body: unknown) {
+      if (failRefundResponseOnce) {
+        failRefundResponseOnce = false;
+        throw new Error('synthetic refund response completion failure');
+      }
+      return originalRefundJson.call(this, body);
+    };
+    let completionRefundResponse: any;
+    try {
+      completionRefundResponse = await api(baseUrl, '/api/refunds', {
+        method: 'POST', headers: owner.authHeader,
+        body: { bill_id: completionRefundBill, amount: 2, method: 'cash', approver_id: owner.userId, override_pin: '1234' },
+      });
+    } finally {
+      refundResponsePrototype.json = originalRefundJson;
+    }
+    assertEqual(completionRefundResponse.status, 500, 'a post-commit response failure remains visible');
+    assertEqual(completionRefundResponse.data.reason_code, 'operation.completion_failed', 'a post-commit refund failure uses the completion reason');
+    assertEqual(completionRefundResponse.data.operation, 'payment.refund', 'the completion failure identifies refund processing');
+    assertEqual(completionRefundResponse.data.outcome, 'applied', 'the committed refund is reported as applied');
+    assertEqual((db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(completionRefundBill) as { count: number }).count, 1, 'the refund remains committed after response failure');
+    assertEqual((db.prepare('SELECT payment_status FROM bills WHERE id = ?').get(completionRefundBill) as { payment_status: string }).payment_status, 'partially_refunded', 'the bill state reflects the committed refund');
+
+    const originalRefundCapture = cloudSync.captureOperationFailure;
+    cloudSync.captureOperationFailure = () => { throw new Error('local diagnostics unavailable'); };
+    try {
+      const captureUnavailable = await api(baseUrl, '/api/refunds', { method: 'POST', headers: owner.authHeader, body: {} });
+      assertEqual(captureUnavailable.status, 400, 'a diagnostics sink error cannot mask refund validation');
+      assertEqual(captureUnavailable.data.reason_code, 'refund.rejected', 'the original refund rejection remains structured');
+    } finally {
+      cloudSync.captureOperationFailure = originalRefundCapture;
+    }
 
     console.log('\n4b. Payment validation, rollback, and post-commit outcomes follow persisted state');
     const paymentOrderId = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)

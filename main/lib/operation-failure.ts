@@ -45,6 +45,20 @@ const PAYMENT_DISPLAY_CODES = [
   'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient',
   'kitchen_undelivered', 'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
 ] as const;
+const BILL_CHARGE_DISPLAY_CODES = [
+  'charge_required', 'bill_not_found', 'split_check', 'bill_paid', 'bill_refunded',
+  'order_not_found', 'order_cancelled', 'charge_unavailable', 'order_type_unsupported',
+  'change_required', 'invalid_change_type', 'charge_not_waivable', 'charge_always_applied',
+] as const;
+const REFUND_DISPLAY_CODES = [
+  'bill_id_required', 'order_item_id_invalid', 'amount_required', 'amount_invalid', 'reason_too_long',
+  'approver_required', 'approver_conflict', 'idempotency_key_invalid', 'bill_unavailable',
+  'order_unavailable', 'idempotency_conflict', 'refund_window_expired', 'item_unavailable',
+  'item_bill_mismatch', 'split_item_unallocated', 'split_item_partial', 'item_status_ineligible',
+  'item_amount_mismatch', 'method_required', 'wallet_disabled', 'wallet_customer_required',
+  'nothing_to_refund', 'amount_exceeds_refundable', 'approver_pin_required', 'pin_rate_limited',
+  'approver_pin_invalid', 'cash_session_required',
+] as const;
 
 /** Closed capture registry; new event tuples must be added here and to the cloud receiver. */
 export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] = [
@@ -126,6 +140,22 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
+    capture_point: 'fc.backend.bill.charge.validation',
+    reason_code: 'bill.charge_rejected', operation: 'bill.charge.update', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: BILL_CHARGE_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.bill.charge.persistence',
+    reason_code: 'persistence.failed', operation: 'bill.charge.update', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.bill.charge.completion',
+    reason_code: 'operation.completion_failed', operation: 'bill.charge.update', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.frontend.pos.order.create.transport',
     reason_code: 'request.transport_failed', operation: 'order.create', stage: 'submission',
     classification: 'unexpected_failure', outcomes: ['unknown'],
@@ -149,6 +179,11 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
   {
     capture_point: 'fc.client.order.create.retry_state_update',
     reason_code: 'order.retry_state_failed', operation: 'order.create', stage: 'retry_state',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.client.payment.create.retry_state_update',
+    reason_code: 'payment.retry_state_failed', operation: 'payment.create', stage: 'retry_state',
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
@@ -189,6 +224,27 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
+    capture_point: 'fc.frontend.pos.order.create.held_cleanup',
+    reason_code: 'order.held_state.cleanup_failed', operation: 'order.create', stage: 'cleanup',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
+    reason_code: 'order.held_state.cleanup_failed', operation: 'payment.create', stage: 'cleanup',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.frontend.pos.order.append.transport',
+    reason_code: 'request.transport_failed', operation: 'order.append', stage: 'submission',
+    classification: 'unexpected_failure', outcomes: ['unknown'],
+    facts: { failure_class: { type: 'enum', values: NETWORK_FAILURE_CLASSES } },
+  },
+  {
+    capture_point: 'fc.frontend.pos.order.append.recovery',
+    reason_code: 'request.outcome_unknown', operation: 'order.append', stage: 'recovery',
+    classification: 'unexpected_failure', outcomes: ['unknown'], facts: NO_FACTS,
+  },
+  {
     capture_point: 'fc.frontend.pos.order.append.retry_storage',
     reason_code: 'storage.retry_state_unavailable', operation: 'order.append', stage: 'local_storage',
     classification: 'unexpected_failure', outcomes: ['not_applied'], facts: NO_FACTS,
@@ -201,7 +257,18 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
   {
     capture_point: 'fc.backend.payment.refund.persistence',
     reason_code: 'persistence.failed', operation: 'payment.refund', stage: 'persistence',
-    classification: 'unexpected_failure', outcomes: ['not_applied', 'partial', 'unknown'], facts: NO_FACTS,
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.payment.refund.validation',
+    reason_code: 'refund.rejected', operation: 'payment.refund', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: REFUND_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.payment.refund.completion',
+    reason_code: 'operation.completion_failed', operation: 'payment.refund', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {
     capture_point: 'fc.backend.bill.generate.failure',

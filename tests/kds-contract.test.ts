@@ -37,6 +37,7 @@ async function main() {
   const orderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-001'").get() as any).id;
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(orderId, now(), now());
+  const foodItemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
 
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-bar', 'Bar', 2)`).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
@@ -131,6 +132,7 @@ async function main() {
     assertEqual(deniedEmbeddedMutation.status, 403, 'restricted chef cannot mutate an unauthorized embedded KDS item');
     const deniedOrderItemMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
     assertEqual(deniedOrderItemMutation.status, 403, 'restricted chef cannot mutate an unauthorized order item');
+    assertEqual(deniedOrderItemMutation.body.display_code, 'category_scope_denied', 'KDS category denial has a safe branch code');
 
     db.prepare('UPDATE users SET category_ids = NULL WHERE id = ?').run(chefId);
     const stationOnlyOrders = await request(app).get('/api/kds/orders').set(chefAuth);
@@ -141,6 +143,7 @@ async function main() {
     assertEqual(stationOnlyOrders.body.orders.find((entry: any) => entry.id === barOrderId)?.items?.length || 0, 0, 'mixed station ACLs do not cross-route table-assigned categories');
     const deniedMixedStationMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
     assertEqual(deniedMixedStationMutation.status, 403, 'mixed station ACLs block cross-station mutations');
+    assertEqual(deniedMixedStationMutation.body.display_code, 'station_scope_denied', 'KDS station denial has a safe branch code');
     const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
     assertEqual(stationOnlyDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display enforces per-station categories for table-assigned orders');
@@ -151,6 +154,58 @@ async function main() {
     assertEqual(casUpdate.status, 200, 'KDS status update accepts the expected current status');
     const staleCasUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'ready', expected_status: 'pending' });
     assertEqual(staleCasUpdate.status, 409, 'KDS status update rejects a stale expected status');
+
+    const invalidStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`)
+      .set({ ...authHeader, 'x-operation-id': '3e6f5e32-7ae8-4f6f-a59c-35eb7e9f4601' })
+      .send({ status: 'boiling' });
+    assertEqual(invalidStatus.status, 400, 'invalid KDS status retains its existing response status');
+    assertEqual(invalidStatus.body.reason_code, 'kds.status_rejected', 'invalid KDS status has a stable reason');
+    assertEqual(invalidStatus.body.display_code, 'invalid_status', 'invalid KDS status has a safe branch code');
+    assertEqual(invalidStatus.body.correlation_id, '3e6f5e32-7ae8-4f6f-a59c-35eb7e9f4601', 'KDS status failure preserves the operation reference');
+    const missingItem = await request(app).patch('/api/order-items/missing-kds-item/status').set(authHeader).send({ status: 'ready' });
+    assertEqual(missingItem.status, 404, 'missing KDS item keeps its existing response status');
+    assertEqual(missingItem.body.display_code, 'item_unavailable', 'missing KDS item has a safe branch code');
+    const staleOrderItemStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(authHeader)
+      .send({ status: 'preparing', expected_status: 'ready' });
+    assertEqual(staleOrderItemStatus.status, 409, 'stale order-item compare-and-set keeps its existing response status');
+    assertEqual(staleOrderItemStatus.body.display_code, 'status_conflict', 'stale order-item compare-and-set has a safe branch code');
+
+    db.exec(`CREATE TRIGGER diagnostics_force_kds_status_rollback BEFORE UPDATE ON order_items
+      WHEN NEW.id = ${Number(foodItemId)} BEGIN SELECT RAISE(ABORT, 'synthetic KDS status rollback'); END`);
+    const rollbackStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(authHeader).send({ status: 'preparing' });
+    db.exec('DROP TRIGGER diagnostics_force_kds_status_rollback');
+    assertEqual(rollbackStatus.status, 500, 'a KDS write failure keeps the route error status');
+    assertEqual(rollbackStatus.body.reason_code, 'persistence.failed', 'a KDS write failure is not mislabeled as expected validation');
+    assertEqual(rollbackStatus.body.outcome, 'not_applied', 'failed KDS transaction is reported as rolled back');
+    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status, 'pending', 'failed KDS transaction leaves the item unchanged');
+    const rollbackRow = db.prepare("SELECT metadata_json FROM local_diagnostics WHERE event_code = 'persistence.failed' ORDER BY id DESC LIMIT 1").get() as { metadata_json: string };
+    const rollbackMetadata = JSON.parse(rollbackRow.metadata_json);
+    assertEqual(rollbackMetadata.outcome, 'not_applied', 'stored KDS rollback row preserves the proven outcome');
+    assertEqual(JSON.stringify(rollbackMetadata).includes('synthetic KDS status rollback'), false, 'KDS rollback diagnostics omit exception text');
+
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run('{invalid-json', 'kds-contract-station');
+    const invalidStationState = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(chefAuth).send({ status: 'preparing' });
+    assertEqual(invalidStationState.status, 403, 'malformed station permissions preserve the existing 403 response');
+    assertEqual(invalidStationState.body.reason_code, 'kds.permissions_unavailable', 'malformed station configuration is an unexpected permission-state failure');
+    assertEqual(invalidStationState.body.classification, 'unexpected_failure', 'permission resolver failure is not mislabeled as expected denial');
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-contract-category']), 'kds-contract-station');
+
+    const kdsService = require('../main/services/kds');
+    const originalNotifyKdsUpdate = kdsService.notifyKdsUpdate;
+    kdsService.notifyKdsUpdate = () => { throw new Error('synthetic KDS notification failure'); };
+    let completionFailure;
+    try {
+      completionFailure = await request(app).patch(`/api/order-items/${foodItemId}/status`)
+        .set({ ...authHeader, 'x-operation-id': '0d3374a2-4e1e-47a6-8e4f-f2c0278d15b1' })
+        .send({ status: 'preparing' });
+    } finally {
+      kdsService.notifyKdsUpdate = originalNotifyKdsUpdate;
+    }
+    assertEqual(completionFailure.status, 500, 'post-commit KDS notification failure retains the route error status');
+    assertEqual(completionFailure.body.reason_code, 'operation.completion_failed', 'post-commit notification failure is classified as completion');
+    assertEqual(completionFailure.body.outcome, 'applied', 'post-commit notification failure reports the committed KDS status');
+    assertEqual(completionFailure.body.correlation_id, '0d3374a2-4e1e-47a6-8e4f-f2c0278d15b1', 'post-commit KDS failure preserves the operation reference');
+    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status, 'preparing', 'post-commit notification failure does not undo the item status');
 
     const unrestrictedOrders = await request(app).get('/api/kds/orders').set(unrestrictedChefAuth);
     assertEqual(unrestrictedOrders.status, 200, 'unrestricted station KDS request succeeds');
@@ -219,6 +274,7 @@ async function main() {
     db.exec('PRAGMA foreign_keys = ON');
     const orphanUpdate = await request(app).patch(`/api/order-items/${barItemId}/status`).set(authHeader).send({ status: 'ready' });
     assertEqual(orphanUpdate.status, 404, 'orphaned order item update returns 404');
+    assertEqual(orphanUpdate.body.display_code, 'orphaned_order', 'orphaned order-item rejection has a safe branch code');
     assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(barItemId) as any).status, 'preparing', 'orphaned update does not commit a status change');
   } finally {
     closeDatabase();

@@ -77,6 +77,12 @@ const CASH_DAY_CLOSE_DISPLAY_CODES = [
   'business_date_invalid', 'future_business_date', 'amount_invalid', 'notes_too_long',
   'day_already_closed', 'opening_float_mismatch',
 ] as const;
+const KDS_ITEM_STATUS_DISPLAY_CODES = [
+  'invalid_status', 'expected_status_invalid', 'action_permission_denied', 'user_inactive',
+  'station_unassigned', 'item_voided', 'item_immutable', 'item_terminal',
+  'category_scope_denied', 'station_scope_denied', 'orphaned_order', 'status_conflict',
+  'item_unavailable',
+] as const;
 
 /** Closed capture registry; new event tuples must be added here and to the cloud receiver. */
 export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] = [
@@ -371,6 +377,27 @@ export const OPERATION_FAILURE_REGISTRY: readonly OperationFailureDefinition[] =
   {
     capture_point: 'fc.backend.cash.day.close.completion',
     reason_code: 'operation.completion_failed', operation: 'cash.day.close', stage: 'completion',
+    classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.kds.item.status.validation',
+    reason_code: 'kds.status_rejected', operation: 'kds.item.status.update', stage: 'validation',
+    classification: 'expected_rejection', outcomes: ['not_applied'],
+    facts: { display_code: { type: 'enum', values: KDS_ITEM_STATUS_DISPLAY_CODES } },
+  },
+  {
+    capture_point: 'fc.backend.kds.item.status.authorization_state',
+    reason_code: 'kds.permissions_unavailable', operation: 'kds.item.status.update', stage: 'authorization',
+    classification: 'unexpected_failure', outcomes: ['not_applied'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.kds.item.status.persistence',
+    reason_code: 'persistence.failed', operation: 'kds.item.status.update', stage: 'persistence',
+    classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'], facts: NO_FACTS,
+  },
+  {
+    capture_point: 'fc.backend.kds.item.status.completion',
+    reason_code: 'operation.completion_failed', operation: 'kds.item.status.update', stage: 'completion',
     classification: 'unexpected_failure', outcomes: ['applied'], facts: NO_FACTS,
   },
   {

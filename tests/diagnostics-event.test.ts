@@ -430,6 +430,31 @@ async function main() {
     await assertRefundFailure({ bill_id: missingOrderRefundBill, amount: 1, method: 'card', approver_id: owner.userId }, 'order_unavailable', 404);
     db.prepare('DELETE FROM bills WHERE id = ?').run(missingOrderRefundBill);
 
+    console.log('\n4ab. An unrelated cash-session database failure keeps its original refund response');
+    setSetting('require_open_shift', 'true');
+    const cashGuardBill = createPaymentBill(db, 'DIAG-REFUND-CASH-GUARD');
+    const originalPrepare = db.prepare;
+    const injectedCashGuardError = Object.assign(new Error('synthetic cash-session lookup failure'), { statusCode: 409 });
+    const beforeCashGuardDiagnostics = countLocalDiagnostics(db);
+    (db as any).prepare = (sql: string) => {
+      if (sql === "SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1") throw injectedCashGuardError;
+      return originalPrepare.call(db, sql);
+    };
+    let cashGuardResponse: any;
+    try {
+      cashGuardResponse = await api(baseUrl, '/api/refunds', {
+        method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': crypto.randomUUID() },
+        body: { bill_id: cashGuardBill, amount: 1, method: 'cash', approver_id: owner.userId, override_pin: '1234' },
+      });
+    } finally {
+      (db as any).prepare = originalPrepare;
+    }
+    assertEqual(cashGuardResponse.status, 409, 'the database error status is preserved');
+    assertEqual(cashGuardResponse.data.error, 'synthetic cash-session lookup failure', 'the original database error response is preserved');
+    assertEqual(cashGuardResponse.data.reason_code, undefined, 'the database error is not mislabeled as a cash-session validation');
+    assertEqual(countLocalDiagnostics(db), beforeCashGuardDiagnostics, 'the database error creates no false expected-rejection diagnostic');
+    setSetting('require_open_shift', 'false');
+
     const idempotentRefundBill = createPaymentBill(db, 'DIAG-REFUND-IDEMPOTENCY', { paidAmount: 10, status: 'paid' });
     const idempotentRefundBody = { bill_id: idempotentRefundBill, amount: 2, method: 'cash', approver_id: owner.userId, override_pin: '1234' };
     const firstIdempotentRefund = await api(baseUrl, '/api/refunds', {

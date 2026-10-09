@@ -91,12 +91,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     }
   }
 
-  try {
-    requireOpenSessionForCashTender(db, [{ method: req.method }]);
-  } catch (error) {
-    Object.assign(error as object, { diagnosticCode: 'cash_session_required' });
-    throw error;
-  }
+  requireOpenSessionForCashTender(db, [{ method: req.method }]);
 
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId) as any;
   if (!bill) throw httpError('Bill not found', 404, 'bill_unavailable');

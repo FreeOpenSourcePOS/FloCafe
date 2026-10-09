@@ -5,8 +5,8 @@
  */
 import { getDatabase, getSettingValue } from '../db';
 
-function httpError(message: string, statusCode: number): Error {
-  return Object.assign(new Error(message), { statusCode });
+function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
+  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
 }
 
 export interface CashSessionRow {
@@ -59,7 +59,7 @@ export function isCashTender(db: ReturnType<typeof getDatabase>, payment: unknow
 export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
   if (!getOpenSession(db)) {
-    throw httpError('No open shift: open a shift before taking cash', 409);
+    throw httpError('No open shift: open a shift before taking cash', 409, 'cash_session_required');
   }
 }
 
@@ -70,6 +70,6 @@ export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): v
 export function requireOpenSessionForCashTender(db: ReturnType<typeof getDatabase>, payments: unknown[]): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
   if (payments.some((line) => isCashTender(db, line)) && !getOpenSession(db)) {
-    throw httpError('No open shift: open a shift before taking cash', 409);
+    throw httpError('No open shift: open a shift before taking cash', 409, 'cash_session_required');
   }
 }

@@ -417,7 +417,8 @@
     "replacedNotice": "Expense replaced.",
     "permissionDenied": "You do not have permission to view expenses.",
     "description": "Description",
-    "paymentRecorded": "Payment recorded."
+    "paymentRecorded": "Payment recorded.",
+    "reversalRecorded": "Payment reversed."
   },
   "inventory": {
     "tabSupplies": "Supplies",

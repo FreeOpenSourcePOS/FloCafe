@@ -417,7 +417,8 @@
     "replacedNotice": "Shpenzimi u zëvendësua.",
     "permissionDenied": "Nuk keni leje të shihni shpenzimet.",
     "description": "Përshkrimi",
-    "paymentRecorded": "Pagesa u regjistrua."
+    "paymentRecorded": "Pagesa u regjistrua.",
+    "reversalRecorded": "Pagesa u kthye."
   },
   "inventory": {
     "tabSupplies": "Materialet",

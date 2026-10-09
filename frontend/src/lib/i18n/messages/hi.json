@@ -417,7 +417,8 @@
     "replacedNotice": "व्यय बदला गया।",
     "permissionDenied": "आपको व्यय देखने की अनुमति नहीं है।",
     "description": "विवरण",
-    "paymentRecorded": "भुगतान दर्ज हो गया।"
+    "paymentRecorded": "भुगतान दर्ज हो गया।",
+    "reversalRecorded": "भुगतान वापस कर दिया गया।"
   },
   "inventory": {
     "tabSupplies": "आपूर्ति",

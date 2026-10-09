@@ -961,7 +961,7 @@ export function recordExpensePayment(
   input: ExpensePaymentWriteFields & { actorUserId: string; idempotencyKey?: string | null },
 ): MutationOutcome<{ expense: ExpenseRecord; payment: ExpensePaymentRecord }> {
   return withTxn(() => {
-    const expense = requireActiveExpense(db, expenseId);
+    const expense = getExpense(db, expenseId);
     return runExpenseMutation(
       db,
       {
@@ -972,6 +972,7 @@ export function recordExpensePayment(
         fields: paymentMutationFields(input, expense.currency_code),
       },
       () => {
+        requireActiveExpense(db, expenseId);
         const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
       const method = normalizeExpensePaymentMethod(input.method);
       const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);

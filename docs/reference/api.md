@@ -398,7 +398,7 @@ counts as paid to date. Those are not payments-made-in-period figures, they are 
 from sales reports, and voided or replaced expenses stay out of the headline totals while remaining
 readable through the `status` history filter. Payments settle against the immutable ledger and are
 never edited in place: a reversal is a separate reasoned row that copies the original amount and
-method, and cash is always corrected by that reversal — `POST /api/cash-closures/movements/:id/void`
+method, and cash is always corrected by that reversal: `POST /api/cash-closures/movements/:id/void`
 refuses a drawer movement that backs an expense payment or reversal, so the original Pay Out is
 never voided out from under the ledger.
 

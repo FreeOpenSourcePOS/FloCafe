@@ -417,7 +417,8 @@
     "replacedNotice": "Ausgabe ersetzt.",
     "permissionDenied": "Sie haben keine Berechtigung, Ausgaben zu sehen.",
     "description": "Beschreibung",
-    "paymentRecorded": "Zahlung erfasst."
+    "paymentRecorded": "Zahlung erfasst.",
+    "reversalRecorded": "Zahlung rückgebucht."
   },
   "inventory": {
     "tabSupplies": "Vorräte",

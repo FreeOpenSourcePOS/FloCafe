@@ -417,7 +417,8 @@
     "replacedNotice": "Dépense remplacée.",
     "permissionDenied": "Vous n'avez pas la permission de consulter les dépenses.",
     "description": "Libellé",
-    "paymentRecorded": "Paiement enregistré."
+    "paymentRecorded": "Paiement enregistré.",
+    "reversalRecorded": "Paiement contre-passé."
   },
   "inventory": {
     "tabSupplies": "Approvisionnements",

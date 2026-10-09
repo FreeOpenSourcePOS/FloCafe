@@ -417,7 +417,8 @@
     "replacedNotice": "경비를 교체했습니다.",
     "permissionDenied": "경비를 볼 권한이 없습니다.",
     "description": "설명",
-    "paymentRecorded": "결제를 기록했습니다."
+    "paymentRecorded": "결제를 기록했습니다.",
+    "reversalRecorded": "결제를 되돌렸습니다."
   },
   "inventory": {
     "tabSupplies": "재고",

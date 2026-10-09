@@ -417,7 +417,8 @@
     "replacedNotice": "支出已取代。",
     "permissionDenied": "您沒有檢視支出的權限。",
     "description": "說明",
-    "paymentRecorded": "已記錄付款。"
+    "paymentRecorded": "已記錄付款。",
+    "reversalRecorded": "已沖正付款。"
   },
   "inventory": {
     "tabSupplies": "庫存",

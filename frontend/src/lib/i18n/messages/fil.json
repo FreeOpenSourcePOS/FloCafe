@@ -417,7 +417,8 @@
     "replacedNotice": "Napalitan ang gastos.",
     "permissionDenied": "Wala kang pahintulot na tingnan ang mga gastos.",
     "description": "Paglalarawan",
-    "paymentRecorded": "Naitala ang bayad."
+    "paymentRecorded": "Naitala ang bayad.",
+    "reversalRecorded": "Naibalik ang bayad."
   },
   "inventory": {
     "tabSupplies": "Mga Supply",

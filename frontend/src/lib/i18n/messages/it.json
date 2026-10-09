@@ -417,7 +417,8 @@
     "replacedNotice": "Spesa sostituita.",
     "permissionDenied": "Non hai il permesso di vedere le spese.",
     "description": "Descrizione",
-    "paymentRecorded": "Pagamento registrato."
+    "paymentRecorded": "Pagamento registrato.",
+    "reversalRecorded": "Pagamento stornato."
   },
   "inventory": {
     "tabSupplies": "Scorte",

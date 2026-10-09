@@ -417,7 +417,8 @@
     "replacedNotice": "แทนที่ค่าใช้จ่ายแล้ว",
     "permissionDenied": "คุณไม่มีสิทธิ์ดูค่าใช้จ่าย",
     "description": "คำอธิบาย",
-    "paymentRecorded": "บันทึกการชำระเงินแล้ว"
+    "paymentRecorded": "บันทึกการชำระเงินแล้ว",
+    "reversalRecorded": "ย้อนกลับการชำระเงินแล้ว"
   },
   "inventory": {
     "tabSupplies": "วัสดุ",

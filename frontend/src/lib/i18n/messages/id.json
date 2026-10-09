@@ -417,7 +417,8 @@
     "replacedNotice": "Pengeluaran diganti.",
     "permissionDenied": "Anda tidak memiliki izin untuk melihat pengeluaran.",
     "description": "Deskripsi",
-    "paymentRecorded": "Pembayaran dicatat."
+    "paymentRecorded": "Pembayaran dicatat.",
+    "reversalRecorded": "Pembayaran dibalikkan."
   },
   "inventory": {
     "tabSupplies": "Persediaan",

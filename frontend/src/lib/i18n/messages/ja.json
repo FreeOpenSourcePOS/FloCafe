@@ -417,7 +417,8 @@
     "replacedNotice": "経費を差し替えました。",
     "permissionDenied": "経費を表示する権限がありません。",
     "description": "説明",
-    "paymentRecorded": "支払を記録しました。"
+    "paymentRecorded": "支払を記録しました。",
+    "reversalRecorded": "支払を戻しました。"
   },
   "inventory": {
     "tabSupplies": "食材",

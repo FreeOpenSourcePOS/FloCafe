@@ -7,6 +7,8 @@ import { createPaymentIdempotencyKey } from './payment-idempotency';
  * committed. One slot only: the workflow allows a single in-flight mutation.
  */
 export const EXPENSE_ATTEMPT_STORAGE_KEY = 'flo.expenses.attempt.v1';
+export const expenseAttemptStorageKey = (actorId: number, tenantId: number): string =>
+  `${EXPENSE_ATTEMPT_STORAGE_KEY}:${tenantId}:${actorId}`;
 
 export type ExpenseAttemptKind =
   | 'expense.create'
@@ -86,13 +88,25 @@ export function newExpenseAttempt(input: {
  * untouched so its owner can retry, and this session never submits under its key.
  */
 export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAttemptSnapshot | null {
+  const scopedKey = expenseAttemptStorageKey(actorId, tenantId);
   let raw: string | null;
   try {
-    raw = attemptStorage().getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
+    const storage = attemptStorage();
+    raw = storage.getItem(scopedKey);
+    if (raw === null) {
+      // Fallback: check legacy unscoped key if it belongs to this owner
+      const legacyRaw = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
+      if (legacyRaw !== null) {
+        const legacyParsed: unknown = JSON.parse(legacyRaw);
+        if (isSnapshot(legacyParsed) && legacyParsed.actorId === actorId && legacyParsed.tenantId === tenantId) {
+          return legacyParsed;
+        }
+      }
+      return null;
+    }
   } catch {
     throw new ExpenseAttemptStorageError();
   }
-  if (raw === null) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -106,6 +120,7 @@ export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAt
 
 /** Persists to an empty slot before the request leaves the device, verified by read-back. */
 export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
+  const scopedKey = expenseAttemptStorageKey(snapshot.actorId, snapshot.tenantId);
   let serialized: string;
   try {
     serialized = JSON.stringify(snapshot);
@@ -115,9 +130,9 @@ export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
   let stored = false;
   try {
     const storage = attemptStorage();
-    if (storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) !== null) throw new ExpenseAttemptStorageError();
-    storage.setItem(EXPENSE_ATTEMPT_STORAGE_KEY, serialized);
-    stored = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) === serialized;
+    if (storage.getItem(scopedKey) !== null) throw new ExpenseAttemptStorageError();
+    storage.setItem(scopedKey, serialized);
+    stored = storage.getItem(scopedKey) === serialized;
   } catch {
     stored = false;
   }
@@ -125,15 +140,34 @@ export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
 }
 
 /** Clears the slot once the mutation is known to be committed or rejected. */
-export function clearExpenseAttempt(idempotencyKey: string): boolean {
+export function clearExpenseAttempt(actorId: number, tenantId: number, idempotencyKey: string): boolean {
+  const scopedKey = expenseAttemptStorageKey(actorId, tenantId);
   try {
     const storage = attemptStorage();
-    const raw = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
-    if (raw === null) return true;
-    const parsed: unknown = JSON.parse(raw);
-    if (!isSnapshot(parsed) || parsed.idempotencyKey !== idempotencyKey) return false;
-    storage.removeItem(EXPENSE_ATTEMPT_STORAGE_KEY);
-    return storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY) === null;
+    let cleared = true;
+    const raw = storage.getItem(scopedKey);
+    if (raw !== null) {
+      const parsed: unknown = JSON.parse(raw);
+      if (isSnapshot(parsed) && parsed.idempotencyKey === idempotencyKey) {
+        storage.removeItem(scopedKey);
+        cleared = storage.getItem(scopedKey) === null;
+      } else {
+        cleared = false;
+      }
+    }
+    // Also clean up legacy key if it matched this idempotencyKey
+    const legacyRaw = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
+    if (legacyRaw !== null) {
+      try {
+        const legacyParsed: unknown = JSON.parse(legacyRaw);
+        if (isSnapshot(legacyParsed) && legacyParsed.idempotencyKey === idempotencyKey) {
+          storage.removeItem(EXPENSE_ATTEMPT_STORAGE_KEY);
+        }
+      } catch {
+        // ignore legacy parse errors on cleanup
+      }
+    }
+    return cleared;
   } catch {
     return false;
   }

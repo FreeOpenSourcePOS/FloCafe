@@ -417,7 +417,8 @@
     "replacedNotice": "تم استبدال المصروف.",
     "permissionDenied": "ليس لديك صلاحية لعرض المصروفات.",
     "description": "الوصف",
-    "paymentRecorded": "تم تسجيل الدفعة."
+    "paymentRecorded": "تم تسجيل الدفعة.",
+    "reversalRecorded": "تم عكس الدفعة."
   },
   "inventory": {
     "tabSupplies": "المستلزمات",

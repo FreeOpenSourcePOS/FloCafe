@@ -417,7 +417,8 @@
     "replacedNotice": "支出已替换。",
     "permissionDenied": "您没有查看支出的权限。",
     "description": "说明",
-    "paymentRecorded": "已记录付款。"
+    "paymentRecorded": "已记录付款。",
+    "reversalRecorded": "已冲正付款。"
   },
   "inventory": {
     "tabSupplies": "库存",

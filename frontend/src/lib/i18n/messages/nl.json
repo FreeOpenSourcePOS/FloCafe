@@ -417,7 +417,8 @@
     "replacedNotice": "Onkost vervangen.",
     "permissionDenied": "U hebt geen toestemming om onkosten te bekijken.",
     "description": "Omschrijving",
-    "paymentRecorded": "Betaling vastgelegd."
+    "paymentRecorded": "Betaling vastgelegd.",
+    "reversalRecorded": "Betaling teruggedraaid."
   },
   "inventory": {
     "tabSupplies": "Voorraadartikelen",

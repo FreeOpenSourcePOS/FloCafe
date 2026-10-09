@@ -417,7 +417,8 @@
     "replacedNotice": "Расход заменён.",
     "permissionDenied": "У вас нет прав на просмотр расходов.",
     "description": "Описание",
-    "paymentRecorded": "Платёж записан."
+    "paymentRecorded": "Платёж записан.",
+    "reversalRecorded": "Платёж отменён."
   },
   "inventory": {
     "tabSupplies": "Расходные материалы",

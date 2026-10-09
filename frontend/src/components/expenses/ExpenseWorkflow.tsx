@@ -237,14 +237,14 @@ export default function ExpenseWorkflow({
           const response = await api.post(path, body, {
             headers: { 'Idempotency-Key': snapshot.idempotencyKey },
           });
-          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
           return { data: response.data, snapshot };
         } catch (error) {
           if (isUnresolvedExpenseFailure(error)) {
             setErrors({ form: t('attemptNotice') });
             return null;
           }
-          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
           setErrors({ form: t('saveFailed') });
           return null;
         }
@@ -275,12 +275,12 @@ export default function ExpenseWorkflow({
           const response = await api.post(snapshot.path, snapshot.body, {
             headers: { 'Idempotency-Key': snapshot.idempotencyKey },
           });
-          if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
           return response.data as Record<string, unknown>;
         } catch (error) {
           const status = (error as { response?: { status?: unknown } })?.response?.status;
           if (!isUnresolvedExpenseFailure(error) && status !== 401 && status !== 403) {
-            if (clearExpenseAttempt(snapshot.idempotencyKey)) setAttempt(null);
+            if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
           }
           throw error;
         }
@@ -310,7 +310,7 @@ export default function ExpenseWorkflow({
     }
     if (snapshot.kind === 'expense.void') toast.success(t('voidedNotice'));
     if (snapshot.kind === 'expense.payment') toast.success(t('paymentRecorded'));
-    if (snapshot.kind === 'expense.payment.reverse') toast.success(t('paymentRecorded'));
+    if (snapshot.kind === 'expense.payment.reverse') toast.success(t('reversalRecorded'));
     setView('main');
     void loadDetail();
   };

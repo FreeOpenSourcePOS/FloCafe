@@ -417,7 +417,8 @@
     "replacedNotice": "Đã thay thế chi phí.",
     "permissionDenied": "Bạn không có quyền xem chi phí.",
     "description": "Mô tả",
-    "paymentRecorded": "Đã ghi nhận thanh toán."
+    "paymentRecorded": "Đã ghi nhận thanh toán.",
+    "reversalRecorded": "Đã hoàn ngược thanh toán."
   },
   "inventory": {
     "tabSupplies": "Vật tư",

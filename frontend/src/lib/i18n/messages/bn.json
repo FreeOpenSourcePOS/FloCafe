@@ -417,7 +417,8 @@
     "replacedNotice": "খরচ প্রতিস্থাপিত হয়েছে।",
     "permissionDenied": "খরচ দেখার অনুমতি আপনার নেই।",
     "description": "বিবরণ",
-    "paymentRecorded": "পেমেন্ট রেকর্ড হয়েছে।"
+    "paymentRecorded": "পেমেন্ট রেকর্ড হয়েছে।",
+    "reversalRecorded": "পেমেন্ট ফেরানো হয়েছে।"
   },
   "inventory": {
     "tabSupplies": "সরবরাহ",

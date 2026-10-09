@@ -417,7 +417,8 @@
     "replacedNotice": "Despesa substituída.",
     "permissionDenied": "Não tem permissão para ver despesas.",
     "description": "Descrição",
-    "paymentRecorded": "Pagamento registado."
+    "paymentRecorded": "Pagamento registado.",
+    "reversalRecorded": "Pagamento revertido."
   },
   "inventory": {
     "tabSupplies": "Insumos",

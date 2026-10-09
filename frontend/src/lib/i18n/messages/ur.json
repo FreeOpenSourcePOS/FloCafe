@@ -417,7 +417,8 @@
     "replacedNotice": "خرچ تبدیل ہو گیا۔",
     "permissionDenied": "آپ کو اخراجات دیکھنے کی اجازت نہیں۔",
     "description": "تفصیل",
-    "paymentRecorded": "ادائیگی درج ہو گئی۔"
+    "paymentRecorded": "ادائیگی درج ہو گئی۔",
+    "reversalRecorded": "ادائیگی واپس کر دی گئی۔"
   },
   "inventory": {
     "tabSupplies": "سامان",

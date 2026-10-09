@@ -417,7 +417,8 @@
     "replacedNotice": "هزینه جایگزین شد.",
     "permissionDenied": "شما مجوز مشاهده هزینه‌ها را ندارید.",
     "description": "توضیح",
-    "paymentRecorded": "پرداخت ثبت شد."
+    "paymentRecorded": "پرداخت ثبت شد.",
+    "reversalRecorded": "پرداخت برگشت داده شد."
   },
   "inventory": {
     "tabSupplies": "مواد اولیه",

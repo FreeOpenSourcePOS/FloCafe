@@ -417,7 +417,8 @@
     "replacedNotice": "खर्च प्रतिस्थापित भयो।",
     "permissionDenied": "खर्च हेर्ने अनुमति तपाईंसँग छैन।",
     "description": "विवरण",
-    "paymentRecorded": "भुक्तानी अभिलेख भयो।"
+    "paymentRecorded": "भुक्तानी अभिलेख भयो।",
+    "reversalRecorded": "भुक्तानी फिर्ता गरियो।"
   },
   "inventory": {
     "tabSupplies": "आपूर्तिहरू",

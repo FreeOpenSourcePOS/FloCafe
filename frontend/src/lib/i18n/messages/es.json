@@ -417,7 +417,8 @@
     "replacedNotice": "Gasto sustituido.",
     "permissionDenied": "No tienes permiso para ver gastos.",
     "description": "Descripción",
-    "paymentRecorded": "Pago registrado."
+    "paymentRecorded": "Pago registrado.",
+    "reversalRecorded": "Pago revertido."
   },
   "inventory": {
     "tabSupplies": "Insumos",

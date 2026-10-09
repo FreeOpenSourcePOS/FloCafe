@@ -417,7 +417,8 @@
     "replacedNotice": "Gider değiştirildi.",
     "permissionDenied": "Giderleri görme izniniz yok.",
     "description": "Açıklama",
-    "paymentRecorded": "Ödeme kaydedildi."
+    "paymentRecorded": "Ödeme kaydedildi.",
+    "reversalRecorded": "Ödeme geri alındı."
   },
   "inventory": {
     "tabSupplies": "Sarf malzemeleri",

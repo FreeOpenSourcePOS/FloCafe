@@ -19,7 +19,11 @@ type Diagnostic = {
 };
 
 function runOxlint(binary: string, cwd: string, args: string[]) {
-  const result = spawnSync(binary, [...args, '--format', 'json'], { cwd, encoding: 'utf8' });
+  const result = spawnSync(binary, [...args, '--format', 'json'], {
+    cwd,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  });
   assert.ok(!result.error, `oxlint must be runnable at ${binary}: ${result.error?.message}`);
   let report: { diagnostics?: Diagnostic[] };
   try {
@@ -175,7 +179,11 @@ console.log('Testing frontend file scope and ignore behavior...');
 
 const generatedFixture = 'frontend/.next/__lint_parity_generated.ts';
 fixtures({ [generatedFixture]: 'export const generated: any = 1;\n' }, () => {
-  const listed = spawnSync(frontendOxlint, ['.', '--debug=files'], { cwd: frontendDir, encoding: 'utf8' }).stdout;
+  const listed = spawnSync(frontendOxlint, ['.', '--debug=files'], {
+    cwd: frontendDir,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  }).stdout;
   const files = listed
     .split('\n')
     .map((line) => line.trim().replace(/^\.\//, ''))
@@ -285,7 +293,11 @@ if (mode !== 'malformed' && mode !== 'no-output') {
   const silent = runBudget('no-output', 'warn:1');
   assert.strictEqual(silent.status, 1, 'a linter that produces nothing must fail');
 
-  const realBudget = spawnSync('npm', ['run', 'lint:budget'], { cwd: rootDir, encoding: 'utf8' });
+  const realBudget = spawnSync('npm', ['run', 'lint:budget'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  });
   assert.strictEqual(realBudget.status, 0, `the repository's own lint budget must pass: ${realBudget.stderr}`);
 } finally {
   fs.rmSync(budgetFixture, { recursive: true, force: true });

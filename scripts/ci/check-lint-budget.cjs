@@ -23,6 +23,7 @@ function countDiagnostics(scope) {
     cwd: scope.cwd,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 64,
+    shell: process.platform === 'win32',
   });
   if (result.error) {
     throw new Error(`oxlint could not run for ${scope.name}: ${result.error.message}`);

@@ -144,6 +144,26 @@ that claims to be local, so local status cannot be used to skip signing.
 source. It requires merchant acknowledgement of a disclaimer, and a local or manual pack may never
 declare it.
 
+The Singapore community profile in
+[`main/tax-packs/community-singapore.json`](../../main/tax-packs/community-singapore.json) applies
+9% GST from 2024-01-01 to standard-rated restaurant products, packaging, delivery, service charges,
+add-ons, and unclassified lines. Its default pricing behavior is GST-inclusive. Activation does not
+verify GST registration with IRAS; only GST-registered businesses charge GST. The registration field
+accepts UENs and IRAS-issued GST registration numbers, which may be separate from a UEN. Its format
+check validates syntax only, not registration status.
+
+Hotels and food-and-beverage establishments that impose a genuine service charge may display
+GST-exclusive prices for goods and services subject to that charge, with a prominent notice. The
+service charge remains part of the amount on which GST is calculated. The community profile does
+not model the price-display concession, rate-change transition rules, or exempt and zero-rated
+supplies. It rounds document GST to cents using half-up rounding. See IRAS guidance on the
+[prevailing 9% rate](https://www.iras.gov.sg/taxes/goods-services-tax-%28gst%29/charging-gst-%28output-tax%29/when-to-charge-goods-and-services-tax-%28gst%29/prevailing-rate-of-9),
+[hotel and F&B treatment](https://www.iras.gov.sg/taxes/goods-services-tax-%28gst%29/specific-business-sectors/hotel-and-food-beverage),
+and [GST registration numbers on invoices](https://www.iras.gov.sg/taxes/goods-services-tax-%28gst%29/basics-of-gst/invoicing-price-display-and-record-keeping/invoicing-customers).
+
+A JSON source file in FloCafe does not make a pack bundled or available in the public catalog. The
+catalog contains only signed releases that have been published in FloCafe-Plugins.
+
 There is one trusted signing public key, in
 [`main/tax-packs/trusted-signing-key.ts`](../../main/tax-packs/trusted-signing-key.ts).
 

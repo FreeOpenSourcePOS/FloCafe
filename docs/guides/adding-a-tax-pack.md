@@ -66,22 +66,17 @@ Never set `taxPoint` to `order_created` expecting a behaviour change. The field 
 schema, but nothing reads it; every shipped pack declares `finalized_at` and that is the only value
 with any observable meaning.
 
-## 5. Provide test vectors
+## 5. Add executable calculation fixtures
 
-Give the pack mandatory vectors covering representative transactions. `activationVectorPasses()`
-runs them through the real engine at activation, so they are a gate rather than documentation.
+`CountryPack` has no `testVectors` field. Keep fixtures in the repository's existing tests and run
+them through `TaxEngine.calculate()`; activation check 23 only checks that declared data produces a
+self-consistent calculation.
 
-Cover at minimum:
-
-- A plain single-category line, at unit, line, and document rounding scope.
-- An inclusive-priced line, including one with a fixed component.
-- A compounded percent rule with `baseRuleIds`.
-- An interstate and an intrastate case, if the pack distinguishes them.
-- A customer that is exempt, and a customer carrying a registration number.
-- A non-default currency, if the pack targets one.
-
-Include a case whose expected result differs between rounding methods, so the vectors prove the
-method is being applied rather than merely accepted.
+Cover the jurisdiction's supported behavior: standard rates, inclusive and exclusive prices,
+categories and charges, discounts, multiple lines, rounding boundaries, and any supported
+conditions or exemptions. Verify registration-number formats against primary-source examples, and
+make clear when a format check validates syntax rather than legal registration status. Do not add a
+pack rule for a legal condition the engine cannot represent.
 
 ## 6. Verify locally
 
@@ -91,10 +86,12 @@ Confirm the pack satisfies the schema and the engine before proposing publicatio
 npm run test:tax-pack-management
 npm run test:tax-pack-catalog
 npm run test:tax-engine
+npm run test:tax-components
 ```
 
-The pack must also survive `containsUnsafeData()` (check 22) and the registration-number pattern
-check (check 25), which rejects nested quantifiers.
+For a community pack, also run `npm run test:community-tax-packs`. The activation checklist checks
+that the pack is data-only (check 22) and that its registration-number pattern is valid and does not
+contain nested quantifiers (check 25).
 
 ## 7. Publish
 
@@ -112,18 +109,25 @@ The `<pack-id>` segment matches `^[a-z0-9][a-z0-9-]*$` and `<X.Y.Z>` matches `^\
 format is enforced, not advisory: `scripts/tax-packs/prepare-release.cjs` matches the tag against
 `TAG_PATTERN` and throws if it does not conform.
 
-The release process, driven by `.github/workflows/tax-pack-release.yml`:
+The release process runs in the FloCafe-Plugins repository through
+[`.github/workflows/tax-pack-release.yml`](https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/blob/main/.github/workflows/tax-pack-release.yml):
 
-1. The script resolves the tag to a pack id and version, and verifies the tag version equals the
-   version inside the matching pack file. A mismatch throws.
-2. It refuses a pack whose `publisher` is `local`.
-3. It loads the Ed25519 private key from the `TAX_PACK_SIGNING_KEY` secret and refuses a key that is
-   not Ed25519.
-4. It computes the SHA-256 digest and the detached base64 signature, then writes a cumulative
-   `catalog.json` merging this pack into the previous published catalog.
+1. The workflow tests `scripts/tax-packs/prepare-release.cjs` before it accesses the signing secret.
+2. The script resolves the tag to a pack id and version, checks that the tag version matches the
+   artifact, and refuses a pack whose `publisher` is `local`.
+3. The workflow loads the Ed25519 private key from the `TAX_PACK_SIGNING_KEY` secret. It computes a
+   SHA-256 digest and detached signature over the exact artifact bytes and writes a cumulative
+   `catalog.json`.
+4. The workflow stages the pack JSON, signature, and catalog as exactly three assets on a draft
+   release. A tag and its workflow do not publish the draft.
+5. Review all three draft assets against the source before a maintainer publishes it. Before any
+   publication, refresh the latest public catalog and serialize releases with different tags:
+   workflow concurrency only serializes identical tags. An unrelated official pack preserves
+   community entries; an official pack replaces only community entries for the same country.
 
 FloCafe discovers the release by matching that same tag pattern when it pages the Releases API, so a
-release whose tag does not match is invisible to every store.
+published release whose tag does not match is invisible to every store. Old released artifacts are
+immutable; publish a new version instead of changing a tagged asset.
 
 ## What not to do
 

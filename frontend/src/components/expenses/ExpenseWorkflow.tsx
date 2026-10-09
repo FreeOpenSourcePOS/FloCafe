@@ -368,7 +368,8 @@ export default function ExpenseWorkflow({
 
   const openPayment = () => {
     setErrors({});
-    setPaymentAmount(unitAdapter.toDisplay((record?.due_minor ?? 0) / minorFactor));
+    const paymentMinorFactor = getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code);
+    setPaymentAmount(unitAdapter.toDisplay((record?.due_minor ?? 0) / paymentMinorFactor));
     setPaymentReference('');
     setCashReturned(false);
     setPaymentMethod(canMoveDrawer && context.cash_session_open ? 'cash' : 'card');
@@ -377,7 +378,8 @@ export default function ExpenseWorkflow({
 
   const submitPayment = async () => {
     if (!expense || !record) return;
-    const cents = displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, minorFactor);
+    const paymentMinorFactor = getCurrencyMinorUnitFactor(record.currency_code);
+    const cents = displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, paymentMinorFactor);
     if (cents === null || cents <= 0) {
       setErrors({ amount: t('amountRequired') });
       focusAmount();
@@ -801,7 +803,7 @@ export default function ExpenseWorkflow({
               </div>
               <p className="rounded-lg bg-muted p-3 text-sm" data-testid="expense-payment-review">
                 {t('reviewPayment', {
-                  amount: fmtMinor(displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, minorFactor) ?? 0),
+                  amount: fmtMinor(displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, getCurrencyMinorUnitFactor(record.currency_code)) ?? 0),
                   method: paymentMethod === 'cash' ? tPos('methodCash') : paymentMethod === 'card' ? tPos('methodCard') : paymentMethod === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther'),
                 })}
               </p>

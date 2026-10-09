@@ -941,11 +941,10 @@ interface ExpensePaymentWriteFields {
   currency_code?: unknown;
 }
 
-function paymentMutationFields(input: ExpensePaymentWriteFields): Record<string, unknown> {
-  const storeCurrency = tenantRegionalSnapshot().currency;
+function paymentMutationFields(input: ExpensePaymentWriteFields, expenseCurrency: string): Record<string, unknown> {
   const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
   const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
-    ? storeCurrency
+    ? expenseCurrency
     : rawCurrency;
   return {
     amount_minor: input.amount_minor,
@@ -961,18 +960,19 @@ export function recordExpensePayment(
   expenseId: string,
   input: ExpensePaymentWriteFields & { actorUserId: string; idempotencyKey?: string | null },
 ): MutationOutcome<{ expense: ExpenseRecord; payment: ExpensePaymentRecord }> {
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'record_expense_payment',
-      resourceId: expenseId,
-      fields: paymentMutationFields(input),
-    },
-    () => {
-      const expense = requireActiveExpense(db, expenseId);
-      const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
+  return withTxn(() => {
+    const expense = requireActiveExpense(db, expenseId);
+    return runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'record_expense_payment',
+        resourceId: expenseId,
+        fields: paymentMutationFields(input, expense.currency_code),
+      },
+      () => {
+        const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
       const method = normalizeExpensePaymentMethod(input.method);
       const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
       requireExpectedCurrency(input.currency_code, expense.currency_code);
@@ -998,8 +998,8 @@ export function recordExpensePayment(
         ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
       `).run(id, expenseId, amountMinor, method, businessDate, reference, cashMovementId, input.actorUserId, now());
       return { status: 201, body: { expense: getExpense(db, expenseId), payment: getExpensePayment(db, expenseId, id) } };
-    },
-  ));
+    });
+  });
 }
 
 /**

@@ -134,11 +134,13 @@ async function main(): Promise<number> {
   assertEqualOrThrow(countRows('cash_drawer_movements'), movementsBefore, 'a card payment leaves the drawer untouched');
   assertEqualOrThrow(countRows('expense_payments', 'WHERE expense_id = ?', payTarget.id), 1, 'a card payment writes exactly one ledger row');
 
+  setSetting('currency', 'EUR');
   const cardReplay = service.recordExpensePayment(db, payTarget.id, {
     amount_minor: 25000, method: 'card', reference: 'slip 4471',
     actorUserId: actor, idempotencyKey: 'pay-card-1',
   });
-  assertEqualOrThrow(cardReplay.replayed, true, 'an omitted currency_code still replays the committed payment');
+  setSetting('currency', 'INR');
+  assertEqualOrThrow(cardReplay.replayed, true, 'an omitted currency_code still replays the committed payment after currency switch');
   assertEqualOrThrow(cardReplay.body.payment.id, card1.body.payment.id, 'the replay returns the committed payment id');
   assertEqualOrThrow(countRows('expense_payments', 'WHERE expense_id = ?', payTarget.id), 1, 'a replay writes no second ledger row');
   expectError(() => service.recordExpensePayment(db, payTarget.id, { amount_minor: 25001, method: 'card', reference: 'slip 4471', actorUserId: actor, idempotencyKey: 'pay-card-1' }), 409, 'a reused payment key with a changed amount conflicts', 'idempotency_conflict');

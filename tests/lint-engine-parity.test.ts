@@ -224,6 +224,8 @@ if (mode.startsWith('warn:')) {
 } else if (mode === 'error-zero-exit') {
   bump(1, 'error', 'typescript(no-explicit-any)');
   process.exitCode = 0;
+} else if (mode === 'fatal') {
+  bump(1, 'fatal', 'fixture(fatal)');
 } else if (mode === 'malformed') {
   process.stdout.write('Failed to parse oxlint configuration file.\\n');
   process.exitCode = 0;
@@ -284,6 +286,26 @@ if (mode !== 'malformed' && mode !== 'no-output') {
 
   const silent = runBudget('no-output', 'warn:1');
   assert.strictEqual(silent.status, 1, 'a linter that produces nothing must fail');
+
+  const unknownSeverity = runBudget('fatal', 'fatal');
+  assert.strictEqual(unknownSeverity.status, 1, 'unrecognized diagnostic severities must fail in both scopes');
+  assert.match(unknownSeverity.stderr, /invalid diagnostic severity for backend/);
+  assert.match(unknownSeverity.stderr, /invalid diagnostic severity for frontend/);
+
+  fs.writeFileSync(path.join(fixtureScripts, 'lint-budget.json'), JSON.stringify({ backend: 2 }));
+  const missingFrontendBudget = runBudget('warn:1', 'warn:1');
+  assert.strictEqual(missingFrontendBudget.status, 1, 'a missing frontend warning budget must fail');
+  assert.match(missingFrontendBudget.stderr, /budget for frontend must be a finite non-negative number/);
+
+  fs.writeFileSync(path.join(fixtureScripts, 'lint-budget.json'), JSON.stringify({ backend: -1, frontend: 1 }));
+  const negativeBackendBudget = runBudget('warn:1', 'warn:1');
+  assert.strictEqual(negativeBackendBudget.status, 1, 'a negative backend warning budget must fail');
+  assert.match(negativeBackendBudget.stderr, /budget for backend must be a finite non-negative number/);
+
+  fs.writeFileSync(path.join(fixtureScripts, 'lint-budget.json'), '{"backend":2,"frontend":1e400}');
+  const infiniteFrontendBudget = runBudget('warn:1', 'warn:1');
+  assert.strictEqual(infiniteFrontendBudget.status, 1, 'an infinite frontend warning budget must fail');
+  assert.match(infiniteFrontendBudget.stderr, /budget for frontend must be a finite non-negative number/);
 
   const realBudget = spawnSync('npm', ['run', 'lint:budget'], { cwd: rootDir, encoding: 'utf8' });
   assert.strictEqual(realBudget.status, 0, `the repository's own lint budget must pass: ${realBudget.stderr}`);

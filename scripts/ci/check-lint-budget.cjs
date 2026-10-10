@@ -18,6 +18,13 @@ const SCOPES = [
   { name: 'frontend', cwd: path.join(ROOT, 'frontend'), args: ['.'] },
 ];
 
+for (const scope of SCOPES) {
+  const limit = budget?.[scope.name];
+  if (!Number.isFinite(limit) || limit < 0) {
+    throw new Error(`Lint warning budget for ${scope.name} must be a finite non-negative number.`);
+  }
+}
+
 function countDiagnostics(scope) {
   const result = spawnSync('npx', ['oxlint', ...scope.args, '--format', 'json'], {
     cwd: scope.cwd,
@@ -38,6 +45,9 @@ function countDiagnostics(scope) {
   }
   if (!Array.isArray(report.diagnostics)) {
     throw new Error(`oxlint reported no diagnostics list for ${scope.name}.`);
+  }
+  if (report.diagnostics.some((diagnostic) => !['error', 'warning'].includes(diagnostic?.severity))) {
+    throw new Error(`oxlint reported an invalid diagnostic severity for ${scope.name}.`);
   }
   return {
     errors: report.diagnostics.filter((d) => d.severity === 'error').length,

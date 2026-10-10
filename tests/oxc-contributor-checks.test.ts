@@ -409,7 +409,7 @@ const oddNames = [
   'main/odd/--check.ts',
   ...(process.platform === 'win32'
     ? ['main/odd/with&semi;metacharacters.ts']
-    : ["main/odd/quote's-\"double.ts", 'main/odd/semi;touch pwned|&&.ts']),
+    : ['main/odd/quote\'s-"double.ts', 'main/odd/semi;touch pwned|&&.ts']),
 ];
 for (const name of oddNames) write(hookRepo, name, 'export const  odd={x:1}\n');
 git(hookRepo, ['add', 'main/odd']);
@@ -1038,7 +1038,7 @@ const oddGateNames = [
   'main/odd/--check.ts',
   ...(process.platform === 'win32'
     ? ['main/odd/with&semi;metacharacters.ts']
-    : ["main/odd/quote's-\"-double.ts", 'main/odd/newline-\nname.ts']),
+    : ['main/odd/quote\'s-"-double.ts', 'main/odd/newline-\nname.ts']),
 ];
 for (const name of oddGateNames) write(oddGateRepo, name, 'export const  odd={x:1}\n');
 commitAll(oddGateRepo, 'odd file names');
@@ -1164,11 +1164,7 @@ const unsupportedHeadGate = runGate(noBaseRepo, [
   '--head',
   'HEAD',
 ]);
-assertEqualOrThrow(
-  unsupportedHeadGate.status,
-  1,
-  'a comparison cannot override the current head',
-);
+assertEqualOrThrow(unsupportedHeadGate.status, 1, 'a comparison cannot override the current head');
 assertIncludesOrThrow(
   gateOutput(unsupportedHeadGate),
   'Unknown argument: --head',

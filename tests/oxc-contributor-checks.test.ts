@@ -268,10 +268,24 @@ for (const probe of [
     0,
     `owned probe fixture ${probe} must stay formatted: ${check.stdout}${check.stderr}`,
   );
+  const eolAttr = spawnSync('git', ['check-attr', 'eol', probe], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+  assertEqualOrThrow(
+    eolAttr.stdout.trim(),
+    `${probe}: eol: lf`,
+    `owned probe fixture ${probe} must have eol: lf in .gitattributes for Windows compatibility`,
+  );
 }
 
 const editorSettings = JSON.parse(
   fs.readFileSync(path.join(rootDir, '.vscode', 'settings.json'), 'utf8'),
+);
+assertEqualOrThrow(
+  editorSettings['files.eol'],
+  '\n',
+  'files.eol must be configured to LF in .vscode/settings.json',
 );
 for (const language of ['javascript', 'javascriptreact', 'typescript', 'typescriptreact']) {
   const settings = editorSettings[`[${language}]`];

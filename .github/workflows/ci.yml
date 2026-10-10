@@ -107,27 +107,32 @@ jobs:
       - name: Rebuild native modules
         run: npx @electron/rebuild -f -w better-sqlite3
 
-      - name: Backend lint
-        run: npm run lint:backend
-
-      - name: Compile TypeScript
-        run: npx tsc --noEmit
+      - name: Backend lint and TypeScript compilation
+        run: |
+          npm run lint:backend &
+          PID_LINT=$!
+          npx tsc --noEmit &
+          PID_TSC=$!
+          wait $PID_LINT || exit 1
+          wait $PID_TSC || exit 1
 
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Frontend lint
-        working-directory: frontend
-        run: npm run lint
-
       # Authoritative formatting gate: the whole touched file, against the pull request base
       # (or the pushed range), so legacy formatting debt outside the change stays out of scope.
-      - name: Changed-file formatting
-        run: node scripts/ci/check-changed-format.cjs
-
-      - name: Lint warning budget
-        run: npm run lint:budget
+      - name: Frontend lint, formatting, and lint warning budget
+        run: |
+          (cd frontend && npm run lint) &
+          PID_FELINT=$!
+          node scripts/ci/check-changed-format.cjs &
+          PID_FMT=$!
+          npm run lint:budget &
+          PID_BUDGET=$!
+          wait $PID_FELINT || exit 1
+          wait $PID_FMT || exit 1
+          wait $PID_BUDGET || exit 1
 
       - name: Build frontend
         run: cd frontend && npx cross-env NEXT_BUILD_MODE=desktop npm run build
@@ -135,13 +140,12 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
 
   # 4b. Linux Core Test Suite (sharded)
-  # `npm test` runs ~90 suites serially (~3.5 min) and dominated the PR critical
-  # path. Run the same suites as two round-robin shards on separate runners —
-  # they run in parallel with the build/lint job above, cutting merge-ready time
-  # instead of just the job's own wall time. Shards MUST be separate runners:
+  # `npm test` runs ~180 suites serially. Run the suites as 4 round-robin shards
+  # on separate runners — they run in parallel with the build/lint job above,
+  # cutting merge-ready time to under 3 minutes. Shards MUST be separate runners:
   # several auth suites interfere when run concurrently on one machine.
   linux-tests:
-    name: Core Test Suite (Shard ${{ matrix.shard_number }}/2)
+    name: Core Test Suite (Shard ${{ matrix.shard_number }}/4)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-24.04
@@ -149,12 +153,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2, 3]
         include:
           - shard: 0
             shard_number: 1
           - shard: 1
             shard_number: 2
+          - shard: 2
+            shard_number: 3
+          - shard: 3
+            shard_number: 4
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -191,15 +199,19 @@ jobs:
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run
         # time, so shard coverage cannot drift from a hand-maintained list.
-        run: xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
+        run: xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=4 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
 
-  # 5. Playwright E2E
-  e2e-playwright:
-    name: End-to-End Playwright Tests
+  # 5. Playwright E2E Sharded Workers
+  e2e-playwright-worker:
+    name: Playwright E2E (Shard ${{ matrix.shard }}/4)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -238,47 +250,72 @@ jobs:
         working-directory: frontend
         run: npx playwright install chromium
 
-      - name: Run renderer and printer regression suites
+      - name: Run renderer and printer regression suites (Shard 1 only)
+        if: matrix.shard == 1
         run: npm run test:release-regressions
         env:
           CI: true
           REQUIRE_VISUAL_EVIDENCE: '1'
           EVIDENCE_DIR: ${{ runner.temp }}/flocafe-release-regressions
 
-      - name: Run Playwright tests
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
         working-directory: frontend
         # This job is the browser-only layer. The Electron project has its own
         # config and dedicated native job with an explicit display server.
-        run: npx playwright test --config=playwright.config.ts --project=chromium --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'
+        run: npx playwright test --config=playwright.config.ts --project=chromium --shard=${{ matrix.shard }}/4 --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale|@ci-tier1|@ci-tier2'
         env:
           CI: true
 
-      - name: Run verified browser E2E Tier 1
-        run: npm run test:e2e:browser:tier1
-        env:
-          CI: true
-
-      - name: Run verified browser E2E Tier 2
-        run: npm run test:e2e:browser:tier2
+      - name: Run verified browser E2E Tier 1 and Tier 2 (shard ${{ matrix.shard }}/4)
+        working-directory: frontend
+        run: npx playwright test --config=playwright.config.ts --project=chromium --retries=0 --shard=${{ matrix.shard }}/4 --grep='@ci-tier1|@ci-tier2' --grep-invert='FINDING:|a paid order offers a refund, and issuing it settles against the recorded sale'
         env:
           CI: true
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: frontend/playwright-report/
           retention-days: 10
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
+        if: always() && matrix.shard == 1
         with:
           name: release-regression-evidence
           path: ${{ runner.temp }}/flocafe-release-regressions/
           if-no-files-found: ignore
           retention-days: 10
 
-  # 5b. Native Electron E2E
+  # 5b. End-to-End Playwright Tests Gate
+  # Satisfies the required status check in GitHub ruleset ("End-to-End Playwright Tests")
+  # by verifying that all parallel shards completed successfully.
+  e2e-playwright:
+    name: End-to-End Playwright Tests
+    needs: [changes, e2e-playwright-worker]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verify all Playwright shards passed
+        run: |
+          changes_result="${{ needs.changes.result }}"
+          worker_result="${{ needs.e2e-playwright-worker.result }}"
+          if [ "$changes_result" = "skipped" ] || [ "$worker_result" = "skipped" ]; then
+            echo "Playwright tests skipped via path filtering."
+            exit 0
+          fi
+          if [ "$worker_result" = "cancelled" ]; then
+            echo "::warning::Playwright E2E worker was cancelled."
+            exit 1
+          fi
+          if [ "$worker_result" != "success" ]; then
+            echo "::error::One or more Playwright E2E shards failed (status: $worker_result)."
+            exit 1
+          fi
+          echo "All Playwright E2E shards completed successfully."
+
+  # 5c. Native Electron E2E
   # Keep this lifecycle separate from the browser webServer. The native
   # harness owns its temporary profile, database, ports, and app services.
   native-e2e-playwright:

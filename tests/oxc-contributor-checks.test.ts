@@ -937,7 +937,6 @@ assertEqualOrThrow(
 );
 
 const typeChangeRepo = createContributorRepo('gate-type-change');
-const typeChangeBase = git(typeChangeRepo, ['rev-parse', 'HEAD']).stdout.trim();
 const symlinkBlob = run(
   'git',
   ['hash-object', '-w', '--stdin'],
@@ -951,9 +950,25 @@ git(typeChangeRepo, [
   `120000,${symlinkBlob},main/type-change.ts`,
 ]);
 commit(typeChangeRepo, 'add tracked symlink');
+const typeChangeBase = git(typeChangeRepo, ['rev-parse', 'HEAD']).stdout.trim();
 write(typeChangeRepo, 'main/type-change.ts', 'export const  changed={x:1}\n');
-git(typeChangeRepo, ['add', 'main/type-change.ts']);
+const replacementBlob = git(typeChangeRepo, [
+  'hash-object',
+  '-w',
+  'main/type-change.ts',
+]).stdout.trim();
+git(typeChangeRepo, [
+  'update-index',
+  '--add',
+  '--cacheinfo',
+  `100644,${replacementBlob},main/type-change.ts`,
+]);
 commit(typeChangeRepo, 'replace symlink with source file');
+assertEqualOrThrow(
+  git(typeChangeRepo, ['diff', '--name-status', typeChangeBase, 'HEAD']).stdout.trim(),
+  'T\tmain/type-change.ts',
+  'the symlink replacement regression must exercise Git type-change status',
+);
 const typeChangeGate = runGate(typeChangeRepo, ['--base', typeChangeBase]);
 assertEqualOrThrow(
   typeChangeGate.status,

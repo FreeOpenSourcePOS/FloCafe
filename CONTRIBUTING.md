@@ -83,6 +83,34 @@ npm run build:frontend   # Export static Next.js frontend
 npm test                 # Run default test suite
 ```
 
+### Formatting
+
+Oxfmt owns formatting, pinned to an exact version in both `package.json` files. The backend scope is
+JavaScript and TypeScript sources under `main/`, `shared/`, `scripts/`, and `tests/`, plus
+`dev-server.js` and `kill-ports.js`. The frontend scope is JavaScript and TypeScript sources under
+`frontend/src/` and `frontend/e2e/`, plus its maintained JavaScript and TypeScript configuration
+files. This includes TypeScript declarations. Formatting never reorders executable imports,
+`package.json` keys, or Tailwind classes.
+
+```sh
+npm run format                 # Write formatting across both scopes
+npm run format:check           # Report formatting drift without writing
+npm run format:backend         # Backend scope only
+npm run format:check:backend   # Backend scope, check only
+cd frontend && npm run format  # Frontend scope only
+```
+
+These npm commands operate on their complete configured scopes; they do not limit formatting to files
+changed by the current task. Generated and derived files stay outside both scopes: the derived
+print-label table, the translation catalogues, committed test fixtures and goldens, lockfiles, build
+output, coverage, and test results. To format individual files, pass only those paths directly, for
+example `npx oxfmt path/to/file.ts` from the repository root or
+`cd frontend && npx oxfmt src/path/to/file.tsx`.
+
+`npm run format:check` reports the files that still need formatting. Existing sources carry a
+formatting backlog, so that command fails until they are formatted, and it is not a required CI
+gate. Lint stays the enforced gate: `npm run lint` reports problems and never rewrites sources.
+
 > **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 
 ---
@@ -112,7 +140,6 @@ Use clear commit messages following Conventional Commits (`feat:`, `fix:`, `docs
 
 - **Backend (`main/`):** TypeScript with strict types, Express route handlers in `main/routes/`, SQLite access via `better-sqlite3`.
 - **Frontend (`frontend/src/`):** Next.js 16, React 19, Tailwind CSS, shadcn/ui components, and Zustand for shared client state.
-- **Formatting:** Two spaces, single quotes.
 
 ---
 
@@ -130,6 +157,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
+- **Formatting:** See [Formatting](#formatting) for full-scope commands and changed-file checks.
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).

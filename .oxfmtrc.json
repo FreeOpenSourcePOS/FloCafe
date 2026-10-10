@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": true,
+  "singleQuote": true,
+  "sortImports": false,
+  "sortPackageJson": false,
+  "sortTailwindcss": false,
+  "ignorePatterns": [
+    "backups/",
+    "dist/",
+    "mas-build-output/",
+    "node_modules/",
+    "release/",
+    "specs/",
+    "test-results/",
+    "xcode/",
+    "main/print/print-labels.generated.ts",
+    "tests/fixtures/"
+  ]
+}

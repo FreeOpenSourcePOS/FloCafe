@@ -7,6 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "oxlint .",
+    "format": "oxfmt \"src/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" \"e2e/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" \"next.config.ts\" \"playwright.config.ts\" \"playwright.electron.config.ts\" \"postcss.config.mjs\"",
+    "format:check": "oxfmt --check \"src/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" \"e2e/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}\" \"next.config.ts\" \"playwright.config.ts\" \"playwright.electron.config.ts\" \"postcss.config.mjs\"",
     "test:e2e": "playwright test --config=playwright.config.ts --project=chromium",
     "test:e2e:electron": "playwright test --config=playwright.electron.config.ts --project=electron-desktop"
   },
@@ -41,6 +43,7 @@
     "@types/react-dom": "^19",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
+    "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "playwright": "1.63.0",
     "postcss": "8.5.28",

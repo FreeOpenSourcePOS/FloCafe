@@ -206,7 +206,6 @@
     "build/",
     "next-env.d.ts",
     "node_modules/",
-    "src/types/receipt-printer-encoder.d.ts",
-    "**/src/types/receipt-printer-encoder.d.ts"
+    "src/types/receipt-printer-encoder.d.ts"
   ]
 }

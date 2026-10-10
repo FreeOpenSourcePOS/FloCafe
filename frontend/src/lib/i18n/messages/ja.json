@@ -2666,7 +2666,15 @@
     "floorRenamed": "フロア名を変更しました",
     "floorRenameFailed": "フロア名の変更に失敗しました",
     "floorDeleted": "フロアを削除しました",
-    "floorDeleteFailed": "フロアの削除に失敗しました"
+    "floorDeleteFailed": "フロアの削除に失敗しました",
+    "confirmMoveOrder": "{table} へ移動",
+    "moveOrder": "注文を移動",
+    "moveOrderDescription": "{from} のアクティブな注文を別のテーブルに移動します。",
+    "moveTable": "テーブルを移動",
+    "selectDestinationTable": "移動先のテーブルを選択",
+    "tableMovedSuccess": "注文が {from} から {to} に移動しました",
+    "tableMoveFailed": "テーブル注文の移動に失敗しました",
+    "targetTableOccupied": "移動先のテーブルにはすでにアクティブな注文があります"
   },
   "tax": {
     "actionActivate": "パックを有効化",

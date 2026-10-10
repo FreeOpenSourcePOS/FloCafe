@@ -2666,7 +2666,15 @@
     "floorRenamed": "تالاب کا نام بدل دیا گیا",
     "floorRenameFailed": "تالاب کا نام بدل نہیں سکا",
     "floorDeleted": "تالاب حذف کر دی گئی",
-    "floorDeleteFailed": "تالاب حذف نہیں ہو سکی"
+    "floorDeleteFailed": "تالاب حذف نہیں ہو سکی",
+    "confirmMoveOrder": "{table} پر منتقل کریں",
+    "moveOrder": "آرڈر منتقل کریں",
+    "moveOrderDescription": "فعال آرڈر کو {from} سے دوسری میز پر منتقل کریں۔",
+    "moveTable": "میز منتقل کریں",
+    "selectDestinationTable": "منزل کی میز منتخب کریں",
+    "tableMovedSuccess": "آرڈر {from} سے {to} پر منتقل ہو گیا",
+    "tableMoveFailed": "میز کا آرڈر منتقل کرنے میں ناکامی",
+    "targetTableOccupied": "منزل کی میز پر پہلے سے فعال آرڈر موجود ہے"
   },
   "tax": {
     "actionActivate": "پیک فعال ہو گیا",

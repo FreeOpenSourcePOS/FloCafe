@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
+import { ArrowRightLeft, ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
 import type { Order, Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n';
@@ -174,7 +174,7 @@ function saveSavedCanvasSize(floor: string, size: SavedCanvasSize): void {
   } catch { /* quota / private mode — fail silently */ }
 }
 
-export default function FloorplanEditor({ mode, canManage = false, tables, ordersByTable, onSaved, onReserve, onViewOrder }: {
+export default function FloorplanEditor({ mode, canManage = false, tables, ordersByTable, onSaved, onReserve, onViewOrder, onMoveTable }: {
   mode: 'edit' | 'service';
   canManage?: boolean;
   tables: Table[];
@@ -182,6 +182,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   onSaved?: () => void;
   onReserve?: (tb: Table) => void;
   onViewOrder?: () => void;
+  onMoveTable?: (tb: Table) => void;
 }) {
   const edit = mode === 'edit' && canManage;
   const t = useTranslations('tables');
@@ -458,7 +459,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     }
   };
 
-  const canOpenActionSheet = (tb: Table) => canManage || (tb.status === 'occupied' && !!onViewOrder);
+  const canOpenActionSheet = (tb: Table) => canManage || (tb.status === 'occupied' && (!!onViewOrder || !!onMoveTable));
   const openActionSheet = (tb: Table) => {
     if (canOpenActionSheet(tb)) setActionTable(tb);
   };
@@ -711,6 +712,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     const actions: Array<{ label: string; icon: React.ReactNode; run: () => void }> = [];
     if (tb.status === 'occupied' && onViewOrder) {
       actions.push({ label: t('viewOrder'), icon: <Eye size={15} />, run: () => { setActionTable(null); onViewOrder(); } });
+    }
+    if (tb.status === 'occupied' && onMoveTable) {
+      actions.push({ label: t('moveTable'), icon: <ArrowRightLeft size={15} />, run: () => { setActionTable(null); onMoveTable(tb); } });
     }
     if (canManage) {
       if (tb.status === 'available') {

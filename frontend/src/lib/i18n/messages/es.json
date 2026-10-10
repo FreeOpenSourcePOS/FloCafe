@@ -2666,7 +2666,15 @@
     "floorRenamed": "Piso renombrado",
     "floorRenameFailed": "No se pudo renombrar el piso",
     "floorDeleted": "Piso eliminado",
-    "floorDeleteFailed": "No se pudo eliminar el piso"
+    "floorDeleteFailed": "No se pudo eliminar el piso",
+    "confirmMoveOrder": "Mover a {table}",
+    "moveOrder": "Mover pedido",
+    "moveOrderDescription": "Transferir pedido activo de {from} a otra mesa.",
+    "moveTable": "Mover mesa",
+    "selectDestinationTable": "Seleccionar mesa de destino",
+    "tableMovedSuccess": "Pedido movido de {from} a {to}",
+    "tableMoveFailed": "Error al mover el pedido de la mesa",
+    "targetTableOccupied": "La mesa de destino ya tiene un pedido activo"
   },
   "tax": {
     "actionActivate": "Paquete activado",

@@ -2666,7 +2666,15 @@
     "floorRenamed": "Đã đổi tên khu vực",
     "floorRenameFailed": "Không thể đổi tên khu vực",
     "floorDeleted": "Đã xóa khu vực",
-    "floorDeleteFailed": "Không thể xóa khu vực"
+    "floorDeleteFailed": "Không thể xóa khu vực",
+    "confirmMoveOrder": "Chuyển sang {table}",
+    "moveOrder": "Chuyển đơn hàng",
+    "moveOrderDescription": "Chuyển đơn hàng đang hoạt động từ {from} sang bàn khác.",
+    "moveTable": "Chuyển bàn",
+    "selectDestinationTable": "Chọn bàn đích",
+    "tableMovedSuccess": "Đã chuyển đơn hàng từ {from} sang {to}",
+    "tableMoveFailed": "Không thể chuyển đơn hàng bàn",
+    "targetTableOccupied": "Bàn đích đã có đơn hàng đang hoạt động"
   },
   "tax": {
     "actionActivate": "Đã kích hoạt gói",

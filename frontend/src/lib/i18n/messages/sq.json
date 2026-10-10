@@ -2666,7 +2666,15 @@
     "floorRenamed": "Kati u riemërua",
     "floorRenameFailed": "Riemërtimi i kati dështoi",
     "floorDeleted": "Kati u fshi",
-    "floorDeleteFailed": "Fshirja e kati dështoi"
+    "floorDeleteFailed": "Fshirja e kati dështoi",
+    "confirmMoveOrder": "Kalo te {table}",
+    "moveOrder": "Lëviz Porosinë",
+    "moveOrderDescription": "Transfero porosinë aktive nga {from} në një tavolinë tjetër.",
+    "moveTable": "Lëviz Tavolinën",
+    "selectDestinationTable": "Zgjidh tavolinën e destinacionit",
+    "tableMovedSuccess": "Porosia u lëviz nga {from} te {to}",
+    "tableMoveFailed": "Dështoi lëvizja e porosisë së tavolinës",
+    "targetTableOccupied": "Tavolina e destinacionit tashmë ka një porosi aktive"
   },
   "tax": {
     "actionActivate": "Pakoja u aktivizua",

@@ -2653,7 +2653,15 @@
     "floorRenamed": "भुइँको नाम परिवर्तन गरियो",
     "floorRenameFailed": "भुइँको नाम परिवर्तन गर्न सकिएन",
     "floorDeleted": "भुइँ मेटाइयो",
-    "floorDeleteFailed": "भुइँ मेटाउन असफल भयो"
+    "floorDeleteFailed": "भुइँ मेटाउन असफल भयो",
+    "confirmMoveOrder": "{table} मा सार्नुहोस्",
+    "moveOrder": "अर्डर सार्नुहोस्",
+    "moveOrderDescription": "सक्रिय अर्डर {from} बाट अर्को टेबलमा सार्नुहोस्।",
+    "moveTable": "टेबल सार्नुहोस्",
+    "selectDestinationTable": "गन्तव्य टेबल चयन गर्नुहोस्",
+    "tableMovedSuccess": "अर्डर {from} बाट {to} मा सारियो",
+    "tableMoveFailed": "टेबल अर्डर सार्न असफल भयो",
+    "targetTableOccupied": "गन्तव्य टेबलमा पहिले नै सक्रिय अर्डर छ"
   },
   "tax": {
     "actionActivate": "प्याक सक्रिय गरियो",

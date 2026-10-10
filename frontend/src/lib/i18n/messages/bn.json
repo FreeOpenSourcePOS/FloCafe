@@ -2666,7 +2666,15 @@
     "floorRenamed": "ফ্লোরের নাম পরিবর্তন করা হয়েছে",
     "floorRenameFailed": "ফ্লোরের নাম পরিবর্তন করতে ব্যর্থ হয়েছে।",
     "floorDeleted": "মেঝে মুছে ফেলা হয়েছে",
-    "floorDeleteFailed": "মেঝে মুছে ফেলতে ব্যর্থ হয়েছে"
+    "floorDeleteFailed": "মেঝে মুছে ফেলতে ব্যর্থ হয়েছে",
+    "confirmMoveOrder": "{table}-এ স্থানান্তর করুন",
+    "moveOrder": "অর্ডার স্থানান্তর করুন",
+    "moveOrderDescription": "সক্রিয় অর্ডার {from} থেকে অন্য টেবিলে স্থানান্তর করুন।",
+    "moveTable": "টেবিল স্থানান্তর করুন",
+    "selectDestinationTable": "গন্তব্য টেবিল নির্বাচন করুন",
+    "tableMovedSuccess": "অর্ডার {from} থেকে {to}-এ স্থানান্তরিত হয়েছে",
+    "tableMoveFailed": "টেবিল অর্ডার স্থানান্তর করতে ব্যর্থ হয়েছে",
+    "targetTableOccupied": "গন্তব্য টেবিলে ইতিমধ্যে একটি সক্রিয় অর্ডার রয়েছে"
   },
   "tax": {
     "actionActivate": "প্যাক সক্রিয় করা হয়েছে",

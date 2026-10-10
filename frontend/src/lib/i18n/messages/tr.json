@@ -2666,7 +2666,15 @@
     "floorRenamed": "Kat yeniden adlandırıldı",
     "floorRenameFailed": "Kat yeniden adlandırılamadı",
     "floorDeleted": "Kat silindi",
-    "floorDeleteFailed": "Kat silinemedi"
+    "floorDeleteFailed": "Kat silinemedi",
+    "confirmMoveOrder": "{table} masasına taşı",
+    "moveOrder": "Siparişi Taşı",
+    "moveOrderDescription": "Aktif siparişi {from} masasından başka bir masaya aktarın.",
+    "moveTable": "Masayı Taşı",
+    "selectDestinationTable": "Hedef masayı seçin",
+    "tableMovedSuccess": "Sipariş {from} masasından {to} masasına taşındı",
+    "tableMoveFailed": "Masa siparişi taşınamadı",
+    "targetTableOccupied": "Hedef masada zaten aktif bir sipariş var"
   },
   "tax": {
     "actionActivate": "Vergi paketi etkinleştirildi",

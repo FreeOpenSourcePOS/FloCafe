@@ -2666,7 +2666,15 @@
     "floorRenamed": "Floor renamed",
     "floorRenameFailed": "Failed to rename floor",
     "floorDeleted": "Floor deleted",
-    "floorDeleteFailed": "Failed to delete floor"
+    "floorDeleteFailed": "Failed to delete floor",
+    "confirmMoveOrder": "Move to {table}",
+    "moveOrder": "Move Order",
+    "moveOrderDescription": "Transfer active order from {from} to another table.",
+    "moveTable": "Move Table",
+    "selectDestinationTable": "Select destination table",
+    "tableMovedSuccess": "Order moved from {from} to {to}",
+    "tableMoveFailed": "Failed to move table order",
+    "targetTableOccupied": "Destination table already has an active order"
   },
   "tax": {
     "actionActivate": "Pack activated",

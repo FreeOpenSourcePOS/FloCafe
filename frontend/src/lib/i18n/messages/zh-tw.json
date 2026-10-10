@@ -2666,7 +2666,15 @@
     "floorRenamed": "樓層已重新命名",
     "floorRenameFailed": "重新命名樓層失敗",
     "floorDeleted": "樓層已刪除",
-    "floorDeleteFailed": "刪除樓層失敗"
+    "floorDeleteFailed": "刪除樓層失敗",
+    "confirmMoveOrder": "移至 {table}",
+    "moveOrder": "移動訂單",
+    "moveOrderDescription": "將進行中的訂單從 {from} 轉移至另一張桌子。",
+    "moveTable": "移動桌位",
+    "selectDestinationTable": "選擇目標桌位",
+    "tableMovedSuccess": "訂單已從 {from} 移至 {to}",
+    "tableMoveFailed": "移動桌位訂單失敗",
+    "targetTableOccupied": "目標桌位已有進行中的訂單"
   },
   "tax": {
     "actionActivate": "稅務包已啟用",

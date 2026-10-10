@@ -2666,7 +2666,15 @@
     "floorRenamed": "Pinalitan ang pangalan ng palapag",
     "floorRenameFailed": "Hindi pinalitan ang pangalan ng palapag",
     "floorDeleted": "Tinanggal ang palapag",
-    "floorDeleteFailed": "Hindi tinanggal ang palapag"
+    "floorDeleteFailed": "Hindi tinanggal ang palapag",
+    "confirmMoveOrder": "Ilipat sa {table}",
+    "moveOrder": "Ilipat ang Order",
+    "moveOrderDescription": "Ilipat ang aktibong order mula sa {from} patungo sa ibang mesa.",
+    "moveTable": "Ilipat ang Mesa",
+    "selectDestinationTable": "Pumili ng pupuntahang mesa",
+    "tableMovedSuccess": "Nailipat ang order mula {from} patungong {to}",
+    "tableMoveFailed": "Nabigong ilipat ang order sa mesa",
+    "targetTableOccupied": "May aktibong order na ang pupuntahang mesa"
   },
   "tax": {
     "actionActivate": "Na-activate ang pack",

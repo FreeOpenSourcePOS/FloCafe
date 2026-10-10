@@ -2666,7 +2666,15 @@
     "floorRenamed": "Этаж переименован",
     "floorRenameFailed": "Не удалось переименовать этаж.",
     "floorDeleted": "Этаж удален",
-    "floorDeleteFailed": "Не удалось удалить этаж."
+    "floorDeleteFailed": "Не удалось удалить этаж.",
+    "confirmMoveOrder": "Перенести на {table}",
+    "moveOrder": "Перенести заказ",
+    "moveOrderDescription": "Перенести активный заказ с {from} на другой стол.",
+    "moveTable": "Перенести стол",
+    "selectDestinationTable": "Выберите стол назначения",
+    "tableMovedSuccess": "Заказ перенесен с {from} на {to}",
+    "tableMoveFailed": "Не удалось перенести заказ стола",
+    "targetTableOccupied": "За столом назначения уже есть активный заказ"
   },
   "tax": {
     "actionActivate": "Пакет активирован",

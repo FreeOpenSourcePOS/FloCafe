@@ -2666,7 +2666,15 @@
     "floorRenamed": "Étage renommé",
     "floorRenameFailed": "Impossible de renommer l'étage",
     "floorDeleted": "Étage supprimé",
-    "floorDeleteFailed": "Impossible de supprimer l'étage"
+    "floorDeleteFailed": "Impossible de supprimer l'étage",
+    "confirmMoveOrder": "Déplacer vers {table}",
+    "moveOrder": "Déplacer la commande",
+    "moveOrderDescription": "Transférer la commande active de {from} vers une autre table.",
+    "moveTable": "Déplacer la table",
+    "selectDestinationTable": "Sélectionner la table de destination",
+    "tableMovedSuccess": "Commande déplacée de {from} vers {to}",
+    "tableMoveFailed": "Échec du déplacement de la commande de table",
+    "targetTableOccupied": "La table de destination a déjà une commande active"
   },
   "tax": {
     "actionActivate": "Module activé",

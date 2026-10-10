@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, Printer, Loader2 } from 'lucide-react';
+import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -10,6 +10,9 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
+import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
+import MoveTableModal from '@/components/tables/MoveTableModal';
 
 interface Props {
   table: Table;
@@ -23,6 +26,8 @@ interface Props {
   canReadBills?: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
+  onMoveTable?: (table: Table) => void;
+  tables?: Table[];
 }
 
 export default function TableCheckoutModal({
@@ -36,10 +41,15 @@ export default function TableCheckoutModal({
   canGenerateBill,
   canReadBills = true,
   onPayment,
-  onAddCartToOrder
+  onAddCartToOrder,
+  onMoveTable,
+  tables,
 }: Props) {
   const t = useTranslations('pos');
+  const tTables = useTranslations('tables');
   const tReceipt = useTranslations('receipt');
+  const { currentTenant } = useAuthStore();
+  const canMoveTable = tenantCan(currentTenant, 'tables.orders.move');
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -54,6 +64,16 @@ export default function TableCheckoutModal({
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
   const [printingBill, setPrintingBill] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+
+  const handleMoveTable = () => {
+    if (onMoveTable) {
+      onMoveTable(table);
+      onClose();
+    } else {
+      setShowMoveModal(true);
+    }
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -222,9 +242,22 @@ export default function TableCheckoutModal({
             </div>
             <p className="text-sm text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            {canMoveTable && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMoveTable}
+                className="text-xs h-8 gap-1.5"
+              >
+                <ArrowRightLeft size={13} />
+                {tTables('moveTable')}
+              </Button>
+            )}
+            <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
@@ -326,6 +359,17 @@ export default function TableCheckoutModal({
       const existingBills = current.bills || (current.bill ? [current.bill] : []);
       return { ...current, bill: bills[0], bills: [...existingBills.filter((existing) => existing.id !== splitBill.id), ...bills] };
     }); setSplitBill(null); }} />}
+    {showMoveModal && (
+      <MoveTableModal
+        sourceTable={table}
+        tables={tables}
+        onClose={() => setShowMoveModal(false)}
+        onSuccess={() => {
+          setShowMoveModal(false);
+          onClose();
+        }}
+      />
+    )}
     </>
   );
 }

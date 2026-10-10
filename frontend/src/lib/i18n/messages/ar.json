@@ -2666,7 +2666,15 @@
     "floorRenamed": "تم تغيير اسم الطابق",
     "floorRenameFailed": "فشل إعادة تسمية الطابق",
     "floorDeleted": "تم حذف الطابق",
-    "floorDeleteFailed": "فشل حذف الطابق"
+    "floorDeleteFailed": "فشل حذف الطابق",
+    "confirmMoveOrder": "نقل إلى {table}",
+    "moveOrder": "نقل الطلب",
+    "moveOrderDescription": "تحويل الطلب النشط من {from} إلى طاولة أخرى.",
+    "moveTable": "نقل الطاولة",
+    "selectDestinationTable": "حدد الطاولة الوجهة",
+    "tableMovedSuccess": "تم نقل الطلب من {from} إلى {to}",
+    "tableMoveFailed": "فشل نقل طلب الطاولة",
+    "targetTableOccupied": "الطاولة الوجهة تحتوي بالفعل على طلب نشط"
   },
   "tax": {
     "actionActivate": "تم تفعيل الحزمة",

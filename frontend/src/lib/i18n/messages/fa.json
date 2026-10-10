@@ -2666,7 +2666,15 @@
     "floorRenamed": "نام طبقه تغییر کرد",
     "floorRenameFailed": "تغییر نام طبقه ناموفق بود",
     "floorDeleted": "طبقه حذف شد",
-    "floorDeleteFailed": "حذف طبقه ناموفق بود"
+    "floorDeleteFailed": "حذف طبقه ناموفق بود",
+    "confirmMoveOrder": "انتقال به {table}",
+    "moveOrder": "انتقال سفارش",
+    "moveOrderDescription": "انتقال سفارش فعال از {from} به میز دیگر.",
+    "moveTable": "انتقال میز",
+    "selectDestinationTable": "انتخاب میز مقصد",
+    "tableMovedSuccess": "سفارش از {from} به {to} منتقل شد",
+    "tableMoveFailed": "انتقال سفارش میز انجام نشد",
+    "targetTableOccupied": "میز مقصد در حال حاضر سفارش فعال دارد"
   },
   "tax": {
     "actionActivate": "بسته فعال شد",

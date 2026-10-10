@@ -2666,7 +2666,15 @@
     "floorRenamed": "Verdieping hernoemd",
     "floorRenameFailed": "Kan de naam van de verdieping niet wijzigen",
     "floorDeleted": "Verdieping verwijderd",
-    "floorDeleteFailed": "Kan verdieping niet verwijderen"
+    "floorDeleteFailed": "Kan verdieping niet verwijderen",
+    "confirmMoveOrder": "Verplaatsen naar {table}",
+    "moveOrder": "Bestelling verplaatsen",
+    "moveOrderDescription": "Actieve bestelling overdragen van {from} naar een andere tafel.",
+    "moveTable": "Tafel verplaatsen",
+    "selectDestinationTable": "Bestemmingstafel selecteren",
+    "tableMovedSuccess": "Bestelling verplaatst van {from} naar {to}",
+    "tableMoveFailed": "Verplaatsen van tafelbestelling mislukt",
+    "targetTableOccupied": "Bestemmingstafel heeft al een actieve bestelling"
   },
   "tax": {
     "actionActivate": "Pakket geactiveerd",

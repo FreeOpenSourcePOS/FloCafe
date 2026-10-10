@@ -2666,7 +2666,15 @@
     "floorRenamed": "เปลี่ยนชื่อชั้นแล้ว",
     "floorRenameFailed": "เปลี่ยนชื่อชั้นไม่สำเร็จ",
     "floorDeleted": "ลบชั้นแล้ว",
-    "floorDeleteFailed": "ลบชั้นไม่สำเร็จ"
+    "floorDeleteFailed": "ลบชั้นไม่สำเร็จ",
+    "confirmMoveOrder": "ย้ายไป {table}",
+    "moveOrder": "ย้ายออเดอร์",
+    "moveOrderDescription": "โอนย้ายออเดอร์ที่ใช้งานอยู่จาก {from} ไปยังโต๊ะอื่น",
+    "moveTable": "ย้ายโต๊ะ",
+    "selectDestinationTable": "เลือกโต๊ะปลายทาง",
+    "tableMovedSuccess": "ย้ายออเดอร์จาก {from} ไป {to} สำเร็จ",
+    "tableMoveFailed": "ย้ายออเดอร์ของโต๊ะไม่สำเร็จ",
+    "targetTableOccupied": "โต๊ะปลายทางมีออเดอร์ที่ใช้งานอยู่แล้ว"
   },
   "tax": {
     "actionActivate": "เปิดใช้แพ็กแล้ว",

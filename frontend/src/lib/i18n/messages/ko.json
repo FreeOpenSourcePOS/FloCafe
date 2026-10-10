@@ -2666,7 +2666,15 @@
     "floorRenamed": "홀 이름이 변경되었습니다",
     "floorRenameFailed": "홀 이름을 변경하지 못했습니다",
     "floorDeleted": "홀이 삭제되었습니다",
-    "floorDeleteFailed": "홀을 삭제하지 못했습니다"
+    "floorDeleteFailed": "홀을 삭제하지 못했습니다",
+    "confirmMoveOrder": "{table} (으)로 이동",
+    "moveOrder": "주문 이동",
+    "moveOrderDescription": "{from} 의 진행 중인 주문을 다른 테이블로 이전합니다.",
+    "moveTable": "테이블 이동",
+    "selectDestinationTable": "이동할 대상 테이블 선택",
+    "tableMovedSuccess": "주문이 {from} 에서 {to} (으)로 이동되었습니다",
+    "tableMoveFailed": "테이블 주문 이동 실패",
+    "targetTableOccupied": "대상 테이블에 이미 활성 주문이 있습니다"
   },
   "tax": {
     "actionActivate": "세금 팩이 활성화되었습니다",

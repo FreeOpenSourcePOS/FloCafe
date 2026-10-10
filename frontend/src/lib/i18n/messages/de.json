@@ -2666,7 +2666,15 @@
     "floorRenamed": "Etage umbenannt",
     "floorRenameFailed": "Etage konnte nicht umbenannt werden",
     "floorDeleted": "Etage gelöscht",
-    "floorDeleteFailed": "Etage konnte nicht gelöscht werden"
+    "floorDeleteFailed": "Etage konnte nicht gelöscht werden",
+    "confirmMoveOrder": "Nach {table} verschieben",
+    "moveOrder": "Bestellung verschieben",
+    "moveOrderDescription": "Aktive Bestellung von {from} an einen anderen Tisch übertragen.",
+    "moveTable": "Tisch verschieben",
+    "selectDestinationTable": "Ziel-Tisch auswählen",
+    "tableMovedSuccess": "Bestellung von {from} nach {to} verschoben",
+    "tableMoveFailed": "Fehler beim Verschieben der Tischbestellung",
+    "targetTableOccupied": "Ziel-Tisch hat bereits eine aktive Bestellung"
   },
   "tax": {
     "actionActivate": "Steuerpaket aktiviert",

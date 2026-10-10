@@ -2666,7 +2666,15 @@
     "floorRenamed": "मंजिल का नाम बदला गया",
     "floorRenameFailed": "फ़्लोर का नाम बदलने में विफल",
     "floorDeleted": "फर्श हटा दिया गया",
-    "floorDeleteFailed": "फ़्लोर हटाने में विफल"
+    "floorDeleteFailed": "फ़्लोर हटाने में विफल",
+    "confirmMoveOrder": "{table} पर स्थानांतरित करें",
+    "moveOrder": "ऑर्डर स्थानांतरित करें",
+    "moveOrderDescription": "सक्रिय ऑर्डर को {from} से दूसरी टेबल पर स्थानांतरित करें।",
+    "moveTable": "टेबल बदलें",
+    "selectDestinationTable": "गंतव्य टेबल चुनें",
+    "tableMovedSuccess": "ऑर्डर {from} से {to} पर स्थानांतरित किया गया",
+    "tableMoveFailed": "टेबल ऑर्डर स्थानांतरित करने में विफल",
+    "targetTableOccupied": "गंतव्य टेबल पर पहले से एक सक्रिय ऑर्डर है"
   },
   "tax": {
     "actionActivate": "पैक सक्रिय",

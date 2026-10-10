@@ -2666,7 +2666,15 @@
     "floorRenamed": "Nama lantai diubah",
     "floorRenameFailed": "Gagal mengubah nama lantai",
     "floorDeleted": "Lantai dihapus",
-    "floorDeleteFailed": "Gagal menghapus lantai"
+    "floorDeleteFailed": "Gagal menghapus lantai",
+    "confirmMoveOrder": "Pindah ke {table}",
+    "moveOrder": "Pindahkan Pesanan",
+    "moveOrderDescription": "Pindahkan pesanan aktif dari {from} ke meja lain.",
+    "moveTable": "Pindah Meja",
+    "selectDestinationTable": "Pilih meja tujuan",
+    "tableMovedSuccess": "Pesanan dipindahkan dari {from} ke {to}",
+    "tableMoveFailed": "Gagal memindahkan pesanan meja",
+    "targetTableOccupied": "Meja tujuan sudah memiliki pesanan aktif"
   },
   "tax": {
     "actionActivate": "Paket diaktifkan",

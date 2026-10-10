@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin, MapPinned, List } from 'lucide-react';
+import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin, MapPinned, List, ArrowRightLeft } from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import FloorplanEditor from '@/components/tables/FloorplanEditor';
+import MoveTableModal from '@/components/tables/MoveTableModal';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
@@ -209,11 +210,13 @@ export default function TablesPage() {
   const { currentTenant } = useAuthStore();
   const canManageTables = tenantCan(currentTenant, 'tables.manage');
   const canReadOrders = tenantCan(currentTenant, 'orders.read');
+  const canMoveTable = tenantCan(currentTenant, 'tables.orders.move');
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingTable, setEditingTable] = useState<Table | null>(null);
+  const [movingTable, setMovingTable] = useState<Table | null>(null);
   const [selectedFloor, setSelectedFloor] = useState('all');
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   // List is the default view (table management + Add table); the floor
@@ -463,6 +466,7 @@ export default function TablesPage() {
           onSaved={fetchTables}
           onReserve={(tb) => setReservingTable(tb)}
           onViewOrder={canReadOrders ? () => router.push('/orders') : undefined}
+          onMoveTable={canMoveTable ? (tb) => setMovingTable(tb) : undefined}
         />
       </div>
 
@@ -564,27 +568,36 @@ export default function TablesPage() {
                 )}
 
                 {/* Actions */}
-                {canManageTables && (
+                {(canManageTables || (canMoveTable && table.status === 'occupied')) && (
                   <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
-                    <button onClick={() => openEdit(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
-                      <Pencil size={12} /> {tTables('editTable')}
-                    </button>
-                    {(table.status === 'occupied' || table.status === 'reserved') && (
-                      <button onClick={() => updateStatus(table.id, 'available')}
-                        className="text-xs text-brand hover:text-brand-hover font-medium">
-                        {tTables('markAvailable')}
+                    {canMoveTable && table.status === 'occupied' && (
+                      <button onClick={() => setMovingTable(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
+                        <ArrowRightLeft size={12} /> {tTables('moveTable')}
                       </button>
                     )}
-                    {table.status === 'available' && (
-                      <button onClick={() => setReservingTable(table)}
-                        className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                        {tTables('reserve')}
-                      </button>
+                    {canManageTables && (
+                      <>
+                        <button onClick={() => openEdit(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
+                          <Pencil size={12} /> {tTables('editTable')}
+                        </button>
+                        {(table.status === 'occupied' || table.status === 'reserved') && (
+                          <button onClick={() => updateStatus(table.id, 'available')}
+                            className="text-xs text-brand hover:text-brand-hover font-medium">
+                            {tTables('markAvailable')}
+                          </button>
+                        )}
+                        {table.status === 'available' && (
+                          <button onClick={() => setReservingTable(table)}
+                            className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
+                            {tTables('reserve')}
+                          </button>
+                        )}
+                        <button onClick={() => toggleActive(table)}
+                          className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
+                          {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
+                        </button>
+                      </>
                     )}
-                    <button onClick={() => toggleActive(table)}
-                      className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                      {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
-                    </button>
                   </div>
                 )}
               </div>
@@ -609,6 +622,12 @@ export default function TablesPage() {
               )}
               {table.status === 'reserved' && table.reservation_customer_phone && (
                 <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
+              )}
+
+              {canMoveTable && table.status === 'occupied' && (
+                <button onClick={() => setMovingTable(table)} className="mt-3 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
+                  <ArrowRightLeft size={12} /> {tTables('moveTable')}
+                </button>
               )}
 
               {canManageTables && (
@@ -700,6 +719,17 @@ export default function TablesPage() {
             </form>
           </div>
         </div>
+      )}
+      {movingTable && (
+        <MoveTableModal
+          sourceTable={movingTable}
+          tables={tables}
+          onClose={() => setMovingTable(null)}
+          onSuccess={() => {
+            setMovingTable(null);
+            fetchTables();
+          }}
+        />
       )}
     </div>
   );

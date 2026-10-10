@@ -2666,7 +2666,15 @@
     "floorRenamed": "Piano rinominato",
     "floorRenameFailed": "Rinominazione del piano non riuscita",
     "floorDeleted": "Piano eliminato",
-    "floorDeleteFailed": "Eliminazione del piano non riuscita"
+    "floorDeleteFailed": "Eliminazione del piano non riuscita",
+    "confirmMoveOrder": "Sposta a {table}",
+    "moveOrder": "Sposta ordine",
+    "moveOrderDescription": "Trasferisci l'ordine attivo da {from} a un altro tavolo.",
+    "moveTable": "Sposta tavolo",
+    "selectDestinationTable": "Seleziona tavolo di destinazione",
+    "tableMovedSuccess": "Ordine spostato da {from} a {to}",
+    "tableMoveFailed": "Impossibile spostare l'ordine del tavolo",
+    "targetTableOccupied": "Il tavolo di destinazione ha già un ordine attivo"
   },
   "tax": {
     "actionActivate": "Pack attivato",

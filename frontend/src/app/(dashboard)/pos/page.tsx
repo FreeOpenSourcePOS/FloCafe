@@ -1570,9 +1570,13 @@ export default function POSPage() {
       {checkoutTable && (
         <TableCheckoutModal
           table={checkoutTable}
+          tables={tables}
           currency={currency}
           cartItemCount={cart.itemCount()}
-          onClose={() => setCheckoutTable(null)}
+          onClose={() => {
+            setCheckoutTable(null);
+            refreshTables();
+          }}
           onAddItems={handleAddItemsToOrder}
           onPrintBill={async (bill, reservedWindow) => {
             await printBillForTenant(bill, true, reservedWindow);

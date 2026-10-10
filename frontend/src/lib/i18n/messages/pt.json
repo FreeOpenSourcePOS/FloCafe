@@ -2666,7 +2666,15 @@
     "floorRenamed": "Andar renomeado",
     "floorRenameFailed": "Falha ao renomear o andar",
     "floorDeleted": "Andar excluído",
-    "floorDeleteFailed": "Falha ao excluir o andar"
+    "floorDeleteFailed": "Falha ao excluir o andar",
+    "confirmMoveOrder": "Mover para {table}",
+    "moveOrder": "Mover pedido",
+    "moveOrderDescription": "Transferir pedido ativo de {from} para outra mesa.",
+    "moveTable": "Mover mesa",
+    "selectDestinationTable": "Selecionar mesa de destino",
+    "tableMovedSuccess": "Pedido movido de {from} para {to}",
+    "tableMoveFailed": "Falha ao mover o pedido da mesa",
+    "targetTableOccupied": "A mesa de destino já possui um pedido ativo"
   },
   "tax": {
     "actionActivate": "Pacote ativado",

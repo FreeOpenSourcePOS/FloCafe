@@ -1,9 +1,24 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { getE2eToken } from './helpers/test-auth';
 
-const EVIDENCE_DIR = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M4KH9AEE64Z0DN12TWX2717P';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M4KH9AEE64Z0DN12TWX2717P');
+
+async function captureScreenshot(page: any, filename: string): Promise<void> {
+  try {
+    if (!fs.existsSync(EVIDENCE_DIR)) {
+      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+    }
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
+  } catch (err) {
+    console.warn(`Could not save screenshot ${filename}:`, err);
+  }
+}
 
 test.describe('Table Move UI Live Validation', () => {
   test.setTimeout(90_000);
@@ -167,10 +182,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(moveModal.getByRole('button', { name: new RegExp(t4Num) })).not.toBeVisible();
 
       // Take screenshot 1: MoveTableModal in Floorplan
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '01-floorplan-move-modal.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '01-floorplan-move-modal.png');
 
       // Select candidate T2
       await candidateT2.click();
@@ -191,10 +203,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(moveModal).not.toBeVisible();
 
       // Take screenshot 2: After Floorplan Move
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '02-floorplan-move-completed.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '02-floorplan-move-completed.png');
 
       // Verify database state: T1 is available, T2 is occupied
       const checkTables1 = await (
@@ -238,10 +247,7 @@ test.describe('Table Move UI Live Validation', () => {
       ).toBeVisible();
 
       // Take screenshot 3: MoveTableModal from Tables List
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '03-table-list-move-modal.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '03-table-list-move-modal.png');
 
       // Select T1 (which is now available)
       const candidateT1 = listMoveModal.getByRole('button', { name: new RegExp(t1Num) });
@@ -261,10 +267,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(listMoveModal).not.toBeVisible();
 
       // Take screenshot 4: After Tables List Move
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '04-table-list-move-completed.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '04-table-list-move-completed.png');
 
       // Verify T1 is occupied again, T2 is available
       const checkTables2 = await (
@@ -307,10 +310,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posCheckoutMoveBtn).toBeVisible();
 
       // Take screenshot 5: TableCheckoutModal with Move Table button
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '05-pos-checkout-modal.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '05-pos-checkout-modal.png');
 
       // Click "Move Table" button in POS checkout modal
       await posCheckoutMoveBtn.click();
@@ -320,10 +320,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posMoveModal).toBeVisible();
 
       // Take screenshot 6: MoveTableModal over POS
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '06-pos-move-modal.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '06-pos-move-modal.png');
 
       // Select candidate T2 and confirm move
       const candidateT2InPos = posMoveModal.getByRole('button', { name: new RegExp(t2Num) });
@@ -343,10 +340,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posMoveModal).not.toBeVisible();
 
       // Take screenshot 7: POS state after table move
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '07-pos-table-moved.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '07-pos-table-moved.png');
 
       // Verify database state: T2 is occupied with order1, T1 is available
       const checkTables3 = await (
@@ -397,10 +391,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(guardModal.getByRole('button', { name: new RegExp(t4Num) })).not.toBeVisible();
 
       // Take screenshot 8: Guard against occupied / inactive tables
-      await page.screenshot({
-        path: path.join(EVIDENCE_DIR, '08-occupied-table-disabled.png'),
-        fullPage: true,
-      });
+      await captureScreenshot(page, '08-occupied-table-disabled.png');
 
       // Close modal
       await guardModal.getByRole('button', { name: 'Cancel' }).first().click();

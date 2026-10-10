@@ -1,0 +1,80 @@
+// Git-hook installation for contributor checkouts only. CI, production installs, source
+// archives without a work tree and frontend-only installs must install dependencies without
+// touching Git configuration, so every non-contributor environment is skipped explicitly.
+// Linked worktrees share Git configuration with the main checkout: install with HUSKY=0 there.
+
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function skip(reason) {
+  console.log(`husky: skipped (${reason})`);
+}
+
+function currentHooksPath() {
+  const result = spawnSync('git', ['config', '--get', 'core.hooksPath'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function defaultHooksDirectory() {
+  const result = spawnSync('git', ['rev-parse', '--git-path', 'hooks'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return null;
+  return path.resolve(repoRoot, result.stdout.trim());
+}
+
+async function install() {
+  if (process.env.HUSKY === '0') return skip('HUSKY=0');
+  if (process.env.CI || process.env.NODE_ENV === 'production') {
+    return skip('non-contributor environment');
+  }
+  if (!fs.existsSync(path.join(repoRoot, '.git'))) return skip('no Git work tree');
+
+  const hooksPath = currentHooksPath();
+  if (hooksPath && hooksPath !== '.husky/_') {
+    return skip(`core.hooksPath is already set to ${hooksPath} by another tool`);
+  }
+  if (!hooksPath) {
+    const hooksDirectory = defaultHooksDirectory();
+    if (
+      hooksDirectory &&
+      fs.existsSync(hooksDirectory) &&
+      fs.readdirSync(hooksDirectory).some((name) => {
+        if (name.endsWith('.sample')) return false;
+        try {
+          const hook = fs.statSync(path.join(hooksDirectory, name));
+          return hook.isFile();
+        } catch {
+          return false;
+        }
+      })
+    ) {
+      return skip('an existing default Git hook is already installed');
+    }
+  }
+
+  let husky;
+  try {
+    ({ default: husky } = await import('husky'));
+  } catch {
+    return skip('husky is not installed (development dependencies omitted)');
+  }
+
+  const failure = husky();
+  if (failure) {
+    console.error(`husky: ${failure}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('husky: Git hooks installed at .husky/_');
+}
+
+await install();

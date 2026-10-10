@@ -103,13 +103,34 @@ cd frontend && npm run format  # Frontend scope only
 These npm commands operate on their complete configured scopes; they do not limit formatting to files
 changed by the current task. Generated and derived files stay outside both scopes: the derived
 print-label table, the translation catalogues, committed test fixtures and goldens, lockfiles, build
-output, coverage, and test results. To format individual files, pass only those paths directly, for
-example `npx oxfmt path/to/file.ts` from the repository root or
-`cd frontend && npx oxfmt src/path/to/file.tsx`.
+output, coverage, and test results. To format only selected files, run
+`npx oxfmt --write -- path/to/file.ts` from the repository root, or
+`cd frontend && npx oxfmt --write -- src/path/to/file.tsx` for frontend files. Pass only paths owned
+by that package and quote paths containing spaces.
 
 `npm run format:check` reports the files that still need formatting. Existing sources carry a
-formatting backlog, so that command fails until they are formatted, and it is not a required CI
-gate. Lint stays the enforced gate: `npm run lint` reports problems and never rewrites sources.
+formatting backlog, so that command fails until they are formatted, and it is not a CI gate. CI
+checks formatting for the files a change touches: `npm run format:check:changed -- --base
+origin/main` (CI supplies its own comparison base) fails when a touched file is unformatted, and it
+checks each touched file as a whole. Untouched legacy files stay out of scope. Lint stays the
+enforced gate: `npm run lint` reports problems and never rewrites sources.
+
+### Editor and pre-commit hook
+
+`npm install` can install a Husky pre-commit hook that runs lint-staged. It formats staged files in
+each package's formatting scope and lints files in that package's lint scope; root lint is limited
+to `main/` and `shared/`, so root scripts, tests and tooling are format-only. The hook stages the
+formatted result. Partially staged files keep their unstaged edits untouched. Hooks are a local
+convenience rather than a gate: `git commit --no-verify` bypasses them, and CI re-runs the same
+scopes for every pull request.
+
+Hook installation is skipped when it does not apply: `HUSKY=0`, `CI`, `NODE_ENV=production`, a source
+archive without a `.git` directory, a frontend-only install, or a checkout where another tool
+already sets `core.hooksPath` (that setting is never replaced), or a default Git hooks directory
+that already contains a non-sample regular file (existing hooks are preserved). When the Oxc hook
+is not installed, use the manual formatter and lint commands above; CI remains the enforced gate.
+Use `HUSKY=0 npm install` inside linked worktrees, which share Git configuration with the main
+checkout.
 
 > **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 
@@ -157,7 +178,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
-- **Formatting:** See [Formatting](#formatting) for full-scope commands and changed-file checks.
+- **Formatting:** Run `npm run format:check:changed -- --base origin/main` for touched files. To fix selected files, use the per-file Oxfmt commands in [Formatting](#formatting); the npm `format` commands write their full scopes.
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).

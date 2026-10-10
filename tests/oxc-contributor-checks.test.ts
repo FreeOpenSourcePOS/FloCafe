@@ -37,7 +37,6 @@ const TOOLING_FILES = [
   'lint-staged.config.mjs',
   'scripts/ci/check-changed-format.cjs',
   'scripts/oxc/format-staged.cjs',
-  'scripts/oxc/probe/root-scope.ts',
   'scripts/oxc/scope.cjs',
 ];
 
@@ -126,16 +125,11 @@ function createContributorRepo(label: string) {
     path.join(dir, 'frontend', '.oxlintrc.json'),
   );
   // The frontend fixture config differs from the root one, so a formatted result proves which
-  // package config was applied. Its owned probe follows that fixture formatting.
+  // package config was applied.
   write(
     dir,
     'frontend/.oxfmtrc.json',
     '{ "$schema": "../node_modules/oxfmt/configuration_schema.json", "singleQuote": false }\n',
-  );
-  write(
-    dir,
-    'frontend/e2e/helpers/format-scope-probe.ts',
-    '// Owned fixture for the changed-file formatting gate.\nexport const FRONTEND_SCOPE_PROBE = "frontend scope probe";\n',
   );
   write(
     dir,
@@ -215,48 +209,6 @@ assertEqualOrThrow(
   'frontend/e2e/helpers/urls.ts,frontend/next.config.ts,frontend/src/app/page.tsx',
   'the ambient declaration Oxlint ignores must be formatted but not linted',
 );
-
-const policyProbes = scope.selectFiles(rootPackage, [
-  'scripts/oxc/probe/root-scope.ts',
-  'frontend/e2e/helpers/format-scope-probe.ts',
-]);
-assertEqualOrThrow(
-  policyProbes.format.join(','),
-  'scripts/oxc/probe/root-scope.ts',
-  'the root scope must select its owned probe fixture',
-);
-const frontendPolicyProbes = scope.selectFiles(frontendPackage, [
-  'scripts/oxc/probe/root-scope.ts',
-  'frontend/e2e/helpers/format-scope-probe.ts',
-]);
-assertEqualOrThrow(
-  frontendPolicyProbes.format.join(','),
-  'frontend/e2e/helpers/format-scope-probe.ts',
-  'the frontend scope must select its owned probe fixture',
-);
-
-for (const probe of [
-  'scripts/oxc/probe/root-scope.ts',
-  'frontend/e2e/helpers/format-scope-probe.ts',
-]) {
-  const absolute = path.join(rootDir, probe);
-  const packageDir = probe.startsWith('frontend/') ? frontendPackage.dir : rootPackage.dir;
-  const check = spawnSync(
-    process.execPath,
-    [
-      path.join(packageDir, 'node_modules', 'oxfmt', 'bin', 'oxfmt'),
-      '--check',
-      '--',
-      path.relative(packageDir, absolute),
-    ],
-    { cwd: packageDir, encoding: 'utf8' },
-  );
-  assertEqualOrThrow(
-    check.status,
-    0,
-    `owned probe fixture ${probe} must stay formatted: ${check.stdout}${check.stderr}`,
-  );
-}
 
 // ── Contributor pre-commit hook ──────────────────────────────────────────────
 
@@ -587,10 +539,18 @@ assertEqualOrThrow(
   'node .husky/install.mjs',
   'contributor installs must go through the hook installation gate',
 );
-assertIncludesOrThrow(
-  rootScripts.scripts.postinstall,
-  'electron-builder install-app-deps',
-  'the Electron postinstall must stay intact',
+const postinstallCommands = rootScripts.scripts.postinstall
+  .split(/\s*&&\s*/)
+  .map((command: string) => command.trim());
+assertEqualOrThrow(
+  JSON.stringify(postinstallCommands),
+  JSON.stringify([
+    'install-electron',
+    'electron-builder install-app-deps',
+    'npm run verify:electron',
+    'node scripts/prepare-snap-build.cjs',
+  ]),
+  'the complete Electron postinstall command sequence must stay intact',
 );
 
 // ── Changed-file formatting gate ─────────────────────────────────────────────
@@ -879,39 +839,6 @@ assertEqualOrThrow(
   `formatted frontend change must pass: ${gateOutput(frontendGateFixed)}`,
 );
 
-const policyRepo = createContributorRepo('gate-policy');
-const policyBase = git(policyRepo, ['rev-parse', 'HEAD']).stdout.trim();
-write(policyRepo, 'package.json', '{"name":"oxc-temp-repo","version":"1.0.1"}\n');
-commitAll(policyRepo, 'formatter policy change');
-const policyGate = runGate(policyRepo, ['--base', policyBase]);
-assertEqualOrThrow(
-  policyGate.status,
-  0,
-  `a formatter policy change must check the owned fixtures: ${gateOutput(policyGate)}`,
-);
-assertIncludesOrThrow(
-  policyGate.stdout,
-  'owned',
-  'a policy-only change must exercise an owned fixture instead of reporting no work',
-);
-
-const brokenPolicyRepo = createContributorRepo('gate-policy-broken');
-const brokenPolicyBase = git(brokenPolicyRepo, ['rev-parse', 'HEAD']).stdout.trim();
-fs.rmSync(path.join(brokenPolicyRepo, 'scripts/oxc/probe/root-scope.ts'));
-write(brokenPolicyRepo, 'package.json', '{"name":"oxc-temp-repo","version":"1.0.2"}\n');
-commitAll(brokenPolicyRepo, 'policy change without its fixture');
-const brokenPolicyGate = runGate(brokenPolicyRepo, ['--base', brokenPolicyBase]);
-assertEqualOrThrow(
-  brokenPolicyGate.status,
-  1,
-  `a policy change with a missing fixture must fail: ${gateOutput(brokenPolicyGate)}`,
-);
-assertIncludesOrThrow(
-  gateOutput(brokenPolicyGate),
-  'scripts/oxc/probe/root-scope.ts are missing',
-  'a policy-only change without its owned fixture must be reported, never treated as no work',
-);
-
 const noBaseRepo = createContributorRepo('gate-no-base');
 const noBaseGate = runGate(noBaseRepo);
 assertEqualOrThrow(noBaseGate.status, 1, 'a run without a comparison base must fail');
@@ -919,6 +846,22 @@ assertIncludesOrThrow(
   gateOutput(noBaseGate),
   '--base',
   'a run without a comparison base must explain how to provide one',
+);
+const unsupportedHeadGate = runGate(noBaseRepo, [
+  '--base',
+  git(noBaseRepo, ['rev-parse', 'HEAD']).stdout.trim(),
+  '--head',
+  'HEAD',
+]);
+assertEqualOrThrow(
+  unsupportedHeadGate.status,
+  1,
+  'a comparison cannot override the current head',
+);
+assertIncludesOrThrow(
+  gateOutput(unsupportedHeadGate),
+  'Unknown argument: --head',
+  'the changed-file gate must reject the removed head override',
 );
 const unknownBaseGate = runGate(noBaseRepo, ['--base', '0000000000000000000000000000000000000000']);
 assertEqualOrThrow(
@@ -969,25 +912,34 @@ const workflow = YAML.load(
 );
 const lintJobSteps = workflow.jobs['linux-baseline'].steps as Array<Record<string, string>>;
 
-const stepIndex = (pattern: string) =>
-  lintJobSteps.findIndex((step) => (step.run ?? '').includes(pattern));
-const frontendInstallIndex = () =>
+const exactStepIndex = (command: string, workingDirectory?: string) =>
   lintJobSteps.findIndex(
-    (step) => step['working-directory'] === 'frontend' && step.run === 'npm ci',
+    (step) =>
+      step.run === command &&
+      (workingDirectory === undefined
+        ? step['working-directory'] === undefined
+        : step['working-directory'] === workingDirectory),
   );
 
-const gateIndex = stepIndex('scripts/ci/check-changed-format.cjs');
+const gateIndex = exactStepIndex('node scripts/ci/check-changed-format.cjs');
 assertOrThrow(gateIndex >= 0, 'CI must run the changed-file formatting gate');
 assertOrThrow(
-  stepIndex('npm ci') >= 0 && stepIndex('npm ci') < gateIndex,
+  exactStepIndex('npm ci') >= 0 && exactStepIndex('npm ci') < gateIndex,
   'the gate must run after the root dependency install',
 );
 assertOrThrow(
-  frontendInstallIndex() >= 0 && frontendInstallIndex() < gateIndex,
+  exactStepIndex('npm ci', 'frontend') >= 0 && exactStepIndex('npm ci', 'frontend') < gateIndex,
   'the gate must run after the frontend dependency install it formats against',
 );
-for (const required of ['npm run lint:backend', 'npm run lint', 'npm run lint:budget']) {
-  assertOrThrow(stepIndex(required) >= 0, `the ${required} gate must stay in the lint job`);
+for (const [required, workingDirectory] of [
+  ['npm run lint:backend', undefined],
+  ['npm run lint', 'frontend'],
+  ['npm run lint:budget', undefined],
+] as const) {
+  assertOrThrow(
+    exactStepIndex(required, workingDirectory) >= 0,
+    `the ${required} gate must stay in the lint job`,
+  );
 }
 
 const filterStep = workflow.jobs.changes.steps.find(

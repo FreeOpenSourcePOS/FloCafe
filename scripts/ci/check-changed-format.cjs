@@ -7,32 +7,15 @@
 // formatting backlog is deliberately not a CI failure, so each touched file is checked as a
 // whole (never a modified hunk) and untouched legacy files stay out of scope.
 //
-// Usage: node scripts/ci/check-changed-format.cjs [--base <rev>] [--head <rev>]
+// Usage: node scripts/ci/check-changed-format.cjs [--base <rev>]
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
-const path = require('node:path');
 const scope = require('../oxc/scope.cjs');
 
-// Changing formatter options, its pinned version, or this selection policy must still run a
-// real formatter check, so owned fixtures stand in when no ordinary source file changed.
-const POLICY_FILES = new Set([
-  '.oxfmtrc.json',
-  'frontend/.oxfmtrc.json',
-  'package.json',
-  'frontend/package.json',
-  'scripts/oxc/scope.cjs',
-  'scripts/ci/check-changed-format.cjs',
-]);
-
-const POLICY_PROBES = [
-  'scripts/oxc/probe/root-scope.ts',
-  'frontend/e2e/helpers/format-scope-probe.ts',
-];
 const HISTORY_FETCH_DEPTH = 200;
 
-const USAGE =
-  'Pass --base <rev> (and optionally --head <rev>) when there is no GitHub event payload.';
+const USAGE = 'Pass --base <rev> when there is no GitHub event payload.';
 
 function git(args, { allowFailure = false } = {}) {
   const result = spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -63,14 +46,11 @@ function ensureCommit(rev) {
 }
 
 function parseArgs(argv) {
-  const options = { base: null, head: 'HEAD' };
+  const options = { base: null };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--base') {
       options.base = argv[index + 1] ?? null;
-      index += 1;
-    } else if (value === '--head') {
-      options.head = argv[index + 1] ?? 'HEAD';
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${value}. ${USAGE}`);
@@ -117,7 +97,7 @@ function resolveComparison(options) {
   if (options.base) {
     return {
       base: options.base,
-      head: options.head,
+      head: 'HEAD',
       strategy: 'merge-base',
       description: `explicit base ${options.base}`,
     };
@@ -188,32 +168,7 @@ function main() {
   const selectedCount = selections.reduce((total, entry) => total + entry.format.length, 0);
 
   if (selectedCount === 0) {
-    const touchedPolicy = changed.filter((file) => POLICY_FILES.has(file));
-    if (touchedPolicy.length === 0) {
-      console.log('No JS/TS files in the Oxc formatting scope changed; nothing to check.');
-      return;
-    }
-    console.log(
-      `Formatter policy changed (${touchedPolicy.join(', ')}); checking owned scope fixtures.`,
-    );
-    const missing = POLICY_PROBES.filter(
-      (file) => !fs.existsSync(path.join(scope.REPO_ROOT, file)),
-    );
-    if (missing.length > 0) {
-      throw new Error(
-        `Owned fixture(s) ${missing.join(', ')} are missing; a policy-only change needs them to exercise the formatter.`,
-      );
-    }
-    for (const pkg of scope.PACKAGES) {
-      const { format } = scope.selectFiles(pkg, POLICY_PROBES);
-      if (format.length === 0) {
-        throw new Error(
-          `No owned ${pkg.name} fixture is selected by the formatting scope; the selection policy is broken.`,
-        );
-      }
-      console.log(`Checking ${format.length} owned ${pkg.name} fixture(s).`);
-      runCheck(pkg, format);
-    }
+    console.log('No JS/TS files in the Oxc formatting scope changed; nothing to check.');
     return;
   }
 

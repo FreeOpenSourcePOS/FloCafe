@@ -180,7 +180,8 @@ async function main() {
   // Customer D: a partially refunded order still counts unless every bill is fully refunded.
   insertItem(db, insertOrder(db, 'cust-d', 'completed', ['refunded', 'paid']), 'p-split', 'Split Salad', 2);
   insertItem(db, insertOrder(db, 'cust-d', 'completed', ['partially_refunded']), 'p-split', 'Split Salad', 1);
-  assertEqualOrThrow(summary(getCustomerTopItems(db, 'cust-d')), 'p-split:3/2', 'Partially refunded orders still count');
+  insertItem(db, insertOrder(db, 'cust-d', 'completed', [null as unknown as string]), 'p-split', 'Split Salad', 1);
+  assertEqualOrThrow(summary(getCustomerTopItems(db, 'cust-d')), 'p-split:4/3', 'Partially refunded or null-status orders still count');
 
   // Customer F: only non-sale history is the same as no history.
   insertItem(db, insertOrder(db, 'cust-f', 'cancelled', []), 'p-latte', 'Latte', 4, { status: 'cancelled' });

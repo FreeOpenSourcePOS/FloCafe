@@ -27,9 +27,8 @@ export type CustomerTopItemsView =
   | { kind: 'items'; items: ResolvedCustomerTopItem[] };
 
 /**
- * Pairs each history entry with the current catalog product, so a click adds it at today's price.
- * A product the backend marks unavailable, or one missing from the loaded catalog, stays listed
- * without a product to add.
+ * Pairs history entries with catalog products at current pricing.
+ * Unavailable or missing products stay listed without an addable product.
  */
 export function resolveCustomerTopItems(items: CustomerTopItem[], products: Product[]): ResolvedCustomerTopItem[] {
   const catalog = new Map(products.map((product) => [String(product.id), product]));

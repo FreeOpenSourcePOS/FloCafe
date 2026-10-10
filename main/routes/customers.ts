@@ -66,9 +66,8 @@ export interface CustomerTopItem {
 }
 
 /**
- * A customer's most bought products across completed orders, every variant and modifier counted
- * under its product. Cancelled, voided, refunded, and refund-adjustment lines never count, nor does
- * an order whose every bill was refunded in full. `available` mirrors the POS catalog filter.
+ * Customer's top bought products on completed orders (grouped by product, terminal items excluded).
+ * Excludes orders whose bills were all refunded; `available` mirrors the POS catalog filter.
  */
 export function getCustomerTopItems(
   db: ReturnType<typeof getDatabase>,
@@ -87,7 +86,7 @@ export function getCustomerTopItems(
         AND oi.quantity > 0
         AND NOT (
           EXISTS (SELECT 1 FROM bills b WHERE b.order_id = o.id)
-          AND NOT EXISTS (SELECT 1 FROM bills b WHERE b.order_id = o.id AND b.payment_status != 'refunded')
+          AND NOT EXISTS (SELECT 1 FROM bills b WHERE b.order_id = o.id AND COALESCE(b.payment_status, '') != 'refunded')
         )
     ),
     product_totals AS (

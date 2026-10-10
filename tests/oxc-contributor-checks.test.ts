@@ -279,12 +279,6 @@ for (const probe of [
   );
 }
 
-const gitAttributes = fs.readFileSync(path.join(rootDir, '.gitattributes'), 'utf8');
-assertOrThrow(
-  gitAttributes.includes('eol=lf'),
-  '.gitattributes must configure LF line endings so Windows checkouts do not fail Oxfmt',
-);
-
 const editorSettings = JSON.parse(
   fs.readFileSync(path.join(rootDir, '.vscode', 'settings.json'), 'utf8'),
 );

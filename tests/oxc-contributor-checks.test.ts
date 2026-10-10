@@ -492,20 +492,20 @@ assertIncludesOrThrow(
   'root files must be formatted with the root config',
 );
 
-// react-js is a jsPlugin in frontend/.oxlintrc.json, so only a run in the frontend package with
-// that config can report it: the hook must not fall back to native Oxlint rules alone.
+// react/purity is configured in frontend/.oxlintrc.json, so only a run in the frontend package with
+// that config can report it: the hook must not fall back to root rules alone.
 write(
   hookRepo,
-  'frontend/src/app/bridge.tsx',
-  "import React from 'react';\nexport function Widget() {\n  React.render(React.createElement('div'), document.body);\n  return null;\n}\n",
+  'frontend/src/app/purity.tsx',
+  'export function Widget() {\n  return <div>{Date.now()}</div>;\n}\n',
 );
-git(hookRepo, ['add', 'frontend/src/app/bridge.tsx']);
-const bridgeCommit = commit(hookRepo, 'frontend bridge rule');
-assertOrThrow(bridgeCommit.status !== 0, 'a frontend bridge lint error must block the commit');
+git(hookRepo, ['add', 'frontend/src/app/purity.tsx']);
+const frontendLintCommit = commit(hookRepo, 'frontend lint rule');
+assertOrThrow(frontendLintCommit.status !== 0, 'a frontend lint error must block the commit');
 assertIncludesOrThrow(
-  `${bridgeCommit.stdout}${bridgeCommit.stderr}`,
-  'no-deprecated',
-  'the hook must lint frontend files with the frontend jsPlugin bridges, not native rules only',
+  `${frontendLintCommit.stdout}${frontendLintCommit.stderr}`,
+  'react(purity)',
+  'the hook must lint frontend files with the frontend config, not root rules only',
 );
 git(hookRepo, ['reset', '-q', '--hard', 'HEAD']);
 

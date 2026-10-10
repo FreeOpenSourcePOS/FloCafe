@@ -8,9 +8,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Cloud,
+  Database,
+  KeyRound,
+  Search,
+  Sparkles,
+  UtensilsCrossed,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
-import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQuery, sortCountriesByLocalizedName, type Country } from '@/lib/countries';
+import {
+  COUNTRIES,
+  getCountryByCode,
+  getLocalizedCountryName,
+  countryMatchesQuery,
+  sortCountriesByLocalizedName,
+  type Country,
+} from '@/lib/countries';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { CurrencySelect } from '@/components/CurrencySelect';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
@@ -25,10 +44,7 @@ const SETUP_PROFILES: Array<{ value: SetupProfile; badge?: 'express' | null }> =
   { value: 'demo' },
 ];
 
-const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
-  { value: 'qsr' },
-  { value: 'finedine' },
-];
+const SERVICE_MODELS: Array<{ value: ServiceModel }> = [{ value: 'qsr' }, { value: 'finedine' }];
 
 // Typed message keys for setup profile and service model cards.
 type SetupKey = keyof AppConfig['Messages']['setup'];
@@ -108,7 +124,8 @@ export default function SetupPage() {
   const ownerEmail = form.email.trim().toLowerCase();
   const ownerEmailEntered = ownerEmail.length > 0;
   const ownerEmailInvalid = ownerEmailEntered && !isValidOwnerEmail(ownerEmail);
-  const ownerEmailWarning = ownerEmailEntered && !ownerEmailInvalid && hasSuspectEmailDomain(ownerEmail);
+  const ownerEmailWarning =
+    ownerEmailEntered && !ownerEmailInvalid && hasSuspectEmailDomain(ownerEmail);
 
   const [masterPinAvailable, setMasterPinAvailable] = useState<boolean | null>(null);
   const [masterPin, setMasterPin] = useState('');
@@ -116,7 +133,8 @@ export default function SetupPage() {
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
   const [ownerApprovalPin, setOwnerApprovalPin] = useState('');
   const [ownerApprovalPinConfirm, setOwnerApprovalPinConfirm] = useState('');
-  const ownerApprovalPinValid = /^\d{4,6}$/.test(ownerApprovalPin) && ownerApprovalPin === ownerApprovalPinConfirm;
+  const ownerApprovalPinValid =
+    /^\d{4,6}$/.test(ownerApprovalPin) && ownerApprovalPin === ownerApprovalPinConfirm;
 
   const cloudEnabled = true;
   const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
@@ -145,7 +163,8 @@ export default function SetupPage() {
       setBrowserLanguage(getBrowserLanguage());
     });
     let mountedFlag = true;
-    api.get('/auth/setup/status')
+    api
+      .get('/auth/setup/status')
       .then(({ data }) => {
         if (!mountedFlag) return;
         setMasterPinAvailable(!!data.masterPinAvailable);
@@ -171,15 +190,16 @@ export default function SetupPage() {
       window.cancelAnimationFrame(frame);
     };
     // One-time mount check — the toast uses the initial language selection.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const languageOptions: Language[] = SELECTABLE_LANGUAGES.includes(browserLanguage)
     ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
     : SELECTABLE_LANGUAGES;
-  const filteredCountries = sortCountriesByLocalizedName(COUNTRIES, resolvedCountryLocale)
-    .filter((c) => countryMatchesQuery(c, countryQuery, resolvedCountryLocale));
+  const filteredCountries = sortCountriesByLocalizedName(COUNTRIES, resolvedCountryLocale).filter(
+    (c) => countryMatchesQuery(c, countryQuery, resolvedCountryLocale),
+  );
 
   const completeSetup = () => {
     usePosSettingsStore.getState().setLanguage(language);
@@ -246,8 +266,9 @@ export default function SetupPage() {
     if (cloudEnabled && cloudServerUrl.trim()) {
       try {
         const parsed = new URL(cloudServerUrl.trim());
-        const localHttp = parsed.protocol === 'http:'
-          && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
+        const localHttp =
+          parsed.protocol === 'http:' &&
+          ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
         if (parsed.protocol !== 'https:' && !localHttp) {
           toast.error(t('cloudUrlHttpsRequired'));
           setStep(5);
@@ -324,9 +345,7 @@ export default function SetupPage() {
               <div className="space-y-6">
                 <div className="text-center">
                   <h2 className="text-xl font-semibold mb-2">{t('chooseLanguage')}</h2>
-                  <p className="text-muted-foreground text-sm">
-                    {t('chooseLanguageHint')}
-                  </p>
+                  <p className="text-muted-foreground text-sm">{t('chooseLanguageHint')}</p>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -338,13 +357,17 @@ export default function SetupPage() {
                         key={option}
                         onClick={() => setStoreLanguage(option)}
                         className={`p-4 rounded-xl border-2 text-start transition-all ${
-                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          selected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-semibold">{label}</div>
-                            <div className="text-xs text-muted-foreground mt-1">{option.toUpperCase()}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {option.toUpperCase()}
+                            </div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
                         </div>
@@ -360,7 +383,10 @@ export default function SetupPage() {
                   </div>
 
                   <div className="relative">
-                    <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <Search
+                      size={16}
+                      className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                    />
                     <Input
                       value={countryQuery}
                       onChange={(e) => setCountryQuery(e.target.value)}
@@ -388,7 +414,9 @@ export default function SetupPage() {
                           }
                         }}
                         className={`p-3 rounded-xl border-2 text-start transition-all flex items-center justify-between ${
-                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          selected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div>
@@ -404,7 +432,9 @@ export default function SetupPage() {
                     );
                   })}
                   {countryQuery.trim() && filteredCountries.length === 0 && (
-                    <p className="text-center text-gray-500 py-6 text-sm">{t('noMatches', { query: countryQuery })}</p>
+                    <p className="text-center text-gray-500 py-6 text-sm">
+                      {t('noMatches', { query: countryQuery })}
+                    </p>
                   )}
                 </div>
 
@@ -422,7 +452,9 @@ export default function SetupPage() {
                       allLabel={tSettings('currencyAll')}
                       className="h-10 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
                     />
-                    <p className="text-xs text-muted-foreground">{tSettings('currencySelectionHint')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tSettings('currencySelectionHint')}
+                    </p>
                   </div>
                 ) : null}
 
@@ -467,9 +499,7 @@ export default function SetupPage() {
                     <KeyRound className="w-5 h-5 text-primary" />
                   </div>
                   <h2 className="text-xl font-semibold mb-2">{t('setMasterPinTitle')}</h2>
-                  <p className="text-muted-foreground text-sm">
-                    {t('setMasterPinDescription')}
-                  </p>
+                  <p className="text-muted-foreground text-sm">{t('setMasterPinDescription')}</p>
                   <p className="text-muted-foreground text-xs mt-2 bg-muted rounded-lg p-3">
                     {t('masterPinRecoveryNote')}
                   </p>
@@ -486,12 +516,14 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="master-pin"
-                          type={showMasterPin ? "text" : "password"}
+                          type={showMasterPin ? 'text' : 'password'}
                           inputMode="numeric"
                           pattern="[0-9]*"
                           maxLength={4}
                           value={masterPin}
-                          onChange={(e) => setMasterPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          onChange={(e) =>
+                            setMasterPin(e.target.value.replace(/\D/g, '').slice(0, 4))
+                          }
                           placeholder="••••"
                           className="text-center text-lg tracking-[0.5em] pe-10"
                         />
@@ -510,12 +542,14 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="master-pin-confirm"
-                          type={showConfirmMasterPin ? "text" : "password"}
+                          type={showConfirmMasterPin ? 'text' : 'password'}
                           inputMode="numeric"
                           pattern="[0-9]*"
                           maxLength={4}
                           value={masterPinConfirm}
-                          onChange={(e) => setMasterPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          onChange={(e) =>
+                            setMasterPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))
+                          }
                           placeholder="••••"
                           className="text-center text-lg tracking-[0.5em] pe-10"
                         />
@@ -535,7 +569,9 @@ export default function SetupPage() {
                 <div className="space-y-3 rounded-lg border border-border px-3 py-3">
                   <div>
                     <h3 className="text-sm font-medium">{t('ownerApprovalPinLabel')}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">{t('ownerApprovalPinDescription')}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('ownerApprovalPinDescription')}
+                    </p>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -543,13 +579,15 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="owner-approval-pin"
-                          type={showApprovalPin ? "text" : "password"}
+                          type={showApprovalPin ? 'text' : 'password'}
                           inputMode="numeric"
                           pattern="[0-9]*"
                           minLength={4}
                           maxLength={6}
                           value={ownerApprovalPin}
-                          onChange={(e) => setOwnerApprovalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          onChange={(e) =>
+                            setOwnerApprovalPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                          }
                           placeholder="••••"
                           className="text-center text-lg tracking-[0.5em] pe-10"
                           required
@@ -569,13 +607,17 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="owner-approval-pin-confirm"
-                          type={showConfirmApprovalPin ? "text" : "password"}
+                          type={showConfirmApprovalPin ? 'text' : 'password'}
                           inputMode="numeric"
                           pattern="[0-9]*"
                           minLength={4}
                           maxLength={6}
                           value={ownerApprovalPinConfirm}
-                          onChange={(e) => setOwnerApprovalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          onChange={(e) =>
+                            setOwnerApprovalPinConfirm(
+                              e.target.value.replace(/\D/g, '').slice(0, 6),
+                            )
+                          }
                           placeholder="••••"
                           className="text-center text-lg tracking-[0.5em] pe-10"
                           required
@@ -592,13 +634,17 @@ export default function SetupPage() {
                     </div>
                   </div>
                   {ownerApprovalPinConfirm && ownerApprovalPin !== ownerApprovalPinConfirm && (
-                    <p className="text-xs font-medium text-red-600">{t('ownerApprovalPinMismatch')}</p>
+                    <p className="text-xs font-medium text-red-600">
+                      {t('ownerApprovalPinMismatch')}
+                    </p>
                   )}
                 </div>
 
                 <Button
                   onClick={() => setStep(3)}
-                  disabled={(masterPinAvailable === true && !masterPinValid) || !ownerApprovalPinValid}
+                  disabled={
+                    (masterPinAvailable === true && !masterPinValid) || !ownerApprovalPinValid
+                  }
                   className="w-full"
                   size="lg"
                 >
@@ -646,9 +692,7 @@ export default function SetupPage() {
                       required
                     />
                     {ownerEmailInvalid && (
-                      <p className="text-xs font-medium text-red-600">
-                        {t('errorInvalidEmail')}
-                      </p>
+                      <p className="text-xs font-medium text-red-600">{t('errorInvalidEmail')}</p>
                     )}
                     {ownerEmailWarning && (
                       <p className="text-xs font-medium text-orange-600">
@@ -662,7 +706,7 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="password"
-                          type={showPassword ? "text" : "password"}
+                          type={showPassword ? 'text' : 'password'}
                           autoComplete="new-password"
                           value={form.password}
                           onChange={(e) => setForm({ ...form, password: e.target.value })}
@@ -685,7 +729,7 @@ export default function SetupPage() {
                       <div className="relative">
                         <Input
                           id="confirmPassword"
-                          type={showConfirmPassword ? "text" : "password"}
+                          type={showConfirmPassword ? 'text' : 'password'}
                           autoComplete="new-password"
                           value={form.confirmPassword}
                           onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
@@ -710,7 +754,9 @@ export default function SetupPage() {
                     </p>
                   )}
                   {passwordsEntered && (
-                    <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
+                    <p
+                      className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}
+                    >
                       {passwordsMatch ? t('passwordsMatch') : t('passwordsMismatch')}
                     </p>
                   )}
@@ -733,7 +779,9 @@ export default function SetupPage() {
                       dir="ltr"
                       maxLength={100}
                     />
-                    <p className="text-xs text-muted-foreground">{tSettings('instagramHandleHint')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {tSettings('instagramHandleHint')}
+                    </p>
                   </div>
 
                   <label className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -746,15 +794,30 @@ export default function SetupPage() {
                     />
                     <span>
                       {t('termsIntro')}{' '}
-                      <a href="https://flopos.com/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a
+                        href="https://flopos.com/terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline"
+                      >
                         {t('terms')}
                       </a>
                       ,{' '}
-                      <a href="https://flopos.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a
+                        href="https://flopos.com/privacy"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline"
+                      >
                         {t('privacy')}
                       </a>
                       , {t('termsAnd')}{' '}
-                      <a href="https://flopos.com/disclaimer" target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                      <a
+                        href="https://flopos.com/disclaimer"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline"
+                      >
                         {t('disclaimer')}
                       </a>
                       .
@@ -765,7 +828,9 @@ export default function SetupPage() {
                     <p className="font-medium text-foreground">{t('anonymousDataTitle')}</p>
                     <p className="mt-1">{t('anonymousDataDescription')}</p>
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-primary">{t('anonymousDataDetails')}</summary>
+                      <summary className="cursor-pointer text-primary">
+                        {t('anonymousDataDetails')}
+                      </summary>
                       <p className="mt-1">{t('anonymousDataFields')}</p>
                     </details>
                   </div>
@@ -774,17 +839,36 @@ export default function SetupPage() {
                     <p className="font-medium text-foreground">{t('emailCommunicationTitle')}</p>
                     <p className="text-muted-foreground">{t('emailCommunicationDescription')}</p>
                     <label className="flex items-start gap-2">
-                      <input type="checkbox" checked={productUpdates} onChange={(e) => setProductUpdates(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
+                      <input
+                        type="checkbox"
+                        checked={productUpdates}
+                        onChange={(e) => setProductUpdates(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                      />
                       <span>{t('productUpdatesOptional')}</span>
                     </label>
                     <label className="flex items-start gap-2">
-                      <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
+                      <input
+                        type="checkbox"
+                        checked={marketing}
+                        onChange={(e) => setMarketing(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                      />
                       <span>{t('marketingOptional')}</span>
                     </label>
                   </div>
 
-
-                  <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
+                  <Button
+                    type="submit"
+                    disabled={
+                      ownerEmailInvalid ||
+                      !passwordsMatch ||
+                      !termsAccepted ||
+                      !isPasswordValid(form.password)
+                    }
+                    className="w-full"
+                    size="lg"
+                  >
                     {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                   </Button>
                 </form>
@@ -808,13 +892,20 @@ export default function SetupPage() {
                 <div className="grid gap-4">
                   {SETUP_PROFILES.map((item) => {
                     const selected = profile === item.value;
-                    const Icon = item.value === 'demo' ? Database : item.value === 'express' ? Sparkles : UtensilsCrossed;
+                    const Icon =
+                      item.value === 'demo'
+                        ? Database
+                        : item.value === 'express'
+                          ? Sparkles
+                          : UtensilsCrossed;
                     return (
                       <button
                         key={item.value}
                         onClick={() => setProfile(item.value)}
                         className={`p-4 rounded-xl border-2 text-start transition-all ${
-                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          selected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-start gap-4">
@@ -823,15 +914,21 @@ export default function SetupPage() {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold">{t(SETUP_PROFILE_KEYS[item.value].label)}</span>
+                              <span className="font-semibold">
+                                {t(SETUP_PROFILE_KEYS[item.value].label)}
+                              </span>
                               {item.badge && (
                                 <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
                                   {t('expressBadge')}
                                 </span>
                               )}
                             </div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(SETUP_PROFILE_KEYS[item.value].desc)}</div>
-                            <div className="text-xs text-muted-foreground mt-2">{t(SETUP_PROFILE_KEYS[item.value].details)}</div>
+                            <div className="text-sm text-muted-foreground mt-1">
+                              {t(SETUP_PROFILE_KEYS[item.value].desc)}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-2">
+                              {t(SETUP_PROFILE_KEYS[item.value].details)}
+                            </div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary" />}
                         </div>
@@ -871,8 +968,12 @@ export default function SetupPage() {
                     className="mt-0.5 h-4 w-4 rounded border-gray-300"
                   />
                   <span>
-                    <span className="font-medium text-foreground">{t('cloudManagedAutomaticallyTitle')}</span>
-                    <span className="block text-sm text-muted-foreground mt-1">{t('cloudManagedAutomaticallyDescription')}</span>
+                    <span className="font-medium text-foreground">
+                      {t('cloudManagedAutomaticallyTitle')}
+                    </span>
+                    <span className="block text-sm text-muted-foreground mt-1">
+                      {t('cloudManagedAutomaticallyDescription')}
+                    </span>
                   </span>
                 </label>
 
@@ -923,14 +1024,22 @@ export default function SetupPage() {
                         key={item.value}
                         onClick={() => setServiceModel(item.value)}
                         className={`p-5 rounded-xl border-2 text-start transition-all ${
-                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          selected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-lg">{t(SERVICE_MODEL_KEYS[item.value].label)}</div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(SERVICE_MODEL_KEYS[item.value].desc)}</div>
-                            <div className="text-xs text-muted-foreground mt-3">{t(SERVICE_MODEL_KEYS[item.value].details)}</div>
+                            <div className="font-semibold text-lg">
+                              {t(SERVICE_MODEL_KEYS[item.value].label)}
+                            </div>
+                            <div className="text-sm text-muted-foreground mt-1">
+                              {t(SERVICE_MODEL_KEYS[item.value].desc)}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-3">
+                              {t(SERVICE_MODEL_KEYS[item.value].details)}
+                            </div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
                         </div>
@@ -939,8 +1048,15 @@ export default function SetupPage() {
                   })}
                 </div>
 
-                <Button onClick={handleCompleteSetup} disabled={loading} className="w-full" size="lg">
-                  {loading ? t('completingSetup') : (
+                <Button
+                  onClick={handleCompleteSetup}
+                  disabled={loading}
+                  className="w-full"
+                  size="lg"
+                >
+                  {loading ? (
+                    t('completingSetup')
+                  ) : (
                     <>
                       {t('completeSetup')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                     </>

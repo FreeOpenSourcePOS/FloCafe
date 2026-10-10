@@ -6,7 +6,33 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { ArrowDownRight, ArrowRight, ArrowUpRight, Banknote, BarChart3, CalendarDays, ChefHat, ChevronDown, ClipboardList, Clock, Download, FileSpreadsheet, FileText, Hourglass, LayoutGrid, Lock, Minus, ReceiptText, RotateCcw, Tags, Timer, TrendingUp, Trophy, Wallet, type LucideIcon } from 'lucide-react';
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Banknote,
+  BarChart3,
+  CalendarDays,
+  ChefHat,
+  ChevronDown,
+  ClipboardList,
+  Clock,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Hourglass,
+  LayoutGrid,
+  Lock,
+  Minus,
+  ReceiptText,
+  RotateCcw,
+  Tags,
+  Timer,
+  TrendingUp,
+  Trophy,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
@@ -27,7 +53,6 @@ import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
 import { businessDateForInstant } from '@shared/business-date';
 import { downloadBlob } from '@/lib/download';
-
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -119,7 +144,6 @@ interface DayBucket {
   dayIndex: number;
   orderCount: number;
 }
-
 
 interface Insights {
   windowDays: number;
@@ -242,9 +266,10 @@ export default function DashboardPage() {
   const dayInputRef = useRef<HTMLInputElement>(null);
   const monthInputRef = useRef<HTMLInputElement>(null);
   const isToday = periodMode === 'day' && selectedDate === todayLocal;
-  const range = periodMode === 'month'
-    ? getMonthRange(selectedMonth)
-    : { startDate: selectedDate, endDate: selectedDate };
+  const range =
+    periodMode === 'month'
+      ? getMonthRange(selectedMonth)
+      : { startDate: selectedDate, endDate: selectedDate };
 
   /** Opens Chromium's native calendar UI while preserving keyboard fallback. */
   const openPicker = (input: HTMLInputElement | null) => {
@@ -278,63 +303,83 @@ export default function DashboardPage() {
     const dailyStatsRequest = isToday
       ? api.get('/reports/daily-stats', { signal: controller.signal })
       : Promise.resolve(null);
-    const scopedSummary = periodMode === 'month'
-      ? Promise.resolve(null)
-      : api.get('/reports/summary', { params: { date: selectedDate }, signal: controller.signal });
+    const scopedSummary =
+      periodMode === 'month'
+        ? Promise.resolve(null)
+        : api.get('/reports/summary', {
+            params: { date: selectedDate },
+            signal: controller.signal,
+          });
     const previousWeekDate = shiftDate(selectedDate, -7);
-    const comparisonRequest = periodMode === 'day' && canViewFinancials
-      ? api.get('/reports/financial-summary', {
-          params: { start_date: previousWeekDate, end_date: previousWeekDate },
-          signal: controller.signal,
-        })
-          .then((res) => ({
-            sales: Number(res.data.financialSummary?.netCollected ?? 0),
-            averageOrderValue: Number(res.data.financialSummary?.averageOrderValue ?? 0),
-          }))
-          .catch((err: unknown) => {
-            if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) throw err;
-            return null;
-          })
-      : Promise.resolve(null);
+    const comparisonRequest =
+      periodMode === 'day' && canViewFinancials
+        ? api
+            .get('/reports/financial-summary', {
+              params: { start_date: previousWeekDate, end_date: previousWeekDate },
+              signal: controller.signal,
+            })
+            .then((res) => ({
+              sales: Number(res.data.financialSummary?.netCollected ?? 0),
+              averageOrderValue: Number(res.data.financialSummary?.averageOrderValue ?? 0),
+            }))
+            .catch((err: unknown) => {
+              if (
+                err instanceof Error &&
+                (err.name === 'CanceledError' || err.name === 'AbortError')
+              )
+                throw err;
+              return null;
+            })
+        : Promise.resolve(null);
     // `dashboard.view` and `reports.financial.view` are independently configurable, so an
     // owner may grant one without the other. Skip the financial-summary call entirely in
     // that case rather than letting its 403 reject the whole Promise.all and blank the tiles
     // (running orders, tables, top products, ...) that only need `dashboard.view`.
     const financialSummaryRequest = canViewFinancials
-      ? api.get('/reports/financial-summary', { params: { start_date: range.startDate, end_date: range.endDate }, signal: controller.signal })
+      ? api.get('/reports/financial-summary', {
+          params: { start_date: range.startDate, end_date: range.endDate },
+          signal: controller.signal,
+        })
       : Promise.resolve(null);
     Promise.all([
       dailyStatsRequest,
       scopedSummary,
       financialSummaryRequest,
-      api.get('/reports/topProducts', { params: { start_date: range.startDate, end_date: range.endDate, limit: 5 }, signal: controller.signal }),
+      api.get('/reports/topProducts', {
+        params: { start_date: range.startDate, end_date: range.endDate, limit: 5 },
+        signal: controller.signal,
+      }),
       api.get('/reports/recentOrders', {
-        params: periodMode === 'month'
-          ? { start_date: range.startDate, end_date: range.endDate, limit: 6 }
-          : { date: selectedDate, limit: 6 },
+        params:
+          periodMode === 'month'
+            ? { start_date: range.startDate, end_date: range.endDate, limit: 6 }
+            : { date: selectedDate, limit: 6 },
         signal: controller.signal,
       }),
       api.get('/reports/insights', { params: { days: 30 }, signal: controller.signal }),
       comparisonRequest,
     ])
-      .then(([statsRes, summaryRes, financialRes, topRes, recentRes, insightsRes, comparisonRes]) => {
-        setStats(statsRes?.data ?? null);
-        setDaySummary(summaryRes?.data?.summary ?? null);
-        setFinancialSummary(financialRes?.data.financialSummary ?? null);
-        setTopProducts(topRes.data.topProducts || []);
-        setRecentOrders(recentRes.data.recentOrders || []);
-        setInsights(insightsRes.data);
-        setWeeklyComparison(comparisonRes);
-      })
+      .then(
+        ([statsRes, summaryRes, financialRes, topRes, recentRes, insightsRes, comparisonRes]) => {
+          setStats(statsRes?.data ?? null);
+          setDaySummary(summaryRes?.data?.summary ?? null);
+          setFinancialSummary(financialRes?.data.financialSummary ?? null);
+          setTopProducts(topRes.data.topProducts || []);
+          setRecentOrders(recentRes.data.recentOrders || []);
+          setInsights(insightsRes.data);
+          setWeeklyComparison(comparisonRes);
+        },
+      )
       .catch((err: unknown) => {
-        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) return;
+        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))
+          return;
         toast.error(tCommon('somethingWrong'));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, canViewFinancials, periodMode, selectedDate, selectedMonth]);
 
   // Day-close wizard lives in useCashClose + CashCloseModal; the page
@@ -343,9 +388,10 @@ export default function DashboardPage() {
   const { openCloseModal } = cashClose;
   const cashCloseAction = searchParams.get('action');
   const requestedCashCloseView = searchParams.get('view');
-  const cashCloseView = requestedCashCloseView === 'x-report' || requestedCashCloseView === 'z-report'
-    ? requestedCashCloseView
-    : null;
+  const cashCloseView =
+    requestedCashCloseView === 'x-report' || requestedCashCloseView === 'z-report'
+      ? requestedCashCloseView
+      : null;
   useEffect(() => {
     if (cashCloseAction !== 'cash-close') return;
     openCloseModal(cashCloseView);
@@ -387,20 +433,27 @@ export default function DashboardPage() {
   const getComparisonBadge = (current: number, previous: number) => {
     const difference = current - previous;
     const direction = difference === 0 ? 'flat' : difference > 0 ? 'up' : 'down';
-    const percent = previous === 0 ? null : Math.round((Math.abs(difference) / Math.abs(previous)) * 100);
+    const percent =
+      previous === 0 ? null : Math.round((Math.abs(difference) / Math.abs(previous)) * 100);
     const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus;
-    const label = difference === 0
-      ? t('kpiNoChangeVsSameDayLastWeek')
-      : previous === 0
-        ? t('kpiNewVsSameDayLastWeek')
-        : t('kpiChangeVsSameDayLastWeek', { percent: `${direction === 'down' ? '-' : direction === 'up' ? '+' : ''}${percent}` });
-    const tone = direction === 'up'
-      ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
-      : direction === 'down'
-        ? 'bg-red-100/80 text-red-700 dark:bg-red-950/50 dark:text-red-300'
-        : 'bg-muted text-muted-foreground';
+    const label =
+      difference === 0
+        ? t('kpiNoChangeVsSameDayLastWeek')
+        : previous === 0
+          ? t('kpiNewVsSameDayLastWeek')
+          : t('kpiChangeVsSameDayLastWeek', {
+              percent: `${direction === 'down' ? '-' : direction === 'up' ? '+' : ''}${percent}`,
+            });
+    const tone =
+      direction === 'up'
+        ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+        : direction === 'down'
+          ? 'bg-red-100/80 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+          : 'bg-muted text-muted-foreground';
     return (
-      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${tone}`}>
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${tone}`}
+      >
         <Icon size={13} />
         {label}
       </span>
@@ -411,146 +464,167 @@ export default function DashboardPage() {
     ? getComparisonBadge(financialSummary?.netCollected ?? 0, weeklyComparison.sales)
     : null;
   const aovComparison = weeklyComparison
-    ? getComparisonBadge(financialSummary?.averageOrderValue ?? 0, weeklyComparison.averageOrderValue)
+    ? getComparisonBadge(
+        financialSummary?.averageOrderValue ?? 0,
+        weeklyComparison.averageOrderValue,
+      )
     : null;
-  const primaryTiles: DashboardTile[] = periodMode === 'month'
-    ? [
-        {
-          label: t('netCollections'),
-          value: fmtFinancial(financialSummary?.netCollected ?? 0),
-          icon: Banknote,
-          color: 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
-          iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
-          href: '/orders',
-        },
-        {
-          label: t('grossCollections'),
-          value: fmtFinancial(financialSummary?.grossCollected ?? 0),
-          icon: TrendingUp,
-          color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
-          iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
-          href: '/orders',
-        },
-        {
-          label: t('billsCollected'),
-          value: numFinancial(financialSummary?.billCount ?? 0),
-          icon: ReceiptText,
-          color: 'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
-          iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
-          href: '/orders',
-        },
-        {
-          label: t('refunds'),
-          value: fmtFinancial(financialSummary?.refunded ?? 0),
-          icon: RotateCcw,
-          color: 'border-red-200 bg-red-50/80 dark:border-red-800/50 dark:bg-red-950/30',
-          iconBg: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
-          href: '/orders',
-        },
-      ]
-    : isToday
+  const primaryTiles: DashboardTile[] =
+    periodMode === 'month'
       ? [
           {
-            label: t('todaySales'),
+            label: t('netCollections'),
             value: fmtFinancial(financialSummary?.netCollected ?? 0),
-            comparison: salesComparison,
             icon: Banknote,
-            color: 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
+            color:
+              'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
             iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
             href: '/orders',
           },
           {
-            label: t('runningOrders'),
-            value: stats?.runningOrders ?? 0,
-            meta: t('liveNow'),
-            icon: ChefHat,
+            label: t('grossCollections'),
+            value: fmtFinancial(financialSummary?.grossCollected ?? 0),
+            icon: TrendingUp,
             color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
             iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
             href: '/orders',
-          },
-          {
-            label: t('pendingOrders'),
-            value: stats?.pendingOrders ?? 0,
-            meta: t('liveNow'),
-            icon: Clock,
-            color: 'border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/30',
-            iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
-            href: '/orders',
-          },
-          {
-            label: t('tablesOccupied'),
-            value: stats?.tablesOccupied ?? 0,
-            meta: t('liveNow'),
-            icon: LayoutGrid,
-            color: 'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
-            iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
-            href: '/tables',
-          },
-        ]
-      : [
-          {
-            label: t('sales'),
-            value: fmtFinancial(financialSummary?.netCollected ?? 0),
-            comparison: salesComparison,
-            icon: Banknote,
-            color: 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
-            iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
-            href: '/orders',
-          },
-          {
-            label: t('orders'),
-            value: daySummary?.orders.count ?? 0,
-            icon: ClipboardList,
-            color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
-            iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
-            href: '/orders',
-          },
-          {
-            label: t('newCustomers'),
-            value: daySummary?.customers.new ?? 0,
-            icon: Trophy,
-            color: 'border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/30',
-            iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
-            href: '/customers',
           },
           {
             label: t('billsCollected'),
             value: numFinancial(financialSummary?.billCount ?? 0),
             icon: ReceiptText,
-            color: 'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
+            color:
+              'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
             iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
             href: '/orders',
           },
-        ];
+          {
+            label: t('refunds'),
+            value: fmtFinancial(financialSummary?.refunded ?? 0),
+            icon: RotateCcw,
+            color: 'border-red-200 bg-red-50/80 dark:border-red-800/50 dark:bg-red-950/30',
+            iconBg: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+            href: '/orders',
+          },
+        ]
+      : isToday
+        ? [
+            {
+              label: t('todaySales'),
+              value: fmtFinancial(financialSummary?.netCollected ?? 0),
+              comparison: salesComparison,
+              icon: Banknote,
+              color:
+                'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
+              iconBg:
+                'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+              href: '/orders',
+            },
+            {
+              label: t('runningOrders'),
+              value: stats?.runningOrders ?? 0,
+              meta: t('liveNow'),
+              icon: ChefHat,
+              color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
+              iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+              href: '/orders',
+            },
+            {
+              label: t('pendingOrders'),
+              value: stats?.pendingOrders ?? 0,
+              meta: t('liveNow'),
+              icon: Clock,
+              color:
+                'border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/30',
+              iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+              href: '/orders',
+            },
+            {
+              label: t('tablesOccupied'),
+              value: stats?.tablesOccupied ?? 0,
+              meta: t('liveNow'),
+              icon: LayoutGrid,
+              color:
+                'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
+              iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
+              href: '/tables',
+            },
+          ]
+        : [
+            {
+              label: t('sales'),
+              value: fmtFinancial(financialSummary?.netCollected ?? 0),
+              comparison: salesComparison,
+              icon: Banknote,
+              color:
+                'border-emerald-200 bg-emerald-50/80 dark:border-emerald-800/50 dark:bg-emerald-950/30',
+              iconBg:
+                'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+              href: '/orders',
+            },
+            {
+              label: t('orders'),
+              value: daySummary?.orders.count ?? 0,
+              icon: ClipboardList,
+              color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
+              iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+              href: '/orders',
+            },
+            {
+              label: t('newCustomers'),
+              value: daySummary?.customers.new ?? 0,
+              icon: Trophy,
+              color:
+                'border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/30',
+              iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+              href: '/customers',
+            },
+            {
+              label: t('billsCollected'),
+              value: numFinancial(financialSummary?.billCount ?? 0),
+              icon: ReceiptText,
+              color:
+                'border-violet-200 bg-violet-50/80 dark:border-violet-800/50 dark:bg-violet-950/30',
+              iconBg: 'bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300',
+              href: '/orders',
+            },
+          ];
 
-  const secondaryMetrics: DashboardMetric[] = periodMode === 'day' && isToday
-    ? [
-        {
-          label: t('avgTableTurn'),
-          value: stats?.avgTableTurnMinutes != null
-            ? (() => {
-                const { h, m } = splitHoursMinutes(stats.avgTableTurnMinutes);
-                return h > 0 ? tCommon('timeHoursMinutes', { h, m }) : tCommon('timeMinutes', { m });
-              })()
-            : '—',
-          icon: Hourglass,
-          iconBg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300',
-        },
-        {
-          label: t('aov'),
-          value: fmtFinancial(financialSummary?.averageOrderValue ?? 0),
-          comparison: aovComparison,
-          icon: TrendingUp,
-          iconBg: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
-        },
-        {
-          label: t('avgPrepTime'),
-          value: insights?.avgPrepTimeMinutes != null ? t('minutesValue', { minutes: insights.avgPrepTimeMinutes }) : '—',
-          icon: Timer,
-          iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
-        },
-      ]
-    : [];
+  const secondaryMetrics: DashboardMetric[] =
+    periodMode === 'day' && isToday
+      ? [
+          {
+            label: t('avgTableTurn'),
+            value:
+              stats?.avgTableTurnMinutes != null
+                ? (() => {
+                    const { h, m } = splitHoursMinutes(stats.avgTableTurnMinutes);
+                    return h > 0
+                      ? tCommon('timeHoursMinutes', { h, m })
+                      : tCommon('timeMinutes', { m });
+                  })()
+                : '—',
+            icon: Hourglass,
+            iconBg: 'bg-sky-100 text-sky-700 dark:bg-sky-900/50 dark:text-sky-300',
+          },
+          {
+            label: t('aov'),
+            value: fmtFinancial(financialSummary?.averageOrderValue ?? 0),
+            comparison: aovComparison,
+            icon: TrendingUp,
+            iconBg: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+          },
+          {
+            label: t('avgPrepTime'),
+            value:
+              insights?.avgPrepTimeMinutes != null
+                ? t('minutesValue', { minutes: insights.avgPrepTimeMinutes })
+                : '—',
+            icon: Timer,
+            iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+          },
+        ]
+      : [];
 
   return (
     <div className="min-h-full bg-background p-4 sm:p-6 lg:p-7">
@@ -607,7 +681,11 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="flex h-10 rounded-xl border border-border bg-card p-1 shadow-sm" role="group" aria-label={t('periodView')}>
+          <div
+            className="flex h-10 rounded-xl border border-border bg-card p-1 shadow-sm"
+            role="group"
+            aria-label={t('periodView')}
+          >
             {(['day', 'month'] as const).map((mode) => (
               <button
                 key={mode}
@@ -664,10 +742,18 @@ export default function DashboardPage() {
       <CashCloseModal model={cashClose} />
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" role="status" aria-live="polite">
+        <div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          role="status"
+          aria-live="polite"
+        >
           <span className="sr-only">{tCommon('loading')}</span>
           {[0, 1, 2, 3].map((item) => (
-            <div key={item} aria-hidden="true" className="h-36 animate-pulse rounded-2xl border border-border bg-card/70" />
+            <div
+              key={item}
+              aria-hidden="true"
+              className="h-36 animate-pulse rounded-2xl border border-border bg-card/70"
+            />
           ))}
         </div>
       ) : (
@@ -681,7 +767,9 @@ export default function DashboardPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="text-sm font-medium text-muted-foreground">{tile.label}</span>
-                  <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${tile.iconBg}`}>
+                  <span
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${tile.iconBg}`}
+                  >
                     <tile.icon size={19} />
                   </span>
                 </div>
@@ -689,7 +777,10 @@ export default function DashboardPage() {
                   {tile.value}
                 </p>
                 <div className="mt-3 min-h-6">
-                  {tile.comparison || (tile.meta && <span className="text-xs font-medium text-muted-foreground">{tile.meta}</span>)}
+                  {tile.comparison ||
+                    (tile.meta && (
+                      <span className="text-xs font-medium text-muted-foreground">{tile.meta}</span>
+                    ))}
                 </div>
               </Link>
             ))}
@@ -698,8 +789,13 @@ export default function DashboardPage() {
           {secondaryMetrics.length > 0 && (
             <div className="mt-5 grid grid-cols-1 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:grid-cols-3">
               {secondaryMetrics.map((metric, index) => (
-                <div key={metric.label} className={`flex items-center gap-3 p-4 sm:p-5 ${index > 0 ? 'border-t border-border sm:border-s-0 sm:border-t-0 sm:border-s' : ''}`}>
-                  <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${metric.iconBg}`}>
+                <div
+                  key={metric.label}
+                  className={`flex items-center gap-3 p-4 sm:p-5 ${index > 0 ? 'border-t border-border sm:border-s-0 sm:border-t-0 sm:border-s' : ''}`}
+                >
+                  <span
+                    className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${metric.iconBg}`}
+                  >
                     <metric.icon size={18} />
                   </span>
                   <div className="min-w-0">
@@ -723,10 +819,17 @@ export default function DashboardPage() {
                     <ClipboardList size={16} />
                   </span>
                   <h2 className="font-semibold text-foreground">
-                    {isToday ? t('recentOrders') : periodMode === 'month' ? t('monthOrders') : t('orders')}
+                    {isToday
+                      ? t('recentOrders')
+                      : periodMode === 'month'
+                        ? t('monthOrders')
+                        : t('orders')}
                   </h2>
                 </div>
-                <Link href="/orders" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
+                <Link
+                  href="/orders"
+                  className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium"
+                >
                   {t('viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
@@ -747,9 +850,18 @@ export default function DashboardPage() {
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">#<Ltr>{order.order_number}</Ltr></span>
-                          <span className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-muted-foreground'}`}>
-                            {(() => { const k = (ORDER_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>)[order.status]; return k ? tOrders(k) : order.status; })()}
+                          <span className="text-sm font-medium text-foreground">
+                            #<Ltr>{order.order_number}</Ltr>
+                          </span>
+                          <span
+                            className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-muted-foreground'}`}
+                          >
+                            {(() => {
+                              const k = (
+                                ORDER_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>
+                              )[order.status];
+                              return k ? tOrders(k) : order.status;
+                            })()}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
@@ -773,10 +885,17 @@ export default function DashboardPage() {
                     <TrendingUp size={16} />
                   </span>
                   <h2 className="font-semibold text-foreground">
-                    {periodMode === 'month' ? t('topProductsMonth') : isToday ? t('topProductsToday') : t('topProducts')}
+                    {periodMode === 'month'
+                      ? t('topProductsMonth')
+                      : isToday
+                        ? t('topProductsToday')
+                        : t('topProducts')}
                   </h2>
                 </div>
-                <Link href="/products" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
+                <Link
+                  href="/products"
+                  className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium"
+                >
                   {t('viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
@@ -790,10 +909,20 @@ export default function DashboardPage() {
               ) : (
                 <div className="divide-y divide-border">
                   {topProducts.map((product) => (
-                    <div key={product.product_id} className="flex items-center justify-between px-5 py-3">
+                    <div
+                      key={product.product_id}
+                      className="flex items-center justify-between px-5 py-3"
+                    >
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-foreground">{product.product_name}</span>
-                        <p className="text-xs text-muted-foreground">{t('productSoldOrders', { quantity: product.total_quantity, orders: product.order_count })}</p>
+                        <span className="text-sm font-medium text-foreground">
+                          {product.product_name}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          {t('productSoldOrders', {
+                            quantity: product.total_quantity,
+                            orders: product.order_count,
+                          })}
+                        </p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(product.total_revenue))}
@@ -815,7 +944,10 @@ export default function DashboardPage() {
                   </span>
                   <h2 className="font-semibold text-foreground">{t('topStaff')}</h2>
                 </div>
-                <Link href="/staff" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
+                <Link
+                  href="/staff"
+                  className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium"
+                >
                   {t('viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
@@ -829,10 +961,15 @@ export default function DashboardPage() {
               ) : (
                 <div className="divide-y divide-border">
                   {insights!.topStaff.map((staff) => (
-                    <div key={staff.user_id} className="flex items-center justify-between px-5 py-3">
+                    <div
+                      key={staff.user_id}
+                      className="flex items-center justify-between px-5 py-3"
+                    >
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-foreground">{staff.name}</span>
-                        <p className="text-xs text-muted-foreground">{t('staffOrderCount', { orders: staff.orderCount })}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t('staffOrderCount', { orders: staff.orderCount })}
+                        </p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(staff.revenue))}
@@ -852,7 +989,10 @@ export default function DashboardPage() {
                   </span>
                   <h2 className="font-semibold text-foreground">{t('topCategories')}</h2>
                 </div>
-                <Link href="/products" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
+                <Link
+                  href="/products"
+                  className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium"
+                >
                   {t('viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
@@ -866,10 +1006,15 @@ export default function DashboardPage() {
               ) : (
                 <div className="divide-y divide-border">
                   {insights!.topCategories.map((category) => (
-                    <div key={category.category_id ?? category.name} className="flex items-center justify-between px-5 py-3">
+                    <div
+                      key={category.category_id ?? category.name}
+                      className="flex items-center justify-between px-5 py-3"
+                    >
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-foreground">{category.name}</span>
-                        <p className="text-xs text-muted-foreground">{t('categoryQuantitySold', { quantity: category.quantity })}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t('categoryQuantitySold', { quantity: category.quantity })}
+                        </p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(category.revenue))}
@@ -893,18 +1038,28 @@ export default function DashboardPage() {
                   </h2>
                   <p className="text-xs text-muted-foreground mt-0.5">{t('refundActivityHint')}</p>
                 </div>
-                <span className="text-sm font-semibold text-red-600">{fmt(financialSummary?.refunded ?? 0)}</span>
+                <span className="text-sm font-semibold text-red-600">
+                  {fmt(financialSummary?.refunded ?? 0)}
+                </span>
               </div>
               {(financialSummary?.refunds.length ?? 0) === 0 ? (
-                <p className="px-6 py-10 text-center text-sm text-muted-foreground">{t('noRefunds')}</p>
+                <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+                  {t('noRefunds')}
+                </p>
               ) : (
                 <div className="divide-y divide-border">
                   {financialSummary!.refunds.map((refund) => (
-                    <div key={refund.id} className="grid grid-cols-1 gap-2 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div
+                      key={refund.id}
+                      className="grid grid-cols-1 gap-2 px-5 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                    >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                           <span className="text-sm font-semibold text-foreground">
-                            {t('refundReference', { bill: refund.bill_number, order: refund.order_number })}
+                            {t('refundReference', {
+                              bill: refund.bill_number,
+                              order: refund.order_number,
+                            })}
                           </span>
                           <span className="text-xs text-muted-foreground">{refund.method}</span>
                         </div>
@@ -915,9 +1070,15 @@ export default function DashboardPage() {
                           {' · '}
                           {t('collectedAt', { date: formatDateTime(refund.paid_at) })}
                         </p>
-                        {refund.reason && <p className="mt-1 text-xs text-muted-foreground truncate">{refund.reason}</p>}
+                        {refund.reason && (
+                          <p className="mt-1 text-xs text-muted-foreground truncate">
+                            {refund.reason}
+                          </p>
+                        )}
                       </div>
-                      <span className="text-base font-bold text-red-600 sm:text-end">{fmt(-Number(refund.amount))}</span>
+                      <span className="text-base font-bold text-red-600 sm:text-end">
+                        {fmt(-Number(refund.amount))}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -947,22 +1108,40 @@ export default function DashboardPage() {
                     {paymentMethods.map((pm) => {
                       const meta = PAYMENT_METHODS.find((m) => m.key === pm.method);
                       const Icon = meta?.icon ?? Wallet;
-                      const label = meta ? tPos(BUILT_IN_PAYMENT_KEYS[meta.key]) : pm.method === 'wallet' ? tPos('methodWallet') : String(pm.method || tCommon('unknown'));
-                      const percent = paymentMethodsTotal > 0
-                        ? Math.max(0, Math.min(100, Math.round((Number(pm.total) / paymentMethodsTotal) * 100)))
-                        : 0;
+                      const label = meta
+                        ? tPos(BUILT_IN_PAYMENT_KEYS[meta.key])
+                        : pm.method === 'wallet'
+                          ? tPos('methodWallet')
+                          : String(pm.method || tCommon('unknown'));
+                      const percent =
+                        paymentMethodsTotal > 0
+                          ? Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                Math.round((Number(pm.total) / paymentMethodsTotal) * 100),
+                              ),
+                            )
+                          : 0;
                       return (
                         <div key={pm.method ?? 'unknown'}>
                           <div className="mb-1.5 flex items-center justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-2">
                               <Icon size={14} className="text-muted-foreground" />
-                              <span className="truncate text-sm font-medium text-foreground">{label}</span>
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {label}
+                              </span>
                             </div>
-                            <span className="shrink-0 text-sm font-semibold text-foreground">{fmt(Number(pm.total))}</span>
+                            <span className="shrink-0 text-sm font-semibold text-foreground">
+                              {fmt(Number(pm.total))}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                              <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${percent}%` }} />
+                              <div
+                                className="h-full rounded-full bg-brand transition-all"
+                                style={{ width: `${percent}%` }}
+                              />
                             </div>
                             <span className="shrink-0 text-xs text-muted-foreground">
                               {t('paymentMethodCount', { count: pm.count, percent })}
@@ -985,7 +1164,9 @@ export default function DashboardPage() {
                   </span>
                   <div>
                     <h2 className="font-semibold text-foreground">{t('businessPatterns')}</h2>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{t('businessPatternsHint', { days: insights?.windowDays ?? 30 })}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {t('businessPatternsHint', { days: insights?.windowDays ?? 30 })}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -993,30 +1174,54 @@ export default function DashboardPage() {
                 <div className="bg-card p-4">
                   <p className="text-xs text-muted-foreground">{t('busiestHour')}</p>
                   <p className="mt-2 text-lg font-bold text-foreground">
-                    {insights?.busiestHour ? formatHourLabel(insights.busiestHour.hour, locale) : t('notEnoughData')}
+                    {insights?.busiestHour
+                      ? formatHourLabel(insights.busiestHour.hour, locale)
+                      : t('notEnoughData')}
                   </p>
-                  {insights?.busiestHour && <p className="mt-1 text-xs text-muted-foreground">{t('ordersCount', { count: insights.busiestHour.orderCount })}</p>}
+                  {insights?.busiestHour && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('ordersCount', { count: insights.busiestHour.orderCount })}
+                    </p>
+                  )}
                 </div>
                 <div className="bg-card p-4">
                   <p className="text-xs text-muted-foreground">{t('idlestHour')}</p>
                   <p className="mt-2 text-lg font-bold text-foreground">
-                    {insights?.idlestHour ? formatHourLabel(insights.idlestHour.hour, locale) : t('notEnoughData')}
+                    {insights?.idlestHour
+                      ? formatHourLabel(insights.idlestHour.hour, locale)
+                      : t('notEnoughData')}
                   </p>
-                  {insights?.idlestHour && <p className="mt-1 text-xs text-muted-foreground">{t('ordersCount', { count: insights.idlestHour.orderCount })}</p>}
+                  {insights?.idlestHour && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('ordersCount', { count: insights.idlestHour.orderCount })}
+                    </p>
+                  )}
                 </div>
                 <div className="bg-card p-4">
                   <p className="text-xs text-muted-foreground">{t('busiestDay')}</p>
                   <p className="mt-2 text-lg font-bold text-foreground">
-                    {insights?.busiestDayOfWeek ? formatWeekdayLabel(insights.busiestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
+                    {insights?.busiestDayOfWeek
+                      ? formatWeekdayLabel(insights.busiestDayOfWeek.dayIndex, locale)
+                      : t('notEnoughData')}
                   </p>
-                  {insights?.busiestDayOfWeek && <p className="mt-1 text-xs text-muted-foreground">{t('ordersCount', { count: insights.busiestDayOfWeek.orderCount })}</p>}
+                  {insights?.busiestDayOfWeek && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('ordersCount', { count: insights.busiestDayOfWeek.orderCount })}
+                    </p>
+                  )}
                 </div>
                 <div className="bg-card p-4">
                   <p className="text-xs text-muted-foreground">{t('idlestDay')}</p>
                   <p className="mt-2 text-lg font-bold text-foreground">
-                    {insights?.idlestDayOfWeek ? formatWeekdayLabel(insights.idlestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
+                    {insights?.idlestDayOfWeek
+                      ? formatWeekdayLabel(insights.idlestDayOfWeek.dayIndex, locale)
+                      : t('notEnoughData')}
                   </p>
-                  {insights?.idlestDayOfWeek && <p className="mt-1 text-xs text-muted-foreground">{t('ordersCount', { count: insights.idlestDayOfWeek.orderCount })}</p>}
+                  {insights?.idlestDayOfWeek && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t('ordersCount', { count: insights.idlestDayOfWeek.orderCount })}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

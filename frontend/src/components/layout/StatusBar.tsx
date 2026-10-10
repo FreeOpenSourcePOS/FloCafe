@@ -43,7 +43,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function formatUptime(seconds: number): string {
@@ -59,10 +59,13 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const isPending = !status && !error;
 
   const serverStatusDisplay = status?.server
-    ? (status.server === 'running' ? tNav('serverStatusRunning')
-       : status.server === 'stopped' ? tNav('serverStatusStopped')
-       : status.server === 'starting' ? tNav('serverStatusStarting')
-       : status.server)
+    ? status.server === 'running'
+      ? tNav('serverStatusRunning')
+      : status.server === 'stopped'
+        ? tNav('serverStatusStopped')
+        : status.server === 'starting'
+          ? tNav('serverStatusStarting')
+          : status.server
     : tNav('serverUnknown');
 
   return (
@@ -80,23 +83,22 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
               : 'bg-red-50 text-red-700 ring-red-200/80 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800'
         }`}
       >
-        {isRunning ? (
-          <CheckCircle size={13} />
-        ) : (
-          <AlertCircle size={13} />
-        )}
-        <span>{tNav('serverLabel')}{serverStatusDisplay}</span>
+        {isRunning ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
+        <span>
+          {tNav('serverLabel')}
+          {serverStatusDisplay}
+        </span>
       </div>
 
-      {error && (
-        <span className="hidden text-red-600 sm:inline">{error}</span>
-      )}
+      {error && <span className="hidden text-red-600 sm:inline">{error}</span>}
 
       <div className="ms-auto flex h-full items-center divide-x divide-border/70">
         <div className="flex items-center gap-1.5 px-3" title={tNav('portLabel')}>
           <Server size={13} className="text-muted-foreground/70" />
           <span className="hidden text-muted-foreground lg:inline">{tNav('portLabel')}</span>
-          <span className="font-medium tabular-nums text-foreground/70">{status?.port || '...'}</span>
+          <span className="font-medium tabular-nums text-foreground/70">
+            {status?.port || '...'}
+          </span>
         </div>
 
         <div className="hidden items-center gap-1.5 px-3 md:flex" title={tNav('heapLabel').trim()}>
@@ -107,7 +109,10 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
           </span>
         </div>
 
-        <div className="hidden items-center gap-1.5 px-3 sm:flex" title={tNav('uptimeLabel').trim()}>
+        <div
+          className="hidden items-center gap-1.5 px-3 sm:flex"
+          title={tNav('uptimeLabel').trim()}
+        >
           <Clock size={13} className="text-muted-foreground/70" />
           <span className="hidden text-muted-foreground xl:inline">{tNav('uptimeLabel')}</span>
           <span className="font-medium tabular-nums text-foreground/70">

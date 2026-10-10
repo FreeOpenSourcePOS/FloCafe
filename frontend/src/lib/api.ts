@@ -7,7 +7,7 @@ const api = axios.create({
   baseURL: typeof window !== 'undefined' ? `${window.location.origin}/api` : '/api',
   headers: {
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
+    Accept: 'application/json',
   },
 });
 
@@ -35,14 +35,18 @@ api.interceptors.response.use(
       if (!window.location.pathname.includes('/auth/login') && !authRedirectInProgress) {
         authRedirectInProgress = true;
         localStorage.removeItem('tenant');
-        window.location.href = '/auth/login';
+        window.location.assign('/auth/login');
       }
     }
-    if (error.response?.status === 403 && error.response?.data?.code === 'permission_denied' && typeof window !== 'undefined') {
+    if (
+      error.response?.status === 403 &&
+      error.response?.data?.code === 'permission_denied' &&
+      typeof window !== 'undefined'
+    ) {
       window.dispatchEvent(new Event('flo:authorization-denied'));
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

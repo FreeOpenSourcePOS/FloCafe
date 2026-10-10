@@ -17,7 +17,8 @@ export default function MenuActionHandler() {
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
   async function runBackup(pin: string) {
-    if (!window.electronAPI?.backupDatabase) return { success: false, error: tCommon('notAvailable') };
+    if (!window.electronAPI?.backupDatabase)
+      return { success: false, error: tCommon('notAvailable') };
 
     toast.loading(tBackup('creating'), { id: 'backup' });
     try {
@@ -158,15 +159,21 @@ export default function MenuActionHandler() {
       }
     });
 
-    return () => { unsubscribe?.(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      unsubscribe?.();
+    };
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   return (
     <MasterPinPrompt
       open={pendingPinAction !== null}
       mode="verify"
-      title={pendingPinAction === 'backup' ? tSettings('confirmBackupTitle') : tSettings('confirmRestoreTitle')}
+      title={
+        pendingPinAction === 'backup'
+          ? tSettings('confirmBackupTitle')
+          : tSettings('confirmRestoreTitle')
+      }
       description={tSettings('enterMasterPinPrompt')}
       onCancel={() => setPendingPinAction(null)}
       onSubmit={handlePinSubmit}

@@ -24,7 +24,6 @@
 .DS_Store
 Thumbs.db
 *.pem
-.eslintcache
 .vscode/
 .idea/
 *.swp

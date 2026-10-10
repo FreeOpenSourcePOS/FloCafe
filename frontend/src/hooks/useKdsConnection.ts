@@ -11,7 +11,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 const KDS_RECONNECT_BASE_MS = 1000;
 const KDS_RECONNECT_MAX_MS = 30000;
 function kdsReconnectDelay(attempt: number): number {
-  return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * (2 ** attempt));
+  return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * 2 ** attempt);
 }
 
 // 'voided' is a locked terminal status excluded from sequential status progressions.
@@ -66,11 +66,16 @@ export const STATUS_CONFIG = {
   },
 } as const satisfies Record<KitchenStatus, StatusConfigEntry>;
 
-export const STATUS_ORDER: Exclude<KitchenStatus, 'voided'>[] = ['pending', 'preparing', 'ready', 'served'];
+export const STATUS_ORDER: Exclude<KitchenStatus, 'voided'>[] = [
+  'pending',
+  'preparing',
+  'ready',
+  'served',
+];
 
 export function normalizeKitchenStatus(status: unknown): KitchenStatus {
   return typeof status === 'string' && status in STATUS_CONFIG
-    ? status as KitchenStatus
+    ? (status as KitchenStatus)
     : 'pending';
 }
 
@@ -98,7 +103,10 @@ export interface KdsOrderItem {
   addons?: KdsOrderItemAddon[] | null;
   special_instructions?: string | null;
   /** Variant the kitchen actually received, JSON text or object per the API. */
-  variant_selection?: { id: string; name: string; price: number; sku?: string | null } | string | null;
+  variant_selection?:
+    | { id: string; name: string; price: number; sku?: string | null }
+    | string
+    | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -171,7 +179,11 @@ export interface UseKdsConnectionResult {
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
   handleLogout: () => Promise<void>;
-  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<boolean>;
+  updateItemStatus: (
+    itemId: number,
+    status: KitchenStatus,
+    opts?: { silent?: boolean; expectedStatus?: KitchenStatus },
+  ) => Promise<boolean>;
   ConfirmDialog: ReactNode;
 }
 
@@ -182,15 +194,23 @@ const ITEM_STATUS_ENDPOINT = '/order-items/:itemId/status';
 const KDS_AUTH_BLOCKED_KEY = 'flocafe:kds-auth-blocked';
 
 function isKdsAuthBlocked(): boolean {
-  try { return window.sessionStorage.getItem(KDS_AUTH_BLOCKED_KEY) === '1'; } catch { return false; }
+  try {
+    return window.sessionStorage.getItem(KDS_AUTH_BLOCKED_KEY) === '1';
+  } catch {
+    return false;
+  }
 }
 
 function clearKdsAuthBlocked(): void {
-  try { window.sessionStorage.removeItem(KDS_AUTH_BLOCKED_KEY); } catch { }
+  try {
+    window.sessionStorage.removeItem(KDS_AUTH_BLOCKED_KEY);
+  } catch {}
 }
 
 function markKdsAuthBlocked(): void {
-  try { window.sessionStorage.setItem(KDS_AUTH_BLOCKED_KEY, '1'); } catch { }
+  try {
+    window.sessionStorage.setItem(KDS_AUTH_BLOCKED_KEY, '1');
+  } catch {}
 }
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
@@ -231,7 +251,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const kdsDisabledRef = useRef(false);
   const updatingIdsRef = useRef(new Set<number>());
   // Mutable ref allowing reconnect timer to invoke latest tryWebSocket recursively.
-  const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(() => {});
+  const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(
+    () => {},
+  );
 
   const stopRestPolling = useCallback(() => {
     if (restIntervalRef.current) {
@@ -245,27 +267,30 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     restRequestSequenceRef.current += 1;
   }, []);
 
-  const disableKdsConnection = useCallback((message: string) => {
-    kdsDisabledRef.current = true;
-    sessionGenerationRef.current += 1;
-    stopRestPolling();
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    const activeWs = wsRef.current;
-    wsRef.current = null;
-    if (activeWs) activeWs.close();
-    updatingIdsRef.current.clear();
-    setUpdating(null);
-    setUser(null);
-    setOrders([]);
-    setCounts({});
-    setConnected(false);
-    setConnectionMode(null);
-    setLoading(false);
-    setLoginError(message);
-  }, [stopRestPolling]);
+  const disableKdsConnection = useCallback(
+    (message: string) => {
+      kdsDisabledRef.current = true;
+      sessionGenerationRef.current += 1;
+      stopRestPolling();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      const activeWs = wsRef.current;
+      wsRef.current = null;
+      if (activeWs) activeWs.close();
+      updatingIdsRef.current.clear();
+      setUpdating(null);
+      setUser(null);
+      setOrders([]);
+      setCounts({});
+      setConnected(false);
+      setConnectionMode(null);
+      setLoading(false);
+      setLoginError(message);
+    },
+    [stopRestPolling],
+  );
 
   const fetchOrdersRest = useCallback(async () => {
     const generation = sessionGenerationRef.current;
@@ -276,12 +301,17 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         generation !== sessionGenerationRef.current ||
         requestSequence !== restRequestSequenceRef.current ||
         (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
-      ) return;
+      )
+        return;
       setOrders(data.orders || []);
       setCounts(data.counts || {});
       setConnected(true);
     } catch (error: unknown) {
-      if (generation !== sessionGenerationRef.current || requestSequence !== restRequestSequenceRef.current) return;
+      if (
+        generation !== sessionGenerationRef.current ||
+        requestSequence !== restRequestSequenceRef.current
+      )
+        return;
       const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
       const status = axiosError?.response?.status;
       const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
@@ -333,7 +363,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(
-    async (itemId: number, status: KitchenStatus, opts: { silent?: boolean; expectedStatus?: KitchenStatus } = {}) => {
+    async (
+      itemId: number,
+      status: KitchenStatus,
+      opts: { silent?: boolean; expectedStatus?: KitchenStatus } = {},
+    ) => {
       const generation = sessionGenerationRef.current;
       updatingIdsRef.current.add(itemId);
       setUpdating(itemId);
@@ -342,7 +376,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           status,
           ...(opts.expectedStatus ? { expected_status: opts.expectedStatus } : {}),
         });
-        if (generation === sessionGenerationRef.current && connectionMode === 'rest' && wsRef.current === null) {
+        if (
+          generation === sessionGenerationRef.current &&
+          connectionMode === 'rest' &&
+          wsRef.current === null
+        ) {
           await fetchOrdersRest();
         }
         if (generation === sessionGenerationRef.current && !opts.silent) {
@@ -360,7 +398,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           if (!opts.silent) toast.error(t('failedToUpdateItem'));
           return false;
         }
-        const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(errorMessage);
+        const authorizationFailure =
+          /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(
+            errorMessage,
+          );
         if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
           sessionGenerationRef.current += 1;
           if (statusCode === 401) window.localStorage.removeItem('token');
@@ -401,8 +442,16 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       }
     },
     // statusLabel is derived from `t` (already in deps), so omit it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, connectionMode, disableKdsConnection, fetchOrdersRest, itemStatusPath, stopRestPolling, t],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [
+      api,
+      connectionMode,
+      disableKdsConnection,
+      fetchOrdersRest,
+      itemStatusPath,
+      stopRestPolling,
+      t,
+    ],
   );
 
   const tryWebSocket = useCallback(
@@ -477,7 +526,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           if (retryDuringMaintenance) {
             const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
             reconnectTimerRef.current = setTimeout(() => {
-              if (generation === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
+              if (
+                generation === sessionGenerationRef.current &&
+                window.localStorage.getItem('token') === token
+              ) {
                 tryWebSocketRef.current(token, true);
               }
             }, delay);
@@ -505,7 +557,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             reconnectAttemptRef.current = 0;
             // Invalidate any in-flight REST response before accepting WebSocket snapshot.
             stopRestPolling();
-            if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+            if (authTimeout) {
+              clearTimeout(authTimeout);
+              authTimeout = null;
+            }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
             setOrders(msg.orders || []);
             setCounts(msg.counts || {});
@@ -513,7 +568,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setLoading(false);
           } else if (msg.type === 'auth_error') {
             if (wsRef.current !== ws) return;
-            if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+            if (authTimeout) {
+              clearTimeout(authTimeout);
+              authTimeout = null;
+            }
             const maintenanceInProgress = /database maintenance/i.test(msg.message || '');
             const kdsDisabled = /kds is disabled/i.test(msg.message || '');
             if (kdsDisabled) {
@@ -521,10 +579,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               return;
             }
             const temporaryUnavailable = maintenanceInProgress;
-            const authorizationFailure = /user not found|only kitchen staff|no active kitchen station|could not load station permissions/i.test(msg.message || '');
-            const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
+            const authorizationFailure =
+              /user not found|only kitchen staff|no active kitchen station|could not load station permissions/i.test(
+                msg.message || '',
+              );
+            const invalidSession = /invalid|expired|revoked|authentication required/i.test(
+              msg.message || '',
+            );
             sessionGenerationRef.current += 1;
-            setLoginError(maintenanceInProgress ? '' : (msg.message || t('authFailed')));
+            setLoginError(maintenanceInProgress ? '' : msg.message || t('authFailed'));
             if (wsRef.current === ws) wsRef.current = null;
             if (reconnectTimerRef.current) {
               clearTimeout(reconnectTimerRef.current);
@@ -544,7 +607,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               setLoading(true);
               const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
               reconnectTimerRef.current = setTimeout(() => {
-                if (generation + 1 === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
+                if (
+                  generation + 1 === sessionGenerationRef.current &&
+                  window.localStorage.getItem('token') === token
+                ) {
                   tryWebSocketRef.current(token, true);
                 }
               }, delay);
@@ -625,7 +691,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   );
 
   const handleLogout = useCallback(async () => {
-    if (!await confirm(tNav('confirmLogout'))) return;
+    if (!(await confirm(tNav('confirmLogout')))) return;
     sessionGenerationRef.current += 1;
     const logoutGeneration = sessionGenerationRef.current;
     if (reconnectTimerRef.current) {
@@ -667,12 +733,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       return () => window.clearTimeout(resetTimer);
     }
     const generation = sessionGenerationRef.current;
-    api.get(mePath)
+    api
+      .get(mePath)
       .then(({ data }) => {
         if (
           generation !== sessionGenerationRef.current ||
           window.localStorage.getItem('token') !== savedToken
-        ) return;
+        )
+          return;
         setUser({
           id: data.user.id,
           name: data.user.name,
@@ -685,7 +753,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (
           generation !== sessionGenerationRef.current ||
           window.localStorage.getItem('token') !== savedToken
-        ) return;
+        )
+          return;
         const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
         const status = axiosError?.response?.status;
         if (status === 401) {

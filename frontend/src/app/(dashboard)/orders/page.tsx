@@ -102,7 +102,8 @@ export default function OrdersPage() {
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
+  const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } =
+    usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
@@ -178,13 +179,24 @@ export default function OrdersPage() {
 
   // Other states
   const [addItemsOrder, setAddItemsOrder] = useState<Order | null>(null);
-  const [printHistory, setPrintHistory] = useState<Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>>({});
+  const [printHistory, setPrintHistory] = useState<
+    Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>
+  >({});
   const fetchedBillIdsRef = useRef<Set<number>>(new Set());
 
   // Add Item modal states
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<{ key: string; product: Product; variant: ProductVariant | null; quantity: number; special_instructions: string; addons: Addon[] }[]>([]);
+  const [selectedItems, setSelectedItems] = useState<
+    {
+      key: string;
+      product: Product;
+      variant: ProductVariant | null;
+      quantity: number;
+      special_instructions: string;
+      addons: Addon[];
+    }[]
+  >([]);
   const [addingItems, setAddingItems] = useState(false);
   const [addonPickerProduct, setAddonPickerProduct] = useState<Product | null>(null);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
@@ -222,11 +234,15 @@ export default function OrdersPage() {
   const [createCustomerSearch, setCreateCustomerSearch] = useState('');
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
+  const currency = getCurrencySymbol(
+    currentTenant?.currency || '',
+    getCountryByCode(currentTenant?.country ?? '')?.locale,
+  );
   const unitAdapter = useCurrencyUnitAdapter();
-  const normalizedDiscountValue = discountModal?.type === 'amount'
-    ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
-    : discountModal?.value ?? 0;
+  const normalizedDiscountValue =
+    discountModal?.type === 'amount'
+      ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
+      : (discountModal?.value ?? 0);
   const fmt = useFormatCurrency();
   const { layout: ordersLayout } = useOrdersLayoutPreference();
   // Selected order id survives refetches; it resolves against the filtered list
@@ -248,7 +264,11 @@ export default function OrdersPage() {
     }
   }
 
-  if (discountModal && discountMode !== 'none' && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+  if (
+    discountModal &&
+    discountMode !== 'none' &&
+    !isDiscountTypeAllowed(discountMode, discountModal.type)
+  ) {
     setDiscountModal({
       ...discountModal,
       type: defaultDiscountTypeForMode(discountMode),
@@ -260,7 +280,7 @@ export default function OrdersPage() {
   const fetchPrintHistory = async (billId: number) => {
     try {
       const { data } = await api.get(`/bills/${billId}/print-history`);
-      setPrintHistory(prev => ({ ...prev, [billId]: data.prints || [] }));
+      setPrintHistory((prev) => ({ ...prev, [billId]: data.prints || [] }));
     } catch {
       // Ignore error
     }
@@ -268,14 +288,24 @@ export default function OrdersPage() {
 
   const fetchOrders = async (
     cursor?: number,
-    { rateLimitedRefresh = false, refreshLoadedPages = false }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
+    {
+      rateLimitedRefresh = false,
+      refreshLoadedPages = false,
+    }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
   ): Promise<boolean> => {
-    if (cursor === undefined && (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)) {
+    if (
+      cursor === undefined &&
+      (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)
+    ) {
       ordersRefreshPendingRef.current = true;
       ordersRefreshLoadedPagesPendingRef.current ||= refreshLoadedPages;
       return true;
     }
-    if (cursor !== undefined && (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)) return true;
+    if (
+      cursor !== undefined &&
+      (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)
+    )
+      return true;
     if (cursor === undefined && rateLimitedRefresh) {
       if (ordersRefreshTimerRef.current !== null) {
         ordersRefreshPendingRef.current = true;
@@ -288,7 +318,10 @@ export default function OrdersPage() {
         ordersRefreshPendingRef.current = false;
         const shouldRefreshLoadedPages = ordersRefreshLoadedPagesPendingRef.current;
         ordersRefreshLoadedPagesPendingRef.current = false;
-        fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: shouldRefreshLoadedPages });
+        fetchOrders(undefined, {
+          rateLimitedRefresh: true,
+          refreshLoadedPages: shouldRefreshLoadedPages,
+        });
       }, 1000);
     } else if (cursor === undefined) {
       ordersRefreshPendingRef.current = false;
@@ -307,7 +340,11 @@ export default function OrdersPage() {
       if (refreshLoadedPages) {
         const refreshed = await fetchLoadedOrderPages(async (pageCursor) => {
           const { data } = await api.get('/orders', {
-            params: { per_page: 50, ...(search ? { search } : {}), ...(pageCursor !== undefined ? { before_id: pageCursor } : {}) },
+            params: {
+              per_page: 50,
+              ...(search ? { search } : {}),
+              ...(pageCursor !== undefined ? { before_id: pageCursor } : {}),
+            },
           });
           if (fetchId !== ordersFetchIdRef.current) return { orders: [], nextCursor: null };
           return { orders: (data.orders || []) as Order[], nextCursor: data.nextCursor ?? null };
@@ -316,7 +353,11 @@ export default function OrdersPage() {
         nextCursor = refreshed.nextCursor;
       } else {
         const { data } = await api.get('/orders', {
-          params: { per_page: 50, ...(search ? { search } : {}), ...(cursor !== undefined ? { before_id: cursor } : {}) },
+          params: {
+            per_page: 50,
+            ...(search ? { search } : {}),
+            ...(cursor !== undefined ? { before_id: cursor } : {}),
+          },
         });
         if (fetchId !== ordersFetchIdRef.current) return true;
         orders.push(...(data.orders || []));
@@ -331,7 +372,10 @@ export default function OrdersPage() {
       } else if (cursor === undefined) {
         if (hasLoadedOlderOrdersRef.current) {
           const refreshedOrderIds = new Set(orders.map((order) => order.id));
-          setOrders((prev) => [...orders, ...prev.filter((order) => !refreshedOrderIds.has(order.id))]);
+          setOrders((prev) => [
+            ...orders,
+            ...prev.filter((order) => !refreshedOrderIds.has(order.id)),
+          ]);
         } else {
           setOrders(orders);
           setNextOrdersCursor(nextCursor);
@@ -369,7 +413,10 @@ export default function OrdersPage() {
           ordersRefreshPendingRef.current = false;
           const shouldRefreshLoadedPages = ordersRefreshLoadedPagesPendingRef.current;
           ordersRefreshLoadedPagesPendingRef.current = false;
-          fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: shouldRefreshLoadedPages });
+          fetchOrders(undefined, {
+            rateLimitedRefresh: true,
+            refreshLoadedPages: shouldRefreshLoadedPages,
+          });
         }
       }
     }
@@ -392,7 +439,7 @@ export default function OrdersPage() {
     setLoadingMoreOrders(false);
     const timeout = setTimeout(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 300);
     return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.search]);
 
   useEffect(() => {
@@ -406,23 +453,32 @@ export default function OrdersPage() {
     if (!pendingAttempt) return;
     appendRecoveryStartedUsersRef.current.add(activeUserId);
     addItemsAttemptRef.current = pendingAttempt;
-    api.post(`/orders/${pendingAttempt.orderId}/items`, {
-      items: pendingAttempt.items,
-      special_instructions: pendingAttempt.specialInstructions,
-    }, { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } }).then(() => {
-      if (!clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!)) throw new Error('Unable to clear append retry state');
-      if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
-      addItemsAttemptRef.current = null;
-      toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
-      fetchOrders(undefined, { refreshLoadedPages: true });
-    }).catch(() => {
-      toast.error(tOrders('addItemsFailed'));
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    api
+      .post(
+        `/orders/${pendingAttempt.orderId}/items`,
+        {
+          items: pendingAttempt.items,
+          special_instructions: pendingAttempt.specialInstructions,
+        },
+        { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } },
+      )
+      .then(() => {
+        if (!clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!))
+          throw new Error('Unable to clear append retry state');
+        if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
+        addItemsAttemptRef.current = null;
+        toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
+        fetchOrders(undefined, { refreshLoadedPages: true });
+      })
+      .catch(() => {
+        toast.error(tOrders('addItemsFailed'));
+      });
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
 
   useEffect(() => {
-    api.get('/settings/kds_enabled')
+    api
+      .get('/settings/kds_enabled')
       .then((res) => {
         const value = res.data?.setting?.value;
         setKdsEnabled(value === 'true' ? true : value === 'false' ? false : null);
@@ -455,7 +511,11 @@ export default function OrdersPage() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'order_updated' || data.type === 'orders' || data.type === 'initial_data') {
+            if (
+              data.type === 'order_updated' ||
+              data.type === 'orders' ||
+              data.type === 'initial_data'
+            ) {
               // Another terminal just changed an order this page has loaded, so
               // the already-visible pages are refreshed, not only page one.
               fetchOrders(undefined, { rateLimitedRefresh: true, refreshLoadedPages: true });
@@ -471,14 +531,17 @@ export default function OrdersPage() {
             return;
           }
           reconnectTimeout = setTimeout(() => {
-            api.get('/settings/kds_enabled')
+            api
+              .get('/settings/kds_enabled')
               .then(({ data }) => {
                 if (!active) return;
                 const value = data?.setting?.value;
                 if (value === 'true') connectWS();
                 else setKdsEnabled(value === 'false' ? false : null);
               })
-              .catch(() => { if (active) setKdsEnabled(null); });
+              .catch(() => {
+                if (active) setKdsEnabled(null);
+              });
           }, 3000);
         };
 
@@ -501,7 +564,7 @@ export default function OrdersPage() {
       }
     };
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [kdsEnabled]);
 
   useEffect(() => {
@@ -524,12 +587,14 @@ export default function OrdersPage() {
 
       if (isTablesRequired) {
         heldOrdersStore.fetchHeldOrders();
-        api.get('/tables')
+        api
+          .get('/tables')
           .then((res) => setTables(res.data.tables || []))
           .catch(() => {});
       }
 
-      api.get('/settings/discount')
+      api
+        .get('/settings/discount')
         .then((res) => {
           setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
           setDiscountRequiresApproval(!!res.data.discount_requires_approval);
@@ -554,8 +619,8 @@ export default function OrdersPage() {
       ordersRefreshPendingRef.current = false;
       ordersRefreshLoadedPagesPendingRef.current = false;
     };
-     
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
   const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | null => {
@@ -570,18 +635,17 @@ export default function OrdersPage() {
 
     // Check for active POS cart items to avoid accidental loss of progress
     if (cartStore.items.length > 0) {
-      const proceed = await confirm(
-        tOrders('cartClearConfirm')
-      );
+      const proceed = await confirm(tOrders('cartClearConfirm'));
       if (!proceed) return;
     }
 
     cartStore.clearCart();
     cartStore.setCustomer(order.customer);
 
-    const posOrderType = (order.type === 'dine_in' || order.type === 'takeaway' || order.type === 'delivery')
-      ? order.type
-      : 'takeaway';
+    const posOrderType =
+      order.type === 'dine_in' || order.type === 'takeaway' || order.type === 'delivery'
+        ? order.type
+        : 'takeaway';
     cartStore.setOrderType(posOrderType);
 
     if (posOrderType === 'dine_in' && order.table_id) {
@@ -605,7 +669,7 @@ export default function OrdersPage() {
     linkSearchRef.current = setTimeout(async () => {
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(query)}`);
-        setLinkCustomerResults(Array.isArray(data) ? data : (data.customers || []));
+        setLinkCustomerResults(Array.isArray(data) ? data : data.customers || []);
       } catch {
         setLinkCustomerResults([]);
       }
@@ -632,7 +696,10 @@ export default function OrdersPage() {
   const isOrderActive = (order: Order) => {
     if (order.status === 'cancelled') return false;
     if (order.status === 'completed') {
-      return kdsEnabled === true && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
+      return (
+        kdsEnabled === true &&
+        (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status))
+      );
     }
     return true;
   };
@@ -641,7 +708,8 @@ export default function OrdersPage() {
     // Tab filter
     if (tabFilter === 'active' && !isOrderActive(order)) return false;
     // Filter unpaid orders using resolved payment status since bills are generated at checkout.
-    if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
+    if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || ''))
+      return false;
 
     // Filter by table
     if (filters.table && String(order.table_id) !== filters.table) {
@@ -664,9 +732,10 @@ export default function OrdersPage() {
     return true;
   });
 
-  const selectedOrder = selectedOrderId == null
-    ? undefined
-    : filteredOrders.find((order) => order.id === selectedOrderId);
+  const selectedOrder =
+    selectedOrderId == null
+      ? undefined
+      : filteredOrders.find((order) => order.id === selectedOrderId);
 
   const handleCheckout = async (orderId: number) => {
     setGeneratingBill(orderId);
@@ -714,12 +783,14 @@ export default function OrdersPage() {
             number_digits: currentTenant?.number_digits,
             calendar: currentTenant?.calendar,
           },
-          { isReprint: false }
+          { isReprint: false },
         );
         showPrintWarningsToast(printWarnings);
         try {
           await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
-        } catch { /* best-effort history tracking */ }
+        } catch {
+          /* best-effort history tracking */
+        }
       } catch (err) {
         const msg = extractPrinterErrorMessage(err);
         toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
@@ -751,14 +822,16 @@ export default function OrdersPage() {
           number_digits: currentTenant?.number_digits,
           calendar: currentTenant?.calendar,
         },
-        { isReprint }
+        { isReprint },
       );
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
       try {
         await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
         fetchPrintHistory(billId);
-      } catch { /* best-effort history tracking */ }
+      } catch {
+        /* best-effort history tracking */
+      }
     } catch (err) {
       const detail = extractPrinterErrorMessage(err);
       toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
@@ -790,22 +863,19 @@ export default function OrdersPage() {
   const handlePrintDeliverySlip = async (order: Order) => {
     const customer = order.customer;
     const phone = customer?.phone
-      ? (customer.country_code && !customer.phone.startsWith(customer.country_code)
+      ? customer.country_code && !customer.phone.startsWith(customer.country_code)
         ? `${customer.country_code} ${customer.phone}`
-        : customer.phone)
+        : customer.phone
       : '';
     setPrintingSlipOrderId(order.id);
     try {
-      const warnings = await printDeliverySlip(
-        order,
-        {
-          name: customer?.name || '',
-          phone,
-          // The order's own address wins; pre-column orders take the fallback,
-          // so that is the common case rather than the rare one.
-          address: order.delivery_address || customer?.address || '',
-        },
-      );
+      const warnings = await printDeliverySlip(order, {
+        name: customer?.name || '',
+        phone,
+        // The order's own address wins; pre-column orders take the fallback,
+        // so that is the common case rather than the rare one.
+        address: order.delivery_address || customer?.address || '',
+      });
       showPrintWarningsToast(warnings);
       toast.success(tOrders('printDeliverySlip'));
       fetchOrders();
@@ -852,9 +922,17 @@ export default function OrdersPage() {
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    if (!await confirm(tOrders('removeItemConfirm'), { destructive: true, confirmLabel: tCommon('remove') })) return;
+    if (
+      !(await confirm(tOrders('removeItemConfirm'), {
+        destructive: true,
+        confirmLabel: tCommon('remove'),
+      }))
+    )
+      return;
     try {
-      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
+      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, {
+        reason: tOrders('removedByManager'),
+      });
       toast.success(tOrders('itemRemoved'));
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch {
@@ -923,7 +1001,11 @@ export default function OrdersPage() {
   const handleApplyDiscount = async () => {
     if (!discountModal) return;
 
-    if (discountModal.type === 'amount' && discountModal.value > 0 && normalizedDiscountValue <= 0) {
+    if (
+      discountModal.type === 'amount' &&
+      discountModal.value > 0 &&
+      normalizedDiscountValue <= 0
+    ) {
       toast.error(tOrders('discountFailed'));
       return;
     }
@@ -943,7 +1025,8 @@ export default function OrdersPage() {
         discount_type: discountModal.type,
         discount_value: normalizedDiscountValue,
         discount_reason: discountModal.reason || undefined,
-        override_pin: discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
+        override_pin:
+          discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
       });
       toast.success(tOrders('discountApplied'));
       fetchOrders(undefined, { refreshLoadedPages: true });
@@ -957,7 +1040,12 @@ export default function OrdersPage() {
 
   const handleConvertToTakeaway = async (order: Order) => {
     const tableNote = order.table ? tOrders('freeTableSuffix', { name: order.table.name }) : '';
-    if (!await confirm(tOrders('convertToTakeawayConfirm', { number: order.order_number, tableNote }))) return;
+    if (
+      !(await confirm(
+        tOrders('convertToTakeawayConfirm', { number: order.order_number, tableNote }),
+      ))
+    )
+      return;
     setConvertingOrderId(order.id);
     try {
       await api.patch(`/orders/${order.id}/convert-to-takeaway`);
@@ -978,7 +1066,8 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!addItemsOrder) return;
-    api.get('/products', { params: { per_page: 200 } })
+    api
+      .get('/products', { params: { per_page: 200 } })
       .then(({ data }) => setProducts(data.products || []))
       .catch(() => toast.error(tOrders('menuLoadFailed')));
   }, [addItemsOrder, tOrders]);
@@ -988,46 +1077,64 @@ export default function OrdersPage() {
       setAddonPickerProduct(product);
       return;
     }
-    setSelectedItems(prev => {
-      const existing = prev.find(i => i.product.id === product.id && !i.variant && i.addons.length === 0);
+    setSelectedItems((prev) => {
+      const existing = prev.find(
+        (i) => i.product.id === product.id && !i.variant && i.addons.length === 0,
+      );
       if (existing) {
-        return prev.map(i => i === existing ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map((i) => (i === existing ? { ...i, quantity: i.quantity + 1 } : i));
       }
-      const key = typeof globalThis.crypto?.randomUUID === 'function'
-        ? globalThis.crypto.randomUUID()
-        : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
-      return [...prev, { key, product, variant: null, quantity: 1, special_instructions: '', addons: [] }];
+      const key =
+        typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
+      return [
+        ...prev,
+        { key, product, variant: null, quantity: 1, special_instructions: '', addons: [] },
+      ];
     });
   };
 
-  const handleAddonPickerAdd = (product: Product, quantity: number, addons: Addon[], instructions: string, variant: ProductVariant | null) => {
-    setSelectedItems(prev => {
-      const key = typeof globalThis.crypto?.randomUUID === 'function'
-        ? globalThis.crypto.randomUUID()
-        : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
-      return [...prev, {
-        key,
-        product,
-        variant,
-        quantity,
-        special_instructions: instructions,
-        addons,
-      }];
+  const handleAddonPickerAdd = (
+    product: Product,
+    quantity: number,
+    addons: Addon[],
+    instructions: string,
+    variant: ProductVariant | null,
+  ) => {
+    setSelectedItems((prev) => {
+      const key =
+        typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
+      return [
+        ...prev,
+        {
+          key,
+          product,
+          variant,
+          quantity,
+          special_instructions: instructions,
+          addons,
+        },
+      ];
     });
     setAddonPickerProduct(null);
   };
 
   const handleRemoveFromSelection = (key: string) => {
-    setSelectedItems(prev => prev.filter(i => i.key !== key));
+    setSelectedItems((prev) => prev.filter((i) => i.key !== key));
   };
 
   const handleUpdateSelectionQty = (key: string, quantity: number) => {
     if (quantity < 1) return;
-    setSelectedItems(prev => prev.map(i => i.key === key ? { ...i, quantity } : i));
+    setSelectedItems((prev) => prev.map((i) => (i.key === key ? { ...i, quantity } : i)));
   };
 
   const handleUpdateSelectionNotes = (key: string, notes: string) => {
-    setSelectedItems(prev => prev.map(i => i.key === key ? { ...i, special_instructions: notes } : i));
+    setSelectedItems((prev) =>
+      prev.map((i) => (i.key === key ? { ...i, special_instructions: notes } : i)),
+    );
   };
 
   const handleSubmitAddItems = async () => {
@@ -1041,17 +1148,23 @@ export default function OrdersPage() {
         userId: activeUserId || '',
         orderId: addItemsOrder.id,
         fingerprint,
-        createKey: () => typeof globalThis.crypto?.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        createKey: () =>
+          typeof globalThis.crypto?.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         items,
         orderNumber: addItemsOrder.order_number,
       });
       addItemsAttemptRef.current = attempt;
-      await api.post(`/orders/${addItemsOrder.id}/items`, {
-        items,
-      }, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
-      if (!clearAppendAttempt(storage, attempt)) throw new Error('Unable to clear append retry state');
+      await api.post(
+        `/orders/${addItemsOrder.id}/items`,
+        {
+          items,
+        },
+        { headers: { 'Idempotency-Key': attempt.idempotencyKey } },
+      );
+      if (!clearAppendAttempt(storage, attempt))
+        throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(tOrders('itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
@@ -1131,7 +1244,7 @@ export default function OrdersPage() {
             type="text"
             placeholder={tOrders('search')}
             value={filters.search}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
             className="w-full ps-9 pe-3 py-2 border border-border bg-card rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
           />
         </div>
@@ -1139,7 +1252,7 @@ export default function OrdersPage() {
         {/* Table filter */}
         <select
           value={filters.table}
-          onChange={(e) => setFilters(prev => ({ ...prev, table: e.target.value }))}
+          onChange={(e) => setFilters((prev) => ({ ...prev, table: e.target.value }))}
           className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allTables')}</option>
@@ -1153,7 +1266,7 @@ export default function OrdersPage() {
         {/* Type filter */}
         <select
           value={filters.type}
-          onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
+          onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}
           className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allTypes')}</option>
@@ -1166,7 +1279,7 @@ export default function OrdersPage() {
         {/* Status filter */}
         <select
           value={filters.status}
-          onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+          onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
           className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
           <option value="">{tOrders('allStatuses')}</option>
@@ -1189,28 +1302,39 @@ export default function OrdersPage() {
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
             {Object.values(heldOrdersStore.orders).map((heldOrder) => (
-              <div key={heldOrder.tableId} className="bg-card rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
-                 <div className="p-4 border-b border-border bg-blue-50/50 flex justify-between items-center">
-                   <div>
-                     <p className="font-bold text-foreground">{tables.find(t => t.id === heldOrder.tableId)?.name || tCommon('tableFallback')}</p>
-                     <p className="text-xs text-muted-foreground">{formatTime(heldOrder.heldAt)}</p>
-                   </div>
-                   <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">{tOrders('held')}</span>
-                 </div>
-                 <div className="p-4 flex-1">
-                   {heldOrder.items.map((item, idx) => (
-                     <div key={idx} className="flex justify-between text-sm py-1 text-foreground">
-                       <span>{item.quantity}x {item.product.name}</span>
-                     </div>
-                   ))}
-                   {heldOrder.orderNotes && (
-                     <div className="mt-3 text-sm italic text-muted-foreground bg-muted p-2 rounded-lg">
-                       &quot;{heldOrder.orderNotes}&quot;
-                     </div>
-                   )}
-                 </div>
-                 <div className="p-4 bg-muted border-t border-border flex gap-2">
-                    <Button onClick={async () => {
+              <div
+                key={heldOrder.tableId}
+                className="bg-card rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="p-4 border-b border-border bg-blue-50/50 flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-foreground">
+                      {tables.find((t) => t.id === heldOrder.tableId)?.name ||
+                        tCommon('tableFallback')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{formatTime(heldOrder.heldAt)}</p>
+                  </div>
+                  <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">
+                    {tOrders('held')}
+                  </span>
+                </div>
+                <div className="p-4 flex-1">
+                  {heldOrder.items.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-sm py-1 text-foreground">
+                      <span>
+                        {item.quantity}x {item.product.name}
+                      </span>
+                    </div>
+                  ))}
+                  {heldOrder.orderNotes && (
+                    <div className="mt-3 text-sm italic text-muted-foreground bg-muted p-2 rounded-lg">
+                      &quot;{heldOrder.orderNotes}&quot;
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 bg-muted border-t border-border flex gap-2">
+                  <Button
+                    onClick={async () => {
                       try {
                         const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
                         if (held) {
@@ -1236,11 +1360,20 @@ export default function OrdersPage() {
                       } catch {
                         toast.error(tOrders('resumeFailed'));
                       }
-                    }} variant="default" className="flex-1 bg-brand hover:bg-brand/90 text-white">{tOrders('resumeInPos')}</Button>
-                    <Button onClick={async () => {
+                    }}
+                    variant="default"
+                    className="flex-1 bg-brand hover:bg-brand/90 text-white"
+                  >
+                    {tOrders('resumeInPos')}
+                  </Button>
+                  <Button
+                    onClick={async () => {
                       if (await confirm(tOrders('deleteHeldConfirm'), { destructive: true })) {
                         try {
-                          const deleted = await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
+                          const deleted = await heldOrdersStore.removeHeldOrder(
+                            heldOrder.tableId,
+                            heldOrder.id,
+                          );
                           if (deleted) {
                             toast.success(tOrders('heldOrderRemoved'));
                           } else {
@@ -1251,8 +1384,13 @@ export default function OrdersPage() {
                           toast.error(tOrders('removeHeldOrderFailed'));
                         }
                       }
-                    }} variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50">{tOrders('delete')}</Button>
-                 </div>
+                    }}
+                    variant="outline"
+                    className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    {tOrders('delete')}
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -1268,7 +1406,12 @@ export default function OrdersPage() {
       ) : ordersLayout === 'split' ? (
         <div className="flex-1 min-h-0 flex gap-4">
           {/* Master pane — a fixed reading column on desktop, full width below md. */}
-          <div className={cn(selectedOrder ? 'hidden md:flex' : 'flex', 'w-full md:w-[360px] lg:w-[400px] xl:w-[440px] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden')}>
+          <div
+            className={cn(
+              selectedOrder ? 'hidden md:flex' : 'flex',
+              'w-full md:w-[360px] lg:w-[400px] xl:w-[440px] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden',
+            )}
+          >
             <OrdersMasterList
               orders={filteredOrders}
               selectedOrderId={selectedOrderId}
@@ -1278,7 +1421,9 @@ export default function OrdersPage() {
           </div>
 
           {/* Detail pane — fills the remaining row width on desktop, full width with back nav below md. */}
-          <div className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:flex-1 min-w-0')}>
+          <div
+            className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:flex-1 min-w-0')}
+          >
             <OrderDetailPanel
               order={selectedOrder ?? null}
               onBack={() => setSelectedOrderId(null)}
@@ -1294,7 +1439,9 @@ export default function OrdersPage() {
               sendingWaOrderId={sendingWaOrderId}
               cancellingOrderId={cancellingOrderId}
               convertingOrderId={convertingOrderId}
-              isLinkingCustomer={selectedOrderId !== null && linkCustomerOrderId === selectedOrderId}
+              isLinkingCustomer={
+                selectedOrderId !== null && linkCustomerOrderId === selectedOrderId
+              }
               linkCustomerSearch={linkCustomerSearch}
               linkCustomerResults={linkCustomerResults}
               linkingCustomer={linkingCustomer}
@@ -1303,9 +1450,13 @@ export default function OrdersPage() {
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
               onConvertToTakeaway={handleConvertToTakeaway}
-              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
+              onCancelOrder={(ord) =>
+                setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })
+              }
               onPrint={(billId) => setConfirmPrintBillId(billId)}
-              onPrintOrder={tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined}
+              onPrintOrder={
+                tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined
+              }
               onPrintDeliverySlip={handlePrintDeliverySlip}
               onSendWhatsApp={handleSendViaFlo}
               onLinkCustomer={(orderId) => {
@@ -1364,9 +1515,13 @@ export default function OrdersPage() {
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
               onConvertToTakeaway={handleConvertToTakeaway}
-              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
+              onCancelOrder={(ord) =>
+                setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })
+              }
               onPrint={(billId) => setConfirmPrintBillId(billId)}
-              onPrintOrder={tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined}
+              onPrintOrder={
+                tenantCan(currentTenant, 'bills.generate') ? handlePrintOrder : undefined
+              }
               onSendWhatsApp={handleSendViaFlo}
               onLinkCustomer={(orderId) => {
                 setLinkCustomerOrderId(orderId);
@@ -1400,8 +1555,17 @@ export default function OrdersPage() {
       )}
       {filters.search.trim() && tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
         <div className="shrink-0 text-center py-3 border-t border-border">
-          <Button variant="outline" size="sm" onClick={() => fetchOrders(nextOrdersCursor)} disabled={loadingMoreOrders}>
-            {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchOrders(nextOrdersCursor)}
+            disabled={loadingMoreOrders}
+          >
+            {loadingMoreOrders ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              tCommon('loadMore')
+            )}
           </Button>
         </div>
       )}
@@ -1431,7 +1595,10 @@ export default function OrdersPage() {
           order={refundModal.order}
           bills={refundModal.bills}
           onClose={() => setRefundModal(null)}
-          onRefunded={() => { setRefundModal(null); fetchOrders(undefined, { refreshLoadedPages: true }); }}
+          onRefunded={() => {
+            setRefundModal(null);
+            fetchOrders(undefined, { refreshLoadedPages: true });
+          }}
         />
       )}
 
@@ -1440,7 +1607,9 @@ export default function OrdersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-lg font-bold text-foreground mb-2">
-              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? tOrders('reprintReceiptTitle') : tOrders('printReceiptTitle')}
+              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
+                ? tOrders('reprintReceiptTitle')
+                : tOrders('printReceiptTitle')}
             </h2>
             <p className="text-sm text-muted-foreground mb-6">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
@@ -1448,11 +1617,7 @@ export default function OrdersPage() {
                 : tOrders('printReceiptConfirm')}
             </p>
             <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConfirmPrintBillId(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setConfirmPrintBillId(null)}>
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -1464,9 +1629,11 @@ export default function OrdersPage() {
                 aria-label={tOrders('downloadPrintPreview')}
                 className="w-9 px-0"
               >
-                {previewingBillId === confirmPrintBillId
-                  ? <Loader2 size={14} className="animate-spin" />
-                  : <Download size={14} />}
+                {previewingBillId === confirmPrintBillId ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Download size={14} />
+                )}
               </Button>
               <Button
                 size="sm"
@@ -1489,14 +1656,19 @@ export default function OrdersPage() {
       {cancelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-foreground mb-4">{tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">
+              {tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr>
+            </h2>
             <p className="text-sm text-muted-foreground -mt-2 mb-4">
               {tOrders('cancelOrderStatusHint')}
             </p>
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="cancelReason" className="block text-sm font-medium text-foreground mb-1">
+                <label
+                  htmlFor="cancelReason"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
                   {tCommon('reasonOptional')}
                 </label>
                 <input
@@ -1524,9 +1696,15 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {(cancelModal.order.status !== 'pending' || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
+              {(cancelModal.order.status !== 'pending' ||
+                cancelModal.order.items?.some((i) =>
+                  ['preparing', 'ready', 'served', 'completed'].includes(i.status),
+                )) && (
                 <div>
-                  <label htmlFor="overridePin" className="block text-sm font-medium text-foreground mb-1">
+                  <label
+                    htmlFor="overridePin"
+                    className="block text-sm font-medium text-foreground mb-1"
+                  >
                     {tOrders('overridePinLabel')}
                   </label>
                   <input
@@ -1534,7 +1712,7 @@ export default function OrdersPage() {
                     type="password"
                     value={cancelModal.overridePin}
                     onChange={(e) => updateCancelModal({ overridePin: e.target.value })}
-placeholder={tOrders('managerPin')}
+                    placeholder={tOrders('managerPin')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   />
                 </div>
@@ -1542,11 +1720,7 @@ placeholder={tOrders('managerPin')}
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCancelModal(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setCancelModal(null)}>
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -1555,7 +1729,9 @@ placeholder={tOrders('managerPin')}
                 disabled={cancellingOrderId === cancelModal.order.id}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                {cancellingOrderId === cancelModal.order.id ? tOrders('cancelling') : tOrders('confirmCancel')}
+                {cancellingOrderId === cancelModal.order.id
+                  ? tOrders('cancelling')
+                  : tOrders('confirmCancel')}
               </Button>
             </div>
           </div>
@@ -1567,10 +1743,15 @@ placeholder={tOrders('managerPin')}
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-lg font-bold text-foreground mb-1">{tOrders('voidItem')}</h2>
-            <p className="text-sm text-muted-foreground mb-4">{tOrders('voidItemConfirm', { name: voidItemModal.productName })}</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {tOrders('voidItemConfirm', { name: voidItemModal.productName })}
+            </p>
 
             <div>
-              <label htmlFor="voidOverridePin" className="block text-sm font-medium text-foreground mb-1">
+              <label
+                htmlFor="voidOverridePin"
+                className="block text-sm font-medium text-foreground mb-1"
+              >
                 {tOrders('overridePinLabel')}
               </label>
               <input
@@ -1578,18 +1759,16 @@ placeholder={tOrders('managerPin')}
                 type="password"
                 autoFocus
                 value={voidItemModal.overridePin}
-                onChange={(e) => setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })}
+                onChange={(e) =>
+                  setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })
+                }
                 placeholder={tOrders('managerPin')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setVoidItemModal(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setVoidItemModal(null)}>
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -1609,7 +1788,9 @@ placeholder={tOrders('managerPin')}
       {discountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-foreground mb-4">{tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}</h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">
+              {tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}
+            </h2>
 
             <div className="space-y-4">
               {/* Discount Type Toggle */}
@@ -1645,7 +1826,9 @@ placeholder={tOrders('managerPin')}
               {/* Discount Value */}
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">
-                  {discountModal.type === 'percentage' ? tOrders('discountPercentageLabel') : tOrders('discountAmountLabel')}
+                  {discountModal.type === 'percentage'
+                    ? tOrders('discountPercentageLabel')
+                    : tOrders('discountAmountLabel')}
                 </label>
                 <div className="relative">
                   <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
@@ -1654,11 +1837,15 @@ placeholder={tOrders('managerPin')}
                   <input
                     type="number"
                     min={0}
-                    max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
+                    max={
+                      discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)
+                    }
                     step={getDiscountInputStep(unitAdapter.maxDecimals, discountModal.type)}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
-                    placeholder={discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)}
+                    placeholder={
+                      discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)
+                    }
                     className="w-full ps-8 pe-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>
@@ -1682,24 +1869,31 @@ placeholder={tOrders('managerPin')}
               <div className="bg-muted rounded-lg p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{tCommon('subtotal')}</span>
-                  <span className="text-foreground">{fmt(Number(discountModal.order.subtotal))}</span>
+                  <span className="text-foreground">
+                    {fmt(Number(discountModal.order.subtotal))}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{tCommon('tax')}</span>
-                  <span className="text-foreground">{fmt(Number(discountModal.order.tax_amount || 0))}</span>
+                  <span className="text-foreground">
+                    {fmt(Number(discountModal.order.tax_amount || 0))}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-purple-600">
                     {tCommon('discount')}
                     {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                      <span className="text-gray-400 ms-1">{tOrders('percentOnSubtotal', { value: discountModal.value })}</span>
+                      <span className="text-gray-400 ms-1">
+                        {tOrders('percentOnSubtotal', { value: discountModal.value })}
+                      </span>
                     )}
                   </span>
                   <span className="text-purple-600">
-                    -{fmt(
+                    -
+                    {fmt(
                       discountModal.type === 'percentage'
-                        ? Number(discountModal.order.subtotal) * discountModal.value / 100
-                        : normalizedDiscountValue
+                        ? (Number(discountModal.order.subtotal) * discountModal.value) / 100
+                        : normalizedDiscountValue,
                     )}
                   </span>
                 </div>
@@ -1708,8 +1902,11 @@ placeholder={tOrders('managerPin')}
                   <span className="text-foreground">
                     {fmt(
                       discountModal.type === 'percentage'
-                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) + Number(discountModal.order.tax_amount || 0)
-                        : Number(discountModal.order.subtotal) - normalizedDiscountValue + Number(discountModal.order.tax_amount || 0)
+                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) +
+                            Number(discountModal.order.tax_amount || 0)
+                        : Number(discountModal.order.subtotal) -
+                            normalizedDiscountValue +
+                            Number(discountModal.order.tax_amount || 0),
                     )}
                   </span>
                 </div>
@@ -1718,24 +1915,22 @@ placeholder={tOrders('managerPin')}
 
             {discountRequiresApproval && discountModal.value > 0 && (
               <div className="mt-4">
-                <label className="block text-sm font-medium text-foreground mb-1">{tOrders('managerPinLabel')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  {tOrders('managerPinLabel')}
+                </label>
                 <input
                   type="password"
                   value={discountPin}
                   onChange={(e) => setDiscountPin(e.target.value)}
-placeholder={tOrders('managerPin')}
-                maxLength={6}
+                  placeholder={tOrders('managerPin')}
+                  maxLength={6}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
             )}
 
             <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setDiscountModal(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setDiscountModal(null)}>
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -1756,11 +1951,16 @@ placeholder={tOrders('managerPin')}
       {addItemsOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
-            <h2 className="text-lg font-bold text-foreground mb-4">{tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">
+              {tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr>
+            </h2>
 
             {/* Search */}
             <div className="relative mb-3">
-              <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search
+                size={16}
+                className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 placeholder={tOrders('searchMenu')}
@@ -1773,7 +1973,10 @@ placeholder={tOrders('managerPin')}
             {/* Product list */}
             <div className="flex-1 overflow-y-auto border border-border rounded-lg mb-3 max-h-48">
               {products
-                .filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()))
+                .filter(
+                  (p) =>
+                    !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()),
+                )
                 .map((product: Product) => (
                   <button
                     key={product.id}
@@ -1783,27 +1986,36 @@ placeholder={tOrders('managerPin')}
                     <div>
                       <span className="text-sm font-medium text-foreground">{product.name}</span>
                       {product.price && (
-                        <span className="text-xs text-muted-foreground ms-2">{fmt(Number(product.price))}</span>
+                        <span className="text-xs text-muted-foreground ms-2">
+                          {fmt(Number(product.price))}
+                        </span>
                       )}
                     </div>
                     <Plus size={14} className="text-green-500" />
                   </button>
-                ))
-              }
-              {products.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-4 text-sm text-gray-400 text-center">{tOrders('noItemsFound')}</div>
+                ))}
+              {products.filter(
+                (p) => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()),
+              ).length === 0 && (
+                <div className="px-3 py-4 text-sm text-gray-400 text-center">
+                  {tOrders('noItemsFound')}
+                </div>
               )}
             </div>
 
             {/* Selected items */}
             {selectedItems.length > 0 && (
               <div className="space-y-2 mb-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase">{tOrders('selectedItems')}</p>
-                {selectedItems.map(item => (
+                <p className="text-xs font-medium text-muted-foreground uppercase">
+                  {tOrders('selectedItems')}
+                </p>
+                {selectedItems.map((item) => (
                   <div key={item.key} className="flex items-center gap-2 bg-muted rounded-lg p-2">
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-foreground truncate block">
-                        {item.variant ? `${item.product.name} (${item.variant.name})` : item.product.name}
+                        {item.variant
+                          ? `${item.product.name} (${item.variant.name})`
+                          : item.product.name}
                       </span>
                       {item.addons.length > 0 && (
                         <span className="text-xs text-muted-foreground truncate block">
@@ -1815,7 +2027,9 @@ placeholder={tOrders('managerPin')}
                         placeholder={tOrders('notesOptional')}
                         value={item.special_instructions}
                         maxLength={100}
-                        onChange={(e) => handleUpdateSelectionNotes(item.key, e.target.value.slice(0, 100))}
+                        onChange={(e) =>
+                          handleUpdateSelectionNotes(item.key, e.target.value.slice(0, 100))
+                        }
                         className="w-full text-xs text-muted-foreground bg-transparent border-0 p-0 focus:outline-none placeholder:text-gray-300"
                       />
                     </div>
@@ -1823,12 +2037,16 @@ placeholder={tOrders('managerPin')}
                       <button
                         onClick={() => handleUpdateSelectionQty(item.key, item.quantity - 1)}
                         className="w-6 h-6 rounded bg-gray-200 text-muted-foreground text-xs hover:bg-gray-300"
-                      >-</button>
+                      >
+                        -
+                      </button>
                       <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
                       <button
                         onClick={() => handleUpdateSelectionQty(item.key, item.quantity + 1)}
                         className="w-6 h-6 rounded bg-gray-200 text-muted-foreground text-xs hover:bg-gray-300"
-                      >+</button>
+                      >
+                        +
+                      </button>
                     </div>
                     <button
                       onClick={() => handleRemoveFromSelection(item.key)}
@@ -1843,11 +2061,7 @@ placeholder={tOrders('managerPin')}
 
             {/* Actions */}
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openAddItemsModal(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => openAddItemsModal(null)}>
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -1857,7 +2071,9 @@ placeholder={tOrders('managerPin')}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 <Plus size={14} className="me-1.5" />
-                {addingItems ? tOrders('adding') : tOrders('addItemsCount', { count: selectedItems.length })}
+                {addingItems
+                  ? tOrders('adding')
+                  : tOrders('addItemsCount', { count: selectedItems.length })}
               </Button>
             </div>
           </div>

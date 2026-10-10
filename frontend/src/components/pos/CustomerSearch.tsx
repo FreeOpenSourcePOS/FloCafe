@@ -21,10 +21,10 @@ interface Props {
 }
 
 const TAG_COLORS: Record<string, string> = {
-  veg:    'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+  veg: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
   nonveg: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-  vegan:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-  spicy:  'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
+  vegan: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  spicy: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
 };
 
 function tagColor(tag: string) {
@@ -35,7 +35,10 @@ function digitsOnly(value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '');
 }
 
-function phoneMatchesInput(customerPhoneDigits: string | null | undefined, inputDigits: string): boolean {
+function phoneMatchesInput(
+  customerPhoneDigits: string | null | undefined,
+  inputDigits: string,
+): boolean {
   if (!customerPhoneDigits || !inputDigits) return false;
   return customerPhoneDigits.includes(inputDigits);
 }
@@ -47,7 +50,10 @@ function TagBadges({ counts }: { counts: Record<string, number> }) {
   return (
     <div className="flex flex-wrap gap-1">
       {entries.map(([tag, count]) => (
-        <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${tagColor(tag)}`}>
+        <span
+          key={tag}
+          className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${tagColor(tag)}`}
+        >
           {t('tagCount', { tag, count })}
         </span>
       ))}
@@ -89,25 +95,28 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   useEffect(() => {
     if (!customer) return;
     const controller = new AbortController();
-    api.get(`/customers/${customer.id}/wallet`, { signal: controller.signal })
+    api
+      .get(`/customers/${customer.id}/wallet`, { signal: controller.signal })
       .then((res) => setLoyaltyPoints(res.data.balance))
       .catch((err: unknown) => {
-        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) return;
+        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))
+          return;
         setLoyaltyPoints(null);
       });
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id]);
 
   useEffect(() => {
     if (cart.customerId && !cart.customer) {
       const controller = new AbortController();
-      api.get(`/customers/${cart.customerId}`, { signal: controller.signal })
-        .then(res => cart.setCustomer(res.data.customer))
+      api
+        .get(`/customers/${cart.customerId}`, { signal: controller.signal })
+        .then((res) => cart.setCustomer(res.data.customer))
         .catch(() => {});
       return () => controller.abort();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.customerId]);
 
   useEffect(() => {
@@ -120,14 +129,22 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const searchByPhone = (p: string) => {
     clearTimeout(debounceRef.current);
     requestAbortRef.current?.abort();
-    if (p.length < 3) { setMatched(null); setName(''); setSearched(false); return; }
+    if (p.length < 3) {
+      setMatched(null);
+      setName('');
+      setSearched(false);
+      return;
+    }
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       requestAbortRef.current = controller;
       try {
-        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`, { signal: controller.signal });
-        const results = Array.isArray(data) ? data : (data.customers || []);
-        const exactMatch = results.find((result: Customer) => phoneMatchesInput(result.phone_digits, p)) || null;
+        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`, {
+          signal: controller.signal,
+        });
+        const results = Array.isArray(data) ? data : data.customers || [];
+        const exactMatch =
+          results.find((result: Customer) => phoneMatchesInput(result.phone_digits, p)) || null;
         const found: Customer | null = exactMatch || results[0] || null;
         setMatched(found);
         setName(found ? found.name : '');
@@ -159,7 +176,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const handleSelectMatched = () => {
     if (!matched) return;
     cart.setCustomer(matched);
-    setPhone(''); setName(''); setMatched(null); setSearched(false);
+    setPhone('');
+    setName('');
+    setMatched(null);
+    setSearched(false);
     onSelected?.();
   };
 
@@ -178,9 +198,16 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: name.trim(), phone: parsed.e164, country_code: parsed.countryCode });
+      const { data } = await api.post('/customers', {
+        name: name.trim(),
+        phone: parsed.e164,
+        country_code: parsed.countryCode,
+      });
       cart.setCustomer(data.customer);
-      setPhone(''); setName(''); setMatched(null); setSearched(false);
+      setPhone('');
+      setName('');
+      setMatched(null);
+      setSearched(false);
       toast.success(t('customerCreated'));
       onSelected?.();
     } catch {
@@ -195,14 +222,20 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const handleWidgetBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     if (creating) return;
-    if (matched) { handleSelectMatched(); return; }
-    if (isNew && name.trim() && phone.trim()) { handleCreate(); }
+    if (matched) {
+      handleSelectMatched();
+      return;
+    }
+    if (isNew && name.trim() && phone.trim()) {
+      handleCreate();
+    }
   };
 
   const handleClear = () => cart.setCustomer(null);
 
   // ── Shared input classes ───────────────────────────────────────────────────
-  const baseInput = 'min-h-11 px-3 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none text-sm';
+  const baseInput =
+    'min-h-11 px-3 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none text-sm';
 
   // ── Customer already selected ──────────────────────────────────────────────
   if (customer) {
@@ -217,8 +250,12 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               title={t('editCustomer')}
               className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start"
             >
-              <span className="font-semibold text-brand dark:text-indigo-300 text-sm truncate">{customer.name}</span>
-              <span className="text-brand/70 dark:text-indigo-300 text-xs shrink-0"><Ltr>{customer.phone}</Ltr></span>
+              <span className="font-semibold text-brand dark:text-indigo-300 text-sm truncate">
+                {customer.name}
+              </span>
+              <span className="text-brand/70 dark:text-indigo-300 text-xs shrink-0">
+                <Ltr>{customer.phone}</Ltr>
+              </span>
               <Pencil size={14} className="text-brand/60 dark:text-indigo-300 shrink-0" />
               {!!loyaltyPoints && loyaltyPoints > 0 && (
                 <span className="flex items-center gap-0.5 text-xs font-medium text-brand dark:text-indigo-300 bg-card/70 rounded-full px-1.5 py-0.5 shrink-0">
@@ -228,7 +265,11 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               )}
               {hasTags && <TagBadges counts={customer.tag_counts!} />}
             </button>
-            <button onClick={handleClear} className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 shrink-0 ms-auto" aria-label={t('remove')}>
+            <button
+              onClick={handleClear}
+              className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 shrink-0 ms-auto"
+              aria-label={t('remove')}
+            >
               <X size={16} />
             </button>
           </div>
@@ -246,12 +287,25 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     return (
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg text-sm">
-          <button onClick={() => setEditingCustomer(true)} className="touch-target flex-1 min-w-0 justify-start gap-2 text-start">
-            <span className="font-medium text-brand dark:text-indigo-300 truncate">{customer.name}</span>
-            {customer.phone && <span className="text-xs text-muted-foreground"><Ltr>{customer.phone}</Ltr></span>}
+          <button
+            onClick={() => setEditingCustomer(true)}
+            className="touch-target flex-1 min-w-0 justify-start gap-2 text-start"
+          >
+            <span className="font-medium text-brand dark:text-indigo-300 truncate">
+              {customer.name}
+            </span>
+            {customer.phone && (
+              <span className="text-xs text-muted-foreground">
+                <Ltr>{customer.phone}</Ltr>
+              </span>
+            )}
             <Pencil size={14} className="text-brand/60 dark:text-indigo-300 shrink-0" />
           </button>
-          <button onClick={handleClear} className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 ms-2 shrink-0" aria-label={t('remove')}>
+          <button
+            onClick={handleClear}
+            className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 ms-2 shrink-0"
+            aria-label={t('remove')}
+          >
             <X size={16} />
           </button>
         </div>
@@ -278,7 +332,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     return (
       <div className="relative w-full min-w-0">
         <div className="h-10 flex items-center gap-2 min-w-0" onBlur={handleWidgetBlur}>
-
           <input
             type="tel"
             inputMode="tel"
@@ -330,9 +383,13 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {searched && (
           <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-border bg-card px-2 py-1 shadow-sm">
             {matched ? (
-              <span className="text-xs text-green-600 dark:text-green-400 font-medium">{t('customerFound')}</span>
+              <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                {t('customerFound')}
+              </span>
             ) : (
-              <span className="text-xs text-red-500 dark:text-red-400 font-medium">{t('newCustomerEnterName')}</span>
+              <span className="text-xs text-red-500 dark:text-red-400 font-medium">
+                {t('newCustomerEnterName')}
+              </span>
             )}
           </div>
         )}
@@ -345,7 +402,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     <div className="space-y-2" onBlur={handleWidgetBlur}>
       <div className="grid grid-cols-1 gap-2">
         <div className="flex items-stretch gap-2">
-
           <input
             type="tel"
             inputMode="numeric"
@@ -378,7 +434,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <div className="space-y-1.5">
           {matched ? (
             <>
-              <p className="text-xs text-green-600 dark:text-green-400 font-medium">{t('customerFoundClick')}</p>
+              <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                {t('customerFoundClick')}
+              </p>
               {matched.tag_counts && <TagBadges counts={matched.tag_counts} />}
               <button
                 onClick={handleSelectMatched}
@@ -389,7 +447,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             </>
           ) : (
             <>
-              <p className="text-xs text-red-500 dark:text-red-400 font-medium">{t('newCustomerEnterName')}</p>
+              <p className="text-xs text-red-500 dark:text-red-400 font-medium">
+                {t('newCustomerEnterName')}
+              </p>
               {name.trim() && (
                 <button
                   onClick={handleCreate}

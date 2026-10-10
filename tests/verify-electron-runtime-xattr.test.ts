@@ -9,7 +9,6 @@
  */
 import * as assert from 'node:assert/strict';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { classifyQuarantine } = require('../scripts/verify-electron-runtime.cjs');
 
 function run() {
@@ -25,13 +24,29 @@ function run() {
   assert.equal(absent.state, 'absent', 'exit 1 with "No such xattr" is "absent"');
 
   // Unexpected failure (exit 1 + permission denied) → must NOT be clean.
-  const permissionDenied = classifyQuarantine(1, 'xattr: [Errno 13] Permission denied: /path/Electron.app', '');
-  assert.equal(permissionDenied.state, 'error', 'exit 1 with a permission error is "error", not clean');
-  assert.match(permissionDenied.message, /Permission denied/, 'permission error message is preserved');
+  const permissionDenied = classifyQuarantine(
+    1,
+    'xattr: [Errno 13] Permission denied: /path/Electron.app',
+    '',
+  );
+  assert.equal(
+    permissionDenied.state,
+    'error',
+    'exit 1 with a permission error is "error", not clean',
+  );
+  assert.match(
+    permissionDenied.message,
+    /Permission denied/,
+    'permission error message is preserved',
+  );
 
   // Unexpected failure (exit 1 + empty stderr) → must NOT be clean.
   const silentFailure = classifyQuarantine(1, '', '');
-  assert.equal(silentFailure.state, 'error', 'exit 1 with no "No such xattr" stderr is "error", not clean');
+  assert.equal(
+    silentFailure.state,
+    'error',
+    'exit 1 with no "No such xattr" stderr is "error", not clean',
+  );
 
   // Missing tool (exit 127) → must NOT be clean.
   const missingTool = classifyQuarantine(127, 'xattr: command not found', '');

@@ -186,77 +186,33 @@ fixtures(
   {
     'frontend/src/__lint_parity_hooks.tsx':
       "import { useEffect, useState } from 'react';\n\nexport function HooksFixture({ value }: { value: number }) {\n  const [state, setState] = useState(value);\n  useEffect(() => {\n    setState(value);\n  }, [value]);\n  return <div>{state}</div>;\n}\n",
-    'frontend/src/__lint_parity_deprecated.tsx':
-      "import React from 'react';\n\nexport class DeprecatedFixture extends React.Component {\n  componentWillMount() {}\n  render() { return null; }\n}\n",
-    'frontend/src/__lint_parity_deprecated_suppressed.tsx':
-      "import React from 'react';\n\nexport class DeprecatedSuppressedFixture extends React.Component {\n  // eslint-disable-next-line react-js/no-deprecated -- fixture suppression\n  componentWillMount() {}\n  render() { return null; }\n}\n",
     'frontend/src/__lint_parity_purity.tsx':
       'export function PurityFixture() {\n  return <div>{Date.now()}</div>;\n}\n',
+    'frontend/src/__lint_parity_purity_suppressed.tsx':
+      'export function PuritySuppressedFixture() {\n  // oxlint-disable-next-line react/purity -- fixture suppression\n  return <div>{Date.now()}</div>;\n}\n',
     'frontend/src/__lint_parity_deps.tsx':
       "import { useEffect } from 'react';\n\nexport function DepsFixture({ value }: { value: number }) {\n  useEffect(() => {\n    void value;\n  }, []);\n  return <p />;\n}\n",
     'frontend/src/__lint_parity_deps_suppressed.tsx':
       "import { useEffect } from 'react';\n\nexport function DepsSuppressed({ value }: { value: number }) {\n  useEffect(() => {\n    void value;\n    // eslint-disable-next-line react-hooks/exhaustive-deps -- fixture suppression\n  }, []);\n  return <p />;\n}\n",
+    'frontend/src/__lint_parity_deps_oxlint_suppressed.tsx':
+      "import { useEffect } from 'react';\n\nexport function DepsOxlintSuppressed({ value }: { value: number }) {\n  useEffect(() => {\n    void value;\n    // oxlint-disable-next-line react-hooks/exhaustive-deps -- fixture suppression\n  }, []);\n  return <p />;\n}\n",
     'frontend/src/__lint_parity_img.tsx':
       'export function ImgFixture() {\n  return <img src="/logo.png" alt="" />;\n}\n',
     'frontend/e2e/__lint_parity_e2e.spec.ts': 'export const violation: any = 1;\n',
-    'frontend/.lint_parity_config.json': JSON.stringify({
-      jsPlugins: [{ name: 'react-hooks-js', specifier: 'eslint-plugin-react-hooks' }],
-      rules: { 'react-hooks-js/config': ['error', { target: 'not-a-target' }] },
-    }),
-    'frontend/.lint_parity_gating.json': JSON.stringify({
-      jsPlugins: [{ name: 'react-hooks-js', specifier: 'eslint-plugin-react-hooks' }],
-      rules: { 'react-hooks-js/gating': ['error', { dynamicGating: { source: 'featureFlags' } }] },
-    }),
-    'frontend/src/__lint_parity_compiler_config.tsx':
-      'export function CompilerConfigFixture() {\n  return <div />;\n}\n',
-    'frontend/src/__lint_parity_compiler_gating.tsx':
-      'export function CompilerGatingFixture() {\n  "use memo if(not-valid)";\n  return <div />;\n}\n',
   },
   () => {
     const run = (relative: string) => runOxlint(frontendOxlint, frontendDir, [relative]);
 
-    const deprecated = run('src/__lint_parity_deprecated.tsx');
-    assert.strictEqual(deprecated.diagnostics.length, 1, 'deprecated React APIs must be reported');
-    assert.strictEqual(deprecated.diagnostics[0].code, 'react-js(no-deprecated)');
-    assert.strictEqual(deprecated.diagnostics[0].severity, 'error');
-
-    const deprecatedSuppressed = run('src/__lint_parity_deprecated_suppressed.tsx');
-    assert.strictEqual(
-      deprecatedSuppressed.diagnostics.length,
-      0,
-      'JS-plugin rules must honor eslint-disable directives',
-    );
-
     const purity = run('src/__lint_parity_purity.tsx');
-    assert.strictEqual(
-      purity.diagnostics.length,
-      1,
-      'the prior React Hooks purity rule must remain active',
-    );
-    assert.strictEqual(purity.diagnostics[0].code, 'react-hooks-js(purity)');
+    assert.strictEqual(purity.diagnostics.length, 1, 'the React purity rule must remain active');
+    assert.strictEqual(purity.diagnostics[0].code, 'react(purity)');
     assert.strictEqual(purity.diagnostics[0].severity, 'error');
 
-    const config = runOxlint(frontendOxlint, frontendDir, [
-      '--config',
-      '.lint_parity_config.json',
-      'src/__lint_parity_compiler_config.tsx',
-    ]);
-    assert.strictEqual(config.status, 1, 'invalid React Compiler options must fail lint');
-    assert.ok(
-      config.diagnostics.some(
-        (d) => d.severity === 'error' && /Not a valid target/.test(d.message),
-      ),
-      'invalid React Compiler options must report their failure',
-    );
-
-    const gating = runOxlint(frontendOxlint, frontendDir, [
-      '--config',
-      '.lint_parity_gating.json',
-      'src/__lint_parity_compiler_gating.tsx',
-    ]);
-    assert.ok(
-      gating.diagnostics.some((d) => d.code === 'react-hooks-js(gating)' && d.severity === 'error'),
-      'invalid React Compiler gating options must be reported',
+    const puritySuppressed = run('src/__lint_parity_purity_suppressed.tsx');
+    assert.strictEqual(
+      puritySuppressed.diagnostics.length,
+      0,
+      'oxlint-disable-next-line react/purity must honor directives',
     );
 
     const hooks = run('src/__lint_parity_hooks.tsx');
@@ -279,6 +235,13 @@ fixtures(
       suppressed.diagnostics.length,
       0,
       'an existing `eslint-disable-next-line react-hooks/exhaustive-deps` comment must keep suppressing the rule',
+    );
+
+    const oxlintSuppressed = run('src/__lint_parity_deps_oxlint_suppressed.tsx');
+    assert.strictEqual(
+      oxlintSuppressed.diagnostics.length,
+      0,
+      'an `oxlint-disable-next-line react-hooks/exhaustive-deps` comment must suppress the rule',
     );
 
     const img = run('src/__lint_parity_img.tsx');

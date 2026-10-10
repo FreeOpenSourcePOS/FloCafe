@@ -37,6 +37,7 @@ const TOOLING_FILES = [
   'lint-staged.config.mjs',
   'scripts/ci/check-changed-format.cjs',
   'scripts/oxc/format-staged.cjs',
+  'scripts/oxc/probe/root-scope.ts',
   'scripts/oxc/scope.cjs',
 ];
 
@@ -58,6 +59,11 @@ function gitEnv(dir: string) {
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_CONFIG_NOSYSTEM: '1',
     XDG_CONFIG_HOME: xdg,
+    CI: '',
+    GITHUB_EVENT_NAME: '',
+    GITHUB_EVENT_PATH: '',
+    HUSKY: '',
+    NODE_ENV: '',
   };
 }
 
@@ -125,11 +131,16 @@ function createContributorRepo(label: string) {
     path.join(dir, 'frontend', '.oxlintrc.json'),
   );
   // The frontend fixture config differs from the root one, so a formatted result proves which
-  // package config was applied.
+  // package config was applied. Its owned probe follows that fixture formatting.
   write(
     dir,
     'frontend/.oxfmtrc.json',
     '{ "$schema": "../node_modules/oxfmt/configuration_schema.json", "singleQuote": false }\n',
+  );
+  write(
+    dir,
+    'frontend/e2e/helpers/format-scope-probe.ts',
+    '// Owned fixture for the changed-file formatting gate.\nexport const FRONTEND_SCOPE_PROBE = "frontend scope probe";\n',
   );
   write(
     dir,
@@ -146,7 +157,7 @@ function createContributorRepo(label: string) {
 function installHooks(dir: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, ['.husky/install.mjs'], {
     cwd: dir,
-    env: { ...gitEnv(dir), CI: '', ...env },
+    env: { ...gitEnv(dir), ...env },
     encoding: 'utf8',
   });
 }
@@ -208,6 +219,72 @@ assertEqualOrThrow(
   frontendSelection.lint.join(','),
   'frontend/e2e/helpers/urls.ts,frontend/next.config.ts,frontend/src/app/page.tsx',
   'the ambient declaration Oxlint ignores must be formatted but not linted',
+);
+
+const policyProbes = scope.selectFiles(rootPackage, [
+  'scripts/oxc/probe/root-scope.ts',
+  'frontend/e2e/helpers/format-scope-probe.ts',
+]);
+assertEqualOrThrow(
+  policyProbes.format.join(','),
+  'scripts/oxc/probe/root-scope.ts',
+  'the root scope must select its owned probe fixture',
+);
+const frontendPolicyProbes = scope.selectFiles(frontendPackage, [
+  'scripts/oxc/probe/root-scope.ts',
+  'frontend/e2e/helpers/format-scope-probe.ts',
+]);
+assertEqualOrThrow(
+  frontendPolicyProbes.format.join(','),
+  'frontend/e2e/helpers/format-scope-probe.ts',
+  'the frontend scope must select its owned probe fixture',
+);
+
+for (const probe of [
+  'scripts/oxc/probe/root-scope.ts',
+  'frontend/e2e/helpers/format-scope-probe.ts',
+]) {
+  const absolute = path.join(rootDir, probe);
+  const packageDir = probe.startsWith('frontend/') ? frontendPackage.dir : rootPackage.dir;
+  const check = spawnSync(
+    process.execPath,
+    [
+      path.join(packageDir, 'node_modules', 'oxfmt', 'bin', 'oxfmt'),
+      '--check',
+      '--',
+      path.relative(packageDir, absolute),
+    ],
+    { cwd: packageDir, encoding: 'utf8' },
+  );
+  assertEqualOrThrow(
+    check.status,
+    0,
+    `owned probe fixture ${probe} must stay formatted: ${check.stdout}${check.stderr}`,
+  );
+}
+
+const editorSettings = JSON.parse(
+  fs.readFileSync(path.join(rootDir, '.vscode', 'settings.json'), 'utf8'),
+);
+for (const language of ['javascript', 'javascriptreact', 'typescript', 'typescriptreact']) {
+  const settings = editorSettings[`[${language}]`];
+  assertEqualOrThrow(
+    settings['editor.defaultFormatter'],
+    'oxc.oxc-vscode',
+    `${language} files must use the Oxc formatter extension`,
+  );
+  assertEqualOrThrow(
+    settings['editor.formatOnSave'],
+    true,
+    `${language} files must format on save`,
+  );
+}
+const editorRecommendations = JSON.parse(
+  fs.readFileSync(path.join(rootDir, '.vscode', 'extensions.json'), 'utf8'),
+).recommendations;
+assertOrThrow(
+  editorRecommendations.includes('oxc.oxc-vscode'),
+  'the Oxc formatter extension must be recommended',
 );
 
 // ── Contributor pre-commit hook ──────────────────────────────────────────────
@@ -491,12 +568,14 @@ assertEqualOrThrow(
 const defaultHookRepo = createInstallScene('default-hook');
 const defaultHooksDir = path.join(defaultHookRepo, '.git', 'hooks');
 fs.mkdirSync(defaultHooksDir, { recursive: true });
-const defaultHook = write(
-  defaultHookRepo,
-  '.git/hooks/pre-commit',
-  '#!/bin/sh\nprintf invoked > .git/custom-hook-ran\n',
-);
-fs.chmodSync(defaultHook, 0o755);
+const defaultHooks = {
+  'commit-msg': "#!/bin/sh\nprintf '%s\\n' commit-msg >> .git/custom-hook-runs\n",
+  'pre-push': "#!/bin/sh\nprintf '%s\\n' pre-push >> .git/custom-hook-runs\n",
+};
+for (const [name, contents] of Object.entries(defaultHooks)) {
+  const hookPath = write(defaultHookRepo, `.git/hooks/${name}`, contents);
+  fs.chmodSync(hookPath, 0o755);
+}
 const defaultHookInstall = installHooks(defaultHookRepo);
 assertEqualOrThrow(
   defaultHookInstall.status,
@@ -505,25 +584,90 @@ assertEqualOrThrow(
 );
 assertIncludesOrThrow(
   defaultHookInstall.stdout,
-  'existing default pre-commit hook',
-  'an existing default hook must be preserved instead of being shadowed by Husky',
+  'existing default Git hook',
+  'existing default hooks must be preserved instead of being shadowed by Husky',
 );
 assertEqualOrThrow(
   hooksPath(defaultHookRepo),
   '',
   'an existing default hook must keep the default Git hook path active',
 );
+for (const [name, contents] of Object.entries(defaultHooks)) {
+  assertEqualOrThrow(
+    read(defaultHookRepo, `.git/hooks/${name}`),
+    contents,
+    `the existing ${name} hook must remain byte-identical after installation`,
+  );
+}
 write(defaultHookRepo, 'README.md', '# custom hook test\n');
 git(defaultHookRepo, ['add', 'README.md']);
-const customHookCommit = commit(defaultHookRepo, 'run existing hook');
+const customHookCommit = commit(defaultHookRepo, 'run non-pre-commit hooks');
 assertEqualOrThrow(
   customHookCommit.status,
   0,
   `a commit with the existing default hook must succeed: ${customHookCommit.stderr}`,
 );
-assertOrThrow(
-  fs.existsSync(path.join(defaultHookRepo, '.git', 'custom-hook-ran')),
-  'the existing default pre-commit hook must still run on commit',
+assertEqualOrThrow(
+  read(defaultHookRepo, '.git/custom-hook-runs'),
+  'commit-msg\n',
+  'the existing commit-msg hook must run on commit without a pre-commit hook masking the case',
+);
+const remoteRoot = tempDir('default-hook-remote');
+const remoteRepo = path.join(remoteRoot, 'origin.git');
+const bareInit = run('git', ['init', '--bare', remoteRepo], remoteRoot);
+assertEqualOrThrow(
+  bareInit.status,
+  0,
+  `the bare hook-test remote must initialize: ${bareInit.stderr}`,
+);
+git(defaultHookRepo, ['remote', 'add', 'origin', remoteRepo]);
+const hookPush = git(defaultHookRepo, ['push', 'origin', 'HEAD:main']);
+assertEqualOrThrow(
+  hookPush.status,
+  0,
+  `the existing pre-push hook must allow a push: ${hookPush.stderr}`,
+);
+assertEqualOrThrow(
+  read(defaultHookRepo, '.git/custom-hook-runs'),
+  'commit-msg\npre-push\n',
+  'the existing pre-push hook must still run on push without a pre-commit hook present',
+);
+
+const preCommitHookRepo = createInstallScene('default-pre-commit-hook');
+const preCommitHook = write(
+  preCommitHookRepo,
+  '.git/hooks/pre-commit',
+  '#!/bin/sh\nprintf invoked > .git/custom-hook-ran\n',
+);
+fs.chmodSync(preCommitHook, 0o755);
+const preCommitHookInstall = installHooks(preCommitHookRepo);
+assertEqualOrThrow(
+  preCommitHookInstall.status,
+  0,
+  `an existing pre-commit hook must not fail installs: ${preCommitHookInstall.stderr}`,
+);
+assertEqualOrThrow(
+  hooksPath(preCommitHookRepo),
+  '',
+  'an existing pre-commit hook must keep the default Git hook path active',
+);
+assertEqualOrThrow(
+  read(preCommitHookRepo, '.git/hooks/pre-commit'),
+  '#!/bin/sh\nprintf invoked > .git/custom-hook-ran\n',
+  'the existing pre-commit hook must remain byte-identical after installation',
+);
+write(preCommitHookRepo, 'README.md', '# pre-commit hook test\n');
+git(preCommitHookRepo, ['add', 'README.md']);
+const preCommitHookCommit = commit(preCommitHookRepo, 'run existing pre-commit hook');
+assertEqualOrThrow(
+  preCommitHookCommit.status,
+  0,
+  `a commit with the existing pre-commit hook must succeed: ${preCommitHookCommit.stderr}`,
+);
+assertEqualOrThrow(
+  read(preCommitHookRepo, '.git/custom-hook-ran'),
+  'invoked',
+  'the existing pre-commit hook must still run on commit',
 );
 
 const frontendScripts = JSON.parse(
@@ -679,6 +823,31 @@ assertIncludesOrThrow(
   shallowGate.stdout,
   '1 changed root file(s)',
   'merge-base comparison must exclude untouched legacy formatting debt',
+);
+
+const pullRequestRepo = createContributorRepo('gate-pull-request');
+const pullRequestBase = git(pullRequestRepo, ['rev-parse', 'HEAD']).stdout.trim();
+write(pullRequestRepo, 'main/pull-request.ts', 'export const  pullRequest={value:1}\n');
+commitAll(pullRequestRepo, 'add pull request file');
+const pullRequestEventPath = path.join(pullRequestRepo, '.pull-request-event.json');
+write(
+  pullRequestRepo,
+  '.pull-request-event.json',
+  JSON.stringify({ pull_request: { base: { sha: pullRequestBase } } }),
+);
+const pullRequestGate = runGate(pullRequestRepo, [], {
+  GITHUB_EVENT_NAME: 'pull_request',
+  GITHUB_EVENT_PATH: pullRequestEventPath,
+});
+assertEqualOrThrow(
+  pullRequestGate.status,
+  1,
+  `the pull request event must check its changed files: ${gateOutput(pullRequestGate)}`,
+);
+assertIncludesOrThrow(
+  gateOutput(pullRequestGate),
+  'main/pull-request.ts',
+  'pull request comparison must run from the event base to HEAD',
 );
 
 const pushRepo = createContributorRepo('gate-push-range');
@@ -869,6 +1038,39 @@ assertEqualOrThrow(
   `formatted frontend change must pass: ${gateOutput(frontendGateFixed)}`,
 );
 
+const policyRepo = createContributorRepo('gate-policy');
+const policyBase = git(policyRepo, ['rev-parse', 'HEAD']).stdout.trim();
+write(policyRepo, 'package.json', '{"name":"oxc-temp-repo","version":"1.0.1"}\n');
+commitAll(policyRepo, 'formatter policy change');
+const policyGate = runGate(policyRepo, ['--base', policyBase]);
+assertEqualOrThrow(
+  policyGate.status,
+  0,
+  `a formatter policy change must check the owned fixtures: ${gateOutput(policyGate)}`,
+);
+assertIncludesOrThrow(
+  policyGate.stdout,
+  'owned',
+  'a policy-only change must exercise an owned fixture instead of reporting no work',
+);
+
+const brokenPolicyRepo = createContributorRepo('gate-policy-broken');
+const brokenPolicyBase = git(brokenPolicyRepo, ['rev-parse', 'HEAD']).stdout.trim();
+fs.rmSync(path.join(brokenPolicyRepo, 'scripts/oxc/probe/root-scope.ts'));
+write(brokenPolicyRepo, 'package.json', '{"name":"oxc-temp-repo","version":"1.0.2"}\n');
+commitAll(brokenPolicyRepo, 'policy change without its fixture');
+const brokenPolicyGate = runGate(brokenPolicyRepo, ['--base', brokenPolicyBase]);
+assertEqualOrThrow(
+  brokenPolicyGate.status,
+  1,
+  `a policy change with a missing fixture must fail: ${gateOutput(brokenPolicyGate)}`,
+);
+assertIncludesOrThrow(
+  gateOutput(brokenPolicyGate),
+  'scripts/oxc/probe/root-scope.ts are missing',
+  'a policy-only change without its owned fixture must be reported, never treated as no work',
+);
+
 const noBaseRepo = createContributorRepo('gate-no-base');
 const noBaseGate = runGate(noBaseRepo);
 assertEqualOrThrow(noBaseGate.status, 1, 'a run without a comparison base must fail');
@@ -989,7 +1191,6 @@ for (const pattern of [
   'tsconfig.json',
   '.oxlintrc.json',
   '.oxfmtrc.json',
-  'frontend/.oxfmtrc.json',
   'scripts/ci/check-lint-budget.cjs',
   'lint-staged.config.mjs',
   '.husky/**',

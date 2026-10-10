@@ -11,9 +11,24 @@
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
+const path = require('node:path');
 const scope = require('../oxc/scope.cjs');
 
 const HISTORY_FETCH_DEPTH = 200;
+
+const POLICY_FILES = new Set([
+  '.oxfmtrc.json',
+  'frontend/.oxfmtrc.json',
+  'package.json',
+  'frontend/package.json',
+  'scripts/oxc/scope.cjs',
+  'scripts/ci/check-changed-format.cjs',
+]);
+
+const POLICY_PROBES = [
+  'scripts/oxc/probe/root-scope.ts',
+  'frontend/e2e/helpers/format-scope-probe.ts',
+];
 
 const USAGE = 'Pass --base <rev> when there is no GitHub event payload.';
 
@@ -64,7 +79,7 @@ function comparisonFromPayload() {
   if (!eventPath || !fs.existsSync(eventPath)) return null;
   const event = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
   const eventName = process.env.GITHUB_EVENT_NAME ?? '';
-  if (eventName === 'pull_request' || eventName === 'pull_request_target') {
+  if (eventName === 'pull_request') {
     const base = event?.pull_request?.base?.sha;
     if (!base) throw new Error('The pull request payload has no base commit to compare against.');
     return {
@@ -168,7 +183,32 @@ function main() {
   const selectedCount = selections.reduce((total, entry) => total + entry.format.length, 0);
 
   if (selectedCount === 0) {
-    console.log('No JS/TS files in the Oxc formatting scope changed; nothing to check.');
+    const touchedPolicy = changed.filter((file) => POLICY_FILES.has(file));
+    if (touchedPolicy.length === 0) {
+      console.log('No JS/TS files in the Oxc formatting scope changed; nothing to check.');
+      return;
+    }
+    console.log(
+      `Formatter policy changed (${touchedPolicy.join(', ')}); checking owned scope fixtures.`,
+    );
+    const missing = POLICY_PROBES.filter(
+      (file) => !fs.existsSync(path.join(scope.REPO_ROOT, file)),
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `Owned fixture(s) ${missing.join(', ')} are missing; a policy-only change needs them to exercise the formatter.`,
+      );
+    }
+    for (const pkg of scope.PACKAGES) {
+      const { format } = scope.selectFiles(pkg, POLICY_PROBES);
+      if (format.length === 0) {
+        throw new Error(
+          `No owned ${pkg.name} fixture is selected by the formatting scope; the selection policy is broken.`,
+        );
+      }
+      console.log(`Checking ${format.length} owned ${pkg.name} fixture(s).`);
+      runCheck(pkg, format);
+    }
     return;
   }
 

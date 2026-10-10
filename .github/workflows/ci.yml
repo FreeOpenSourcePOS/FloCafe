@@ -51,7 +51,7 @@ jobs:
         with:
           filters: |
             frontend: ['frontend/**', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
-            backend: ['main/**', 'shared/**', 'scripts/**', 'dev-server.js', 'kill-ports.js', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.oxlintrc.json', '.oxfmtrc.json', 'frontend/.oxfmtrc.json', 'scripts/ci/check-lint-budget.cjs', 'lint-staged.config.mjs', '.husky/**', '.github/workflows/ci.yml']
+            backend: ['main/**', 'shared/**', 'scripts/**', 'dev-server.js', 'kill-ports.js', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.oxlintrc.json', '.oxfmtrc.json', 'scripts/ci/check-lint-budget.cjs', 'lint-staged.config.mjs', '.husky/**', '.github/workflows/ci.yml']
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']

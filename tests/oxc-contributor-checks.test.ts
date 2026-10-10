@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // Electron must be mocked before the shared helper pulls in main/db.
 const Module = require('module');
@@ -535,6 +536,44 @@ assertEqualOrThrow(
   "another tool's hooks path must survive hook installation",
 );
 
+const defaultHookRepo = createInstallScene('default-hook');
+const defaultHooksDir = path.join(defaultHookRepo, '.git', 'hooks');
+fs.mkdirSync(defaultHooksDir, { recursive: true });
+const defaultHook = write(
+  defaultHookRepo,
+  '.git/hooks/pre-commit',
+  '#!/bin/sh\nprintf invoked > .git/custom-hook-ran\n',
+);
+fs.chmodSync(defaultHook, 0o755);
+const defaultHookInstall = installHooks(defaultHookRepo);
+assertEqualOrThrow(
+  defaultHookInstall.status,
+  0,
+  `an existing default hook must not fail installs: ${defaultHookInstall.stderr}`,
+);
+assertIncludesOrThrow(
+  defaultHookInstall.stdout,
+  'existing default pre-commit hook',
+  'an existing default hook must be preserved instead of being shadowed by Husky',
+);
+assertEqualOrThrow(
+  hooksPath(defaultHookRepo),
+  '',
+  'an existing default hook must keep the default Git hook path active',
+);
+write(defaultHookRepo, 'README.md', '# custom hook test\n');
+git(defaultHookRepo, ['add', 'README.md']);
+const customHookCommit = commit(defaultHookRepo, 'run existing hook');
+assertEqualOrThrow(
+  customHookCommit.status,
+  0,
+  `a commit with the existing default hook must succeed: ${customHookCommit.stderr}`,
+);
+assertOrThrow(
+  fs.existsSync(path.join(defaultHookRepo, '.git', 'custom-hook-ran')),
+  'the existing default pre-commit hook must still run on commit',
+);
+
 const frontendScripts = JSON.parse(
   fs.readFileSync(path.join(rootDir, 'frontend', 'package.json'), 'utf8'),
 ).scripts;
@@ -558,10 +597,10 @@ assertIncludesOrThrow(
 
 console.log('Testing the changed-file formatting gate...');
 
-function runGate(dir: string, args: string[] = []) {
+function runGate(dir: string, args: string[] = [], env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, ['scripts/ci/check-changed-format.cjs', ...args], {
     cwd: dir,
-    env: gitEnv(dir),
+    env: { ...gitEnv(dir), ...env },
     encoding: 'utf8',
   });
 }
@@ -591,6 +630,11 @@ assertIncludesOrThrow(
   gateOutput(unformattedGate),
   'main/changed.ts',
   'the gate must name the file that needs formatting',
+);
+assertIncludesOrThrow(
+  gateOutput(unformattedGate),
+  'npx oxfmt --write --" from the repository root',
+  'root repair guidance must use Oxfmt on selected root paths',
 );
 assertEqualOrThrow(
   read(gateRepo, 'main/changed.ts'),
@@ -630,6 +674,92 @@ assertIncludesOrThrow(
   gateOutput(rangeGate),
   'Format issues found in above 1 files',
   'only the unformatted file in the range may be reported',
+);
+
+const shallowSource = createContributorRepo('gate-shallow-source');
+write(shallowSource, 'main/legacy.ts', 'export const  legacy={value:1}\n');
+commitAll(shallowSource, 'add untouched legacy debt');
+const commonCommit = git(shallowSource, ['rev-parse', 'HEAD']).stdout.trim();
+git(shallowSource, ['checkout', '-b', 'feature']);
+write(shallowSource, 'main/new.ts', 'export const newValue = { value: 1 };\n');
+commitAll(shallowSource, 'add formatted feature file');
+git(shallowSource, ['checkout', '-b', 'base', commonCommit]);
+write(shallowSource, 'main/legacy.ts', 'export const  legacy={value:2}\n');
+commitAll(shallowSource, 'advance base with legacy change');
+const shallowBase = git(shallowSource, ['rev-parse', 'HEAD']).stdout.trim();
+const shallowRemote = path.join(tempDir('gate-shallow-remote'), 'repo.git');
+git(shallowSource, ['init', '--bare', shallowRemote]);
+git(shallowSource, ['remote', 'add', 'origin', shallowRemote]);
+git(shallowSource, ['push', 'origin', 'feature', 'base']);
+const shallowParent = tempDir('gate-shallow-clone');
+const shallowRepo = path.join(shallowParent, 'checkout');
+const shallowClone = run(
+  'git',
+  ['clone', '--depth=1', '--branch', 'feature', pathToFileURL(shallowRemote).href, shallowRepo],
+  shallowSource,
+);
+assertEqualOrThrow(
+  shallowClone.status,
+  0,
+  `the shallow clone must be created: ${shallowClone.stderr}`,
+);
+assertEqualOrThrow(
+  git(shallowRepo, ['rev-parse', '--is-shallow-repository']).stdout.trim(),
+  'true',
+  'the divergent history regression must run from a shallow clone',
+);
+git(shallowRepo, ['config', 'protocol.file.allow', 'always']);
+const shallowGate = runGate(shallowRepo, ['--base', shallowBase]);
+assertEqualOrThrow(
+  shallowGate.status,
+  0,
+  `a shallow divergent PR must check only the feature change: ${gateOutput(shallowGate)}`,
+);
+assertIncludesOrThrow(
+  shallowGate.stdout,
+  '1 changed root file(s)',
+  'merge-base comparison must exclude untouched legacy formatting debt',
+);
+
+const pushRepo = createContributorRepo('gate-push-range');
+write(pushRepo, 'main/legacy.ts', 'export const  legacy={value:1}\n');
+commitAll(pushRepo, 'add legacy debt');
+const pushCommon = git(pushRepo, ['rev-parse', 'HEAD']).stdout.trim();
+git(pushRepo, ['checkout', '-b', 'before']);
+write(pushRepo, 'main/legacy.ts', 'export const legacy = { value: 2 };\n');
+commitAll(pushRepo, 'format legacy on previous branch');
+const pushBefore = git(pushRepo, ['rev-parse', 'HEAD']).stdout.trim();
+git(pushRepo, ['checkout', '-b', 'after', pushCommon]);
+write(pushRepo, 'main/new.ts', 'export const newValue = { value: 1 };\n');
+commitAll(pushRepo, 'add pushed file');
+const pushAfter = git(pushRepo, ['rev-parse', 'HEAD']).stdout.trim();
+git(pushRepo, ['checkout', '-b', 'checkout-head', pushAfter]);
+write(pushRepo, 'main/decoy.ts', 'export const  decoy={value:1}\n');
+commitAll(pushRepo, 'add file outside pushed range');
+const pushEventPath = path.join(pushRepo, '.push-event.json');
+write(pushRepo, '.push-event.json', JSON.stringify({ before: pushBefore, after: pushAfter }));
+const pushGate = runGate(pushRepo, [], {
+  GITHUB_EVENT_NAME: 'push',
+  GITHUB_EVENT_PATH: pushEventPath,
+});
+assertEqualOrThrow(
+  pushGate.status,
+  1,
+  `the pushed before/after trees must include their changed legacy file: ${gateOutput(pushGate)}`,
+);
+assertIncludesOrThrow(
+  gateOutput(pushGate),
+  'main/legacy.ts',
+  'push comparison must use the event before/after trees instead of their merge base',
+);
+assertOrThrow(
+  !gateOutput(pushGate).includes('main/decoy.ts'),
+  'push comparison must stop at the event after commit instead of using the checkout HEAD',
+);
+assertIncludesOrThrow(
+  pushGate.stdout,
+  `pushed range ${pushBefore}..${pushAfter}`,
+  'push output must identify the payload before/after range',
 );
 
 const deleteRepo = createContributorRepo('gate-delete');
@@ -725,6 +855,11 @@ assertIncludesOrThrow(
   gateOutput(frontendGate),
   'frontend file',
   'the gate must split the frontend scope',
+);
+assertIncludesOrThrow(
+  gateOutput(frontendGate),
+  'npx oxfmt --write --" from frontend/',
+  'frontend repair guidance must use the frontend package formatter on selected paths',
 );
 run(
   process.execPath,
@@ -858,24 +993,52 @@ for (const required of ['npm run lint:backend', 'npm run lint', 'npm run lint:bu
 const filterStep = workflow.jobs.changes.steps.find(
   (step: { id?: string }) => step.id === 'filter',
 );
-const backendFilter = JSON.parse(
-  String(filterStep.with.filters)
-    .split('\n')
-    .find((line: string) => line.trim().startsWith('backend:'))
-    ?.trim()
-    .replace(/^backend:\s*/, '')
-    .replace(/'/g, '"') ?? '[]',
-) as string[];
+const normalizedFilters = YAML.load(String(filterStep.with.filters)) as Record<string, string[]>;
+const backendFilter = normalizedFilters.backend;
 for (const pattern of [
+  'main/**',
+  'shared/**',
+  'scripts/**',
+  'dev-server.js',
+  'kill-ports.js',
+  'tests/**',
+  'package.json',
+  'package-lock.json',
+  'tsconfig.json',
+  '.oxlintrc.json',
   '.oxfmtrc.json',
   'frontend/.oxfmtrc.json',
+  'scripts/ci/check-lint-budget.cjs',
   'scripts/oxc/**',
   'scripts/ci/check-changed-format.cjs',
+  'lint-staged.config.mjs',
   '.husky/**',
+  '.github/workflows/ci.yml',
 ]) {
   assertOrThrow(
     backendFilter.includes(pattern),
-    `a change to ${pattern} must not skip the job that runs the formatting gate`,
+    `the backend workflow filter must retain ${pattern}`,
+  );
+}
+const matchesBackendFilter = (file: string) =>
+  backendFilter.some((pattern) => {
+    if (!pattern.endsWith('/**')) return pattern === file;
+    const prefix = pattern.slice(0, -3);
+    return file.startsWith(`${prefix}/`);
+  });
+for (const file of [
+  'shared/print/kernel.ts',
+  'scripts/oxc/scope.cjs',
+  'scripts/ci/check-lint-budget.cjs',
+  'scripts/ci/check-changed-format.cjs',
+  'dev-server.js',
+  'kill-ports.js',
+  '.husky/pre-commit',
+  'lint-staged.config.mjs',
+]) {
+  assertOrThrow(
+    matchesBackendFilter(file),
+    `a change to ${file} must activate the backend workflow output`,
   );
 }
 

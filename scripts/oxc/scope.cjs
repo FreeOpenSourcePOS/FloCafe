@@ -46,13 +46,6 @@ function packageByName(name) {
   return found;
 }
 
-function packageForDirectory(directory) {
-  const resolved = path.resolve(directory);
-  const found = PACKAGES.find((entry) => entry.dir === resolved);
-  if (!found) throw new Error(`No Oxc scope package for directory: ${resolved}`);
-  return found;
-}
-
 function toPosix(file) {
   return file.split(path.sep).join('/');
 }
@@ -130,7 +123,6 @@ module.exports = {
   SOURCE_EXTENSIONS,
   PACKAGES,
   packageByName,
-  packageForDirectory,
   selectFiles,
   oxfmtInvocation,
   oxlintInvocation,

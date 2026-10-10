@@ -103,9 +103,10 @@ cd frontend && npm run format  # Frontend scope only
 These npm commands operate on their complete configured scopes; they do not limit formatting to files
 changed by the current task. Generated and derived files stay outside both scopes: the derived
 print-label table, the translation catalogues, committed test fixtures and goldens, lockfiles, build
-output, coverage, and test results. To format individual files, pass only those paths directly, for
-example `npx oxfmt path/to/file.ts` from the repository root or
-`cd frontend && npx oxfmt src/path/to/file.tsx`.
+output, coverage, and test results. To format only selected files, run
+`npx oxfmt --write -- path/to/file.ts` from the repository root, or
+`cd frontend && npx oxfmt --write -- src/path/to/file.tsx` for frontend files. Pass only paths owned
+by that package and quote paths containing spaces.
 
 `npm run format:check` reports the files that still need formatting. Existing sources carry a
 formatting backlog, so that command fails until they are formatted, and it is not a CI gate. CI
@@ -125,9 +126,6 @@ Hook installation is skipped when it does not apply: `HUSKY=0`, `CI`, `NODE_ENV=
 archive without a `.git` directory, a frontend-only install, or a checkout where another tool
 already sets `core.hooksPath` (that setting is never replaced). Use `HUSKY=0 npm install` inside
 linked worktrees, which share Git configuration with the main checkout.
-
-`.vscode/` recommends the official Oxc extension and enables format-on-save for JavaScript and
-TypeScript, so editor formatting matches the repository configuration.
 
 > **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 

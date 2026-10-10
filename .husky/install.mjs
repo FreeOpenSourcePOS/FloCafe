@@ -22,6 +22,15 @@ function currentHooksPath() {
   return result.status === 0 ? result.stdout.trim() : '';
 }
 
+function defaultPreCommitPath() {
+  const result = spawnSync('git', ['rev-parse', '--git-path', 'hooks/pre-commit'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return null;
+  return path.resolve(repoRoot, result.stdout.trim());
+}
+
 async function install() {
   if (process.env.HUSKY === '0') return skip('HUSKY=0');
   if (process.env.CI || process.env.NODE_ENV === 'production') {
@@ -32,6 +41,12 @@ async function install() {
   const hooksPath = currentHooksPath();
   if (hooksPath && hooksPath !== '.husky/_') {
     return skip(`core.hooksPath is already set to ${hooksPath} by another tool`);
+  }
+  if (!hooksPath) {
+    const existingHook = defaultPreCommitPath();
+    if (existingHook && fs.existsSync(existingHook)) {
+      return skip('an existing default pre-commit hook is already installed');
+    }
   }
 
   let husky;

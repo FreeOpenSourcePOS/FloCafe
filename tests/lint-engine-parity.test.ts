@@ -684,7 +684,12 @@ fixtures(
     );
 
     const stable = readText(backendAbsolute);
-    runOxfmt(backendOxfmt, rootDir, [backendFixture]);
+    const repeatedWrite = runOxfmt(backendOxfmt, rootDir, [backendFixture]);
+    assert.strictEqual(
+      repeatedWrite.status,
+      0,
+      `a repeated formatter write must succeed: ${repeatedWrite.stderr}`,
+    );
     assert.strictEqual(readText(backendAbsolute), stable, 'a repeated write must be byte-stable');
 
     const formattedCheck = runOxfmt(backendOxfmt, rootDir, ['--check', backendFixture]);

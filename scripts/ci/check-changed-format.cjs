@@ -8,8 +8,6 @@
 // whole (never a modified hunk) and untouched legacy files stay out of scope.
 //
 // Usage: node scripts/ci/check-changed-format.cjs [--base <rev>] [--head <rev>]
-// In GitHub Actions the comparison comes from the event payload: the pull request base or
-// the pushed-before commit. An unavailable comparison fails instead of reporting no work.
 
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -31,6 +29,7 @@ const POLICY_PROBES = [
   'scripts/oxc/probe/root-scope.ts',
   'frontend/e2e/helpers/format-scope-probe.ts',
 ];
+const HISTORY_FETCH_DEPTH = 200;
 
 const USAGE =
   'Pass --base <rev> (and optionally --head <rev>) when there is no GitHub event payload.';
@@ -51,11 +50,16 @@ function commitExists(rev) {
 
 // Shallow clones may not have the comparison commit yet; fetch exactly that commit.
 function ensureCommit(rev) {
-  if (commitExists(rev)) return;
-  const fetched = git(['fetch', '--no-tags', '--depth=1', 'origin', rev], { allowFailure: true });
-  if (commitExists(rev)) return;
-  const details = (fetched.stderr || fetched.stdout || '').trim();
-  throw new Error(`Cannot compare against ${rev}; the commit is unavailable locally.\n${details}`);
+  if (!commitExists(rev)) {
+    const fetched = git(['fetch', '--no-tags', '--depth=1', 'origin', rev], { allowFailure: true });
+    if (!commitExists(rev)) {
+      const details = (fetched.stderr || fetched.stdout || '').trim();
+      throw new Error(
+        `Cannot compare against ${rev}; the commit is unavailable locally.\n${details}`,
+      );
+    }
+  }
+  return git(['rev-parse', '--verify', `${rev}^{commit}`]).stdout.trim();
 }
 
 function parseArgs(argv) {
@@ -83,30 +87,65 @@ function comparisonFromPayload() {
   if (eventName === 'pull_request' || eventName === 'pull_request_target') {
     const base = event?.pull_request?.base?.sha;
     if (!base) throw new Error('The pull request payload has no base commit to compare against.');
-    return { base, description: `pull request base ${base}` };
+    return {
+      base,
+      head: 'HEAD',
+      strategy: 'merge-base',
+      description: `pull request base ${base}`,
+    };
   }
   if (eventName === 'push') {
     const before = event?.before;
     if (!before || /^0+$/.test(before)) {
       throw new Error(`This push has no previous commit to compare against. ${USAGE}`);
     }
-    return { base: before, description: `pushed range ${before}..HEAD` };
+    const after = event?.after;
+    if (!after || /^0+$/.test(after)) {
+      throw new Error(`This push has no new commit to compare against. ${USAGE}`);
+    }
+    return {
+      base: before,
+      head: after,
+      strategy: 'range',
+      description: `pushed range ${before}..${after}`,
+    };
   }
   return null;
 }
 
 function resolveComparison(options) {
-  if (options.base) return { base: options.base, description: `explicit base ${options.base}` };
+  if (options.base) {
+    return {
+      base: options.base,
+      head: options.head,
+      strategy: 'merge-base',
+      description: `explicit base ${options.base}`,
+    };
+  }
   const fromPayload = comparisonFromPayload();
   if (fromPayload) return fromPayload;
   throw new Error(`No comparison base was found for this run. ${USAGE}`);
 }
 
-function changedFiles(base, head) {
-  // merge-base keeps base-side commits out of the comparison when the base has moved on;
-  // shallow clones can lack the ancestry, in which case the event base is already exact.
-  const mergeBase = git(['merge-base', base, head], { allowFailure: true });
-  const from = mergeBase.status === 0 ? mergeBase.stdout.trim() || base : base;
+function mergeBaseCommit(base, head) {
+  let result = git(['merge-base', base, head], { allowFailure: true });
+  if (result.status === 0) return result.stdout.trim();
+
+  const fetched = git(
+    ['fetch', '--no-tags', `--deepen=${HISTORY_FETCH_DEPTH}`, 'origin', base, head],
+    { allowFailure: true },
+  );
+  result = git(['merge-base', base, head], { allowFailure: true });
+  if (result.status === 0) return result.stdout.trim();
+
+  const details = (result.stderr || result.stdout || fetched.stderr || fetched.stdout || '').trim();
+  throw new Error(
+    `Cannot determine the merge base between ${base} and ${head} after fetching up to ${HISTORY_FETCH_DEPTH} commits of history.\n${details}`,
+  );
+}
+
+function changedFiles(base, head, strategy) {
+  const from = strategy === 'merge-base' ? mergeBaseCommit(base, head) : base;
   const diff = git(['diff', '--name-only', '--diff-filter=ACMR', '-z', `${from}..${head}`]);
   return diff.stdout.split('\0').filter(Boolean);
 }
@@ -128,16 +167,21 @@ function runCheck(pkg, files) {
     );
   }
   console.error(`Selected ${files.length} changed ${pkg.name} file(s): ${files.join(', ')}`);
+  const repair =
+    pkg.name === 'frontend'
+      ? 'Run "npx oxfmt --write --" from frontend/ with only the selected frontend paths.'
+      : 'Run "npx oxfmt --write --" from the repository root with only the selected root paths.';
   throw new Error(
-    `Oxfmt failed for ${files.length} changed ${pkg.name} file(s) with exit ${result.status}. Run "npm run format", which formats the whole touched file.`,
+    `Oxfmt failed for ${files.length} changed ${pkg.name} file(s) with exit ${result.status}. ${repair} Quote paths containing spaces.`,
   );
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const { base, description } = resolveComparison(options);
-  ensureCommit(base);
-  const changed = changedFiles(base, options.head);
+  const { base, head, strategy, description } = resolveComparison(options);
+  const baseCommit = ensureCommit(base);
+  const headCommit = ensureCommit(head);
+  const changed = changedFiles(baseCommit, headCommit, strategy);
   console.log(`Changed-file format check (${description}): ${changed.length} changed file(s).`);
 
   const selections = scope.PACKAGES.map((pkg) => ({ pkg, ...scope.selectFiles(pkg, changed) }));

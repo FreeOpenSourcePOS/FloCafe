@@ -78,7 +78,6 @@ npm run dev              # Build frontend & backend, launch Electron
 node dev-server.js       # Backend only (Express API on :3001, KDS on :3002, Server App on :3003)
 npm run dev:frontend     # Frontend development server in browser
 npm run lint             # Lint backend and frontend
-npm run format           # Format backend and frontend
 npm run build            # Compile TypeScript backend to dist/
 npm run build:frontend   # Export static Next.js frontend
 npm test                 # Run default test suite

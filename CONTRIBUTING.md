@@ -117,7 +117,7 @@ enforced gate: `npm run lint` reports problems and never rewrites sources.
 
 ### Editor and pre-commit hook
 
-`npm install` installs a Husky pre-commit hook that runs lint-staged. It formats staged files in
+`npm install` can install a Husky pre-commit hook that runs lint-staged. It formats staged files in
 each package's formatting scope and lints files in that package's lint scope; root lint is limited
 to `main/` and `shared/`, so root scripts, tests and tooling are format-only. The hook stages the
 formatted result. Partially staged files keep their unstaged edits untouched. Hooks are a local
@@ -126,8 +126,11 @@ scopes for every pull request.
 
 Hook installation is skipped when it does not apply: `HUSKY=0`, `CI`, `NODE_ENV=production`, a source
 archive without a `.git` directory, a frontend-only install, or a checkout where another tool
-already sets `core.hooksPath` (that setting is never replaced). Use `HUSKY=0 npm install` inside
-linked worktrees, which share Git configuration with the main checkout.
+already sets `core.hooksPath` (that setting is never replaced), or a default Git hooks directory
+that already contains a non-sample regular file (existing hooks are preserved). When the Oxc hook
+is not installed, use the manual formatter and lint commands above; CI remains the enforced gate.
+Use `HUSKY=0 npm install` inside linked worktrees, which share Git configuration with the main
+checkout.
 
 > **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 

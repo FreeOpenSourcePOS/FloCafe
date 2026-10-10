@@ -140,7 +140,6 @@ Use clear commit messages following Conventional Commits (`feat:`, `fix:`, `docs
 
 - **Backend (`main/`):** TypeScript with strict types, Express route handlers in `main/routes/`, SQLite access via `better-sqlite3`.
 - **Frontend (`frontend/src/`):** Next.js 16, React 19, Tailwind CSS, shadcn/ui components, and Zustand for shared client state.
-- **Formatting:** Oxfmt owns style: two spaces, semicolons, single quotes, and a 100-column target. Scope and commands are in [Formatting](#formatting).
 
 ---
 
@@ -158,7 +157,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
-- **Formatting:** `npm run format:check` checks the complete configured scopes and `npm run format` writes across them. To check or format only touched files, run Oxfmt directly with their paths, such as `npx oxfmt --check path/to/file.ts` or `npx oxfmt path/to/file.ts`.
+- **Formatting:** See [Formatting](#formatting) for full-scope commands and changed-file checks.
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).

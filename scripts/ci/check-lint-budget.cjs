@@ -13,23 +13,24 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const BUDGET_PATH = path.join(__dirname, 'lint-budget.json');
 const budget = JSON.parse(fs.readFileSync(BUDGET_PATH, 'utf8'));
 
+for (const name of ['backend', 'frontend']) {
+  const limit = budget?.[name];
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0) {
+    throw new Error(`Invalid lint warning budget for ${name}.`);
+  }
+}
+
 const SCOPES = [
   { name: 'backend', cwd: ROOT, args: ['main/', 'shared/'] },
   { name: 'frontend', cwd: path.join(ROOT, 'frontend'), args: ['.'] },
 ];
-
-for (const scope of SCOPES) {
-  const limit = budget?.[scope.name];
-  if (!Number.isFinite(limit) || limit < 0) {
-    throw new Error(`Lint warning budget for ${scope.name} must be a finite non-negative number.`);
-  }
-}
 
 function countDiagnostics(scope) {
   const result = spawnSync('npx', ['oxlint', ...scope.args, '--format', 'json'], {
     cwd: scope.cwd,
     encoding: 'utf8',
     maxBuffer: 1024 * 1024 * 64,
+    shell: process.platform === 'win32',
   });
   if (result.error) {
     throw new Error(`oxlint could not run for ${scope.name}: ${result.error.message}`);
@@ -43,11 +44,17 @@ function countDiagnostics(scope) {
       `oxlint did not report valid JSON for ${scope.name} (exit ${result.status}).\n${details}`,
     );
   }
-  if (!Array.isArray(report.diagnostics)) {
+  if (!report || typeof report !== 'object' || !Array.isArray(report.diagnostics)) {
     throw new Error(`oxlint reported no diagnostics list for ${scope.name}.`);
   }
-  if (report.diagnostics.some((diagnostic) => !['error', 'warning'].includes(diagnostic?.severity))) {
-    throw new Error(`oxlint reported an invalid diagnostic severity for ${scope.name}.`);
+  for (const diagnostic of report.diagnostics) {
+    if (
+      !diagnostic ||
+      typeof diagnostic !== 'object' ||
+      !['error', 'warning'].includes(diagnostic.severity)
+    ) {
+      throw new Error(`oxlint reported an invalid diagnostic severity for ${scope.name}.`);
+    }
   }
   return {
     errors: report.diagnostics.filter((d) => d.severity === 'error').length,

@@ -17,8 +17,8 @@ issue #441 (epic #438).
   kernel treats codes as structural strings (`PrintLanguageCode = string`).
 - Enforced in CI by the public consumer-boundary checks in
   `tests/kernel-purity.test.ts`, the static forbidden-import audit in
-  `tests/print-document.test.ts`, and ESLint (`npm run lint` covers `shared/`
-  with import restrictions).
+  `tests/print-document.test.ts`, and the shared-scope lint rules described in
+  [the frontend architecture guide](../../docs/architecture/frontend.md#lint-engine).
 
 ## Registry-injection pattern
 

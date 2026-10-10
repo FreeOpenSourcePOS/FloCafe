@@ -87,9 +87,11 @@ npm test                 # Run default test suite
 ### Formatting
 
 Oxfmt owns formatting, pinned to an exact version in both `package.json` files. The backend scope is
-`main/`, `shared/`, `scripts/`, `tests/`, `dev-server.js`, and `kill-ports.js`; the frontend scope is
-`frontend/src/`, `frontend/e2e/`, and its maintained configuration files. Formatting never reorders
-executable imports, `package.json` keys, or Tailwind classes.
+JavaScript and TypeScript sources under `main/`, `shared/`, `scripts/`, and `tests/`, plus
+`dev-server.js` and `kill-ports.js`. The frontend scope is JavaScript and TypeScript sources under
+`frontend/src/` and `frontend/e2e/`, plus its maintained JavaScript and TypeScript configuration
+files. This includes TypeScript declarations. Formatting never reorders executable imports,
+`package.json` keys, or Tailwind classes.
 
 ```sh
 npm run format                 # Write formatting across both scopes
@@ -99,9 +101,12 @@ npm run format:check:backend   # Backend scope, check only
 cd frontend && npm run format  # Frontend scope only
 ```
 
-Generated and derived files stay outside both scopes: the derived print-label table, the translation
-catalogues, committed test fixtures and goldens, lockfiles, build output, coverage, and test results.
-Format the files you touch instead of reformatting the tree inside a feature change.
+These npm commands operate on their complete configured scopes; they do not limit formatting to files
+changed by the current task. Generated and derived files stay outside both scopes: the derived
+print-label table, the translation catalogues, committed test fixtures and goldens, lockfiles, build
+output, coverage, and test results. To format individual files, pass only those paths directly, for
+example `npx oxfmt path/to/file.ts` from the repository root or
+`cd frontend && npx oxfmt src/path/to/file.tsx`.
 
 `npm run format:check` reports the files that still need formatting. Existing sources carry a
 formatting backlog, so that command fails until they are formatted, and it is not a required CI
@@ -154,7 +159,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
-- **Formatting:** Run `npm run format:check` for the sources you touched, and `npm run format` to fix what it reports.
+- **Formatting:** `npm run format:check` checks the complete configured scopes and `npm run format` writes across them. To check or format only touched files, run Oxfmt directly with their paths, such as `npx oxfmt --check path/to/file.ts` or `npx oxfmt path/to/file.ts`.
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).

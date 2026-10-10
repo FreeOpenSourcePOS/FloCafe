@@ -220,6 +220,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -230,14 +233,18 @@ jobs:
       - name: Build main backend process
         run: npm run build
 
+      - name: Cache Next.js build
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: frontend/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-${{ hashFiles('frontend/src/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-
+
       - name: Build frontend
         run: npm run build:frontend
         env:
           NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Install frontend dependencies for Playwright
-        working-directory: frontend
-        run: npm ci
 
       - name: Cache Playwright Browsers
         id: playwright-cache
@@ -336,6 +343,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -346,14 +356,18 @@ jobs:
       - name: Build main backend process
         run: npm run build
 
+      - name: Cache Next.js build
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: frontend/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-${{ hashFiles('frontend/src/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-
+
       - name: Build frontend
         run: npm run build:frontend
         env:
           NEXT_TELEMETRY_DISABLED: 1
-
-      - name: Install frontend dependencies for Playwright
-        working-directory: frontend
-        run: npm ci
 
       - name: Run native Electron tests under Xvfb
         # Playwright supplies --no-sandbox for Electron on Linux. Xvfb is the

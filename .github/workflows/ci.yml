@@ -353,6 +353,40 @@ jobs:
       - name: Run Windows uninstaller Pester tests
         run: node tests/run-windows-uninstaller-tests.cjs
 
+  # 6b. Windows Contributor Tooling
+  # The full cross-platform matrix only runs on main, nightly, and dispatch, so Windows-only
+  # tooling breakage (junction handling, CRLF checkouts) reached main twice in a row. This reruns
+  # the contributor tooling suites on the same OS, path-filtered to the files they cover. It is
+  # reported but not yet a required check: the ruleset owns that list.
+  windows-tooling:
+    name: Contributor Tooling (Windows)
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The fixture links this tree in, and resolves the frontend Oxfmt from it.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Oxc contributor checks (pre-commit hook and changed-file gate)
+        run: npm run test:oxc-contributor-checks
+
   # 7. Documentation Checks
   # Structural checks (Markdown lint, relative links, index completeness) gate.
   # The policy half is a ratchet: it reports development-process material and

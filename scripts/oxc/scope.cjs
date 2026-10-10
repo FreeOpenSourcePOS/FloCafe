@@ -71,7 +71,7 @@ function matchesList(relative, entries, { prefix }) {
 }
 
 function isEligible(pkg, relative) {
-  if (!SOURCE_EXTENSIONS.has(path.extname(relative).toLowerCase())) return false;
+  if (!SOURCE_EXTENSIONS.has(path.extname(relative))) return false;
   if (matchesList(relative, pkg.excludes ?? [], { prefix: true })) return false;
   return (
     matchesList(relative, pkg.files ?? [], { prefix: false }) ||

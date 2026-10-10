@@ -28,6 +28,7 @@ const {
 } = require('./helpers/test-setup');
 
 const rootDir = path.resolve(__dirname, '..');
+const directoryLinkType = process.platform === 'win32' ? 'junction' : 'dir';
 
 const TOOLING_FILES = [
   '.husky/install.mjs',
@@ -113,14 +114,18 @@ function createContributorRepo(label: string) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(rootDir, file), target);
   }
-  fs.symlinkSync(path.join(rootDir, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+  fs.symlinkSync(
+    path.join(rootDir, 'node_modules'),
+    path.join(dir, 'node_modules'),
+    directoryLinkType,
+  );
   fs.mkdirSync(path.join(dir, 'main'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'tests', 'fixtures'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'frontend'), { recursive: true });
   fs.symlinkSync(
     path.join(rootDir, 'frontend', 'node_modules'),
     path.join(dir, 'frontend', 'node_modules'),
-    'dir',
+    directoryLinkType,
   );
   fs.copyFileSync(
     path.join(rootDir, 'frontend', '.oxfmtrc.json'),
@@ -181,6 +186,7 @@ const rootSelection = scope.selectFiles(rootPackage, [
   'shared/print/kernel.ts',
   'scripts/ci/check-changed-format.cjs',
   'tests/oxc-contributor-checks.test.ts',
+  'main/Uppercase.TS',
   'tests/fixtures/golden.ts',
   'main/print/print-labels.generated.ts',
   'README.md',
@@ -206,6 +212,7 @@ const frontendSelection = scope.selectFiles(frontendPackage, [
   'frontend/next.config.ts',
   'frontend/src/lib/i18n/messages/en.json',
   'frontend/src/types/receipt-printer-encoder.d.ts',
+  'frontend/src/app/Uppercase.TSX',
   'main/service.ts',
   'frontend/README.md',
 ]);
@@ -375,13 +382,34 @@ assertEqualOrThrow(
   'excluded generated and fixture paths must stay byte-identical',
 );
 
+const uppercaseSourceFiles = [
+  ['main/Uppercase.TS', 'export const  uppercase={value:1}\n'],
+  ['frontend/src/app/Uppercase.TSX', 'export const  uppercase={label:"frontend"}\n'],
+] as const;
+for (const [file, contents] of uppercaseSourceFiles) write(hookRepo, file, contents);
+git(hookRepo, ['add', ...uppercaseSourceFiles.map(([file]) => file)]);
+const uppercaseCommit = commit(hookRepo, 'unsupported uppercase extensions');
+assertEqualOrThrow(
+  uppercaseCommit.status,
+  0,
+  `unsupported uppercase extensions must not invoke the local hook tools: ${uppercaseCommit.stderr}`,
+);
+for (const [file, contents] of uppercaseSourceFiles) {
+  assertEqualOrThrow(
+    gitShow(hookRepo, `HEAD:${file}`),
+    contents,
+    `${file} must remain outside the hook scope because the pinned tools reject it`,
+  );
+}
+
 const oddNames = [
   'main/odd/with space.ts',
   'main/odd/unicode-日本語-é.ts',
   'main/odd/brackets[1].ts',
-  'main/odd/quote\'s-"double.ts',
   'main/odd/--check.ts',
-  'main/odd/semi;touch pwned|&&.ts',
+  ...(process.platform === 'win32'
+    ? ['main/odd/with&semi;metacharacters.ts']
+    : ["main/odd/quote's-\"double.ts", 'main/odd/semi;touch pwned|&&.ts']),
 ];
 for (const name of oddNames) write(hookRepo, name, 'export const  odd={x:1}\n');
 git(hookRepo, ['add', 'main/odd']);
@@ -503,7 +531,11 @@ function createInstallScene(label: string, { gitInit = true } = {}) {
     path.join(dir, '.husky', 'install.mjs'),
   );
   if (gitInit) run('git', ['init', '-q', '.'], dir);
-  fs.symlinkSync(path.join(rootDir, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+  fs.symlinkSync(
+    path.join(rootDir, 'node_modules'),
+    path.join(dir, 'node_modules'),
+    directoryLinkType,
+  );
   return dir;
 }
 
@@ -934,6 +966,29 @@ assertIncludesOrThrow(
   'type changes to eligible source paths must reach the formatter',
 );
 
+const uppercaseGateRepo = createContributorRepo('gate-uppercase-extensions');
+const uppercaseGateBase = git(uppercaseGateRepo, ['rev-parse', 'HEAD']).stdout.trim();
+for (const [file, contents] of uppercaseSourceFiles) write(uppercaseGateRepo, file, contents);
+commitAll(uppercaseGateRepo, 'add unsupported uppercase extensions');
+const uppercaseGate = runGate(uppercaseGateRepo, ['--base', uppercaseGateBase]);
+assertEqualOrThrow(
+  uppercaseGate.status,
+  0,
+  `unsupported uppercase extensions must be excluded from the changed-file gate: ${gateOutput(uppercaseGate)}`,
+);
+assertIncludesOrThrow(
+  gateOutput(uppercaseGate),
+  'No JS/TS files in the Oxc formatting scope changed',
+  'the changed-file gate must agree with the pinned tools about uppercase extensions',
+);
+for (const [file, contents] of uppercaseSourceFiles) {
+  assertEqualOrThrow(
+    read(uppercaseGateRepo, file),
+    contents,
+    `the changed-file gate must not send unsupported ${file} to Oxfmt`,
+  );
+}
+
 const renameRepo = createContributorRepo('gate-rename');
 const renameBase = git(renameRepo, ['rev-parse', 'HEAD']).stdout.trim();
 write(renameRepo, 'main/keep.ts', 'export const keep = { k: 1 };\n');
@@ -965,9 +1020,10 @@ const oddGateNames = [
   'main/odd/with space.ts',
   'main/odd/unicode-日本語-é.ts',
   'main/odd/brackets[1].ts',
-  'main/odd/quote\'s-"-double.ts',
   'main/odd/--check.ts',
-  'main/odd/newline-\nname.ts',
+  ...(process.platform === 'win32'
+    ? ['main/odd/with&semi;metacharacters.ts']
+    : ["main/odd/quote's-\"-double.ts", 'main/odd/newline-\nname.ts']),
 ];
 for (const name of oddGateNames) write(oddGateRepo, name, 'export const  odd={x:1}\n');
 commitAll(oddGateRepo, 'odd file names');
@@ -977,16 +1033,24 @@ assertEqualOrThrow(
   1,
   `odd file names must fail the gate while unformatted: ${gateOutput(oddGate)}`,
 );
-assertIncludesOrThrow(
-  gateOutput(oddGate),
-  'newline-',
-  'NUL-delimited Git output must survive newlines in file names',
-);
-assertIncludesOrThrow(
-  gateOutput(oddGate),
-  'quote\'s-"-double.ts',
-  'quoted file names must reach the formatter unquoted and unescaped',
-);
+if (process.platform === 'win32') {
+  assertIncludesOrThrow(
+    gateOutput(oddGate),
+    'with&semi;metacharacters.ts',
+    'Windows-safe shell metacharacters must reach the formatter as one path',
+  );
+} else {
+  assertIncludesOrThrow(
+    gateOutput(oddGate),
+    'newline-',
+    'NUL-delimited Git output must survive newlines in file names',
+  );
+  assertIncludesOrThrow(
+    gateOutput(oddGate),
+    'quote\'s-"-double.ts',
+    'quoted file names must reach the formatter unquoted and unescaped',
+  );
+}
 run(
   process.execPath,
   ['scripts/oxc/format-staged.cjs', '--package', 'root', ...oddGateNames],

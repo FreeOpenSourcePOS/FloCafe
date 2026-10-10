@@ -10,45 +10,129 @@ import { resolve } from 'node:path';
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const tables = source('frontend/src/app/(dashboard)/tables/page.tsx');
-assert.match(tables, /tenantCan\(currentTenant, 'tables\.manage'\)/, 'table management controls stay permission-gated');
-assert.match(tables, /api\.put\(`\/tables\/\$\{editingTable\.id\}`/, 'table editor persists through PUT');
-assert.match(tables, /TABLE_NAME_DUPLICATE: tTables\('tableNameDuplicate'\)/, 'backend table errors map to localized UI messages');
-assert.match(tables, /TABLE_LOCATION_INVALID: tTables\('tableLocationInvalid'\)/, 'backend location errors map to localized UI messages');
-assert.match(tables, /Number\.isInteger\(capacity\).*capacity < 1/s, 'table capacity is validated before submission');
+assert.match(
+  tables,
+  /tenantCan\(currentTenant, 'tables\.manage'\)/,
+  'table management controls stay permission-gated',
+);
+assert.match(
+  tables,
+  /api\.put\(`\/tables\/\$\{editingTable\.id\}`/,
+  'table editor persists through PUT',
+);
+assert.match(
+  tables,
+  /TABLE_NAME_DUPLICATE: tTables\('tableNameDuplicate'\)/,
+  'backend table errors map to localized UI messages',
+);
+assert.match(
+  tables,
+  /TABLE_LOCATION_INVALID: tTables\('tableLocationInvalid'\)/,
+  'backend location errors map to localized UI messages',
+);
+assert.match(
+  tables,
+  /Number\.isInteger\(capacity\).*capacity < 1/s,
+  'table capacity is validated before submission',
+);
 assert.match(tables, /tTables\('allFloors'\)/, 'floor filter retains its all-floors option');
-assert.match(tables, /\[table\.floor, table\.section\]/, 'floor and section remain visible together');
+assert.match(
+  tables,
+  /\[table\.floor, table\.section\]/,
+  'floor and section remain visible together',
+);
 
 const whatsapp = source('frontend/src/components/settings/WhatsAppEnableCard.tsx');
-assert.match(whatsapp, /font-semibold text-foreground/, 'WhatsApp enable heading uses theme foreground');
+assert.match(
+  whatsapp,
+  /font-semibold text-foreground/,
+  'WhatsApp enable heading uses theme foreground',
+);
 
 const settings = source('frontend/src/app/(dashboard)/settings/page.tsx');
-assert.match(settings, /dark:bg-yellow-950\/50 dark:border-yellow-800/, 'update warning has a dark-mode surface');
-assert.match(settings, /text-yellow-700 dark:text-yellow-300/, 'update warning copy has dark-mode contrast');
-assert.match(settings, /text-red-600 dark:text-red-300/, 'update failure copy has dark-mode contrast');
+assert.match(
+  settings,
+  /dark:bg-yellow-950\/50 dark:border-yellow-800/,
+  'update warning has a dark-mode surface',
+);
+assert.match(
+  settings,
+  /text-yellow-700 dark:text-yellow-300/,
+  'update warning copy has dark-mode contrast',
+);
+assert.match(
+  settings,
+  /text-red-600 dark:text-red-300/,
+  'update failure copy has dark-mode contrast',
+);
 
 const kds = source('frontend/src/hooks/useKdsConnection.ts');
-assert.match(kds, /bg-yellow-50 dark:bg-yellow-950\/60/, 'waiting KDS cards use a dark-mode background');
+assert.match(
+  kds,
+  /bg-yellow-50 dark:bg-yellow-950\/60/,
+  'waiting KDS cards use a dark-mode background',
+);
 assert.match(kds, /text-yellow-700 dark:text-yellow-300/, 'waiting KDS labels use dark-mode text');
 
 const customers = source('frontend/src/app/(dashboard)/customers/page.tsx');
-assert.match(customers, /text-muted-foreground whitespace-nowrap.*formatDate/, 'ledger dates use semantic text color');
-assert.match(customers, /text-end text-foreground whitespace-nowrap.*fmt\(b\.total\)/, 'ledger totals use semantic text color');
+assert.match(
+  customers,
+  /text-muted-foreground whitespace-nowrap.*formatDate/s,
+  'ledger dates use semantic text color',
+);
+assert.match(
+  customers,
+  /text-end text-foreground whitespace-nowrap.*fmt\(b\.total\)/s,
+  'ledger totals use semantic text color',
+);
 
 const payment = source('frontend/src/components/pos/PaymentModal.tsx');
 assert.match(payment, /sm:max-w-4xl/, 'desktop payment modal stays wide');
 assert.match(payment, /lg:grid lg:grid-cols-2/, 'desktop payment content stays side by side');
-assert.match(payment, /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/, 'desktop payment stays two-column with bounded overflow fallback');
-assert.doesNotMatch(payment, /lg:overflow-visible/, 'desktop payment does not clip controls outside its bounded container');
+assert.match(
+  payment,
+  /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/,
+  'desktop payment stays two-column with bounded overflow fallback',
+);
+assert.doesNotMatch(
+  payment,
+  /lg:overflow-visible/,
+  'desktop payment does not clip controls outside its bounded container',
+);
 
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
-assert.match(dashboard, /dayInputRef.*monthInputRef/s, 'dashboard retains explicit date and month picker controls');
-assert.match(dashboard, /input\.showPicker\(\)/, 'dashboard calendar buttons invoke the native Chromium picker');
-assert.match(dashboard, /aria-label=\{t\('openDatePicker'\)\}/, 'dashboard date picker trigger stays accessible');
+assert.match(
+  dashboard,
+  /dayInputRef.*monthInputRef/s,
+  'dashboard retains explicit date and month picker controls',
+);
+assert.match(
+  dashboard,
+  /input\.showPicker\(\)/,
+  'dashboard calendar buttons invoke the native Chromium picker',
+);
+assert.match(
+  dashboard,
+  /aria-label=\{t\('openDatePicker'\)\}/,
+  'dashboard date picker trigger stays accessible',
+);
 
 const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
-assert.doesNotMatch(prepaidCheckout, /bg-gradient-to-br from-slate-800 to-slate-900/, 'prepaid checkout does not restore the oversized total card');
-assert.match(prepaidCheckout, /preview\.discountedSubtotal/, 'prepaid checkout shows the post-discount subtotal');
-assert.match(prepaidCheckout, /t\('discounts'\)/, 'prepaid checkout retains the compact cart-level discounts control');
+assert.doesNotMatch(
+  prepaidCheckout,
+  /bg-gradient-to-br from-slate-800 to-slate-900/,
+  'prepaid checkout does not restore the oversized total card',
+);
+assert.match(
+  prepaidCheckout,
+  /preview\.discountedSubtotal/,
+  'prepaid checkout shows the post-discount subtotal',
+);
+assert.match(
+  prepaidCheckout,
+  /t\('discounts'\)/,
+  'prepaid checkout retains the compact cart-level discounts control',
+);
 const numberPadIndex = prepaidCheckout.indexOf('<CurrencyTouchNumberPad');
 const changeReturnedIndex = prepaidCheckout.indexOf("t('changeReturned')");
 assert.ok(

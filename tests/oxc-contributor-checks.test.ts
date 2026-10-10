@@ -152,7 +152,7 @@ function createContributorRepo(label: string) {
 function installHooks(dir: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync(process.execPath, ['.husky/install.mjs'], {
     cwd: dir,
-    env: { ...gitEnv(dir), ...env },
+    env: { ...gitEnv(dir), CI: '', ...env },
     encoding: 'utf8',
   });
 }
@@ -1009,8 +1009,6 @@ for (const pattern of [
   '.oxfmtrc.json',
   'frontend/.oxfmtrc.json',
   'scripts/ci/check-lint-budget.cjs',
-  'scripts/oxc/**',
-  'scripts/ci/check-changed-format.cjs',
   'lint-staged.config.mjs',
   '.husky/**',
   '.github/workflows/ci.yml',

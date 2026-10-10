@@ -35,13 +35,13 @@ export function useCashDrawerMovements() {
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
-  const [todayLocal] = useState(() =>
+  const computeTodayLocal = () =>
     businessDateForInstant({
       instant: new Date(),
       timezone: currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       startTime: currentTenant?.business_day_start_time || '00:00',
-    }),
-  );
+    });
+  const [todayLocal, setTodayLocal] = useState(computeTodayLocal);
   const [open, setOpen] = useState(false);
   const [businessDate, setBusinessDate] = useState(todayLocal);
   const [movementType, setMovementType] = useState<CashDrawerMovementType>('pay_in');
@@ -85,12 +85,14 @@ export function useCashDrawerMovements() {
   };
 
   const openModal = () => {
-    setBusinessDate(todayLocal);
+    const freshToday = computeTodayLocal();
+    setTodayLocal(freshToday);
+    setBusinessDate(freshToday);
     setMovementType('pay_in');
     setAmountInput('');
     setReason('');
     setOpen(true);
-    void loadMovements(todayLocal);
+    void loadMovements(freshToday);
   };
 
   const amountCents = () => {

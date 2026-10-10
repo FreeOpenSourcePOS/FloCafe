@@ -11,7 +11,8 @@
   },
   "plugins": [
     "eslint",
-    "typescript"
+    "typescript",
+    "oxc"
   ],
   "rules": {
     "typescript/ban-ts-comment": "error",
@@ -44,7 +45,41 @@
     "typescript/no-wrapper-object-types": "error",
     "typescript/prefer-as-const": "error",
     "typescript/prefer-namespace-keyword": "error",
-    "typescript/triple-slash-reference": "error"
+    "typescript/triple-slash-reference": "error",
+    "no-constant-binary-expression": "error",
+    "no-constant-condition": "error",
+    "no-dupe-else-if": "error",
+    "no-self-assign": "error",
+    "no-self-compare": "error",
+    "no-sparse-arrays": "error",
+    "no-unreachable": "error",
+    "no-unsafe-optional-chaining": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "no-async-promise-executor": "error",
+    "no-obj-calls": "error",
+    "no-new-native-nonconstructor": "error",
+    "no-loss-of-precision": "error",
+    "oxc/approx-constant": "error",
+    "oxc/bad-array-method-on-arguments": "error",
+    "oxc/bad-bitwise-operator": "error",
+    "oxc/bad-char-at-comparison": "error",
+    "oxc/bad-comparison-sequence": "error",
+    "oxc/bad-match-all-arg": "error",
+    "oxc/bad-min-max-func": "error",
+    "oxc/bad-object-literal-comparison": "error",
+    "oxc/bad-replace-all-arg": "error",
+    "oxc/const-comparisons": "error",
+    "oxc/double-comparisons": "error",
+    "oxc/erasing-op": "error",
+    "oxc/misrefactored-assign-op": "error",
+    "oxc/missing-throw": "error",
+    "oxc/no-accumulating-spread": "error",
+    "oxc/no-const-enum": "error",
+    "oxc/no-this-in-exported-function": "error",
+    "oxc/number-arg-out-of-range": "error",
+    "oxc/only-used-in-recursion": "error",
+    "oxc/uninvoked-array-callback": "error"
   },
   "overrides": [
     {

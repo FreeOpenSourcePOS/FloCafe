@@ -1084,4 +1084,55 @@ try {
   fs.rmSync(commandFixtureRoot, { recursive: true, force: true });
 }
 
+// ── Adopted zero-finding curated rule verification ──────────────────────────
+
+console.log('Testing adopted runtime and React/a11y rules enforcement...');
+
+fixtures(
+  {
+    'shared/__lint_adopted_backend.ts':
+      'export function badControlFlow(): number {\n  return 1;\n  const unreachable = 2;\n  return unreachable;\n}\n',
+    'frontend/src/__lint_adopted_react.tsx':
+      'export function ExternalLinkFixture() {\n  return <a href="https://example.com" target="_blank">External</a>;\n}\n',
+    'frontend/src/__lint_adopted_a11y.tsx':
+      'export function InvalidRoleFixture() {\n  return <div role="nonexistent-role">Bad Role</div>;\n}\n',
+    'frontend/src/__lint_adopted_valid.tsx':
+      'export function ValidFixture() {\n  return (\n    <a href="https://example.com" target="_blank" rel="noopener noreferrer">\n      Valid Link\n    </a>\n  );\n}\n',
+  },
+  () => {
+    const backendResult = backendDiagnostics(['shared/__lint_adopted_backend.ts']);
+    assert.ok(
+      backendResult.diagnostics.some(
+        (d) => d.code === 'eslint(no-unreachable)' && d.severity === 'error',
+      ),
+      'adopted backend rule eslint(no-unreachable) must be reported as error',
+    );
+
+    const runFrontend = (rel: string) => runOxlint(frontendOxlint, frontendDir, [rel]);
+
+    const reactResult = runFrontend('src/__lint_adopted_react.tsx');
+    assert.ok(
+      reactResult.diagnostics.some(
+        (d) => d.code === 'react(jsx-no-target-blank)' && d.severity === 'error',
+      ),
+      'adopted frontend rule react(jsx-no-target-blank) must be reported as error',
+    );
+
+    const a11yResult = runFrontend('src/__lint_adopted_a11y.tsx');
+    assert.ok(
+      a11yResult.diagnostics.some(
+        (d) => d.code === 'jsx-a11y(aria-role)' && d.severity === 'error',
+      ),
+      'adopted frontend rule jsx-a11y(aria-role) must be reported as error',
+    );
+
+    const validResult = runFrontend('src/__lint_adopted_valid.tsx');
+    assert.strictEqual(
+      validResult.diagnostics.length,
+      0,
+      'valid frontend code must have 0 diagnostics under adopted rules',
+    );
+  },
+);
+
 console.log('Lint engine parity and formatter behavior verified.');

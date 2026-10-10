@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Fails CI if ESLint warning counts exceed the recorded budget in lint-budget.json.
-// Per docs' stabilization plan Phase 4: no cleanup campaign — the budget only
-// ratchets down manually as warnings are fixed incidentally while touching a file.
+// Fails CI if lint warning counts exceed the recorded budget in lint-budget.json,
+// if either scope reports an error-severity diagnostic, or if a linter run cannot
+// be read. Per docs' stabilization plan Phase 4: no cleanup campaign — the budget
+// only ratchets down manually as warnings are fixed incidentally while touching a file.
 'use strict';
 
-const { execFileSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 
@@ -12,34 +13,80 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const BUDGET_PATH = path.join(__dirname, 'lint-budget.json');
 const budget = JSON.parse(fs.readFileSync(BUDGET_PATH, 'utf8'));
 
-function countWarnings(cwd, args) {
-  let stdout;
-  try {
-    stdout = execFileSync('npx', ['eslint', ...args, '--format', 'json'], {
-      cwd,
-      encoding: 'utf8',
-      maxBuffer: 1024 * 1024 * 64,
-    });
-  } catch (err) {
-    // eslint exits non-zero when it reports any error/warning; stdout still has the JSON report.
-    stdout = err.stdout;
-    if (!stdout) throw err;
+for (const name of ['backend', 'frontend']) {
+  const limit = budget?.[name];
+  if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 0) {
+    throw new Error(`Invalid lint warning budget for ${name}.`);
   }
-  const results = JSON.parse(stdout);
-  return results.reduce((sum, file) => sum + file.warningCount, 0);
 }
 
-const backendCount = countWarnings(ROOT, ['main/', 'shared/']);
-const frontendCount = countWarnings(path.join(ROOT, 'frontend'), ['.']);
+const SCOPES = [
+  { name: 'backend', cwd: ROOT, args: ['main/', 'shared/'] },
+  { name: 'frontend', cwd: path.join(ROOT, 'frontend'), args: ['.'] },
+];
+
+function countDiagnostics(scope) {
+  const result = spawnSync('npx', ['oxlint', ...scope.args, '--format', 'json'], {
+    cwd: scope.cwd,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 64,
+    shell: process.platform === 'win32',
+  });
+  if (result.error) {
+    throw new Error(`oxlint could not run for ${scope.name}: ${result.error.message}`);
+  }
+  let report;
+  try {
+    report = JSON.parse(result.stdout);
+  } catch {
+    const details = [result.stdout, result.stderr].filter(Boolean).join('\n').trim().slice(0, 1000);
+    throw new Error(
+      `oxlint did not report valid JSON for ${scope.name} (exit ${result.status}).\n${details}`,
+    );
+  }
+  if (!report || typeof report !== 'object' || !Array.isArray(report.diagnostics)) {
+    throw new Error(`oxlint reported no diagnostics list for ${scope.name}.`);
+  }
+  for (const diagnostic of report.diagnostics) {
+    if (
+      !diagnostic ||
+      typeof diagnostic !== 'object' ||
+      !['error', 'warning'].includes(diagnostic.severity)
+    ) {
+      throw new Error(`oxlint reported an invalid diagnostic severity for ${scope.name}.`);
+    }
+  }
+  return {
+    errors: report.diagnostics.filter((d) => d.severity === 'error').length,
+    warnings: report.diagnostics.filter((d) => d.severity === 'warning').length,
+    exitCode: result.status,
+  };
+}
 
 let failed = false;
-for (const [name, count] of [['backend', backendCount], ['frontend', frontendCount]]) {
-  const limit = budget[name];
-  if (count > limit) {
-    console.error(`Lint warning budget exceeded for ${name}: ${count} warnings (budget: ${limit}).`);
+for (const scope of SCOPES) {
+  let counts;
+  try {
+    counts = countDiagnostics(scope);
+  } catch (err) {
+    console.error(err.message);
+    failed = true;
+    continue;
+  }
+  const limit = budget[scope.name];
+  if (counts.errors > 0) {
+    console.error(`Lint errors in ${scope.name}: ${counts.errors} error-severity diagnostics.`);
+    failed = true;
+  }
+  if (counts.exitCode !== 0 && counts.errors === 0) {
+    console.error(`oxlint exited ${counts.exitCode} for ${scope.name} without reporting a lint error.`);
+    failed = true;
+  }
+  if (counts.warnings > limit) {
+    console.error(`Lint warning budget exceeded for ${scope.name}: ${counts.warnings} warnings (budget: ${limit}).`);
     failed = true;
   } else {
-    console.log(`Lint warning budget OK for ${name}: ${count} warnings (budget: ${limit}).`);
+    console.log(`Lint warning budget OK for ${scope.name}: ${counts.warnings} warnings (budget: ${limit}).`);
   }
 }
 

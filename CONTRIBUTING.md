@@ -112,7 +112,7 @@ Use clear commit messages following Conventional Commits (`feat:`, `fix:`, `docs
 
 - **Backend (`main/`):** TypeScript with strict types, Express route handlers in `main/routes/`, SQLite access via `better-sqlite3`.
 - **Frontend (`frontend/src/`):** Next.js 16, React 19, Tailwind CSS, shadcn/ui components, and Zustand for shared client state.
-- **Formatting:** Two spaces, single quotes, ESLint compliance (`npm run lint`).
+- **Formatting:** Two spaces, single quotes.
 
 ---
 

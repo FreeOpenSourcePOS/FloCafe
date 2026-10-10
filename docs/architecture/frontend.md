@@ -537,3 +537,24 @@ frontend/src/
 
 `npm run build:frontend` is the check that catches a server-side construct: it is the only build
 that switches the export target on, so run it rather than a bare `next dev`.
+
+### Lint engine
+
+Oxlint lints both scopes, pinned to an exact version in each `package.json`. `npm run lint:backend`
+runs `main/` and `shared/` against the root `.oxlintrc.json`; `npm run lint` adds the renderer
+against `frontend/.oxlintrc.json`. Both configs switch every Oxlint category off and name each rule
+with its severity, so a rule runs only because the config lists it. Explicit `any` is a warning
+under `main/` and an error under `shared/`, which is also where the pure-kernel import boundary is
+enforced at error severity.
+
+Renderer declarations are linted except `next-env.d.ts` and
+`src/types/receipt-printer-encoder.d.ts`. Oxlint reports a false `TS(2309)` for that ambient module
+declaration ending in `export =`, which `tsc` accepts. `@next/next/no-img-element` stays off because
+the static export cannot use `next/image`. The React and React Hooks rules without compatible
+native implementations run through Oxlint's JS plugin bridge, using the plugin versions pinned in
+`frontend/package.json`.
+
+`npm run lint:budget` reads the Oxlint JSON report for each scope and fails on an error-severity
+diagnostic, on a run whose report it cannot read, and on warnings above
+`scripts/ci/lint-budget.json`. Those limits are ceilings that ratchet down manually as warnings are
+fixed incidentally, not targets to spend.

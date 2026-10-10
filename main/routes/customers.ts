@@ -5,6 +5,7 @@ import { getDatabase, now, getSettingValue } from '../db';
 import { requirePermission } from '../services/authorization';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import { validateCustomerAddress } from './orders-validation';
+import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
 
 export function parseCustomer(c: any): any {
   if (!c) return c;
@@ -52,6 +53,75 @@ export function getWalletBalance(customerId: string | number | null): number {
   `).get(customerId) as { total: number };
 
   return Math.max(0, credits.total - debits.total);
+}
+
+export const CUSTOMER_TOP_ITEMS_LIMIT = 5;
+
+export interface CustomerTopItem {
+  product_id: string;
+  product_name: string;
+  total_quantity: number;
+  order_count: number;
+  available: boolean;
+}
+
+/**
+ * A customer's most bought products across completed orders, every variant and modifier counted
+ * under its product. Cancelled, voided, refunded, and refund-adjustment lines never count, nor does
+ * an order whose every bill was refunded in full. `available` mirrors the POS catalog filter.
+ */
+export function getCustomerTopItems(
+  db: ReturnType<typeof getDatabase>,
+  customerId: string,
+  limit: number = CUSTOMER_TOP_ITEMS_LIMIT,
+): CustomerTopItem[] {
+  const terminalPlaceholders = TERMINAL_ITEM_STATUSES.map(() => '?').join(', ');
+  const rows = db.prepare(`
+    WITH sale_lines AS (
+      SELECT oi.id, oi.order_id, oi.product_id, oi.quantity
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.customer_id = ?
+        AND o.status = 'completed'
+        AND (oi.status IS NULL OR oi.status NOT IN (${terminalPlaceholders}))
+        AND oi.quantity > 0
+        AND NOT (
+          EXISTS (SELECT 1 FROM bills b WHERE b.order_id = o.id)
+          AND NOT EXISTS (SELECT 1 FROM bills b WHERE b.order_id = o.id AND b.payment_status != 'refunded')
+        )
+    ),
+    product_totals AS (
+      SELECT product_id,
+        SUM(quantity) AS total_quantity,
+        COUNT(DISTINCT order_id) AS order_count,
+        MAX(id) AS latest_line_id
+      FROM sale_lines
+      GROUP BY product_id
+    )
+    SELECT t.product_id,
+      COALESCE(p.name, latest.product_name) AS product_name,
+      t.total_quantity,
+      t.order_count,
+      CASE WHEN p.id IS NOT NULL AND p.deleted_at IS NULL AND p.is_active = 1
+        AND (c.id IS NULL OR c.is_active = 1) THEN 1 ELSE 0 END AS available
+    FROM product_totals t
+    JOIN order_items latest ON latest.id = t.latest_line_id
+    LEFT JOIN products p ON p.id = t.product_id
+    LEFT JOIN categories c ON c.id = p.category_id
+    ORDER BY t.total_quantity DESC,
+      t.order_count DESC,
+      COALESCE(p.name, latest.product_name) COLLATE NOCASE ASC,
+      t.product_id ASC
+    LIMIT ?
+  `).all(String(customerId), ...TERMINAL_ITEM_STATUSES, limit) as Array<Omit<CustomerTopItem, 'available'> & { available: number }>;
+
+  return rows.map((row) => ({
+    product_id: String(row.product_id),
+    product_name: row.product_name,
+    total_quantity: Number(row.total_quantity),
+    order_count: Number(row.order_count),
+    available: row.available === 1,
+  }));
 }
 
 // Cleanup endpoint: delete all customers with null IDs - must be before /:id
@@ -291,6 +361,21 @@ router.get('/:id/wallet', customerReadRateLimit, requirePermission('customers.vi
       },
     });
   } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get('/:id/top-items', customerReadRateLimit, requirePermission('customers.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const customerId = req.params.id as string;
+    const customer = db.prepare('SELECT id FROM customers WHERE id = ?').get(customerId);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    res.json({ items: getCustomerTopItems(db, customerId) });
+  } catch (error) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

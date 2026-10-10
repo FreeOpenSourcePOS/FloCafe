@@ -2,15 +2,18 @@
 
 import PrinterStatus from './PrinterStatus';
 import CustomerSearch from './CustomerSearch';
+import CustomerTopItems from './CustomerTopItems';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Printer } from 'lucide-react';
-import type { Table } from '@/lib/types';
+import type { Product, Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
 interface Props {
   tables: Table[];
+  products: Product[];
+  onTopItemSelect: (product: Product) => void;
   onShowTablePicker: () => void;
   onShowCashMovement: () => void;
   onShowShift: () => void;
@@ -23,7 +26,7 @@ interface Props {
   onToggleFullscreen: () => void;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, onShowPrintMenu, fullscreen, onToggleFullscreen }: Props) {
+export default function PosTopbar({ tables, products, onTopItemSelect, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, onShowPrintMenu, fullscreen, onToggleFullscreen }: Props) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
@@ -39,6 +42,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b bg-card shrink-0 px-3 py-2 sm:px-4 sm:py-2.5">
       <div className="flex-1 min-w-0">
         <CustomerSearch variant="topbar" />
+        <CustomerTopItems products={products} onSelect={onTopItemSelect} />
       </div>
 
       <div className="flex w-full flex-wrap items-center justify-end gap-2 xl:w-auto">

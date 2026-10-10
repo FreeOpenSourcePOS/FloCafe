@@ -7,9 +7,26 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  Loader2, AlertTriangle, CheckCircle2, XCircle, QrCode, Ban, Send, Inbox, Copy, KeyRound, Info,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  QrCode,
+  Ban,
+  Send,
+  Inbox,
+  Copy,
+  KeyRound,
+  Info,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -24,7 +41,13 @@ import { tenantCan } from '@/lib/permissions';
 
 interface WhatsAppStatus {
   enabled: boolean;
-  state: 'disconnected' | 'connecting' | 'waiting_qr' | 'waiting_pairing' | 'connected' | 'cooldown';
+  state:
+    | 'disconnected'
+    | 'connecting'
+    | 'waiting_qr'
+    | 'waiting_pairing'
+    | 'connected'
+    | 'cooldown';
   connectedPhone: string | null;
   lastError: string | null;
   lastErrorReason: string | null;
@@ -50,8 +73,13 @@ function isWhatsAppApiErrorKey(code: string): code is WhatsAppApiErrorKey {
 }
 
 /** Show a backend error as a localized toast, mapping `whatsapp.apiError.<reason>` and never surfacing raw English. */
-function toastApiError(err: unknown, fallback: string, tApiError: (key: WhatsAppApiErrorKey) => string): void {
-  const data = (err as { response?: { data?: { reason?: string; code?: string } } })?.response?.data;
+function toastApiError(
+  err: unknown,
+  fallback: string,
+  tApiError: (key: WhatsAppApiErrorKey) => string,
+): void {
+  const data = (err as { response?: { data?: { reason?: string; code?: string } } })?.response
+    ?.data;
   const code = data?.reason || data?.code;
   toast.error(code && isWhatsAppApiErrorKey(code) ? tApiError(code) : fallback);
 }
@@ -113,7 +141,13 @@ const WHATSAPP_KIND_KEYS = {
   z_report: 'z_report',
 } as const satisfies Record<WhatsAppMessageKind, WhatsAppKindKey>;
 
-type WhatsAppState = 'disconnected' | 'connecting' | 'waiting_qr' | 'waiting_pairing' | 'connected' | 'cooldown';
+type WhatsAppState =
+  | 'disconnected'
+  | 'connecting'
+  | 'waiting_qr'
+  | 'waiting_pairing'
+  | 'connected'
+  | 'cooldown';
 type WhatsAppStateKey = keyof AppConfig['Messages']['whatsapp']['state'];
 
 const STATE_KEYS = {
@@ -136,7 +170,7 @@ const WHATSAPP_LAST_ERROR_KEYS = {
 } as const satisfies Record<WhatsAppLastErrorReason, WhatsAppLastErrorKey>;
 
 const STATUS_STEPS = ['queued', 'typing', 'sent', 'delivered', 'read'] as const;
-type StatusStep = typeof STATUS_STEPS[number];
+type StatusStep = (typeof STATUS_STEPS)[number];
 
 function stepIndex(status: string): number {
   return STATUS_STEPS.indexOf(status as StatusStep);
@@ -182,7 +216,9 @@ function translateLastError(
     const code = m?.[1] ?? '429';
     return tLastError('rate_limited', { code });
   }
-  const key = (WHATSAPP_LAST_ERROR_KEYS as Record<string, WhatsAppLastErrorKey | undefined>)[reason ?? ''];
+  const key = (WHATSAPP_LAST_ERROR_KEYS as Record<string, WhatsAppLastErrorKey | undefined>)[
+    reason ?? ''
+  ];
   if (key) return tLastError(key);
   return raw ?? tLastError('cooldown');
 }
@@ -248,7 +284,7 @@ export default function WhatsAppPage() {
   }, []);
 
   const defaultTab = status?.state === 'connected' ? 'sent' : 'connection';
-  const effectiveTab = (userTab === 'inbox' && !isAdmin) ? defaultTab : userTab ?? defaultTab;
+  const effectiveTab = userTab === 'inbox' && !isAdmin ? defaultTab : (userTab ?? defaultTab);
   const onTabChange = (v: string) => {
     setUserTab(v);
     if (typeof window !== 'undefined') window.localStorage.setItem('whatsapp.activeTab', v);
@@ -276,9 +312,13 @@ export default function WhatsAppPage() {
 
   const refreshSent = useCallback(async () => {
     try {
-      const { data } = await api.get('/whatsapp/messages', { params: { direction: 'outbound', limit: 100 } });
+      const { data } = await api.get('/whatsapp/messages', {
+        params: { direction: 'outbound', limit: 100 },
+      });
       setSentMessages(data.messages ?? []);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const refreshInbox = useCallback(async () => {
@@ -286,7 +326,9 @@ export default function WhatsAppPage() {
     try {
       const { data } = await api.get('/whatsapp/inbox', { params: { limit: 100 } });
       setInbox(data.messages ?? []);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [isAdmin]);
 
   const refreshBlocklist = useCallback(async () => {
@@ -294,23 +336,27 @@ export default function WhatsAppPage() {
     try {
       const { data } = await api.get('/whatsapp/blocklist');
       setBlocklist(data.blocklist ?? []);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }, [isAdmin]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshStatus();
   }, [refreshStatus]);
 
   useEffect(() => {
-    const id = setInterval(() => { void refreshStatus(); }, 5000);
+    const id = setInterval(() => {
+      void refreshStatus();
+    }, 5000);
     return () => clearInterval(id);
   }, [refreshStatus]);
 
   useEffect(() => {
     if (!isAdmin) return;
     if (status?.state === 'waiting_qr') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
       void refreshQr();
       const id = setInterval(refreshQr, 5000);
       return () => clearInterval(id);
@@ -322,7 +368,7 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (!isAdmin) return;
     if (status?.state === 'waiting_pairing') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+      // oxlint-disable-next-line react-hooks/set-state-in-effect
       void refreshPairing();
       const id = setInterval(refreshPairing, 5000);
       return () => clearInterval(id);
@@ -332,30 +378,34 @@ export default function WhatsAppPage() {
   }, [status?.state, isAdmin, refreshPairing]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshSent();
   }, [refreshSent]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshInbox();
   }, [refreshInbox]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // oxlint-disable-next-line react-hooks/set-state-in-effect
     void refreshBlocklist();
   }, [refreshBlocklist]);
 
   const disableFeature = async () => {
-    if (!await confirm(tActive('disableConfirm'), {
-      title: tActive('disableTitle'),
-      confirmLabel: tActive('disableCta'),
-      destructive: true,
-    })) return;
+    if (
+      !(await confirm(tActive('disableConfirm'), {
+        title: tActive('disableTitle'),
+        confirmLabel: tActive('disableCta'),
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.post('/whatsapp/disable');
       setWhatsappEnabled(false);
       toast.success(tActive('disabledSuccess'));
       void refreshStatus();
-} catch (err) { toastApiError(err, tActive('disableFailed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tActive('disableFailed'), tApiError);
     }
   };
 
@@ -363,7 +413,8 @@ export default function WhatsAppPage() {
     try {
       await api.post('/whatsapp/connect', { method: 'qr' });
       void refreshStatus();
-} catch (err) { toastApiError(err, tConnect('qrFailed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tConnect('qrFailed'), tApiError);
     }
   };
 
@@ -373,24 +424,32 @@ export default function WhatsAppPage() {
       return;
     }
     try {
-      const { data } = await api.post('/whatsapp/connect', { method: 'pairing_code', phone: pairingPhone.trim() });
+      const { data } = await api.post('/whatsapp/connect', {
+        method: 'pairing_code',
+        phone: pairingPhone.trim(),
+      });
       if (data?.code) setPairingCode(data.code);
       void refreshStatus();
-} catch (err) { toastApiError(err, tConnect('pairingFailed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tConnect('pairingFailed'), tApiError);
     }
   };
 
   const disconnect = async () => {
-    if (!await confirm(tConnect('disconnectConfirm'), {
-      title: tConnect('disconnectTitle'),
-      confirmLabel: tConnect('disconnectCta'),
-      destructive: true,
-    })) return;
+    if (
+      !(await confirm(tConnect('disconnectConfirm'), {
+        title: tConnect('disconnectTitle'),
+        confirmLabel: tConnect('disconnectCta'),
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.post('/whatsapp/disconnect');
       toast.success(tConnect('disconnectedSuccess'));
       void refreshStatus();
-} catch (err) { toastApiError(err, tConnect('disconnectFailed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tConnect('disconnectFailed'), tApiError);
     }
   };
 
@@ -407,19 +466,24 @@ export default function WhatsAppPage() {
       setBlockReason('');
       void refreshBlocklist();
       toast.success(tBlocklist('addedSuccess'));
-    } catch (err) { toastApiError(err, tBlocklist('failed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tBlocklist('failed'), tApiError);
     }
   };
 
   const removeBlock = async (phone: string) => {
-    if (!await confirm(tBlocklist('removeConfirm', { phone }), {
-      confirmLabel: tBlocklist('removeCta'),
-      destructive: true,
-    })) return;
+    if (
+      !(await confirm(tBlocklist('removeConfirm', { phone }), {
+        confirmLabel: tBlocklist('removeCta'),
+        destructive: true,
+      }))
+    )
+      return;
     try {
       await api.delete(`/whatsapp/blocklist/${encodeURIComponent(phone)}`);
       void refreshBlocklist();
-} catch (err) { toastApiError(err, tBlocklist('failed'), tApiError);
+    } catch (err) {
+      toastApiError(err, tBlocklist('failed'), tApiError);
     }
   };
 
@@ -429,7 +493,10 @@ export default function WhatsAppPage() {
       return;
     }
     try {
-      await api.post('/whatsapp/blocklist', { phone_e164: phone, reason: tBlocklist('defaultReason') });
+      await api.post('/whatsapp/blocklist', {
+        phone_e164: phone,
+        reason: tBlocklist('defaultReason'),
+      });
       void refreshBlocklist();
       void refreshInbox();
       toast.success(tBlocklist('fromInboxSuccess', { phone }));
@@ -447,333 +514,367 @@ export default function WhatsAppPage() {
     <>
       {ConfirmDialog}
       <div className="space-y-4 p-2">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{tNav('whatsapp')}</h1>
-        {status && (
-          <Badge variant={status.state === 'connected' ? 'default' : status.state === 'cooldown' ? 'destructive' : 'secondary'}>
-            {stateLabel(status.state)}
-            {status.connectedPhone ? <> · <Ltr>{status.connectedPhone}</Ltr></> : null}
-          </Badge>
-        )}
-      </div>
-
-      <Tabs value={effectiveTab} onValueChange={onTabChange}>
-        <TabsList>
-          <TabsTrigger value="sent"><Send className="size-4" /> {tTabs('sent')}</TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="inbox"><Inbox className="size-4" /> {tTabs('inbox')}</TabsTrigger>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">{tNav('whatsapp')}</h1>
+          {status && (
+            <Badge
+              variant={
+                status.state === 'connected'
+                  ? 'default'
+                  : status.state === 'cooldown'
+                    ? 'destructive'
+                    : 'secondary'
+              }
+            >
+              {stateLabel(status.state)}
+              {status.connectedPhone ? (
+                <>
+                  {' '}
+                  · <Ltr>{status.connectedPhone}</Ltr>
+                </>
+              ) : null}
+            </Badge>
           )}
-          <TabsTrigger value="connection"><QrCode className="size-4" /> {tTabs('connection')}</TabsTrigger>
-        </TabsList>
+        </div>
 
-        <TabsContent value="connection" className="space-y-4">
-          {!status?.enabled && (
-            <Card>
-              <CardContent className="text-sm text-muted-foreground flex items-center justify-between gap-4 py-4">
-                <span>
-                  {tConnection('notEnabled')}
-                </span>
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/settings?tab=whatsapp">
-                    {tConnection('enableInSettings')}
-                  </Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+        <Tabs value={effectiveTab} onValueChange={onTabChange}>
+          <TabsList>
+            <TabsTrigger value="sent">
+              <Send className="size-4" /> {tTabs('sent')}
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="inbox">
+                <Inbox className="size-4" /> {tTabs('inbox')}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value="connection">
+              <QrCode className="size-4" /> {tTabs('connection')}
+            </TabsTrigger>
+          </TabsList>
 
-          {status?.enabled && (
-            <>
-              {isAdmin && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{tConnect('title')}</CardTitle>
-                    <CardDescription>{tConnect('description')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {status.state === 'disconnected' && (
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
-                              <QrCode className="size-5" />
+          <TabsContent value="connection" className="space-y-4">
+            {!status?.enabled && (
+              <Card>
+                <CardContent className="text-sm text-muted-foreground flex items-center justify-between gap-4 py-4">
+                  <span>{tConnection('notEnabled')}</span>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/settings?tab=whatsapp">{tConnection('enableInSettings')}</Link>
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {status?.enabled && (
+              <>
+                {isAdmin && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{tConnect('title')}</CardTitle>
+                      <CardDescription>{tConnect('description')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {status.state === 'disconnected' && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
+                                <QrCode className="size-5" />
+                              </div>
+                              <h3 className="font-semibold text-sm">{tConnect('qrMethodTitle')}</h3>
                             </div>
-                            <h3 className="font-semibold text-sm">{tConnect('qrMethodTitle')}</h3>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{tConnect('qrMethodDescription')}</p>
-                          <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                            <div className="flex items-start gap-1.5">
-                              <Info className="size-3.5 mt-0.5 shrink-0" />
-                              <span>{tConnect('qrMethodWhere')}</span>
+                            <p className="text-sm text-muted-foreground">
+                              {tConnect('qrMethodDescription')}
+                            </p>
+                            <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                              <div className="flex items-start gap-1.5">
+                                <Info className="size-3.5 mt-0.5 shrink-0" />
+                                <span>{tConnect('qrMethodWhere')}</span>
+                              </div>
                             </div>
+                            <Button onClick={connectQr} className="mt-auto w-full">
+                              <QrCode className="size-4" /> {tConnect('startQr')}
+                            </Button>
                           </div>
-                          <Button onClick={connectQr} className="mt-auto w-full">
-                            <QrCode className="size-4" /> {tConnect('startQr')}
-                          </Button>
+
+                          <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
+                            <div className="flex items-center gap-2">
+                              <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
+                                <KeyRound className="size-5" />
+                              </div>
+                              <h3 className="font-semibold text-sm">
+                                {tConnect('pairingMethodTitle')}
+                              </h3>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {tConnect('pairingMethodDescription')}
+                            </p>
+                            <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                              <div className="flex items-start gap-1.5">
+                                <Info className="size-3.5 mt-0.5 shrink-0" />
+                                <span>{tConnect('pairingMethodWhere')}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-xs text-muted-foreground">
+                                {tConnect('pairingPhoneLabel')}
+                              </label>
+                              <Input
+                                value={pairingPhone}
+                                onChange={(e) => setPairingPhone(e.target.value)}
+                                placeholder={tConnect('pairingPhonePlaceholder', {
+                                  dialCode: dialCode || '+CC',
+                                })}
+                                inputMode="tel"
+                                dir="ltr"
+                              />
+                            </div>
+                            <Button onClick={connectPairing} variant="outline" className="w-full">
+                              <KeyRound className="size-4" /> {tConnect('usePairing')}
+                            </Button>
+                          </div>
                         </div>
+                      )}
 
-                        <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center justify-center size-9 rounded-md bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300">
-                              <KeyRound className="size-5" />
+                      {status.state === 'waiting_qr' && (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                            {tConnect('qrInstruction')}
+                          </p>
+                          {qrDataUrl ? (
+                            <div className="rounded-md border p-3 inline-block bg-card">
+                              <img
+                                src={qrDataUrl}
+                                alt={tTabs('connection')}
+                                className="w-64 h-64"
+                              />
                             </div>
-                            <h3 className="font-semibold text-sm">{tConnect('pairingMethodTitle')}</h3>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{tConnect('pairingMethodDescription')}</p>
-                          <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                            <div className="flex items-start gap-1.5">
-                              <Info className="size-3.5 mt-0.5 shrink-0" />
-                              <span>{tConnect('pairingMethodWhere')}</span>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="size-4 animate-spin" /> {tConnect('qrGenerating')}
                             </div>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {tConnect('qrRefreshHint')}
+                          </p>
+                        </div>
+                      )}
+
+                      {status.state === 'waiting_pairing' && (
+                        <div className="space-y-2">
+                          <p className="text-sm text-muted-foreground">
+                            {tConnect('pairingInstruction')}
+                          </p>
+                          {pairingCode ? (
+                            <Ltr
+                              as="div"
+                              className="text-3xl font-mono tracking-widest p-4 rounded-md bg-muted inline-block"
+                            >
+                              {pairingCode}
+                            </Ltr>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="size-4 animate-spin" />{' '}
+                              {tConnect('pairingWaiting')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {status.state === 'connected' && (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-green-700">
+                            <CheckCircle2 className="size-5" />
+                            <span>{tConnect('connectedAs')}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                status.connectedPhone &&
+                                copyToClipboard(status.connectedPhone, status.connectedPhone)
+                              }
+                              className="inline-flex items-center gap-1 font-mono font-semibold hover:underline cursor-pointer"
+                              title={tInbox('copyPhone')}
+                            >
+                              <Ltr>{status.connectedPhone}</Ltr>
+                            </button>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs text-muted-foreground">{tConnect('pairingPhoneLabel')}</label>
-                            <Input
-                              value={pairingPhone}
-                              onChange={(e) => setPairingPhone(e.target.value)}
-                              placeholder={tConnect('pairingPhonePlaceholder', { dialCode: dialCode || '+CC' })}
-                              inputMode="tel"
-                              dir="ltr"
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" onClick={disconnect}>
+                              {tConnect('disconnectCta')}
+                            </Button>
+                          </div>
+                          <label className="flex items-start gap-3 text-sm cursor-pointer pt-2 border-t">
+                            <input
+                              type="checkbox"
+                              className="mt-1 size-4 accent-primary"
+                              checked={filterGroups}
+                              onChange={(e) => {
+                                const next = e.target.checked;
+                                setFilterGroupsState(next);
+                                void api
+                                  .post('/whatsapp/settings', { filterGroups: next })
+                                  .catch(() => {
+                                    setFilterGroupsState(!next);
+                                    toast.error(tCommon('saveFailed'));
+                                  });
+                              }}
                             />
+                            <span className="text-muted-foreground">
+                              {tConnect('filterGroupsLabel')}
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                      {status.state === 'cooldown' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-amber-700">
+                            <AlertTriangle className="size-5" />{' '}
+                            {translateLastError(
+                              status.lastErrorReason,
+                              status.lastError,
+                              tLastError,
+                            )}
                           </div>
-                          <Button onClick={connectPairing} variant="outline" className="w-full">
-                            <KeyRound className="size-4" /> {tConnect('usePairing')}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-
-                    {status.state === 'waiting_qr' && (
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">{tConnect('qrInstruction')}</p>
-                        {qrDataUrl ? (
-                          <div className="rounded-md border p-3 inline-block bg-card">
-                            <img src={qrDataUrl} alt={tTabs('connection')} className="w-64 h-64" />
+                          {status.cooldownUntil && (
+                            <p className="text-xs text-muted-foreground">
+                              {tConnect('cooldownResumesAt', {
+                                time: fmtClock(status.cooldownUntil),
+                              })}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            <Button variant="outline" onClick={disconnect}>
+                              {tConnect('disconnectCta')}
+                            </Button>
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {tConnect('qrGenerating')}</div>
-                        )}
-                        <p className="text-xs text-muted-foreground">{tConnect('qrRefreshHint')}</p>
-                      </div>
-                    )}
-
-                    {status.state === 'waiting_pairing' && (
-                      <div className="space-y-2">
-                        <p className="text-sm text-muted-foreground">{tConnect('pairingInstruction')}</p>
-                        {pairingCode ? (
-                          <Ltr as="div" className="text-3xl font-mono tracking-widest p-4 rounded-md bg-muted inline-block">{pairingCode}</Ltr>
-                        ) : (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {tConnect('pairingWaiting')}</div>
-                        )}
-                      </div>
-                    )}
-
-                    {status.state === 'connected' && (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-green-700">
-                          <CheckCircle2 className="size-5" />
-                          <span>{tConnect('connectedAs')}</span>
-                          <button
-                            type="button"
-                            onClick={() => status.connectedPhone && copyToClipboard(status.connectedPhone, status.connectedPhone)}
-                            className="inline-flex items-center gap-1 font-mono font-semibold hover:underline cursor-pointer"
-                            title={tInbox('copyPhone')}
-                          >
-                            <Ltr>{status.connectedPhone}</Ltr>
-                          </button>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="outline" onClick={disconnect}>{tConnect('disconnectCta')}</Button>
+                      )}
+
+                      {status.state === 'connecting' && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="size-4 animate-spin" /> {tConnect('connecting')}
                         </div>
-                        <label className="flex items-start gap-3 text-sm cursor-pointer pt-2 border-t">
-                          <input
-                            type="checkbox"
-                            className="mt-1 size-4 accent-primary"
-                            checked={filterGroups}
-                            onChange={(e) => {
-                              const next = e.target.checked;
-                              setFilterGroupsState(next);
-                              void api.post('/whatsapp/settings', { filterGroups: next })
-                                .catch(() => { setFilterGroupsState(!next); toast.error(tCommon('saveFailed')); });
-                            }}
+                      )}
+
+                      <div className="pt-2 border-t flex justify-end">
+                        <Button variant="destructive" size="sm" onClick={disableFeature}>
+                          {tActive('disableCta')}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {!isAdmin && status.state === 'connected' && status.connectedPhone && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{tConnect('title')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-green-700">
+                        <CheckCircle2 className="size-5" />
+                        <span>{tConnect('connectedAs')}</span>
+                        <Ltr as="strong" className="font-mono">
+                          {status.connectedPhone}
+                        </Ltr>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {isAdmin && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Ban className="size-5" /> {tBlocklist('title')}
+                      </CardTitle>
+                      <CardDescription>{tBlocklist('description')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex flex-wrap gap-2 items-end">
+                        <div className="flex-1 min-w-[180px]">
+                          <label className="text-xs text-muted-foreground">
+                            {tBlocklist('phoneLabel')}
+                          </label>
+                          <Input
+                            value={blockPhone}
+                            onChange={(e) => setBlockPhone(e.target.value)}
+                            placeholder={tBlocklist('phonePlaceholder', {
+                              dialCode: dialCode || '+CC',
+                            })}
+                            inputMode="tel"
+                            dir="ltr"
                           />
-                          <span className="text-muted-foreground">
-                            {tConnect('filterGroupsLabel')}
-                          </span>
-                        </label>
-                      </div>
-                    )}
-
-                    {status.state === 'cooldown' && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-amber-700"><AlertTriangle className="size-5" /> {translateLastError(status.lastErrorReason, status.lastError, tLastError)}</div>
-                        {status.cooldownUntil && <p className="text-xs text-muted-foreground">{tConnect('cooldownResumesAt', { time: fmtClock(status.cooldownUntil) })}</p>}
-                        <div className="flex flex-wrap gap-2">
-                          <Button variant="outline" onClick={disconnect}>{tConnect('disconnectCta')}</Button>
                         </div>
+                        <div className="flex-1 min-w-[180px]">
+                          <label className="text-xs text-muted-foreground">
+                            {tBlocklist('reasonLabel')}
+                          </label>
+                          <Input
+                            value={blockReason}
+                            onChange={(e) => setBlockReason(e.target.value)}
+                            placeholder={tBlocklist('reasonPlaceholder')}
+                          />
+                        </div>
+                        <Button onClick={addBlock}>{tBlocklist('addCta')}</Button>
                       </div>
-                    )}
-
-                    {status.state === 'connecting' && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {tConnect('connecting')}</div>
-                    )}
-
-                    <div className="pt-2 border-t flex justify-end">
-                      <Button variant="destructive" size="sm" onClick={disableFeature}>{tActive('disableCta')}</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {!isAdmin && status.state === 'connected' && status.connectedPhone && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{tConnect('title')}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-2 text-green-700">
-                      <CheckCircle2 className="size-5" />
-                      <span>{tConnect('connectedAs')}</span>
-                      <Ltr as="strong" className="font-mono">{status.connectedPhone}</Ltr>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {isAdmin && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Ban className="size-5" /> {tBlocklist('title')}</CardTitle>
-                    <CardDescription>{tBlocklist('description')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex flex-wrap gap-2 items-end">
-                      <div className="flex-1 min-w-[180px]">
-                        <label className="text-xs text-muted-foreground">{tBlocklist('phoneLabel')}</label>
-                        <Input
-                          value={blockPhone}
-                          onChange={(e) => setBlockPhone(e.target.value)}
-                          placeholder={tBlocklist('phonePlaceholder', { dialCode: dialCode || '+CC' })}
-                          inputMode="tel"
-                          dir="ltr"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-[180px]">
-                        <label className="text-xs text-muted-foreground">{tBlocklist('reasonLabel')}</label>
-                        <Input value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder={tBlocklist('reasonPlaceholder')} />
-                      </div>
-                      <Button onClick={addBlock}>{tBlocklist('addCta')}</Button>
-                    </div>
-                    {blocklist.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">{tBlocklist('empty')}</p>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{tBlocklist('colPhone')}</TableHead>
-                            <TableHead>{tBlocklist('colReason')}</TableHead>
-                            <TableHead>{tBlocklist('colWhen')}</TableHead>
-                            <TableHead></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {blocklist.map((b) => (
-                            <TableRow key={b.phone_e164}>
-                              <TableCell className="font-mono text-sm"><Ltr>{b.phone_e164}</Ltr></TableCell>
-                              <TableCell className="text-sm text-muted-foreground">{b.reason ?? '—'}</TableCell>
-                              <TableCell className="text-sm text-muted-foreground">{fmt(b.blocked_at)}</TableCell>
-                              <TableCell><Button size="sm" variant="ghost" onClick={() => removeBlock(b.phone_e164)}>{tBlocklist('removeCta')}</Button></TableCell>
+                      {blocklist.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">{tBlocklist('empty')}</p>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{tBlocklist('colPhone')}</TableHead>
+                              <TableHead>{tBlocklist('colReason')}</TableHead>
+                              <TableHead>{tBlocklist('colWhen')}</TableHead>
+                              <TableHead></TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </TabsContent>
+                          </TableHeader>
+                          <TableBody>
+                            {blocklist.map((b) => (
+                              <TableRow key={b.phone_e164}>
+                                <TableCell className="font-mono text-sm">
+                                  <Ltr>{b.phone_e164}</Ltr>
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {b.reason ?? '—'}
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {fmt(b.blocked_at)}
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => removeBlock(b.phone_e164)}
+                                  >
+                                    {tBlocklist('removeCta')}
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            )}
+          </TabsContent>
 
-        <TabsContent value="sent" className="space-y-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>{tSent('title')}</CardTitle>
-              <CardDescription>{tSent('description')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {sentMessages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
-                  <Send className="size-8 mb-2 opacity-40" />
-                  <p className="font-medium text-foreground">{tSent('empty')}</p>
-                  <p className="mt-1 max-w-sm">{tSent('emptyHint')}</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tSent('colWhen')}</TableHead>
-                      <TableHead>{tSent('colPhone')}</TableHead>
-                      <TableHead>{tSent('colKind')}</TableHead>
-                      <TableHead>{tSent('colStatus')}</TableHead>
-                      <TableHead>{tSent('colBody')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sentMessages.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmt(m.queued_at)}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
-                            className="hover:text-foreground transition-colors cursor-pointer"
-                            title={tInbox('copyPhone')}
-                          >
-                            <Ltr>{m.phone_e164}</Ltr>
-                          </button>
-                        </TableCell>
-                        <TableCell className="text-xs">{tKind(WHATSAPP_KIND_KEYS[m.kind])}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <StatusStepper status={m.status} />
-                            {m.error && <div className="text-xs text-destructive">{m.error}</div>}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm max-w-md">
-                          <div className="line-clamp-3 whitespace-pre-line break-words">{m.body}</div>
-                          <details className="text-xs text-muted-foreground mt-1">
-                            <summary>{tSent('timeline')}</summary>
-                            <div>{tSent('timelineQueued', { time: fmt(m.queued_at) })}</div>
-                            {m.typing_at && <div>{tSent('timelineTyping', { time: fmt(m.typing_at) })}</div>}
-                            {m.sent_at && <div>{tSent('timelineSent', { time: fmt(m.sent_at) })}</div>}
-                            {m.delivered_at && <div>{tSent('timelineDelivered', { time: fmt(m.delivered_at) })}</div>}
-                            {m.read_at && <div>{tSent('timelineRead', { time: fmt(m.read_at) })}</div>}
-                            {m.failed_at && <div>{tSent('timelineFailed', { time: fmt(m.failed_at) })}</div>}
-                          </details>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {isAdmin && (
-          <TabsContent value="inbox" className="space-y-2">
+          <TabsContent value="sent" className="space-y-2">
             <Card>
               <CardHeader>
-                <CardTitle>{tInbox('title')}</CardTitle>
-                <CardDescription>{tInbox('description')}</CardDescription>
+                <CardTitle>{tSent('title')}</CardTitle>
+                <CardDescription>{tSent('description')}</CardDescription>
               </CardHeader>
               <CardContent>
-                {inbox.length === 0 ? (
+                {sentMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
-                    <Inbox className="size-8 mb-2 opacity-40" />
-                    <p className="font-medium text-foreground">{tInbox('empty')}</p>
-                    <p className="mt-1 max-w-sm">{tInbox('emptyHint')}</p>
+                    <Send className="size-8 mb-2 opacity-40" />
+                    <p className="font-medium text-foreground">{tSent('empty')}</p>
+                    <p className="mt-1 max-w-sm">{tSent('emptyHint')}</p>
                   </div>
                 ) : (
                   <Table>
@@ -781,54 +882,148 @@ export default function WhatsAppPage() {
                       <TableRow>
                         <TableHead>{tSent('colWhen')}</TableHead>
                         <TableHead>{tSent('colPhone')}</TableHead>
+                        <TableHead>{tSent('colKind')}</TableHead>
+                        <TableHead>{tSent('colStatus')}</TableHead>
                         <TableHead>{tSent('colBody')}</TableHead>
-                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {inbox.map((m) => {
-                        const isBlocked = blocklist.some((b) => b.phone_e164 === m.phone_e164);
-                        return (
-                          <TableRow key={m.id}>
-                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmt(m.queued_at)}</TableCell>
-                            <TableCell className="font-mono text-xs">
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
-                                className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
-                                title={tInbox('copyPhone')}
-                              >
-                                <Copy className="size-3 opacity-0 group-hover:opacity-100" />
-                                <Ltr>{m.phone_e164}</Ltr>
-                              </button>
-                            </TableCell>
-                            <TableCell className="text-sm whitespace-pre-line break-words max-w-md">{m.body}</TableCell>
-                            <TableCell>
-                              {isBlocked ? (
-                                <Badge variant="secondary">{tInbox('blocked')}</Badge>
-                              ) : (
-                                <Button size="sm" variant="outline" onClick={() => blockFromInbox(m.phone_e164)}>
-                                  <Ban className="size-3" /> {tInbox('blockCta')}
-                                </Button>
+                      {sentMessages.map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {fmt(m.queued_at)}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
+                              className="hover:text-foreground transition-colors cursor-pointer"
+                              title={tInbox('copyPhone')}
+                            >
+                              <Ltr>{m.phone_e164}</Ltr>
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {tKind(WHATSAPP_KIND_KEYS[m.kind])}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <StatusStepper status={m.status} />
+                              {m.error && <div className="text-xs text-destructive">{m.error}</div>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm max-w-md">
+                            <div className="line-clamp-3 whitespace-pre-line break-words">
+                              {m.body}
+                            </div>
+                            <details className="text-xs text-muted-foreground mt-1">
+                              <summary>{tSent('timeline')}</summary>
+                              <div>{tSent('timelineQueued', { time: fmt(m.queued_at) })}</div>
+                              {m.typing_at && (
+                                <div>{tSent('timelineTyping', { time: fmt(m.typing_at) })}</div>
                               )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
+                              {m.sent_at && (
+                                <div>{tSent('timelineSent', { time: fmt(m.sent_at) })}</div>
+                              )}
+                              {m.delivered_at && (
+                                <div>
+                                  {tSent('timelineDelivered', { time: fmt(m.delivered_at) })}
+                                </div>
+                              )}
+                              {m.read_at && (
+                                <div>{tSent('timelineRead', { time: fmt(m.read_at) })}</div>
+                              )}
+                              {m.failed_at && (
+                                <div>{tSent('timelineFailed', { time: fmt(m.failed_at) })}</div>
+                              )}
+                            </details>
+                          </TableCell>
+                        </TableRow>
+                      ))}
                     </TableBody>
                   </Table>
                 )}
               </CardContent>
             </Card>
           </TabsContent>
-        )}
-      </Tabs>
 
-      {status?.lastError && status.state !== 'cooldown' && (
-        <div className="text-sm text-red-600 flex items-center gap-1">
-          <XCircle className="size-4" /> {translateLastError(status.lastErrorReason, status.lastError, tLastError)}
-        </div>
-      )}
+          {isAdmin && (
+            <TabsContent value="inbox" className="space-y-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{tInbox('title')}</CardTitle>
+                  <CardDescription>{tInbox('description')}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {inbox.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
+                      <Inbox className="size-8 mb-2 opacity-40" />
+                      <p className="font-medium text-foreground">{tInbox('empty')}</p>
+                      <p className="mt-1 max-w-sm">{tInbox('emptyHint')}</p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{tSent('colWhen')}</TableHead>
+                          <TableHead>{tSent('colPhone')}</TableHead>
+                          <TableHead>{tSent('colBody')}</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {inbox.map((m) => {
+                          const isBlocked = blocklist.some((b) => b.phone_e164 === m.phone_e164);
+                          return (
+                            <TableRow key={m.id}>
+                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                {fmt(m.queued_at)}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
+                                  className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                                  title={tInbox('copyPhone')}
+                                >
+                                  <Copy className="size-3 opacity-0 group-hover:opacity-100" />
+                                  <Ltr>{m.phone_e164}</Ltr>
+                                </button>
+                              </TableCell>
+                              <TableCell className="text-sm whitespace-pre-line break-words max-w-md">
+                                {m.body}
+                              </TableCell>
+                              <TableCell>
+                                {isBlocked ? (
+                                  <Badge variant="secondary">{tInbox('blocked')}</Badge>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => blockFromInbox(m.phone_e164)}
+                                  >
+                                    <Ban className="size-3" /> {tInbox('blockCta')}
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+        </Tabs>
+
+        {status?.lastError && status.state !== 'cooldown' && (
+          <div className="text-sm text-red-600 flex items-center gap-1">
+            <XCircle className="size-4" />{' '}
+            {translateLastError(status.lastErrorReason, status.lastError, tLastError)}
+          </div>
+        )}
       </div>
     </>
   );

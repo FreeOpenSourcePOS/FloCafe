@@ -7,7 +7,18 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale } from 'lucide-react';
+import {
+  Plus,
+  Search,
+  X,
+  Edit,
+  Trash2,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  PackageMinus,
+  ClipboardList,
+  Scale,
+} from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -100,14 +111,28 @@ export default function InventoryPage() {
 
   const [showSupplyForm, setShowSupplyForm] = useState(false);
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
-  const [supplyForm, setSupplyForm] = useState({ name: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '' });
+  const [supplyForm, setSupplyForm] = useState({
+    name: '',
+    base_unit: 'each' as SupplyUnit,
+    stock_quantity: '0',
+    low_stock_threshold: '',
+  });
 
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
-  const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
+  const [movementForm, setMovementForm] = useState({
+    movement_type: 'receive',
+    quantity: '',
+    unit: 'each' as SupplyUnit,
+    reason: '',
+  });
 
   const [showRecipeForm, setShowRecipeForm] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
-  const [recipeForm, setRecipeForm] = useState({ product_id: '', yield_quantity: '1', items: [] as { supply_id: string; quantity: string; unit: SupplyUnit }[] });
+  const [recipeForm, setRecipeForm] = useState({
+    product_id: '',
+    yield_quantity: '1',
+    items: [] as { supply_id: string; quantity: string; unit: SupplyUnit }[],
+  });
 
   const [deletingSupply, setDeletingSupply] = useState<Supply | null>(null);
   const [deletingRecipe, setDeletingRecipe] = useState<Recipe | null>(null);
@@ -126,13 +151,15 @@ export default function InventoryPage() {
     if (search) params.search = search;
     if (lowStockOnly) params.low_stock = 'true';
     if (includeInactive) params.include_inactive = 'true';
-    api.get('/supplies', { params, signal: controller.signal })
+    api
+      .get('/supplies', { params, signal: controller.signal })
       .then(({ data }) => setSupplies(data.supplies || []))
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')))
+          toast.error(t('loadFailed'));
       });
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [search, lowStockOnly, includeInactive, refreshKey, canManage]);
 
   useEffect(() => {
@@ -147,32 +174,38 @@ export default function InventoryPage() {
         setProducts(productsRes.data.products || []);
       })
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')))
+          toast.error(t('loadFailed'));
       });
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
 
-  const loadMovements = useCallback(async (cursor?: number | null) => {
-    if (movementResolvedSequence.current !== movementRequestSequence.current) return;
-    const requestSequence = ++movementRequestSequence.current;
-    try {
-      const params: Record<string, string | number> = { per_page: 50 };
-      if (movementSearch.trim()) params.search = movementSearch.trim();
-      if (cursor) params.before_id = cursor;
-      const { data } = await api.get('/supplies/movements', { params });
-      if (requestSequence !== movementRequestSequence.current) return;
-      setMovements((prev) => (cursor ? [...prev, ...(data.movements || [])] : data.movements || []));
-      setNextCursor(data.nextCursor ?? null);
-      movementResolvedSequence.current = requestSequence;
-    } catch {
-      if (requestSequence === movementRequestSequence.current) {
+  const loadMovements = useCallback(
+    async (cursor?: number | null) => {
+      if (movementResolvedSequence.current !== movementRequestSequence.current) return;
+      const requestSequence = ++movementRequestSequence.current;
+      try {
+        const params: Record<string, string | number> = { per_page: 50 };
+        if (movementSearch.trim()) params.search = movementSearch.trim();
+        if (cursor) params.before_id = cursor;
+        const { data } = await api.get('/supplies/movements', { params });
+        if (requestSequence !== movementRequestSequence.current) return;
+        setMovements((prev) =>
+          cursor ? [...prev, ...(data.movements || [])] : data.movements || [],
+        );
+        setNextCursor(data.nextCursor ?? null);
         movementResolvedSequence.current = requestSequence;
-        toast.error(t('loadFailed'));
+      } catch {
+        if (requestSequence === movementRequestSequence.current) {
+          movementResolvedSequence.current = requestSequence;
+          toast.error(t('loadFailed'));
+        }
       }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, movementSearch]);
+    },
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [refreshKey, movementSearch],
+  );
 
   useEffect(() => {
     if (!canManage || tab !== 'movements') return;
@@ -180,7 +213,8 @@ export default function InventoryPage() {
     const requestSequence = ++movementRequestSequence.current;
     const params: Record<string, string | number> = { per_page: 50 };
     if (movementSearch.trim()) params.search = movementSearch.trim();
-    api.get('/supplies/movements', { params, signal: controller.signal })
+    api
+      .get('/supplies/movements', { params, signal: controller.signal })
       .then(({ data }) => {
         if (requestSequence !== movementRequestSequence.current) return;
         setMovements(data.movements || []);
@@ -188,10 +222,14 @@ export default function InventoryPage() {
         movementResolvedSequence.current = requestSequence;
       })
       .catch((err: unknown) => {
-        if (requestSequence === movementRequestSequence.current && !(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
+        if (
+          requestSequence === movementRequestSequence.current &&
+          !(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))
+        )
+          toast.error(t('loadFailed'));
       });
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, canManage, refreshKey, movementSearch]);
 
   const openAddSupply = () => {
@@ -218,7 +256,8 @@ export default function InventoryPage() {
         name: supplyForm.name,
         base_unit: supplyForm.base_unit,
         stock_quantity: Number(supplyForm.stock_quantity),
-        low_stock_threshold: supplyForm.low_stock_threshold === '' ? null : Number(supplyForm.low_stock_threshold),
+        low_stock_threshold:
+          supplyForm.low_stock_threshold === '' ? null : Number(supplyForm.low_stock_threshold),
       };
       if (editingSupply) {
         await api.put(`/supplies/${editingSupply.id}`, {
@@ -233,9 +272,10 @@ export default function InventoryPage() {
       setShowSupplyForm(false);
       refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+      const message =
+        err instanceof Error && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       toast.error(message || t('saveFailed'));
     }
   };
@@ -255,9 +295,10 @@ export default function InventoryPage() {
       setMovementForm({ movement_type: 'receive', quantity: '', unit: 'each', reason: '' });
       refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+      const message =
+        err instanceof Error && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       toast.error(message || t('saveFailed'));
     }
   };
@@ -273,7 +314,11 @@ export default function InventoryPage() {
     setRecipeForm({
       product_id: r.product_id,
       yield_quantity: String(r.yield_quantity),
-      items: r.items.map((item) => ({ supply_id: item.supply_id, quantity: String(item.quantity), unit: item.unit })),
+      items: r.items.map((item) => ({
+        supply_id: item.supply_id,
+        quantity: String(item.quantity),
+        unit: item.unit,
+      })),
     });
     setShowRecipeForm(true);
   };
@@ -293,9 +338,10 @@ export default function InventoryPage() {
       setShowRecipeForm(false);
       refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+      const message =
+        err instanceof Error && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       toast.error(message || t('saveFailed'));
     }
   };
@@ -308,9 +354,10 @@ export default function InventoryPage() {
       setDeletingSupply(null);
       refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+      const message =
+        err instanceof Error && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       toast.error(message || t('deleteFailed'));
     }
   };
@@ -330,12 +377,15 @@ export default function InventoryPage() {
   // Recipes come from one unpaginated list, so this filter always sees every
   // recipe; movements are searched on the server (see the movements request).
   const normalizedRecipeSearch = recipeSearch.trim().toLowerCase();
-  const visibleRecipes = normalizedRecipeSearch === ''
-    ? recipes
-    : recipes.filter((recipe) => [
-        recipe.product_name || recipe.product_id,
-        ...recipe.items.map((item) => item.supply_name),
-      ].some((field) => field.toLowerCase().includes(normalizedRecipeSearch)));
+  const visibleRecipes =
+    normalizedRecipeSearch === ''
+      ? recipes
+      : recipes.filter((recipe) =>
+          [
+            recipe.product_name || recipe.product_id,
+            ...recipe.items.map((item) => item.supply_name),
+          ].some((field) => field.toLowerCase().includes(normalizedRecipeSearch)),
+        );
 
   if (!canManage) {
     return (
@@ -351,53 +401,92 @@ export default function InventoryPage() {
       <div className="flex shrink-0 justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
-          <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
+          <Button onClick={openAddSupply}>
+            <Plus size={16} className="me-1" /> {t('addSupply')}
+          </Button>
         )}
         {tab === 'recipes' && (
-          <Button onClick={openAddRecipe}><Plus size={16} className="me-1" /> {t('addRecipe')}</Button>
+          <Button onClick={openAddRecipe}>
+            <Plus size={16} className="me-1" /> {t('addRecipe')}
+          </Button>
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => {
-        if (value === 'movements') setNextCursor(null);
-        setTab(value);
-      }} className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col">
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          if (value === 'movements') setNextCursor(null);
+          setTab(value);
+        }}
+        className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col"
+      >
         <TabsList className="shrink-0">
           <TabsTrigger value="supplies">{t('tabSupplies')}</TabsTrigger>
           <TabsTrigger value="recipes">{t('tabRecipes')}</TabsTrigger>
           <TabsTrigger value="movements">{t('tabMovements')}</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="supplies" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="supplies"
+          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
+        >
           <div className="flex shrink-0 flex-wrap items-center gap-3 mb-4">
             <div className="relative flex-1 min-w-48">
-              <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search
+                size={18}
+                className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400"
+              />
               <input
-                type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
                 placeholder={tCommon('search')}
                 className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
               />
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
-              <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={lowStockOnly}
+                onChange={(e) => setLowStockOnly(e.target.checked)}
+              />
               {t('lowStockOnly')}
             </label>
             <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
-              <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={includeInactive}
+                onChange={(e) => setIncludeInactive(e.target.checked)}
+              />
               {t('includeInactive')}
             </label>
           </div>
 
-          <div data-testid="inventory-supplies-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div
+            data-testid="inventory-supplies-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('supplyName')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('baseUnit')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('stock')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('threshold')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{tCommon('active')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('supplyName')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('baseUnit')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('stock')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('threshold')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {tCommon('active')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('actions')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -406,11 +495,17 @@ export default function InventoryPage() {
                     <td className="p-4 font-medium text-foreground">
                       {s.name}
                       {s.is_low_stock === 1 && (
-                        <Badge variant="destructive" className="ms-2">{t('lowStock')}</Badge>
+                        <Badge variant="destructive" className="ms-2">
+                          {t('lowStock')}
+                        </Badge>
                       )}
                     </td>
                     <td className="p-4 text-center text-sm text-muted-foreground">{s.base_unit}</td>
-                    <td className={`p-4 text-end text-sm font-medium ${Number(s.stock_quantity) < 0 ? 'text-red-600' : ''}`}>{fmtNum(Number(s.stock_quantity))} {s.base_unit}</td>
+                    <td
+                      className={`p-4 text-end text-sm font-medium ${Number(s.stock_quantity) < 0 ? 'text-red-600' : ''}`}
+                    >
+                      {fmtNum(Number(s.stock_quantity))} {s.base_unit}
+                    </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.low_stock_threshold === null ? '—' : fmtNum(Number(s.low_stock_threshold))}
                     </td>
@@ -419,16 +514,36 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => {
-                          setMovementSupply(s);
-                          setMovementForm({ movement_type: 'receive', quantity: '', unit: s.base_unit, reason: '' });
-                        }} title={t('recordMovement')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setMovementSupply(s);
+                            setMovementForm({
+                              movement_type: 'receive',
+                              quantity: '',
+                              unit: s.base_unit,
+                              reason: '',
+                            });
+                          }}
+                          title={t('recordMovement')}
+                        >
                           <ArrowDownCircle size={14} />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => openEditSupply(s)} title={tCommon('edit')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditSupply(s)}
+                          title={tCommon('edit')}
+                        >
                           <Edit size={14} />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeletingSupply(s)} title={tCommon('delete')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeletingSupply(s)}
+                          title={tCommon('delete')}
+                        >
                           <Trash2 size={14} />
                         </Button>
                       </div>
@@ -437,7 +552,9 @@ export default function InventoryPage() {
                 ))}
               </tbody>
             </table>
-            {supplies.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptySupplies')}</p>}
+            {supplies.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">{t('emptySupplies')}</p>
+            )}
           </div>
         </TabsContent>
 
@@ -445,25 +562,40 @@ export default function InventoryPage() {
           <div className="relative mb-4 max-w-sm shrink-0">
             <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              type="text" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)}
+              type="text"
+              value={recipeSearch}
+              onChange={(e) => setRecipeSearch(e.target.value)}
               placeholder={tCommon('search')}
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
             />
           </div>
-          <div data-testid="inventory-recipes-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div
+            data-testid="inventory-recipes-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('product')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('yield')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('components')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('product')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('yield')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('components')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('actions')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleRecipes.map((r) => (
                   <tr key={r.id} className="hover:bg-muted">
-                    <td className="p-4 font-medium text-foreground">{r.product_name || r.product_id}</td>
+                    <td className="p-4 font-medium text-foreground">
+                      {r.product_name || r.product_id}
+                    </td>
                     <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
                     <td className="p-4 text-sm text-muted-foreground">
                       <ul className="space-y-0.5">
@@ -476,10 +608,20 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEditRecipe(r)} title={tCommon('edit')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditRecipe(r)}
+                          title={tCommon('edit')}
+                        >
                           <Edit size={14} />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeletingRecipe(r)} title={tCommon('delete')}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeletingRecipe(r)}
+                          title={tCommon('delete')}
+                        >
                           <Trash2 size={14} />
                         </Button>
                       </div>
@@ -488,15 +630,24 @@ export default function InventoryPage() {
                 ))}
               </tbody>
             </table>
-            {visibleRecipes.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedRecipeSearch === '' ? t('emptyRecipes') : tCommon('noResults')}</p>}
+            {visibleRecipes.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">
+                {normalizedRecipeSearch === '' ? t('emptyRecipes') : tCommon('noResults')}
+              </p>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="movements" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="movements"
+          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
+        >
           <div className="relative mb-4 max-w-sm shrink-0">
             <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              type="text" value={movementSearch} onChange={(e) => {
+              type="text"
+              value={movementSearch}
+              onChange={(e) => {
                 movementRequestSequence.current++;
                 setMovements([]);
                 setNextCursor(null);
@@ -506,39 +657,76 @@ export default function InventoryPage() {
               className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
             />
           </div>
-          <div data-testid="inventory-movements-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div
+            data-testid="inventory-movements-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('date')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('supply')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('movementType')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('quantity')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('stockAfter')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('reason')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('actor')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('date')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('supply')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('movementType')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('quantity')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('stockAfter')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('reason')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('actor')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {movements.map((m) => {
                   const Icon = movementTypeIcons[m.movement_type] || ClipboardList;
-                  const labelKey = m.movement_type === 'recipe_depletion' ? 'recipeDepletion'
-                    : m.movement_type === 'recipe_restore' ? 'recipeRestore'
-                    : m.movement_type;
+                  const labelKey =
+                    m.movement_type === 'recipe_depletion'
+                      ? 'recipeDepletion'
+                      : m.movement_type === 'recipe_restore'
+                        ? 'recipeRestore'
+                        : m.movement_type;
                   return (
                     <tr key={m.id} className="hover:bg-muted">
-                      <td className="p-4 text-sm text-muted-foreground whitespace-nowrap">{formatDate(m.created_at)}</td>
-                      <td className="p-4 text-sm font-medium text-foreground">{m.supply_name || m.supply_id}</td>
+                      <td className="p-4 text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(m.created_at)}
+                      </td>
+                      <td className="p-4 text-sm font-medium text-foreground">
+                        {m.supply_name || m.supply_id}
+                      </td>
                       <td className="p-4 text-center text-sm">
                         <span className="inline-flex items-center gap-1.5">
                           <Icon size={14} className="text-muted-foreground" />
-                          {t(labelKey as 'receive' | 'count' | 'adjustment' | 'waste' | 'recipeDepletion' | 'recipeRestore')}
+                          {t(
+                            labelKey as
+                              | 'receive'
+                              | 'count'
+                              | 'adjustment'
+                              | 'waste'
+                              | 'recipeDepletion'
+                              | 'recipeRestore',
+                          )}
                         </span>
                       </td>
-                      <td className={`p-4 text-end text-sm font-medium whitespace-nowrap ${Number(m.quantity_delta) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                        {Number(m.quantity_delta) > 0 ? '+' : ''}{fmtNum(Number(m.quantity_delta))} {m.unit}
+                      <td
+                        className={`p-4 text-end text-sm font-medium whitespace-nowrap ${Number(m.quantity_delta) < 0 ? 'text-red-600' : 'text-emerald-600'}`}
+                      >
+                        {Number(m.quantity_delta) > 0 ? '+' : ''}
+                        {fmtNum(Number(m.quantity_delta))} {m.unit}
                       </td>
-                      <td className="p-4 text-end text-sm text-muted-foreground whitespace-nowrap">{fmtNum(Number(m.stock_after))} {m.unit}</td>
+                      <td className="p-4 text-end text-sm text-muted-foreground whitespace-nowrap">
+                        {fmtNum(Number(m.stock_after))} {m.unit}
+                      </td>
                       <td className="p-4 text-sm text-muted-foreground">{m.reason || '—'}</td>
                       <td className="p-4 text-sm text-muted-foreground">{m.actor_name || '—'}</td>
                     </tr>
@@ -546,10 +734,16 @@ export default function InventoryPage() {
                 })}
               </tbody>
             </table>
-            {movements.length === 0 && <p className="text-center text-muted-foreground py-12">{movementSearch.trim() === '' ? t('emptyMovements') : tCommon('noResults')}</p>}
+            {movements.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">
+                {movementSearch.trim() === '' ? t('emptyMovements') : tCommon('noResults')}
+              </p>
+            )}
             {nextCursor !== null && (
               <div className="text-center py-3 border-t border-border">
-                <Button variant="outline" size="sm" onClick={() => loadMovements(nextCursor)}>{t('loadMore')}</Button>
+                <Button variant="outline" size="sm" onClick={() => loadMovements(nextCursor)}>
+                  {t('loadMore')}
+                </Button>
               </div>
             )}
           </div>
@@ -560,29 +754,65 @@ export default function InventoryPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingSupply ? t('editSupply') : t('addSupply')}</h2>
-              <button onClick={() => setShowSupplyForm(false)}><X size={20} className="text-gray-400" /></button>
+              <h2 className="text-lg font-bold">
+                {editingSupply ? t('editSupply') : t('addSupply')}
+              </h2>
+              <button onClick={() => setShowSupplyForm(false)}>
+                <X size={20} className="text-gray-400" />
+              </button>
             </div>
             <form onSubmit={handleSaveSupply} className="space-y-4">
-              <input type="text" placeholder={t('supplyName')} value={supplyForm.name}
+              <input
+                type="text"
+                placeholder={t('supplyName')}
+                value={supplyForm.name}
                 onChange={(e) => setSupplyForm({ ...supplyForm, name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                required
+              />
               {!editingSupply && (
                 <>
-                  <select value={supplyForm.base_unit}
-                    onChange={(e) => setSupplyForm({ ...supplyForm, base_unit: e.target.value as SupplyUnit })}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
-                    {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  <select
+                    value={supplyForm.base_unit}
+                    onChange={(e) =>
+                      setSupplyForm({ ...supplyForm, base_unit: e.target.value as SupplyUnit })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                  >
+                    {SUPPLY_UNITS.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
                   </select>
-                  <input type="number" step="any" min="0" placeholder={t('stock')} value={supplyForm.stock_quantity}
-                    onChange={(e) => setSupplyForm({ ...supplyForm, stock_quantity: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder={t('stock')}
+                    value={supplyForm.stock_quantity}
+                    onChange={(e) =>
+                      setSupplyForm({ ...supplyForm, stock_quantity: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    required
+                  />
                 </>
               )}
-              <input type="number" step="any" min="0" placeholder={t('threshold')} value={supplyForm.low_stock_threshold}
-                onChange={(e) => setSupplyForm({ ...supplyForm, low_stock_threshold: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-              <Button type="submit" className="w-full">{tCommon('save')}</Button>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                placeholder={t('threshold')}
+                value={supplyForm.low_stock_threshold}
+                onChange={(e) =>
+                  setSupplyForm({ ...supplyForm, low_stock_threshold: e.target.value })
+                }
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              />
+              <Button type="submit" className="w-full">
+                {tCommon('save')}
+              </Button>
             </form>
           </div>
         </div>
@@ -593,33 +823,63 @@ export default function InventoryPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('recordMovement')}</h2>
-              <button onClick={() => setMovementSupply(null)}><X size={20} className="text-gray-400" /></button>
+              <button onClick={() => setMovementSupply(null)}>
+                <X size={20} className="text-gray-400" />
+              </button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">{movementSupply.name}</p>
             <form onSubmit={handleRecordMovement} className="space-y-4">
-              <select value={movementForm.movement_type}
-                onChange={(e) => setMovementForm({ ...movementForm, movement_type: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
+              <select
+                value={movementForm.movement_type}
+                onChange={(e) =>
+                  setMovementForm({ ...movementForm, movement_type: e.target.value })
+                }
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+              >
                 <option value="receive">{t('receive')}</option>
                 <option value="count">{t('count')}</option>
                 <option value="adjustment">{t('adjustment')}</option>
                 <option value="waste">{t('waste')}</option>
               </select>
               <div className="flex gap-2">
-                <input type="number" step="any" min={movementForm.movement_type === 'adjustment' ? undefined : 0} placeholder={t('quantity')} value={movementForm.quantity}
+                <input
+                  type="number"
+                  step="any"
+                  min={movementForm.movement_type === 'adjustment' ? undefined : 0}
+                  placeholder={t('quantity')}
+                  value={movementForm.quantity}
                   onChange={(e) => setMovementForm({ ...movementForm, quantity: e.target.value })}
-                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-                <select value={movementForm.unit}
-                  onChange={(e) => setMovementForm({ ...movementForm, unit: e.target.value as SupplyUnit })}
-                  className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
-                  {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  required
+                />
+                <select
+                  value={movementForm.unit}
+                  onChange={(e) =>
+                    setMovementForm({ ...movementForm, unit: e.target.value as SupplyUnit })
+                  }
+                  className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                >
+                  {SUPPLY_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
                 </select>
               </div>
-              <input type="text" placeholder={t('reason')} value={movementForm.reason}
+              <input
+                type="text"
+                placeholder={t('reason')}
+                value={movementForm.reason}
                 onChange={(e) => setMovementForm({ ...movementForm, reason: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                required={movementForm.movement_type === 'adjustment' || movementForm.movement_type === 'waste'} />
-              <Button type="submit" className="w-full">{tCommon('save')}</Button>
+                required={
+                  movementForm.movement_type === 'adjustment' ||
+                  movementForm.movement_type === 'waste'
+                }
+              />
+              <Button type="submit" className="w-full">
+                {tCommon('save')}
+              </Button>
             </form>
           </div>
         </div>
@@ -629,35 +889,67 @@ export default function InventoryPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-2xl p-6 w-full max-w-md max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingRecipe ? t('editRecipe') : t('addRecipe')}</h2>
-              <button onClick={() => setShowRecipeForm(false)}><X size={20} className="text-gray-400" /></button>
+              <h2 className="text-lg font-bold">
+                {editingRecipe ? t('editRecipe') : t('addRecipe')}
+              </h2>
+              <button onClick={() => setShowRecipeForm(false)}>
+                <X size={20} className="text-gray-400" />
+              </button>
             </div>
             <form onSubmit={handleSaveRecipe} className="space-y-4">
-              <select value={recipeForm.product_id}
+              <select
+                value={recipeForm.product_id}
                 onChange={(e) => setRecipeForm({ ...recipeForm, product_id: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
-                required disabled={Boolean(editingRecipe)}>
+                required
+                disabled={Boolean(editingRecipe)}
+              >
                 <option value="">{t('product')}</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
-              <input type="number" step="any" min="0.00000001" placeholder={t('yield')} value={recipeForm.yield_quantity}
+              <input
+                type="number"
+                step="any"
+                min="0.00000001"
+                placeholder={t('yield')}
+                value={recipeForm.yield_quantity}
                 onChange={(e) => setRecipeForm({ ...recipeForm, yield_quantity: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                required
+              />
 
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-foreground">{t('components')}</span>
-                  <Button type="button" variant="outline" size="sm"
-                    onClick={() => setRecipeForm({
-                      ...recipeForm,
-                      items: [...recipeForm.items, { supply_id: supplies[0]?.id || '', quantity: '1', unit: (supplies[0]?.base_unit || 'each') as SupplyUnit }],
-                    })}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setRecipeForm({
+                        ...recipeForm,
+                        items: [
+                          ...recipeForm.items,
+                          {
+                            supply_id: supplies[0]?.id || '',
+                            quantity: '1',
+                            unit: (supplies[0]?.base_unit || 'each') as SupplyUnit,
+                          },
+                        ],
+                      })
+                    }
+                  >
                     <Plus size={14} /> {t('addComponent')}
                   </Button>
                 </div>
                 {recipeForm.items.map((item, index) => (
                   <div key={index} className="flex gap-2 mb-2">
-                    <select value={item.supply_id}
+                    <select
+                      value={item.supply_id}
                       onChange={(e) => {
                         const items = [...recipeForm.items];
                         const targetSupply = supplies.find((s) => s.id === e.target.value);
@@ -668,34 +960,63 @@ export default function InventoryPage() {
                         };
                         setRecipeForm({ ...recipeForm, items });
                       }}
-                      className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
+                      className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                    >
                       <option value="">{t('supply')}</option>
-                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {supplies.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
                     </select>
-                    <input type="number" step="any" min="0.00000001" placeholder={t('quantity')} value={item.quantity}
+                    <input
+                      type="number"
+                      step="any"
+                      min="0.00000001"
+                      placeholder={t('quantity')}
+                      value={item.quantity}
                       onChange={(e) => {
                         const items = [...recipeForm.items];
                         items[index] = { ...items[index], quantity: e.target.value };
                         setRecipeForm({ ...recipeForm, items });
                       }}
-                      className="w-24 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-                    <select value={item.unit}
+                      className="w-24 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      required
+                    />
+                    <select
+                      value={item.unit}
                       onChange={(e) => {
                         const items = [...recipeForm.items];
                         items[index] = { ...items[index], unit: e.target.value as SupplyUnit };
                         setRecipeForm({ ...recipeForm, items });
                       }}
-                      className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
-                      {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      className="px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                    >
+                      {SUPPLY_UNITS.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
                     </select>
-                    <Button type="button" variant="ghost" size="icon-sm"
-                      onClick={() => setRecipeForm({ ...recipeForm, items: recipeForm.items.filter((_, i) => i !== index) })}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() =>
+                        setRecipeForm({
+                          ...recipeForm,
+                          items: recipeForm.items.filter((_, i) => i !== index),
+                        })
+                      }
+                    >
                       <X size={14} />
                     </Button>
                   </div>
                 ))}
               </div>
-              <Button type="submit" className="w-full" disabled={recipeForm.items.length === 0}>{tCommon('save')}</Button>
+              <Button type="submit" className="w-full" disabled={recipeForm.items.length === 0}>
+                {tCommon('save')}
+              </Button>
             </form>
           </div>
         </div>
@@ -705,10 +1026,16 @@ export default function InventoryPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold mb-2">{tCommon('delete')}</h2>
-            <p className="text-sm text-muted-foreground mb-4">{t('confirmDeleteSupply', { name: deletingSupply.name })}</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {t('confirmDeleteSupply', { name: deletingSupply.name })}
+            </p>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setDeletingSupply(null)}>{tCommon('cancel')}</Button>
-              <Button variant="destructive" onClick={handleDeleteSupply}>{tCommon('delete')}</Button>
+              <Button variant="outline" onClick={() => setDeletingSupply(null)}>
+                {tCommon('cancel')}
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteSupply}>
+                {tCommon('delete')}
+              </Button>
             </div>
           </div>
         </div>
@@ -718,10 +1045,18 @@ export default function InventoryPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold mb-2">{tCommon('delete')}</h2>
-            <p className="text-sm text-muted-foreground mb-4">{t('confirmDeleteRecipe', { name: deletingRecipe.product_name || deletingRecipe.product_id })}</p>
+            <p className="text-sm text-muted-foreground mb-4">
+              {t('confirmDeleteRecipe', {
+                name: deletingRecipe.product_name || deletingRecipe.product_id,
+              })}
+            </p>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setDeletingRecipe(null)}>{tCommon('cancel')}</Button>
-              <Button variant="destructive" onClick={handleDeleteRecipe}>{tCommon('delete')}</Button>
+              <Button variant="outline" onClick={() => setDeletingRecipe(null)}>
+                {tCommon('cancel')}
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteRecipe}>
+                {tCommon('delete')}
+              </Button>
             </div>
           </div>
         </div>

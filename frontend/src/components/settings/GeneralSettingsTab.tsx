@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, Hash, CreditCard, Lock } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -94,16 +94,22 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
   const dd = String(now.getDate()).padStart(2, '0');
   if (period === 'monthly') return `${yyyy}${mm}`;
   if (period === 'financial_year') {
-    const startsThisYear = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+    const startsThisYear =
+      now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
     const startYear = startsThisYear ? yyyy : yyyy - 1;
     return `FY${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
   }
   return `${yyyy}${mm}${dd}`;
 }
 
-function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
-  const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
-  return key ? tCommon(key) : (status || '-');
+function tenantStatusLabel(
+  status: string | undefined,
+  tCommon: (key: 'active' | 'inactive') => string,
+): string {
+  const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[
+    status ?? ''
+  ];
+  return key ? tCommon(key) : status || '-';
 }
 
 export interface GeneralSettingsTabProps {
@@ -139,11 +145,15 @@ export function GeneralSettingsTab({
   const setLanguage = usePosSettingsStore((state) => state.setLanguage);
   const languageRequestId = useRef(0);
 
-  useEffect(() => () => {
-    languageRequestId.current += 1;
-  }, []);
+  useEffect(
+    () => () => {
+      languageRequestId.current += 1;
+    },
+    [],
+  );
 
   const sortedCountries = useMemo(() => sortCountriesByLocalizedName(COUNTRIES, locale), [locale]);
+  const [sampleOrderDate] = useState(() => new Date().toISOString().slice(0, 10).replace(/-/g, ''));
 
   const TAX_ID_WARNING_MAX_LENGTH = 24;
   const taxIdWarning = (() => {
@@ -185,7 +195,9 @@ export function GeneralSettingsTab({
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               />
             ) : (
-              <p className="font-medium text-foreground">{form.businessName || currentTenant?.business_name}</p>
+              <p className="font-medium text-foreground">
+                {form.businessName || currentTenant?.business_name}
+              </p>
             )}
           </div>
           {/* Country, Timezone, Currency in single line with individual headings */}
@@ -211,10 +223,12 @@ export function GeneralSettingsTab({
                     const country = COUNTRIES.find((c) => c.code === e.target.value);
                     setForm((p) => {
                       const previousCountry = getCountryByCode(p.countryCode);
-                      const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
+                      const timezoneWasDefault =
+                        !previousCountry || p.timezone === previousCountry.timezone;
                       const options = country?.localeOptions;
                       const currencyDisplay =
-                        options?.currencyDisplay?.includes(p.currencyDisplay) || p.currencyDisplay === 'rial'
+                        options?.currencyDisplay?.includes(p.currencyDisplay) ||
+                        p.currencyDisplay === 'rial'
                           ? p.currencyDisplay
                           : 'rial';
                       const numberDigits =
@@ -270,7 +284,9 @@ export function GeneralSettingsTab({
                     className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                   />
                 ) : (
-                  <p className="font-medium text-foreground"><Ltr>{form.currency || '-'}</Ltr></p>
+                  <p className="font-medium text-foreground">
+                    <Ltr>{form.currency || '-'}</Ltr>
+                  </p>
                 )}
               </div>
             ) : (
@@ -331,7 +347,9 @@ export function GeneralSettingsTab({
               if (patch.calendar !== undefined) markHydrationTouched('calendar');
               setForm((p) => ({
                 ...p,
-                ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                ...(patch.currencyDisplay !== undefined
+                  ? { currencyDisplay: patch.currencyDisplay }
+                  : {}),
                 ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
                 ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
               }));
@@ -356,7 +374,9 @@ export function GeneralSettingsTab({
             )}
           </div>
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">{t('tablesRequired')}</label>
+            <label className="block text-sm text-muted-foreground mb-1">
+              {t('tablesRequired')}
+            </label>
             {isAdmin ? (
               <select
                 value={form.tablesRequired ? 'yes' : 'no'}
@@ -370,7 +390,9 @@ export function GeneralSettingsTab({
                 <option value="no">{t('tablesRequiredNo')}</option>
               </select>
             ) : (
-              <p className="font-medium text-foreground">{form.tablesRequired ? t('yes') : t('no')}</p>
+              <p className="font-medium text-foreground">
+                {form.tablesRequired ? t('yes') : t('no')}
+              </p>
             )}
           </div>
           <div>
@@ -388,7 +410,9 @@ export function GeneralSettingsTab({
                 <option value="no">{t('no')}</option>
               </select>
             ) : (
-              <p className="font-medium text-foreground">{form.taxRegistered ? t('yes') : t('no')}</p>
+              <p className="font-medium text-foreground">
+                {form.taxRegistered ? t('yes') : t('no')}
+              </p>
             )}
           </div>
           {form.taxRegistered ? (
@@ -432,7 +456,9 @@ export function GeneralSettingsTab({
                   markHydrationTouched('businessPhone');
                   setForm((p) => ({ ...p, businessPhone: e.target.value }));
                 }}
-                placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
+                placeholder={t('phonePlaceholder', {
+                  dialCode: dialCodeFor(form.countryCode) || '+1',
+                })}
                 className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 dir="ltr"
               />
@@ -460,7 +486,9 @@ export function GeneralSettingsTab({
             )}
           </div>
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">{t('instagramHandle')}</label>
+            <label className="block text-sm text-muted-foreground mb-1">
+              {t('instagramHandle')}
+            </label>
             {isAdmin ? (
               <input
                 type="text"
@@ -495,7 +523,9 @@ export function GeneralSettingsTab({
         <h3 className="text-sm font-semibold text-foreground mb-3">{t('orderNumbers')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">{t('orderNumberPrefix')}</label>
+            <label className="block text-sm text-muted-foreground mb-1">
+              {t('orderNumberPrefix')}
+            </label>
             {isAdmin ? (
               <input
                 type="text"
@@ -516,12 +546,14 @@ export function GeneralSettingsTab({
             )}
           </div>
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">{t('orderNumberPreview')}</label>
+            <label className="block text-sm text-muted-foreground mb-1">
+              {t('orderNumberPreview')}
+            </label>
             <p className="font-mono font-medium text-foreground px-3 py-2 bg-muted rounded-lg border border-border">
               <Ltr>
                 {[
                   orderNumberForm.prefix,
-                  orderNumberForm.includeDate ? new Date().toISOString().slice(0, 10).replace(/-/g, '') : '',
+                  orderNumberForm.includeDate ? sampleOrderDate : '',
                   '0001',
                 ]
                   .filter(Boolean)
@@ -574,7 +606,9 @@ export function GeneralSettingsTab({
           <h3 className="text-sm font-semibold text-foreground mb-3">{t('invoiceNumbers')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">{t('invoiceNumberPrefix')}</label>
+              <label className="block text-sm text-muted-foreground mb-1">
+                {t('invoiceNumberPrefix')}
+              </label>
               {isAdmin ? (
                 <input
                   type="text"
@@ -591,11 +625,15 @@ export function GeneralSettingsTab({
                   className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 />
               ) : (
-                <p className="font-medium text-foreground">{orderNumberForm.invoicePrefix || '-'}</p>
+                <p className="font-medium text-foreground">
+                  {orderNumberForm.invoicePrefix || '-'}
+                </p>
               )}
             </div>
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">{t('invoiceNumberPreview')}</label>
+              <label className="block text-sm text-muted-foreground mb-1">
+                {t('invoiceNumberPreview')}
+              </label>
               <p className="font-mono font-medium text-foreground px-3 py-2 bg-muted rounded-lg border border-border">
                 <Ltr>
                   {[
@@ -604,7 +642,7 @@ export function GeneralSettingsTab({
                       ? invoicePreviewSegment(
                           orderNumberForm.invoiceResetPeriod,
                           orderNumberForm.invoiceFinancialYearStartMonth,
-                          orderNumberForm.invoiceFinancialYearStartDay
+                          orderNumberForm.invoiceFinancialYearStartDay,
                         )
                       : '',
                     '0001',
@@ -615,7 +653,9 @@ export function GeneralSettingsTab({
               </p>
             </div>
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">{t('invoiceResetPeriod')}</label>
+              <label className="block text-sm text-muted-foreground mb-1">
+                {t('invoiceResetPeriod')}
+              </label>
               {isAdmin ? (
                 <select
                   value={orderNumberForm.invoiceResetPeriod}
@@ -634,7 +674,9 @@ export function GeneralSettingsTab({
                   <option value="never">{t('invoiceResetNever')}</option>
                 </select>
               ) : (
-                <p className="font-medium text-foreground">{orderNumberForm.invoiceResetPeriod.replace('_', ' ')}</p>
+                <p className="font-medium text-foreground">
+                  {orderNumberForm.invoiceResetPeriod.replace('_', ' ')}
+                </p>
               )}
             </div>
             {orderNumberForm.invoiceResetPeriod === 'financial_year' && (
@@ -687,7 +729,9 @@ export function GeneralSettingsTab({
             <div className="flex items-center justify-between py-2">
               <div>
                 <span className="text-sm text-foreground">{t('invoiceNumberIncludePeriod')}</span>
-                <p className="text-xs text-muted-foreground">{t('invoiceNumberIncludePeriodHint')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('invoiceNumberIncludePeriodHint')}
+                </p>
               </div>
               <Toggle
                 value={orderNumberForm.invoiceIncludePeriod}
@@ -739,7 +783,10 @@ export function GeneralSettingsTab({
                 const requestId = ++languageRequestId.current;
                 setLanguage(lang);
                 api.put('/settings/business', { language: lang }).catch(() => {
-                  if (requestId === languageRequestId.current && usePosSettingsStore.getState().language === lang) {
+                  if (
+                    requestId === languageRequestId.current &&
+                    usePosSettingsStore.getState().language === lang
+                  ) {
                     setLanguage(prev);
                     toast.error(t('saveFailed'));
                   }

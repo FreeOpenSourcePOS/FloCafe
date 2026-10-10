@@ -359,7 +359,7 @@ export default function TablesPage() {
     load();
     const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMode]);
 
   const displaysOrderDetails = canReadOrders && showDetails;

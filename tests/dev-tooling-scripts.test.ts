@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 // Import kill-ports functions
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { isFloProcess, FLO_PATTERNS } = require('../kill-ports.js');
 const YAML = require('js-yaml') as { load: (text: string) => unknown };
 
@@ -37,7 +36,11 @@ function runTest() {
     encoding: 'utf8',
     cwd: rootDir,
   });
-  assert.strictEqual(existingLanguage.status, 1, 'i18n:add must refuse to overwrite an existing language file');
+  assert.strictEqual(
+    existingLanguage.status,
+    1,
+    'i18n:add must refuse to overwrite an existing language file',
+  );
   assert.match(
     existingLanguage.stderr,
     /Refusing to overwrite existing messages file/,
@@ -48,21 +51,37 @@ function runTest() {
     encoding: 'utf8',
     cwd: rootDir,
   });
-  assert.strictEqual(regionalLanguage.status, 1, 'i18n:add must accept a regional key before refusing an existing file');
-  assert.doesNotMatch(regionalLanguage.stderr, /Invalid language code/, 'i18n:add must accept a canonical lowercase regional key');
+  assert.strictEqual(
+    regionalLanguage.status,
+    1,
+    'i18n:add must accept a regional key before refusing an existing file',
+  );
+  assert.doesNotMatch(
+    regionalLanguage.stderr,
+    /Invalid language code/,
+    'i18n:add must accept a canonical lowercase regional key',
+  );
 
   const invalidLanguage = spawnSync(process.execPath, [i18nAddScript, 'EN'], {
     encoding: 'utf8',
     cwd: rootDir,
   });
-  assert.strictEqual(invalidLanguage.status, 1, 'i18n:add must reject non-canonical language codes');
+  assert.strictEqual(
+    invalidLanguage.status,
+    1,
+    'i18n:add must reject non-canonical language codes',
+  );
   assert.match(invalidLanguage.stderr, /Invalid language code/);
 
   const extensionLanguage = spawnSync(process.execPath, [i18nAddScript, 'en-u-nu-latn'], {
     encoding: 'utf8',
     cwd: rootDir,
   });
-  assert.strictEqual(extensionLanguage.status, 1, 'i18n:add must reject Unicode-extension locale keys');
+  assert.strictEqual(
+    extensionLanguage.status,
+    1,
+    'i18n:add must reject Unicode-extension locale keys',
+  );
   assert.match(extensionLanguage.stderr, /Invalid language code/);
   console.log('✓ i18n:add validation, regional keys, and no-overwrite guard verified');
 
@@ -137,11 +156,23 @@ if (args[0] === 'ls') {
     const npmCalls = () => fs.readFileSync(npmLog, 'utf8').trim().split(/\r?\n/);
 
     const firstBuild = runFrontendBuild();
-    assert.strictEqual(firstBuild.status, 0, `Expected missing dependencies to install: ${firstBuild.stderr}`);
-    assert.deepStrictEqual(npmCalls(), ['ci', 'run build'], 'Missing dependencies must be installed before building');
+    assert.strictEqual(
+      firstBuild.status,
+      0,
+      `Expected missing dependencies to install: ${firstBuild.stderr}`,
+    );
+    assert.deepStrictEqual(
+      npmCalls(),
+      ['ci', 'run build'],
+      'Missing dependencies must be installed before building',
+    );
 
     const currentBuild = runFrontendBuild();
-    assert.strictEqual(currentBuild.status, 0, `Expected current dependencies to build: ${currentBuild.stderr}`);
+    assert.strictEqual(
+      currentBuild.status,
+      0,
+      `Expected current dependencies to build: ${currentBuild.stderr}`,
+    );
     assert.deepStrictEqual(
       npmCalls().slice(2),
       ['ls --all --json', 'run build'],
@@ -151,11 +182,23 @@ if (args[0] === 'ls') {
     lockfile.packages['node_modules/example'].version = '1.0.1';
     fs.writeFileSync(lockfilePath, JSON.stringify(lockfile));
     const staleBuild = runFrontendBuild();
-    assert.strictEqual(staleBuild.status, 0, `Expected stale dependencies to reinstall: ${staleBuild.stderr}`);
-    assert.deepStrictEqual(npmCalls().slice(-2), ['ci', 'run build'], 'A lockfile change must trigger npm ci');
+    assert.strictEqual(
+      staleBuild.status,
+      0,
+      `Expected stale dependencies to reinstall: ${staleBuild.stderr}`,
+    );
+    assert.deepStrictEqual(
+      npmCalls().slice(-2),
+      ['ci', 'run build'],
+      'A lockfile change must trigger npm ci',
+    );
 
     const incompleteBuild = runFrontendBuild({ ...buildEnv, FLO_TEST_NPM_LS_STATUS: '1' });
-    assert.strictEqual(incompleteBuild.status, 0, `Expected incomplete dependencies to reinstall: ${incompleteBuild.stderr}`);
+    assert.strictEqual(
+      incompleteBuild.status,
+      0,
+      `Expected incomplete dependencies to reinstall: ${incompleteBuild.stderr}`,
+    );
     assert.deepStrictEqual(npmCalls().slice(-3), ['ls --all --json', 'ci', 'run build']);
   } finally {
     fs.rmSync(buildFixture, { recursive: true, force: true });
@@ -179,11 +222,7 @@ if (args[0] === 'ls') {
   ];
 
   for (const cmd of positiveCases) {
-    assert.strictEqual(
-      isFloProcess(cmd),
-      true,
-      `Expected "${cmd}" to match Flo process patterns`,
-    );
+    assert.strictEqual(isFloProcess(cmd), true, `Expected "${cmd}" to match Flo process patterns`);
   }
 
   // Negative cases (should NOT match as Flo processes)
@@ -243,13 +282,33 @@ if (args[0] === 'ls') {
     ];
     darwinPaths.forEach(mkdirp);
     const darwinResult = runReset('Darwin', { HOME: darwinHome });
-    assert.strictEqual(darwinResult.status, 0, `Expected Darwin cache cleanup to pass: ${darwinResult.stderr}`);
+    assert.strictEqual(
+      darwinResult.status,
+      0,
+      `Expected Darwin cache cleanup to pass: ${darwinResult.stderr}`,
+    );
     darwinPaths.forEach((cachePath) => {
-      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Darwin cache path to be removed: ${cachePath}`);
+      assert.strictEqual(
+        fs.existsSync(cachePath),
+        false,
+        `Expected Darwin cache path to be removed: ${cachePath}`,
+      );
     });
-    assert.match(darwinResult.stdout, /Cleared: Electron app cache/, 'Expected Darwin app cache removal message');
-    assert.match(darwinResult.stdout, /Cleared: Electron code cache/, 'Expected Darwin code cache removal message');
-    assert.match(darwinResult.stdout, /Cleared: Electron system cache/, 'Expected Darwin system cache removal message');
+    assert.match(
+      darwinResult.stdout,
+      /Cleared: Electron app cache/,
+      'Expected Darwin app cache removal message',
+    );
+    assert.match(
+      darwinResult.stdout,
+      /Cleared: Electron code cache/,
+      'Expected Darwin code cache removal message',
+    );
+    assert.match(
+      darwinResult.stdout,
+      /Cleared: Electron system cache/,
+      'Expected Darwin system cache removal message',
+    );
 
     const linuxHome = path.join(tmpDir, 'linux-home');
     const linuxConfigHome = path.join(tmpDir, 'linux-config');
@@ -265,9 +324,17 @@ if (args[0] === 'ls') {
       XDG_CONFIG_HOME: linuxConfigHome,
       XDG_CACHE_HOME: linuxCacheHome,
     });
-    assert.strictEqual(linuxResult.status, 0, `Expected Linux cache cleanup to pass: ${linuxResult.stderr}`);
+    assert.strictEqual(
+      linuxResult.status,
+      0,
+      `Expected Linux cache cleanup to pass: ${linuxResult.stderr}`,
+    );
     linuxPaths.forEach((cachePath) => {
-      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Linux cache path to be removed: ${cachePath}`);
+      assert.strictEqual(
+        fs.existsSync(cachePath),
+        false,
+        `Expected Linux cache path to be removed: ${cachePath}`,
+      );
     });
 
     const windowsAppData = path.join(tmpDir, 'windows-appdata');
@@ -282,16 +349,28 @@ if (args[0] === 'ls') {
       APPDATA: windowsAppData,
       LOCALAPPDATA: windowsLocalAppData,
     });
-    assert.strictEqual(windowsResult.status, 0, `Expected Windows cache cleanup to pass: ${windowsResult.stderr}`);
+    assert.strictEqual(
+      windowsResult.status,
+      0,
+      `Expected Windows cache cleanup to pass: ${windowsResult.stderr}`,
+    );
     windowsPaths.forEach((cachePath) => {
-      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Windows cache path to be removed: ${cachePath}`);
+      assert.strictEqual(
+        fs.existsSync(cachePath),
+        false,
+        `Expected Windows cache path to be removed: ${cachePath}`,
+      );
     });
 
     const missingWindowsResult = runReset('Windows_NT', {
       APPDATA: '',
       LOCALAPPDATA: '',
     });
-    assert.strictEqual(missingWindowsResult.status, 0, 'Expected missing Windows cache roots to be reported without failing');
+    assert.strictEqual(
+      missingWindowsResult.status,
+      0,
+      'Expected missing Windows cache roots to be reported without failing',
+    );
     assert.match(
       missingWindowsResult.stdout,
       /Skipped: Electron app\/code cache unavailable \(APPDATA is not set\)/,
@@ -308,19 +387,42 @@ if (args[0] === 'ls') {
 
   console.log('✓ nuclear reset Electron cache paths verified');
 
-  console.log('Testing scripts/ci/run-test-shard.cjs parameter validation and sharding behavior...');
+  console.log(
+    'Testing scripts/ci/run-test-shard.cjs parameter validation and sharding behavior...',
+  );
 
   const shardScript = path.join(rootDir, 'scripts/ci/run-test-shard.cjs');
 
   // Parameter validation checks
   const invalidCases = [
-    { env: { SHARD_TOTAL: '0', SHARD_INDEX: '0' }, expectedErr: /Invalid SHARD_TOTAL=0: expected an integer >= 1/ },
-    { env: { SHARD_TOTAL: '-2', SHARD_INDEX: '0' }, expectedErr: /Invalid SHARD_TOTAL=-2: expected an integer >= 1/ },
-    { env: { SHARD_TOTAL: 'abc', SHARD_INDEX: '0' }, expectedErr: /Invalid SHARD_TOTAL=abc: expected an integer >= 1/ },
-    { env: { SHARD_TOTAL: '2.5', SHARD_INDEX: '0' }, expectedErr: /Invalid SHARD_TOTAL=2.5: expected an integer >= 1/ },
-    { env: { SHARD_TOTAL: '2', SHARD_INDEX: '-1' }, expectedErr: /Invalid SHARD_INDEX=-1: expected an integer >= 0/ },
-    { env: { SHARD_TOTAL: '2', SHARD_INDEX: '2' }, expectedErr: /Invalid SHARD_INDEX=2: must be < SHARD_TOTAL=2/ },
-    { env: { SHARD_TOTAL: '2', SHARD_INDEX: '5' }, expectedErr: /Invalid SHARD_INDEX=5: must be < SHARD_TOTAL=2/ },
+    {
+      env: { SHARD_TOTAL: '0', SHARD_INDEX: '0' },
+      expectedErr: /Invalid SHARD_TOTAL=0: expected an integer >= 1/,
+    },
+    {
+      env: { SHARD_TOTAL: '-2', SHARD_INDEX: '0' },
+      expectedErr: /Invalid SHARD_TOTAL=-2: expected an integer >= 1/,
+    },
+    {
+      env: { SHARD_TOTAL: 'abc', SHARD_INDEX: '0' },
+      expectedErr: /Invalid SHARD_TOTAL=abc: expected an integer >= 1/,
+    },
+    {
+      env: { SHARD_TOTAL: '2.5', SHARD_INDEX: '0' },
+      expectedErr: /Invalid SHARD_TOTAL=2.5: expected an integer >= 1/,
+    },
+    {
+      env: { SHARD_TOTAL: '2', SHARD_INDEX: '-1' },
+      expectedErr: /Invalid SHARD_INDEX=-1: expected an integer >= 0/,
+    },
+    {
+      env: { SHARD_TOTAL: '2', SHARD_INDEX: '2' },
+      expectedErr: /Invalid SHARD_INDEX=2: must be < SHARD_TOTAL=2/,
+    },
+    {
+      env: { SHARD_TOTAL: '2', SHARD_INDEX: '5' },
+      expectedErr: /Invalid SHARD_INDEX=5: must be < SHARD_TOTAL=2/,
+    },
   ];
 
   for (const tc of invalidCases) {
@@ -368,7 +470,8 @@ exit 0
         'test:suite-5': 'node -e ""',
         'test:failing-suite': 'node -e ""',
         test: 'bash tests/run-test.sh npm run test:suite-1 && bash tests/run-test.sh npm run test:suite-2 && bash tests/run-test.sh npm run test:suite-3 && bash tests/run-test.sh npm run test:suite-4 && bash tests/run-test.sh npm run test:suite-5',
-        'test-with-fail': 'bash tests/run-test.sh npm run test:suite-1 && bash tests/run-test.sh npm run test:failing-suite && bash tests/run-test.sh npm run test:suite-3',
+        'test-with-fail':
+          'bash tests/run-test.sh npm run test:suite-1 && bash tests/run-test.sh npm run test:failing-suite && bash tests/run-test.sh npm run test:suite-3',
       },
     };
     fs.writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify(fixturePkg, null, 2));
@@ -420,7 +523,10 @@ exit 0
   // Real package.json test suite partition & coverage invariance
   const realPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   const testScript = realPkg.scripts?.test;
-  assert.ok(typeof testScript === 'string' && testScript.length > 0, 'package.json must define a "test" script');
+  assert.ok(
+    typeof testScript === 'string' && testScript.length > 0,
+    'package.json must define a "test" script',
+  );
 
   const pretestScript = realPkg.scripts?.pretest;
   const releaseRegressionScript = realPkg.scripts?.['test:release-regressions'];
@@ -454,7 +560,10 @@ exit 0
     if (!allSuites.includes(match[1])) allSuites.push(match[1]);
   }
 
-  assert.ok(allSuites.length >= 90, `Expected at least 90 test suites in "test" script, got ${allSuites.length}`);
+  assert.ok(
+    allSuites.length >= 90,
+    `Expected at least 90 test suites in "test" script, got ${allSuites.length}`,
+  );
 
   for (const suiteName of allSuites) {
     assert.ok(
@@ -467,8 +576,16 @@ exit 0
   const shard1Suites = allSuites.filter((_, i) => i % 2 === 1);
   const expectedShard0 = Math.ceil(allSuites.length / 2);
   const expectedShard1 = Math.floor(allSuites.length / 2);
-  assert.strictEqual(shard0Suites.length, expectedShard0, `Shard 0 must have exactly ${expectedShard0} suites`);
-  assert.strictEqual(shard1Suites.length, expectedShard1, `Shard 1 must have exactly ${expectedShard1} suites`);
+  assert.strictEqual(
+    shard0Suites.length,
+    expectedShard0,
+    `Shard 0 must have exactly ${expectedShard0} suites`,
+  );
+  assert.strictEqual(
+    shard1Suites.length,
+    expectedShard1,
+    `Shard 1 must have exactly ${expectedShard1} suites`,
+  );
 
   // Ensure 0 overlap and 100% union coverage
   const intersection = shard0Suites.filter((s) => shard1Suites.includes(s));
@@ -478,9 +595,15 @@ exit 0
   for (let i = 0; i < allSuites.length; i++) {
     reconstructed.push(i % 2 === 0 ? shard0Suites[i / 2] : shard1Suites[(i - 1) / 2]);
   }
-  assert.deepStrictEqual(reconstructed, allSuites, 'Round-robin shards must reconstruct the exact original suite list in order');
+  assert.deepStrictEqual(
+    reconstructed,
+    allSuites,
+    'Round-robin shards must reconstruct the exact original suite list in order',
+  );
 
-  console.log(`✓ package.json test suite sharding coverage invariance (${allSuites.length} suites, ${shard0Suites.length}/${shard1Suites.length} per shard) verified`);
+  console.log(
+    `✓ package.json test suite sharding coverage invariance (${allSuites.length} suites, ${shard0Suites.length}/${shard1Suites.length} per shard) verified`,
+  );
 
   // CI Workflow schema and configuration assertions
   const ciWorkflow = fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
@@ -488,8 +611,20 @@ exit 0
 
   assert.ok(ciConfig?.jobs?.['linux-tests'], 'ci.yml must define a "linux-tests" job');
   const linuxTestsJob = ciConfig.jobs['linux-tests'];
-  for (const jobName of ['dependency-review', 'changes', 'tax-category-invariant', 'linux-baseline', 'linux-tests', 'e2e-playwright', 'native-e2e-playwright']) {
-    assert.strictEqual(ciConfig.jobs[jobName]?.['runs-on'], 'ubuntu-24.04', `${jobName} must use the pinned Ubuntu image`);
+  for (const jobName of [
+    'dependency-review',
+    'changes',
+    'tax-category-invariant',
+    'linux-baseline',
+    'linux-tests',
+    'e2e-playwright',
+    'native-e2e-playwright',
+  ]) {
+    assert.strictEqual(
+      ciConfig.jobs[jobName]?.['runs-on'],
+      'ubuntu-24.04',
+      `${jobName} must use the pinned Ubuntu image`,
+    );
   }
   assert.strictEqual(ciConfig.jobs['linux-baseline']?.['timeout-minutes'], 25);
   assert.strictEqual(linuxTestsJob['runs-on'], 'ubuntu-24.04');
@@ -499,15 +634,25 @@ exit 0
     'Core Test Suite (Shard ${{ matrix.shard_number }}/2)',
     'linux-tests must display 1-indexed shard numbers in job name',
   );
-  assert.strictEqual(linuxTestsJob.strategy?.['fail-fast'], false, 'linux-tests strategy.fail-fast must be false');
-  assert.deepStrictEqual(linuxTestsJob.strategy?.matrix?.shard, [0, 1], 'linux-tests matrix.shard must be [0, 1]');
+  assert.strictEqual(
+    linuxTestsJob.strategy?.['fail-fast'],
+    false,
+    'linux-tests strategy.fail-fast must be false',
+  );
+  assert.deepStrictEqual(
+    linuxTestsJob.strategy?.matrix?.shard,
+    [0, 1],
+    'linux-tests matrix.shard must be [0, 1]',
+  );
   assert.deepStrictEqual(
     linuxTestsJob.strategy?.matrix?.include?.map((entry: any) => entry.shard_number),
     [1, 2],
     'linux-tests matrix must include 1-indexed shard_number mappings',
   );
 
-  const shardRunStep = linuxTestsJob.steps.find((step: any) => step.name === 'Core test suite (shard ${{ matrix.shard }})');
+  const shardRunStep = linuxTestsJob.steps.find(
+    (step: any) => step.name === 'Core test suite (shard ${{ matrix.shard }})',
+  );
   assert.ok(shardRunStep, 'linux-tests must define its core test suite step');
   assert.strictEqual(
     shardRunStep.run.trim(),
@@ -518,12 +663,17 @@ exit 0
     'Payment method split check must run only on shard 0',
   );
   assert.ok(
-    linuxTestsJob.steps.some((step: any) => step.name === 'Install frontend dependencies' && step['working-directory'] === 'frontend'),
+    linuxTestsJob.steps.some(
+      (step: any) =>
+        step.name === 'Install frontend dependencies' && step['working-directory'] === 'frontend',
+    ),
     'linux-tests must include frontend dependencies installation step',
   );
 
   const linuxBaselineJob = ciConfig.jobs['linux-baseline'];
-  const baselineBuildStep = linuxBaselineJob.steps.find((step: any) => step.name === 'Build frontend');
+  const baselineBuildStep = linuxBaselineJob.steps.find(
+    (step: any) => step.name === 'Build frontend',
+  );
   assert.strictEqual(
     baselineBuildStep.run.trim(),
     'cd frontend && npx cross-env NEXT_BUILD_MODE=desktop npm run build',
@@ -566,7 +716,9 @@ exit 0
 
   const windowsSteps = windowsJob.steps as any[];
   const setupNodeIndex = windowsSteps.findIndex((step) => step.name === 'Set up Node.js 22');
-  const uninstallerTestIndex = windowsSteps.findIndex((step) => step.name === 'Run Windows uninstaller Pester tests');
+  const uninstallerTestIndex = windowsSteps.findIndex(
+    (step) => step.name === 'Run Windows uninstaller Pester tests',
+  );
   assert.ok(setupNodeIndex >= 0, 'Windows job must set up Node.js 22');
   assert.ok(uninstallerTestIndex > setupNodeIndex, 'Windows wrapper must run after Node.js setup');
   assert.strictEqual(windowsSteps[setupNodeIndex].with?.['node-version'], '22');
@@ -575,7 +727,10 @@ exit 0
   // indentation. Trimming the parsed scalar keeps formatting changes harmless
   // while preserving command contents and order for the boundary check.
   const windowsRunSteps = windowsSteps
-    .map((step, index) => ({ index, command: typeof step.run === 'string' ? step.run.trim() : null }))
+    .map((step, index) => ({
+      index,
+      command: typeof step.run === 'string' ? step.run.trim() : null,
+    }))
     .filter((step): step is { index: number; command: string } => step.command !== null);
   assert.deepStrictEqual(
     windowsRunSteps.map((step) => step.index),
@@ -589,7 +744,10 @@ exit 0
   );
   const windowsRunCommands = windowsRunSteps.map((step) => step.command).join('\n');
   assert.doesNotMatch(windowsRunCommands, /\bnpm(?:\.cmd)?\s+(?:ci|i|install|run\s+postinstall)\b/);
-  assert.doesNotMatch(windowsRunCommands, /install-electron|electron-builder install-app-deps|verify:electron/);
+  assert.doesNotMatch(
+    windowsRunCommands,
+    /install-electron|electron-builder install-app-deps|verify:electron/,
+  );
 
   console.log('✓ Windows uninstaller CI boundary avoids application postinstall');
 
@@ -598,15 +756,39 @@ exit 0
   const matrixConfig = YAML.load(fs.readFileSync(matrixPath, 'utf8')) as any;
   const buildMatrixJob = matrixConfig.jobs['build-matrix'];
   assert.ok(buildMatrixJob, 'full-cross-platform-matrix.yml must define build-matrix job');
-  const linuxRow = buildMatrixJob.strategy?.matrix?.include?.find((entry: any) => entry.name === 'linux-x64');
+  const linuxRow = buildMatrixJob.strategy?.matrix?.include?.find(
+    (entry: any) => entry.name === 'linux-x64',
+  );
   assert.ok(linuxRow, 'full-cross-platform-matrix.yml matrix must define linux-x64 row');
-  assert.match(linuxRow['extra-deps'], /apt-get\s+install(?:-[a-z]+)*\s+.*?\bxvfb\b/, 'linux-x64 matrix row must install xvfb via apt-get in extra-deps');
-  const testStep = buildMatrixJob.steps.find((step: any) => step.name === 'Run full platform test suite');
+  assert.match(
+    linuxRow['extra-deps'],
+    /apt-get\s+install(?:-[a-z]+)*\s+.*?\bxvfb\b/,
+    'linux-x64 matrix row must install xvfb via apt-get in extra-deps',
+  );
+  const testStep = buildMatrixJob.steps.find(
+    (step: any) => step.name === 'Run full platform test suite',
+  );
   assert.ok(testStep, 'full-cross-platform-matrix.yml must define full platform test suite step');
-  assert.strictEqual(testStep.shell, 'bash', 'Run full platform test suite step must explicitly use bash shell for cross-platform compatibility');
-  assert.match(testStep.run, /if\s+\[\s*"\${{\s*runner\.os\s*}}"\s*=\s*"Linux"\s*\];\s*then/, 'test step must check for Linux runner OS');
-  assert.match(testStep.run, /xvfb-run\s+-a\s+--server-args='-screen 0 1280x800x24'\s+npm test/, 'test step must execute npm test under xvfb-run on Linux');
-  assert.match(testStep.run, /else\s+npm test\s+fi/, 'test step must execute direct npm test fallback on non-Linux');
+  assert.strictEqual(
+    testStep.shell,
+    'bash',
+    'Run full platform test suite step must explicitly use bash shell for cross-platform compatibility',
+  );
+  assert.match(
+    testStep.run,
+    /if\s+\[\s*"\${{\s*runner\.os\s*}}"\s*=\s*"Linux"\s*\];\s*then/,
+    'test step must check for Linux runner OS',
+  );
+  assert.match(
+    testStep.run,
+    /xvfb-run\s+-a\s+--server-args='-screen 0 1280x800x24'\s+npm test/,
+    'test step must execute npm test under xvfb-run on Linux',
+  );
+  assert.match(
+    testStep.run,
+    /else\s+npm test\s+fi/,
+    'test step must execute direct npm test fallback on non-Linux',
+  );
 
   console.log('✓ Full cross-platform matrix Linux xvfb configuration verified');
 

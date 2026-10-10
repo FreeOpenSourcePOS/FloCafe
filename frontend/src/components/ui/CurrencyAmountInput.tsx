@@ -23,12 +23,19 @@ type CurrencyAmountInputProps = Omit<ComponentProps<'input'>, 'value' | 'onChang
  * fraction digits (e.g. COP, JPY). docs/architecture/regional-settings.md, "Currency
  * input and display path".
  */
-export default function CurrencyAmountInput({ value, onValueChange, format, ...rest }: CurrencyAmountInputProps) {
+export default function CurrencyAmountInput({
+  value,
+  onValueChange,
+  format,
+  ...rest
+}: CurrencyAmountInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastEmitted = useRef<number | ''>(value);
   const formatKey = `${format.decimalSeparator}|${format.groupSeparator}|${format.currencyFractionDigits}`;
   const lastFormatKey = useRef(formatKey);
-  const [display, setDisplay] = useState(() => (value === '' ? '' : formatAmountForDisplay(value, format)));
+  const [display, setDisplay] = useState(() =>
+    value === '' ? '' : formatAmountForDisplay(value, format),
+  );
 
   useEffect(() => {
     // Re-derive the display from the plain numeric value whenever it changes
@@ -40,7 +47,7 @@ export default function CurrencyAmountInput({ value, onValueChange, format, ...r
     lastFormatKey.current = formatKey;
     setDisplay(value === '' ? '' : formatAmountForDisplay(value, format));
     // formatKey is a value-equal proxy for format's three fields, so it alone is the correct dep.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [value, formatKey]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {

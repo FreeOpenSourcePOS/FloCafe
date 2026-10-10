@@ -550,9 +550,8 @@ enforced at error severity.
 Renderer declarations are linted except `next-env.d.ts` and
 `src/types/receipt-printer-encoder.d.ts`. Oxlint reports a false `TS(2309)` for that ambient module
 declaration ending in `export =`, which `tsc` accepts. `@next/next/no-img-element` stays off because
-the static export cannot use `next/image`. The React and React Hooks rules without compatible
-native implementations run through Oxlint's JS plugin bridge, using the plugin versions pinned in
-`frontend/package.json`.
+the static export cannot use `next/image`. React and React Hooks rules run directly as native Oxlint
+rules without a JS plugin bridge.
 
 `npm run lint:budget` reads the Oxlint JSON report for each scope and fails on an error-severity
 diagnostic, on a run whose report it cannot read, and on warnings above

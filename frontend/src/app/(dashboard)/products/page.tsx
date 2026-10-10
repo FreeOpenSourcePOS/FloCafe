@@ -6,7 +6,25 @@ import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Printer, ChevronUp, ChevronDown, Search } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  Package,
+  Folder,
+  Puzzle,
+  FileSpreadsheet,
+  Download,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  AlertTriangle,
+  Printer,
+  ChevronUp,
+  ChevronDown,
+  Search,
+} from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import {
   buildVariantsPayload,
@@ -36,7 +54,9 @@ type ProductsKey = keyof AppConfig['Messages']['products'];
 
 // Loaded on demand: the menu printer pulls the thermal print kernel in, which the
 // catalog page has no use for until the merchant opens the dialog.
-const PrintMenuModal = dynamic(() => import('@/components/products/PrintMenuModal'), { ssr: false });
+const PrintMenuModal = dynamic(() => import('@/components/products/PrintMenuModal'), {
+  ssr: false,
+});
 
 const PRESET_TAGS: { key: string; labelKey: PosKey }[] = [
   { key: 'veg', labelKey: 'tagVeg' },
@@ -76,7 +96,8 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
   { key: 'rose', labelKey: 'colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
-const VARIANT_CELL = 'w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none';
+const VARIANT_CELL =
+  'w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none';
 
 type TabType = 'products' | 'categories' | 'addons';
 
@@ -127,18 +148,45 @@ export default function ProductsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, addon_group_ids: [] as string[] });
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    color: '',
+    is_active: true,
+    addon_group_ids: [] as string[],
+  });
   const editRequestId = useRef(0);
-  const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
+  const [addonForm, setAddonForm] = useState({
+    name: '',
+    description: '',
+    is_required: false,
+    allow_multiple_quantities: false,
+    min_selection: 0,
+    max_selection: 10,
+  });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
   const [addonList, setAddonList] = useState<AddonEditorRow[]>([]);
   const [form, setForm] = useState({
-    name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
-    sale_unit: 'each' as Product['sale_unit'], allow_fractional_quantity: false, weight_precision: '3',
-    inventory_product_id: '', inventory_deduction_quantity: '1',
-    tax_category_id: '', tax_behavior: 'country_default', description: '',
-    track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
+    name: '',
+    category_id: '',
+    price: '',
+    cost_price: '',
+    cb_percent: '',
+    sku: '',
+    barcode: '',
+    sale_unit: 'each' as Product['sale_unit'],
+    allow_fractional_quantity: false,
+    weight_precision: '3',
+    inventory_product_id: '',
+    inventory_deduction_quantity: '1',
+    tax_category_id: '',
+    tax_behavior: 'country_default',
+    description: '',
+    track_inventory: false,
+    stock_quantity: '0',
+    low_stock_threshold: '5',
+    is_active: true,
     tags: [] as string[],
     customTag: '',
     has_variants: false,
@@ -155,16 +203,26 @@ export default function ProductsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvResult, setCsvResult] = useState<Record<string, unknown> | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
-  const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: string | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
+  const [catDeleteModal, setCatDeleteModal] = useState<{
+    open: boolean;
+    id: string | null;
+    name: string;
+    productCount: number;
+  }>({ open: false, id: null, name: '', productCount: 0 });
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
-  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]>([]);
+  const [taxCategories, setTaxCategories] = useState<
+    { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]
+  >([]);
   const [defaultTaxCategoryId, setDefaultTaxCategoryId] = useState('');
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
+  const currency = getCurrencySymbol(
+    currentTenant?.currency || '',
+    getCountryByCode(currentTenant?.country ?? '')?.locale,
+  );
   const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || '', currentTenant?.country);
   const fmt = useFormatCurrency();
   const amountFormat = useAmountFormat();
@@ -205,26 +263,40 @@ export default function ProductsPage() {
         if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
       })
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('failedToLoad'));
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')))
+          toast.error(t('failedToLoad'));
       })
-      .finally(() => { setLoading(false); });
-    api.get('/tax/categories', { signal: controller.signal })
+      .finally(() => {
+        setLoading(false);
+      });
+    api
+      .get('/tax/categories', { signal: controller.signal })
       .then((res) => {
-        const data = res.data as { categories?: { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]; default_category_id?: string | null };
+        const data = res.data as {
+          categories?: {
+            id: string;
+            label: string;
+            rate_percent?: number | null;
+            rate_label?: string | null;
+          }[];
+          default_category_id?: string | null;
+        };
         setTaxCategories(data.categories || []);
         setDefaultTaxCategoryId(data.default_category_id || '');
       })
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')))
+          setTaxCategories([]);
       });
-    api.get('/settings/loyalty', { signal: controller.signal })
+    api
+      .get('/settings/loyalty', { signal: controller.signal })
       .then((res) => {
         setLoyaltyEnabled(!!res.data.loyalty_enabled);
         setGlobalCashbackPercent(Number(res.data.global_cashback_percent) || 0);
       })
       .catch(() => {});
     return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openCsvModal = (type: 'categories' | 'products' | 'addons') => {
@@ -255,11 +327,19 @@ export default function ProductsPage() {
     setBulkTaxApplying(true);
     try {
       const results = await Promise.allSettled(
-        legacyProducts.map((p) => api.put(`/products/${p.id}`, { tax_category_id: bulkTaxCategoryId })),
+        legacyProducts.map((p) =>
+          api.put(`/products/${p.id}`, { tax_category_id: bulkTaxCategoryId }),
+        ),
       );
       const failedCount = results.filter((r) => r.status === 'rejected').length;
       if (failedCount > 0) {
-        toast.error(t('categoryAssignPartial', { assigned: results.length - failedCount, total: results.length, failed: failedCount }));
+        toast.error(
+          t('categoryAssignPartial', {
+            assigned: results.length - failedCount,
+            total: results.length,
+            failed: failedCount,
+          }),
+        );
       } else {
         toast.success(t('categoryAssignSuccess', { count: results.length }));
       }
@@ -290,13 +370,31 @@ export default function ProductsPage() {
     editRequestId.current += 1;
     setProductInactiveAddonGroups([]);
     setForm({
-      name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
-      sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3',
-      inventory_product_id: '', inventory_deduction_quantity: '1',
-      tax_category_id: '', tax_behavior: 'country_default', description: '',
-      track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
-      tags: [], customTag: '', has_variants: false, variants: [],
-      addon_group_ids: [], image_url: null,
+      name: '',
+      category_id: '',
+      price: '',
+      cost_price: '',
+      cb_percent: '',
+      sku: '',
+      barcode: '',
+      sale_unit: 'each',
+      allow_fractional_quantity: false,
+      weight_precision: '3',
+      inventory_product_id: '',
+      inventory_deduction_quantity: '1',
+      tax_category_id: '',
+      tax_behavior: 'country_default',
+      description: '',
+      track_inventory: false,
+      stock_quantity: '0',
+      low_stock_threshold: '5',
+      is_active: true,
+      tags: [],
+      customTag: '',
+      has_variants: false,
+      variants: [],
+      addon_group_ids: [],
+      image_url: null,
     });
     setImageTouched(false);
     setEditingProduct(null);
@@ -311,14 +409,18 @@ export default function ProductsPage() {
 
   const openEdit = async (product: Product) => {
     const requestId = ++editRequestId.current;
-    const addonGroupIds = product.addon_group_ids ?? product.addon_groups?.map((group) => group.id) ?? [];
-    const inactiveGroupIds = addonGroupIds.filter((id) => !addonGroups.some((group) => group.id === id));
+    const addonGroupIds =
+      product.addon_group_ids ?? product.addon_groups?.map((group) => group.id) ?? [];
+    const inactiveGroupIds = addonGroupIds.filter(
+      (id) => !addonGroups.some((group) => group.id === id),
+    );
     let inactiveGroups: AddonGroup[] = [];
     if (inactiveGroupIds.length > 0) {
       try {
         const response = await api.get('/addon-groups?include_inactive=true');
-        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || [])
-          .filter((group) => !group.is_active && inactiveGroupIds.includes(group.id));
+        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || []).filter(
+          (group) => !group.is_active && inactiveGroupIds.includes(group.id),
+        );
       } catch {
         if (requestId === editRequestId.current) toast.error(t('failedToLoad'));
       }
@@ -332,7 +434,10 @@ export default function ProductsPage() {
       category_id: product.category_id != null ? String(product.category_id) : '',
       price: String(product.price),
       cost_price: String(product.cost ?? ''),
-      cb_percent: product.cb_percent === null || product.cb_percent === undefined ? '' : String(product.cb_percent),
+      cb_percent:
+        product.cb_percent === null || product.cb_percent === undefined
+          ? ''
+          : String(product.cb_percent),
       sku: product.sku || '',
       barcode: product.barcode || '',
       sale_unit: product.sale_unit || 'each',
@@ -357,26 +462,32 @@ export default function ProductsPage() {
     setShowForm(true);
   };
 
-  const addVariantRow = () => setForm((prev) => ({
-    ...prev,
-    has_variants: true,
-    variants: [...prev.variants, newVariantRow()],
-  }));
+  const addVariantRow = () =>
+    setForm((prev) => ({
+      ...prev,
+      has_variants: true,
+      variants: [...prev.variants, newVariantRow()],
+    }));
 
-  const updateVariantRow = (idx: number, patch: Partial<ProductVariantRow>) => setForm((prev) => ({
-    ...prev,
-    variants: prev.variants.map((row, i) => (i === idx ? { ...row, ...patch, touched: true } : row)),
-  }));
+  const updateVariantRow = (idx: number, patch: Partial<ProductVariantRow>) =>
+    setForm((prev) => ({
+      ...prev,
+      variants: prev.variants.map((row, i) =>
+        i === idx ? { ...row, ...patch, touched: true } : row,
+      ),
+    }));
 
-  const shiftVariantRow = (idx: number, offset: -1 | 1) => setForm((prev) => ({
-    ...prev,
-    variants: moveVariantRow(prev.variants, idx, offset),
-  }));
+  const shiftVariantRow = (idx: number, offset: -1 | 1) =>
+    setForm((prev) => ({
+      ...prev,
+      variants: moveVariantRow(prev.variants, idx, offset),
+    }));
 
-  const dropVariantRow = (idx: number) => setForm((prev) => ({
-    ...prev,
-    variants: removeVariantRow(prev.variants, idx),
-  }));
+  const dropVariantRow = (idx: number) =>
+    setForm((prev) => ({
+      ...prev,
+      variants: removeVariantRow(prev.variants, idx),
+    }));
 
   // The editor loads deactivated variants so the row can be switched back on;
   // make stopping sales explicit before taking it.
@@ -385,7 +496,12 @@ export default function ProductsPage() {
       updateVariantRow(idx, { is_active: true });
       return;
     }
-    if (await confirm(t('variantDeactivateConfirm'), { destructive: true, confirmLabel: tCommon('yes') })) {
+    if (
+      await confirm(t('variantDeactivateConfirm'), {
+        destructive: true,
+        confirmLabel: tCommon('yes'),
+      })
+    ) {
       updateVariantRow(idx, { is_active: false });
     } else {
       // Re-render so the controlled checkbox snaps back to the declined value.
@@ -398,7 +514,12 @@ export default function ProductsPage() {
       setForm((prev) => ({ ...prev, has_variants: true }));
       return;
     }
-    if (!await confirm(t('variantRemoveAllConfirm'), { destructive: true, confirmLabel: tCommon('yes') })) {
+    if (
+      !(await confirm(t('variantRemoveAllConfirm'), {
+        destructive: true,
+        confirmLabel: tCommon('yes'),
+      }))
+    ) {
       // Re-render so the controlled switch snaps back to the declined value.
       setForm((prev) => ({ ...prev }));
       return;
@@ -426,7 +547,10 @@ export default function ProductsPage() {
         name: form.name,
         category_id: form.category_id || null,
         price: roundCurrencyValue(Number(form.price), unitAdapter.maxDecimals),
-        cost_price: form.cost_price === '' ? null : roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals),
+        cost_price:
+          form.cost_price === ''
+            ? null
+            : roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals),
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
@@ -435,9 +559,9 @@ export default function ProductsPage() {
         weight_precision: Number(form.weight_precision),
         ...(form.inventory_product_id
           ? {
-            inventory_product_id: form.inventory_product_id,
-            inventory_deduction_quantity: Number(form.inventory_deduction_quantity) || 1,
-          }
+              inventory_product_id: form.inventory_product_id,
+              inventory_deduction_quantity: Number(form.inventory_deduction_quantity) || 1,
+            }
           : { inventory_product_id: null }),
         tax_category_id: form.tax_category_id || null,
         tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
@@ -447,7 +571,10 @@ export default function ProductsPage() {
         low_stock_threshold: Number(form.low_stock_threshold),
         is_active: form.is_active,
         tags: form.tags.length > 0 ? form.tags : null,
-        variants: buildVariantsPayload(form.has_variants ? form.variants : [], unitAdapter.maxDecimals),
+        variants: buildVariantsPayload(
+          form.has_variants ? form.variants : [],
+          unitAdapter.maxDecimals,
+        ),
         addon_group_ids: form.addon_group_ids,
       };
 
@@ -467,15 +594,19 @@ export default function ProductsPage() {
       resetForm();
       fetchData();
     } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
+      const message =
+        err instanceof Error && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       toast.error(message || t('failedToSave'));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!await confirm(t('deleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
+    if (
+      !(await confirm(t('deleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') }))
+    )
+      return;
     try {
       await api.delete(`/products/${id}`);
       toast.success(t('deleted'));
@@ -498,13 +629,16 @@ export default function ProductsPage() {
     const requestId = ++editRequestId.current;
     setProductInactiveAddonGroups([]);
     const addonGroupIds = cat.addon_group_ids || [];
-    const inactiveGroupIds = addonGroupIds.filter((id) => !addonGroups.some((group) => group.id === id));
+    const inactiveGroupIds = addonGroupIds.filter(
+      (id) => !addonGroups.some((group) => group.id === id),
+    );
     let inactiveGroups: AddonGroup[] = [];
     if (inactiveGroupIds.length > 0) {
       try {
         const response = await api.get('/addon-groups?include_inactive=true');
-        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || [])
-          .filter((group) => !group.is_active && inactiveGroupIds.includes(group.id));
+        inactiveGroups = ((response.data.addon_groups as AddonGroup[]) || []).filter(
+          (group) => !group.is_active && inactiveGroupIds.includes(group.id),
+        );
       } catch {
         if (requestId === editRequestId.current) toast.error(t('failedToLoad'));
       }
@@ -548,7 +682,7 @@ export default function ProductsPage() {
   };
 
   const handleCategoryDelete = async (id: string, name: string) => {
-    const productCount = products.filter(p => p.category_id === id).length;
+    const productCount = products.filter((p) => p.category_id === id).length;
     if (productCount > 0) {
       setCatReassignTo('');
       setCatDeleteModal({ open: true, id, name, productCount });
@@ -560,7 +694,9 @@ export default function ProductsPage() {
       toast.success(t('categoryDeleted'));
       fetchData();
     } catch (err: unknown) {
-      const e = err as { response?: { status?: number; data?: { error?: string; productCount?: number } } };
+      const e = err as {
+        response?: { status?: number; data?: { error?: string; productCount?: number } };
+      };
       if (e?.response?.status === 400 && e?.response?.data?.productCount) {
         setCatReassignTo('');
         setCatDeleteModal({ open: true, id, name, productCount: e.response.data.productCount });
@@ -573,7 +709,9 @@ export default function ProductsPage() {
   const handleCategoryReassignDelete = async () => {
     if (!catDeleteModal.id || !catReassignTo) return;
     try {
-      await api.delete(`/categories/${catDeleteModal.id}?action=reassign&reassign_to=${catReassignTo}`);
+      await api.delete(
+        `/categories/${catDeleteModal.id}?action=reassign&reassign_to=${catReassignTo}`,
+      );
       toast.success(t('reassignAndDelete'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
@@ -595,7 +733,14 @@ export default function ProductsPage() {
   };
 
   const resetAddonForm = () => {
-    setAddonForm({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
+    setAddonForm({
+      name: '',
+      description: '',
+      is_required: false,
+      allow_multiple_quantities: false,
+      min_selection: 0,
+      max_selection: 10,
+    });
     setEditingAddonGroup(null);
     setShowAddonModal(false);
     setAddonList([]);
@@ -603,17 +748,26 @@ export default function ProductsPage() {
 
   const openEditAddonGroup = (group: AddonGroup) => {
     setEditingAddonGroup(group);
-    setAddonForm({ name: group.name, description: group.description || '', is_required: Boolean(group.is_required), allow_multiple_quantities: Boolean(group.allow_multiple_quantities), min_selection: group.min_selection, max_selection: group.max_selection });
-    setAddonList(group.addons?.map((a) => ({
-      id: a.id,
-      name: a.name,
-      price: a.price,
-      is_active: Boolean(a.is_active),
-      track_inventory: Boolean(a.track_inventory),
-      stock_quantity: String(a.stock_quantity ?? 0),
-      low_stock_threshold: String(a.low_stock_threshold ?? 0),
-      stock_edited: false,
-    })) || []);
+    setAddonForm({
+      name: group.name,
+      description: group.description || '',
+      is_required: Boolean(group.is_required),
+      allow_multiple_quantities: Boolean(group.allow_multiple_quantities),
+      min_selection: group.min_selection,
+      max_selection: group.max_selection,
+    });
+    setAddonList(
+      group.addons?.map((a) => ({
+        id: a.id,
+        name: a.name,
+        price: a.price,
+        is_active: Boolean(a.is_active),
+        track_inventory: Boolean(a.track_inventory),
+        stock_quantity: String(a.stock_quantity ?? 0),
+        low_stock_threshold: String(a.low_stock_threshold ?? 0),
+        stock_edited: false,
+      })) || [],
+    );
     setShowAddonModal(true);
   };
 
@@ -636,7 +790,9 @@ export default function ProductsPage() {
           low_stock_threshold: Math.max(0, Number(addon.low_stock_threshold) || 0),
           // Omitted unless the merchant edited it: the API reads a submitted
           // stock_quantity as an absolute set and writes a ledger movement.
-          ...(addon.stock_edited ? { stock_quantity: Math.max(0, Number(addon.stock_quantity) || 0) } : {}),
+          ...(addon.stock_edited
+            ? { stock_quantity: Math.max(0, Number(addon.stock_quantity) || 0) }
+            : {}),
         })),
       };
       if (editingAddonGroup) {
@@ -648,57 +804,84 @@ export default function ProductsPage() {
       }
       resetAddonForm();
       fetchData();
-    } catch { toast.error(t('failedToSaveAddonGroup')); }
+    } catch {
+      toast.error(t('failedToSaveAddonGroup'));
+    }
   };
 
   const handleAddonGroupDelete = async (id: number | string) => {
-    if (!await confirm(t('deleteAddonGroupConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
+    if (
+      !(await confirm(t('deleteAddonGroupConfirm'), {
+        destructive: true,
+        confirmLabel: tCommon('delete'),
+      }))
+    )
+      return;
     try {
       await api.delete(`/addon-groups/${id}`);
       toast.success(t('addonGroupDeleted'));
       fetchData();
-    } catch { toast.error(tCommon('failedToDelete')); }
+    } catch {
+      toast.error(tCommon('failedToDelete'));
+    }
   };
 
-  const addAddonItem = () => setAddonList((prev) => [...prev, {
-    name: '',
-    price: 0,
-    track_inventory: false,
-    stock_quantity: '0',
-    low_stock_threshold: '0',
-    stock_edited: false,
-  }]);
+  const addAddonItem = () =>
+    setAddonList((prev) => [
+      ...prev,
+      {
+        name: '',
+        price: 0,
+        track_inventory: false,
+        stock_quantity: '0',
+        low_stock_threshold: '0',
+        stock_edited: false,
+      },
+    ]);
   const updateAddonItem = (idx: number, patch: Partial<AddonEditorRow>) =>
     setAddonList((prev) => prev.map((a, i) => (i === idx ? { ...a, ...patch } : a)));
   // Editing the stock box is what authorises an absolute stock write on save.
   const updateAddonStock = (idx: number, value: string) =>
-    setAddonList((prev) => prev.map((a, i) => (i === idx ? { ...a, stock_quantity: value, stock_edited: true } : a)));
+    setAddonList((prev) =>
+      prev.map((a, i) => (i === idx ? { ...a, stock_quantity: value, stock_edited: true } : a)),
+    );
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
   // One search box filters whichever list the active tab shows; every list is
   // already fully loaded, so the filter never stops at a first page.
   const normalizedSearch = search.trim().toLowerCase();
   const matchesSearch = (fields: Array<string | null | undefined>) =>
-    fields.some((field) => typeof field === 'string' && field.toLowerCase().includes(normalizedSearch));
-  const visibleProducts = normalizedSearch === ''
-    ? products
-    : products.filter((product) => matchesSearch([
-        product.name,
-        product.sku,
-        product.barcode,
-        product.category?.name,
-        categories.find((c) => String(c.id) === String(product.category_id || product.category?.id))?.name,
-      ]));
-  const visibleCategories = normalizedSearch === ''
-    ? categories
-    : categories.filter((category) => matchesSearch([category.name, category.description]));
-  const visibleAddonGroups = normalizedSearch === ''
-    ? addonGroups
-    : addonGroups.filter((group) => matchesSearch([
-        group.name,
-        group.description,
-        ...(group.addons || []).map((addon) => addon.name),
-      ]));
+    fields.some(
+      (field) => typeof field === 'string' && field.toLowerCase().includes(normalizedSearch),
+    );
+  const visibleProducts =
+    normalizedSearch === ''
+      ? products
+      : products.filter((product) =>
+          matchesSearch([
+            product.name,
+            product.sku,
+            product.barcode,
+            product.category?.name,
+            categories.find(
+              (c) => String(c.id) === String(product.category_id || product.category?.id),
+            )?.name,
+          ]),
+        );
+  const visibleCategories =
+    normalizedSearch === ''
+      ? categories
+      : categories.filter((category) => matchesSearch([category.name, category.description]));
+  const visibleAddonGroups =
+    normalizedSearch === ''
+      ? addonGroups
+      : addonGroups.filter((group) =>
+          matchesSearch([
+            group.name,
+            group.description,
+            ...(group.addons || []).map((addon) => addon.name),
+          ]),
+        );
 
   if (loading) {
     return (
@@ -713,7 +896,10 @@ export default function ProductsPage() {
       <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="relative w-full sm:max-w-xs">
-          <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            size={16}
+            className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <input
             type="text"
             value={search}
@@ -754,10 +940,19 @@ export default function ProductsPage() {
           )}
         </TabsList>
 
-        <TabsContent value="products" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="products"
+          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
+        >
           <div className="flex shrink-0 justify-end gap-2 mb-4">
             {isOwnerOrManager && taxCategories.length > 0 && (
-              <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setBulkTaxCategoryId('');
+                  setShowBulkTaxModal(true);
+                }}
+              >
                 {t('assignTaxCategory')}
               </Button>
             )}
@@ -772,611 +967,990 @@ export default function ProductsPage() {
             </Button>
           </div>
 
-      {/* Product Table */}
-      <div data-testid="products-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
-        <table className="w-full">
-          <thead className="bg-muted">
-            <tr>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnProduct')}</th>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
-              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
-              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
-              {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
-              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {visibleProducts.map((product) => {
-              const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
-              const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
-              const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
-              const taxLabel = product.tax_category_id
-                ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
-                : '—';
-              return (
-              <tr key={product.id} className="hover:bg-muted">
-                <td className="p-4 max-w-[220px]">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
-                      <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{ backgroundColor: nameToColor(product.name) }}
-                      >
-                        <span className="text-sm font-bold text-white/80">
-                          {product.name.substring(0, 2).toUpperCase()}
-                        </span>
-                      </div>
-                      {product.has_image && (
-                        <img 
-                          src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
-                          alt="" 
-                          className="absolute inset-0 w-full h-full object-cover"
-                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground">{product.name}</p>
-                      {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('skuLabel', { sku: product.sku })}</p>}
-                      {product.barcode && <p className="text-xs text-gray-400 mt-0.5 font-mono">{t('barcodeLabel', { barcode: product.barcode })}</p>}
-                      {product.tags && product.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
+          {/* Product Table */}
+          <div
+            data-testid="products-list-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
+            <table className="w-full">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnProduct')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnCategory')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnAddons')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnPrice')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnTax')}
+                  </th>
+                  {loyaltyEnabled && (
+                    <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                      {t('columnCashback')}
+                    </th>
+                  )}
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnStock')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnStatus')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnActions')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {visibleProducts.map((product) => {
+                  const parentCat = categories.find(
+                    (c) => String(c.id) === String(product.category_id || product.category?.id),
+                  );
+                  const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
+                  const matchedTaxCategory = taxCategories.find(
+                    (tc) => tc.id === product.tax_category_id,
+                  );
+                  const taxLabel = product.tax_category_id
+                    ? matchedTaxCategory
+                      ? taxCategoryOptionLabel(matchedTaxCategory)
+                      : product.tax_category_id
+                    : '—';
+                  return (
+                    <tr key={product.id} className="hover:bg-muted">
+                      <td className="p-4 max-w-[220px]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
+                            <div
+                              className="absolute inset-0 flex items-center justify-center"
+                              style={{ backgroundColor: nameToColor(product.name) }}
+                            >
+                              <span className="text-sm font-bold text-white/80">
+                                {product.name.substring(0, 2).toUpperCase()}
+                              </span>
+                            </div>
+                            {product.has_image && (
+                              <img
+                                src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
+                                alt=""
+                                className="absolute inset-0 w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-foreground">{product.name}</p>
+                            {product.sku && (
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {t('skuLabel', { sku: product.sku })}
+                              </p>
+                            )}
+                            {product.barcode && (
+                              <p className="text-xs text-gray-400 mt-0.5 font-mono">
+                                {t('barcodeLabel', { barcode: product.barcode })}
+                              </p>
+                            )}
+                            {product.tags && product.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {product.tags.map((tag: string) => (
+                                  <TagBadge key={tag} tag={tag} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
+                      </td>
+                      <td className="p-4 text-sm text-muted-foreground">
+                        <div className="flex flex-col gap-0.5">
+                          <span>{product.category?.name || '—'}</span>
+                          {isCategoryInactive && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit"
+                              title="Parent category is inactive; product is hidden on POS"
+                            >
+                              <AlertTriangle size={11} className="shrink-0" />{' '}
+                              {t('categoryInactiveBadge')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        {product.addon_groups && product.addon_groups.length > 0 ? (
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {t('addonGroupCount', { count: product.addon_groups.length })}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-end">
+                        <p className="font-medium">{fmt(Number(product.price))}</p>
+                        {product.cost != null && product.cost > 0 && (
+                          <p className="text-xs text-gray-400">
+                            {t('costLabel', { value: fmt(Number(product.cost)) })}
+                          </p>
+                        )}
+                      </td>
+                      <td className="p-4 text-sm text-muted-foreground">
+                        <div className="flex flex-col gap-0.5">
+                          <span>{taxLabel}</span>
+                          {!product.tax_category_id && taxCategories.length > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit"
+                              title={t('notTaxedTooltip')}
+                            >
+                              <AlertTriangle size={11} className="shrink-0" /> {t('notTaxedBadge')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      {loyaltyEnabled && (
+                        <td className="p-4 text-sm text-muted-foreground">
+                          {product.cb_percent === null || product.cb_percent === undefined ? (
+                            <span>
+                              {globalCashbackPercent}%{' '}
+                              <span className="text-gray-400 text-xs">
+                                ({t('cashbackGlobalBadge')})
+                              </span>
+                            </span>
+                          ) : product.cb_percent === 0 ? (
+                            <span className="text-gray-400">0%</span>
+                          ) : (
+                            <span>{product.cb_percent}%</span>
+                          )}
+                        </td>
                       )}
-                    </div>
-                  </div>
-                </td>
-                <td className="p-4 text-sm text-muted-foreground">
-                  <div className="flex flex-col gap-0.5">
-                    <span>{product.category?.name || '—'}</span>
-                    {isCategoryInactive && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Parent category is inactive; product is hidden on POS">
-                        <AlertTriangle size={11} className="shrink-0" /> {t('categoryInactiveBadge')}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="p-4 text-center">
-                  {product.addon_groups && product.addon_groups.length > 0 ? (
-                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {t('addonGroupCount', { count: product.addon_groups.length })}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-sm">—</span>
-                  )}
-                </td>
-                <td className="p-4 text-end">
-                  <p className="font-medium">{fmt(Number(product.price))}</p>
-                  {product.cost != null && product.cost > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost)) })}</p>}
-                </td>
-                <td className="p-4 text-sm text-muted-foreground">
-                  <div className="flex flex-col gap-0.5">
-                    <span>{taxLabel}</span>
-                    {!product.tax_category_id && taxCategories.length > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title={t('notTaxedTooltip')}>
-                        <AlertTriangle size={11} className="shrink-0" /> {t('notTaxedBadge')}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                {loyaltyEnabled && (
-                  <td className="p-4 text-sm text-muted-foreground">
-                    {product.cb_percent === null || product.cb_percent === undefined ? (
-                      <span>{globalCashbackPercent}% <span className="text-gray-400 text-xs">({t('cashbackGlobalBadge')})</span></span>
-                    ) : product.cb_percent === 0 ? (
-                      <span className="text-gray-400">0%</span>
-                    ) : (
-                      <span>{product.cb_percent}%</span>
-                    )}
-                  </td>
-                )}
-                <td className="p-4 text-center">
-                  {product.track_inventory ? (
-                    <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
-                      {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400 text-sm">—</span>
-                  )}
-                </td>
-                <td className="p-4 text-center">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {product.is_active ? tCommon('active') : tCommon('inactive')}
-                  </span>
-                  {product.is_active && isCategoryInactive && (
-                    <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('hiddenOnPos')}</span>
-                  )}
-                </td>
-                <td className="p-4 text-end">
-                  <div className="flex gap-2 justify-end">
-                    {isOwnerOrManager && (
-                      <>
-                        <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
-                          <Pencil size={16} />
-                        </button>
-                        <button onClick={() => handleDelete(product.id)} className="p-1.5 text-gray-400 hover:text-red-600">
-                          <Trash2 size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {visibleProducts.length === 0 && (
-          <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('empty') : tCommon('noResults')}</p>
-        )}
-      </div>
+                      <td className="p-4 text-center">
+                        {product.track_inventory ? (
+                          <span
+                            className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}
+                          >
+                            {product.stock_quantity <= 0
+                              ? tPos('outOfStock')
+                              : product.stock_quantity}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            product.is_active
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {product.is_active ? tCommon('active') : tCommon('inactive')}
+                        </span>
+                        {product.is_active && isCategoryInactive && (
+                          <span className="text-[10px] text-amber-600 font-medium block mt-1">
+                            {t('hiddenOnPos')}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4 text-end">
+                        <div className="flex gap-2 justify-end">
+                          {isOwnerOrManager && (
+                            <>
+                              <button
+                                onClick={() => openEdit(product)}
+                                className="p-1.5 text-gray-400 hover:text-brand"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(product.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-600"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {visibleProducts.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">
+                {normalizedSearch === '' ? t('empty') : tCommon('noResults')}
+              </p>
+            )}
+          </div>
 
-      {/* Product Form Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
-              <h2 className="text-lg font-bold">{editingProduct ? t('editProductTitle') : t('addProductTitle')}</h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Wide two-column layout: the full-width variant editor and the
-                  grid rows keep every control inside the popup. */}
-              <form id="product-form" onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-x-6">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-              </div>
-              <div>
-                <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
-                <textarea id="product-description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldImage')}</label>
-                <ImageUploader
-                  value={form.image_url}
-                  onChange={(val) => {
-                    setForm({ ...form, image_url: val });
-                    setImageTouched(true);
-                  }}
-                  productId={editingProduct?.id ? String(editingProduct.id) : undefined}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCategory')}<span className="text-red-500 ms-1">*</span></label>
-                  <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required>
-                    <option value="">{t('selectPlaceholder')}</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldSku')}</label>
-                  <input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldBarcode')}</label>
-                <input type="text" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })}
-                  placeholder={t('fieldBarcodePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono" />
-                <p className="text-xs text-gray-400 mt-1">{t('fieldBarcodeHint')}</p>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldSaleUnit')}</label>
-                  <select
-                    value={form.sale_unit}
-                    onChange={(e) => {
-                      const saleUnit = e.target.value as Product['sale_unit'];
-                      setForm({
-                        ...form,
-                        sale_unit: saleUnit,
-                        allow_fractional_quantity: saleUnit === 'each' ? false : true,
-                      });
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                  >
-                    <option value="each">{t('saleUnitEach')}</option>
-                    <option value="kg">{t('saleUnitKg')}</option>
-                    <option value="g">{t('saleUnitG')}</option>
-                    <option value="lb">{t('saleUnitLb')}</option>
-                    <option value="ml">{t('saleUnitMl')}</option>
-                    <option value="cl">{t('saleUnitCl')}</option>
-                    <option value="l">{t('saleUnitL')}</option>
-                    <option value="fl oz">{t('saleUnitFlOz')}</option>
-                    <option value="oz">{t('saleUnitOz')}</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldWeightPrecision')}</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="4"
-                    value={form.weight_precision}
-                    onChange={(e) => setForm({ ...form, weight_precision: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                  />
-                </div>
-                <label className="flex items-center gap-2 pt-7">
-                  <input
-                    type="checkbox"
-                    checked={form.allow_fractional_quantity}
-                    onChange={(e) => setForm({ ...form, allow_fractional_quantity: e.target.checked })}
-                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
-                  />
-                  <span className="text-sm text-foreground">{t('fieldAllowFractionalQuantity')}</span>
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldInventoryProduct')}</label>
-                  <select
-                    value={form.inventory_product_id}
-                    onChange={(e) => setForm({ ...form, inventory_product_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                  >
-                    <option value="">{t('fieldInventoryProductNone')}</option>
-                    {products
-                      .filter((p) => p.id !== editingProduct?.id && !p.inventory_product_id)
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">{t('fieldInventoryProductHint')}</p>
-                </div>
-                {!!form.inventory_product_id && (
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldInventoryDeductionQuantity')}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={form.inventory_deduction_quantity}
-                      onChange={(e) => setForm({ ...form, inventory_deduction_quantity: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
-                  <CurrencyAmountInput value={form.price === '' ? '' : Number(form.price)} format={amountFormat}
-                    onValueChange={(v) => setForm({ ...form, price: v === '' ? '' : String(v) })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                  {form.has_variants && <p className="text-xs text-muted-foreground mt-1">{t('variantGovernedHint')}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCostPrice')}</label>
-                  <CurrencyAmountInput value={form.cost_price === '' ? '' : Number(form.cost_price)} format={amountFormat}
-                    onValueChange={(v) => setForm({ ...form, cost_price: v === '' ? '' : String(v) })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                </div>
-              </div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.has_variants}
-                  onChange={(e) => toggleHasVariants(e.target.checked)}
-                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
-                />
-                <span className="text-sm text-foreground">{t('variantToggle')}</span>
-              </label>
-              {form.has_variants && (
-                <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4 lg:col-span-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-foreground">{t('variantsSection')}</span>
-                    <button type="button" onClick={addVariantRow} className="text-xs text-brand hover:underline">{t('addButton')}</button>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[820px] text-sm">
-                      <thead>
-                        <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                          <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
-                          <th className="text-start py-1 pe-2">{t('columnPrice')}</th>
-                          <th className="text-start py-1 pe-2">{t('variantOnlinePrice')}</th>
-                          <th className="text-start py-1 pe-2">{t('fieldSku')}</th>
-                          <th className="text-start py-1 pe-2">{t('fieldBarcode')}</th>
-                          <th className="text-start py-1 pe-2">{t('columnStock')}</th>
-                          <th className="text-start py-1 pe-2">{t('variantRecipeMultiplier')}</th>
-                          <th className="text-center py-1 pe-2">{tCommon('active')}</th>
-                          <th aria-hidden="true" />
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {form.variants.map((row, idx) => (
-                          <tr key={row.id ?? `new-${idx}`}>
-                            <td className="py-1 pe-2">
-                              <input type="text" value={row.name} required aria-label={t('nameLabel')} placeholder={tCommon('namePlaceholder')}
-                                onChange={(e) => updateVariantRow(idx, { name: e.target.value })}
-                                className={VARIANT_CELL} />
-                            </td>
-                            <td className="py-1 pe-2">
-                              <CurrencyAmountInput value={row.price === '' ? '' : Number(row.price)} format={amountFormat} required aria-label={t('columnPrice')}
-                                onValueChange={(v) => updateVariantRow(idx, { price: v === '' ? '' : String(v) })}
-                                className={VARIANT_CELL} />
-                            </td>
-                            <td className="py-1 pe-2">
-                              <CurrencyAmountInput value={row.online_price === '' ? '' : Number(row.online_price)} format={amountFormat} aria-label={t('variantOnlinePrice')}
-                                onValueChange={(v) => updateVariantRow(idx, { online_price: v === '' ? '' : String(v) })}
-                                className={VARIANT_CELL} />
-                            </td>
-                            <td className="py-1 pe-2">
-                              <input type="text" value={row.sku} aria-label={t('fieldSku')}
-                                onChange={(e) => updateVariantRow(idx, { sku: e.target.value })}
-                                className={VARIANT_CELL} />
-                            </td>
-                            <td className="py-1 pe-2">
-                              <input type="text" value={row.barcode} aria-label={t('fieldBarcode')} placeholder={t('fieldBarcodePlaceholder')}
-                                onChange={(e) => updateVariantRow(idx, { barcode: e.target.value })}
-                                className={`${VARIANT_CELL} font-mono`} />
-                            </td>
-                            <td className="py-1 pe-2">
-                              <div className="flex items-center gap-2">
-                                <input type="checkbox" checked={row.track_inventory} aria-label={t('fieldTrackInventory')}
-                                  onChange={(e) => updateVariantRow(idx, { track_inventory: e.target.checked })}
-                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                                {row.track_inventory && (
-                                  <input type="number" min="0" step="any" required value={row.stock_quantity} aria-label={t('columnStock')}
-                                    onChange={(e) => updateVariantRow(idx, { stock_quantity: e.target.value })}
-                                    className={VARIANT_CELL} />
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-1 pe-2">
-                              <input type="number" min="0" step="any" inputMode="decimal" required
-                                value={row.recipe_multiplier} aria-label={t('variantRecipeMultiplier')}
-                                title={t('variantRecipeMultiplierHint')}
-                                onChange={(e) => updateVariantRow(idx, { recipe_multiplier: e.target.value })}
-                                className={VARIANT_CELL} />
-                            </td>
-                            <td className="py-1 pe-2 text-center">
-                              <input type="checkbox" checked={row.is_active} aria-label={tCommon('active')}
-                                onChange={(e) => toggleVariantActive(idx, e.target.checked)}
-                                className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                            </td>
-                            <td className="py-1">
-                              <div className="flex items-center justify-end gap-1">
-                                <button type="button" title={t('variantMoveUp')} aria-label={t('variantMoveUp')} disabled={idx === 0}
-                                  onClick={() => shiftVariantRow(idx, -1)}
-                                  className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
-                                  <ChevronUp size={16} />
-                                </button>
-                                <button type="button" title={t('variantMoveDown')} aria-label={t('variantMoveDown')} disabled={idx === form.variants.length - 1}
-                                  onClick={() => shiftVariantRow(idx, 1)}
-                                  className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400">
-                                  <ChevronDown size={16} />
-                                </button>
-                                <button type="button" title={tCommon('remove')} aria-label={tCommon('remove')}
-                                  onClick={() => dropVariantRow(idx)}
-                                  className="p-1 text-gray-400 hover:text-red-500">
-                                  <X size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t('variantRecipeMultiplierHint')}</p>
-                </div>
-              )}
-              {loyaltyEnabled && (
-                <div className="bg-muted p-4 rounded-xl space-y-2">
-                  <label className="block text-sm font-medium text-foreground">{t('cashbackLabel')}</label>
-                  <div className="flex items-center gap-2">
-                    <input type="number" step="0.1" min="0" max="100" value={form.cb_percent}
-                      onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
-                      placeholder={String(globalCashbackPercent)}
-                      className="w-24 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                    <span className="text-muted-foreground font-medium">%</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {form.cb_percent === ''
-                      ? t('cashbackUsingGlobal', { rate: globalCashbackPercent })
-                      : t('cashbackOverrideHint')}
-                  </p>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('taxRateGroupLabel')}</label>
-                <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                  <option value="">{t('taxNoTax')}</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
-                </select>
-                {taxCategories.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">{t('taxNoGroupsHint')}</p>
-                )}
-                {taxCategories.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">{t('taxDefaultHint')}</p>
-                )}
-              </div>
-              {form.tax_category_id ? (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{t('taxBehaviorLabel')}</label>
-                  <select value={form.tax_behavior} onChange={(e) => setForm({ ...form, tax_behavior: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                    <option value="country_default">{t('taxCountryDefault')}</option>
-                    <option value="inclusive">{t('taxInclusive')}</option>
-                    <option value="exclusive">{t('taxExclusive')}</option>
-                    <option value="exempt">{t('taxExempt')}</option>
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">{t('taxRateHint')}</p>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 -mt-2">
-                  {t('taxNoCategory')}
-                </p>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">{t('fieldTags')}</label>
-                {/* Selected tags */}
-                {form.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {form.tags.map((tag) => (
-                      <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-brand/10 text-brand rounded-lg text-xs font-medium">
-                        {tagLabelText(tag)}
-                        <button type="button" onClick={() => setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }))} className="hover:text-red-500">
-                          <X size={11} />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {/* Preset tag chips */}
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                  {PRESET_TAGS.filter((pt) => !form.tags.includes(pt.key)).map((pt) => (
-                    <button
-                      key={pt.key}
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, tags: [...prev.tags, pt.key] }))}
-                      className="px-2 py-1 text-xs border border-border rounded-lg text-muted-foreground hover:border-brand hover:text-brand transition-colors"
-                    >
-                      + {tPos(pt.labelKey)}
-                    </button>
-                  ))}
-                </div>
-                {/* Custom tag input */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={form.customTag}
-                    onChange={(e) => setForm((prev) => ({ ...prev, customTag: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ',') {
-                        e.preventDefault();
-                        const val = form.customTag.trim().toLowerCase().replace(/\s+/g, '_');
-                        if (val && !form.tags.includes(val)) {
-                          setForm((prev) => ({ ...prev, tags: [...prev.tags, val], customTag: '' }));
-                        }
-                      }
-                    }}
-                    placeholder={t('tagPlaceholder')}
-                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const val = form.customTag.trim().toLowerCase().replace(/\s+/g, '_');
-                      if (val && !form.tags.includes(val)) {
-                        setForm((prev) => ({ ...prev, tags: [...prev.tags, val], customTag: '' }));
-                      }
-                    }}
-                    className="px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-muted text-muted-foreground"
-                  >
-                    {tCommon('add')}
+          {/* Product Form Modal */}
+          {showForm && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-card rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
+                  <h2 className="text-lg font-bold">
+                    {editingProduct ? t('editProductTitle') : t('addProductTitle')}
+                  </h2>
+                  <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground">
+                    <X size={20} />
                   </button>
                 </div>
-              </div>
-              {isRestaurant && productAddonGroupOptions.length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
-                    {productAddonGroupOptions.map((group) => {
-                      const isChecked = form.addon_group_ids.includes(group.id);
-                      const isInherited = categories.find((category) => category.id === form.category_id)?.addon_group_ids?.includes(group.id) || false;
-                      return (
-                        <div key={group.id} className="flex items-center gap-2">
+                <div className="p-6 overflow-y-auto flex-1">
+                  {/* Wide two-column layout: the full-width variant editor and the
+                  grid rows keep every control inside the popup. */}
+                  <form
+                    id="product-form"
+                    onSubmit={handleSubmit}
+                    className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 lg:gap-x-6"
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('fieldName')}
+                        <span className="text-red-500 ms-1">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={form.name}
+                        onChange={(e) => setForm({ ...form, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="product-description"
+                        className="block text-sm font-medium text-foreground mb-1"
+                      >
+                        {t('categoryDescription')}
+                      </label>
+                      <textarea
+                        id="product-description"
+                        value={form.description}
+                        onChange={(e) => setForm({ ...form, description: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        rows={2}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('fieldImage')}
+                      </label>
+                      <ImageUploader
+                        value={form.image_url}
+                        onChange={(val) => {
+                          setForm({ ...form, image_url: val });
+                          setImageTouched(true);
+                        }}
+                        productId={editingProduct?.id ? String(editingProduct.id) : undefined}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldCategory')}
+                          <span className="text-red-500 ms-1">*</span>
+                        </label>
+                        <select
+                          value={form.category_id}
+                          onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                          required
+                        >
+                          <option value="">{t('selectPlaceholder')}</option>
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldSku')}
+                        </label>
+                        <input
+                          type="text"
+                          value={form.sku}
+                          onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('fieldBarcode')}
+                      </label>
+                      <input
+                        type="text"
+                        value={form.barcode}
+                        onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                        placeholder={t('fieldBarcodePlaceholder')}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">{t('fieldBarcodeHint')}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldSaleUnit')}
+                        </label>
+                        <select
+                          value={form.sale_unit}
+                          onChange={(e) => {
+                            const saleUnit = e.target.value as Product['sale_unit'];
+                            setForm({
+                              ...form,
+                              sale_unit: saleUnit,
+                              allow_fractional_quantity: saleUnit === 'each' ? false : true,
+                            });
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        >
+                          <option value="each">{t('saleUnitEach')}</option>
+                          <option value="kg">{t('saleUnitKg')}</option>
+                          <option value="g">{t('saleUnitG')}</option>
+                          <option value="lb">{t('saleUnitLb')}</option>
+                          <option value="ml">{t('saleUnitMl')}</option>
+                          <option value="cl">{t('saleUnitCl')}</option>
+                          <option value="l">{t('saleUnitL')}</option>
+                          <option value="fl oz">{t('saleUnitFlOz')}</option>
+                          <option value="oz">{t('saleUnitOz')}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldWeightPrecision')}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="4"
+                          value={form.weight_precision}
+                          onChange={(e) => setForm({ ...form, weight_precision: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 pt-7">
+                        <input
+                          type="checkbox"
+                          checked={form.allow_fractional_quantity}
+                          onChange={(e) =>
+                            setForm({ ...form, allow_fractional_quantity: e.target.checked })
+                          }
+                          className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                        />
+                        <span className="text-sm text-foreground">
+                          {t('fieldAllowFractionalQuantity')}
+                        </span>
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldInventoryProduct')}
+                        </label>
+                        <select
+                          value={form.inventory_product_id}
+                          onChange={(e) =>
+                            setForm({ ...form, inventory_product_id: e.target.value })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        >
+                          <option value="">{t('fieldInventoryProductNone')}</option>
+                          {products
+                            .filter((p) => p.id !== editingProduct?.id && !p.inventory_product_id)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {t('fieldInventoryProductHint')}
+                        </p>
+                      </div>
+                      {!!form.inventory_product_id && (
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            {t('fieldInventoryDeductionQuantity')}
+                          </label>
                           <input
-                            type="checkbox"
-                            id={`addon-group-${group.id}`}
-                            checked={isChecked}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={form.inventory_deduction_quantity}
+                            onChange={(e) =>
+                              setForm({ ...form, inventory_deduction_quantity: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('priceLabel', { currency })}
+                          <span className="text-red-500 ms-1">*</span>
+                        </label>
+                        <CurrencyAmountInput
+                          value={form.price === '' ? '' : Number(form.price)}
+                          format={amountFormat}
+                          onValueChange={(v) =>
+                            setForm({ ...form, price: v === '' ? '' : String(v) })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                          required
+                        />
+                        {form.has_variants && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {t('variantGovernedHint')}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('fieldCostPrice')}
+                        </label>
+                        <CurrencyAmountInput
+                          value={form.cost_price === '' ? '' : Number(form.cost_price)}
+                          format={amountFormat}
+                          onValueChange={(v) =>
+                            setForm({ ...form, cost_price: v === '' ? '' : String(v) })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={form.has_variants}
+                        onChange={(e) => toggleHasVariants(e.target.checked)}
+                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                      />
+                      <span className="text-sm text-foreground">{t('variantToggle')}</span>
+                    </label>
+                    {form.has_variants && (
+                      <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4 lg:col-span-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold text-foreground">
+                            {t('variantsSection')}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={addVariantRow}
+                            className="text-xs text-brand hover:underline"
+                          >
+                            {t('addButton')}
+                          </button>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[820px] text-sm">
+                            <thead>
+                              <tr className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                                <th className="text-start py-1 pe-2">{t('nameLabel')}</th>
+                                <th className="text-start py-1 pe-2">{t('columnPrice')}</th>
+                                <th className="text-start py-1 pe-2">{t('variantOnlinePrice')}</th>
+                                <th className="text-start py-1 pe-2">{t('fieldSku')}</th>
+                                <th className="text-start py-1 pe-2">{t('fieldBarcode')}</th>
+                                <th className="text-start py-1 pe-2">{t('columnStock')}</th>
+                                <th className="text-start py-1 pe-2">
+                                  {t('variantRecipeMultiplier')}
+                                </th>
+                                <th className="text-center py-1 pe-2">{tCommon('active')}</th>
+                                <th aria-hidden="true" />
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {form.variants.map((row, idx) => (
+                                <tr key={row.id ?? `new-${idx}`}>
+                                  <td className="py-1 pe-2">
+                                    <input
+                                      type="text"
+                                      value={row.name}
+                                      required
+                                      aria-label={t('nameLabel')}
+                                      placeholder={tCommon('namePlaceholder')}
+                                      onChange={(e) =>
+                                        updateVariantRow(idx, { name: e.target.value })
+                                      }
+                                      className={VARIANT_CELL}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <CurrencyAmountInput
+                                      value={row.price === '' ? '' : Number(row.price)}
+                                      format={amountFormat}
+                                      required
+                                      aria-label={t('columnPrice')}
+                                      onValueChange={(v) =>
+                                        updateVariantRow(idx, { price: v === '' ? '' : String(v) })
+                                      }
+                                      className={VARIANT_CELL}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <CurrencyAmountInput
+                                      value={
+                                        row.online_price === '' ? '' : Number(row.online_price)
+                                      }
+                                      format={amountFormat}
+                                      aria-label={t('variantOnlinePrice')}
+                                      onValueChange={(v) =>
+                                        updateVariantRow(idx, {
+                                          online_price: v === '' ? '' : String(v),
+                                        })
+                                      }
+                                      className={VARIANT_CELL}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <input
+                                      type="text"
+                                      value={row.sku}
+                                      aria-label={t('fieldSku')}
+                                      onChange={(e) =>
+                                        updateVariantRow(idx, { sku: e.target.value })
+                                      }
+                                      className={VARIANT_CELL}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <input
+                                      type="text"
+                                      value={row.barcode}
+                                      aria-label={t('fieldBarcode')}
+                                      placeholder={t('fieldBarcodePlaceholder')}
+                                      onChange={(e) =>
+                                        updateVariantRow(idx, { barcode: e.target.value })
+                                      }
+                                      className={`${VARIANT_CELL} font-mono`}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={row.track_inventory}
+                                        aria-label={t('fieldTrackInventory')}
+                                        onChange={(e) =>
+                                          updateVariantRow(idx, {
+                                            track_inventory: e.target.checked,
+                                          })
+                                        }
+                                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                                      />
+                                      {row.track_inventory && (
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          required
+                                          value={row.stock_quantity}
+                                          aria-label={t('columnStock')}
+                                          onChange={(e) =>
+                                            updateVariantRow(idx, {
+                                              stock_quantity: e.target.value,
+                                            })
+                                          }
+                                          className={VARIANT_CELL}
+                                        />
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-1 pe-2">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      inputMode="decimal"
+                                      required
+                                      value={row.recipe_multiplier}
+                                      aria-label={t('variantRecipeMultiplier')}
+                                      title={t('variantRecipeMultiplierHint')}
+                                      onChange={(e) =>
+                                        updateVariantRow(idx, { recipe_multiplier: e.target.value })
+                                      }
+                                      className={VARIANT_CELL}
+                                    />
+                                  </td>
+                                  <td className="py-1 pe-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={row.is_active}
+                                      aria-label={tCommon('active')}
+                                      onChange={(e) => toggleVariantActive(idx, e.target.checked)}
+                                      className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                                    />
+                                  </td>
+                                  <td className="py-1">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        type="button"
+                                        title={t('variantMoveUp')}
+                                        aria-label={t('variantMoveUp')}
+                                        disabled={idx === 0}
+                                        onClick={() => shiftVariantRow(idx, -1)}
+                                        className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400"
+                                      >
+                                        <ChevronUp size={16} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title={t('variantMoveDown')}
+                                        aria-label={t('variantMoveDown')}
+                                        disabled={idx === form.variants.length - 1}
+                                        onClick={() => shiftVariantRow(idx, 1)}
+                                        className="p-1 text-gray-400 hover:text-brand disabled:opacity-30 disabled:hover:text-gray-400"
+                                      >
+                                        <ChevronDown size={16} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title={tCommon('remove')}
+                                        aria-label={tCommon('remove')}
+                                        onClick={() => dropVariantRow(idx)}
+                                        className="p-1 text-gray-400 hover:text-red-500"
+                                      >
+                                        <X size={16} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t('variantRecipeMultiplierHint')}
+                        </p>
+                      </div>
+                    )}
+                    {loyaltyEnabled && (
+                      <div className="bg-muted p-4 rounded-xl space-y-2">
+                        <label className="block text-sm font-medium text-foreground">
+                          {t('cashbackLabel')}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            value={form.cb_percent}
+                            onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
+                            placeholder={String(globalCashbackPercent)}
+                            className="w-24 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                          />
+                          <span className="text-muted-foreground font-medium">%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {form.cb_percent === ''
+                            ? t('cashbackUsingGlobal', { rate: globalCashbackPercent })
+                            : t('cashbackOverrideHint')}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('taxRateGroupLabel')}
+                      </label>
+                      <select
+                        value={form.tax_category_id}
+                        onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      >
+                        <option value="">{t('taxNoTax')}</option>
+                        {taxCategories.map((tc) => (
+                          <option key={tc.id} value={tc.id}>
+                            {taxCategoryOptionLabel(tc)}
+                          </option>
+                        ))}
+                      </select>
+                      {taxCategories.length === 0 && (
+                        <p className="text-xs text-gray-400 mt-1">{t('taxNoGroupsHint')}</p>
+                      )}
+                      {taxCategories.length > 0 && (
+                        <p className="text-xs text-gray-400 mt-1">{t('taxDefaultHint')}</p>
+                      )}
+                    </div>
+                    {form.tax_category_id ? (
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('taxBehaviorLabel')}
+                        </label>
+                        <select
+                          value={form.tax_behavior}
+                          onChange={(e) => setForm({ ...form, tax_behavior: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        >
+                          <option value="country_default">{t('taxCountryDefault')}</option>
+                          <option value="inclusive">{t('taxInclusive')}</option>
+                          <option value="exclusive">{t('taxExclusive')}</option>
+                          <option value="exempt">{t('taxExempt')}</option>
+                        </select>
+                        <p className="text-xs text-gray-400 mt-1">{t('taxRateHint')}</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 -mt-2">{t('taxNoCategory')}</p>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        {t('fieldTags')}
+                      </label>
+                      {/* Selected tags */}
+                      {form.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {form.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-brand/10 text-brand rounded-lg text-xs font-medium"
+                            >
+                              {tagLabelText(tag)}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    tags: prev.tags.filter((t) => t !== tag),
+                                  }))
+                                }
+                                className="hover:text-red-500"
+                              >
+                                <X size={11} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Preset tag chips */}
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {PRESET_TAGS.filter((pt) => !form.tags.includes(pt.key)).map((pt) => (
+                          <button
+                            key={pt.key}
+                            type="button"
+                            onClick={() =>
+                              setForm((prev) => ({ ...prev, tags: [...prev.tags, pt.key] }))
+                            }
+                            className="px-2 py-1 text-xs border border-border rounded-lg text-muted-foreground hover:border-brand hover:text-brand transition-colors"
+                          >
+                            + {tPos(pt.labelKey)}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Custom tag input */}
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={form.customTag}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, customTag: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault();
+                              const val = form.customTag.trim().toLowerCase().replace(/\s+/g, '_');
+                              if (val && !form.tags.includes(val)) {
+                                setForm((prev) => ({
+                                  ...prev,
+                                  tags: [...prev.tags, val],
+                                  customTag: '',
+                                }));
+                              }
+                            }
+                          }}
+                          placeholder={t('tagPlaceholder')}
+                          className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const val = form.customTag.trim().toLowerCase().replace(/\s+/g, '_');
+                            if (val && !form.tags.includes(val)) {
                               setForm((prev) => ({
                                 ...prev,
-                                addon_group_ids: checked
-                                  ? [...prev.addon_group_ids, group.id]
-                                  : prev.addon_group_ids.filter((id) => id !== group.id),
+                                tags: [...prev.tags, val],
+                                customTag: '',
                               }));
-                            }}
-                            className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
-                          />
-                          <label htmlFor={`addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
-                            <span className="text-sm text-foreground">{group.name}{group.is_active ? '' : ` (${tCommon('inactive')})`}</span>
-                            {isInherited && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{t('inheritedFromCategory')}</span>}
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
-                              {group.is_required ? t('required') : t('optional')}
-                            </span>
-                          </label>
+                            }
+                          }}
+                          className="px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-muted text-muted-foreground"
+                        >
+                          {tCommon('add')}
+                        </button>
+                      </div>
+                    </div>
+                    {isRestaurant && productAddonGroupOptions.length > 0 && (
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-2">
+                          {t('fieldAddonGroups')}
+                        </label>
+                        <div className="space-y-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
+                          {productAddonGroupOptions.map((group) => {
+                            const isChecked = form.addon_group_ids.includes(group.id);
+                            const isInherited =
+                              categories
+                                .find((category) => category.id === form.category_id)
+                                ?.addon_group_ids?.includes(group.id) || false;
+                            return (
+                              <div key={group.id} className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`addon-group-${group.id}`}
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setForm((prev) => ({
+                                      ...prev,
+                                      addon_group_ids: checked
+                                        ? [...prev.addon_group_ids, group.id]
+                                        : prev.addon_group_ids.filter((id) => id !== group.id),
+                                    }));
+                                  }}
+                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                                />
+                                <label
+                                  htmlFor={`addon-group-${group.id}`}
+                                  className="flex items-center gap-2 cursor-pointer select-none"
+                                >
+                                  <span className="text-sm text-foreground">
+                                    {group.name}
+                                    {group.is_active ? '' : ` (${tCommon('inactive')})`}
+                                  </span>
+                                  {isInherited && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                                      {t('inheritedFromCategory')}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}
+                                  >
+                                    {group.is_required ? t('required') : t('optional')}
+                                  </span>
+                                </label>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={form.track_inventory}
+                          onChange={(e) => setForm({ ...form, track_inventory: e.target.checked })}
+                          className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                        />
+                        <span className="text-sm text-foreground">{t('fieldTrackInventory')}</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={form.is_active}
+                          onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+                          className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                        />
+                        <span className="text-sm text-foreground">{t('fieldActive')}</span>
+                      </label>
+                    </div>
+                    {!!form.track_inventory && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            {t('fieldStock')}
+                            <span className="text-red-500 ms-1">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={form.stock_quantity}
+                            onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                            required
+                          />
+                          {form.has_variants && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {t('variantGovernedHint')}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-foreground mb-1">
+                            {t('fieldLowStockThreshold')}
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={form.low_stock_threshold}
+                            onChange={(e) =>
+                              setForm({ ...form, low_stock_threshold: e.target.value })
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </form>
                 </div>
-              )}
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={form.track_inventory} onChange={(e) => setForm({ ...form, track_inventory: e.target.checked })}
-                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                  <span className="text-sm text-foreground">{t('fieldTrackInventory')}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                  <span className="text-sm text-foreground">{t('fieldActive')}</span>
-                </label>
+                <div className="flex shrink-0 justify-end gap-3 border-t border-border p-4">
+                  <Button type="button" variant="outline" onClick={resetForm}>
+                    {tCommon('cancel')}
+                  </Button>
+                  <Button type="submit" form="product-form">
+                    {editingProduct ? t('updateProduct') : t('createProduct')}
+                  </Button>
+                </div>
               </div>
-              {!!form.track_inventory && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldStock')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="number" min="0" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                    {form.has_variants && <p className="text-xs text-muted-foreground mt-1">{t('variantGovernedHint')}</p>}
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldLowStockThreshold')}</label>
-                    <input type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                  </div>
-                </div>
-              )}
-              </form>
             </div>
-            <div className="flex shrink-0 justify-end gap-3 border-t border-border p-4">
-              <Button type="button" variant="outline" onClick={resetForm}>{tCommon('cancel')}</Button>
-              <Button type="submit" form="product-form">
-                {editingProduct ? t('updateProduct') : t('createProduct')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
         </TabsContent>
 
-        <TabsContent value="categories" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
+        <TabsContent
+          value="categories"
+          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
+        >
           <div className="flex shrink-0 justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
-            <Button onClick={() => { resetCategoryForm(); setShowForm(true); }}>
+            <Button
+              onClick={() => {
+                resetCategoryForm();
+                setShowForm(true);
+              }}
+            >
               <Plus size={16} className="me-1" /> {t('addCategory')}
             </Button>
           </div>
-          <div data-testid="categories-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div
+            data-testid="categories-list-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('fieldAddonGroups')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryColor')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('categoryName')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('fieldAddonGroups')}
+                  </th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('categoryColor')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnStatus')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnActions')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1390,15 +1964,25 @@ export default function ProductsPage() {
                           <span className="inline-flex px-2 py-1 rounded-full bg-muted text-xs font-medium text-muted-foreground">
                             {t('addonGroupCount', { count: cat.addon_group_ids.length })}
                           </span>
-                        ) : <span className="text-gray-400 text-sm">—</span>}
+                        ) : (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
                       </td>
                       <td className="p-4">
                         {colorObj ? (
-                          <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
-                        ) : <span className="text-gray-400 text-sm">—</span>}
+                          <span
+                            className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}
+                          >
+                            {t(colorObj.labelKey)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">—</span>
+                        )}
                       </td>
                       <td className="p-4 text-center">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}
+                        >
                           {cat.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -1406,8 +1990,18 @@ export default function ProductsPage() {
                         <div className="flex gap-2 justify-end">
                           {isOwnerOrManager && (
                             <>
-                              <button onClick={() => openEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>
-                              <button onClick={() => handleCategoryDelete(cat.id, cat.name)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                              <button
+                                onClick={() => openEditCategory(cat)}
+                                className="p-1.5 text-gray-400 hover:text-brand"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleCategoryDelete(cat.id, cat.name)}
+                                className="p-1.5 text-gray-400 hover:text-red-600"
+                              >
+                                <Trash2 size={16} />
+                              </button>
                             </>
                           )}
                         </div>
@@ -1417,39 +2011,83 @@ export default function ProductsPage() {
                 })}
               </tbody>
             </table>
-            {visibleCategories.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('categoryEmpty') : tCommon('noResults')}</p>}
+            {visibleCategories.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">
+                {normalizedSearch === '' ? t('categoryEmpty') : tCommon('noResults')}
+              </p>
+            )}
           </div>
 
           {showForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-card rounded-2xl p-6 w-full max-w-md">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-bold">{editingCategory ? t('editCategoryTitle') : t('addCategoryTitle')}</h2>
-                  <button onClick={resetCategoryForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+                  <h2 className="text-lg font-bold">
+                    {editingCategory ? t('editCategoryTitle') : t('addCategoryTitle')}
+                  </h2>
+                  <button
+                    onClick={resetCategoryForm}
+                    className="text-gray-400 hover:text-muted-foreground"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
                 <form onSubmit={handleCategorySubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      {t('fieldName')}
+                      <span className="text-red-500 ms-1">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={categoryForm.name}
+                      onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      required
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
-                    <textarea value={categoryForm.description} onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      {t('categoryDescription')}
+                    </label>
+                    <textarea
+                      value={categoryForm.description}
+                      onChange={(e) =>
+                        setCategoryForm({ ...categoryForm, description: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      rows={2}
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">{t('colorLabel')}</label>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      {t('colorLabel')}
+                    </label>
                     <div className="flex flex-wrap gap-2">
                       {CATEGORY_COLORS.map((c) => (
-                        <button type="button" key={c.key} onClick={() => setCategoryForm({ ...categoryForm, color: c.key })} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 ${c.key === categoryForm.color ? 'border-brand' : 'border-transparent'} ${c.bg} ${c.text}`}>{t(c.labelKey)}</button>
+                        <button
+                          type="button"
+                          key={c.key}
+                          onClick={() => setCategoryForm({ ...categoryForm, color: c.key })}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 ${c.key === categoryForm.color ? 'border-brand' : 'border-transparent'} ${c.bg} ${c.text}`}
+                        >
+                          {t(c.labelKey)}
+                        </button>
                       ))}
                     </div>
                   </div>
                   {isRestaurant && categoryAddonGroupOptions.length > 0 && (
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        {t('fieldAddonGroups')}
+                      </label>
                       <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
                         {categoryAddonGroupOptions.map((group) => (
-                          <label key={group.id} htmlFor={`category-addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
+                          <label
+                            key={group.id}
+                            htmlFor={`category-addon-group-${group.id}`}
+                            className="flex items-center gap-2 cursor-pointer select-none"
+                          >
                             <input
                               type="checkbox"
                               id={`category-addon-group-${group.id}`}
@@ -1465,17 +2103,29 @@ export default function ProductsPage() {
                               }}
                               className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                             />
-                            <span className="text-sm text-foreground">{group.name}{group.is_active ? '' : ` (${tCommon('inactive')})`}</span>
+                            <span className="text-sm text-foreground">
+                              {group.name}
+                              {group.is_active ? '' : ` (${tCommon('inactive')})`}
+                            </span>
                           </label>
                         ))}
                       </div>
                     </div>
                   )}
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <input
+                      type="checkbox"
+                      checked={categoryForm.is_active}
+                      onChange={(e) =>
+                        setCategoryForm({ ...categoryForm, is_active: e.target.checked })
+                      }
+                      className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                    />
                     <span className="text-sm text-foreground">{t('fieldActive')}</span>
                   </label>
-                  <Button type="submit" className="w-full">{editingCategory ? tCommon('update') : tCommon('create')}</Button>
+                  <Button type="submit" className="w-full">
+                    {editingCategory ? tCommon('update') : tCommon('create')}
+                  </Button>
                 </form>
               </div>
             </div>
@@ -1487,19 +2137,37 @@ export default function ProductsPage() {
             <Button variant="outline" onClick={() => openCsvModal('addons')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
-            <Button onClick={() => { resetAddonForm(); setShowAddonModal(true); }}>
+            <Button
+              onClick={() => {
+                resetAddonForm();
+                setShowAddonModal(true);
+              }}
+            >
               <Plus size={16} className="me-1" /> {t('addAddonGroup')}
             </Button>
           </div>
-          <div data-testid="addons-list-scroll" className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+          <div
+            data-testid="addons-list-scroll"
+            className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+          >
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnRequired')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnSelection')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('categoryName')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnRequired')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnSelection')}
+                  </th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnAddons')}
+                  </th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">
+                    {t('columnActions')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1507,16 +2175,37 @@ export default function ProductsPage() {
                   <tr key={group.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">{group.name}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>{group.is_required ? tCommon('yes') : tCommon('no')}</span>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}
+                      >
+                        {group.is_required ? tCommon('yes') : tCommon('no')}
+                      </span>
                     </td>
-                    <td className="p-4 text-center text-sm text-muted-foreground">{t('addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
-                    <td className="p-4 text-center text-sm text-muted-foreground">{group.addons?.length || 0}</td>
+                    <td className="p-4 text-center text-sm text-muted-foreground">
+                      {t('addonSelectionRange', {
+                        min: group.min_selection,
+                        max: group.max_selection,
+                      })}
+                    </td>
+                    <td className="p-4 text-center text-sm text-muted-foreground">
+                      {group.addons?.length || 0}
+                    </td>
                     <td className="p-4 text-end">
                       <div className="flex gap-2 justify-end">
                         {isOwnerOrManager && (
                           <>
-                            <button onClick={() => openEditAddonGroup(group)} className="p-1.5 text-gray-400 hover:text-brand"><Pencil size={16} /></button>
-                            <button onClick={() => handleAddonGroupDelete(group.id)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                            <button
+                              onClick={() => openEditAddonGroup(group)}
+                              className="p-1.5 text-gray-400 hover:text-brand"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleAddonGroupDelete(group.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </>
                         )}
                       </div>
@@ -1525,90 +2214,215 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
-            {visibleAddonGroups.length === 0 && <p className="text-center text-muted-foreground py-12">{normalizedSearch === '' ? t('addonEmpty') : tCommon('noResults')}</p>}
+            {visibleAddonGroups.length === 0 && (
+              <p className="text-center text-muted-foreground py-12">
+                {normalizedSearch === '' ? t('addonEmpty') : tCommon('noResults')}
+              </p>
+            )}
           </div>
 
           {showAddonModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
                 <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
-                  <h2 className="text-lg font-bold">{editingAddonGroup ? t('editAddonGroupTitle') : t('addAddonGroupTitle')}</h2>
-                  <button onClick={resetAddonForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+                  <h2 className="text-lg font-bold">
+                    {editingAddonGroup ? t('editAddonGroupTitle') : t('addAddonGroupTitle')}
+                  </h2>
+                  <button
+                    onClick={resetAddonForm}
+                    className="text-gray-400 hover:text-muted-foreground"
+                  >
+                    <X size={20} />
+                  </button>
                 </div>
                 <div className="p-6 overflow-y-auto flex-1">
                   <form onSubmit={handleAddonGroupSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
-                    <input type="text" value={addonForm.description} onChange={(e) => setAddonForm({ ...addonForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMin')}</label>
-                      <input type="number" min="0" value={addonForm.min_selection} onChange={(e) => setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('fieldName')}
+                        <span className="text-red-500 ms-1">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={addonForm.name}
+                        onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        required
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMax')}</label>
-                      <input type="number" min="0" value={addonForm.max_selection} onChange={(e) => setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        {t('categoryDescription')}
+                      </label>
+                      <input
+                        type="text"
+                        value={addonForm.description}
+                        onChange={(e) =>
+                          setAddonForm({ ...addonForm, description: e.target.value })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                      />
                     </div>
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                    <span className="text-sm text-foreground">{t('addonRequired')}</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                    <span className="text-sm text-foreground">{t('addonAllowMultipleQuantities')}</span>
-                  </label>
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-sm font-medium text-foreground">{t('addonAddons')}</label>
-                      <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">{t('addAddonInline')}</button>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <span>{t('nameLabel')}</span>
-                        <span>{t('columnPrice')}</span>
-                        <span aria-hidden="true" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('addonMin')}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={addonForm.min_selection}
+                          onChange={(e) =>
+                            setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
                       </div>
-                      {addonList.map((addon, idx) => (
-                        <div key={idx} className="flex flex-wrap items-center gap-2">
-                          <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center grow">
-                            <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, { name: e.target.value })} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                            <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, { price: v === '' ? 0 : v })} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                            <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
-                          </div>
-                          <label className="flex items-center gap-1.5">
-                            <input type="checkbox" checked={addon.track_inventory} aria-label={t('fieldTrackInventory')}
-                              onChange={(e) => updateAddonItem(idx, { track_inventory: e.target.checked })}
-                              className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                            <span className="text-xs text-muted-foreground">{t('fieldTrackInventory')}</span>
-                          </label>
-                          {addon.track_inventory && (
-                            <>
-                              <label className="flex items-center gap-1.5">
-                                <span className="text-xs text-muted-foreground">{t('fieldStock')}</span>
-                                <input type="number" min="0" step="any" value={addon.stock_quantity} aria-label={t('fieldStock')}
-                                  onChange={(e) => updateAddonStock(idx, e.target.value)}
-                                  className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                              </label>
-                              <label className="flex items-center gap-1.5">
-                                <span className="text-xs text-muted-foreground">{t('fieldLowStockThreshold')}</span>
-                                <input type="number" min="0" step="any" value={addon.low_stock_threshold} aria-label={t('fieldLowStockThreshold')}
-                                  onChange={(e) => updateAddonItem(idx, { low_stock_threshold: e.target.value })}
-                                  className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                              </label>
-                            </>
-                          )}
-                        </div>
-                      ))}
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                          {t('addonMax')}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={addonForm.max_selection}
+                          onChange={(e) =>
+                            setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                        />
+                      </div>
                     </div>
-                  </div>
-                  <Button type="submit" className="w-full">{editingAddonGroup ? tCommon('update') : tCommon('create')}</Button>
-                </form>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={addonForm.is_required}
+                        onChange={(e) =>
+                          setAddonForm({ ...addonForm, is_required: e.target.checked })
+                        }
+                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                      />
+                      <span className="text-sm text-foreground">{t('addonRequired')}</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={addonForm.allow_multiple_quantities}
+                        onChange={(e) =>
+                          setAddonForm({
+                            ...addonForm,
+                            allow_multiple_quantities: e.target.checked,
+                          })
+                        }
+                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                      />
+                      <span className="text-sm text-foreground">
+                        {t('addonAllowMultipleQuantities')}
+                      </span>
+                    </label>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-sm font-medium text-foreground">
+                          {t('addonAddons')}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={addAddonItem}
+                          className="text-xs text-brand hover:underline"
+                        >
+                          {t('addAddonInline')}
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          <span>{t('nameLabel')}</span>
+                          <span>{t('columnPrice')}</span>
+                          <span aria-hidden="true" />
+                        </div>
+                        {addonList.map((addon, idx) => (
+                          <div key={idx} className="flex flex-wrap items-center gap-2">
+                            <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center grow">
+                              <input
+                                type="text"
+                                value={addon.name}
+                                onChange={(e) => updateAddonItem(idx, { name: e.target.value })}
+                                placeholder={tCommon('namePlaceholder')}
+                                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                              />
+                              <CurrencyAmountInput
+                                value={addon.price}
+                                format={amountFormat}
+                                onValueChange={(v) =>
+                                  updateAddonItem(idx, { price: v === '' ? 0 : v })
+                                }
+                                placeholder={tCommon('pricePlaceholder')}
+                                aria-label={t('columnPrice')}
+                                className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeAddonItem(idx)}
+                                className="text-gray-400 hover:text-red-500"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                            <label className="flex items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={addon.track_inventory}
+                                aria-label={t('fieldTrackInventory')}
+                                onChange={(e) =>
+                                  updateAddonItem(idx, { track_inventory: e.target.checked })
+                                }
+                                className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                {t('fieldTrackInventory')}
+                              </span>
+                            </label>
+                            {addon.track_inventory && (
+                              <>
+                                <label className="flex items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">
+                                    {t('fieldStock')}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={addon.stock_quantity}
+                                    aria-label={t('fieldStock')}
+                                    onChange={(e) => updateAddonStock(idx, e.target.value)}
+                                    className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                                  />
+                                </label>
+                                <label className="flex items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">
+                                    {t('fieldLowStockThreshold')}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    value={addon.low_stock_threshold}
+                                    aria-label={t('fieldLowStockThreshold')}
+                                    onChange={(e) =>
+                                      updateAddonItem(idx, { low_stock_threshold: e.target.value })
+                                    }
+                                    className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                                  />
+                                </label>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <Button type="submit" className="w-full">
+                      {editingAddonGroup ? tCommon('update') : tCommon('create')}
+                    </Button>
+                  </form>
                 </div>
               </div>
             </div>
@@ -1621,7 +2435,12 @@ export default function ProductsPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('assignTaxCategory')}</h2>
-              <button onClick={() => setShowBulkTaxModal(false)} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+              <button
+                onClick={() => setShowBulkTaxModal(false)}
+                className="text-gray-400 hover:text-muted-foreground"
+              >
+                <X size={20} />
+              </button>
             </div>
             {legacyProducts.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t('taxAllAssigned')}</p>
@@ -1630,16 +2449,32 @@ export default function ProductsPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   {t('taxBulkBody', { count: legacyProducts.length })}
                 </p>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('taxRateGroupLabel')}</label>
-                <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  {t('taxRateGroupLabel')}
+                </label>
+                <select
+                  value={bulkTaxCategoryId}
+                  onChange={(e) => setBulkTaxCategoryId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5"
+                >
                   <option value="">{t('selectPlaceholder')}</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
+                  {taxCategories.map((tc) => (
+                    <option key={tc.id} value={tc.id}>
+                      {taxCategoryOptionLabel(tc)}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>{tCommon('cancel')}</Button>
-                  <Button onClick={handleBulkTaxAssign} disabled={!bulkTaxCategoryId || bulkTaxApplying}>
-                    {bulkTaxApplying ? t('csvImporting') : t('taxApplyToProducts', { count: legacyProducts.length })}
+                  <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>
+                    {tCommon('cancel')}
+                  </Button>
+                  <Button
+                    onClick={handleBulkTaxAssign}
+                    disabled={!bulkTaxCategoryId || bulkTaxApplying}
+                  >
+                    {bulkTaxApplying
+                      ? t('csvImporting')
+                      : t('taxApplyToProducts', { count: legacyProducts.length })}
                   </Button>
                 </div>
               </>
@@ -1653,9 +2488,19 @@ export default function ProductsPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-lg">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-bold">
-                {t('csvModalTitle', { type: csvType === 'categories' ? t('tabCategories') : csvType === 'products' ? t('tabProducts') : t('tabAddonGroups') })}
+                {t('csvModalTitle', {
+                  type:
+                    csvType === 'categories'
+                      ? t('tabCategories')
+                      : csvType === 'products'
+                        ? t('tabProducts')
+                        : t('tabAddonGroups'),
+                })}
               </h2>
-              <button onClick={() => setShowCsvModal(false)} className="text-gray-400 hover:text-muted-foreground">
+              <button
+                onClick={() => setShowCsvModal(false)}
+                className="text-gray-400 hover:text-muted-foreground"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -1666,13 +2511,17 @@ export default function ProductsPage() {
                 <p className="text-sm font-medium text-foreground">{t('download')}</p>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => downloadCsv(`/menu-csv/template/${csvType}`, `${csvType}-template.csv`)}
+                    onClick={() =>
+                      downloadCsv(`/menu-csv/template/${csvType}`, `${csvType}-template.csv`)
+                    }
                     className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted font-medium"
                   >
                     <Download size={14} /> {t('csvBlankTemplate')}
                   </button>
                   <button
-                    onClick={() => downloadCsv(`/menu-csv/export/${csvType}`, `${csvType}-export.csv`)}
+                    onClick={() =>
+                      downloadCsv(`/menu-csv/export/${csvType}`, `${csvType}-export.csv`)
+                    }
                     className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted font-medium"
                   >
                     <Download size={14} /> {t('csvCurrentData')}
@@ -1701,7 +2550,10 @@ export default function ProductsPage() {
                     type="file"
                     accept=".csv,text/csv"
                     className="hidden"
-                    onChange={(e) => { setCsvFile(e.target.files?.[0] ?? null); setCsvResult(null); }}
+                    onChange={(e) => {
+                      setCsvFile(e.target.files?.[0] ?? null);
+                      setCsvResult(null);
+                    }}
                   />
                 </label>
                 {csvFile && (
@@ -1716,41 +2568,68 @@ export default function ProductsPage() {
                 <div className="rounded-xl border border-border overflow-hidden">
                   <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border-b border-border">
                     <CheckCircle size={15} className="text-green-600" />
-                    <span className="text-sm font-medium text-green-800">{t('importComplete')}</span>
+                    <span className="text-sm font-medium text-green-800">
+                      {t('importComplete')}
+                    </span>
                   </div>
                   <div className="px-4 py-3 text-sm text-foreground space-y-1">
                     {csvType === 'addons' ? (
                       <>
-                        <p>{t('csvGroupsCreated')} <span className="font-medium">{String(csvResult.groups_created ?? 0)}</span></p>
-                        <p>{t('csvAddonsCreated')} <span className="font-medium">{String(csvResult.addons_created ?? 0)}</span></p>
+                        <p>
+                          {t('csvGroupsCreated')}{' '}
+                          <span className="font-medium">
+                            {String(csvResult.groups_created ?? 0)}
+                          </span>
+                        </p>
+                        <p>
+                          {t('csvAddonsCreated')}{' '}
+                          <span className="font-medium">
+                            {String(csvResult.addons_created ?? 0)}
+                          </span>
+                        </p>
                       </>
                     ) : (
-                      <p>{tCommon('created')} <span className="font-medium">{String(csvResult.created ?? 0)}</span></p>
+                      <p>
+                        {tCommon('created')}{' '}
+                        <span className="font-medium">{String(csvResult.created ?? 0)}</span>
+                      </p>
                     )}
-                    <p>{tCommon('skipped')} <span className="font-medium">{String(csvResult.skipped ?? 0)}</span></p>
+                    <p>
+                      {tCommon('skipped')}{' '}
+                      <span className="font-medium">{String(csvResult.skipped ?? 0)}</span>
+                    </p>
                   </div>
-                  {Array.isArray(csvResult.warnings) && (csvResult.warnings as string[]).length > 0 && (
-                    <div className="px-4 py-3 border-t border-border bg-amber-50">
-                      <div className="flex items-center gap-2 mb-2">
-                        <AlertCircle size={14} className="text-amber-500" />
-                        <span className="text-xs font-medium text-amber-700">{t('csvMissingFields')}</span>
+                  {Array.isArray(csvResult.warnings) &&
+                    (csvResult.warnings as string[]).length > 0 && (
+                      <div className="px-4 py-3 border-t border-border bg-amber-50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertCircle size={14} className="text-amber-500" />
+                          <span className="text-xs font-medium text-amber-700">
+                            {t('csvMissingFields')}
+                          </span>
+                        </div>
+                        <ul className="space-y-1">
+                          {(csvResult.warnings as string[]).map((w, i) => (
+                            <li key={i} className="text-xs text-amber-800">
+                              {w}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
-                      <ul className="space-y-1">
-                        {(csvResult.warnings as string[]).map((w, i) => (
-                          <li key={i} className="text-xs text-amber-800">{w}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                    )}
                   {Array.isArray(csvResult.errors) && (csvResult.errors as string[]).length > 0 && (
                     <div className="px-4 py-3 border-t border-border">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertCircle size={14} className="text-red-500" />
-                        <span className="text-xs font-medium text-red-700">{t('csvSkippedErrors')}</span>
+                        <span className="text-xs font-medium text-red-700">
+                          {t('csvSkippedErrors')}
+                        </span>
                       </div>
                       <ul className="space-y-1">
                         {(csvResult.errors as string[]).map((e, i) => (
-                          <li key={i} className="text-xs text-muted-foreground">{e}</li>
+                          <li key={i} className="text-xs text-muted-foreground">
+                            {e}
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -1766,14 +2645,26 @@ export default function ProductsPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-foreground">{t('deleteCategoryTitle')}</h2>
-              <button onClick={() => setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+              <button
+                onClick={() =>
+                  setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })
+                }
+                className="text-gray-400 hover:text-muted-foreground"
+              >
+                <X size={20} />
+              </button>
             </div>
             <p className="text-sm text-foreground mb-5">
-              {t('deleteCategoryBody', { name: catDeleteModal.name, count: catDeleteModal.productCount })}
+              {t('deleteCategoryBody', {
+                name: catDeleteModal.name,
+                count: catDeleteModal.productCount,
+              })}
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{t('moveProductsTo')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  {t('moveProductsTo')}
+                </label>
                 <select
                   value={catReassignTo}
                   onChange={(e) => setCatReassignTo(e.target.value)}
@@ -1781,14 +2672,30 @@ export default function ProductsPage() {
                 >
                   <option value="">{t('selectCategoryPlaceholder')}</option>
                   {categories
-                    .filter((c) => c.name.toLowerCase() === 'uncategorized' && c.id !== catDeleteModal.id)
-                    .map((c) => <option key={c.id} value={String(c.id)}>{t('defaultCategoryTag', { name: c.name })}</option>)}
+                    .filter(
+                      (c) => c.name.toLowerCase() === 'uncategorized' && c.id !== catDeleteModal.id,
+                    )
+                    .map((c) => (
+                      <option key={c.id} value={String(c.id)}>
+                        {t('defaultCategoryTag', { name: c.name })}
+                      </option>
+                    ))}
                   {categories
-                    .filter((c) => c.name.toLowerCase() !== 'uncategorized' && c.id !== catDeleteModal.id)
-                    .map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                    .filter(
+                      (c) => c.name.toLowerCase() !== 'uncategorized' && c.id !== catDeleteModal.id,
+                    )
+                    .map((c) => (
+                      <option key={c.id} value={String(c.id)}>
+                        {c.name}
+                      </option>
+                    ))}
                 </select>
               </div>
-              <Button onClick={handleCategoryReassignDelete} disabled={!catReassignTo} className="w-full">
+              <Button
+                onClick={handleCategoryReassignDelete}
+                disabled={!catReassignTo}
+                className="w-full"
+              >
                 {t('moveAndDelete')}
               </Button>
               <div className="relative flex items-center">

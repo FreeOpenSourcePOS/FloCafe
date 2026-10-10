@@ -35,11 +35,13 @@ export function useCashDrawerMovements() {
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
-  const todayLocal = businessDateForInstant({
-    instant: new Date(),
-    timezone: currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    startTime: currentTenant?.business_day_start_time || '00:00',
-  });
+  const computeTodayLocal = () =>
+    businessDateForInstant({
+      instant: new Date(),
+      timezone: currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      startTime: currentTenant?.business_day_start_time || '00:00',
+    });
+  const [todayLocal, setTodayLocal] = useState(computeTodayLocal);
   const [open, setOpen] = useState(false);
   const [businessDate, setBusinessDate] = useState(todayLocal);
   const [movementType, setMovementType] = useState<CashDrawerMovementType>('pay_in');
@@ -62,14 +64,20 @@ export function useCashDrawerMovements() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/cash-closures/movements', { params: { business_date: requestedDate } });
-      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current) return;
+      const response = await api.get('/cash-closures/movements', {
+        params: { business_date: requestedDate },
+      });
+      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current)
+        return;
       setMovements(response.data?.movements || []);
     } catch (err: unknown) {
-      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current) return;
+      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current)
+        return;
       const message = axios.isAxiosError(err)
         ? err.response?.data?.error || err.message
-        : err instanceof Error ? err.message : tCommon('somethingWrong');
+        : err instanceof Error
+          ? err.message
+          : tCommon('somethingWrong');
       setError(message);
     } finally {
       if (requestId === movementRequestRef.current) setLoading(false);
@@ -77,12 +85,14 @@ export function useCashDrawerMovements() {
   };
 
   const openModal = () => {
-    setBusinessDate(todayLocal);
+    const freshToday = computeTodayLocal();
+    setTodayLocal(freshToday);
+    setBusinessDate(freshToday);
     setMovementType('pay_in');
     setAmountInput('');
     setReason('');
     setOpen(true);
-    void loadMovements(todayLocal);
+    void loadMovements(freshToday);
   };
 
   const amountCents = () => {
@@ -119,7 +129,9 @@ export function useCashDrawerMovements() {
     } catch (err: unknown) {
       const message = axios.isAxiosError(err)
         ? err.response?.data?.error || err.message
-        : err instanceof Error ? err.message : t('movementSaveFailed');
+        : err instanceof Error
+          ? err.message
+          : t('movementSaveFailed');
       setError(message);
       toast.error(message);
     } finally {
@@ -141,7 +153,9 @@ export function useCashDrawerMovements() {
     } catch (err: unknown) {
       const message = axios.isAxiosError(err)
         ? err.response?.data?.error || err.message
-        : err instanceof Error ? err.message : tCommon('somethingWrong');
+        : err instanceof Error
+          ? err.message
+          : tCommon('somethingWrong');
       setError(message);
       toast.error(message);
       return false;

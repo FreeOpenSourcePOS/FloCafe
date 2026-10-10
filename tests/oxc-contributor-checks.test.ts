@@ -1291,7 +1291,11 @@ const exactStepIndex = (command: string, workingDirectory?: string) =>
         : step['working-directory'] === workingDirectory),
   );
 
-const stepRunsCommand = (step: Record<string, string>, command: string, workingDirectory?: string) => {
+const stepRunsCommand = (
+  step: Record<string, string>,
+  command: string,
+  workingDirectory?: string,
+) => {
   if (!step?.run) return false;
   if (workingDirectory !== undefined) {
     if (step['working-directory'] === workingDirectory && step.run.includes(command)) return true;

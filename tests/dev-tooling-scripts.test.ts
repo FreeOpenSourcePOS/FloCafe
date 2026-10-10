@@ -586,7 +586,11 @@ exit 0
   for (let a = 0; a < 4; a++) {
     for (let b = a + 1; b < 4; b++) {
       const intersection = shardSuites[a].filter((s) => shardSuites[b].includes(s));
-      assert.strictEqual(intersection.length, 0, `Shards ${a} and ${b} must not share any duplicate suites`);
+      assert.strictEqual(
+        intersection.length,
+        0,
+        `Shards ${a} and ${b} must not share any duplicate suites`,
+      );
     }
   }
 

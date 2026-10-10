@@ -11,8 +11,13 @@ const builderUtil = require('builder-util') as {
 };
 
 function loadWorkflow(fileName: string): any {
-  const workflow = YAML.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', fileName), 'utf8')) as any;
-  assert.ok(workflow && typeof workflow === 'object' && workflow.jobs, `${fileName} must parse as a workflow with jobs`);
+  const workflow = YAML.load(
+    fs.readFileSync(path.join(__dirname, '../.github/workflows', fileName), 'utf8'),
+  ) as any;
+  assert.ok(
+    workflow && typeof workflow === 'object' && workflow.jobs,
+    `${fileName} must parse as a workflow with jobs`,
+  );
   return workflow;
 }
 
@@ -54,12 +59,21 @@ function renderWorkflowScript(script: string, expressions: Record<string, string
   });
 }
 
-function executeWorkflowStep(step: any, options: {
-  env?: Record<string, string>;
-  expressions?: Record<string, string>;
-  fakeNodeVersion?: string;
-  fakeCommands?: Record<string, string>;
-} = {}): { status: number | null; stdout: string; stderr: string; outputs: Record<string, string>; log: string } {
+function executeWorkflowStep(
+  step: any,
+  options: {
+    env?: Record<string, string>;
+    expressions?: Record<string, string>;
+    fakeNodeVersion?: string;
+    fakeCommands?: Record<string, string>;
+  } = {},
+): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  outputs: Record<string, string>;
+  log: string;
+} {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-release-config-'));
   const binDir = path.join(tempDir, 'bin');
   const outputPath = path.join(tempDir, 'github-output');
@@ -90,7 +104,14 @@ function executeWorkflowStep(step: any, options: {
     const bashExecutable = process.platform === 'win32' ? 'bash' : '/bin/bash';
     const result = childProcess.spawnSync(
       bashExecutable,
-      ['-e', '-u', '-o', 'pipefail', '-c', renderWorkflowScript(step.run as string, options.expressions || {})],
+      [
+        '-e',
+        '-u',
+        '-o',
+        'pipefail',
+        '-c',
+        renderWorkflowScript(step.run as string, options.expressions || {}),
+      ],
       {
         cwd: path.join(__dirname, '..'),
         env: {
@@ -102,7 +123,7 @@ function executeWorkflowStep(step: any, options: {
           PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
         },
         encoding: 'utf8',
-      }
+      },
     );
     const outputs: Record<string, string> = {};
     if (fs.existsSync(outputPath)) {
@@ -165,19 +186,49 @@ function run() {
   const releaseVerifier = require('../scripts/verify-release-assets.cjs');
 
   assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
-  assert.equal(pkg.scripts?.['verify:electron'], 'node scripts/verify-electron-runtime.cjs', 'Electron runtime verification must be cross-platform');
-  assert.equal(pkg.scripts?.['verify:release-artifacts'], 'node scripts/assert-release-artifact-names.cjs', 'release artifact filename assertion must be available to CI');
-  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')), 'cross-platform Electron runtime verifier must exist');
-  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/assert-release-artifact-names.cjs')), 'release artifact filename verifier must exist');
-  assert.equal(typeof releaseVerifier.assertReleaseAssetInventory, 'function', 'draft release verifier must expose inventory validation');
+  assert.equal(
+    pkg.scripts?.['verify:electron'],
+    'node scripts/verify-electron-runtime.cjs',
+    'Electron runtime verification must be cross-platform',
+  );
+  assert.equal(
+    pkg.scripts?.['verify:release-artifacts'],
+    'node scripts/assert-release-artifact-names.cjs',
+    'release artifact filename assertion must be available to CI',
+  );
+  assert.ok(
+    fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')),
+    'cross-platform Electron runtime verifier must exist',
+  );
+  assert.ok(
+    fs.existsSync(path.join(__dirname, '../scripts/assert-release-artifact-names.cjs')),
+    'release artifact filename verifier must exist',
+  );
+  assert.equal(
+    typeof releaseVerifier.assertReleaseAssetInventory,
+    'function',
+    'draft release verifier must expose inventory validation',
+  );
   assert.deepEqual(
     releaseVerifier.expectedManifestNames('latest'),
     ['latest.yml', 'latest-mac.yml', 'latest-linux.yml', 'latest-linux-arm64.yml'],
-    'draft release verification must require both Linux architecture manifests'
+    'draft release verification must require both Linux architecture manifests',
   );
-  assert.equal(build?.publish?.channel, 'latest', 'stable builds must default to the latest update channel');
-  assert.equal(build?.detectUpdateChannel, false, 'GitHub release channels must be selected explicitly by the release pipeline');
-  assert.equal(build?.generateUpdatesFilesForAllChannels, true, 'electron-builder must support channel update manifests');
+  assert.equal(
+    build?.publish?.channel,
+    'latest',
+    'stable builds must default to the latest update channel',
+  );
+  assert.equal(
+    build?.detectUpdateChannel,
+    false,
+    'GitHub release channels must be selected explicitly by the release pipeline',
+  );
+  assert.equal(
+    build?.generateUpdatesFilesForAllChannels,
+    true,
+    'electron-builder must support channel update manifests',
+  );
   assert.equal(build?.publish?.provider, 'github', 'build.publish must target GitHub releases');
 
   const macTargets = (build?.mac?.target || []).map((target: any) => target.target);
@@ -188,7 +239,7 @@ function run() {
   assert.equal(
     pkg.scripts?.['build:appx'],
     'npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false',
-    'build:appx must preserve local x64 and arm64 Store builds'
+    'build:appx must preserve local x64 and arm64 Store builds',
   );
   assert.ok(build?.appx?.identityName, 'build.appx.identityName must be set');
   assert.ok(build?.appx?.publisher, 'build.appx.publisher must be set');
@@ -200,15 +251,46 @@ function run() {
   const snapPlugs = build?.snapcraft?.core24?.plugs || [];
   assert.ok(snapPlugs.includes('default'), 'snapcraft must preserve the default Electron plugs');
   assert.ok(snapPlugs.includes('network-bind'), 'snapcraft must permit the local servers to bind');
-  assert.equal(build?.snapcraft?.core24?.environment?.TMPDIR, '$XDG_RUNTIME_DIR', 'snapcraft must use a writable runtime temp directory');
-  assert.ok(typeof build?.linux?.synopsis === 'string' && build.linux.synopsis.length > 0 && build.linux.synopsis.length <= 78, 'linux synopsis must be present and short');
+  assert.equal(
+    build?.snapcraft?.core24?.environment?.TMPDIR,
+    '$XDG_RUNTIME_DIR',
+    'snapcraft must use a writable runtime temp directory',
+  );
+  assert.ok(
+    typeof build?.linux?.synopsis === 'string' &&
+      build.linux.synopsis.length > 0 &&
+      build.linux.synopsis.length <= 78,
+    'linux synopsis must be present and short',
+  );
 
-  assert.equal(build?.linux?.artifactName, 'flocafe-${version}-linux.${ext}', 'Linux package artifact template must remain deterministic');
-  assert.equal(build?.appImage?.artifactName, 'flocafe-${version}-linux.appimage', 'AppImage artifact extension must be lowercase');
-  assert.equal(builderUtil.getArtifactArchName(builderUtil.Arch.x64, 'AppImage'), 'x86_64', 'electron-builder AppImage x64 macro spelling must be documented');
-  assert.equal(builderUtil.getArtifactArchName(builderUtil.Arch.arm64, 'AppImage'), 'arm64', 'electron-builder AppImage arm64 macro spelling must be documented');
+  assert.equal(
+    build?.linux?.artifactName,
+    'flocafe-${version}-linux.${ext}',
+    'Linux package artifact template must remain deterministic',
+  );
+  assert.equal(
+    build?.appImage?.artifactName,
+    'flocafe-${version}-linux.appimage',
+    'AppImage artifact extension must be lowercase',
+  );
+  assert.equal(
+    builderUtil.getArtifactArchName(builderUtil.Arch.x64, 'AppImage'),
+    'x86_64',
+    'electron-builder AppImage x64 macro spelling must be documented',
+  );
+  assert.equal(
+    builderUtil.getArtifactArchName(builderUtil.Arch.arm64, 'AppImage'),
+    'arm64',
+    'electron-builder AppImage arm64 macro spelling must be documented',
+  );
   for (const artifact of [build?.linux?.artifactName, build?.appImage?.artifactName]) {
-    assert.ok(typeof artifact === 'string' && artifact.includes('${version}') && !artifact.includes('${arch}') && !/\s/.test(artifact.replace(/\$\{[^}]+\}/g, '')), `Linux artifact template must be safe: ${JSON.stringify(artifact)}`);
+    assert.ok(
+      typeof artifact === 'string' &&
+        artifact.includes('${version}') &&
+        !artifact.includes('${arch}') &&
+        !/\s/.test(artifact.replace(/\$\{[^}]+\}/g, '')),
+      `Linux artifact template must be safe: ${JSON.stringify(artifact)}`,
+    );
   }
 
   const linuxTargets = build?.linux?.target || [];
@@ -218,10 +300,18 @@ function run() {
   }
 
   const extraFiles: any[] = build?.linux?.extraFiles || [];
-  const metainfoEntry = extraFiles.find((entry: any) => typeof entry?.to === 'string' && entry.to.startsWith('usr/share/metainfo/'));
+  const metainfoEntry = extraFiles.find(
+    (entry: any) => typeof entry?.to === 'string' && entry.to.startsWith('usr/share/metainfo/'),
+  );
   assert.ok(metainfoEntry, 'linux.extraFiles must include AppStream metainfo');
-  assert.ok(fs.existsSync(path.join(__dirname, '..', metainfoEntry.from)), 'AppStream metainfo source must exist');
-  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')), 'AppStream metadata updater must exist');
+  assert.ok(
+    fs.existsSync(path.join(__dirname, '..', metainfoEntry.from)),
+    'AppStream metainfo source must exist',
+  );
+  assert.ok(
+    fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')),
+    'AppStream metadata updater must exist',
+  );
 
   const workflow = loadWorkflow('release.yml');
   const jobs = workflow.jobs;
@@ -231,11 +321,29 @@ function run() {
   const masJob = masWorkflow.jobs['publish-mas'];
   assert.equal(masTriggers.workflow_dispatch.inputs.release_tag.required, true);
   assert.equal(masTriggers.workflow_dispatch.inputs.release_tag.type, 'string');
-  const masCheckouts = masJob.steps.filter((step: any) => step.uses?.startsWith('actions/checkout@'));
-  assert.equal(masCheckouts[0]?.with?.ref, 'main', 'MAS provenance must use current main verifier code');
-  assert.equal(masCheckouts[1]?.with?.ref, '${{ github.sha }}', 'MAS build must use the validated event commit');
-  assert.equal(masCheckouts[0]?.with?.['persist-credentials'], false, 'MAS verifier checkout must not persist credentials');
-  assert.equal(masCheckouts[1]?.with?.['persist-credentials'], false, 'MAS build checkout must not persist credentials');
+  const masCheckouts = masJob.steps.filter((step: any) =>
+    step.uses?.startsWith('actions/checkout@'),
+  );
+  assert.equal(
+    masCheckouts[0]?.with?.ref,
+    'main',
+    'MAS provenance must use current main verifier code',
+  );
+  assert.equal(
+    masCheckouts[1]?.with?.ref,
+    '${{ github.sha }}',
+    'MAS build must use the validated event commit',
+  );
+  assert.equal(
+    masCheckouts[0]?.with?.['persist-credentials'],
+    false,
+    'MAS verifier checkout must not persist credentials',
+  );
+  assert.equal(
+    masCheckouts[1]?.with?.['persist-credentials'],
+    false,
+    'MAS build checkout must not persist credentials',
+  );
   const masProvenance = findStep(masJob, 'Validate MAS release provenance');
   assertShellStep(masJob, 'Validate MAS release provenance');
   assert.equal(masProvenance.env.GH_TOKEN, '${{ github.token }}');
@@ -258,9 +366,22 @@ function run() {
   assert.notEqual(masBranchExecution.status, 0, 'MAS publishing must reject non-tag workflow refs');
   assert.match(masBranchExecution.stdout, /must run from the selected release tag/);
   const createRelease = jobs['create-release'];
-  for (const jobName of ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release', 'publish-release']) {
-    const checkout = jobs[jobName].steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
-    assert.equal(checkout?.with?.ref, '${{ github.sha }}', `${jobName} must use the validated event commit`);
+  for (const jobName of [
+    'create-release',
+    'release-linux',
+    'release-mac',
+    'release-windows',
+    'verify-release',
+    'publish-release',
+  ]) {
+    const checkout = jobs[jobName].steps.find((step: any) =>
+      step.uses?.startsWith('actions/checkout@'),
+    );
+    assert.equal(
+      checkout?.with?.ref,
+      '${{ github.sha }}',
+      `${jobName} must use the validated event commit`,
+    );
   }
   const metadata = findStep(createRelease, 'Determine release metadata');
   const validateTag = findStep(createRelease, 'Validate release tag');
@@ -284,9 +405,19 @@ function run() {
     validateProvenanceExecution.log.trim(),
     `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.4.0 --commit ${'a'.repeat(40)} --main-ref main`,
   );
-  assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'promotion_only', 'version']);
-  assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta'],
-    'nightly releases are rejected (#503): stable and beta are the only channels');
+  assert.deepEqual(Object.keys(createRelease.outputs).sort(), [
+    'channel',
+    'make_latest',
+    'manifest_prefix',
+    'prerelease',
+    'promotion_only',
+    'version',
+  ]);
+  assert.deepEqual(
+    triggers.workflow_dispatch.inputs.channel.options,
+    ['stable', 'beta'],
+    'nightly releases are rejected (#503): stable and beta are the only channels',
+  );
   assert.equal(triggers.workflow_dispatch.inputs.channel.type, 'choice');
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.required, true);
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.type, 'string');
@@ -295,11 +426,18 @@ function run() {
   assert.equal(triggers.workflow_dispatch.inputs.candidate_manifest_sha256.required, false);
 
   for (const scriptName of ['release:linux', 'release:mac', 'release:win']) {
-    assert.match(pkg.scripts?.[scriptName], /--publish never$/, `${scriptName} must not publish outside the release workflow`);
+    assert.match(
+      pkg.scripts?.[scriptName],
+      /--publish never$/,
+      `${scriptName} must not publish outside the release workflow`,
+    );
   }
 
   const uploadNotes = findStep(createRelease, 'Upload release notes artifact');
-  assert.equal(uploadNotes.uses, 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+  assert.equal(
+    uploadNotes.uses,
+    'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+  );
   assert.equal(uploadNotes.with?.name, 'release-notes');
   assert.equal(uploadNotes.with?.path, '/tmp/release-notes.md');
   assert.equal(uploadNotes.with?.['retention-days'], 30);
@@ -308,20 +446,38 @@ function run() {
 
   const linuxJob = jobs['release-linux'];
   const downloadNotes = findStep(linuxJob, 'Download release notes artifact');
-  assert.equal(downloadNotes.uses, 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c');
+  assert.equal(
+    downloadNotes.uses,
+    'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+  );
   assert.equal(downloadNotes.with?.name, 'release-notes');
   assert.equal(downloadNotes.with?.path, '/tmp');
-  assert.equal(downloadNotes['continue-on-error'], undefined, 'Download release notes artifact must strictly require artifact to guarantee note parity');
+  assert.equal(
+    downloadNotes['continue-on-error'],
+    undefined,
+    'Download release notes artifact must strictly require artifact to guarantee note parity',
+  );
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
-  assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');
+  assert.equal(
+    linuxBuild.env.FLO_LINUX_ARCH,
+    '${{ matrix.arch }}',
+    'Linux release names must use the safe matrix architecture labels',
+  );
   assertShellStep(linuxJob, 'Verify Linux release assets');
   assertShellStep(linuxJob, 'Upload Linux assets to GitHub release');
   assertShellStep(linuxJob, 'Prepend AppStream release entry');
   const snapPublish = findStep(linuxJob, 'Publish snap to the matching Snap Store channel');
   assertShellStep(linuxJob, 'Publish snap to the matching Snap Store channel');
-  assert.equal(snapPublish.env.GH_TOKEN, '${{ github.token }}', 'Snap evidence upload must have GitHub API credentials');
-  assert.deepEqual(linuxJob.strategy.matrix.include.map((entry: any) => entry.runner), ['ubuntu-24.04', 'ubuntu-24.04-arm']);
+  assert.equal(
+    snapPublish.env.GH_TOKEN,
+    '${{ github.token }}',
+    'Snap evidence upload must have GitHub API credentials',
+  );
+  assert.deepEqual(
+    linuxJob.strategy.matrix.include.map((entry: any) => entry.runner),
+    ['ubuntu-24.04', 'ubuntu-24.04-arm'],
+  );
   assert.equal(snapPublish.if, undefined, 'Snap publication must run for both architectures');
 
   const macJob = jobs['release-mac'];
@@ -334,77 +490,155 @@ function run() {
   assertShellStep(winJob, 'Verify Windows release assets');
   assertShellStep(winJob, 'Upload Windows assets to GitHub release');
   const windowsStepNames = new Set((winJob.steps || []).map((step: any) => step.name));
-  assert.equal(windowsStepNames.has('Setup Microsoft Store Developer CLI'), false, 'Microsoft Store setup must remain manual');
-  assert.equal(windowsStepNames.has('Publish Windows AppX packages to Microsoft Store'), false, 'Microsoft Store submission must not run automatically');
+  assert.equal(
+    windowsStepNames.has('Setup Microsoft Store Developer CLI'),
+    false,
+    'Microsoft Store setup must remain manual',
+  );
+  assert.equal(
+    windowsStepNames.has('Publish Windows AppX packages to Microsoft Store'),
+    false,
+    'Microsoft Store submission must not run automatically',
+  );
 
   const verifyJob = jobs['verify-release'];
   const verifierDependencies = findStep(verifyJob, 'Install verifier dependencies');
   assert.equal(verifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
-  assert.equal(verifyJob.outputs.candidate_manifest_asset_id, '${{ steps.verify-assets.outputs.candidate_manifest_asset_id }}');
-  assert.equal(verifyJob.outputs.candidate_manifest_sha256, '${{ steps.verify-assets.outputs.candidate_manifest_sha256 }}');
+  assert.equal(
+    verifyJob.outputs.candidate_manifest_asset_id,
+    '${{ steps.verify-assets.outputs.candidate_manifest_asset_id }}',
+  );
+  assert.equal(
+    verifyJob.outputs.candidate_manifest_sha256,
+    '${{ steps.verify-assets.outputs.candidate_manifest_sha256 }}',
+  );
   const publishJob = jobs['publish-release'];
-  assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
-  assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
+  assert.deepEqual(verifyJob.needs, [
+    'create-release',
+    'release-linux',
+    'release-mac',
+    'release-windows',
+  ]);
+  assert.deepEqual(publishJob.needs, [
+    'create-release',
+    'release-linux',
+    'release-mac',
+    'release-windows',
+    'verify-release',
+  ]);
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
-  const verifyAssetsStep = findStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
+  const verifyAssetsStep = findStep(
+    verifyJob,
+    'Download and verify every release manifest and referenced artifact',
+  );
   assert.equal(verifyAssetsStep.env.GH_TOKEN, '${{ github.token }}');
   const betaVerify = executeWorkflowStep(verifyAssetsStep, {
     env: {
       RELEASE_TAG: '3.3.1-beta.1',
       RELEASE_CHANNEL: 'beta',
     },
-    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'beta', 'github.sha': 'a'.repeat(40) },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.create-release.outputs.manifest_prefix': 'beta',
+      'github.sha': 'a'.repeat(40),
+    },
     fakeCommands: { gh: fakeGh, node: captureNodeArgs },
   });
   assert.equal(betaVerify.status, 0, betaVerify.stderr);
-  assert.doesNotMatch(betaVerify.log, /--require-snap-evidence/, 'beta Snap permission degradation must not require stable evidence');
-  assert.match(betaVerify.outputs.candidate_manifest_asset_id, /\S/, 'candidate manifest asset ID must be surfaced as a job output');
-  assert.match(betaVerify.outputs.candidate_manifest_sha256, /^[0-9a-f]{64}$/, 'candidate manifest SHA-256 output must be a full hex digest');
+  assert.doesNotMatch(
+    betaVerify.log,
+    /--require-snap-evidence/,
+    'beta Snap permission degradation must not require stable evidence',
+  );
+  assert.match(
+    betaVerify.outputs.candidate_manifest_asset_id,
+    /\S/,
+    'candidate manifest asset ID must be surfaced as a job output',
+  );
+  assert.match(
+    betaVerify.outputs.candidate_manifest_sha256,
+    /^[0-9a-f]{64}$/,
+    'candidate manifest SHA-256 output must be a full hex digest',
+  );
   const stableVerify = executeWorkflowStep(verifyAssetsStep, {
     env: {
       RELEASE_TAG: '3.3.0',
       RELEASE_CHANNEL: 'stable',
     },
-    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.create-release.outputs.manifest_prefix': 'latest',
+      'github.sha': 'b'.repeat(40),
+    },
     fakeCommands: { gh: fakeGh, node: captureNodeArgs },
   });
   assert.equal(stableVerify.status, 0, stableVerify.stderr);
-  assert.match(stableVerify.log, /--require-snap-evidence/, 'stable verification must require both Snap markers');
+  assert.match(
+    stableVerify.log,
+    /--require-snap-evidence/,
+    'stable verification must require both Snap markers',
+  );
   const missingCandidateManifestId = executeWorkflowStep(verifyAssetsStep, {
     env: {
       RELEASE_TAG: '3.3.0',
       RELEASE_CHANNEL: 'stable',
     },
-    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.create-release.outputs.manifest_prefix': 'latest',
+      'github.sha': 'b'.repeat(40),
+    },
     fakeCommands: { gh: '#!/bin/sh\nexit 0\n' },
   });
   assert.notEqual(missingCandidateManifestId.status, 0);
   assert.match(missingCandidateManifestId.stdout, /candidate-manifest\.json asset ID is missing/);
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
-  assert.equal(findStep(publishJob, 'Publish draft without changing GitHub Latest by default').env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(
+    findStep(publishJob, 'Publish draft without changing GitHub Latest by default').env.GH_TOKEN,
+    '${{ github.token }}',
+  );
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
-  const promoteCheckout = promoteJob.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
-  assert.equal(promoteCheckout?.with?.ref, 'main', 'historical promotion must use current main verifier code');
+  const promoteCheckout = promoteJob.steps.find((step: any) =>
+    step.uses?.startsWith('actions/checkout@'),
+  );
+  assert.equal(
+    promoteCheckout?.with?.ref,
+    'main',
+    'historical promotion must use current main verifier code',
+  );
   const validatePromotedProvenance = findStep(promoteJob, 'Validate historical promotion binding');
   assertShellStep(promoteJob, 'Validate historical promotion binding');
   assert.equal(validatePromotedProvenance.env.GH_TOKEN, '${{ github.token }}');
-  assert.equal(validatePromotedProvenance.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
+  assert.equal(
+    validatePromotedProvenance.env.RELEASE_TAG,
+    '${{ needs.create-release.outputs.version }}',
+  );
   const validatePromotedProvenanceExecution = executeWorkflowStep(validatePromotedProvenance, {
     env: { RELEASE_TAG: '3.3.0' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'github.sha': 'b'.repeat(40) },
     fakeCommands: { node: captureNodeArgs },
   });
-  assert.equal(validatePromotedProvenanceExecution.status, 0, validatePromotedProvenanceExecution.stderr);
+  assert.equal(
+    validatePromotedProvenanceExecution.status,
+    0,
+    validatePromotedProvenanceExecution.stderr,
+  );
   assert.equal(
     validatePromotedProvenanceExecution.log.trim(),
     `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.3.0 --commit ${'b'.repeat(40)} --allow-off-main --allow-historical-promotion`,
   );
   const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
-  const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
+  const promoteVerifier = findStep(
+    promoteJob,
+    'Verify stable Snap publication and permanent evidence',
+  );
   const promoteBoundaryRun = promoteJob.steps
-    .filter((step: any) => step.name === promoteVerifierDependencies.name || step.name === promoteVerifier.name)
+    .filter(
+      (step: any) =>
+        step.name === promoteVerifierDependencies.name || step.name === promoteVerifier.name,
+    )
     .map((step: any) => step.run)
     .join('\n');
   const promoteBoundary = executeWorkflowStep(
@@ -427,7 +661,7 @@ fi
 printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
 `,
       },
-    }
+    },
   );
   assert.equal(promoteBoundary.status, 0, promoteBoundary.stderr);
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
@@ -445,11 +679,23 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
     "needs.create-release.outputs.promotion_only != 'true' && needs.create-release.outputs.channel == 'stable'",
     'beta releases and manual promotion-only runs must never reach automatic promotion',
   );
-  const promoteStableCheckout = promoteStableJob.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
-  assert.equal(promoteStableCheckout?.with?.ref, '${{ github.sha }}', 'automatic promotion must verify the exact release commit');
-  const promoteStableVerifier = findStep(promoteStableJob, 'Verify stable Snap publication and permanent evidence');
+  const promoteStableCheckout = promoteStableJob.steps.find((step: any) =>
+    step.uses?.startsWith('actions/checkout@'),
+  );
+  assert.equal(
+    promoteStableCheckout?.with?.ref,
+    '${{ github.sha }}',
+    'automatic promotion must verify the exact release commit',
+  );
+  const promoteStableVerifier = findStep(
+    promoteStableJob,
+    'Verify stable Snap publication and permanent evidence',
+  );
   assertShellStep(promoteStableJob, 'Verify stable Snap publication and permanent evidence');
-  assert.equal(promoteStableVerifier.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
+  assert.equal(
+    promoteStableVerifier.env.RELEASE_TAG,
+    '${{ needs.create-release.outputs.version }}',
+  );
   const promoteStableVerifierExecution = executeWorkflowStep(promoteStableVerifier, {
     env: { RELEASE_TAG: '3.4.0' },
     expressions: {
@@ -465,7 +711,10 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
     `node scripts/release-gate/verify-stable-promotion.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.4.0 --candidate-asset-id 299 --manifest-sha256 ${'a'.repeat(64)}`,
     'automatic promotion must feed the same script the run already verified, not a re-derived or dispatch-provided value',
   );
-  const promoteStablePromote = findStep(promoteStableJob, 'Promote published stable release to GitHub Latest');
+  const promoteStablePromote = findStep(
+    promoteStableJob,
+    'Promote published stable release to GitHub Latest',
+  );
   assertShellStep(promoteStableJob, 'Promote published stable release to GitHub Latest');
   assert.equal(promoteStablePromote.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
   const promoteStablePromoteRejectsDraft = executeWorkflowStep(promoteStablePromote, {
@@ -475,7 +724,11 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
     // draft:true value actually flows through to the script's own check.
     fakeCommands: { gh: '#!/bin/sh\nprintf \'{"draft":true,"prerelease":false,"id":42}\\n\'\n' },
   });
-  assert.notEqual(promoteStablePromoteRejectsDraft.status, 0, 'promotion must refuse an unpublished draft');
+  assert.notEqual(
+    promoteStablePromoteRejectsDraft.status,
+    0,
+    'promotion must refuse an unpublished draft',
+  );
   assert.match(promoteStablePromoteRejectsDraft.stdout, /must already be published/);
 
   function fakeGhForPromotion(currentLatestTag: string | 'not-found' | 'server-error'): string {
@@ -507,13 +760,21 @@ esac
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
     fakeCommands: { gh: fakeGhForPromotion('not-found') },
   });
-  assert.equal(promoteStableAllowsWhenNoCurrentLatest.status, 0, promoteStableAllowsWhenNoCurrentLatest.stderr);
+  assert.equal(
+    promoteStableAllowsWhenNoCurrentLatest.status,
+    0,
+    promoteStableAllowsWhenNoCurrentLatest.stderr,
+  );
   const promoteStableRefusesOlder = executeWorkflowStep(promoteStablePromote, {
     env: { RELEASE_TAG: '3.4.0' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
     fakeCommands: { gh: fakeGhForPromotion('3.5.0') },
   });
-  assert.notEqual(promoteStableRefusesOlder.status, 0, 'promotion must refuse to move GitHub Latest backward');
+  assert.notEqual(
+    promoteStableRefusesOlder.status,
+    0,
+    'promotion must refuse to move GitHub Latest backward',
+  );
   assert.match(promoteStableRefusesOlder.stdout, /must never move Latest backward/);
   const promoteStableFailsOnLatestLookupError = executeWorkflowStep(promoteStablePromote, {
     env: { RELEASE_TAG: '3.4.0' },
@@ -529,20 +790,44 @@ esac
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
   const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
-  assert.ok(candidateTriggers.workflow_dispatch, 'candidate gate must be manual and must not publish on pushes');
+  assert.ok(
+    candidateTriggers.workflow_dispatch,
+    'candidate gate must be manual and must not publish on pushes',
+  );
   assert.equal(candidateTriggers.push, undefined);
   const candidateInputs = candidateTriggers.workflow_dispatch.inputs;
-  for (const input of ['candidate_tag', 'candidate_commit', 'candidate_manifest_sha256', 'candidate_manifest_asset_id', 'stable_tag', 'from_version']) {
+  for (const input of [
+    'candidate_tag',
+    'candidate_commit',
+    'candidate_manifest_sha256',
+    'candidate_manifest_asset_id',
+    'stable_tag',
+    'from_version',
+  ]) {
     assert.equal(candidateInputs[input].required, true, `${input} must be exact and required`);
   }
   assert.equal(candidateInputs.run_installed_matrix.type, 'boolean');
   const candidateEvidenceJob = candidateWorkflow.jobs['retain-candidate-evidence'];
-  assert.deepEqual(candidateEvidenceJob.needs, ['verify-candidate', 'installed-artifact-matrix', 'matrix-not-run-boundary']);
+  assert.deepEqual(candidateEvidenceJob.needs, [
+    'verify-candidate',
+    'installed-artifact-matrix',
+    'matrix-not-run-boundary',
+  ]);
   assert.equal(candidateEvidenceJob.if, "always() && needs.verify-candidate.result == 'success'");
-  const candidateEvidenceUpload = findStep(candidateEvidenceJob, 'Retain sanitized evidence for 90 days');
+  const candidateEvidenceUpload = findStep(
+    candidateEvidenceJob,
+    'Retain sanitized evidence for 90 days',
+  );
   assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
-  const candidateEvidenceStep = findStep(candidateEvidenceJob, 'Build final sanitized evidence bundle');
-  for (const [matrixResult, expectedStatus] of [['success', 'PASS'], ['skipped', 'NOT-RUN'], ['cancelled', 'FAIL']] as const) {
+  const candidateEvidenceStep = findStep(
+    candidateEvidenceJob,
+    'Build final sanitized evidence bundle',
+  );
+  for (const [matrixResult, expectedStatus] of [
+    ['success', 'PASS'],
+    ['skipped', 'NOT-RUN'],
+    ['cancelled', 'FAIL'],
+  ] as const) {
     const matrixEvidence = executeWorkflowStep(candidateEvidenceStep, {
       env: {
         RELEASE_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
@@ -554,7 +839,10 @@ esac
     assert.equal(matrixEvidence.status, 0, matrixEvidence.stderr);
     assert.match(matrixEvidence.log, new RegExp(`--matrix-status ${expectedStatus}`));
   }
-  const candidateVerifyStep = findStep(candidateWorkflow.jobs['verify-candidate'], 'Verify exact candidate manifest, tag, commit, and bytes');
+  const candidateVerifyStep = findStep(
+    candidateWorkflow.jobs['verify-candidate'],
+    'Verify exact candidate manifest, tag, commit, and bytes',
+  );
   const shellInjection = 'safe"; echo injected >&2; #';
   const safeCandidateVerification = executeWorkflowStep(candidateVerifyStep, {
     env: {
@@ -570,8 +858,15 @@ esac
   assert.doesNotMatch(safeCandidateVerification.stderr, /injected/);
   const candidateMatrixJob = candidateWorkflow.jobs['installed-artifact-matrix'];
   assert.equal(candidateMatrixJob.if, 'inputs.run_installed_matrix == true');
-  assert.equal(candidateWorkflow.jobs['matrix-not-run-boundary'].if, 'inputs.run_installed_matrix != true');
-  assert.equal(findStep(candidateMatrixJob, 'Require the #512 runtime-matrix integration contract').env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(
+    candidateWorkflow.jobs['matrix-not-run-boundary'].if,
+    'inputs.run_installed_matrix != true',
+  );
+  assert.equal(
+    findStep(candidateMatrixJob, 'Require the #512 runtime-matrix integration contract').env
+      .GH_TOKEN,
+    '${{ github.token }}',
+  );
 
   const metadataStable = executeWorkflowStep(metadata, {
     env: {
@@ -646,7 +941,11 @@ esac
     expressions: { 'inputs.channel': 'beta', 'inputs.promote_stable': 'true' },
     fakeNodeVersion: '3.3.1-beta.1',
   });
-  assert.notEqual(metadataBetaPromotion.status, 0, 'beta releases must not be promoted automatically');
+  assert.notEqual(
+    metadataBetaPromotion.status,
+    0,
+    'beta releases must not be promoted automatically',
+  );
 
   const draftReleaseStep = findStep(createRelease, 'Create GitHub draft release (if not exists)');
   const draftStable = executeWorkflowStep(draftReleaseStep, {
@@ -659,10 +958,14 @@ esac
   assert.match(draftStable.log, /--latest=false/);
   assert.doesNotMatch(draftStable.log, /--prerelease/);
   assert.match(draftStable.log, /--title 3\.3\.0(?:\s|$)/);
-  assert.doesNotMatch(draftStable.log, /--title 3\.3\.0 \(/, 'release title must not carry a "(channel)" suffix — GitHub already badges pre-releases');
+  assert.doesNotMatch(
+    draftStable.log,
+    /--title 3\.3\.0 \(/,
+    'release title must not carry a "(channel)" suffix — GitHub already badges pre-releases',
+  );
   assert.ok(
     readReleaseNotes().includes('compare/3.2.3...3.3.0'),
-    'draft release notes must contain comparison link to predecessor tag'
+    'draft release notes must contain comparison link to predecessor tag',
   );
 
   const draftBeta = executeWorkflowStep(draftReleaseStep, {
@@ -692,16 +995,19 @@ exit 1
     fakeCommands: { gh: fakeGhExistingDraft, git: fakeGit },
   });
   assert.equal(draftExisting.status, 0, draftExisting.stderr);
-  assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, extracting existing release notes/);
+  assert.match(
+    draftExisting.stdout,
+    /Draft release 3\.3\.0 already exists, extracting existing release notes/,
+  );
   assert.doesNotMatch(draftExisting.log, /release create/);
   assert.match(
     draftExisting.log,
     /release edit 3\.3\.0 .*--title 3\.3\.0(?:\s|$)/,
-    'a rerun against an existing draft must re-normalize its title, in case it predates a title-format change'
+    'a rerun against an existing draft must re-normalize its title, in case it predates a title-format change',
   );
   assert.ok(
     readReleaseNotes().includes('Existing draft release notes for 3.3.0'),
-    'existing draft rerun must extract existing release notes directly from GitHub release body'
+    'existing draft rerun must extract existing release notes directly from GitHub release body',
   );
 
   const fakeGhEmptyDraft = `#!/bin/sh
@@ -720,10 +1026,17 @@ exit 1
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
     fakeCommands: { gh: fakeGhEmptyDraft, git: fakeGit },
   });
-  assert.notEqual(draftEmpty.status, 0, 'existing draft with empty or whitespace-only body must be rejected');
+  assert.notEqual(
+    draftEmpty.status,
+    0,
+    'existing draft with empty or whitespace-only body must be rejected',
+  );
   assert.match(draftEmpty.stdout, /Existing draft release 3\.3\.0 has an empty body/);
 
-  const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');
+  const publishStep = findStep(
+    publishJob,
+    'Publish draft without changing GitHub Latest by default',
+  );
   const publishStable = executeWorkflowStep(publishStep, {
     expressions: {
       'needs.create-release.outputs.version': '3.3.0',
@@ -769,7 +1082,8 @@ exit 1
   assert.match(publishBeta.log, /--expected-latest 42/);
   const betaLogLines = publishBeta.log.trim().split('\n');
   assert.ok(
-    betaLogLines.findIndex((line) => line.includes('/releases/latest')) < betaLogLines.findIndex((line) => line.includes('api --method PATCH')),
+    betaLogLines.findIndex((line) => line.includes('/releases/latest')) <
+      betaLogLines.findIndex((line) => line.includes('api --method PATCH')),
     'beta Latest snapshot must happen before publication',
   );
 
@@ -799,11 +1113,19 @@ exit 1
     },
     fakeCommands: { gh: fakeGh, node: captureNodeArgs },
   });
-  assert.notEqual(publishBetaLatestFailure.status, 0, 'beta Latest preflight must reject non-404 failures');
+  assert.notEqual(
+    publishBetaLatestFailure.status,
+    0,
+    'beta Latest preflight must reject non-404 failures',
+  );
   assert.match(publishBetaLatestFailure.stderr, /HTTP\/2\.0 500 Error/);
 
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
-  assert.doesNotMatch(promoteStep.run, /releases\/latest/, 'historical promotion must not gate on version order — it exists to re-promote an older release');
+  assert.doesNotMatch(
+    promoteStep.run,
+    /releases\/latest/,
+    'historical promotion must not gate on version order — it exists to re-promote an older release',
+  );
   const promoteStable = executeWorkflowStep(promoteStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_CHANNEL: 'stable' },
     expressions: {
@@ -834,20 +1156,45 @@ exit 1
 
   const verifierRejectsNightly = childProcess.spawnSync(
     process.execPath,
-    [path.join(__dirname, '../scripts/verify-release-assets.cjs'), '--repo', 'FreeOpenSourcePOS/FloCafe', '--tag', '3.3.1-nightly.1', '--channel', 'nightly'],
-    { encoding: 'utf8' }
+    [
+      path.join(__dirname, '../scripts/verify-release-assets.cjs'),
+      '--repo',
+      'FreeOpenSourcePOS/FloCafe',
+      '--tag',
+      '3.3.1-nightly.1',
+      '--channel',
+      'nightly',
+    ],
+    { encoding: 'utf8' },
   );
-  assert.notEqual(verifierRejectsNightly.status, 0, 'the asset verifier must reject nightly channels');
+  assert.notEqual(
+    verifierRejectsNightly.status,
+    0,
+    'the asset verifier must reject nightly channels',
+  );
   assert.match(verifierRejectsNightly.stderr, /unsupported release channel/);
-  assert.deepEqual(releaseVerifier.expectedManifestNames('beta'),
+  assert.deepEqual(
+    releaseVerifier.expectedManifestNames('beta'),
     ['beta.yml', 'beta-mac.yml', 'beta-linux.yml', 'beta-linux-arm64.yml'],
-    'beta drafts must be verified against the beta-prefixed updater manifests');
-
+    'beta drafts must be verified against the beta-prefixed updater manifests',
+  );
 
   const macArtifact = build?.mac?.artifactName;
-  assert.ok(typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')), `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`);
+  assert.ok(
+    typeof macArtifact === 'string' &&
+      macArtifact.includes('${arch}') &&
+      macArtifact.includes('mac') &&
+      !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`,
+  );
   const winArtifact = build?.win?.artifactName;
-  assert.ok(typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')), `win artifact template must be safe: ${JSON.stringify(winArtifact)}`);
+  assert.ok(
+    typeof winArtifact === 'string' &&
+      winArtifact.includes('${arch}') &&
+      winArtifact.includes('win') &&
+      !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `win artifact template must be safe: ${JSON.stringify(winArtifact)}`,
+  );
 
   const matrixWorkflow = loadWorkflow('full-cross-platform-matrix.yml');
   const matrixTriggers = matrixWorkflow.on || matrixWorkflow['true'];
@@ -859,15 +1206,24 @@ exit 1
   assert.equal(matrixJob.name, 'build-${{ matrix.name }}');
   assert.deepEqual(
     matrixJob.strategy.matrix.include.map((entry: any) => entry.name).sort(),
-    ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'].sort()
+    ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'].sort(),
   );
   const matrixUpload = findStep(matrixJob, 'Upload build artifacts');
   assert.equal(matrixUpload.with.name, 'flocafe-build-${{ matrix.name }}');
 
   const ciWorkflow = loadWorkflow('ci.yml');
   const requiredGateJob = ciWorkflow.jobs['required-checks-gate'];
-  assert.deepEqual(requiredGateJob.needs, ['changes', 'linux-baseline', 'e2e-playwright', 'windows-uninstaller']);
-  assert.equal(requiredGateJob.if, 'always()', 'the gate must still report a conclusion when a path-filtered dependency is skipped');
+  assert.deepEqual(requiredGateJob.needs, [
+    'changes',
+    'linux-baseline',
+    'e2e-playwright',
+    'windows-uninstaller',
+  ]);
+  assert.equal(
+    requiredGateJob.if,
+    'always()',
+    'the gate must still report a conclusion when a path-filtered dependency is skipped',
+  );
   const requiredGateStep = findStep(requiredGateJob, 'Verify no required job actually failed');
   assertShellStep(requiredGateJob, 'Verify no required job actually failed');
   const gateExpressions = (changesResult: string, results: [string, string, string]) => ({
@@ -876,13 +1232,29 @@ exit 1
     'needs.e2e-playwright.result': results[1],
     'needs.windows-uninstaller.result': results[2],
   });
-  const gatePassesAllSkipped = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['skipped', 'skipped', 'skipped']) });
-  assert.equal(gatePassesAllSkipped.status, 0, 'a docs/workflow-only PR that skips every path-filtered job must still pass the gate');
-  const gatePassesMixed = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'skipped', 'success']) });
+  const gatePassesAllSkipped = executeWorkflowStep(requiredGateStep, {
+    expressions: gateExpressions('success', ['skipped', 'skipped', 'skipped']),
+  });
+  assert.equal(
+    gatePassesAllSkipped.status,
+    0,
+    'a docs/workflow-only PR that skips every path-filtered job must still pass the gate',
+  );
+  const gatePassesMixed = executeWorkflowStep(requiredGateStep, {
+    expressions: gateExpressions('success', ['success', 'skipped', 'success']),
+  });
   assert.equal(gatePassesMixed.status, 0, gatePassesMixed.stderr);
-  const gateFailsOnRealFailure = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'failure', 'success']) });
-  assert.notEqual(gateFailsOnRealFailure.status, 0, 'the gate must not mask an actual job failure as passing');
-  const gateFailsWhenChangesFails = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('failure', ['skipped', 'skipped', 'skipped']) });
+  const gateFailsOnRealFailure = executeWorkflowStep(requiredGateStep, {
+    expressions: gateExpressions('success', ['success', 'failure', 'success']),
+  });
+  assert.notEqual(
+    gateFailsOnRealFailure.status,
+    0,
+    'the gate must not mask an actual job failure as passing',
+  );
+  const gateFailsWhenChangesFails = executeWorkflowStep(requiredGateStep, {
+    expressions: gateExpressions('failure', ['skipped', 'skipped', 'skipped']),
+  });
   assert.notEqual(
     gateFailsWhenChangesFails.status,
     0,
@@ -895,9 +1267,27 @@ exit 1
   // instead of reporting the same condition as a job failure.
   const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-required-gate-'));
   const runsFixturePath = path.join(gateTempDir, 'runs.json');
-  const thisPush = { id: 1000, run_number: 40, head_branch: 'main', head_sha: 'a'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1000' };
-  const newerPush = { id: 1002, run_number: 41, head_branch: 'main', head_sha: 'b'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1002' };
-  const otherBranchRun = { id: 1003, run_number: 42, head_branch: 'some-other-branch', head_sha: 'c'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1003' };
+  const thisPush = {
+    id: 1000,
+    run_number: 40,
+    head_branch: 'main',
+    head_sha: 'a'.repeat(40),
+    html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1000',
+  };
+  const newerPush = {
+    id: 1002,
+    run_number: 41,
+    head_branch: 'main',
+    head_sha: 'b'.repeat(40),
+    html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1002',
+  };
+  const otherBranchRun = {
+    id: 1003,
+    run_number: 42,
+    head_branch: 'some-other-branch',
+    head_sha: 'c'.repeat(40),
+    html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1003',
+  };
   const fakeRunsGh = `#!/bin/sh
 if [ "\${CI_TEST_GH_FAIL:-}" = "1" ]; then
   echo "gh: HTTP 403: Resource not accessible by integration" >&2
@@ -929,8 +1319,16 @@ cat "$CI_TEST_RUNS_FIXTURE"
       'a superseded push never reported its required checks, so the gate must still fail - the change is messaging only',
     );
     assert.match(gateSuperseded.stdout, /superseded by a newer push/i, gateSuperseded.stdout);
-    assert.match(gateSuperseded.stdout, new RegExp(newerPush.head_sha), 'the superseded message must name the newer push by commit');
-    assert.match(gateSuperseded.stdout, new RegExp(newerPush.html_url), 'the superseded message must link the newer push run');
+    assert.match(
+      gateSuperseded.stdout,
+      new RegExp(newerPush.head_sha),
+      'the superseded message must name the newer push by commit',
+    );
+    assert.match(
+      gateSuperseded.stdout,
+      new RegExp(newerPush.html_url),
+      'the superseded message must link the newer push run',
+    );
     assert.doesNotMatch(
       gateSuperseded.stdout,
       /did not succeed/,
@@ -968,7 +1366,11 @@ cat "$CI_TEST_RUNS_FIXTURE"
       /superseded/i,
       'a real job failure must never be explained away as supersession',
     );
-    assert.match(gateFailureIsNotSuperseded.stdout, /did not succeed/, gateFailureIsNotSuperseded.stdout);
+    assert.match(
+      gateFailureIsNotSuperseded.stdout,
+      /did not succeed/,
+      gateFailureIsNotSuperseded.stdout,
+    );
 
     const gateLookupFails = executeWorkflowStep(requiredGateStep, {
       env: gateEnv([newerPush, thisPush], { CI_TEST_GH_FAIL: '1' }),
@@ -993,8 +1395,13 @@ cat "$CI_TEST_RUNS_FIXTURE"
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
   assertShellStep(e2eJob, 'Run renderer and printer regression suites');
   assert.equal(releaseRegression.env.REQUIRE_VISUAL_EVIDENCE, '1');
-  assert.equal(releaseRegression.env.EVIDENCE_DIR, '${{ runner.temp }}/flocafe-release-regressions');
-  const evidenceUpload = (e2eJob.steps || []).find((step: any) => step.with?.name === 'release-regression-evidence');
+  assert.equal(
+    releaseRegression.env.EVIDENCE_DIR,
+    '${{ runner.temp }}/flocafe-release-regressions',
+  );
+  const evidenceUpload = (e2eJob.steps || []).find(
+    (step: any) => step.with?.name === 'release-regression-evidence',
+  );
   assert.ok(evidenceUpload, 'CI must upload release regression evidence');
   assert.equal(evidenceUpload.with.path, '${{ runner.temp }}/flocafe-release-regressions/');
 
@@ -1002,7 +1409,10 @@ cat "$CI_TEST_RUNS_FIXTURE"
   const originalMetaContent = fs.readFileSync(metaFilePath, 'utf8');
   const testNotesPath = path.join(os.tmpdir(), `flocafe-release-notes-${Date.now()}.md`);
   try {
-    fs.writeFileSync(testNotesPath, 'Features & fixes:\n- Added <parity> & metadata synchronization');
+    fs.writeFileSync(
+      testNotesPath,
+      'Features & fixes:\n- Added <parity> & metadata synchronization',
+    );
     const updateResult = childProcess.spawnSync(
       process.execPath,
       [path.join(__dirname, '../scripts/update-metainfo.js')],
@@ -1013,17 +1423,17 @@ cat "$CI_TEST_RUNS_FIXTURE"
           RELEASE_NOTES_FILE: testNotesPath,
         },
         encoding: 'utf8',
-      }
+      },
     );
     assert.equal(updateResult.status, 0, updateResult.stderr);
     const updatedMetaContent = fs.readFileSync(metaFilePath, 'utf8');
     assert.ok(
       updatedMetaContent.includes(`<release version="${pkg.version}"`),
-      'update-metainfo.js must prepend release entry for current package version'
+      'update-metainfo.js must prepend release entry for current package version',
     );
     assert.ok(
       updatedMetaContent.includes('&lt;parity&gt; &amp; metadata synchronization'),
-      'update-metainfo.js must escape XML entities and preserve release notes text'
+      'update-metainfo.js must escape XML entities and preserve release notes text',
     );
   } finally {
     fs.writeFileSync(metaFilePath, originalMetaContent);

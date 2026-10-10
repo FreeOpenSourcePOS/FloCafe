@@ -9,7 +9,7 @@
  * the same `run-test.sh` wrapper that `npm test` uses.
  *
  * Usage:
- *   SHARD_TOTAL=2 SHARD_INDEX=0 node scripts/ci/run-test-shard.cjs
+ *   SHARD_TOTAL=4 SHARD_INDEX=0 node scripts/ci/run-test-shard.cjs
  *
  * The `pretest` hook (test:payment-methods-split) is intentionally NOT run here;
  * CI runs it as its own step before the shards, mirroring `npm test`'s pretest.

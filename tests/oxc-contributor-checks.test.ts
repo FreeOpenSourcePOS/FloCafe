@@ -68,6 +68,9 @@ function gitEnv(dir: string) {
   };
 }
 
+// Node's spawnSync capture limit, exceeded by a runaway tree and then reported as ENOBUFS.
+const CAPTURE_LIMIT_BYTES = 1024 * 1024;
+
 function run(command: string, args: string[], dir: string, stdin?: string) {
   const result = spawnSync(command, args, {
     cwd: dir,
@@ -75,7 +78,13 @@ function run(command: string, args: string[], dir: string, stdin?: string) {
     encoding: 'utf8',
     input: stdin,
   });
-  if (result.error) throw new Error(`${command} could not run in ${dir}: ${result.error.message}`);
+  if (result.error) {
+    const overflow =
+      (result.error as NodeJS.ErrnoException).code === 'ENOBUFS'
+        ? ` (output passed ${CAPTURE_LIMIT_BYTES} bytes, so this fixture repository is tracking far more files than its own)`
+        : '';
+    throw new Error(`${command} could not run in ${dir}${overflow}: ${result.error.message}`);
+  }
   return result;
 }
 
@@ -106,6 +115,26 @@ function gitShow(dir: string, revision: string) {
   return git(dir, ['show', revision]).stdout;
 }
 
+// Dependency trees the fixture links in rather than copies. A real checkout ignores them, and
+// Git walks a Windows junction as an ordinary directory, so without the same ignore rule the
+// fixture would stage every file of both trees and drown `git commit` in create-mode lines.
+const LINKED_DEPENDENCY_PATHS = ['node_modules', 'frontend/node_modules'];
+
+// A real contributor checkout receives the two dependency trees from npm, untracked. Every
+// repository the fixture runs tools in links them in the same way; none of them is committed.
+function linkDependencies(dir: string) {
+  fs.symlinkSync(
+    path.join(rootDir, 'node_modules'),
+    path.join(dir, 'node_modules'),
+    directoryLinkType,
+  );
+  fs.symlinkSync(
+    path.join(rootDir, 'frontend', 'node_modules'),
+    path.join(dir, 'frontend', 'node_modules'),
+    directoryLinkType,
+  );
+}
+
 // A standalone contributor checkout with the tooling under test and the real Oxc installs.
 function createContributorRepo(label: string) {
   const dir = tempDir(label);
@@ -114,19 +143,10 @@ function createContributorRepo(label: string) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.copyFileSync(path.join(rootDir, file), target);
   }
-  fs.symlinkSync(
-    path.join(rootDir, 'node_modules'),
-    path.join(dir, 'node_modules'),
-    directoryLinkType,
-  );
   fs.mkdirSync(path.join(dir, 'main'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'tests', 'fixtures'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'frontend'), { recursive: true });
-  fs.symlinkSync(
-    path.join(rootDir, 'frontend', 'node_modules'),
-    path.join(dir, 'frontend', 'node_modules'),
-    directoryLinkType,
-  );
+  linkDependencies(dir);
   fs.copyFileSync(
     path.join(rootDir, 'frontend', '.oxfmtrc.json'),
     path.join(dir, 'frontend', '.oxfmtrc.json'),
@@ -154,6 +174,12 @@ function createContributorRepo(label: string) {
   );
   write(dir, 'README.md', '# temporary repository\n');
   run('git', ['init', '-q', '.'], dir);
+  write(dir, '.gitignore', `${LINKED_DEPENDENCY_PATHS.join('\n')}\n`);
+  const ignored = git(dir, ['check-ignore', ...LINKED_DEPENDENCY_PATHS]).stdout;
+  assertOrThrow(
+    LINKED_DEPENDENCY_PATHS.every((linked) => ignored.split('\n').includes(linked)),
+    `the fixture must ignore its linked dependency trees, or Git stages them: ${ignored}`,
+  );
   git(dir, ['add', '-A']);
   commit(dir, 'seed');
   return dir;
@@ -858,6 +884,8 @@ assertEqualOrThrow(
   'true',
   'the divergent history regression must run from a shallow clone',
 );
+// A clone carries no dependency tree, and the tools the gate spawns are resolved from it.
+linkDependencies(shallowRepo);
 git(shallowRepo, ['config', 'protocol.file.allow', 'always']);
 const shallowGate = runGate(shallowRepo, ['--base', shallowBase]);
 assertEqualOrThrow(

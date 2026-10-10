@@ -92,11 +92,18 @@ function comparisonFromPayload() {
   if (eventName === 'push') {
     const before = event?.before;
     if (!before || /^0+$/.test(before)) {
-      throw new Error(`This push has no previous commit to compare against. ${USAGE}`);
+      return {
+        skip: true,
+        reason:
+          'Push event has no previous commit (initial ref or tag push); skipping changed-file format check.',
+      };
     }
     const after = event?.after;
     if (!after || /^0+$/.test(after)) {
-      throw new Error(`This push has no new commit to compare against. ${USAGE}`);
+      return {
+        skip: true,
+        reason: 'Push event has no new commit; skipping changed-file format check.',
+      };
     }
     return {
       base: before,
@@ -173,7 +180,12 @@ function runCheck(pkg, files) {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const { base, head, strategy, description } = resolveComparison(options);
+  const comparison = resolveComparison(options);
+  if (comparison.skip) {
+    console.log(comparison.reason);
+    return;
+  }
+  const { base, head, strategy, description } = comparison;
   const baseCommit = ensureCommit(base);
   const headCommit = ensureCommit(head);
   const changed = changedFiles(baseCommit, headCommit, strategy);

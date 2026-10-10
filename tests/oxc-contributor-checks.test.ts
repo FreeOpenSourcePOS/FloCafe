@@ -923,6 +923,27 @@ assertIncludesOrThrow(
   'push output must identify the payload before/after range',
 );
 
+const zeroBeforeEventPath = path.join(pushRepo, '.zero-before-event.json');
+write(
+  pushRepo,
+  '.zero-before-event.json',
+  JSON.stringify({ before: '0000000000000000000000000000000000000000', after: pushAfter }),
+);
+const zeroBeforeGate = runGate(pushRepo, [], {
+  GITHUB_EVENT_NAME: 'push',
+  GITHUB_EVENT_PATH: zeroBeforeEventPath,
+});
+assertEqualOrThrow(
+  zeroBeforeGate.status,
+  0,
+  `a push event with an all-zero before SHA must skip cleanly: ${gateOutput(zeroBeforeGate)}`,
+);
+assertIncludesOrThrow(
+  zeroBeforeGate.stdout,
+  'skipping changed-file format check',
+  'a push event with an all-zero before SHA must report skipping changed-file format check',
+);
+
 const deleteRepo = createContributorRepo('gate-delete');
 const deleteBase = git(deleteRepo, ['rev-parse', 'HEAD']).stdout.trim();
 write(deleteRepo, 'main/removed.ts', 'export const  removed={r:1}\n');

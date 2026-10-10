@@ -624,6 +624,7 @@ export default function TablesPage() {
               return (
                 <div
                   key={table.id}
+                  data-testid={`table-card-${table.id}`}
                   className={`bg-card rounded-xl border border-border hover:shadow-md transition-shadow ${
                     hasOrders ? 'border-s-4 border-s-brand' : ''
                   } ${!table.is_active ? 'opacity-60' : ''}`}
@@ -785,6 +786,7 @@ export default function TablesPage() {
             {visibleTables.map((table) => (
               <div
                 key={table.id}
+                data-testid={`table-card-${table.id}`}
                 className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}
               >
                 <div

@@ -159,7 +159,7 @@ test.describe('Table Move UI Live Validation', () => {
       // Click Move Table to open MoveTableModal
       await moveTableAction.click();
 
-      const moveModal = page.locator('div[role="dialog"]');
+      const moveModal = page.locator('[data-testid="move-table-modal"]');
       await expect(moveModal).toBeVisible();
       await expect(moveModal.locator('#move-table-modal-title')).toContainText('Move Order');
 
@@ -226,21 +226,18 @@ test.describe('Table Move UI Live Validation', () => {
       const listToggle = page.getByRole('button', { name: 'List' });
       await listToggle.click();
 
-      // Find table card for T2 (now occupied)
-      const t2Card = page
-        .locator(`div:has-text("${t2Num}")`)
-        .filter({ hasText: 'Occupied' })
-        .first();
+      // Find table card for T2 (now occupied) using specific testid
+      const t2Card = page.locator(`[data-testid="table-card-${table2.id}"]`);
       await expect(t2Card).toBeVisible();
 
       // T2 should have inline "Move Table" button
-      const moveBtnOnT2 = t2Card.getByRole('button', { name: 'Move Table' }).first();
+      const moveBtnOnT2 = t2Card.getByRole('button', { name: 'Move Table' });
       await expect(moveBtnOnT2).toBeVisible();
 
       // Open MoveTableModal from tables list
       await moveBtnOnT2.click();
 
-      const listMoveModal = page.locator('div[role="dialog"]');
+      const listMoveModal = page.locator('[data-testid="move-table-modal"]');
       await expect(listMoveModal).toBeVisible();
       await expect(
         listMoveModal.locator(`text=Transfer active order from ${t2Num} to another table.`),
@@ -316,7 +313,7 @@ test.describe('Table Move UI Live Validation', () => {
       await posCheckoutMoveBtn.click();
 
       // MoveTableModal opens on top of POS
-      const posMoveModal = page.locator('div[role="dialog"]');
+      const posMoveModal = page.locator('[data-testid="move-table-modal"]');
       await expect(posMoveModal).toBeVisible();
 
       // Take screenshot 6: MoveTableModal over POS
@@ -372,14 +369,12 @@ test.describe('Table Move UI Live Validation', () => {
       await page.goto(`${BASE}/tables`);
       await page.waitForLoadState('networkidle');
 
-      const t2CardForGuard = page
-        .locator(`div:has-text("${t2Num}")`)
-        .filter({ hasText: 'Occupied' })
-        .first();
-      const moveBtnGuard = t2CardForGuard.getByRole('button', { name: 'Move Table' }).first();
+      const t2CardForGuard = page.locator(`[data-testid="table-card-${table2.id}"]`);
+      await expect(t2CardForGuard).toBeVisible();
+      const moveBtnGuard = t2CardForGuard.getByRole('button', { name: 'Move Table' });
       await moveBtnGuard.click();
 
-      const guardModal = page.locator('div[role="dialog"]');
+      const guardModal = page.locator('[data-testid="move-table-modal"]');
       await expect(guardModal).toBeVisible();
 
       // T3 is occupied: must be rendered as disabled

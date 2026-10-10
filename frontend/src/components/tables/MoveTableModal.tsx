@@ -62,6 +62,8 @@ export default function MoveTableModal({
   const loadingTables = (!initialTables || initialTables.length === 0) && loadingFetched;
 
   const activeOrder = sourceTable.activeOrder || sourceTable.current_order;
+  const sourceName =
+    sourceTable.name || (sourceTable as unknown as { number?: string }).number || '';
 
   // Filter out source table and inactive tables
   const candidateTables = tablesList.filter(
@@ -91,7 +93,7 @@ export default function MoveTableModal({
       }
       const { data } = await api.post(`/tables/${sourceTable.id}/move-order`, payload);
       const targetName = selectedTarget?.name || data.targetTable?.name || selectedTargetId;
-      toast.success(t('tableMovedSuccess', { from: sourceTable.name, to: targetName }));
+      toast.success(t('tableMovedSuccess', { from: sourceName, to: targetName }));
       onSuccess(data);
       onClose();
     } catch (error: unknown) {
@@ -110,6 +112,7 @@ export default function MoveTableModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="move-table-modal-title"
+      data-testid="move-table-modal"
     >
       <div className="bg-card rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl border border-border">
         {/* Header */}
@@ -123,7 +126,7 @@ export default function MoveTableModal({
               {t('moveOrder')}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {t('moveOrderDescription', { from: sourceTable.name })}
+              {t('moveOrderDescription', { from: sourceName })}
             </p>
           </div>
           <button
@@ -139,10 +142,10 @@ export default function MoveTableModal({
         <div className="p-4 bg-muted/60 border-b border-border flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center font-bold text-sm">
-              {sourceTable.name}
+              {sourceName}
             </div>
             <div>
-              <p className="text-sm font-semibold text-foreground">{sourceTable.name}</p>
+              <p className="text-sm font-semibold text-foreground">{sourceName}</p>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Users size={12} />

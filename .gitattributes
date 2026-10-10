@@ -1,3 +1,7 @@
+# Ensure all text files maintain LF line endings across all platforms so
+# Windows checkouts do not rewrite them to CRLF and fail Oxfmt format checks.
+* text=auto eol=lf
+
 # Compared byte for byte against regenerated output, so a CRLF checkout must not
 # rewrite it. `parseGoldenBlocks` also normalises line endings on read, which is
 # what protects an already-checked-out working tree.

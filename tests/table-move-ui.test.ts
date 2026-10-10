@@ -155,6 +155,7 @@ function testMoveTableModalRendering() {
     mockTable('tbl-3', 'Table 3', 'occupied', 'Ground', 4),
     mockTable('tbl-4', 'Table 4', 'cleaning', 'Patio', 6),
     mockTable('tbl-5', 'Table 5', 'reserved', 'Patio', 4),
+    mockTable('tbl-6', 'Table 6', 'held', 'Patio', 4),
   ];
 
   const markup = ReactDOMServer.renderToStaticMarkup(
@@ -177,9 +178,23 @@ function testMoveTableModalRendering() {
   assert.ok(markup.includes('Table 3'), 'renders occupied candidate table');
   assert.ok(markup.includes('Table 4'), 'renders cleaning candidate table');
   assert.ok(markup.includes('Table 5'), 'renders reserved candidate table');
+  assert.ok(markup.includes('Table 6'), 'renders held candidate table');
 
-  // Occupied tables must be disabled
-  assert.ok(markup.includes('disabled=""'), 'occupied candidate table has disabled attribute');
+  // Occupied and held tables must be disabled specifically; available must be enabled
+  const table3Match = markup.match(/<button[^>]*>[\s\S]*?Table 3[\s\S]*?<\/button>/);
+  assert.ok(table3Match, 'found Table 3 button');
+  assert.ok(
+    table3Match[0].includes('disabled=""'),
+    'Table 3 (occupied) button has disabled attribute',
+  );
+
+  const table6Match = markup.match(/<button[^>]*>[\s\S]*?Table 6[\s\S]*?<\/button>/);
+  assert.ok(table6Match, 'found Table 6 button');
+  assert.ok(table6Match[0].includes('disabled=""'), 'Table 6 (held) button has disabled attribute');
+
+  const table2Match = markup.match(/<button[^>]*>[\s\S]*?Table 2[\s\S]*?<\/button>/);
+  assert.ok(table2Match, 'found Table 2 button');
+  assert.ok(!table2Match[0].includes('disabled=""'), 'Table 2 (available) button is enabled');
 
   // Multiple floors present -> floor filter pills rendered
   assert.ok(markup.includes('tables.allFloors'), 'renders All Floors filter tab');

@@ -97,9 +97,12 @@ export default function MoveTableModal({
       onSuccess(data);
       onClose();
     } catch (error: unknown) {
+      const status = (error as { response?: { status?: number } })?.response?.status;
       const errorMsg =
-        (error as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        t('tableMoveFailed');
+        status === 409
+          ? t('targetTableOccupied')
+          : (error as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+            t('tableMoveFailed');
       toast.error(errorMsg);
     } finally {
       setMoving(false);
@@ -219,6 +222,8 @@ export default function MoveTableModal({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {visibleTables.map((tb) => {
                 const isOccupied = tb.status === 'occupied';
+                const isHeld = tb.status === 'held';
+                const isUnavailable = isOccupied || isHeld;
                 const isSelected = selectedTargetId === tb.id;
                 const statusLabelKey = TABLE_STATUS_LABEL_KEYS[tb.status];
 
@@ -226,10 +231,10 @@ export default function MoveTableModal({
                   <button
                     key={tb.id}
                     type="button"
-                    disabled={isOccupied || moving}
+                    disabled={isUnavailable || moving}
                     onClick={() => setSelectedTargetId(tb.id)}
                     className={`p-3 rounded-xl border text-start transition-all flex flex-col justify-between min-h-[82px] ${
-                      isOccupied
+                      isUnavailable
                         ? 'opacity-40 cursor-not-allowed bg-muted/40 border-border'
                         : isSelected
                           ? 'border-brand bg-brand-light dark:bg-[var(--color-brand-light)] ring-2 ring-brand'
@@ -242,9 +247,11 @@ export default function MoveTableModal({
                         className={`w-2 h-2 rounded-full flex-shrink-0 mt-1 ${
                           isOccupied
                             ? 'bg-red-500'
-                            : tb.status === 'available'
-                              ? 'bg-emerald-500'
-                              : 'bg-amber-500'
+                            : isHeld
+                              ? 'bg-amber-500'
+                              : tb.status === 'available'
+                                ? 'bg-emerald-500'
+                                : 'bg-muted-foreground'
                         }`}
                       />
                     </div>

@@ -1599,6 +1599,11 @@ export default function POSPage() {
             setCheckoutOverridePin(overridePin);
           }}
           onAddCartToOrder={handleAddCartToOrder}
+          onOrderMoved={({ sourceTable, targetTable }) => {
+            if (cart.tableId === sourceTable.id) {
+              cart.setTableId(targetTable.id);
+            }
+          }}
         />
       )}
 

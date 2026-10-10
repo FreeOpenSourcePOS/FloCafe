@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
@@ -371,20 +371,21 @@ export default function TablesPage() {
     if (!showDetails && view !== 'plan') setOrders([]);
   }
 
-  useEffect(() => {
+  const fetchOrders = useCallback(() => {
     if (!canReadOrders || (view !== 'plan' && !showDetails)) return;
-    const fetchOrders = () => {
-      api
-        .get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
-        .then(({ data }) => setOrders(data.orders || []))
-        .catch(() => {
-          // silently fail — tables still show
-        });
-    };
+    api
+      .get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
+      .then(({ data }) => setOrders(data.orders || []))
+      .catch(() => {
+        // silently fail — tables still show
+      });
+  }, [canReadOrders, showDetails, view]);
+
+  useEffect(() => {
     fetchOrders();
     const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
-  }, [canReadOrders, showDetails, layoutMode, view]);
+  }, [fetchOrders]);
 
   // Group active orders by table_id — always built so both the floorplan
   // editor and the list view can read active orders per table.
@@ -979,6 +980,7 @@ export default function TablesPage() {
           onSuccess={() => {
             setMovingTable(null);
             fetchTables();
+            fetchOrders();
           }}
         />
       )}

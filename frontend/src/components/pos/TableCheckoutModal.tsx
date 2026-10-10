@@ -26,7 +26,7 @@ interface Props {
   canReadBills?: boolean;
   onPayment: (bill: Bill, overridePin?: string) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
-  onMoveTable?: (table: Table) => void;
+  onOrderMoved?: (result: { sourceTable: Table; targetTable: Table; order: Order }) => void;
   tables?: Table[];
 }
 
@@ -42,7 +42,7 @@ export default function TableCheckoutModal({
   canReadBills = true,
   onPayment,
   onAddCartToOrder,
-  onMoveTable,
+  onOrderMoved,
   tables,
 }: Props) {
   const t = useTranslations('pos');
@@ -67,12 +67,7 @@ export default function TableCheckoutModal({
   const [showMoveModal, setShowMoveModal] = useState(false);
 
   const handleMoveTable = () => {
-    if (onMoveTable) {
-      onMoveTable(table);
-      onClose();
-    } else {
-      setShowMoveModal(true);
-    }
+    setShowMoveModal(true);
   };
 
   useEffect(() => {
@@ -485,8 +480,9 @@ export default function TableCheckoutModal({
           sourceTable={table}
           tables={tables}
           onClose={() => setShowMoveModal(false)}
-          onSuccess={() => {
+          onSuccess={(data) => {
             setShowMoveModal(false);
+            onOrderMoved?.(data);
             onClose();
           }}
         />

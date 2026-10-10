@@ -9,7 +9,11 @@ const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M4KH9AEE64Z0DN12TWX2717P');
 
-async function captureScreenshot(page: Page, filename: string): Promise<void> {
+async function captureScreenshot(
+  page: Page,
+  filename: string,
+  testInfo?: { outputPath: (name: string) => string },
+): Promise<void> {
   try {
     if (!fs.existsSync(EVIDENCE_DIR)) {
       fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
@@ -17,6 +21,13 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
     await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
   } catch (err) {
     console.warn(`Could not save screenshot ${filename}:`, err);
+  }
+  if (testInfo) {
+    try {
+      await page.screenshot({ path: testInfo.outputPath(filename), fullPage: true });
+    } catch {
+      // testInfo screenshot is optional
+    }
   }
 }
 
@@ -26,9 +37,16 @@ test.describe('Table Move UI Live Validation', () => {
   test('executes end-to-end table move flows across floorplan, tables list, and POS checkout modal', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
     const authHeaders = { Authorization: `Bearer ${token}` };
+
+    let table1: { id: string } = { id: '' };
+    let table2: { id: string } = { id: '' };
+    let table3: { id: string } = { id: '' };
+    let table4: { id: string } = { id: '' };
+    let order1: { id: string; order_number?: string } = { id: '' };
+    let order2: { id: string } = { id: '' };
 
     // 0. Ensure tables_required and postpaid billing in business settings so POS shows table picker
     const businessRes = await request.get(`${BASE}/api/settings/business`, {
@@ -63,7 +81,7 @@ test.describe('Table Move UI Live Validation', () => {
         },
       });
       expect(resT1.ok()).toBeTruthy();
-      const table1 = (await resT1.json()).table;
+      table1 = (await resT1.json()).table;
 
       const resT2 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
@@ -77,7 +95,7 @@ test.describe('Table Move UI Live Validation', () => {
         },
       });
       expect(resT2.ok()).toBeTruthy();
-      const table2 = (await resT2.json()).table;
+      table2 = (await resT2.json()).table;
 
       const resT3 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
@@ -91,14 +109,14 @@ test.describe('Table Move UI Live Validation', () => {
         },
       });
       expect(resT3.ok()).toBeTruthy();
-      const table3 = (await resT3.json()).table;
+      table3 = (await resT3.json()).table;
 
       const resT4 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
         data: { number: t4Num, capacity: 4, floor: 'Patio', section: 'Terrace' },
       });
       expect(resT4.ok()).toBeTruthy();
-      const table4 = (await resT4.json()).table;
+      table4 = (await resT4.json()).table;
 
       // Deactivate T4 to test inactive filtering
       const resDeact = await request.post(`${BASE}/api/tables/${table4.id}/deactivate`, {
@@ -117,7 +135,7 @@ test.describe('Table Move UI Live Validation', () => {
         },
       });
       expect(orderRes1.status()).toBe(201);
-      const order1 = (await orderRes1.json()).order;
+      order1 = (await orderRes1.json()).order;
 
       // Login via UI
       await page.goto(`${BASE}/auth/login`);
@@ -182,7 +200,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(moveModal.getByRole('button', { name: new RegExp(t4Num) })).not.toBeVisible();
 
       // Take screenshot 1: MoveTableModal in Floorplan
-      await captureScreenshot(page, '01-floorplan-move-modal.png');
+      await captureScreenshot(page, '01-floorplan-move-modal.png', testInfo);
 
       // Select candidate T2
       await candidateT2.click();
@@ -203,7 +221,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(moveModal).not.toBeVisible();
 
       // Take screenshot 2: After Floorplan Move
-      await captureScreenshot(page, '02-floorplan-move-completed.png');
+      await captureScreenshot(page, '02-floorplan-move-completed.png', testInfo);
 
       // Verify database state: T1 is available, T2 is occupied
       const checkTables1 = await (
@@ -244,7 +262,7 @@ test.describe('Table Move UI Live Validation', () => {
       ).toBeVisible();
 
       // Take screenshot 3: MoveTableModal from Tables List
-      await captureScreenshot(page, '03-table-list-move-modal.png');
+      await captureScreenshot(page, '03-table-list-move-modal.png', testInfo);
 
       // Select T1 (which is now available)
       const candidateT1 = listMoveModal.getByRole('button', { name: new RegExp(t1Num) });
@@ -264,7 +282,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(listMoveModal).not.toBeVisible();
 
       // Take screenshot 4: After Tables List Move
-      await captureScreenshot(page, '04-table-list-move-completed.png');
+      await captureScreenshot(page, '04-table-list-move-completed.png', testInfo);
 
       // Verify T1 is occupied again, T2 is available
       const checkTables2 = await (
@@ -307,7 +325,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posCheckoutMoveBtn).toBeVisible();
 
       // Take screenshot 5: TableCheckoutModal with Move Table button
-      await captureScreenshot(page, '05-pos-checkout-modal.png');
+      await captureScreenshot(page, '05-pos-checkout-modal.png', testInfo);
 
       // Click "Move Table" button in POS checkout modal
       await posCheckoutMoveBtn.click();
@@ -317,7 +335,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posMoveModal).toBeVisible();
 
       // Take screenshot 6: MoveTableModal over POS
-      await captureScreenshot(page, '06-pos-move-modal.png');
+      await captureScreenshot(page, '06-pos-move-modal.png', testInfo);
 
       // Select candidate T2 and confirm move
       const candidateT2InPos = posMoveModal.getByRole('button', { name: new RegExp(t2Num) });
@@ -337,7 +355,7 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(posMoveModal).not.toBeVisible();
 
       // Take screenshot 7: POS state after table move
-      await captureScreenshot(page, '07-pos-table-moved.png');
+      await captureScreenshot(page, '07-pos-table-moved.png', testInfo);
 
       // Verify database state: T2 is occupied with order1, T1 is available
       const checkTables3 = await (
@@ -364,6 +382,7 @@ test.describe('Table Move UI Live Validation', () => {
         },
       });
       expect(orderRes2.status()).toBe(201);
+      order2 = (await orderRes2.json()).order;
 
       // Open MoveTableModal for T2 (which is occupied)
       await page.goto(`${BASE}/tables`);
@@ -386,12 +405,30 @@ test.describe('Table Move UI Live Validation', () => {
       await expect(guardModal.getByRole('button', { name: new RegExp(t4Num) })).not.toBeVisible();
 
       // Take screenshot 8: Guard against occupied / inactive tables
-      await captureScreenshot(page, '08-occupied-table-disabled.png');
+      await captureScreenshot(page, '08-occupied-table-disabled.png', testInfo);
 
       // Close modal
       await guardModal.getByRole('button', { name: 'Cancel' }).first().click();
       await expect(guardModal).not.toBeVisible();
     } finally {
+      // Cleanup created orders and tables
+      if (order1.id) {
+        await request
+          .post(`${BASE}/api/orders/${order1.id}/cancel`, { headers: authHeaders })
+          .catch(() => {});
+      }
+      if (order2.id) {
+        await request
+          .post(`${BASE}/api/orders/${order2.id}/cancel`, { headers: authHeaders })
+          .catch(() => {});
+      }
+      for (const tbl of [table1, table2, table3, table4]) {
+        if (tbl.id) {
+          await request
+            .post(`${BASE}/api/tables/${tbl.id}/deactivate`, { headers: authHeaders })
+            .catch(() => {});
+        }
+      }
       // Restore business settings
       await request
         .put(`${BASE}/api/settings/business`, {

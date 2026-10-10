@@ -1,4 +1,12 @@
-import { test, expect, request as playwrightRequest, type APIRequestContext, type Page, type Request, type Route } from '@playwright/test';
+import {
+  test,
+  expect,
+  request as playwrightRequest,
+  type APIRequestContext,
+  type Page,
+  type Request,
+  type Route,
+} from '@playwright/test';
 import {
   E2E_PASSWORD,
   getE2eToken,
@@ -9,7 +17,9 @@ import {
 } from './helpers/test-auth';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
-const managerHeaders = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+const managerHeaders = {
+  Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+};
 const paymentModalCharges = [
   {
     id: 'service_charge',
@@ -53,7 +63,10 @@ async function readCharges(request: APIRequestContext): Promise<unknown[]> {
 }
 
 async function writeCharges(request: APIRequestContext, charges: unknown[]): Promise<void> {
-  const response = await request.put(`${BASE}/api/settings/charges`, { headers: managerHeaders, data: { charges } });
+  const response = await request.put(`${BASE}/api/settings/charges`, {
+    headers: managerHeaders,
+    data: { charges },
+  });
   expect(response.ok()).toBeTruthy();
 }
 
@@ -80,7 +93,9 @@ test.afterEach(async ({ page }) => {
   await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutOwnerToken);
 });
 
-test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({ page }) => {
+test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({
+  page,
+}) => {
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
@@ -108,7 +123,9 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   });
   const paymentResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname);
+    return (
+      response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname)
+    );
   });
 
   await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
@@ -127,7 +144,9 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toBeVisible();
 });
 
-test('prepaid checkout never reports success when the payment response is partial', async ({ page }) => {
+test('prepaid checkout never reports success when the payment response is partial', async ({
+  page,
+}) => {
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
@@ -166,7 +185,10 @@ test('prepaid checkout never reports success when the payment response is partia
   await expect(page.getByRole('button', { name: 'Place Order' })).toBeEnabled();
 });
 
-test('prepaid checkout fee choices use fresh quotes and fail closed when a quote fails', async ({ page, request }) => {
+test('prepaid checkout fee choices use fresh quotes and fail closed when a quote fails', async ({
+  page,
+  request,
+}) => {
   const originalCharges = await readCharges(request);
   const originalBusiness = await readBusiness(request);
   const cleanupRequest = await playwrightRequest.newContext();
@@ -235,27 +257,55 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
     await expect(addonRow.getByRole('button', { name: 'Add', exact: true })).toBeVisible();
 
     const waivedPreview = page.waitForResponse((response) => {
-      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/tax/preview') return false;
-      return response.request().postDataJSON().waived_charge_ids?.includes('service_charge') === true;
+      if (
+        response.request().method() !== 'POST' ||
+        new URL(response.url()).pathname !== '/api/tax/preview'
+      )
+        return false;
+      return (
+        response.request().postDataJSON().waived_charge_ids?.includes('service_charge') === true
+      );
     });
     await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
     const waivedResponse = await waivedPreview;
     expect(waivedResponse.ok()).toBeTruthy();
     const waivedSummary = (await waivedResponse.json()).summary;
-    expect(waivedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'service_charge').waived).toBe(true);
-    expect(waivedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'checkout_required').amount).toBe(2);
+    expect(
+      waivedSummary.charges_breakdown.find(
+        (charge: { id: string }) => charge.id === 'service_charge',
+      ).waived,
+    ).toBe(true);
+    expect(
+      waivedSummary.charges_breakdown.find(
+        (charge: { id: string }) => charge.id === 'checkout_required',
+      ).amount,
+    ).toBe(2);
     await expect(serviceRow.getByRole('button', { name: 'Apply', exact: true })).toBeVisible();
 
     const addedPreview = page.waitForResponse((response) => {
-      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/tax/preview') return false;
-      return response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true;
+      if (
+        response.request().method() !== 'POST' ||
+        new URL(response.url()).pathname !== '/api/tax/preview'
+      )
+        return false;
+      return (
+        response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true
+      );
     });
     await addonRow.getByRole('button', { name: 'Add', exact: true }).click();
     const addedResponse = await addedPreview;
     expect(addedResponse.ok()).toBeTruthy();
     const addedSummary = (await addedResponse.json()).summary;
-    expect(addedSummary.charges_breakdown.find((charge: { id: string }) => charge.id === 'checkout_addon').amount).toBe(7);
-    await expect(page.getByTestId('prepaid-charge-checkout_addon').getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+    expect(
+      addedSummary.charges_breakdown.find(
+        (charge: { id: string }) => charge.id === 'checkout_addon',
+      ).amount,
+    ).toBe(7);
+    await expect(
+      page
+        .getByTestId('prepaid-charge-checkout_addon')
+        .getByRole('button', { name: 'Remove', exact: true }),
+    ).toBeVisible();
 
     let submittedOrders = 0;
     let submittedPayments = 0;
@@ -268,17 +318,25 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
     await page.route('**/api/tax/preview', async (route) => {
       const body = route.request().postDataJSON();
-      if (!body.waived_charge_ids?.includes('service_charge') && body.opted_in_charge_ids?.includes('checkout_addon')) {
-        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'quote unavailable' }) });
+      if (
+        !body.waived_charge_ids?.includes('service_charge') &&
+        body.opted_in_charge_ids?.includes('checkout_addon')
+      ) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'quote unavailable' }),
+        });
       } else {
         await route.continue();
       }
     });
-    const failedPreview = page.waitForResponse((response) =>
-      response.request().method() === 'POST'
-      && new URL(response.url()).pathname === '/api/tax/preview'
-      && !response.request().postDataJSON().waived_charge_ids?.includes('service_charge')
-      && response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true,
+    const failedPreview = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/tax/preview' &&
+        !response.request().postDataJSON().waived_charge_ids?.includes('service_charge') &&
+        response.request().postDataJSON().opted_in_charge_ids?.includes('checkout_addon') === true,
     );
     await serviceRow.getByRole('button', { name: 'Apply', exact: true }).click();
     expect((await failedPreview).status()).toBe(503);
@@ -292,17 +350,28 @@ test('prepaid checkout fee choices use fresh quotes and fail closed when a quote
     throw error;
   } finally {
     const cleanupFailures: unknown[] = [];
-    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      await writeCharges(cleanupRequest, originalCharges);
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     try {
       const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
         headers: managerHeaders,
         data: originalBusiness,
       });
       expect(restoredBusiness.ok()).toBeTruthy();
-    } catch (error) { cleanupFailures.push(error); }
-    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
+      await cleanupRequest.dispose();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (cleanupFailures.length) {
-      if (primaryFailure) console.error('Prepaid checkout cleanup failed after the test error:', cleanupFailures);
+      if (primaryFailure)
+        console.error('Prepaid checkout cleanup failed after the test error:', cleanupFailures);
       else throw cleanupFailures[0];
     }
   }
@@ -315,10 +384,12 @@ test('payment modal updates applied fees', async ({ page, request }) => {
   let primaryFailure = false;
 
   try {
-    await request.put(`${BASE}/api/settings/business`, {
-      headers: managerHeaders,
-      data: { ...originalBusiness, billing_type: 'postpaid' },
-    }).then((response) => expect(response.ok()).toBeTruthy());
+    await request
+      .put(`${BASE}/api/settings/business`, {
+        headers: managerHeaders,
+        data: { ...originalBusiness, billing_type: 'postpaid' },
+      })
+      .then((response) => expect(response.ok()).toBeTruthy());
     await writeCharges(request, paymentModalCharges);
 
     const orderResponse = await request.post(`${BASE}/api/orders`, {
@@ -340,7 +411,10 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     await page.locator('button[type="submit"]').click();
     await setLanguage(page, 'en');
     await page.goto(`${BASE}/orders`);
-    await page.getByPlaceholder(/search/i).first().fill(order.order_number);
+    await page
+      .getByPlaceholder(/search/i)
+      .first()
+      .fill(order.order_number);
     await expect(page.getByText(`#${order.order_number}`)).toBeVisible();
     await page.getByRole('button', { name: 'Checkout', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
@@ -358,15 +432,20 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     const rejectUpdate = async (route: Route) => {
       if (rejectNextUpdate && route.request().method() === 'PATCH') {
         rejectNextUpdate = false;
-        await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'split check' }) });
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'split check' }),
+        });
         return;
       }
       await route.continue();
     };
     await page.route(chargeRoute, rejectUpdate);
-    const rejectedUpdate = page.waitForResponse((response) =>
-      response.request().method() === 'PATCH'
-      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    const rejectedUpdate = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
     );
     await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
     expect((await rejectedUpdate).status()).toBe(409);
@@ -377,14 +456,19 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     await page.route(`**/api/bills/${bill.id}`, async (route) => {
       if (route.request().method() === 'GET') {
         detailBillReads += 1;
-        await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected bill refresh' }) });
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'unexpected bill refresh' }),
+        });
         return;
       }
       await route.continue();
     });
-    const waiverResponse = page.waitForResponse((response) =>
-      response.request().method() === 'PATCH'
-      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    const waiverResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
     );
     await serviceRow.getByRole('button', { name: 'Waive', exact: true }).click();
     const updatedBill = (await waiverResponse).json().then((data) => data.bill);
@@ -394,14 +478,19 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     await expect(serviceRow).toContainText('0.00');
     expect(detailBillReads).toBe(0);
 
-    const addResponse = page.waitForResponse((response) =>
-      response.request().method() === 'PATCH'
-      && new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
+    const addResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname === `/api/bills/${bill.id}/charges`,
     );
     await addonRow.getByRole('button', { name: 'Add', exact: true }).click();
     const addedBill = (await addResponse).json().then((data) => data.bill);
     expect(Number((await addedBill).total)).toBeGreaterThan(Number(patchedBill.total));
-    await expect(page.getByTestId('payment-charge-payment_addon').getByRole('button', { name: 'Remove', exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByTestId('payment-charge-payment_addon')
+        .getByRole('button', { name: 'Remove', exact: true }),
+    ).toBeVisible();
     expect(detailBillReads).toBe(0);
 
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
@@ -419,14 +508,19 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     };
     let paymentRequestsAfterUncertainUpdate = 0;
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         paymentRequestsAfterUncertainUpdate += 1;
       }
     });
     await page.route(chargeRoute, losePatchResponse);
-    const lostPatchRequest = page.waitForEvent('requestfailed', (browserRequest) =>
-      browserRequest.method() === 'PATCH'
-      && new URL(browserRequest.url()).pathname === `/api/bills/${bill.id}/charges`,
+    const lostPatchRequest = page.waitForEvent(
+      'requestfailed',
+      (browserRequest) =>
+        browserRequest.method() === 'PATCH' &&
+        new URL(browserRequest.url()).pathname === `/api/bills/${bill.id}/charges`,
     );
     await serviceRow.getByRole('button', { name: 'Apply', exact: true }).click();
     await lostPatchRequest;
@@ -435,29 +529,42 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     await expect(page.getByRole('button', { name: /^Pay / })).toBeDisabled();
     expect(paymentRequestsAfterUncertainUpdate).toBe(0);
     await page.unroute(chargeRoute, losePatchResponse);
-
   } catch (error) {
     primaryFailure = true;
     throw error;
   } finally {
     const cleanupFailures: unknown[] = [];
-    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      await writeCharges(cleanupRequest, originalCharges);
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     try {
       const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
         headers: managerHeaders,
         data: originalBusiness,
       });
       expect(restoredBusiness.ok()).toBeTruthy();
-    } catch (error) { cleanupFailures.push(error); }
-    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
+      await cleanupRequest.dispose();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (cleanupFailures.length) {
-      if (primaryFailure) console.error('Payment modal cleanup failed after the test error:', cleanupFailures);
+      if (primaryFailure)
+        console.error('Payment modal cleanup failed after the test error:', cleanupFailures);
       else throw cleanupFailures[0];
     }
   }
 });
 
-test('payment modal hides charge controls without bill discount permission', async ({ request, browser }) => {
+test('payment modal hides charge controls without bill discount permission', async ({
+  request,
+  browser,
+}) => {
   test.setTimeout(60_000);
   const originalCharges = await readCharges(request);
   const originalBusiness = await readBusiness(request);
@@ -471,7 +578,12 @@ test('payment modal hides charge controls without bill discount permission', asy
   const testStartedAt = Date.now();
   const requestStartedAt = new WeakMap<Request, number>();
   let restrictedSettingsReads = 0;
-  const apiEvents: Array<{ label: string; method: string; status: number | 'network_error'; elapsedMs: number }> = [];
+  const apiEvents: Array<{
+    label: string;
+    method: string;
+    status: number | 'network_error';
+    elapsedMs: number;
+  }> = [];
   const stages: Array<{ stage: string; phase: 'start' | 'complete'; elapsedMs: number }> = [];
   const appendApiEvent = (event: (typeof apiEvents)[number]) => {
     apiEvents.push(event);
@@ -482,14 +594,23 @@ test('payment modal hides charge controls without bill discount permission', asy
   };
   const safeApiLabel = (browserRequest: Request): string | null => {
     let url: URL;
-    try { url = new URL(browserRequest.url()); } catch { return null; }
+    try {
+      url = new URL(browserRequest.url());
+    } catch {
+      return null;
+    }
     if (url.origin !== new URL(BASE).origin) return null;
     const path = url.pathname;
-    if (path === '/api/bills/generate' && browserRequest.method() === 'POST') return 'bill-generate';
-    if ((/^\/api\/bills\/[^/]+$/.test(path) || /^\/api\/bills\/order\/[^/]+$/.test(path))
-      && browserRequest.method() === 'GET') return 'bill-load';
+    if (path === '/api/bills/generate' && browserRequest.method() === 'POST')
+      return 'bill-generate';
+    if (
+      (/^\/api\/bills\/[^/]+$/.test(path) || /^\/api\/bills\/order\/[^/]+$/.test(path)) &&
+      browserRequest.method() === 'GET'
+    )
+      return 'bill-load';
     if (path === '/api/tax/preview') return 'tax-preview';
-    if (path === '/api/settings/charges' && browserRequest.method() === 'GET') return 'charges-load';
+    if (path === '/api/settings/charges' && browserRequest.method() === 'GET')
+      return 'charges-load';
     return null;
   };
   let primaryFailure = false;
@@ -521,14 +642,28 @@ test('payment modal hides charge controls without bill discount permission', asy
     });
     expect(addOptionalCharge.status()).toBe(200);
     const appliedBill = await addOptionalCharge.json();
-    expect(JSON.parse(appliedBill.bill.charges_breakdown).some((charge: { id: string }) => charge.id === 'payment_addon')).toBe(true);
+    expect(
+      JSON.parse(appliedBill.bill.charges_breakdown).some(
+        (charge: { id: string }) => charge.id === 'payment_addon',
+      ),
+    ).toBe(true);
 
-    const userResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
+    const userResponse = await request.get(`${BASE}/api/authorization/users/e2e-server`, {
+      headers: ownerHeaders,
+    });
     expect(userResponse.ok()).toBeTruthy();
     const originalUser = await userResponse.json();
     originalServerOverrides = originalUser.overrides;
-    const feePermissionIds = new Set(['bills.read', 'bills.generate', 'bills.discount.apply', 'orders.create', 'settings.view']);
-    const overrides = (originalServerOverrides || []).filter((override) => !feePermissionIds.has(override.permission_id));
+    const feePermissionIds = new Set([
+      'bills.read',
+      'bills.generate',
+      'bills.discount.apply',
+      'orders.create',
+      'settings.view',
+    ]);
+    const overrides = (originalServerOverrides || []).filter(
+      (override) => !feePermissionIds.has(override.permission_id),
+    );
     overrides.push(
       { permission_id: 'bills.read', effect: 'allow' },
       { permission_id: 'bills.generate', effect: 'allow' },
@@ -553,7 +688,8 @@ test('payment modal hides charge controls without bill discount permission', asy
     });
     serverPage.on('request', (browserRequest) => {
       const pathname = new URL(browserRequest.url()).pathname;
-      if (pathname === '/api/settings/business' || pathname === '/api/settings/kds_enabled') restrictedSettingsReads++;
+      if (pathname === '/api/settings/business' || pathname === '/api/settings/kds_enabled')
+        restrictedSettingsReads++;
       if (safeApiLabel(browserRequest)) requestStartedAt.set(browserRequest, Date.now());
     });
     serverPage.on('response', (response) => {
@@ -561,14 +697,24 @@ test('payment modal hides charge controls without bill discount permission', asy
       const startedAt = requestStartedAt.get(browserRequest);
       const label = safeApiLabel(browserRequest);
       if (startedAt !== undefined && label) {
-        appendApiEvent({ label, method: browserRequest.method(), status: response.status(), elapsedMs: Date.now() - startedAt });
+        appendApiEvent({
+          label,
+          method: browserRequest.method(),
+          status: response.status(),
+          elapsedMs: Date.now() - startedAt,
+        });
       }
     });
     serverPage.on('requestfailed', (browserRequest) => {
       const startedAt = requestStartedAt.get(browserRequest);
       const label = safeApiLabel(browserRequest);
       if (startedAt !== undefined && label) {
-        appendApiEvent({ label, method: browserRequest.method(), status: 'network_error', elapsedMs: Date.now() - startedAt });
+        appendApiEvent({
+          label,
+          method: browserRequest.method(),
+          status: 'network_error',
+          elapsedMs: Date.now() - startedAt,
+        });
       }
     });
 
@@ -586,11 +732,15 @@ test('payment modal hides charge controls without bill discount permission', asy
       // mounts the page twice and doubles its per-mount settings reads.
       await serverPage!.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/orders');
       await expect(serverPage!.getByPlaceholder(/search/i).first()).toBeVisible();
-      await serverPage!.getByPlaceholder(/search/i).first().fill(order.order_number);
+      await serverPage!
+        .getByPlaceholder(/search/i)
+        .first()
+        .fill(order.order_number);
       await expect(serverPage!.getByText(`#${order.order_number}`)).toBeVisible();
       markStage('staff_login_order_search', 'complete');
     });
-    const staffOrderCard = serverPage.locator('div.bg-card.rounded-xl.border.flex.flex-col')
+    const staffOrderCard = serverPage
+      .locator('div.bg-card.rounded-xl.border.flex.flex-col')
       .filter({ hasText: `#${order.order_number}` });
     await expect(staffOrderCard).toHaveCount(1);
     await expect(staffOrderCard.getByText('Payment Add-on Fee', { exact: true })).toHaveCount(1);
@@ -602,7 +752,9 @@ test('payment modal hides charge controls without bill discount permission', asy
           (response) => {
             try {
               const url = new URL(response.url());
-              return url.pathname === '/api/bills/generate' && response.request().method() === 'POST';
+              return (
+                url.pathname === '/api/bills/generate' && response.request().method() === 'POST'
+              );
             } catch {
               return false;
             }
@@ -614,7 +766,9 @@ test('payment modal hides charge controls without bill discount permission', asy
       expect(billGenerateResponse.ok()).toBeTruthy();
       markStage('staff_checkout_click', 'complete');
       markStage('payment_heading_visible', 'start');
-      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({ timeout: 10000 });
+      await expect(serverPage!.getByRole('heading', { name: 'Payment' })).toBeVisible({
+        timeout: 10000,
+      });
       markStage('payment_heading_visible', 'complete');
       // Orders reads each setting once; Sidebar must not repeat denied reads after auth refresh.
       expect(restrictedSettingsReads).toBeLessThanOrEqual(2);
@@ -628,11 +782,19 @@ test('payment modal hides charge controls without bill discount permission', asy
       markStage('staff_readonly_charge_assertions', 'complete');
     });
 
-    const limitedHeaders = { Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}` };
-    const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, { headers: limitedHeaders });
+    const limitedHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-server', 'server@flo.local', 'server')}`,
+    };
+    const feeDefinitions = await serverPage.request.get(`${BASE}/api/settings/charges`, {
+      headers: limitedHeaders,
+    });
     expect(feeDefinitions.status()).toBe(200);
-    expect((await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id)).toContain('payment_required');
-    const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, { headers: limitedHeaders });
+    expect(
+      (await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id),
+    ).toContain('payment_required');
+    const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, {
+      headers: limitedHeaders,
+    });
     expect(settingsDenied.status()).toBe(403);
     const forbiddenUpdate = await serverPage.request.patch(`${BASE}/api/bills/${bill.id}/charges`, {
       headers: limitedHeaders,
@@ -644,13 +806,20 @@ test('payment modal hides charge controls without bill discount permission', asy
     if (serverPage) {
       try {
         const orderCard = orderNumber
-          ? serverPage.locator('div.bg-card.rounded-xl.border.flex.flex-col').filter({ hasText: `#${orderNumber}` })
+          ? serverPage
+              .locator('div.bg-card.rounded-xl.border.flex.flex-col')
+              .filter({ hasText: `#${orderNumber}` })
           : null;
         const diagnostics = {
           elapsedMs: Date.now() - testStartedAt,
           orderCardCount: orderCard ? await orderCard.count() : 0,
-          checkoutButtonCount: orderCard ? await orderCard.getByRole('button', { name: 'Checkout', exact: true }).count() : 0,
-          paymentHeadingVisible: await serverPage.getByRole('heading', { name: 'Payment' }).isVisible().catch(() => false),
+          checkoutButtonCount: orderCard
+            ? await orderCard.getByRole('button', { name: 'Checkout', exact: true }).count()
+            : 0,
+          paymentHeadingVisible: await serverPage
+            .getByRole('heading', { name: 'Payment' })
+            .isVisible()
+            .catch(() => false),
           dialogCount: await serverPage.getByRole('dialog').count(),
           stages,
           apiEvents,
@@ -663,10 +832,17 @@ test('payment modal hides charge controls without bill discount permission', asy
     throw error;
   } finally {
     const cleanupFailures: unknown[] = [];
-    try { await serverContext?.close(); } catch (error) { cleanupFailures.push(error); }
+    try {
+      await serverContext?.close();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (serverPermissionsChanged && originalServerOverrides) {
       try {
-        const latestResponse = await cleanupRequest.get(`${BASE}/api/authorization/users/e2e-server`, { headers: ownerHeaders });
+        const latestResponse = await cleanupRequest.get(
+          `${BASE}/api/authorization/users/e2e-server`,
+          { headers: ownerHeaders },
+        );
         expect(latestResponse.ok()).toBeTruthy();
         const latestUser = await latestResponse.json();
         const restored = await cleanupRequest.put(`${BASE}/api/authorization/users/e2e-server`, {
@@ -674,19 +850,32 @@ test('payment modal hides charge controls without bill discount permission', asy
           data: { revision: latestUser.revision, overrides: originalServerOverrides },
         });
         expect(restored.ok()).toBeTruthy();
-      } catch (error) { cleanupFailures.push(error); }
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
     }
-    try { await writeCharges(cleanupRequest, originalCharges); } catch (error) { cleanupFailures.push(error); }
+    try {
+      await writeCharges(cleanupRequest, originalCharges);
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     try {
       const restoredBusiness = await cleanupRequest.put(`${BASE}/api/settings/business`, {
         headers: managerHeaders,
         data: originalBusiness,
       });
       expect(restoredBusiness.ok()).toBeTruthy();
-    } catch (error) { cleanupFailures.push(error); }
-    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
+      await cleanupRequest.dispose();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (cleanupFailures.length) {
-      if (primaryFailure) console.error('Staff payment modal cleanup failed after the test error:', cleanupFailures);
+      if (primaryFailure)
+        console.error('Staff payment modal cleanup failed after the test error:', cleanupFailures);
       else throw cleanupFailures[0];
     }
   }

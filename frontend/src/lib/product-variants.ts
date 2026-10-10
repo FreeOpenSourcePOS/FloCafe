@@ -30,7 +30,9 @@ export function scannedVariantNeedsCustomizer(
   variant: ProductVariant,
 ): boolean {
   const needsRequiredSelection = (product.addon_groups || []).some((group) => {
-    const requiredMin = group.is_required ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+    const requiredMin = group.is_required
+      ? Math.max(1, group.min_selection || 1)
+      : group.min_selection || 0;
     return requiredMin > 0;
   });
   return needsRequiredSelection || isVariantSoldOut(variant);
@@ -67,9 +69,11 @@ export function selectDefaultVariant(
   variants: ProductVariant[],
   initialVariantId?: string | null,
 ): ProductVariant | null {
-  return variants.find((variant) => variant.id === initialVariantId && !isVariantSoldOut(variant))
-    ?? variants.find((variant) => !isVariantSoldOut(variant))
-    ?? null;
+  return (
+    variants.find((variant) => variant.id === initialVariantId && !isVariantSoldOut(variant)) ??
+    variants.find((variant) => !isVariantSoldOut(variant)) ??
+    null
+  );
 }
 
 /** Editable state for one row of the back-office variants table. */
@@ -150,7 +154,10 @@ export function toVariantRows(variants: ProductVariant[] | null | undefined): Pr
     id: variant.id,
     name: variant.name,
     price: String(variant.price),
-    online_price: variant.online_price === null || variant.online_price === undefined ? '' : String(variant.online_price),
+    online_price:
+      variant.online_price === null || variant.online_price === undefined
+        ? ''
+        : String(variant.online_price),
     sku: variant.sku ?? '',
     barcode: variant.barcode ?? '',
     stock_quantity: String(variant.stock_quantity ?? 0),
@@ -176,10 +183,13 @@ export function isPositiveRecipeMultiplier(value: string): boolean {
 }
 
 export function hasInvalidVariantRow(rows: ProductVariantRow[]): boolean {
-  return rows.some((row) => row.name.trim() === ''
-    || row.price === ''
-    || !Number.isFinite(Number(row.price))
-    || !isPositiveRecipeMultiplier(row.recipe_multiplier));
+  return rows.some(
+    (row) =>
+      row.name.trim() === '' ||
+      row.price === '' ||
+      !Number.isFinite(Number(row.price)) ||
+      !isPositiveRecipeMultiplier(row.recipe_multiplier),
+  );
 }
 
 /**
@@ -192,24 +202,30 @@ export function hasInvalidVariantRow(rows: ProductVariantRow[]): boolean {
  * unless the merchant edited them. Active rows always travel, because the API
  * reads an omitted active row as removed.
  */
-export function buildVariantsPayload(rows: ProductVariantRow[], maxDecimals: number): ProductVariantPayload[] {
+export function buildVariantsPayload(
+  rows: ProductVariantRow[],
+  maxDecimals: number,
+): ProductVariantPayload[] {
   return rows
     .map((row, index) => ({ row, index }))
     .filter(({ row }) => row.is_active || row.id === null || row.touched)
     .map(({ row, index }) => {
       const stockQuantity = Math.max(0, Number(row.stock_quantity) || 0);
-      const loadedStockQuantity = row.loaded_stock_quantity !== null
-        ? Math.max(0, Number(row.loaded_stock_quantity) || 0)
-        : null;
-      const stockUnchanged = row.id !== null
-        && loadedStockQuantity !== null
-        && stockQuantity === loadedStockQuantity;
+      const loadedStockQuantity =
+        row.loaded_stock_quantity !== null
+          ? Math.max(0, Number(row.loaded_stock_quantity) || 0)
+          : null;
+      const stockUnchanged =
+        row.id !== null && loadedStockQuantity !== null && stockQuantity === loadedStockQuantity;
 
       return {
         ...(row.id ? { id: row.id } : {}),
         name: row.name.trim(),
         price: roundCurrencyValue(Number(row.price), maxDecimals),
-        online_price: row.online_price === '' ? null : roundCurrencyValue(Number(row.online_price), maxDecimals),
+        online_price:
+          row.online_price === ''
+            ? null
+            : roundCurrencyValue(Number(row.online_price), maxDecimals),
         sku: row.sku.trim() || null,
         barcode: row.barcode.trim() || null,
         // Stock is absolute on the server: resubmitting the value the editor
@@ -230,7 +246,11 @@ export function buildVariantsPayload(rows: ProductVariantRow[], maxDecimals: num
 }
 
 /** Returns the same array reference when the move would fall outside the table. */
-export function moveVariantRow(rows: ProductVariantRow[], index: number, offset: -1 | 1): ProductVariantRow[] {
+export function moveVariantRow(
+  rows: ProductVariantRow[],
+  index: number,
+  offset: -1 | 1,
+): ProductVariantRow[] {
   const target = index + offset;
   if (target < 0 || target >= rows.length) return rows;
   const next = [...rows];

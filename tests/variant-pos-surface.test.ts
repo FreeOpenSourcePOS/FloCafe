@@ -29,23 +29,30 @@ const originalResolveFilename = moduleApi._resolveFilename;
 const zustandPath = frontendRequire.resolve('zustand');
 /** Resolve a bare specifier from the frontend install (react, use-intl, ...). */
 function resolveFrontendPackage(request: string): string | null {
-  if (request.startsWith('.') || path.isAbsolute(request) || request.startsWith('node:')) return null;
+  if (request.startsWith('.') || path.isAbsolute(request) || request.startsWith('node:'))
+    return null;
   try {
     return frontendRequire.resolve(request);
   } catch {
     return null;
   }
 }
-moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-  const resolvedRequest = request === 'zustand'
-    ? zustandPath
-    : request === '@countries'
-      ? path.resolve(ROOT, 'main/countries.ts')
-      : request.startsWith('@/')
-        ? path.resolve(ROOT, 'frontend/src', request.slice(2))
-        : request.startsWith('@print/')
-          ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
-          : resolveFrontendPackage(request) ?? request;
+moduleApi._resolveFilename = function (
+  request: string,
+  parent: any,
+  isMain: boolean,
+  options?: any,
+) {
+  const resolvedRequest =
+    request === 'zustand'
+      ? zustandPath
+      : request === '@countries'
+        ? path.resolve(ROOT, 'main/countries.ts')
+        : request.startsWith('@/')
+          ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+          : request.startsWith('@print/')
+            ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
+            : (resolveFrontendPackage(request) ?? request);
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 
@@ -92,8 +99,14 @@ function product(overrides: Record<string, unknown> = {}) {
 
 const business = { name: 'Flo Test Cafe', country: 'US', currency: 'USD' };
 const bill = {
-  bill_number: 'INV-1', subtotal: 11, discount_amount: 0, tax_amount: 0,
-  total: 11, delivery_charge: 0, packaging_charge: 0, tax_components: [],
+  bill_number: 'INV-1',
+  subtotal: 11,
+  discount_amount: 0,
+  tax_amount: 0,
+  total: 11,
+  delivery_charge: 0,
+  packaging_charge: 0,
+  tax_components: [],
   payment_details: null,
 };
 
@@ -115,10 +128,18 @@ function receiptItem(variantSelection: unknown) {
 // ---------------------------------------------------------------------------
 {
   const heading = (variantSelection: unknown) =>
-    buildBillPrintData({ order_number: 'A1', items: [receiptItem(variantSelection)] }, bill, business, false)
-      .order.items[0].productName;
+    buildBillPrintData(
+      { order_number: 'A1', items: [receiptItem(variantSelection)] },
+      bill,
+      business,
+      false,
+    ).order.items[0].productName;
 
-  assert.equal(heading(JSON.stringify(variant())), 'Cappuccino (Large)', 'a receipt line names the variant sold');
+  assert.equal(
+    heading(JSON.stringify(variant())),
+    'Cappuccino (Large)',
+    'a receipt line names the variant sold',
+  );
   assert.equal(
     heading(JSON.stringify(variant({ sku: 'CAP-LG' }))),
     'Cappuccino (Large) [CAP-LG]',
@@ -129,10 +150,26 @@ function receiptItem(variantSelection: unknown) {
     'Cappuccino (Large)',
     'a variant snapshot stored as an object prints the same heading as the JSON form',
   );
-  assert.equal(heading(undefined), 'Cappuccino', 'an item with no variant prints exactly the product name');
-  assert.equal(heading(null), 'Cappuccino', 'a null variant snapshot prints exactly the product name');
-  assert.equal(heading('null'), 'Cappuccino', 'a JSON null variant snapshot prints exactly the product name');
-  assert.equal(heading('not json'), 'Cappuccino', 'an unparseable variant snapshot prints exactly the product name');
+  assert.equal(
+    heading(undefined),
+    'Cappuccino',
+    'an item with no variant prints exactly the product name',
+  );
+  assert.equal(
+    heading(null),
+    'Cappuccino',
+    'a null variant snapshot prints exactly the product name',
+  );
+  assert.equal(
+    heading('null'),
+    'Cappuccino',
+    'a JSON null variant snapshot prints exactly the product name',
+  );
+  assert.equal(
+    heading('not json'),
+    'Cappuccino',
+    'an unparseable variant snapshot prints exactly the product name',
+  );
   assert.equal(
     heading(JSON.stringify({ id: 'var-large', price: 5.5 })),
     'Cappuccino',
@@ -150,22 +187,36 @@ function receiptItem(variantSelection: unknown) {
 // ---------------------------------------------------------------------------
 {
   const heading = (variantSelection: unknown) =>
-    buildKotPrintData({ order_number: 'A1' }, [{
-      product_name: 'Cappuccino',
-      quantity: 1,
-      status: 'pending',
-      addons: [],
-      special_instructions: '',
-      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
-    }], 'Grill').items[0].productName;
+    buildKotPrintData(
+      { order_number: 'A1' },
+      [
+        {
+          product_name: 'Cappuccino',
+          quantity: 1,
+          status: 'pending',
+          addons: [],
+          special_instructions: '',
+          ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+        },
+      ],
+      'Grill',
+    ).items[0].productName;
 
-  assert.equal(heading(JSON.stringify(variant())), 'Cappuccino (Large)', 'a KOT line names the variant sold');
+  assert.equal(
+    heading(JSON.stringify(variant())),
+    'Cappuccino (Large)',
+    'a KOT line names the variant sold',
+  );
   assert.equal(
     heading(JSON.stringify(variant({ sku: 'CAP-LG' }))),
     'Cappuccino (Large) [CAP-LG]',
     'a KOT line carries the variant SKU when one is defined',
   );
-  assert.equal(heading(undefined), 'Cappuccino', 'a KOT item with no variant prints exactly the product name');
+  assert.equal(
+    heading(undefined),
+    'Cappuccino',
+    'a KOT item with no variant prints exactly the product name',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -235,8 +286,17 @@ function receiptItem(variantSelection: unknown) {
 {
   const tracked = variant({ id: 'tracked-zero', track_inventory: true, stock_quantity: 0 });
   const trackedStocked = variant({ id: 'tracked-stock', track_inventory: true, stock_quantity: 4 });
-  const untrackedZero = variant({ id: 'untracked-zero', track_inventory: false, stock_quantity: 0 });
-  const inactiveSoldOut = variant({ id: 'inactive', track_inventory: true, stock_quantity: 0, is_active: false });
+  const untrackedZero = variant({
+    id: 'untracked-zero',
+    track_inventory: false,
+    stock_quantity: 0,
+  });
+  const inactiveSoldOut = variant({
+    id: 'inactive',
+    track_inventory: true,
+    stock_quantity: 0,
+    is_active: false,
+  });
   const recipeZero = variant({
     id: 'recipe-zero',
     track_inventory: true,
@@ -263,14 +323,45 @@ function receiptItem(variantSelection: unknown) {
 
   // A scanned variant goes straight to the cart only when nothing about it
   // needs the customizer; otherwise the cashier picks there.
-  const requiredGroup = { id: 'g-size', name: 'Size', is_required: true, min_selection: 1, max_selection: 1, sort_order: 0, is_active: true };
-  const optionalGroup = { id: 'g-note', name: 'Extras', is_required: false, min_selection: 0, max_selection: 3, sort_order: 1, is_active: true };
+  const requiredGroup = {
+    id: 'g-size',
+    name: 'Size',
+    is_required: true,
+    min_selection: 1,
+    max_selection: 1,
+    sort_order: 0,
+    is_active: true,
+  };
+  const optionalGroup = {
+    id: 'g-note',
+    name: 'Extras',
+    is_required: false,
+    min_selection: 0,
+    max_selection: 3,
+    sort_order: 1,
+    is_active: true,
+  };
   for (const [label, product_, variant_, expected] of [
     ['a plain variant', product(), untrackedZero, false],
-    ['a product with a required group', product({ addon_groups: [requiredGroup] }), untrackedZero, true],
-    ['a product with only optional groups', product({ addon_groups: [optionalGroup] }), untrackedZero, false],
+    [
+      'a product with a required group',
+      product({ addon_groups: [requiredGroup] }),
+      untrackedZero,
+      true,
+    ],
+    [
+      'a product with only optional groups',
+      product({ addon_groups: [optionalGroup] }),
+      untrackedZero,
+      false,
+    ],
     ['a sold-out variant', product(), tracked, true],
-    ['a sold-out variant on a product with a required group', product({ addon_groups: [requiredGroup] }), tracked, true],
+    [
+      'a sold-out variant on a product with a required group',
+      product({ addon_groups: [requiredGroup] }),
+      tracked,
+      true,
+    ],
     ['a recipe-linked variant at zero own stock', product(), recipeZero, false],
   ] as const) {
     assert.equal(
@@ -286,8 +377,18 @@ function receiptItem(variantSelection: unknown) {
     ['a still-sellable line variant is kept', lineup, 'tracked-stock', 'tracked-stock'],
     ['a sold-out line variant is not kept', lineup, 'tracked-zero', 'untracked-zero'],
     ['the only sellable variant wins', [tracked, untrackedZero], undefined, 'untracked-zero'],
-    ['every variant sold out', [tracked, variant({ id: 'z', track_inventory: true, stock_quantity: 0 })], undefined, null],
-    ['a recipe variant is sellable at zero own stock', [tracked, recipeZero], undefined, 'recipe-zero'],
+    [
+      'every variant sold out',
+      [tracked, variant({ id: 'z', track_inventory: true, stock_quantity: 0 })],
+      undefined,
+      null,
+    ],
+    [
+      'a recipe variant is sellable at zero own stock',
+      [tracked, recipeZero],
+      undefined,
+      'recipe-zero',
+    ],
     ['no variants at all', [], 'anything', null],
   ] as const) {
     const chosen = selectDefaultVariant(variants, initialId);
@@ -299,19 +400,47 @@ function receiptItem(variantSelection: unknown) {
 // 1-tap add routing: only a product with nothing to choose skips the customizer
 // ---------------------------------------------------------------------------
 {
-  const activeGroup = { id: 'g-milk', name: 'Milk', is_required: false, min_selection: 0, max_selection: 1, sort_order: 0, is_active: true };
+  const activeGroup = {
+    id: 'g-milk',
+    name: 'Milk',
+    is_required: false,
+    min_selection: 0,
+    max_selection: 1,
+    sort_order: 0,
+    is_active: true,
+  };
   const inactiveGroup = { ...activeGroup, id: 'g-retired', is_active: false };
 
   for (const [label, input, expected] of [
     ['a product with nothing to choose', product(), false],
     ['a product with no variants array', product({ variants: null }), false],
-    ['an out-of-stock simple product', product({ track_inventory: true, stock_quantity: 0 }), false],
+    [
+      'an out-of-stock simple product',
+      product({ track_inventory: true, stock_quantity: 0 }),
+      false,
+    ],
     ['a product with an active variant', product({ variants: [variant()] }), true],
-    ['a product whose only variants are inactive', product({ variants: [variant({ is_active: false })] }), false],
+    [
+      'a product whose only variants are inactive',
+      product({ variants: [variant({ is_active: false })] }),
+      false,
+    ],
     ['a product with an active add-on group', product({ addon_groups: [activeGroup] }), true],
-    ['a product whose only add-on group is inactive', product({ addon_groups: [inactiveGroup] }), false],
-    ['a sold by weight product', product({ allow_fractional_quantity: true, sale_unit: 'kg', weight_precision: 3 }), true],
-    ['a fractional flag on a sold by each product', product({ allow_fractional_quantity: true, sale_unit: 'each' }), false],
+    [
+      'a product whose only add-on group is inactive',
+      product({ addon_groups: [inactiveGroup] }),
+      false,
+    ],
+    [
+      'a sold by weight product',
+      product({ allow_fractional_quantity: true, sale_unit: 'kg', weight_precision: 3 }),
+      true,
+    ],
+    [
+      'a fractional flag on a sold by each product',
+      product({ allow_fractional_quantity: true, sale_unit: 'each' }),
+      false,
+    ],
   ] as const) {
     assert.equal(productNeedsCustomizer(input), expected, `1-tap add routing: ${label}`);
   }
@@ -340,7 +469,16 @@ function receiptItem(variantSelection: unknown) {
 
   const withAddons = cartItemToOrderItem({
     ...baseItem,
-    addons: [{ id: 'addon-1', addon_group_id: 'g1', name: 'Oat milk', price: 40, is_active: true, sort_order: 0 }],
+    addons: [
+      {
+        id: 'addon-1',
+        addon_group_id: 'g1',
+        name: 'Oat milk',
+        price: 40,
+        is_active: true,
+        sort_order: 0,
+      },
+    ],
   });
   assert.deepEqual(
     withAddons.addons,
@@ -362,7 +500,11 @@ function receiptItem(variantSelection: unknown) {
   for (const [label, input, expected] of [
     ['JSON text snapshot', JSON.stringify(variant()), 'Cappuccino (Large)'],
     ['object snapshot', variant(), 'Cappuccino (Large)'],
-    ['snapshot with a SKU', JSON.stringify(variant({ sku: 'CAP-LG' })), 'Cappuccino (Large) [CAP-LG]'],
+    [
+      'snapshot with a SKU',
+      JSON.stringify(variant({ sku: 'CAP-LG' })),
+      'Cappuccino (Large) [CAP-LG]',
+    ],
     ['no snapshot', undefined, 'Cappuccino'],
     ['null snapshot', null, 'Cappuccino'],
     ['JSON null snapshot', 'null', 'Cappuccino'],
@@ -381,19 +523,29 @@ function receiptItem(variantSelection: unknown) {
   const slipHeading = (variantSelection: unknown) =>
     buildDeliverySlipPrintData(
       { order_number: 'D1' },
-      [{
-        product_name: 'Cappuccino',
-        quantity: 2,
-        status: 'pending',
-        addons: [],
-        special_instructions: '',
-        ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
-      }],
+      [
+        {
+          product_name: 'Cappuccino',
+          quantity: 2,
+          status: 'pending',
+          addons: [],
+          special_instructions: '',
+          ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+        },
+      ],
       {},
     ).items[0].productName;
 
-  assert.equal(slipHeading(JSON.stringify(variant())), 'Cappuccino (Large)', 'a delivery slip line names the variant sold');
-  assert.equal(slipHeading(undefined), 'Cappuccino', 'a delivery slip item with no variant prints exactly the product name');
+  assert.equal(
+    slipHeading(JSON.stringify(variant())),
+    'Cappuccino (Large)',
+    'a delivery slip line names the variant sold',
+  );
+  assert.equal(
+    slipHeading(undefined),
+    'Cappuccino',
+    'a delivery slip item with no variant prints exactly the product name',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -408,21 +560,42 @@ function receiptItem(variantSelection: unknown) {
     order_number: 'A1',
     type: 'dine_in',
     created_at: '2026-08-21 18:42:00',
-    items: [{
-      product_name: 'Cappuccino',
-      quantity: 1,
-      status: 'pending',
-      addons: [],
-      special_instructions: '',
-      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
-    }],
+    items: [
+      {
+        product_name: 'Cappuccino',
+        quantity: 1,
+        status: 'pending',
+        addons: [],
+        special_instructions: '',
+        ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+      },
+    ],
   });
   const kotText = (variantSelection: unknown) =>
-    escPosToText(Buffer.from(fe.kotEncoder.buildKotBytes(kotOrder(variantSelection) as any, { paperWidth: 80, language: 'en' })));
-  assert.ok(kotText(snapshot).includes('1x Cappuccino (Large)'), 'the WebUSB KOT names the variant sold');
-  assert.ok(kotText(snapshotWithSku).includes('Cappuccino (Large) [CAP-LG]'), 'the WebUSB KOT carries the variant SKU');
-  assert.ok(kotText(undefined).includes('1x Cappuccino'), 'a KOT item with no variant prints exactly the product name');
-  assert.ok(!kotText(undefined).includes('(Large)'), 'a KOT item with no variant invents no variant heading');
+    escPosToText(
+      Buffer.from(
+        fe.kotEncoder.buildKotBytes(kotOrder(variantSelection) as any, {
+          paperWidth: 80,
+          language: 'en',
+        }),
+      ),
+    );
+  assert.ok(
+    kotText(snapshot).includes('1x Cappuccino (Large)'),
+    'the WebUSB KOT names the variant sold',
+  );
+  assert.ok(
+    kotText(snapshotWithSku).includes('Cappuccino (Large) [CAP-LG]'),
+    'the WebUSB KOT carries the variant SKU',
+  );
+  assert.ok(
+    kotText(undefined).includes('1x Cappuccino'),
+    'a KOT item with no variant prints exactly the product name',
+  );
+  assert.ok(
+    !kotText(undefined).includes('(Large)'),
+    'a KOT item with no variant invents no variant heading',
+  );
 
   const taxBill = (variantSelection: unknown) => ({
     bill_number: 'INV-1',
@@ -445,39 +618,78 @@ function receiptItem(variantSelection: unknown) {
     },
   });
   const taxBillText = (variantSelection: unknown) =>
-    escPosToText(fe.taxBillEncoder.buildTaxBillBytes(
-      taxBill(variantSelection) as any,
-      { business_name: 'Flo Test Cafe', currency: 'USD', country: 'US' } as any,
-      { paperWidth: 80, rawEscPos: true, language: 'en' },
-    ));
-  assert.ok(taxBillText(snapshot).includes('Cappuccino (Large)'), 'the WebUSB tax bill names the variant sold');
-  assert.ok(!taxBillText(undefined).includes('(Large)'), 'a tax-bill line with no variant prints exactly the product name');
+    escPosToText(
+      fe.taxBillEncoder.buildTaxBillBytes(
+        taxBill(variantSelection) as any,
+        { business_name: 'Flo Test Cafe', currency: 'USD', country: 'US' } as any,
+        { paperWidth: 80, rawEscPos: true, language: 'en' },
+      ),
+    );
+  assert.ok(
+    taxBillText(snapshot).includes('Cappuccino (Large)'),
+    'the WebUSB tax bill names the variant sold',
+  );
+  assert.ok(
+    !taxBillText(undefined).includes('(Large)'),
+    'a tax-bill line with no variant prints exactly the product name',
+  );
 
   const slipOrder = { order_number: 'D1', created_at: '2026-08-21 18:42:00', type: 'delivery' };
-  const slipItems = (variantSelection: unknown) => [{
-    product_name: 'Cappuccino',
-    quantity: 2,
-    ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
-  }];
+  const slipItems = (variantSelection: unknown) => [
+    {
+      product_name: 'Cappuccino',
+      quantity: 2,
+      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+    },
+  ];
   const contact = { name: 'Asha Kumar', phone: '+91 98765 43210', address: '12 Marine Road' };
 
   const slipBytesText = (variantSelection: unknown) =>
-    escPosToText(Buffer.from(fe.deliverySlipEncoder.buildDeliverySlipBytes(
-      slipOrder as any, slipItems(variantSelection) as any, contact, { paperWidth: 80, language: 'en' }, [],
-    )));
-  assert.ok(slipBytesText(snapshot).includes('2x  Cappuccino (Large)'), 'the WebUSB delivery slip names the variant sold');
-  assert.ok(!slipBytesText(undefined).includes('(Large)'), 'a delivery slip item with no variant prints exactly the product name');
+    escPosToText(
+      Buffer.from(
+        fe.deliverySlipEncoder.buildDeliverySlipBytes(
+          slipOrder as any,
+          slipItems(variantSelection) as any,
+          contact,
+          { paperWidth: 80, language: 'en' },
+          [],
+        ),
+      ),
+    );
+  assert.ok(
+    slipBytesText(snapshot).includes('2x  Cappuccino (Large)'),
+    'the WebUSB delivery slip names the variant sold',
+  );
+  assert.ok(
+    !slipBytesText(undefined).includes('(Large)'),
+    'a delivery slip item with no variant prints exactly the product name',
+  );
 
   const slipHtml = (variantSelection: unknown) =>
     fe.deliverySlipWebPrint.generateDeliverySlipHtml(
-      slipOrder as any, slipItems(variantSelection) as any, contact, { paperWidth: 80, language: 'en' },
+      slipOrder as any,
+      slipItems(variantSelection) as any,
+      contact,
+      { paperWidth: 80, language: 'en' },
     );
-  assert.ok(slipHtml(snapshot).includes('2x Cappuccino (Large)'), 'the browser delivery slip names the variant sold');
-  assert.ok(!slipHtml(undefined).includes('(Large)'), 'a browser delivery slip item with no variant prints exactly the product name');
+  assert.ok(
+    slipHtml(snapshot).includes('2x Cappuccino (Large)'),
+    'the browser delivery slip names the variant sold',
+  );
+  assert.ok(
+    !slipHtml(undefined).includes('(Large)'),
+    'a browser delivery slip item with no variant prints exactly the product name',
+  );
 
   const orderSlipLabels = {
-    title: 'Order', subtotal: 'Subtotal', discount: 'Discount', serviceCharge: 'Service',
-    deliveryCharge: 'Delivery', packagingCharge: 'Packaging', tax: 'Tax', total: 'Total',
+    title: 'Order',
+    subtotal: 'Subtotal',
+    discount: 'Discount',
+    serviceCharge: 'Service',
+    deliveryCharge: 'Delivery',
+    packagingCharge: 'Packaging',
+    tax: 'Tax',
+    total: 'Total',
   };
   const orderSlip = (variantSelection: unknown) => ({
     order_number: 'A1',
@@ -489,20 +701,32 @@ function receiptItem(variantSelection: unknown) {
     delivery_charge: 0,
     packaging_charge: 0,
     total: 11,
-    items: [{
-      product_name: 'Cappuccino',
-      quantity: 2,
-      unit_price: 5.5,
-      subtotal: 11,
-      addons: [],
-      special_instructions: '',
-      ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
-    }],
+    items: [
+      {
+        product_name: 'Cappuccino',
+        quantity: 2,
+        unit_price: 5.5,
+        subtotal: 11,
+        addons: [],
+        special_instructions: '',
+        ...(variantSelection === undefined ? {} : { variant_selection: variantSelection }),
+      },
+    ],
   });
   const orderSlipHtml = (variantSelection: unknown) =>
-    fe.orderSlipWebPrint.generateOrderSlipHtml(orderSlip(variantSelection) as any, orderSlipLabels, { paperWidth: 80, language: 'en' });
-  assert.ok(orderSlipHtml(snapshot).includes('2x Cappuccino (Large)'), 'the browser order slip names the variant sold');
-  assert.ok(!orderSlipHtml(undefined).includes('(Large)'), 'an order slip line with no variant prints exactly the product name');
+    fe.orderSlipWebPrint.generateOrderSlipHtml(
+      orderSlip(variantSelection) as any,
+      orderSlipLabels,
+      { paperWidth: 80, language: 'en' },
+    );
+  assert.ok(
+    orderSlipHtml(snapshot).includes('2x Cappuccino (Large)'),
+    'the browser order slip names the variant sold',
+  );
+  assert.ok(
+    !orderSlipHtml(undefined).includes('(Large)'),
+    'an order slip line with no variant prints exactly the product name',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -543,9 +767,10 @@ function receiptItem(variantSelection: unknown) {
 
   // Production presentation context: the real message bundle and a no-op error
   // sink (missing keys are not what this suite is asserting).
-  const render = (element: any) => ReactDOMServer.renderToStaticMarkup(
-    React.createElement(IntlProvider, { locale: 'en', messages, onError: () => {} }, element),
-  );
+  const render = (element: any) =>
+    ReactDOMServer.renderToStaticMarkup(
+      React.createElement(IntlProvider, { locale: 'en', messages, onError: () => {} }, element),
+    );
 
   const soldVariant = { id: 'var-large', name: 'Large', price: 5.5, sku: 'CAP-LG' };
   const orderItem = {
@@ -608,12 +833,21 @@ function receiptItem(variantSelection: unknown) {
 
   const heading = 'Cappuccino (Large) [CAP-LG]';
   const cardMarkup = render(React.createElement(OrderCard, orderProps));
-  assert.ok(cardMarkup.includes(heading), 'an order card line names the variant sold, not just the product');
-  assert.ok(cardMarkup.includes(`title="${heading}"`), 'the order card tooltip names the variant too');
+  assert.ok(
+    cardMarkup.includes(heading),
+    'an order card line names the variant sold, not just the product',
+  );
+  assert.ok(
+    cardMarkup.includes(`title="${heading}"`),
+    'the order card tooltip names the variant too',
+  );
 
   const panelMarkup = render(React.createElement(OrderDetailPanel, orderProps));
   assert.ok(panelMarkup.includes(heading), 'the order detail line names the variant sold');
-  assert.ok(panelMarkup.includes(`title="${heading}"`), 'the order detail tooltip names the variant too');
+  assert.ok(
+    panelMarkup.includes(`title="${heading}"`),
+    'the order detail tooltip names the variant too',
+  );
 
   const variantProduct = {
     id: 'prod-1',
@@ -621,16 +855,32 @@ function receiptItem(variantSelection: unknown) {
     price: 500,
     is_active: true,
     addon_groups: [],
-    variants: [variant({ price: 500, online_price: 550, track_inventory: true, stock_quantity: 4 })],
+    variants: [
+      variant({ price: 500, online_price: 550, track_inventory: true, stock_quantity: 4 }),
+    ],
   };
-  const addonProps = { product: variantProduct, currency: 'USD', country: 'US', onAdd: () => {}, onClose: () => {} };
-  const onlineMarkup = render(React.createElement(AddonModal, { ...addonProps, onlinePlatformSelected: true }));
+  const addonProps = {
+    product: variantProduct,
+    currency: 'USD',
+    country: 'US',
+    onAdd: () => {},
+    onClose: () => {},
+  };
+  const onlineMarkup = render(
+    React.createElement(AddonModal, { ...addonProps, onlinePlatformSelected: true }),
+  );
   assert.ok(onlineMarkup.includes('$550.00'), 'an online customizer quotes the platform price');
-  assert.ok(!onlineMarkup.includes('$500.00'), 'the counter price does not leak into an online quote');
+  assert.ok(
+    !onlineMarkup.includes('$500.00'),
+    'the counter price does not leak into an online quote',
+  );
 
   const counterMarkup = render(React.createElement(AddonModal, addonProps));
   assert.ok(counterMarkup.includes('$500.00'), 'a counter customizer quotes the counter price');
-  assert.ok(!counterMarkup.includes('$550.00'), 'the platform price does not leak into a counter quote');
+  assert.ok(
+    !counterMarkup.includes('$550.00'),
+    'the platform price does not leak into a counter quote',
+  );
 }
 
 console.log('✓ variant POS surface checks passed');

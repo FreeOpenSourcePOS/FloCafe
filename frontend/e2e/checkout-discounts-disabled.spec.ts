@@ -88,7 +88,9 @@ async function writeCharges(request: APIRequestContext, charges: unknown[]): Pro
   expect(response.ok()).toBeTruthy();
 }
 
-async function createTakeawayOrder(request: APIRequestContext): Promise<{ id: number; order_number: string }> {
+async function createTakeawayOrder(
+  request: APIRequestContext,
+): Promise<{ id: number; order_number: string }> {
   const response = await request.post(`${BASE}/api/orders`, {
     headers: managerHeaders,
     data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
@@ -107,14 +109,21 @@ async function login(page: Page): Promise<void> {
 }
 
 /** Orders opens the payment modal for this order; the caller owns the assertions. */
-async function openCheckout(page: Page, orderNumber: string, waitForModalSettings = true): Promise<void> {
+async function openCheckout(
+  page: Page,
+  orderNumber: string,
+  waitForModalSettings = true,
+): Promise<void> {
   const ordersSettingsResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.request().method() === 'GET' && url.pathname === '/api/settings/discount';
   });
   await page.goto(`${BASE}/orders`);
   expect((await ordersSettingsResponse).ok()).toBeTruthy();
-  await page.getByPlaceholder(/search/i).first().fill(orderNumber);
+  await page
+    .getByPlaceholder(/search/i)
+    .first()
+    .fill(orderNumber);
   await expect(page.getByText(`#${orderNumber}`)).toBeVisible();
   const checkoutButton = page.getByRole('button', { name: 'Checkout', exact: true });
   if (waitForModalSettings) {
@@ -131,7 +140,8 @@ async function openCheckout(page: Page, orderNumber: string, waitForModalSetting
 }
 
 const recoveryScreen = (page: Page) => page.getByText('Something went wrong', { exact: true });
-const discountToggle = (page: Page) => page.getByRole('button', { name: /^(Apply Discount|Discount:)/ });
+const discountToggle = (page: Page) =>
+  page.getByRole('button', { name: /^(Apply Discount|Discount:)/ });
 
 /**
  * The recovery boundary auto-retries after 2s, so a render loop surfaces as a
@@ -173,7 +183,9 @@ type BillRecord = {
 };
 
 async function readBill(request: APIRequestContext, orderId: number): Promise<BillRecord> {
-  const response = await request.get(`${BASE}/api/bills/order/${orderId}`, { headers: managerHeaders });
+  const response = await request.get(`${BASE}/api/bills/order/${orderId}`, {
+    headers: managerHeaders,
+  });
   expect(response.ok()).toBeTruthy();
   return (await response.json()).bill;
 }
@@ -189,7 +201,9 @@ async function settleInCash(page: Page, expectedAmount: string): Promise<void> {
   await expect(payButton).toContainText(expectedAmount);
   const paymentResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname);
+    return (
+      response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname)
+    );
   });
   await payButton.click();
   expect((await paymentResponse).ok()).toBeTruthy();
@@ -198,7 +212,9 @@ async function settleInCash(page: Page, expectedAmount: string): Promise<void> {
 
 /** The stored bill is the authority; wait for it to reflect the settlement. */
 async function expectBillPaid(request: APIRequestContext, orderId: number): Promise<BillRecord> {
-  await expect.poll(async () => (await readBill(request, orderId)).payment_status, { timeout: 5000 }).toBe('paid');
+  await expect
+    .poll(async () => (await readBill(request, orderId)).payment_status, { timeout: 5000 })
+    .toBe('paid');
   return readBill(request, orderId);
 }
 
@@ -217,12 +233,23 @@ test.beforeEach(async ({ page, request }) => {
 
 test.afterEach(async ({ page, request }) => {
   const failures: unknown[] = [];
-  try { await writeDiscountMode(request, discountBefore.discount_mode, discountBefore); } catch (error) { failures.push(error); }
-  try { await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutOwnerToken); } catch (error) { failures.push(error); }
+  try {
+    await writeDiscountMode(request, discountBefore.discount_mode, discountBefore);
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutOwnerToken);
+  } catch (error) {
+    failures.push(error);
+  }
   if (failures.length) throw failures[0];
 });
 
-test('orders checkout with discounts disabled opens a payable screen instead of the recovery boundary', async ({ page, request }) => {
+test('orders checkout with discounts disabled opens a payable screen instead of the recovery boundary', async ({
+  page,
+  request,
+}) => {
   await writeDiscountMode(request, 'none', discountBefore);
   const order = await createTakeawayOrder(request);
   const pageErrors = collectPageErrors(page);
@@ -253,14 +280,20 @@ test('orders checkout with discounts disabled opens a payable screen instead of 
   expect(Number(bill.discount_amount)).toBe(0);
 });
 
-test('a late disabled-discount response drops an open checkout draft and still settles', async ({ page, request }) => {
+test('a late disabled-discount response drops an open checkout draft and still settles', async ({
+  page,
+  request,
+}) => {
   await writeDiscountMode(request, 'none', discountBefore);
   const order = await createTakeawayOrder(request);
   const pageErrors = collectPageErrors(page);
   const submittedDiscounts: string[] = [];
   page.on('request', (browserRequest) => {
     const url = new URL(browserRequest.url());
-    if (browserRequest.method() === 'PATCH' && /^\/api\/orders\/\d+\/discount$/.test(url.pathname)) {
+    if (
+      browserRequest.method() === 'PATCH' &&
+      /^\/api\/orders\/\d+\/discount$/.test(url.pathname)
+    ) {
       submittedDiscounts.push(url.pathname);
     }
   });
@@ -268,7 +301,9 @@ test('a late disabled-discount response drops an open checkout draft and still s
   // Hold the payment modal's settings read open so a draft exists while the
   // response is still in flight; the Orders page's own read passes through.
   let released: (() => void) | undefined;
-  const release = new Promise<void>((resolve) => { released = resolve; });
+  const release = new Promise<void>((resolve) => {
+    released = resolve;
+  });
   const settingsReads: Request[] = [];
   await page.route('**/api/settings/discount', async (route) => {
     if (route.request().method() !== 'GET') {
@@ -309,27 +344,34 @@ test('a late disabled-discount response drops an open checkout draft and still s
   expect(Number(bill.discount_amount)).toBe(0);
 });
 
-test('a bill update while discounts stay disabled keeps the checkout payable', async ({ page, request }) => {
+test('a bill update while discounts stay disabled keeps the checkout payable', async ({
+  page,
+  request,
+}) => {
   const chargesBefore = await readCharges(request);
   const businessBefore = await readBusiness(request);
   let primaryFailure = false;
 
   try {
-    await request.put(`${BASE}/api/settings/business`, {
-      headers: managerHeaders,
-      data: { ...businessBefore, billing_type: 'postpaid' },
-    }).then((response) => expect(response.ok()).toBeTruthy());
-    await writeCharges(request, [{
-      id: 'e2e_disabled_charge',
-      name: 'Disabled Mode Fee',
-      type: 'fixed',
-      value: 5,
-      calculation_basis: 'gross',
-      order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-      is_optional: true,
-      is_default_active: true,
-      is_active: true,
-    }]);
+    await request
+      .put(`${BASE}/api/settings/business`, {
+        headers: managerHeaders,
+        data: { ...businessBefore, billing_type: 'postpaid' },
+      })
+      .then((response) => expect(response.ok()).toBeTruthy());
+    await writeCharges(request, [
+      {
+        id: 'e2e_disabled_charge',
+        name: 'Disabled Mode Fee',
+        type: 'fixed',
+        value: 5,
+        calculation_basis: 'gross',
+        order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+        is_optional: true,
+        is_default_active: true,
+        is_active: true,
+      },
+    ]);
     await writeDiscountMode(request, 'none', discountBefore);
     const order = await createTakeawayOrder(request);
     const pageErrors = collectPageErrors(page);
@@ -344,7 +386,10 @@ test('a bill update while discounts stay disabled keeps the checkout payable', a
     await expect(chargeRow).toContainText('Disabled Mode Fee');
     const waiverResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'PATCH' && /^\/api\/bills\/[^/]+\/charges$/.test(url.pathname);
+      return (
+        response.request().method() === 'PATCH' &&
+        /^\/api\/bills\/[^/]+\/charges$/.test(url.pathname)
+      );
     });
     await chargeRow.getByRole('button', { name: 'Waive', exact: true }).click();
     expect((await waiverResponse).ok()).toBeTruthy();
@@ -363,30 +408,48 @@ test('a bill update while discounts stay disabled keeps the checkout payable', a
   } finally {
     const cleanupFailures: unknown[] = [];
     const cleanupRequest = await playwrightRequest.newContext();
-    try { await writeCharges(cleanupRequest, chargesBefore); } catch (error) { cleanupFailures.push(error); }
+    try {
+      await writeCharges(cleanupRequest, chargesBefore);
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     try {
       const restored = await cleanupRequest.put(`${BASE}/api/settings/business`, {
         headers: managerHeaders,
         data: businessBefore,
       });
       expect(restored.ok()).toBeTruthy();
-    } catch (error) { cleanupFailures.push(error); }
-    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
+      await cleanupRequest.dispose();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (cleanupFailures.length) {
-      if (primaryFailure) console.error('Disabled-discount bill update cleanup failed:', cleanupFailures);
+      if (primaryFailure)
+        console.error('Disabled-discount bill update cleanup failed:', cleanupFailures);
       else throw cleanupFailures[0];
     }
   }
 });
 
-test('an already discounted bill settles on its authoritative total when discounts are disabled', async ({ page, request }) => {
+test('an already discounted bill settles on its authoritative total when discounts are disabled', async ({
+  page,
+  request,
+}) => {
   // The discount is persisted while the type is allowed, then the tenant turns
   // discounts off: the stored bill must keep its discount and settle on it.
   await writeDiscountMode(request, 'both', discountBefore);
   const order = await createTakeawayOrder(request);
   const discounted = await request.patch(`${BASE}/api/orders/${order.id}/discount`, {
     headers: managerHeaders,
-    data: { discount_type: 'percentage', discount_value: 10, discount_reason: 'E2E persisted discount' },
+    data: {
+      discount_type: 'percentage',
+      discount_value: 10,
+      discount_reason: 'E2E persisted discount',
+    },
   });
   expect(discounted.ok()).toBeTruthy();
   await writeDiscountMode(request, 'none', discountBefore);
@@ -450,8 +513,10 @@ test('enabled discount modes still expose only their allowed types', async ({ pa
   const amountInput = page.locator('input[type="number"]').first();
   await amountInput.fill('5');
   await page.getByPlaceholder('Reason (optional)').fill('E2E flat mode');
-  const discountPatch = page.waitForRequest((browserRequest) =>
-    browserRequest.method() === 'PATCH' && new URL(browserRequest.url()).pathname === `/api/orders/${order.id}/discount`,
+  const discountPatch = page.waitForRequest(
+    (browserRequest) =>
+      browserRequest.method() === 'PATCH' &&
+      new URL(browserRequest.url()).pathname === `/api/orders/${order.id}/discount`,
   );
   // The open panel also labels its submit button "Apply Discount"; the panel's is last.
   await page.getByRole('button', { name: 'Apply Discount', exact: true }).last().click();
@@ -460,7 +525,10 @@ test('enabled discount modes still expose only their allowed types', async ({ pa
   await expect(recoveryScreen(page)).toHaveCount(0);
 });
 
-test('prepaid checkout settles an undiscounted bill when discounts are disabled', async ({ page, request }) => {
+test('prepaid checkout settles an undiscounted bill when discounts are disabled', async ({
+  page,
+  request,
+}) => {
   const businessBefore = await readBusiness(request);
   let primaryFailure = false;
 
@@ -474,7 +542,10 @@ test('prepaid checkout settles an undiscounted bill when discounts are disabled'
     const pageErrors = collectPageErrors(page);
     let paymentRequests = 0;
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         paymentRequests += 1;
       }
     });
@@ -508,7 +579,10 @@ test('prepaid checkout settles an undiscounted bill when discounts are disabled'
     });
     const paymentResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname);
+      return (
+        response.request().method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname)
+      );
     });
 
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
@@ -528,7 +602,9 @@ test('prepaid checkout settles an undiscounted bill when discounts are disabled'
     expect(paymentRequests).toBe(1);
     await expect(page.getByText(/paid!/)).toBeVisible();
 
-    const storedOrder = await request.get(`${BASE}/api/orders/${orderPayload.order.id}`, { headers: managerHeaders });
+    const storedOrder = await request.get(`${BASE}/api/orders/${orderPayload.order.id}`, {
+      headers: managerHeaders,
+    });
     const order = (await storedOrder.json()).order;
     expect(order.status).toBe('completed');
     expect(Number(order.discount_amount)).toBe(0);
@@ -544,10 +620,17 @@ test('prepaid checkout settles an undiscounted bill when discounts are disabled'
         data: businessBefore,
       });
       expect(restored.ok()).toBeTruthy();
-    } catch (error) { cleanupFailures.push(error); }
-    try { await cleanupRequest.dispose(); } catch (error) { cleanupFailures.push(error); }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+    try {
+      await cleanupRequest.dispose();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
     if (cleanupFailures.length) {
-      if (primaryFailure) console.error('Disabled-discount prepaid cleanup failed:', cleanupFailures);
+      if (primaryFailure)
+        console.error('Disabled-discount prepaid cleanup failed:', cleanupFailures);
       else throw cleanupFailures[0];
     }
   }

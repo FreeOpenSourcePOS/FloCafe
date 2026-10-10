@@ -1,6 +1,12 @@
 import { request, test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { E2E_PASSWORD, getE2eToken, readOrdersLayout, setLanguage, setOrdersLayout } from './helpers/test-auth';
+import {
+  E2E_PASSWORD,
+  getE2eToken,
+  readOrdersLayout,
+  setLanguage,
+  setOrdersLayout,
+} from './helpers/test-auth';
 import { elementTop, expectPinned, innermostScrollableAncestor } from './helpers/layout';
 
 /**
@@ -56,7 +62,9 @@ async function createTakeaway(page: import('@playwright/test').Page, note: strin
 }
 
 test.describe('orders master/detail is the default layout', () => {
-  test('a tenant with no layout preference gets triage rows and a full detail pane', async ({ page }) => {
+  test('a tenant with no layout preference gets triage rows and a full detail pane', async ({
+    page,
+  }) => {
     const order = await createTakeaway(page, 'Split default detail check');
     await login(page);
 
@@ -89,8 +97,12 @@ test.describe('orders master/detail is the default layout', () => {
     await expect(page.getByRole('button', { name: 'Link Customer' })).toBeVisible();
   });
 
-  test('the detail pane carries applied charges and the pre-bill print action', async ({ page }) => {
-    const headers = { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` };
+  test('the detail pane carries applied charges and the pre-bill print action', async ({
+    page,
+  }) => {
+    const headers = {
+      Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+    };
     const chargeName = 'E2E Detail Fee';
     const originalCharges = await page.request.get(`${BASE}/api/settings/charges`, { headers });
     expect(originalCharges.ok()).toBeTruthy();
@@ -102,17 +114,19 @@ test.describe('orders master/detail is the default layout', () => {
       const charges = await page.request.put(`${BASE}/api/settings/charges`, {
         headers,
         data: {
-          charges: [{
-            id: 'e2e_detail_charge',
-            name: chargeName,
-            type: 'fixed',
-            value: 3,
-            calculation_basis: 'gross',
-            order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-            is_optional: false,
-            is_default_active: true,
-            is_active: true,
-          }],
+          charges: [
+            {
+              id: 'e2e_detail_charge',
+              name: chargeName,
+              type: 'fixed',
+              value: 3,
+              calculation_basis: 'gross',
+              order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
+              is_optional: false,
+              is_default_active: true,
+              is_active: true,
+            },
+          ],
         },
       });
       expect(charges.ok()).toBeTruthy();
@@ -148,7 +162,9 @@ test.describe('orders master/detail is the default layout', () => {
     }
   });
 
-  test('below the md breakpoint the detail pane takes over and back returns to the list', async ({ page }) => {
+  test('below the md breakpoint the detail pane takes over and back returns to the list', async ({
+    page,
+  }) => {
     const order = await createTakeaway(page, 'Split default responsive check');
     await login(page);
 
@@ -229,17 +245,34 @@ test.describe('orders cards layout keeps controls visible while order cards scro
       element.scrollTop = element.scrollHeight;
       return element.scrollTop;
     });
-    expect(scrolled, `${label}: order cards scroll inside a bounded content region`).toBeGreaterThan(0);
+    expect(
+      scrolled,
+      `${label}: order cards scroll inside a bounded content region`,
+    ).toBeGreaterThan(0);
 
-    expectPinned(await elementTop(title, `${label} Orders title`), pinned.title, `${label} Orders title`);
-    expectPinned(await elementTop(search, `${label} search field`), pinned.search, `${label} search field`);
-    expectPinned(await elementTop(statusTab, `${label} status tab`), pinned.tab, `${label} status tab`);
+    expectPinned(
+      await elementTop(title, `${label} Orders title`),
+      pinned.title,
+      `${label} Orders title`,
+    );
+    expectPinned(
+      await elementTop(search, `${label} search field`),
+      pinned.search,
+      `${label} search field`,
+    );
+    expectPinned(
+      await elementTop(statusTab, `${label} status tab`),
+      pinned.tab,
+      `${label} status tab`,
+    );
 
     const viewport = page.viewportSize();
     expect(viewport, `${label}: viewport is set`).not.toBeNull();
     const lastBox = await lastCard.boundingBox();
     expect(lastBox, `${label}: last order card has bounds`).not.toBeNull();
-    expect(lastBox!.y, `${label}: last order card is inside the viewport`).toBeGreaterThanOrEqual(-1);
+    expect(lastBox!.y, `${label}: last order card is inside the viewport`).toBeGreaterThanOrEqual(
+      -1,
+    );
     expect(
       lastBox!.y + lastBox!.height,
       `${label}: the last order card is reachable`,
@@ -248,12 +281,20 @@ test.describe('orders cards layout keeps controls visible while order cards scro
     // The filters remain usable after the scroll, and the pinned row stays put
     // while the filter refetches the list.
     await search.fill('scroll fixture');
-    await expect(search, `${label}: search accepts input after scrolling`).toHaveValue('scroll fixture');
+    await expect(search, `${label}: search accepts input after scrolling`).toHaveValue(
+      'scroll fixture',
+    );
     await search.fill('');
-    expectPinned(await elementTop(title, `${label} Orders title`), pinned.title, `${label} Orders title`);
+    expectPinned(
+      await elementTop(title, `${label} Orders title`),
+      pinned.title,
+      `${label} Orders title`,
+    );
   }
 
-  test('desktop: the title, tabs, search and filters stay pinned while cards scroll', async ({ page }) => {
+  test('desktop: the title, tabs, search and filters stay pinned while cards scroll', async ({
+    page,
+  }) => {
     await login(page);
     originalLayout = await readOrdersLayout(page);
     await setOrdersLayout(page, 'cards');
@@ -263,7 +304,9 @@ test.describe('orders cards layout keeps controls visible while order cards scro
     await expectControlsPinnedWhileCardsScroll(page, 'desktop');
   });
 
-  test('phone: the title, tabs, search and filters stay pinned while cards scroll', async ({ page }) => {
+  test('phone: the title, tabs, search and filters stay pinned while cards scroll', async ({
+    page,
+  }) => {
     await login(page);
     originalLayout = await readOrdersLayout(page);
     await setOrdersLayout(page, 'cards');
@@ -289,7 +332,9 @@ test.describe('a held cart resumed from another order type keeps its charge sele
   let chargesBefore: unknown[] = [];
   let businessBefore: Record<string, unknown> = {};
 
-  const headers = () => ({ Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` });
+  const headers = () => ({
+    Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+  });
 
   test.beforeAll(async () => {
     const api = await request.newContext();
@@ -302,31 +347,49 @@ test.describe('a held cart resumed from another order type keeps its charge sele
         data: {
           charges: [
             {
-              id: AUTO_CHARGE.id, name: AUTO_CHARGE.name, type: 'fixed', value: 3,
+              id: AUTO_CHARGE.id,
+              name: AUTO_CHARGE.name,
+              type: 'fixed',
+              value: 3,
               calculation_basis: 'gross',
               order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-              is_optional: true, is_default_active: true, is_active: true,
+              is_optional: true,
+              is_default_active: true,
+              is_active: true,
             },
             {
-              id: OPT_CHARGE.id, name: OPT_CHARGE.name, type: 'fixed', value: 5,
+              id: OPT_CHARGE.id,
+              name: OPT_CHARGE.name,
+              type: 'fixed',
+              value: 5,
               calculation_basis: 'gross',
               order_types: ['dine_in', 'takeaway', 'delivery', 'online'],
-              is_optional: true, is_default_active: false, is_active: true,
+              is_optional: true,
+              is_default_active: false,
+              is_active: true,
             },
           ],
         },
       });
       expect(saved.ok(), 'the two fixture charges are saved').toBeTruthy();
 
-      const businessResponse = await api.get(`${BASE}/api/settings/business`, { headers: headers() });
+      const businessResponse = await api.get(`${BASE}/api/settings/business`, {
+        headers: headers(),
+      });
       expect(businessResponse.ok(), 'the business settings are readable').toBeTruthy();
       const business = await businessResponse.json();
-      businessBefore = { billing_type: business.billing_type, tables_required: business.tables_required };
+      businessBefore = {
+        billing_type: business.billing_type,
+        tables_required: business.tables_required,
+      };
       const switched = await api.put(`${BASE}/api/settings/business`, {
         headers: headers(),
         data: { billing_type: 'postpaid', tables_required: true },
       });
-      expect(switched.ok(), `holding needs postpaid table service (got ${switched.status()})`).toBeTruthy();
+      expect(
+        switched.ok(),
+        `holding needs postpaid table service (got ${switched.status()})`,
+      ).toBeTruthy();
 
       const number = `Rsm${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
       const tableResponse = await api.post(`${BASE}/api/tables`, {
@@ -343,24 +406,42 @@ test.describe('a held cart resumed from another order type keeps its charge sele
   test.afterAll(async () => {
     const api = await request.newContext();
     try {
-      await api.put(`${BASE}/api/settings/charges`, { headers: headers(), data: { charges: chargesBefore } });
+      await api.put(`${BASE}/api/settings/charges`, {
+        headers: headers(),
+        data: { charges: chargesBefore },
+      });
       await api.put(`${BASE}/api/settings/business`, { headers: headers(), data: businessBefore });
-      if (table) await api.post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: headers() }).catch(() => undefined);
+      if (table)
+        await api
+          .post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: headers() })
+          .catch(() => undefined);
     } finally {
       await api.dispose();
     }
   });
 
-  test('the waived automatic fee and the opted-in optional fee come back with the resumed cart', async ({ page }) => {
+  test('the waived automatic fee and the opted-in optional fee come back with the resumed cart', async ({
+    page,
+  }) => {
     await login(page);
     await page.goto(`${BASE}/pos`);
 
     // Dine-in on the fixture table, with the fixture fees offered on the cart.
-    await page.getByRole('button', { name: /Dine in/i }).first().click();
-    await page.getByRole('button', { name: /Select Table/i }).first().click();
+    await page
+      .getByRole('button', { name: /Dine in/i })
+      .first()
+      .click();
+    await page
+      .getByRole('button', { name: /Select Table/i })
+      .first()
+      .click();
     const picker = page.locator('.fixed.inset-0').last();
     await expect(picker).toBeVisible();
-    await picker.getByRole('button').filter({ hasText: new RegExp(table.number) }).first().click();
+    await picker
+      .getByRole('button')
+      .filter({ hasText: new RegExp(table.number) })
+      .first()
+      .click();
 
     // E2E Coffee is a simple product, so the card tap lands it on the cart.
     await page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
@@ -395,11 +476,17 @@ test.describe('a held cart resumed from another order type keeps its charge sele
     const resumedCharges = page.getByTestId('cart-charges');
     await expect(resumedCharges).toBeVisible();
     await expect(
-      resumedCharges.locator(':scope > div').filter({ hasText: AUTO_CHARGE.name }).getByRole('button', { name: 'Apply', exact: true }),
+      resumedCharges
+        .locator(':scope > div')
+        .filter({ hasText: AUTO_CHARGE.name })
+        .getByRole('button', { name: 'Apply', exact: true }),
       'the waived automatic fee comes back waived',
     ).toBeVisible();
     await expect(
-      resumedCharges.locator(':scope > div').filter({ hasText: OPT_CHARGE.name }).getByRole('button', { name: 'Remove', exact: true }),
+      resumedCharges
+        .locator(':scope > div')
+        .filter({ hasText: OPT_CHARGE.name })
+        .getByRole('button', { name: 'Remove', exact: true }),
       'the opted-in optional fee comes back applied',
     ).toBeVisible();
 
@@ -407,11 +494,17 @@ test.describe('a held cart resumed from another order type keeps its charge sele
     await page.getByRole('button', { name: 'Place Order', exact: true }).click();
     await expect(page.getByText(/Order #.* placed!/).first()).toBeVisible({ timeout: 15_000 });
 
-    const listResponse = await page.request.get(`${BASE}/api/orders?table_id=${table.id}`, { headers: headers() });
+    const listResponse = await page.request.get(`${BASE}/api/orders?table_id=${table.id}`, {
+      headers: headers(),
+    });
     expect(listResponse.ok(), 'the placed order is readable').toBeTruthy();
     const orders = (await listResponse.json()).orders as { charges_breakdown: string | null }[];
     expect(orders, 'exactly one order was placed on the fixture table').toHaveLength(1);
-    const applied = JSON.parse(orders[0].charges_breakdown || '[]') as { id: string; amount: number; waived: boolean }[];
+    const applied = JSON.parse(orders[0].charges_breakdown || '[]') as {
+      id: string;
+      amount: number;
+      waived: boolean;
+    }[];
     const auto = applied.find((charge) => charge.id === AUTO_CHARGE.id);
     const opt = applied.find((charge) => charge.id === OPT_CHARGE.id);
     expect(auto, 'the automatic fee is part of the order charges').toBeTruthy();

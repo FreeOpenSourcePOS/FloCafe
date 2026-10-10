@@ -3,7 +3,9 @@ import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 import { elementTop, expectPinned, scrollToEnd } from './helpers/layout';
 
-test('POS product grid has no horizontal clipping and touchable product cards', async ({ page }) => {
+test('POS product grid has no horizontal clipping and touchable product cards', async ({
+  page,
+}) => {
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
@@ -22,7 +24,9 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
     clientWidth: element.clientWidth,
     scrollWidth: element.scrollWidth,
   }));
-  expect(grid.scrollWidth, 'POS grid does not overflow horizontally').toBeLessThanOrEqual(grid.clientWidth);
+  expect(grid.scrollWidth, 'POS grid does not overflow horizontally').toBeLessThanOrEqual(
+    grid.clientWidth,
+  );
 
   const card = await page.getByTestId('pos-product-card').boundingBox();
   expect(card, 'product card has bounds').not.toBeNull();
@@ -30,7 +34,9 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   expect(card!.height, 'product card height').toBeGreaterThanOrEqual(44);
 });
 
-test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on the POS, KDS, and settings routes', async ({ page }) => {
+test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on the POS, KDS, and settings routes', async ({
+  page,
+}) => {
   // One login keeps the suite within the shared server's login rate limit.
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('owner@flo.local');
@@ -68,7 +74,10 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on
     await page.goto(route.url);
     await expect(sidebar, `${route.name}: sidebar renders`).toBeVisible();
 
-    expect(await page.evaluate(() => Boolean(window.electronAPI)), `${route.name}: capability absent`).toBe(false);
+    expect(
+      await page.evaluate(() => Boolean(window.electronAPI)),
+      `${route.name}: capability absent`,
+    ).toBe(false);
     await expect(page.getByTestId('desktop-title-bar'), route.name).toHaveCount(0);
     await expect(page.getByTestId('desktop-drag-surface'), route.name).toHaveCount(0);
     await expect(page.locator('html'), route.name).not.toHaveAttribute('data-flo-desktop-titlebar');
@@ -92,8 +101,10 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on
     }
   });
   expect(forced.y, 'desktop flag offsets sidebar below title bar').toBeCloseTo(40, 0);
-  expect(forced.height, 'desktop flag shrinks sidebar by title-bar height')
-    .toBeCloseTo(viewportHeight - 40, 0);
+  expect(forced.height, 'desktop flag shrinks sidebar by title-bar height').toBeCloseTo(
+    viewportHeight - 40,
+    0,
+  );
 });
 
 /**
@@ -259,14 +270,18 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     }
   });
 
-  test('POS keeps the topbar, search and category chips in place while the catalog scrolls', async ({ page }) => {
+  test('POS keeps the topbar, search and category chips in place while the catalog scrolls', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/pos`);
 
     const catalog = page.getByTestId('pos-catalog-scroll');
     await expect(catalog).toBeVisible();
-    await expect(page.getByTestId('pos-product-card').filter({ hasText: SYNTHETIC_PRODUCT_PREFIX }).first()).toBeVisible();
+    await expect(
+      page.getByTestId('pos-product-card').filter({ hasText: SYNTHETIC_PRODUCT_PREFIX }).first(),
+    ).toBeVisible();
 
     const cashControl = page.getByTitle('Cash movement');
     const searchInput = page.getByTestId('pos-product-grid').locator('input[type="text"]').first();
@@ -285,20 +300,35 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     ).toBeLessThanOrEqual(96);
 
     const scrolled = await scrollToEnd(catalog);
-    expect(scrolled.scrollTop, 'the catalog is the scroll owner for the product list').toBeGreaterThan(0);
+    expect(
+      scrolled.scrollTop,
+      'the catalog is the scroll owner for the product list',
+    ).toBeGreaterThan(0);
 
-    expectPinned(await elementTop(cashControl, 'cash movement control'), pinned.cash, 'cash movement control');
+    expectPinned(
+      await elementTop(cashControl, 'cash movement control'),
+      pinned.cash,
+      'cash movement control',
+    );
     expectPinned(await elementTop(searchInput, 'product search'), pinned.search, 'product search');
-    expectPinned(await elementTop(categoryRow, 'category chips'), pinned.categories, 'category chips');
+    expectPinned(
+      await elementTop(categoryRow, 'category chips'),
+      pinned.categories,
+      'category chips',
+    );
 
     const catalogBox = await catalog.boundingBox();
     const lastCardBox = await page.getByTestId('pos-product-card').last().boundingBox();
     expect(catalogBox, 'catalog has bounds').not.toBeNull();
     expect(lastCardBox, 'last catalog card has bounds').not.toBeNull();
-    expect(lastCardBox!.y, 'the last catalog card is inside the catalog viewport')
-      .toBeGreaterThanOrEqual(catalogBox!.y - 1);
-    expect(lastCardBox!.y + lastCardBox!.height, 'the last catalog card is fully reachable')
-      .toBeLessThanOrEqual(catalogBox!.y + catalogBox!.height + 1);
+    expect(
+      lastCardBox!.y,
+      'the last catalog card is inside the catalog viewport',
+    ).toBeGreaterThanOrEqual(catalogBox!.y - 1);
+    expect(
+      lastCardBox!.y + lastCardBox!.height,
+      'the last catalog card is fully reachable',
+    ).toBeLessThanOrEqual(catalogBox!.y + catalogBox!.height + 1);
   });
 
   test('POS keeps cart totals and checkout in place while cart items scroll', async ({ page }) => {
@@ -315,21 +345,32 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     const checkoutBefore = await elementTop(placeOrder, 'checkout button');
 
     const scrolled = await scrollToEnd(items);
-    expect(scrolled.scrollTop, 'the cart item list is the scroll owner for cart rows').toBeGreaterThan(0);
+    expect(
+      scrolled.scrollTop,
+      'the cart item list is the scroll owner for cart rows',
+    ).toBeGreaterThan(0);
 
     expectPinned(await elementTop(footer, 'cart footer'), footerBefore, 'cart footer');
-    expectPinned(await elementTop(placeOrder, 'checkout button'), checkoutBefore, 'checkout button');
+    expectPinned(
+      await elementTop(placeOrder, 'checkout button'),
+      checkoutBefore,
+      'checkout button',
+    );
 
     const itemsBox = await items.boundingBox();
     const lastItem = items.getByText(names[names.length - 1], { exact: false }).last();
     const lastItemBox = await lastItem.boundingBox();
     expect(itemsBox, 'cart item list has bounds').not.toBeNull();
     expect(lastItemBox, 'the last cart row has bounds').not.toBeNull();
-    expect(lastItemBox!.y + lastItemBox!.height, 'the last cart row is reachable inside the item list')
-      .toBeLessThanOrEqual(itemsBox!.y + itemsBox!.height + 1);
+    expect(
+      lastItemBox!.y + lastItemBox!.height,
+      'the last cart row is reachable inside the item list',
+    ).toBeLessThanOrEqual(itemsBox!.y + itemsBox!.height + 1);
   });
 
-  test('POS keeps the catalog usable and checkout reachable on a short landscape viewport', async ({ page }) => {
+  test('POS keeps the catalog usable and checkout reachable on a short landscape viewport', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await loginAsManager(page);
     await page.goto(`${BASE}/pos`);
@@ -380,7 +421,10 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     await addSyntheticItemsToCart(page, 4);
 
     const openCart = page.getByRole('button', { name: 'Cart' });
-    await expect(openCart, 'the mobile cart trigger is offered when zoom hides the cart column').toBeVisible();
+    await expect(
+      openCart,
+      'the mobile cart trigger is offered when zoom hides the cart column',
+    ).toBeVisible();
     await openCart.click();
 
     const placeOrder = page.getByRole('button', { name: 'Place Order' });
@@ -393,21 +437,27 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     // drawer's cart panel may be scrolled here.
     const panel = page.locator('[data-testid="cart-items-scroll"]:visible');
     await expect(panel, 'the drawer renders its cart panel').toHaveCount(1);
-    const drawerScroller = panel.locator('xpath=ancestor::*[contains(@class, "overflow-y-auto")][1]');
+    const drawerScroller = panel.locator(
+      'xpath=ancestor::*[contains(@class, "overflow-y-auto")][1]',
+    );
 
     // The drawer settles after its open animation, and the sheet re-measures
     // while it settles, so poll the scroll-and-measure pair instead of assuming
     // a single scroll sticks.
-    await expect.poll(async () => {
-      await drawerScroller.first().evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-      });
-      await panel.evaluate((element) => {
-        element.scrollTop = element.scrollHeight;
-      });
-      const box = await placeOrder.boundingBox();
-      return box ? Math.round(box.y + box.height) : Number.POSITIVE_INFINITY;
-    }, { message: 'checkout button is reachable inside the zoomed viewport' })
+    await expect
+      .poll(
+        async () => {
+          await drawerScroller.first().evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+          });
+          await panel.evaluate((element) => {
+            element.scrollTop = element.scrollHeight;
+          });
+          const box = await placeOrder.boundingBox();
+          return box ? Math.round(box.y + box.height) : Number.POSITIVE_INFINITY;
+        },
+        { message: 'checkout button is reachable inside the zoomed viewport' },
+      )
       .toBeLessThanOrEqual(viewport!.height + 1);
   });
 });
@@ -434,9 +484,9 @@ async function seedSyntheticAddonGroups(api: APIRequestContext): Promise<string[
   const response = await api.get(`${BASE}/api/addon-groups`, { headers });
   expect(response.status(), 'add-on groups are readable for seeding').toBe(200);
   const existing = (await response.json()).addon_groups as { id: string; name: string }[];
-  const reusedCount = existing
-    .filter((group) => group.name.startsWith(SYNTHETIC_ADDON_GROUP_PREFIX))
-    .length;
+  const reusedCount = existing.filter((group) =>
+    group.name.startsWith(SYNTHETIC_ADDON_GROUP_PREFIX),
+  ).length;
   const ownedIds: string[] = [];
   for (let index = reusedCount; index < SYNTHETIC_ADDON_GROUP_COUNT; index += 1) {
     const created = await api.post(`${BASE}/api/addon-groups`, {
@@ -478,7 +528,9 @@ async function seedSyntheticInventory(
   const suppliesResponse = await api.get(`${BASE}/api/supplies?include_inactive=true`, { headers });
   expect(suppliesResponse.status(), 'supplies are readable for seeding').toBe(200);
   const supplies = (await suppliesResponse.json()).supplies as { id: string; name: string }[];
-  const seededSupplies = supplies.filter((supply) => supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX));
+  const seededSupplies = supplies.filter((supply) =>
+    supply.name.startsWith(SYNTHETIC_SUPPLY_PREFIX),
+  );
   const seededSupplyIds = seededSupplies.map((supply) => supply.id);
   const existingSupplyNames = new Set(supplies.map((supply) => supply.name));
   const supplyIds: string[] = [];
@@ -486,10 +538,17 @@ async function seedSyntheticInventory(
   let movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
   expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
   let recorded = new Set(
-    ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
+    ((await movementsResponse.json()).movements as { supply_id: string }[]).map(
+      (movement) => movement.supply_id,
+    ),
   );
-  let recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
-  while (recordedSyntheticSupplyCount < SYNTHETIC_SUPPLY_COUNT && supplyIds.length < SYNTHETIC_SUPPLY_COUNT) {
+  let recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) =>
+    recorded.has(supplyId),
+  ).length;
+  while (
+    recordedSyntheticSupplyCount < SYNTHETIC_SUPPLY_COUNT &&
+    supplyIds.length < SYNTHETIC_SUPPLY_COUNT
+  ) {
     const needed = Math.min(
       SYNTHETIC_SUPPLY_COUNT - recordedSyntheticSupplyCount,
       SYNTHETIC_SUPPLY_COUNT - supplyIds.length,
@@ -520,9 +579,13 @@ async function seedSyntheticInventory(
     movementsResponse = await api.get(`${BASE}/api/supplies/movements?per_page=50`, { headers });
     expect(movementsResponse.status(), 'movements are readable for seeding').toBe(200);
     recorded = new Set(
-      ((await movementsResponse.json()).movements as { supply_id: string }[]).map((movement) => movement.supply_id),
+      ((await movementsResponse.json()).movements as { supply_id: string }[]).map(
+        (movement) => movement.supply_id,
+      ),
     );
-    recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) => recorded.has(supplyId)).length;
+    recordedSyntheticSupplyCount = seededSupplyIds.filter((supplyId) =>
+      recorded.has(supplyId),
+    ).length;
   }
 
   const recipeProductIds = ownedProductIds.slice(0, SYNTHETIC_RECIPE_COUNT);
@@ -612,7 +675,9 @@ test.describe('management lists keep their controls visible while records scroll
     }
   });
 
-  test('products keeps the title, tabs and product actions visible while the rows scroll', async ({ page }) => {
+  test('products keeps the title, tabs and product actions visible while the rows scroll', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/products`);
@@ -647,8 +712,10 @@ test.describe('management lists keep their controls visible while records scroll
     const lastRowBox = await region.locator('tbody tr').last().boundingBox();
     expect(regionBox, 'the product list region has bounds').not.toBeNull();
     expect(lastRowBox, 'the last product row has bounds').not.toBeNull();
-    expect(lastRowBox!.y + lastRowBox!.height, 'the last product row is reachable')
-      .toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
+    expect(
+      lastRowBox!.y + lastRowBox!.height,
+      'the last product row is reachable',
+    ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
     // Tab and Shift+Tab must not land on a control that scrolled out of view.
     const viewport = page.viewportSize();
@@ -663,9 +730,14 @@ test.describe('management lists keep their controls visible while records scroll
       });
       expect(focused, `${label}: a control receives focus`).not.toBeNull();
       expect(focused!.height, `${label}: the focused control is rendered`).toBeGreaterThan(0);
-      expect(focused!.top, `${label}: the focused control is not above the viewport`).toBeGreaterThanOrEqual(-1);
-      expect(focused!.bottom, `${label}: the focused control is inside the viewport`)
-        .toBeLessThanOrEqual(viewport!.height + 1);
+      expect(
+        focused!.top,
+        `${label}: the focused control is not above the viewport`,
+      ).toBeGreaterThanOrEqual(-1);
+      expect(
+        focused!.bottom,
+        `${label}: the focused control is inside the viewport`,
+      ).toBeLessThanOrEqual(viewport!.height + 1);
     };
     await search.focus();
     await page.keyboard.press('Tab');
@@ -674,7 +746,9 @@ test.describe('management lists keep their controls visible while records scroll
     await assertFocusVisible('Shift+Tab back to the pinned search');
   });
 
-  test('products keeps each tab’s own actions visible while that tab’s rows scroll', async ({ page }) => {
+  test('products keeps each tab’s own actions visible while that tab’s rows scroll', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/products`);
@@ -695,17 +769,25 @@ test.describe('management lists keep their controls visible while records scroll
       };
 
       const scrolled = await scrollToEnd(region);
-      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(0);
+      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(
+        0,
+      );
 
       expectPinned(await elementTop(tabs, 'products tabs'), pinned.tabs, 'products tabs');
-      expectPinned(await elementTop(action, `${entry.action} action`), pinned.action, `${entry.action} action`);
+      expectPinned(
+        await elementTop(action, `${entry.action} action`),
+        pinned.action,
+        `${entry.action} action`,
+      );
 
       const regionBox = await region.boundingBox();
       const lastRowBox = await region.locator('tbody tr').last().boundingBox();
       expect(regionBox, `${entry.tab}: the list region has bounds`).not.toBeNull();
       expect(lastRowBox, `${entry.tab}: the last row has bounds`).not.toBeNull();
-      expect(lastRowBox!.y + lastRowBox!.height, `${entry.tab}: the last row is reachable`)
-        .toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
+      expect(
+        lastRowBox!.y + lastRowBox!.height,
+        `${entry.tab}: the last row is reachable`,
+      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
       // Radix unmounts the inactive tab, so a previous tab cannot leave a
       // stale scroller or toolbar behind.
@@ -716,7 +798,9 @@ test.describe('management lists keep their controls visible while records scroll
     }
   });
 
-  test('inventory keeps the title, tabs and active filters visible across its tabs', async ({ page }) => {
+  test('inventory keeps the title, tabs and active filters visible across its tabs', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/inventory`);
@@ -741,18 +825,26 @@ test.describe('management lists keep their controls visible while records scroll
       };
 
       const scrolled = await scrollToEnd(region);
-      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(0);
+      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(
+        0,
+      );
 
       expectPinned(await elementTop(title, 'inventory title'), pinned.title, 'inventory title');
       expectPinned(await elementTop(tabs, 'inventory tabs'), pinned.tabs, 'inventory tabs');
-      expectPinned(await elementTop(search, `${entry.tab} search`), pinned.search, `${entry.tab} search`);
+      expectPinned(
+        await elementTop(search, `${entry.tab} search`),
+        pinned.search,
+        `${entry.tab} search`,
+      );
 
       const regionBox = await region.boundingBox();
       const lastRowBox = await region.locator('tbody tr').last().boundingBox();
       expect(regionBox, `${entry.tab}: the list region has bounds`).not.toBeNull();
       expect(lastRowBox, `${entry.tab}: the last row has bounds`).not.toBeNull();
-      expect(lastRowBox!.y + lastRowBox!.height, `${entry.tab}: the last row is reachable`)
-        .toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
+      expect(
+        lastRowBox!.y + lastRowBox!.height,
+        `${entry.tab}: the last row is reachable`,
+      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
       for (const other of cases.filter((candidate) => candidate.region !== entry.region)) {
         await expect(
@@ -778,22 +870,34 @@ test.describe('management lists keep their controls visible while records scroll
     await search.fill('Scroll Layout Supply 01');
     await expect(region.locator('tbody tr'), 'the pinned search filters the list').toHaveCount(1);
     await search.fill('');
-    await expect.poll(() => region.locator('tbody tr').count(), 'the cleared search restores the list')
+    await expect
+      .poll(() => region.locator('tbody tr').count(), 'the cleared search restores the list')
       .toBeGreaterThan(1);
 
     // Row edit still opens from the bottom of the scrolled list.
     await scrollToEnd(region);
     await region.locator('tbody tr').last().getByTitle('Edit').click();
-    await expect(page.getByRole('heading', { name: 'Edit supply' }), 'the edit dialog opens').toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Edit supply' }),
+      'the edit dialog opens',
+    ).toBeVisible();
     await page.locator('.fixed.inset-0 > div').first().locator('button').first().click();
-    await expect(page.getByRole('heading', { name: 'Edit supply' }), 'the edit dialog closes').toBeHidden();
+    await expect(
+      page.getByRole('heading', { name: 'Edit supply' }),
+      'the edit dialog closes',
+    ).toBeHidden();
 
     // And so does the toolbar action above the list.
     await page.getByRole('button', { name: 'Add supply' }).click();
-    await expect(page.getByRole('heading', { name: 'Add supply' }), 'the create dialog opens').toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Add supply' }),
+      'the create dialog opens',
+    ).toBeVisible();
   });
 
-  test('customers keeps the title, add action and search visible while the rows scroll', async ({ page }) => {
+  test('customers keeps the title, add action and search visible while the rows scroll', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/customers`);
@@ -825,26 +929,47 @@ test.describe('management lists keep their controls visible while records scroll
     const lastRowBox = await region.locator('tbody tr').last().boundingBox();
     expect(regionBox, 'the customer list region has bounds').not.toBeNull();
     expect(lastRowBox, 'the last customer row has bounds').not.toBeNull();
-    expect(lastRowBox!.y + lastRowBox!.height, 'the last customer row is reachable')
-      .toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
+    expect(
+      lastRowBox!.y + lastRowBox!.height,
+      'the last customer row is reachable',
+    ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
     // The pinned search still filters the scrolled list.
     await search.fill(SYNTHETIC_CUSTOMER_PREFIX);
-    await expect(region.locator('tbody tr'), 'the pinned search filters the customer list')
-      .toHaveCount(SYNTHETIC_CUSTOMER_COUNT);
+    await expect(
+      region.locator('tbody tr'),
+      'the pinned search filters the customer list',
+    ).toHaveCount(SYNTHETIC_CUSTOMER_COUNT);
     await search.fill('');
   });
 
-  test('management lists fall back to page flow on a short landscape viewport', async ({ page }) => {
+  test('management lists fall back to page flow on a short landscape viewport', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await loginAsManager(page);
 
     const viewport = page.viewportSize();
     expect(viewport, 'viewport is set').not.toBeNull();
     const cases = [
-      { name: 'products', url: `${BASE}/products`, region: 'products-list-scroll', action: 'Add Product' },
-      { name: 'inventory', url: `${BASE}/inventory`, region: 'inventory-supplies-scroll', action: 'Add supply' },
-      { name: 'customers', url: `${BASE}/customers`, region: 'customers-list-scroll', action: 'Add Customer' },
+      {
+        name: 'products',
+        url: `${BASE}/products`,
+        region: 'products-list-scroll',
+        action: 'Add Product',
+      },
+      {
+        name: 'inventory',
+        url: `${BASE}/inventory`,
+        region: 'inventory-supplies-scroll',
+        action: 'Add supply',
+      },
+      {
+        name: 'customers',
+        url: `${BASE}/customers`,
+        region: 'customers-list-scroll',
+        action: 'Add Customer',
+      },
     ];
     for (const entry of cases) {
       await page.goto(entry.url);
@@ -857,24 +982,33 @@ test.describe('management lists keep their controls visible while records scroll
         scrollHeight: element.scrollHeight,
         clientHeight: element.clientHeight,
       }));
-      expect(metrics.scrollHeight, `${entry.name}: the list is not its own tiny window`)
-        .toBeLessThanOrEqual(metrics.clientHeight + 1);
+      expect(
+        metrics.scrollHeight,
+        `${entry.name}: the list is not its own tiny window`,
+      ).toBeLessThanOrEqual(metrics.clientHeight + 1);
 
       const lastRow = region.locator('tbody tr').last();
       await expect(lastRow, `${entry.name}: the last record renders`).toBeAttached();
       await lastRow.scrollIntoViewIfNeeded();
       const lastRowBox = await lastRow.boundingBox();
       expect(lastRowBox, `${entry.name}: the last record has bounds`).not.toBeNull();
-      expect(lastRowBox!.y + lastRowBox!.height, `${entry.name}: the last record is reachable`)
-        .toBeLessThanOrEqual(viewport!.height + 1);
+      expect(
+        lastRowBox!.y + lastRowBox!.height,
+        `${entry.name}: the last record is reachable`,
+      ).toBeLessThanOrEqual(viewport!.height + 1);
 
       const action = page.getByRole('button', { name: entry.action });
       await action.scrollIntoViewIfNeeded();
       const actionBox = await action.boundingBox();
       expect(actionBox, `${entry.name}: the pinned action has bounds`).not.toBeNull();
-      expect(actionBox!.y, `${entry.name}: the pinned action is not above the viewport`).toBeGreaterThanOrEqual(-1);
-      expect(actionBox!.y + actionBox!.height, `${entry.name}: the pinned action is reachable`)
-        .toBeLessThanOrEqual(viewport!.height + 1);
+      expect(
+        actionBox!.y,
+        `${entry.name}: the pinned action is not above the viewport`,
+      ).toBeGreaterThanOrEqual(-1);
+      expect(
+        actionBox!.y + actionBox!.height,
+        `${entry.name}: the pinned action is reachable`,
+      ).toBeLessThanOrEqual(viewport!.height + 1);
     }
   });
 
@@ -894,14 +1028,20 @@ test.describe('management lists keep their controls visible while records scroll
     await lastRow.scrollIntoViewIfNeeded();
     const lastRowBox = await lastRow.boundingBox();
     expect(lastRowBox, 'the last product row has bounds').not.toBeNull();
-    expect(lastRowBox!.y, 'the last product row is not above the viewport').toBeGreaterThanOrEqual(-1);
-    expect(lastRowBox!.y + lastRowBox!.height, 'the last product row is reachable when zoomed')
-      .toBeLessThanOrEqual(viewport!.height + 1);
+    expect(lastRowBox!.y, 'the last product row is not above the viewport').toBeGreaterThanOrEqual(
+      -1,
+    );
+    expect(
+      lastRowBox!.y + lastRowBox!.height,
+      'the last product row is reachable when zoomed',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
 
     await action.scrollIntoViewIfNeeded();
     const actionBox = await action.boundingBox();
-    expect(actionBox!.y + actionBox!.height, 'the create action is reachable when zoomed')
-      .toBeLessThanOrEqual(viewport!.height + 1);
+    expect(
+      actionBox!.y + actionBox!.height,
+      'the create action is reachable when zoomed',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
   });
 });
 
@@ -923,15 +1063,17 @@ test.describe('layout fixtures only delete what they created', () => {
   async function findCategory(api: APIRequestContext, name: string) {
     const response = await api.get(`${BASE}/api/categories`, { headers: headers() });
     expect(response.status(), 'categories are readable').toBe(200);
-    return ((await response.json()).categories as { id: string; name: string }[])
-      .find((category) => category.name === name);
+    return ((await response.json()).categories as { id: string; name: string }[]).find(
+      (category) => category.name === name,
+    );
   }
 
   async function findProduct(api: APIRequestContext, name: string) {
     const response = await api.get(`${BASE}/api/products?active=1`, { headers: headers() });
     expect(response.status(), 'products are readable').toBe(200);
-    return ((await response.json()).products as { id: string; name: string; category_id: string }[])
-      .find((product) => product.name === name);
+    return (
+      (await response.json()).products as { id: string; name: string; category_id: string }[]
+    ).find((product) => product.name === name);
   }
 
   test.beforeAll(async () => {
@@ -969,7 +1111,9 @@ test.describe('layout fixtures only delete what they created', () => {
         await api.delete(`${BASE}/api/products/${ownedSentinelProductId}`, { headers: headers() });
       }
       if (ownedSentinelCategoryId) {
-        await api.delete(`${BASE}/api/categories/${ownedSentinelCategoryId}`, { headers: headers() });
+        await api.delete(`${BASE}/api/categories/${ownedSentinelCategoryId}`, {
+          headers: headers(),
+        });
       }
     } finally {
       await api.dispose();
@@ -980,8 +1124,12 @@ test.describe('layout fixtures only delete what they created', () => {
     const api = await request.newContext();
     try {
       const menu = await seedSyntheticMenu(api, 2);
-      expect(menu.reusedCategoryIds, 'the sentinel is reused, not re-created').toContain(sentinelCategoryId);
-      expect(menu.ownedCategoryIds, 'the seed owns what it created').not.toContain(sentinelCategoryId);
+      expect(menu.reusedCategoryIds, 'the sentinel is reused, not re-created').toContain(
+        sentinelCategoryId,
+      );
+      expect(menu.ownedCategoryIds, 'the seed owns what it created').not.toContain(
+        sentinelCategoryId,
+      );
 
       await removeSyntheticMenu(api, menu);
 
@@ -990,18 +1138,28 @@ test.describe('layout fixtures only delete what they created', () => {
       expect(survivor!.id).toBe(sentinelCategoryId);
       const product = await findProduct(api, SENTINEL_PRODUCT);
       expect(product, 'the pre-existing product under the reused category survives').toBeTruthy();
-      expect(product!.category_id, 'the surviving product keeps its category').toBe(sentinelCategoryId);
+      expect(product!.category_id, 'the surviving product keeps its category').toBe(
+        sentinelCategoryId,
+      );
 
       // The seed's own rows are gone, so repeat runs stay isolated.
-      const remainingCategories = (await (await api.get(`${BASE}/api/categories`, { headers: headers() })).json())
-        .categories as { id: string }[];
+      const remainingCategories = (
+        await (await api.get(`${BASE}/api/categories`, { headers: headers() })).json()
+      ).categories as { id: string }[];
       for (const id of menu.ownedCategoryIds) {
-        expect(remainingCategories.map((category) => category.id), 'an owned category is removed').not.toContain(id);
+        expect(
+          remainingCategories.map((category) => category.id),
+          'an owned category is removed',
+        ).not.toContain(id);
       }
-      const remainingProducts = (await (await api.get(`${BASE}/api/products?active=1`, { headers: headers() })).json())
-        .products as { id: string }[];
+      const remainingProducts = (
+        await (await api.get(`${BASE}/api/products?active=1`, { headers: headers() })).json()
+      ).products as { id: string }[];
       for (const id of menu.ownedProductIds) {
-        expect(remainingProducts.map((candidate) => candidate.id), 'an owned product is removed').not.toContain(id);
+        expect(
+          remainingProducts.map((candidate) => candidate.id),
+          'an owned product is removed',
+        ).not.toContain(id);
       }
     } finally {
       await api.dispose();
@@ -1053,17 +1211,24 @@ async function mockDisplayOrders(
   let current = orders;
   await page.route(
     (url) => url.pathname === '/api/orders',
-    (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ orders: current }),
-    }),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ orders: current }),
+      }),
   );
-  return { replace: (next) => { current = next; } };
+  return {
+    replace: (next) => {
+      current = next;
+    },
+  };
 }
 
 test.describe('customer display keeps its headers visible over independently scrolling tile lists', () => {
-  test('the header and both section headings stay visible while the tile lists scroll', async ({ page }) => {
+  test('the header and both section headings stay visible while the tile lists scroll', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await mockDisplayOrders(page, displayOrders(24, 30));
@@ -1071,7 +1236,10 @@ test.describe('customer display keeps its headers visible over independently scr
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     const ready = page.getByTestId('customer-display-ready-scroll');
-    await expect(preparing.getByText('10024', { exact: true }), 'the preparing tiles render').toBeVisible();
+    await expect(
+      preparing.getByText('10024', { exact: true }),
+      'the preparing tiles render',
+    ).toBeVisible();
     await expect(ready.getByText('20030', { exact: true }), 'the ready tiles render').toBeVisible();
 
     const header = page.locator('header');
@@ -1084,10 +1252,21 @@ test.describe('customer display keeps its headers visible over independently scr
     };
 
     const preparingScrolled = await scrollToEnd(preparing);
-    expect(preparingScrolled.scrollTop, 'the preparing tile list owns its own scroll').toBeGreaterThan(0);
+    expect(
+      preparingScrolled.scrollTop,
+      'the preparing tile list owns its own scroll',
+    ).toBeGreaterThan(0);
     expectPinned(await elementTop(header, 'display header'), pinned.header, 'display header');
-    expectPinned(await elementTop(preparingHeading, 'preparing heading'), pinned.preparingHeading, 'preparing heading');
-    expectPinned(await elementTop(readyHeading, 'ready heading'), pinned.readyHeading, 'ready heading');
+    expectPinned(
+      await elementTop(preparingHeading, 'preparing heading'),
+      pinned.preparingHeading,
+      'preparing heading',
+    );
+    expectPinned(
+      await elementTop(readyHeading, 'ready heading'),
+      pinned.readyHeading,
+      'ready heading',
+    );
     expect(
       await ready.evaluate((element) => element.scrollTop),
       'scrolling the preparing tiles leaves the ready tiles in place',
@@ -1097,8 +1276,10 @@ test.describe('customer display keeps its headers visible over independently scr
     const lastPreparing = await preparing.getByText('10024', { exact: true }).boundingBox();
     expect(preparingBox).not.toBeNull();
     expect(lastPreparing, 'the last preparing tile has bounds').not.toBeNull();
-    expect(lastPreparing!.y + lastPreparing!.height, 'the last preparing tile is reachable')
-      .toBeLessThanOrEqual(preparingBox!.y + preparingBox!.height + 1);
+    expect(
+      lastPreparing!.y + lastPreparing!.height,
+      'the last preparing tile is reachable',
+    ).toBeLessThanOrEqual(preparingBox!.y + preparingBox!.height + 1);
 
     const readyScrolled = await scrollToEnd(ready);
     expect(readyScrolled.scrollTop, 'the ready tile list owns its own scroll').toBeGreaterThan(0);
@@ -1107,24 +1288,35 @@ test.describe('customer display keeps its headers visible over independently scr
       'scrolling the ready tiles leaves the preparing tiles in place',
     ).toBe(preparingScrolled.scrollTop);
     expectPinned(await elementTop(header, 'display header'), pinned.header, 'display header');
-    expectPinned(await elementTop(readyHeading, 'ready heading'), pinned.readyHeading, 'ready heading');
+    expectPinned(
+      await elementTop(readyHeading, 'ready heading'),
+      pinned.readyHeading,
+      'ready heading',
+    );
 
     const readyBox = await ready.boundingBox();
     const lastReady = await ready.getByText('20030', { exact: true }).boundingBox();
     expect(readyBox).not.toBeNull();
     expect(lastReady, 'the last ready tile has bounds').not.toBeNull();
-    expect(lastReady!.y + lastReady!.height, 'the last ready tile is reachable')
-      .toBeLessThanOrEqual(readyBox!.y + readyBox!.height + 1);
+    expect(
+      lastReady!.y + lastReady!.height,
+      'the last ready tile is reachable',
+    ).toBeLessThanOrEqual(readyBox!.y + readyBox!.height + 1);
   });
 
-  test('the polling refresh keeps the scrolled tile list where the guest left it', async ({ page }) => {
+  test('the polling refresh keeps the scrolled tile list where the guest left it', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     const feed = await mockDisplayOrders(page, displayOrders(20, 4));
     await page.goto(`${BASE}/customer-display`);
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
-    await expect(preparing.getByText('10020', { exact: true }), 'the preparing tiles render').toBeVisible();
+    await expect(
+      preparing.getByText('10020', { exact: true }),
+      'the preparing tiles render',
+    ).toBeVisible();
     const scrolled = await scrollToEnd(preparing);
     expect(scrolled.scrollTop, 'the preparing tile list is scrolled').toBeGreaterThan(0);
     const headerBefore = await elementTop(page.locator('header'), 'display header');
@@ -1141,12 +1333,20 @@ test.describe('customer display keeps its headers visible over independently scr
     ).toBeVisible();
 
     const after = await preparing.evaluate((element) => element.scrollTop);
-    expect(Math.abs(after - scrolled.scrollTop), 'the refresh does not jump the scrolled list')
-      .toBeLessThanOrEqual(1);
-    expectPinned(await elementTop(page.locator('header'), 'display header'), headerBefore, 'display header');
+    expect(
+      Math.abs(after - scrolled.scrollTop),
+      'the refresh does not jump the scrolled list',
+    ).toBeLessThanOrEqual(1);
+    expectPinned(
+      await elementTop(page.locator('header'), 'display header'),
+      headerBefore,
+      'display header',
+    );
   });
 
-  test('a narrow viewport uses one reachable content flow instead of two tile windows', async ({ page }) => {
+  test('a narrow viewport uses one reachable content flow instead of two tile windows', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAsManager(page);
     await mockDisplayOrders(page, displayOrders(12, 12));
@@ -1154,7 +1354,10 @@ test.describe('customer display keeps its headers visible over independently scr
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     const ready = page.getByTestId('customer-display-ready-scroll');
-    await expect(preparing.getByText('10012', { exact: true }), 'the preparing tiles render').toBeVisible();
+    await expect(
+      preparing.getByText('10012', { exact: true }),
+      'the preparing tiles render',
+    ).toBeVisible();
     await expect(ready.getByText('20012', { exact: true }), 'the ready tiles render').toBeVisible();
 
     const preparingMetrics = await preparing.evaluate((element) => ({
@@ -1165,10 +1368,14 @@ test.describe('customer display keeps its headers visible over independently scr
       scrollHeight: element.scrollHeight,
       clientHeight: element.clientHeight,
     }));
-    expect(preparingMetrics.scrollHeight, 'the preparing tiles are not squeezed into one column window')
-      .toBeLessThanOrEqual(preparingMetrics.clientHeight + 1);
-    expect(readyMetrics.scrollHeight, 'the ready tiles are not squeezed into one column window')
-      .toBeLessThanOrEqual(readyMetrics.clientHeight + 1);
+    expect(
+      preparingMetrics.scrollHeight,
+      'the preparing tiles are not squeezed into one column window',
+    ).toBeLessThanOrEqual(preparingMetrics.clientHeight + 1);
+    expect(
+      readyMetrics.scrollHeight,
+      'the ready tiles are not squeezed into one column window',
+    ).toBeLessThanOrEqual(readyMetrics.clientHeight + 1);
 
     const viewport = page.viewportSize();
     expect(viewport, 'viewport is set').not.toBeNull();
@@ -1176,13 +1383,19 @@ test.describe('customer display keeps its headers visible over independently scr
     await lastReady.scrollIntoViewIfNeeded();
     const lastReadyBox = await lastReady.boundingBox();
     expect(lastReadyBox, 'the last ready tile has bounds').not.toBeNull();
-    expect(lastReadyBox!.y, 'the last ready tile is not above the viewport').toBeGreaterThanOrEqual(-1);
-    expect(lastReadyBox!.y + lastReadyBox!.height, 'the last ready tile is reachable in the single flow')
-      .toBeLessThanOrEqual(viewport!.height + 1);
+    expect(lastReadyBox!.y, 'the last ready tile is not above the viewport').toBeGreaterThanOrEqual(
+      -1,
+    );
+    expect(
+      lastReadyBox!.y + lastReadyBox!.height,
+      'the last ready tile is reachable in the single flow',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
     await expect(page.locator('header'), 'the business header stays reachable').toBeVisible();
   });
 
-  test('the display keeps its chrome through loading, empty and connection-error states', async ({ page }) => {
+  test('the display keeps its chrome through loading, empty and connection-error states', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.goto(`${BASE}/customer-display`);
@@ -1193,18 +1406,31 @@ test.describe('customer display keeps its headers visible over independently scr
       (url) => url.pathname === '/api/orders',
       async (route) => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ orders: [] }) });
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ orders: [] }),
+        });
       },
     );
     await page.reload();
     await expect(page.getByText('Loading orders…'), 'the loading state renders').toBeVisible();
-    await expect(page.locator('header'), 'the business header stays visible while loading').toBeVisible();
+    await expect(
+      page.locator('header'),
+      'the business header stays visible while loading',
+    ).toBeVisible();
 
     // Empty: both sections explain themselves without collapsing the page.
-    await expect(page.getByText('No orders currently being prepared'), 'the empty preparing state renders')
-      .toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('No orders are ready yet'), 'the empty ready state renders').toBeVisible();
-    const emptyTileHeight = await page.getByTestId('customer-display-preparing-scroll')
+    await expect(
+      page.getByText('No orders currently being prepared'),
+      'the empty preparing state renders',
+    ).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByText('No orders are ready yet'),
+      'the empty ready state renders',
+    ).toBeVisible();
+    const emptyTileHeight = await page
+      .getByTestId('customer-display-preparing-scroll')
       .evaluate((element) => element.clientHeight);
     expect(emptyTileHeight, 'the empty tile area still occupies usable space').toBeGreaterThan(0);
 
@@ -1213,9 +1439,14 @@ test.describe('customer display keeps its headers visible over independently scr
       (url) => url.pathname === '/api/orders',
       (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
     );
-    await expect(page.getByText('Connection problem — retrying…'), 'the connection error is reported')
-      .toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('No orders currently being prepared'), 'the sections survive the error state').toBeVisible();
+    await expect(
+      page.getByText('Connection problem — retrying…'),
+      'the connection error is reported',
+    ).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByText('No orders currently being prepared'),
+      'the sections survive the error state',
+    ).toBeVisible();
   });
 });
 
@@ -1249,22 +1480,33 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     let firstPageCount = 0;
     let releaseRefresh = () => {};
     let signalRefresh = () => {};
-    const refreshStarted = new Promise<void>((resolve) => { signalRefresh = resolve; });
+    const refreshStarted = new Promise<void>((resolve) => {
+      signalRefresh = resolve;
+    });
     await page.route('**/api/supplies/movements*', async (route) => {
       const beforeId = new URL(route.request().url()).searchParams.get('before_id');
       requestedCursors.push(beforeId);
       if (beforeId) {
-        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        await route.fulfill({
+          json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null },
+        });
         return;
       }
       firstPageCount += 1;
       if (firstPageCount === 1) {
-        await route.fulfill({ json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } });
+        await route.fulfill({
+          json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 },
+        });
         return;
       }
       // The re-entry refresh stays unresolved until the test releases it.
-      await new Promise<void>((resolve) => { releaseRefresh = resolve; signalRefresh(); });
-      await route.fulfill({ json: { movements: [movement(300, 'NEW PAGE MOVEMENT')], nextCursor: 888 } });
+      await new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+        signalRefresh();
+      });
+      await route.fulfill({
+        json: { movements: [movement(300, 'NEW PAGE MOVEMENT')], nextCursor: 888 },
+      });
     });
 
     await page.goto(`${BASE}/inventory`);
@@ -1285,13 +1527,19 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
 
     releaseRefresh();
     await expect(page.getByText('NEW PAGE MOVEMENT'), 'the fresh page wins').toBeVisible();
-    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the outdated page is replaced').toHaveCount(0);
+    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the outdated page is replaced').toHaveCount(
+      0,
+    );
 
     // Normal pagination resumes on the fresh cursor.
     await page.getByRole('button', { name: 'Load more' }).click();
     await expect(page.getByText('SECOND PAGE MOVEMENT')).toBeVisible();
     await expect(page.getByText('NEW PAGE MOVEMENT')).toBeVisible();
-    expect(requestedCursors, 'the stale 999 cursor was never requested').toEqual([null, null, '888']);
+    expect(requestedCursors, 'the stale 999 cursor was never requested').toEqual([
+      null,
+      null,
+      '888',
+    ]);
   });
 
   test('a failed first-page refresh does not leave the old cursor live', async ({ page }) => {
@@ -1301,12 +1549,16 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     let firstPageCount = 0;
     await page.route('**/api/supplies/movements*', async (route) => {
       if (new URL(route.request().url()).searchParams.get('before_id')) {
-        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        await route.fulfill({
+          json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null },
+        });
         return;
       }
       firstPageCount += 1;
       if (firstPageCount === 1) {
-        await route.fulfill({ json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } });
+        await route.fulfill({
+          json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 },
+        });
         return;
       }
       await route.fulfill({ status: 500, json: { error: 'Internal server error' } });
@@ -1337,7 +1589,9 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
       const beforeId = new URL(route.request().url()).searchParams.get('before_id');
       requestedCursors.push(beforeId);
       if (!beforeId) {
-        await route.fulfill({ json: { movements: [movement(100, 'FIRST PAGE MOVEMENT')], nextCursor: 999 } });
+        await route.fulfill({
+          json: { movements: [movement(100, 'FIRST PAGE MOVEMENT')], nextCursor: 999 },
+        });
         return;
       }
       olderPageAttempts += 1;
@@ -1345,7 +1599,9 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
         await route.fulfill({ status: 500, json: { error: 'Internal server error' } });
         return;
       }
-      await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+      await route.fulfill({
+        json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null },
+      });
     });
 
     await page.goto(`${BASE}/inventory`);
@@ -1369,13 +1625,17 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     let firstPageCount = 0;
     await page.route('**/api/supplies/movements*', async (route) => {
       if (new URL(route.request().url()).searchParams.get('before_id')) {
-        await route.fulfill({ json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null } });
+        await route.fulfill({
+          json: { movements: [movement(2, 'SECOND PAGE MOVEMENT')], nextCursor: null },
+        });
         return;
       }
       firstPageCount += 1;
-      await route.fulfill(firstPageCount === 1
-        ? { json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } }
-        : { json: { movements: [movement(300, 'FILTERED PAGE MOVEMENT')], nextCursor: null } });
+      await route.fulfill(
+        firstPageCount === 1
+          ? { json: { movements: [movement(100, 'OLD PAGE MOVEMENT')], nextCursor: 999 } }
+          : { json: { movements: [movement(300, 'FILTERED PAGE MOVEMENT')], nextCursor: null } },
+      );
     });
 
     await page.goto(`${BASE}/inventory`);
@@ -1384,7 +1644,9 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
 
     await page.getByPlaceholder('Search').first().fill('filtered');
     await expect(page.getByText('FILTERED PAGE MOVEMENT')).toBeVisible();
-    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the unfiltered page is dropped').toHaveCount(0);
+    await expect(page.getByText('OLD PAGE MOVEMENT'), 'the unfiltered page is dropped').toHaveCount(
+      0,
+    );
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 });

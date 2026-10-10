@@ -23,11 +23,15 @@ test.afterEach(async ({ page }) => {
   await setOrdersLayout(page, ordersLayoutBefore);
 });
 
-test('reserved customer is searchable, shown after reload, and linked to the dine-in order', async ({ page }) => {
+test('reserved customer is searchable, shown after reload, and linked to the dine-in order', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const authHeaders = { Authorization: `Bearer ${token}` };
-  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
+  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
+    headers: authHeaders,
+  });
   expect(businessResponse.ok()).toBeTruthy();
   const originalBusiness = await businessResponse.json();
 
@@ -67,33 +71,45 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     await setLanguage(page, 'en');
 
     await page.goto(`${BASE}/tables`);
-    const tableCard = page.locator('div.bg-card.rounded-xl.border').filter({ hasText: tableName }).first();
+    const tableCard = page
+      .locator('div.bg-card.rounded-xl.border')
+      .filter({ hasText: tableName })
+      .first();
     await expect(tableCard).toBeVisible();
     await tableCard.getByRole('button', { name: 'Reserve' }).click();
 
-    const reserveModal = page.locator('div.fixed.inset-0').filter({
-      has: page.getByRole('heading', { name: new RegExp(tableName) }),
-    }).last();
+    const reserveModal = page
+      .locator('div.fixed.inset-0')
+      .filter({
+        has: page.getByRole('heading', { name: new RegExp(tableName) }),
+      })
+      .last();
     const customerSearch = reserveModal.getByPlaceholder('Search by phone or name...');
     await customerSearch.fill(customerName);
     const searchResult = reserveModal.getByRole('button').filter({ hasText: customerName }).first();
     await expect(searchResult).toBeVisible({ timeout: 5_000 });
     const phoneSearchResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/api/customers-search'
-        && url.searchParams.get('q') === customerPhone;
+      return (
+        response.request().method() === 'GET' &&
+        url.pathname === '/api/customers-search' &&
+        url.searchParams.get('q') === customerPhone
+      );
     });
     await customerSearch.fill(customerPhone);
     const phoneSearchResults = await (await phoneSearchResponse).json();
     expect(Array.isArray(phoneSearchResults)).toBeTruthy();
-    expect(phoneSearchResults.some((result: { id: string }) => result.id === customer.id)).toBeTruthy();
+    expect(
+      phoneSearchResults.some((result: { id: string }) => result.id === customer.id),
+    ).toBeTruthy();
     await expect(searchResult).toBeVisible({ timeout: 5_000 });
     await searchResult.click();
 
     const reserveResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'PATCH' && url.pathname === `/api/tables/${tableId}/status`;
+      return (
+        response.request().method() === 'PATCH' && url.pathname === `/api/tables/${tableId}/status`
+      );
     });
     await reserveModal.getByRole('button', { name: 'Reserve Table' }).click();
     expect((await reserveResponse).ok()).toBeTruthy();
@@ -101,7 +117,10 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     await expect(tableCard).toContainText(customerPhone);
 
     await page.reload();
-    const reloadedTableCard = page.locator('div.bg-card.rounded-xl.border').filter({ hasText: tableName }).first();
+    const reloadedTableCard = page
+      .locator('div.bg-card.rounded-xl.border')
+      .filter({ hasText: tableName })
+      .first();
     await expect(reloadedTableCard).toContainText(customerName);
     await expect(reloadedTableCard).toContainText(customerPhone);
 
@@ -114,7 +133,9 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     await page.getByRole('button', { name: new RegExp(tableName) }).click();
 
     const orderResponse = page.waitForResponse((response) => {
-      return response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/orders';
+      return (
+        response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/orders'
+      );
     });
     await page.getByRole('button', { name: 'Place Order' }).click();
     const orderPayload = await (await orderResponse).json();
@@ -122,7 +143,10 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     expect(orderPayload.order.customer_id).toBe(customer.id);
 
     await page.goto(`${BASE}/orders`);
-    const orderCard = page.locator('div.bg-card.rounded-xl').filter({ hasText: `#${orderPayload.order.order_number}` }).first();
+    const orderCard = page
+      .locator('div.bg-card.rounded-xl')
+      .filter({ hasText: `#${orderPayload.order.order_number}` })
+      .first();
     await expect(orderCard).toContainText(customerName);
     await expect(orderCard.getByRole('button', { name: 'Link Customer' })).toHaveCount(0);
   } finally {
@@ -145,12 +169,16 @@ test('reserved customer is searchable, shown after reload, and linked to the din
   }
 });
 
-test('table selection preserves explicit customers and replaces or clears inherited reservation customers', async ({ page }) => {
+test('table selection preserves explicit customers and replaces or clears inherited reservation customers', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 1600, height: 900 });
   const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const authHeaders = { Authorization: `Bearer ${token}` };
-  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
+  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
+    headers: authHeaders,
+  });
   expect(businessResponse.ok()).toBeTruthy();
   const originalBusiness = await businessResponse.json();
   const attemptId = Date.now();
@@ -166,7 +194,11 @@ test('table selection preserves explicit customers and replaces or clears inheri
     name: `Explicit Guest ${attemptId}`,
     phone: `+668${String(attemptId + 2).slice(-8)}`,
   };
-  const tableNames = [`E2E-RES-A-${attemptId}`, `E2E-RES-B-${attemptId}`, `E2E-RES-FREE-${attemptId}`];
+  const tableNames = [
+    `E2E-RES-A-${attemptId}`,
+    `E2E-RES-B-${attemptId}`,
+    `E2E-RES-FREE-${attemptId}`,
+  ];
   const tableIds: string[] = [];
 
   try {
@@ -194,7 +226,10 @@ test('table selection preserves explicit customers and replaces or clears inheri
       expect(response.ok()).toBeTruthy();
       tableIds.push((await response.json()).table.id);
     }
-    for (const [tableId, customer] of [[tableIds[0], customers[0]], [tableIds[1], customers[1]]] as const) {
+    for (const [tableId, customer] of [
+      [tableIds[0], customers[0]],
+      [tableIds[1], customers[1]],
+    ] as const) {
       const response = await page.request.patch(`${BASE}/api/tables/${tableId}/status`, {
         headers: authHeaders,
         data: { status: 'reserved', reservation_customer_id: customer.id },
@@ -207,9 +242,11 @@ test('table selection preserves explicit customers and replaces or clears inheri
     await page.locator('#password').fill(E2E_PASSWORD);
     const tablesResponsePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/api/tables'
-        && url.searchParams.get('active') === '1';
+      return (
+        response.request().method() === 'GET' &&
+        url.pathname === '/api/tables' &&
+        url.searchParams.get('active') === '1'
+      );
     });
     await page.locator('button[type="submit"]').click();
     await page.waitForURL('**/pos/**', { timeout: 20_000 });
@@ -230,9 +267,11 @@ test('table selection preserves explicit customers and replaces or clears inheri
     const selectCustomerByPhone = async (phone: string, customerId: string) => {
       const search = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === 'GET'
-          && url.pathname === '/api/customers-search'
-          && url.searchParams.get('q') === phone.replace(/\D/g, '');
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === '/api/customers-search' &&
+          url.searchParams.get('q') === phone.replace(/\D/g, '')
+        );
       });
       await phoneInput.fill(phone);
       const results = await (await search).json();
@@ -248,9 +287,12 @@ test('table selection preserves explicit customers and replaces or clears inheri
       } else {
         await page.getByRole('button', { name: 'Select Table' }).click();
       }
-      const picker = page.locator('div.fixed.inset-0').filter({
-        has: page.getByRole('heading', { name: 'Select Table' }),
-      }).last();
+      const picker = page
+        .locator('div.fixed.inset-0')
+        .filter({
+          has: page.getByRole('heading', { name: 'Select Table' }),
+        })
+        .last();
       await picker.getByRole('button', { name: new RegExp(name) }).click();
     };
 

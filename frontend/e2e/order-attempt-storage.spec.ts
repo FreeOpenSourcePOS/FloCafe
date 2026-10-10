@@ -31,9 +31,14 @@ async function blockStorageWrites(page: Page, options: StorageBlockOptions): Pro
   await page.addInitScript((config: StorageBlockOptions) => {
     const originalSetItem = Storage.prototype.setItem;
     Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
-      const targetBlocked = (config.blockLocalStorage && this === window.localStorage)
-        || (config.blockSessionStorage && this === window.sessionStorage);
-      if (targetBlocked && typeof key === 'string' && config.prefixes.some((prefix) => key.startsWith(prefix))) {
+      const targetBlocked =
+        (config.blockLocalStorage && this === window.localStorage) ||
+        (config.blockSessionStorage && this === window.sessionStorage);
+      if (
+        targetBlocked &&
+        typeof key === 'string' &&
+        config.prefixes.some((prefix) => key.startsWith(prefix))
+      ) {
         throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
       }
       return originalSetItem.call(this, key, value);
@@ -50,34 +55,45 @@ async function blockStorageWrites(page: Page, options: StorageBlockOptions): Pro
 const ATTEMPT_WRITE_LOCK = 'flo.e2e.attempt-write-lock';
 
 async function blockAttemptWritesCarryingOrder(page: Page, prefix: string): Promise<void> {
-  await page.addInitScript((config: { prefix: string; lockKey: string }) => {
-    const originalSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
-      const blocked = (() => {
-        try {
-          return window.localStorage.getItem(config.lockKey) !== 'unlocked';
-        } catch {
-          return true;
+  await page.addInitScript(
+    (config: { prefix: string; lockKey: string }) => {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
+        const blocked = (() => {
+          try {
+            return window.localStorage.getItem(config.lockKey) !== 'unlocked';
+          } catch {
+            return true;
+          }
+        })();
+        if (
+          blocked &&
+          typeof key === 'string' &&
+          key.startsWith(config.prefix) &&
+          String(value).includes('"order":')
+        ) {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         }
-      })();
-      if (blocked && typeof key === 'string' && key.startsWith(config.prefix) && String(value).includes('"order":')) {
-        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-      }
-      return originalSetItem.call(this, key, value);
-    };
-  }, { prefix, lockKey: ATTEMPT_WRITE_LOCK });
+        return originalSetItem.call(this, key, value);
+      };
+    },
+    { prefix, lockKey: ATTEMPT_WRITE_LOCK },
+  );
 }
 
 /** Ignores deletes for the given prefix, like a browser that lets the renderer
  * clear the retry key only on the next load. */
 async function blockStorageRemovals(page: Page, prefix: string): Promise<void> {
-  await page.addInitScript((config: { prefix: string }) => {
-    const originalRemoveItem = Storage.prototype.removeItem;
-    Storage.prototype.removeItem = function patchedRemoveItem(key: string) {
-      if (typeof key === 'string' && key.startsWith(config.prefix)) return;
-      originalRemoveItem.call(this, key);
-    };
-  }, { prefix });
+  await page.addInitScript(
+    (config: { prefix: string }) => {
+      const originalRemoveItem = Storage.prototype.removeItem;
+      Storage.prototype.removeItem = function patchedRemoveItem(key: string) {
+        if (typeof key === 'string' && key.startsWith(config.prefix)) return;
+        originalRemoveItem.call(this, key);
+      };
+    },
+    { prefix },
+  );
 }
 
 function trackOrderRequests(page: Page): Array<{ idempotencyKey: string | undefined }> {
@@ -115,7 +131,10 @@ async function getBusinessSettings(request: APIRequestContext): Promise<Record<s
   return businessRes.json();
 }
 
-async function updateBusinessSettings(request: APIRequestContext, business: Record<string, unknown>): Promise<void> {
+async function updateBusinessSettings(
+  request: APIRequestContext,
+  business: Record<string, unknown>,
+): Promise<void> {
   const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const updated = await request.put(`${BASE}/api/settings/business`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -124,7 +143,10 @@ async function updateBusinessSettings(request: APIRequestContext, business: Reco
   expect(updated.ok()).toBeTruthy();
 }
 
-async function setBillingType(page: Page, billingType: 'prepaid' | 'postpaid'): Promise<Record<string, unknown>> {
+async function setBillingType(
+  page: Page,
+  billingType: 'prepaid' | 'postpaid',
+): Promise<Record<string, unknown>> {
   const originalBusiness = await getBusinessSettings(page.request);
   await updateBusinessSettings(page.request, { ...originalBusiness, billing_type: billingType });
   return originalBusiness;
@@ -149,15 +171,23 @@ async function updateCharges(request: APIRequestContext, charges: unknown[]): Pr
   expect(updated.ok()).toBeTruthy();
 }
 
-async function restoreBusiness(request: APIRequestContext, originalBusiness: Record<string, unknown>): Promise<void> {
+async function restoreBusiness(
+  request: APIRequestContext,
+  originalBusiness: Record<string, unknown>,
+): Promise<void> {
   await updateBusinessSettings(request, originalBusiness);
 }
 
-async function restoreCharges(request: APIRequestContext, originalCharges: unknown[]): Promise<void> {
+async function restoreCharges(
+  request: APIRequestContext,
+  originalCharges: unknown[],
+): Promise<void> {
   await updateCharges(request, originalCharges);
 }
 
-test('postpaid: no order is sent and the storage problem is reported when every attempt backend is blocked', async ({ page }) => {
+test('postpaid: no order is sent and the storage problem is reported when every attempt backend is blocked', async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   const originalBusiness = await setBillingType(page, 'postpaid');
   try {
@@ -176,13 +206,17 @@ test('postpaid: no order is sent and the storage problem is reported when every 
     // support-ticket flow stays reachable for the local storage problem.
     await expect(page.getByRole('status')).toContainText(STORAGE_UNAVAILABLE_MESSAGE);
     await expect(page.getByRole('button', { name: 'Get Help' })).toBeVisible();
-    expect(orderRequests, 'a request that cannot be retried safely must not be sent').toHaveLength(0);
+    expect(orderRequests, 'a request that cannot be retried safely must not be sent').toHaveLength(
+      0,
+    );
   } finally {
     await restoreBusiness(page.request, originalBusiness);
   }
 });
 
-test('postpaid: a sessionStorage fallback keeps the retry key across a reload without duplicating the order', async ({ page }) => {
+test('postpaid: a sessionStorage fallback keeps the retry key across a reload without duplicating the order', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'postpaid');
   try {
@@ -196,7 +230,11 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
     // First attempt loses the server response; the fallback-persisted attempt
     // must survive the reload and be replayed under the same idempotency key.
     await page.route('**/api/orders', async (route) => {
-      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E2E forced failure' }) });
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'E2E forced failure' }),
+      });
     });
 
     await loginAndOpenPos(page);
@@ -205,7 +243,9 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
     // The rejection is classified as a server failure, not as a local storage
     // failure, and it is attributed to the order (not printer) support flow.
     await expect(page.getByRole('status')).toContainText('Failed to place order');
-    await expect(page.getByText('Order rejected by the local server (HTTP 500)', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('Order rejected by the local server (HTTP 500)', { exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Get Help' })).toBeVisible();
     expect(orderRequests, 'the first attempt is sent under a durable key').toHaveLength(1);
 
@@ -228,7 +268,9 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
   }
 });
 
-test('postpaid: a confirmed sale whose cleanup is blocked never reuses the completed key', async ({ page }) => {
+test('postpaid: a confirmed sale whose cleanup is blocked never reuses the completed key', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'postpaid');
   try {
@@ -261,7 +303,9 @@ test('postpaid: a confirmed sale whose cleanup is blocked never reuses the compl
   }
 });
 
-test('prepaid: losing the retry state after the order was created replays that order instead of duplicating it', async ({ page }) => {
+test('prepaid: losing the retry state after the order was created replays that order instead of duplicating it', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'prepaid');
   try {
@@ -282,7 +326,10 @@ test('prepaid: losing the retry state after the order was created replays that o
     await expect(page.getByRole('status')).toContainText(STORAGE_UNAVAILABLE_MESSAGE);
     expect(orderRequests, 'the order request itself was sent').toHaveLength(1);
 
-    await page.evaluate((lockKey: string) => window.localStorage.setItem(lockKey, 'unlocked'), ATTEMPT_WRITE_LOCK);
+    await page.evaluate(
+      (lockKey: string) => window.localStorage.setItem(lockKey, 'unlocked'),
+      ATTEMPT_WRITE_LOCK,
+    );
     await page.reload();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
@@ -324,7 +371,10 @@ test.describe('prepaid retry charge decisions', () => {
     }
   });
 
-  test('changing charge decisions after a failed order creates a new attempt', async ({ page, request }) => {
+  test('changing charge decisions after a failed order creates a new attempt', async ({
+    page,
+    request,
+  }) => {
     originalBusiness = await getBusinessSettings(request);
     originalCharges = await getCharges(request);
     try {
@@ -358,7 +408,11 @@ test.describe('prepaid retry charge decisions', () => {
         body: { waived_charge_ids?: string[]; opted_in_charge_ids?: string[] };
       }> = [];
       page.on('request', (pageRequest) => {
-        if (pageRequest.method() !== 'POST' || new URL(pageRequest.url()).pathname !== '/api/orders') return;
+        if (
+          pageRequest.method() !== 'POST' ||
+          new URL(pageRequest.url()).pathname !== '/api/orders'
+        )
+          return;
         orderRequests.push({
           idempotencyKey: pageRequest.headers()['idempotency-key'],
           body: pageRequest.postDataJSON(),
@@ -368,7 +422,11 @@ test.describe('prepaid retry charge decisions', () => {
       await page.route('**/api/orders', async (route) => {
         if (route.request().method() === 'POST' && failFirstOrder) {
           failFirstOrder = false;
-          await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'E2E forced failure' }) });
+          await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'E2E forced failure' }),
+          });
           return;
         }
         await route.continue();
@@ -385,10 +443,11 @@ test.describe('prepaid retry charge decisions', () => {
       await page.getByRole('button', { name: 'Place Order' }).click();
       await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
       await page.getByRole('button', { name: 'Cash', exact: true }).click();
-      const firstFailure = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname === '/api/orders'
-        && response.status() === 500,
+      const firstFailure = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/orders' &&
+          response.status() === 500,
       );
       await page.getByRole('button', { name: /Confirm Payment/ }).click();
       await firstFailure;
@@ -401,28 +460,38 @@ test.describe('prepaid retry charge decisions', () => {
       await page.getByRole('button', { name: 'Cash', exact: true }).click();
       const paymentButton = page.getByRole('button', { name: /Confirm Payment/ });
       await expect(paymentButton).toBeEnabled();
-      const successfulOrder = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname === '/api/orders'
-        && response.status() === 201,
+      const successfulOrder = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/orders' &&
+          response.status() === 201,
       );
-      const paymentRequest = page.waitForRequest((request) =>
-        request.method() === 'POST'
-        && /\/api\/bills\/[^/]+\/payments$/.test(new URL(request.url()).pathname),
+      const paymentRequest = page.waitForRequest(
+        (request) =>
+          request.method() === 'POST' &&
+          /\/api\/bills\/[^/]+\/payments$/.test(new URL(request.url()).pathname),
       );
-      const successfulPayment = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && /\/api\/bills\/[^/]+\/payments$/.test(new URL(response.url()).pathname),
+      const successfulPayment = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          /\/api\/bills\/[^/]+\/payments$/.test(new URL(response.url()).pathname),
       );
       await page.getByRole('button', { name: /Confirm Payment/ }).click();
       const orderResponse = await successfulOrder;
       const order = (await orderResponse.json()).order;
-      const submittedPayment = (await paymentRequest).postDataJSON().payments as Array<{ amount: number }>;
+      const submittedPayment = (await paymentRequest).postDataJSON().payments as Array<{
+        amount: number;
+      }>;
       const paymentResponse = await successfulPayment;
-      expect(paymentResponse.status(), `payment batch returned HTTP ${paymentResponse.status()}`).toBe(200);
+      expect(
+        paymentResponse.status(),
+        `payment batch returned HTTP ${paymentResponse.status()}`,
+      ).toBe(200);
       const paymentBill = (await paymentResponse.json()).bill;
       expect(paymentBill.payment_status).toBe('paid');
-      expect(submittedPayment.reduce((sum, payment) => sum + payment.amount, 0)).toBe(paymentBill.total);
+      expect(submittedPayment.reduce((sum, payment) => sum + payment.amount, 0)).toBe(
+        paymentBill.total,
+      );
       expect(paymentBill.balance).toBe(0);
       expect(order.total).toBe(paymentBill.total);
       await expect(page.getByText(/Order #.+ paid!/)).toBeVisible({ timeout: 30000 });
@@ -434,7 +503,9 @@ test.describe('prepaid retry charge decisions', () => {
       expect(orderRequests[1].body.waived_charge_ids).toEqual([]);
       expect(orderRequests[1].body.opted_in_charge_ids).toEqual([]);
       const charges = JSON.parse(order.charges_breakdown);
-      expect(charges.find((charge: { id: string }) => charge.id === 'service_charge').amount).toBe(5);
+      expect(charges.find((charge: { id: string }) => charge.id === 'service_charge').amount).toBe(
+        5,
+      );
       expect(charges.find((charge: { id: string }) => charge.id === 'retry_addon')).toBeUndefined();
     } finally {
       try {
@@ -452,7 +523,9 @@ test.describe('prepaid retry charge decisions', () => {
   });
 });
 
-test('prepaid: no order is sent and the storage problem is reported when every attempt backend is blocked', async ({ page }) => {
+test('prepaid: no order is sent and the storage problem is reported when every attempt backend is blocked', async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   const originalBusiness = await setBillingType(page, 'prepaid');
   try {
@@ -474,7 +547,10 @@ test('prepaid: no order is sent and the storage problem is reported when every a
     await confirmPayment.click();
 
     await expect(page.getByRole('status')).toContainText(STORAGE_UNAVAILABLE_MESSAGE);
-    expect(orderRequests, 'a checkout that cannot persist its retry keys must not send the order').toHaveLength(0);
+    expect(
+      orderRequests,
+      'a checkout that cannot persist its retry keys must not send the order',
+    ).toHaveLength(0);
   } finally {
     await restoreBusiness(page.request, originalBusiness);
   }

@@ -2,7 +2,24 @@
 
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
-import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, ShoppingCart, Smartphone, SquarePen, Trash2, UserRound } from 'lucide-react';
+import {
+  Bell,
+  CheckCircle2,
+  ChefHat,
+  Circle,
+  Flame,
+  LogOut,
+  Minus,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  ShoppingCart,
+  Smartphone,
+  SquarePen,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
@@ -23,9 +40,30 @@ import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
-type Table = { id: string; name?: string; number?: string; status?: string; activeOrder?: Order | null; current_order?: Order | null };
-type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null; variant_selection?: unknown };
-type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
+type Table = {
+  id: string;
+  name?: string;
+  number?: string;
+  status?: string;
+  activeOrder?: Order | null;
+  current_order?: Order | null;
+};
+type OrderItem = {
+  id: number;
+  product_name: string;
+  quantity: number;
+  status: string;
+  special_instructions?: string | null;
+  variant_selection?: unknown;
+};
+type Order = {
+  id: number;
+  order_number: string;
+  table_id?: string | null;
+  status: string;
+  items?: OrderItem[];
+  customer?: { id: string; name: string; phone?: string } | null;
+};
 type DraftLine = CartItem;
 type ServerAppInfo = {
   country: string;
@@ -57,10 +95,37 @@ function createApi(): AxiosInstance {
 }
 
 function itemStatusIcon(status: string, t: (key: ServerAppKey) => string) {
-  if (status === 'preparing') return <Flame size={15} className="text-orange-500 dark:text-orange-400" aria-label={t('statusPreparing')} />;
-  if (status === 'ready') return <Bell size={15} className="text-emerald-600 dark:text-emerald-400" aria-label={t('statusReady')} />;
-  if (status === 'served') return <CheckCircle2 size={15} className="text-blue-600 dark:text-blue-400" aria-label={t('statusServed')} />;
-  return <Circle size={15} className="text-gray-400 dark:text-gray-500" aria-label={t('statusWaiting')} />;
+  if (status === 'preparing')
+    return (
+      <Flame
+        size={15}
+        className="text-orange-500 dark:text-orange-400"
+        aria-label={t('statusPreparing')}
+      />
+    );
+  if (status === 'ready')
+    return (
+      <Bell
+        size={15}
+        className="text-emerald-600 dark:text-emerald-400"
+        aria-label={t('statusReady')}
+      />
+    );
+  if (status === 'served')
+    return (
+      <CheckCircle2
+        size={15}
+        className="text-blue-600 dark:text-blue-400"
+        aria-label={t('statusServed')}
+      />
+    );
+  return (
+    <Circle
+      size={15}
+      className="text-gray-400 dark:text-gray-500"
+      aria-label={t('statusWaiting')}
+    />
+  );
 }
 
 function money(value: number | string, regional: ServerAppInfo | null) {
@@ -71,7 +136,12 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
-function sendAttemptSignature(scopeId: string, draft: DraftLine[], customerName: string, customerPhone: string): string {
+function sendAttemptSignature(
+  scopeId: string,
+  draft: DraftLine[],
+  customerName: string,
+  customerPhone: string,
+): string {
   const items = draft.map((line) => `${line.id}:${line.quantity}`).join('|');
   return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}`;
 }
@@ -146,7 +216,12 @@ export default function ServerStandalonePage() {
     if (!api || !tableId) return;
     cancelPendingCustomerLookup();
     const res = await api.get('/api/orders', {
-      params: { table_id: tableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
+      params: {
+        table_id: tableId,
+        type: 'dine_in',
+        status: 'pending,preparing,ready',
+        per_page: 1,
+      },
     });
     const order = res.data.orders?.[0] || null;
     setCurrentOrder(order);
@@ -164,7 +239,8 @@ export default function ServerStandalonePage() {
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
-    api.get<ServerAppInfo>('/api/server-app/info')
+    api
+      .get<ServerAppInfo>('/api/server-app/info')
       .then((infoResponse) => {
         if (!cancelled) setRegional(infoResponse.data);
         return api.get('/api/auth/me');
@@ -178,7 +254,9 @@ export default function ServerStandalonePage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [api]);
 
   useEffect(() => {
@@ -188,40 +266,54 @@ export default function ServerStandalonePage() {
       api.get('/api/categories', { params: { active: 'true' } }),
       api.get('/api/products', { params: { active: 'true' } }),
       api.get('/api/tables', { params: { active: 'true' } }),
-    ]).then(([categoriesRes, productsRes, tablesRes]) => {
-      if (cancelled) return;
-      setCategories(categoriesRes.data.categories || []);
-      setProducts(productsRes.data.products || []);
-      const loadedTables = tablesRes.data.tables || [];
-      setTables(loadedTables);
-      if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
-    }).catch(() => toast.error(t('couldNotLoadData')));
-    return () => { cancelled = true; };
+    ])
+      .then(([categoriesRes, productsRes, tablesRes]) => {
+        if (cancelled) return;
+        setCategories(categoriesRes.data.categories || []);
+        setProducts(productsRes.data.products || []);
+        const loadedTables = tablesRes.data.tables || [];
+        setTables(loadedTables);
+        if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
+      })
+      .catch(() => toast.error(t('couldNotLoadData')));
+    return () => {
+      cancelled = true;
+    };
   }, [api, selectedTableId, user, t]);
 
   useEffect(() => {
     if (!selectedTableId || !user || !api) return;
     let cancelled = false;
     cancelPendingCustomerLookup();
-    api.get('/api/orders', {
-      params: { table_id: selectedTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
-    }).then((res) => {
-      if (cancelled) return;
-      const order = res.data.orders?.[0] || null;
-      setCurrentOrder(order);
-      if (order?.customer) {
-        setCustomerName(order.customer.name || '');
-        setCustomerPhone(order.customer.phone || '');
-      } else {
-        setCustomerName('');
-        setCustomerPhone('');
-      }
-      setCustomerMatch(null);
-      setCustomerSearched(false);
-    }).catch(() => {
-      if (!cancelled) setCurrentOrder(null);
-    });
-    return () => { cancelled = true; };
+    api
+      .get('/api/orders', {
+        params: {
+          table_id: selectedTableId,
+          type: 'dine_in',
+          status: 'pending,preparing,ready',
+          per_page: 1,
+        },
+      })
+      .then((res) => {
+        if (cancelled) return;
+        const order = res.data.orders?.[0] || null;
+        setCurrentOrder(order);
+        if (order?.customer) {
+          setCustomerName(order.customer.name || '');
+          setCustomerPhone(order.customer.phone || '');
+        } else {
+          setCustomerName('');
+          setCustomerPhone('');
+        }
+        setCustomerMatch(null);
+        setCustomerSearched(false);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentOrder(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [api, selectedTableId, user]);
 
   useEffect(() => {
@@ -247,7 +339,10 @@ export default function ServerStandalonePage() {
       try {
         const parsed = regional?.country ? parsePhone(rawPhone, regional.country) : null;
         const lookupPhone = parsed ? parsed.e164 : rawPhone;
-        const { data } = await api.get('/api/crm/lookup', { params: { phone: lookupPhone }, signal: controller.signal });
+        const { data } = await api.get('/api/crm/lookup', {
+          params: { phone: lookupPhone },
+          signal: controller.signal,
+        });
         if (data.found && data.customer) {
           setCustomerMatch({ id: data.customer.id, name: data.customer.name });
           setCustomerName(data.customer.name || '');
@@ -287,30 +382,76 @@ export default function ServerStandalonePage() {
   }
 
   async function logout() {
-    try { await api?.post('/api/auth/logout'); } catch {}
+    try {
+      await api?.post('/api/auth/logout');
+    } catch {}
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
   }
 
-  function addDraftLine(product: Product, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null = null) {
+  function addDraftLine(
+    product: Product,
+    quantity: number,
+    addons: Addon[],
+    specialInstructions: string,
+    variant: ProductVariant | null = null,
+  ) {
     setDraft((lines) => {
-      const lineId = generateCartItemId(product.id, variant?.id ?? null, addons, specialInstructions);
+      const lineId = generateCartItemId(
+        product.id,
+        variant?.id ?? null,
+        addons,
+        specialInstructions,
+      );
       const existing = lines.find((line) => line.id === lineId);
       if (existing) {
-        return lines.map((line) => line.id === lineId ? { ...line, quantity: line.quantity + quantity } : line);
+        return lines.map((line) =>
+          line.id === lineId ? { ...line, quantity: line.quantity + quantity } : line,
+        );
       }
-      return [...lines, { id: lineId, product, quantity, addons, special_instructions: specialInstructions, variant }];
+      return [
+        ...lines,
+        {
+          id: lineId,
+          product,
+          quantity,
+          addons,
+          special_instructions: specialInstructions,
+          variant,
+        },
+      ];
     });
   }
 
-  function updateDraftLine(lineId: string, quantity: number, addons: Addon[], specialInstructions: string, variant: ProductVariant | null = null) {
+  function updateDraftLine(
+    lineId: string,
+    quantity: number,
+    addons: Addon[],
+    specialInstructions: string,
+    variant: ProductVariant | null = null,
+  ) {
     setDraft((lines) => {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
 
-      const newId = generateCartItemId(target.product.id, (variant ?? target.variant)?.id ?? null, addons, specialInstructions);
+      const newId = generateCartItemId(
+        target.product.id,
+        (variant ?? target.variant)?.id ?? null,
+        addons,
+        specialInstructions,
+      );
       if (newId === lineId) {
-        return lines.map((line) => line.id === lineId ? { ...line, quantity, addons, special_instructions: specialInstructions, variant: variant ?? target.variant ?? null } : line);
+        return lines.map((line) =>
+          line.id === lineId
+            ? {
+                ...line,
+                quantity,
+                addons,
+                special_instructions: specialInstructions,
+                variant: variant ?? target.variant ?? null,
+              }
+            : line,
+        );
       }
 
       // The edit produced a config that matches another existing line — merge into it.
@@ -318,9 +459,22 @@ export default function ServerStandalonePage() {
       if (collision) {
         return lines
           .filter((line) => line.id !== lineId)
-          .map((line) => line.id === newId ? { ...line, quantity: line.quantity + quantity } : line);
+          .map((line) =>
+            line.id === newId ? { ...line, quantity: line.quantity + quantity } : line,
+          );
       }
-      return lines.map((line) => line.id === lineId ? { ...line, id: newId, quantity, addons, special_instructions: specialInstructions, variant: variant ?? target.variant ?? null } : line);
+      return lines.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              id: newId,
+              quantity,
+              addons,
+              special_instructions: specialInstructions,
+              variant: variant ?? target.variant ?? null,
+            }
+          : line,
+      );
     });
   }
 
@@ -329,9 +483,11 @@ export default function ServerStandalonePage() {
   }
 
   function changeQty(lineId: string, delta: number) {
-    setDraft((lines) => lines
-      .map((line) => line.id === lineId ? { ...line, quantity: line.quantity + delta } : line)
-      .filter((line) => line.quantity > 0));
+    setDraft((lines) =>
+      lines
+        .map((line) => (line.id === lineId ? { ...line, quantity: line.quantity + delta } : line))
+        .filter((line) => line.quantity > 0),
+    );
   }
 
   async function ensureCustomer(): Promise<string | null> {
@@ -349,7 +505,10 @@ export default function ServerStandalonePage() {
       } catch {}
     }
     const fallbackName = name || t('guestFallbackName', { last4: rawPhone.slice(-4) });
-    const res = await api.post('/api/customers', { name: fallbackName, phone: normalizedPhone || undefined });
+    const res = await api.post('/api/customers', {
+      name: fallbackName,
+      phone: normalizedPhone || undefined,
+    });
     return res.data.customer?.id || null;
   }
 
@@ -367,7 +526,8 @@ export default function ServerStandalonePage() {
       }
     }
     try {
-      const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+      const { generateKotHtml, resolveKotTicketLanguage } =
+        await import('@/lib/printer/kot-web-print');
       const html = generateKotHtml(orderForPrint as unknown as FullOrder, {
         paperWidth: 80,
         language: resolveKotTicketLanguage(),
@@ -395,22 +555,26 @@ export default function ServerStandalonePage() {
     }
     try {
       const { generateOrderSlipHtml } = await import('@/lib/printer/order-slip-web-print');
-      const html = generateOrderSlipHtml(orderForPrint as unknown as FullOrder, {
-        title: t('orderSlipTitle'),
-        subtotal: t('orderSlipSubtotal'),
-        discount: t('orderSlipDiscount'),
-        serviceCharge: t('orderSlipServiceCharge'),
-        deliveryCharge: t('orderSlipDeliveryCharge'),
-        packagingCharge: t('orderSlipPackagingCharge'),
-        tax: t('orderSlipTax'),
-        total: t('orderSlipTotal'),
-      }, {
-        paperWidth: 80,
-        country: regional?.country,
-        currency: regional?.currency,
-        locale: getLanguageLocale(language),
-        direction: getLanguageDirection(language),
-      });
+      const html = generateOrderSlipHtml(
+        orderForPrint as unknown as FullOrder,
+        {
+          title: t('orderSlipTitle'),
+          subtotal: t('orderSlipSubtotal'),
+          discount: t('orderSlipDiscount'),
+          serviceCharge: t('orderSlipServiceCharge'),
+          deliveryCharge: t('orderSlipDeliveryCharge'),
+          packagingCharge: t('orderSlipPackagingCharge'),
+          tax: t('orderSlipTax'),
+          total: t('orderSlipTotal'),
+        },
+        {
+          paperWidth: 80,
+          country: regional?.country,
+          currency: regional?.currency,
+          locale: getLanguageLocale(language),
+          direction: getLanguageDirection(language),
+        },
+      );
       await printerService.printViaBrowser(html, 80);
     } catch (fallbackError: unknown) {
       toastApiError(fallbackError, t('billPrintFailed'), apiErrorT);
@@ -435,21 +599,29 @@ export default function ServerStandalonePage() {
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
       if (currentOrder?.id) {
-        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items }, {
-          headers: { 'Idempotency-Key': idempotencyKey },
-        });
+        const { data } = await api.post(
+          `/api/orders/${currentOrder.id}/items`,
+          { items },
+          {
+            headers: { 'Idempotency-Key': idempotencyKey },
+          },
+        );
         orderId = data.order.id;
         rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
         const existingIds = new Set((currentOrder.items || []).map((item) => item.id));
         newItems = (data.order.items || []).filter((item: OrderItem) => !existingIds.has(item.id));
       } else {
-        const { data } = await api.post('/api/orders', {
-          table_id: selectedTableId,
-          customer_id: customerId,
-          type: 'dine_in',
-          items,
-        }, { headers: { 'Idempotency-Key': idempotencyKey } });
+        const { data } = await api.post(
+          '/api/orders',
+          {
+            table_id: selectedTableId,
+            customer_id: customerId,
+            type: 'dine_in',
+            items,
+          },
+          { headers: { 'Idempotency-Key': idempotencyKey } },
+        );
         orderId = data.order.id;
         rawOrder = data.order;
         newItems = data.order.items || [];
@@ -464,7 +636,9 @@ export default function ServerStandalonePage() {
       const enrichedOrder = {
         ...rawOrder,
         table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
-        customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
+        customer:
+          currentOrder?.customer ||
+          (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
       };
       // Backgrounded so an unreachable printer can't block Send; sequenced (not concurrent)
       // since KOT and bill can share a default printer and race its socket connection.
@@ -482,13 +656,19 @@ export default function ServerStandalonePage() {
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
   const filteredProducts = products.filter((product) => {
-    const matchesCategory = selectedCategoryId === 'all' || product.category_id === selectedCategoryId;
+    const matchesCategory =
+      selectedCategoryId === 'all' || product.category_id === selectedCategoryId;
     const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
     return matchesCategory && matchesQuery;
   });
   const draftTotal = draft.reduce((sum, line) => {
-    const addonTotal = line.addons.reduce((addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1), 0);
-    return sum + ((Number(line.variant?.price ?? line.product.price) || 0) + addonTotal) * line.quantity;
+    const addonTotal = line.addons.reduce(
+      (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
+      0,
+    );
+    return (
+      sum + ((Number(line.variant?.price ?? line.product.price) || 0) + addonTotal) * line.quantity
+    );
   }, 0);
   const draftQuantities = useMemo(() => {
     const quantities = new Map<string, number>();
@@ -500,7 +680,11 @@ export default function ServerStandalonePage() {
   const draftItemCount = draft.reduce((sum, line) => sum + line.quantity, 0);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center bg-background"><div className="h-10 w-10 animate-spin rounded-full border-4 border-brand border-t-transparent" /></div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-brand border-t-transparent" />
+      </div>
+    );
   }
 
   if (disabled) {
@@ -516,20 +700,46 @@ export default function ServerStandalonePage() {
   if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm">
+        <form
+          onSubmit={handleLogin}
+          className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm"
+        >
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
             <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
             <p className="mt-1 text-sm text-muted-foreground">{t('loginSubtitle')}</p>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              dir="ltr"
+              placeholder={t('emailPlaceholder')}
+              required
+              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+            />
+            <input
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              placeholder={tAuth('password')}
+              required
+              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+            />
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-border text-brand focus:ring-brand" />
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+                className="rounded border-border text-brand focus:ring-brand"
+              />
               {tAuth('rememberMe')}
             </label>
-            <button disabled={loginLoading} className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60">
+            <button
+              disabled={loginLoading}
+              className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60"
+            >
               {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
             </button>
           </div>
@@ -543,29 +753,48 @@ export default function ServerStandalonePage() {
     <>
       <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <input value={customerPhone} onChange={(event) => handleCustomerPhoneChange(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none" />
+        <input
+          value={customerPhone}
+          onChange={(event) => handleCustomerPhoneChange(event.target.value)}
+          dir="ltr"
+          placeholder={t('phonePlaceholder')}
+          className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+        />
         <input
           value={customerName}
           onChange={customerMatch ? undefined : (event) => setCustomerName(event.target.value)}
           readOnly={!!customerMatch}
-          placeholder={customerSearched ? (customerMatch ? '' : t('customerNamePlaceholder')) : t('customerNamePlaceholder')}
+          placeholder={
+            customerSearched
+              ? customerMatch
+                ? ''
+                : t('customerNamePlaceholder')
+              : t('customerNamePlaceholder')
+          }
           className={`h-10 rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none ${customerMatch ? 'border-border bg-muted' : 'border-border bg-background'}`}
         />
       </div>
       {customerSearched && (
-        <p className={`mt-1 text-xs font-medium ${customerMatch ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+        <p
+          className={`mt-1 text-xs font-medium ${customerMatch ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}
+        >
           {customerMatch ? tPos('customerFound') : tPos('newCustomerEnterName')}
         </p>
       )}
 
       {currentOrder?.items && currentOrder.items.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
-          <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t('kitchen')}</p>
+          <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            {t('kitchen')}
+          </p>
           <div className="space-y-2">
             {currentOrder.items.map((item) => (
               <div key={item.id} className="flex items-center gap-2 text-sm">
                 {itemStatusIcon(item.status, t)}
-                <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {formatItemHeading(item.product_name, item.variant_selection)}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  <Ltr>{item.quantity}</Ltr> x{' '}
+                  {formatItemHeading(item.product_name, item.variant_selection)}
+                </span>
               </div>
             ))}
           </div>
@@ -573,7 +802,9 @@ export default function ServerStandalonePage() {
       )}
 
       <div className="mt-4 border-t border-border pt-3">
-        <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t('newItems')}</p>
+        <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+          {t('newItems')}
+        </p>
         {draft.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">{t('emptyDraft')}</p>
         ) : (
@@ -583,32 +814,56 @@ export default function ServerStandalonePage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">
-                      {line.variant ? `${line.product.name} (${line.variant.name})` : line.product.name}
+                      {line.variant
+                        ? `${line.product.name} (${line.variant.name})`
+                        : line.product.name}
                     </span>
                     {line.addons.length > 0 && (
                       <div className="mt-0.5 space-y-0.5">
                         {line.addons.map((addon) => (
                           <p key={addon.id} className="truncate text-xs text-muted-foreground">
-                            + {addon.name}{(addon.quantity || 1) > 1 ? ` x${addon.quantity}` : ''}
+                            + {addon.name}
+                            {(addon.quantity || 1) > 1 ? ` x${addon.quantity}` : ''}
                           </p>
                         ))}
                       </div>
                     )}
                     {line.special_instructions && (
-                      <p className="mt-0.5 truncate text-xs italic text-muted-foreground">{line.special_instructions}</p>
+                      <p className="mt-0.5 truncate text-xs italic text-muted-foreground">
+                        {line.special_instructions}
+                      </p>
                     )}
                   </div>
-                  <button onClick={() => removeDraftLine(line.id)} aria-label={tCommon('removeItem')}
-                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-red-500"><Trash2 size={14} /></button>
+                  <button
+                    onClick={() => removeDraftLine(line.id)}
+                    aria-label={tCommon('removeItem')}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-red-500"
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <button onClick={() => changeQty(line.id, -1)} className="rounded-md border border-border bg-card p-1"><Minus size={14} /></button>
-                    <span className="w-6 text-center text-sm font-semibold"><Ltr>{line.quantity}</Ltr></span>
-                    <button onClick={() => changeQty(line.id, 1)} className="rounded-md border border-border bg-card p-1"><Plus size={14} /></button>
+                    <button
+                      onClick={() => changeQty(line.id, -1)}
+                      className="rounded-md border border-border bg-card p-1"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className="w-6 text-center text-sm font-semibold">
+                      <Ltr>{line.quantity}</Ltr>
+                    </span>
+                    <button
+                      onClick={() => changeQty(line.id, 1)}
+                      className="rounded-md border border-border bg-card p-1"
+                    >
+                      <Plus size={14} />
+                    </button>
                   </div>
-                  <button onClick={() => setEditingDraftLine(line)}
-                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60">
+                  <button
+                    onClick={() => setEditingDraftLine(line)}
+                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                  >
                     <SquarePen size={12} />
                     {tCommon('edit')}
                   </button>
@@ -621,10 +876,15 @@ export default function ServerStandalonePage() {
 
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         <span className="text-sm text-muted-foreground">{t('draftTotal')}</span>
-        <span className="text-lg font-bold"><Ltr>{money(draftTotal, regional)}</Ltr></span>
+        <span className="text-lg font-bold">
+          <Ltr>{money(draftTotal, regional)}</Ltr>
+        </span>
       </div>
-      <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
-        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">
+      <button
+        onClick={sendDraft}
+        disabled={!selectedTableId || draft.length === 0 || sending}
+        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50"
+      >
         <Send size={17} />
         {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
       </button>
@@ -635,28 +895,53 @@ export default function ServerStandalonePage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-20 border-b border-border bg-card/95 px-3 py-2 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white"><ChefHat size={18} /></div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
+            <ChefHat size={18} />
+          </div>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold">{t('title')}</h1>
-            <p className="truncate text-xs text-muted-foreground">{activeTable ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('selectTable')}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {activeTable
+                ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) })
+                : t('selectTable')}
+            </p>
           </div>
-          <button onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))} className="rounded-lg border border-border p-2 text-muted-foreground"><RefreshCw size={17} /></button>
-          <button onClick={logout} className="rounded-lg border border-border p-2 text-muted-foreground"><LogOut size={17} /></button>
+          <button
+            onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))}
+            className="rounded-lg border border-border p-2 text-muted-foreground"
+          >
+            <RefreshCw size={17} />
+          </button>
+          <button
+            onClick={logout}
+            className="rounded-lg border border-border p-2 text-muted-foreground"
+          >
+            <LogOut size={17} />
+          </button>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
         <section className="rounded-lg border border-border bg-card p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t('tables')}</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            {t('tables')}
+          </h2>
           <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
             {tables.map((table) => {
               const selected = table.id === selectedTableId;
               const order = table.activeOrder || table.current_order;
               return (
-                <button key={table.id} onClick={() => setSelectedTableId(table.id)}
-                  className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}>
-                  <span className="block truncate text-sm font-semibold">{table.name || table.number}</span>
-                  <span className="text-xs text-muted-foreground">{order ? t('openOrder') : tTables('statusAvailable')}</span>
+                <button
+                  key={table.id}
+                  onClick={() => setSelectedTableId(table.id)}
+                  className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
+                >
+                  <span className="block truncate text-sm font-semibold">
+                    {table.name || table.number}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {order ? t('openOrder') : tTables('statusAvailable')}
+                  </span>
                 </button>
               );
             })}
@@ -667,14 +952,27 @@ export default function ServerStandalonePage() {
           <div className="mb-3 flex gap-2">
             <div className="relative flex-1">
               <Search size={16} className="absolute start-3 top-3 text-muted-foreground" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-10 w-full rounded-lg border border-border bg-background ps-9 pe-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t('searchMenu')}
+                className="h-10 w-full rounded-lg border border-border bg-background ps-9 pe-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+              />
             </div>
           </div>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button onClick={() => setSelectedCategoryId('all')} className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}>{tOrders('all')}</button>
+            <button
+              onClick={() => setSelectedCategoryId('all')}
+              className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
+            >
+              {tOrders('all')}
+            </button>
             {categories.map((category) => (
-              <button key={category.id} onClick={() => setSelectedCategoryId(category.id)}
-                className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}>
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategoryId(category.id)}
+                className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
+              >
                 {category.name}
               </button>
             ))}
@@ -683,18 +981,23 @@ export default function ServerStandalonePage() {
             {filteredProducts.map((product) => {
               const inCartQty = draftQuantities.get(product.id) || 0;
               return (
-                <button key={product.id} onClick={() => {
-                  if (productNeedsCustomizer(product)) setAddonModalProduct(product);
-                  else addDraftLine(product, 1, [], '');
-                }}
-                  className="relative min-h-24 rounded-lg border border-border bg-card p-3 text-start hover:border-brand">
+                <button
+                  key={product.id}
+                  onClick={() => {
+                    if (productNeedsCustomizer(product)) setAddonModalProduct(product);
+                    else addDraftLine(product, 1, [], '');
+                  }}
+                  className="relative min-h-24 rounded-lg border border-border bg-card p-3 text-start hover:border-brand"
+                >
                   {inCartQty > 0 && (
                     <span className="absolute top-0 end-0 z-10 flex h-6 w-6 items-center justify-center rounded-es-lg bg-brand text-xs font-bold text-white">
                       <Ltr>{inCartQty}</Ltr>
                     </span>
                   )}
                   <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                  <span className="mt-2 block text-sm text-muted-foreground"><Ltr>{money(product.price, regional)}</Ltr></span>
+                  <span className="mt-2 block text-sm text-muted-foreground">
+                    <Ltr>{money(product.price, regional)}</Ltr>
+                  </span>
                 </button>
               );
             })}
@@ -708,7 +1011,10 @@ export default function ServerStandalonePage() {
 
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:bg-brand-hover active:bg-brand-hover md:hidden" aria-label={t('currentTicket')}>
+          <button
+            className="fixed bottom-5 end-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:bg-brand-hover active:bg-brand-hover md:hidden"
+            aria-label={t('currentTicket')}
+          >
             <ShoppingCart size={22} />
             {draftItemCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
@@ -718,9 +1024,7 @@ export default function ServerStandalonePage() {
           </button>
         </DrawerTrigger>
         <DrawerContent className="max-h-[85vh] text-foreground">
-          <div className="max-h-[80vh] overflow-y-auto px-3 pb-3">
-            {ticketPanelBody}
-          </div>
+          <div className="max-h-[80vh] overflow-y-auto px-3 pb-3">{ticketPanelBody}</div>
         </DrawerContent>
       </Drawer>
 
@@ -729,7 +1033,9 @@ export default function ServerStandalonePage() {
           product={addonModalProduct}
           currency={regional?.currency || ''}
           country={regional?.country}
-          onAdd={(addedProduct, quantity, addons, instructions, variant) => addDraftLine(addedProduct, quantity, addons, instructions, variant)}
+          onAdd={(addedProduct, quantity, addons, instructions, variant) =>
+            addDraftLine(addedProduct, quantity, addons, instructions, variant)
+          }
           onClose={() => setAddonModalProduct(null)}
         />
       )}
@@ -744,7 +1050,9 @@ export default function ServerStandalonePage() {
           initialAddons={editingDraftLine.addons}
           initialInstructions={editingDraftLine.special_instructions}
           initialVariant={editingDraftLine.variant}
-          onAdd={(_editedProduct, quantity, addons, instructions, variant) => updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant)}
+          onAdd={(_editedProduct, quantity, addons, instructions, variant) =>
+            updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant)
+          }
           onClose={() => setEditingDraftLine(null)}
         />
       )}

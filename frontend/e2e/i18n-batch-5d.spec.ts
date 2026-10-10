@@ -2,11 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import {
-  E2E_BASE_URL,
-  E2E_KDS_BASE_URL,
-  E2E_SERVER_APP_BASE_URL,
-} from './helpers/urls';
+import { E2E_BASE_URL, E2E_KDS_BASE_URL, E2E_SERVER_APP_BASE_URL } from './helpers/urls';
 
 const BASE_API = E2E_BASE_URL;
 const BASE_KDS = E2E_KDS_BASE_URL;
@@ -29,7 +25,10 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
     headers: { Authorization: `Bearer ${token}` },
     data: { value },
   });
-  expect(res.ok(), `setting language=${value} should succeed (status ${res.status()})`).toBeTruthy();
+  expect(
+    res.ok(),
+    `setting language=${value} should succeed (status ${res.status()})`,
+  ).toBeTruthy();
   await page.evaluate((lang) => {
     try {
       const raw = localStorage.getItem('pos-settings');
@@ -40,7 +39,9 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
   }, value);
 }
 
-test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
+test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({
+  page,
+}) => {
   // 1. Setup session & seed data
   const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
@@ -80,7 +81,9 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByText('Password', { exact: true })).toBeVisible();
   await expect(page.getByText('Keep me logged in')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
-  await expect(page.getByText('Only chef, manager, or owner roles can access the kitchen display.')).toBeVisible();
+  await expect(
+    page.getByText('Only chef, manager, or owner roles can access the kitchen display.'),
+  ).toBeVisible();
   await captureScreenshot(page, 'kds-login-en.png');
 
   // Log in to KDS
@@ -148,7 +151,10 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   // Click a table and an item — the simple product lands on the ticket on tap; its
   // Edit action is what reopens the addon/instructions modal.
-  await page.getByRole('button', { name: /Table 1/i }).first().click();
+  await page
+    .getByRole('button', { name: /Table 1/i })
+    .first()
+    .click();
   await page.getByText('E2E Coffee').first().click();
   await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
   await expect(page.getByPlaceholder('e.g., no onions, extra spicy...')).toBeVisible();
@@ -176,7 +182,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByText('گذرواژه', { exact: true })).toBeVisible();
     await expect(page.getByText('ورود من را به یاد بسپار')).toBeVisible();
     await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
-    await expect(page.getByText('تنها سرآشپز، سرپرست یا دارنده می‌تواند به نمایشگر آشپزخانه دسترسی داشته باشد.')).toBeVisible();
+    await expect(
+      page.getByText(
+        'تنها سرآشپز، سرپرست یا دارنده می‌تواند به نمایشگر آشپزخانه دسترسی داشته باشد.',
+      ),
+    ).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await captureScreenshot(page, 'kds-login-fa.png');
 
@@ -199,7 +209,9 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     const modalHeaderFa = page.locator('#kds-item-modal-title');
     await expect(modalHeaderFa).toBeVisible();
     await expect(page.getByText(`سفارش شماره ${order.order_number}`)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'تغییر وضعیت به در حال آماده‌سازی' })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'تغییر وضعیت به در حال آماده‌سازی' }),
+    ).toBeVisible();
     await captureScreenshot(page, 'kds-item-modal-fa.png');
     await page.getByLabel('بستن').click();
     await expect(modalHeaderFa).toBeHidden();
@@ -247,14 +259,16 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     // Select table and item — the simple product lands on the ticket on tap; Edit
     // is what reopens the addon/instructions modal.
-    await page.getByRole('button', { name: /Table 1/i }).first().click();
+    await page
+      .getByRole('button', { name: /Table 1/i })
+      .first()
+      .click();
     await page.getByText('E2E Coffee').first().click();
     await page.getByRole('button', { name: 'ویرایش', exact: true }).first().click();
     await expect(page.getByPlaceholder('برای نمونه: بدون پیاز، تندتر')).toBeVisible();
     await page.getByRole('button', { name: /ذخیره دگرگونی/ }).click();
     await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
-
   } finally {
     await setLanguage(page, token, 'en');
   }

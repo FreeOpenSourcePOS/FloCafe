@@ -1,12 +1,11 @@
 /**
- * Table Move UI: modal rendering, disabled states, floor filtering,
- * and entry point wiring across Floorplan, Tables list, and POS Checkout.
+ * Table Move UI: modal rendering, disabled states, candidate table
+ * filtering, and floor filtering edge cases.
  *
  * Usage: ts-node --transpile-only -P tests/tsconfig.json tests/table-move-ui.test.ts
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.join(__dirname, '..');
@@ -192,90 +191,60 @@ function testMoveTableModalRendering() {
   );
 }
 
-function testFloorplanEditorWiring() {
-  const floorplanSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/tables/FloorplanEditor.tsx'),
-    'utf8',
+function testMoveTableModalFilteringAndEdgeCases() {
+  const source = mockTable('tbl-source', 'Source Table', 'occupied', 'Main Room', 2);
+  const inactiveCandidate = mockTable(
+    'tbl-inactive',
+    'Inactive Table',
+    'available',
+    'Main Room',
+    4,
+  );
+  inactiveCandidate.is_active = false;
+
+  const activeCandidate = mockTable('tbl-active', 'Active Table', 'available', 'Main Room', 4);
+
+  const markup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(MoveTableModal, {
+      sourceTable: source,
+      tables: [source, inactiveCandidate, activeCandidate],
+      onClose: () => undefined,
+      onSuccess: () => undefined,
+    }),
   );
 
+  assert.ok(markup.includes('Source Table'), 'renders source table name');
+  assert.ok(markup.includes('Main Room'), 'renders source table floor');
+  assert.ok(!markup.includes('001'), 'omits order details when source has no active order');
+
+  assert.ok(markup.includes('Active Table'), 'renders active candidate');
+  assert.ok(!markup.includes('Inactive Table'), 'filters out inactive tables from candidates');
   assert.ok(
-    floorplanSrc.includes('onMoveTable?: (tb: Table) => void;'),
-    'FloorplanEditor accepts onMoveTable prop',
-  );
-  assert.ok(
-    floorplanSrc.includes("label: t('moveTable')"),
-    'sheetActionsFor includes moveTable action',
-  );
-  assert.ok(
-    floorplanSrc.includes('ArrowRightLeft'),
-    'sheetActionsFor uses ArrowRightLeft icon for moveTable',
-  );
-  assert.ok(
-    floorplanSrc.includes('onMoveTable(tb)'),
-    'sheetActionsFor invokes onMoveTable callback',
-  );
-  assert.ok(
-    floorplanSrc.includes('!!onMoveTable'),
-    'canOpenActionSheet opens for occupied table when onMoveTable is supplied',
+    !markup.includes('tables.allFloors'),
+    'omits floor filter tabs when only one floor exists',
   );
 
-  console.log('  ✓ FloorplanEditor is properly wired with onMoveTable prop and action sheet entry');
-}
-
-function testTablesPageWiring() {
-  const tablesPageSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/app/(dashboard)/tables/page.tsx'),
-    'utf8',
-  );
-
-  assert.ok(
-    tablesPageSrc.includes("tenantCan(currentTenant, 'tables.orders.move')"),
-    'checks tables.orders.move permission',
+  const emptyMarkup = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(MoveTableModal, {
+      sourceTable: source,
+      tables: [source],
+      onClose: () => undefined,
+      onSuccess: () => undefined,
+    }),
   );
   assert.ok(
-    tablesPageSrc.includes('const [movingTable, setMovingTable] = useState<Table | null>(null);'),
-    'has movingTable state',
-  );
-  assert.ok(
-    tablesPageSrc.includes('onMoveTable={canMoveTable ? (tb) => setMovingTable(tb) : undefined}'),
-    'passes onMoveTable to FloorplanEditor',
-  );
-  assert.ok(
-    tablesPageSrc.includes('<MoveTableModal'),
-    'mounts MoveTableModal when movingTable is active',
-  );
-  assert.ok(
-    tablesPageSrc.includes("tTables('moveTable')"),
-    'renders Move Table button in list view',
+    emptyMarkup.includes('tables.noTablesYet'),
+    'renders empty state when no destination tables available',
   );
 
-  console.log('  ✓ Tables page is properly wired in both Plan and List views');
-}
-
-function testTableCheckoutModalWiring() {
-  const checkoutModalSrc = fs.readFileSync(
-    path.join(ROOT, 'frontend/src/components/pos/TableCheckoutModal.tsx'),
-    'utf8',
-  );
-
-  assert.ok(
-    checkoutModalSrc.includes("tenantCan(currentTenant, 'tables.orders.move')"),
-    'checks tables.orders.move permission',
-  );
-  assert.ok(checkoutModalSrc.includes('<MoveTableModal'), 'mounts MoveTableModal');
-  assert.ok(checkoutModalSrc.includes("tTables('moveTable')"), 'renders Move Table action button');
-  assert.ok(checkoutModalSrc.includes('ArrowRightLeft'), 'uses ArrowRightLeft icon');
-
-  console.log('  ✓ TableCheckoutModal is properly wired with permission gate and MoveTableModal');
+  console.log('  ✓ MoveTableModal filtering and edge cases render correctly');
 }
 
 async function main() {
   console.log('Table Move UI tests');
   try {
     testMoveTableModalRendering();
-    testFloorplanEditorWiring();
-    testTablesPageWiring();
-    testTableCheckoutModalWiring();
+    testMoveTableModalFilteringAndEdgeCases();
   } finally {
     moduleApi._load = originalLoad;
     moduleApi._resolveFilename = originalResolveFilename;

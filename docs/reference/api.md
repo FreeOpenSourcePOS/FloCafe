@@ -451,6 +451,7 @@ Router: `main/routes/customers.ts`. Full path: `/api/customers`.
 | `GET` | `/` | `ROLE_ACCESS.sales` + customer read limiter | query: `?search`, `?filter`, `?sort`, `?order`, `?per_page` | Paginated list; `?search`, `?filter`, `?sort`, `?order`, `?per_page`. |
 | `GET` | `/:id` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | - |
 | `GET` | `/:id/wallet` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | Wallet balance and loyalty state for the customer. |
+| `GET` | `/:id/top-items` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | `{ items }`: up to 5 `{ product_id, product_name, total_quantity, order_count, available }`, the products the customer bought most on `completed` orders. Variants and modifiers count under their product. Cancelled, voided, refunded, and refund-adjustment lines are excluded, as is an order whose every bill is `refunded`. Ranked by total quantity, then order count, then name (case-insensitive), then product id. `available` is false for a deleted or inactive product or one in an inactive category; such products stay listed. `404` for an unknown customer. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + customer write limiter | body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManagerCashier` + customer write limiter | path: `id`; body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 

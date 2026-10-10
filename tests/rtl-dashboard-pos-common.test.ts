@@ -68,6 +68,7 @@ const SCREEN_FILES = [
   'frontend/src/components/pos/TableCheckoutModal.tsx',
   'frontend/src/components/pos/AddonModal.tsx',
   'frontend/src/components/pos/CustomerSearch.tsx',
+  'frontend/src/components/pos/CustomerTopItems.tsx',
   'frontend/src/components/pos/EditCustomerModal.tsx',
   'frontend/src/components/pos/PrinterStatus.tsx',
   'frontend/src/components/pos/SplitCheckModal.tsx',

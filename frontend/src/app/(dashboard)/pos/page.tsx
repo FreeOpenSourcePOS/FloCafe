@@ -1191,6 +1191,8 @@ export default function POSPage() {
       )}
       <PosTopbar
         tables={tables}
+        products={products}
+        onTopItemSelect={handleProductClick}
         onShowTablePicker={() => setShowTablePicker(true)}
         onShowCashMovement={cashDrawer.openModal}
         // Re-fetch on entry: the mount snapshot can be hours stale on a

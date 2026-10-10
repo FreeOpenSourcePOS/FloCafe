@@ -117,10 +117,12 @@ enforced gate: `npm run lint` reports problems and never rewrites sources.
 
 ### Editor and pre-commit hook
 
-`npm install` installs a Husky pre-commit hook that runs lint-staged, which formats and lints the
-staged files each package owns and stages the formatted result. Partially staged files keep their
-unstaged edits untouched. Hooks are a local convenience rather than a gate: `git commit --no-verify`
-bypasses them, and CI re-runs the same scopes for every pull request.
+`npm install` installs a Husky pre-commit hook that runs lint-staged. It formats staged files in
+each package's formatting scope and lints files in that package's lint scope; root lint is limited
+to `main/` and `shared/`, so root scripts, tests and tooling are format-only. The hook stages the
+formatted result. Partially staged files keep their unstaged edits untouched. Hooks are a local
+convenience rather than a gate: `git commit --no-verify` bypasses them, and CI re-runs the same
+scopes for every pull request.
 
 Hook installation is skipped when it does not apply: `HUSKY=0`, `CI`, `NODE_ENV=production`, a source
 archive without a `.git` directory, a frontend-only install, or a checkout where another tool

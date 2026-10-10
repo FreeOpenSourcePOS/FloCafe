@@ -735,6 +735,36 @@ assertEqualOrThrow(
   `deleted files must be skipped by the gate: ${gateOutput(deleteGate)}`,
 );
 
+const typeChangeRepo = createContributorRepo('gate-type-change');
+const typeChangeBase = git(typeChangeRepo, ['rev-parse', 'HEAD']).stdout.trim();
+const symlinkBlob = run(
+  'git',
+  ['hash-object', '-w', '--stdin'],
+  typeChangeRepo,
+  '../type-target.ts',
+).stdout.trim();
+git(typeChangeRepo, [
+  'update-index',
+  '--add',
+  '--cacheinfo',
+  `120000,${symlinkBlob},main/type-change.ts`,
+]);
+commit(typeChangeRepo, 'add tracked symlink');
+write(typeChangeRepo, 'main/type-change.ts', 'export const  changed={x:1}\n');
+git(typeChangeRepo, ['add', 'main/type-change.ts']);
+commit(typeChangeRepo, 'replace symlink with source file');
+const typeChangeGate = runGate(typeChangeRepo, ['--base', typeChangeBase]);
+assertEqualOrThrow(
+  typeChangeGate.status,
+  1,
+  `an unformatted regular file replacing a symlink must fail: ${gateOutput(typeChangeGate)}`,
+);
+assertIncludesOrThrow(
+  gateOutput(typeChangeGate),
+  'main/type-change.ts',
+  'type changes to eligible source paths must reach the formatter',
+);
+
 const renameRepo = createContributorRepo('gate-rename');
 const renameBase = git(renameRepo, ['rev-parse', 'HEAD']).stdout.trim();
 write(renameRepo, 'main/keep.ts', 'export const keep = { k: 1 };\n');

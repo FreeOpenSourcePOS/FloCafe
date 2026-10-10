@@ -126,7 +126,7 @@ function mergeBaseCommit(base, head) {
 
 function changedFiles(base, head, strategy) {
   const from = strategy === 'merge-base' ? mergeBaseCommit(base, head) : base;
-  const diff = git(['diff', '--name-only', '--diff-filter=ACMR', '-z', `${from}..${head}`]);
+  const diff = git(['diff', '--name-only', '--diff-filter=ACMRT', '-z', `${from}..${head}`]);
   return diff.stdout.split('\0').filter(Boolean);
 }
 

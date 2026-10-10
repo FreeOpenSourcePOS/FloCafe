@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// lint-staged task: format and lint the staged files one package owns.
+// lint-staged task: format files in a package's formatter scope and lint files in its lint scope.
 // Selection happens here rather than in shell globs so excluded and generated
 // artifacts never reach Oxfmt, where they would exit 2 as "no target files".
 

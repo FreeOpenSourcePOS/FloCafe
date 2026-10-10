@@ -505,60 +505,105 @@ assert.strictEqual(readText(catalogueAbsolute), catalogueBefore, 'translation ca
 
 console.log('Testing the formatter command scope and check-only behavior...');
 
-assert.strictEqual(
-  rootScripts.format,
-  'npm run format:backend && npm --prefix frontend run format',
-  'the root format command must compose both packages',
-);
-assert.strictEqual(
-  rootScripts['format:check'],
-  'npm run format:check:backend && npm --prefix frontend run format:check',
-  'the root format:check must compose both check commands',
-);
+const commandFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-oxfmt-command-'));
+try {
+  const commandFrontendDir = path.join(commandFixtureRoot, 'frontend');
+  const commandBackendFixture = path.join(commandFixtureRoot, 'main', '__fmt_command.ts');
+  const commandRendererFixture = path.join(commandFrontendDir, 'src', '__fmt_command.tsx');
+  const commandBackendBefore = 'export const commandFixture={backend:"unformatted"}\n';
+  const commandRendererBefore = 'export function CommandFixture(){return <div className="p-4">{\'label\'}</div>}\n';
 
-const backendTargets = String(rootScripts['format:backend']).replace(/^oxfmt\s+/, '').split(/\s+/);
-assert.ok(backendTargets.length >= 4, 'the backend formatter must name its targets explicitly');
-assert.ok(
-  backendTargets.every((target) => !target.startsWith('frontend')),
-  'root formatting must never reach into frontend/',
-);
-assert.match(
-  String(rootScripts['format:check:backend']),
-  /^oxfmt --check /,
-  'the backend check command must run Oxfmt in check mode',
-);
+  for (const directory of ['main', 'shared', 'scripts', 'tests']) {
+    fs.mkdirSync(path.join(commandFixtureRoot, directory), { recursive: true });
+  }
+  for (const directory of ['src', 'e2e']) {
+    fs.mkdirSync(path.join(commandFrontendDir, directory), { recursive: true });
+  }
+  fs.writeFileSync(path.join(commandFixtureRoot, 'dev-server.js'), 'export const server = true;\n');
+  fs.writeFileSync(path.join(commandFixtureRoot, 'kill-ports.js'), 'export const port = 3001;\n');
+  for (const file of ['next.config.ts', 'playwright.config.ts', 'playwright.electron.config.ts', 'postcss.config.mjs']) {
+    fs.writeFileSync(path.join(commandFrontendDir, file), 'export default {};\n');
+  }
+  fs.writeFileSync(commandBackendFixture, commandBackendBefore);
+  fs.writeFileSync(commandRendererFixture, commandRendererBefore);
 
-const frontendTargets = String(frontendPackage.scripts.format).replace(/^oxfmt\s+/, '').split(/\s+/);
-assert.ok(
-  frontendTargets.includes('src/') && frontendTargets.includes('e2e/'),
-  'the frontend formatter must name the renderer and e2e scope',
-);
-assert.strictEqual(
-  String(frontendPackage.scripts['format:check']),
-  `oxfmt --check ${frontendTargets.join(' ')}`,
-  'the frontend check must mirror the write targets',
-);
-assert.doesNotMatch(String(rootScripts.lint), /--fix/, 'lint must not rewrite sources');
-assert.doesNotMatch(String(frontendPackage.scripts.lint), /--fix/, 'frontend lint must not rewrite sources');
+  fs.writeFileSync(
+    path.join(commandFixtureRoot, 'package.json'),
+    JSON.stringify({
+      private: true,
+      scripts: {
+        format: rootScripts.format,
+        'format:backend': rootScripts['format:backend'],
+        'format:check': rootScripts['format:check'],
+        'format:check:backend': rootScripts['format:check:backend'],
+      },
+    }),
+  );
+  fs.writeFileSync(
+    path.join(commandFrontendDir, 'package.json'),
+    JSON.stringify({
+      private: true,
+      scripts: {
+        format: frontendPackage.scripts.format,
+        'format:check': frontendPackage.scripts['format:check'],
+      },
+    }),
+  );
 
-const sampleSource = path.join(rootDir, 'dev-server.js');
-const sampleBefore = readText(sampleSource);
-const commandCheck = spawnSync('npm', ['run', 'format:check:backend'], { cwd: rootDir, encoding: 'utf8' });
-assert.ok(
-  commandCheck.status === 0 || commandCheck.status === 1,
-  `format:check:backend must run cleanly (status ${commandCheck.status}): ${commandCheck.stderr}`,
-);
-assert.doesNotMatch(commandCheck.stderr, /Failed to parse configuration/, 'the root config must parse');
-assert.strictEqual(readText(sampleSource), sampleBefore, 'the check command must never write sources');
+  for (const [sourceDir, targetDir, config] of [
+    [rootDir, commandFixtureRoot, rootConfig],
+    [frontendDir, commandFrontendDir, frontendConfig],
+  ] as const) {
+    fs.copyFileSync(path.join(sourceDir, '.oxfmtrc.json'), path.join(targetDir, '.oxfmtrc.json'));
+    const schemaSource = path.resolve(sourceDir, config.$schema);
+    const schemaTarget = path.resolve(targetDir, config.$schema);
+    fs.mkdirSync(path.dirname(schemaTarget), { recursive: true });
+    fs.copyFileSync(schemaSource, schemaTarget);
+  }
 
-const commandCheckFrontend = spawnSync('npm', ['--prefix', 'frontend', 'run', 'format:check'], {
-  cwd: rootDir,
-  encoding: 'utf8',
-});
-assert.ok(
-  commandCheckFrontend.status === 0 || commandCheckFrontend.status === 1,
-  `the frontend check command must run cleanly (status ${commandCheckFrontend.status}): ${commandCheckFrontend.stderr}`,
-);
-assert.doesNotMatch(commandCheckFrontend.stderr, /Failed to parse configuration/, 'the frontend config must parse');
+  const commandEnv = {
+    ...process.env,
+    PATH: [path.dirname(backendOxfmt), path.dirname(frontendOxfmt), process.env.PATH || ''].join(path.delimiter),
+  };
+  const runFormatterCommand = (args: string[]) =>
+    spawnSync('npm', args, { cwd: commandFixtureRoot, encoding: 'utf8', env: commandEnv });
+
+  const backendCheck = runFormatterCommand(['run', 'format:check:backend']);
+  assert.strictEqual(backendCheck.status, 1, `backend check must fail on its unformatted fixture: ${backendCheck.stdout}\n${backendCheck.stderr}`);
+  assert.strictEqual(readText(commandBackendFixture), commandBackendBefore, 'the backend check must not write sources');
+
+  const frontendCheck = runFormatterCommand(['--prefix', 'frontend', 'run', 'format:check']);
+  assert.strictEqual(frontendCheck.status, 1, `frontend check must fail on its unformatted fixture: ${frontendCheck.stdout}\n${frontendCheck.stderr}`);
+  assert.strictEqual(readText(commandRendererFixture), commandRendererBefore, 'the frontend check must not write sources');
+
+  const backendWrite = runFormatterCommand(['run', 'format:backend']);
+  assert.strictEqual(backendWrite.status, 0, `the backend write command must succeed: ${backendWrite.stdout}\n${backendWrite.stderr}`);
+  const backendFormatted = readText(commandBackendFixture);
+  assert.notStrictEqual(backendFormatted, commandBackendBefore, 'the backend command must format its source');
+  assert.strictEqual(readText(commandRendererFixture), commandRendererBefore, 'the backend command must leave frontend sources untouched');
+
+  const backendCheckAfterWrite = runFormatterCommand(['run', 'format:check:backend']);
+  assert.strictEqual(backendCheckAfterWrite.status, 0, `the formatted backend must pass its check: ${backendCheckAfterWrite.stdout}\n${backendCheckAfterWrite.stderr}`);
+
+  const composedCheckWithFrontendDebt = runFormatterCommand(['run', 'format:check']);
+  assert.strictEqual(composedCheckWithFrontendDebt.status, 1, 'the root check must include the still-unformatted frontend');
+  assert.strictEqual(readText(commandBackendFixture), backendFormatted, 'the root check must not write backend sources');
+  assert.strictEqual(readText(commandRendererFixture), commandRendererBefore, 'the root check must not write frontend sources');
+
+  fs.writeFileSync(commandBackendFixture, commandBackendBefore);
+  const composedWrite = runFormatterCommand(['run', 'format']);
+  assert.strictEqual(composedWrite.status, 0, `the root write command must format both scopes: ${composedWrite.stdout}\n${composedWrite.stderr}`);
+  const backendAfterComposedWrite = readText(commandBackendFixture);
+  const rendererAfterComposedWrite = readText(commandRendererFixture);
+  assert.notStrictEqual(backendAfterComposedWrite, commandBackendBefore, 'the root write command must format backend sources');
+  assert.notStrictEqual(rendererAfterComposedWrite, commandRendererBefore, 'the root write command must format frontend sources');
+
+  const composedCheck = runFormatterCommand(['run', 'format:check']);
+  assert.strictEqual(composedCheck.status, 0, `both formatted scopes must pass the root check: ${composedCheck.stdout}\n${composedCheck.stderr}`);
+  assert.strictEqual(readText(commandBackendFixture), backendAfterComposedWrite, 'the root check must preserve formatted backend sources');
+  assert.strictEqual(readText(commandRendererFixture), rendererAfterComposedWrite, 'the root check must preserve formatted frontend sources');
+} finally {
+  fs.rmSync(commandFixtureRoot, { recursive: true, force: true });
+}
 
 console.log('Lint engine parity and formatter behavior verified.');

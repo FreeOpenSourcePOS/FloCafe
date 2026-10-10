@@ -1,0 +1,3 @@
+# Optional local convenience: format and lint the staged files each package owns.
+# Bypass with "git commit --no-verify"; CI re-checks the same scopes authoritatively.
+lint-staged

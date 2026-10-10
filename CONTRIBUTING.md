@@ -108,8 +108,26 @@ example `npx oxfmt path/to/file.ts` from the repository root or
 `cd frontend && npx oxfmt src/path/to/file.tsx`.
 
 `npm run format:check` reports the files that still need formatting. Existing sources carry a
-formatting backlog, so that command fails until they are formatted, and it is not a required CI
-gate. Lint stays the enforced gate: `npm run lint` reports problems and never rewrites sources.
+formatting backlog, so that command fails until they are formatted, and it is not a CI gate. CI
+checks formatting for the files a change touches: `npm run format:check:changed -- --base
+origin/main` (CI supplies its own comparison base) fails when a touched file is unformatted, and it
+checks each touched file as a whole. Untouched legacy files stay out of scope. Lint stays the
+enforced gate: `npm run lint` reports problems and never rewrites sources.
+
+### Editor and pre-commit hook
+
+`npm install` installs a Husky pre-commit hook that runs lint-staged, which formats and lints the
+staged files each package owns and stages the formatted result. Partially staged files keep their
+unstaged edits untouched. Hooks are a local convenience rather than a gate: `git commit --no-verify`
+bypasses them, and CI re-runs the same scopes for every pull request.
+
+Hook installation is skipped when it does not apply: `HUSKY=0`, `CI`, `NODE_ENV=production`, a source
+archive without a `.git` directory, a frontend-only install, or a checkout where another tool
+already sets `core.hooksPath` (that setting is never replaced). Use `HUSKY=0 npm install` inside
+linked worktrees, which share Git configuration with the main checkout.
+
+`.vscode/` recommends the official Oxc extension and enables format-on-save for JavaScript and
+TypeScript, so editor formatting matches the repository configuration.
 
 > **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 
@@ -157,7 +175,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
-- **Formatting:** See [Formatting](#formatting) for full-scope commands and changed-file checks.
+- **Formatting:** Run `npm run format:check:changed -- --base origin/main` for touched files. To fix selected files, use the per-file Oxfmt commands in [Formatting](#formatting); the npm `format` commands write their full scopes.
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
 - **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).

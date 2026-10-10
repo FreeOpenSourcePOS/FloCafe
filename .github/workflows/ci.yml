@@ -51,7 +51,7 @@ jobs:
         with:
           filters: |
             frontend: ['frontend/**', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
-            backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.oxlintrc.json', 'scripts/ci/check-lint-budget.cjs', '.github/workflows/ci.yml']
+            backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.oxlintrc.json', '.oxfmtrc.json', 'frontend/.oxfmtrc.json', 'scripts/oxc/**', 'scripts/ci/check-changed-format.cjs', 'lint-staged.config.mjs', '.husky/**', '.github/workflows/ci.yml']
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
@@ -120,6 +120,11 @@ jobs:
       - name: Frontend lint
         working-directory: frontend
         run: npm run lint
+
+      # Authoritative formatting gate: the whole touched file, against the pull request base
+      # (or the pushed range), so legacy formatting debt outside the change stays out of scope.
+      - name: Changed-file formatting
+        run: node scripts/ci/check-changed-format.cjs
 
       - name: Lint warning budget
         run: npm run lint:budget

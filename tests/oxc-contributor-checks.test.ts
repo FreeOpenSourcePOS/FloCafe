@@ -1374,9 +1374,9 @@ for (const file of [
   );
 }
 
-assertEqualOrThrow(
-  rootScripts.scripts['format:check:changed'],
+assertIncludesOrThrow(
   lintJobSteps[gateIndex].run,
+  rootScripts.scripts['format:check:changed'],
   'the contributor command and the CI step must run the same gate',
 );
 

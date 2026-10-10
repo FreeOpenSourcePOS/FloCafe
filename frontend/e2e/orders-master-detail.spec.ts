@@ -362,10 +362,8 @@ test.describe('a held cart resumed from another order type keeps its charge sele
     await expect(picker).toBeVisible();
     await picker.getByRole('button').filter({ hasText: new RegExp(table.number) }).first().click();
 
+    // E2E Coffee is a simple product, so the card tap lands it on the cart.
     await page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
-    const confirmAdd = page.getByRole('button', { name: /^Add to Cart/ });
-    await confirmAdd.first().click();
-    await expect(confirmAdd.first()).toBeHidden();
 
     // The cashier waives the automatic fee and opts in to the optional one.
     const chargeRows = page.getByTestId('cart-charges');

@@ -59,6 +59,7 @@ const { formatItemHeading } = require('../frontend/src/lib/printer/item-heading'
 const {
   activeVariants,
   isVariantSoldOut,
+  productNeedsCustomizer,
   scannedVariantNeedsCustomizer,
   selectDefaultVariant,
 } = require('../frontend/src/lib/product-variants');
@@ -291,6 +292,28 @@ function receiptItem(variantSelection: unknown) {
   ] as const) {
     const chosen = selectDefaultVariant(variants, initialId);
     assert.equal(chosen?.id ?? null, expected, `default selection: ${label}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 1-tap add routing: only a product with nothing to choose skips the customizer
+// ---------------------------------------------------------------------------
+{
+  const activeGroup = { id: 'g-milk', name: 'Milk', is_required: false, min_selection: 0, max_selection: 1, sort_order: 0, is_active: true };
+  const inactiveGroup = { ...activeGroup, id: 'g-retired', is_active: false };
+
+  for (const [label, input, expected] of [
+    ['a product with nothing to choose', product(), false],
+    ['a product with no variants array', product({ variants: null }), false],
+    ['an out-of-stock simple product', product({ track_inventory: true, stock_quantity: 0 }), false],
+    ['a product with an active variant', product({ variants: [variant()] }), true],
+    ['a product whose only variants are inactive', product({ variants: [variant({ is_active: false })] }), false],
+    ['a product with an active add-on group', product({ addon_groups: [activeGroup] }), true],
+    ['a product whose only add-on group is inactive', product({ addon_groups: [inactiveGroup] }), false],
+    ['a sold by weight product', product({ allow_fractional_quantity: true, sale_unit: 'kg', weight_precision: 3 }), true],
+    ['a fractional flag on a sold by each product', product({ allow_fractional_quantity: true, sale_unit: 'each' }), false],
+  ] as const) {
+    assert.equal(productNeedsCustomizer(input), expected, `1-tap add routing: ${label}`);
   }
 }
 

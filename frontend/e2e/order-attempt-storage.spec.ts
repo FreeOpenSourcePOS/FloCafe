@@ -103,8 +103,8 @@ async function loginAndOpenPos(page: Page): Promise<void> {
 }
 
 async function addProductToCart(page: Page): Promise<void> {
+  // The seeded item carries no options, so the card tap is the whole add.
   await page.getByTestId('pos-product-card').click();
-  await page.getByRole('button', { name: /Add to Cart/ }).click();
 }
 
 async function getBusinessSettings(request: APIRequestContext): Promise<Record<string, unknown>> {

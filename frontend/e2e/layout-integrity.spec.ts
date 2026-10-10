@@ -230,12 +230,8 @@ async function addSyntheticItemsToCart(page: Page, count: number): Promise<strin
     const card = cards.nth(index);
     const name = SYNTHETIC_NAME.exec((await card.textContent()) ?? '');
     expect(name, 'synthetic product name is readable from its card').not.toBeNull();
+    // The synthetic products carry no options, so the tap is the whole add.
     await card.click();
-    // A catalog tap always opens the customizer; confirming it is the action
-    // that actually adds the line to the cart.
-    const confirmAdd = page.getByRole('button', { name: /^Add to Cart/ });
-    await confirmAdd.first().click();
-    await expect(confirmAdd.first(), 'the customizer closes after adding').toBeHidden();
     names.push(name![0]);
   }
   return names;

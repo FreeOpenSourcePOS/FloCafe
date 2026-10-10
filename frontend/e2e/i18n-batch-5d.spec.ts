@@ -146,11 +146,13 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByPlaceholder('Customer name')).toBeVisible();
   await expect(page.getByPlaceholder('Phone')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  // Click a table and an item — opens the addon/instructions modal
+  // Click a table and an item — the simple product lands on the ticket on tap; its
+  // Edit action is what reopens the addon/instructions modal.
   await page.getByRole('button', { name: /Table 1/i }).first().click();
   await page.getByText('E2E Coffee').first().click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).first().click();
   await expect(page.getByPlaceholder('e.g., no onions, extra spicy...')).toBeVisible();
-  await page.getByRole('button', { name: /Add to Cart/ }).click();
+  await page.getByRole('button', { name: /Save changes/ }).click();
   await expect(page.getByRole('button', { name: 'Send to kitchen' })).toBeVisible();
   await captureScreenshot(page, 'server-standalone-en.png');
 
@@ -243,11 +245,13 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByPlaceholder('نام مشتری')).toBeVisible();
     await expect(page.getByPlaceholder('تلفن')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    // Select table and item — opens the addon/instructions modal
+    // Select table and item — the simple product lands on the ticket on tap; Edit
+    // is what reopens the addon/instructions modal.
     await page.getByRole('button', { name: /Table 1/i }).first().click();
     await page.getByText('E2E Coffee').first().click();
+    await page.getByRole('button', { name: 'ویرایش', exact: true }).first().click();
     await expect(page.getByPlaceholder('برای نمونه: بدون پیاز، تندتر')).toBeVisible();
-    await page.getByRole('button', { name: /افزودن به سبد/ }).click();
+    await page.getByRole('button', { name: /ذخیره دگرگونی/ }).click();
     await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
 

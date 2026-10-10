@@ -55,16 +55,17 @@ export function fmt(amount: number): string {
   return amount.toFixed(2);
 }
 
-/** Opens a product's detail modal, picks a preset quantity, and adds it to the cart. */
+/**
+ * Taps a product's catalog card once per unit, adding one to the cart each tap.
+ *
+ * The seeded coffee and the suites' own tracked products carry no variants, add-ons
+ * or weighed quantity, so a tap adds directly and repeated taps merge into one line.
+ */
 export async function addToCart(page: Page, productName: string, quantity = 1): Promise<void> {
-  await page.getByTestId('pos-product-card').filter({ hasText: productName }).first().click();
-  const modal = page.locator('.fixed.inset-0').last();
-  await expect(modal).toBeVisible();
-  if (quantity > 1) {
-    await modal.getByRole('button', { name: String(quantity), exact: true }).click();
+  const card = page.getByTestId('pos-product-card').filter({ hasText: productName }).first();
+  for (let tap = 0; tap < quantity; tap += 1) {
+    await card.click();
   }
-  await modal.getByRole('button', { name: /Add to Cart/ }).click();
-  await expect(modal).toBeHidden();
 }
 
 /**

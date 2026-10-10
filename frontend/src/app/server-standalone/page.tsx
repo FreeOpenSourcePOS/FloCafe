@@ -16,6 +16,7 @@ import { formatItemHeading } from '@/lib/printer/item-heading';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
+import { productNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
 import type { Order as FullOrder, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
@@ -682,7 +683,10 @@ export default function ServerStandalonePage() {
             {filteredProducts.map((product) => {
               const inCartQty = draftQuantities.get(product.id) || 0;
               return (
-                <button key={product.id} onClick={() => setAddonModalProduct(product)}
+                <button key={product.id} onClick={() => {
+                  if (productNeedsCustomizer(product)) setAddonModalProduct(product);
+                  else addDraftLine(product, 1, [], '');
+                }}
                   className="relative min-h-24 rounded-lg border border-border bg-card p-3 text-start hover:border-brand">
                   {inCartQty > 0 && (
                     <span className="absolute top-0 end-0 z-10 flex h-6 w-6 items-center justify-center rounded-es-lg bg-brand text-xs font-bold text-white">

@@ -7,6 +7,7 @@
  */
 
 import { roundCurrencyValue } from './currency-input';
+import { fractionalQuantityStep } from './utils';
 import type { AddonGroup, ProductVariant } from '@/lib/types';
 
 /**
@@ -33,6 +34,23 @@ export function scannedVariantNeedsCustomizer(
     return requiredMin > 0;
   });
   return needsRequiredSelection || isVariantSoldOut(variant);
+}
+
+/**
+ * Whether tapping a product must open the customizer instead of going straight
+ * into the cart: a variant or an add-on still needs a choice, and a weighed
+ * product needs its quantity typed.
+ */
+export function productNeedsCustomizer(product: {
+  variants?: ProductVariant[] | null;
+  addon_groups?: AddonGroup[] | null;
+  allow_fractional_quantity?: boolean | null;
+  sale_unit?: string | null;
+  weight_precision?: number | null;
+}): boolean {
+  if (fractionalQuantityStep(product) !== null) return true;
+  if (activeVariants(product.variants).length > 0) return true;
+  return (product.addon_groups || []).some((group) => group.is_active !== false);
 }
 
 /** Active variants in display order. */

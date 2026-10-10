@@ -7,6 +7,7 @@ import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
 import TagBadge from './DietaryBadge';
+import { productNeedsCustomizer } from '@/lib/product-variants';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -226,7 +227,7 @@ export default function ProductGrid({
                     {!showProductImages && product.tags && product.tags.length > 0 && (
                       <TagBadge tag={product.tags[0]} />
                     )}
-                    {product.addon_groups && product.addon_groups.length > 0 && (
+                    {productNeedsCustomizer(product) && (
                       <span
                         className="touch-target -me-2 -my-2 rounded-lg text-muted-foreground"
                         title={t('customisable')}

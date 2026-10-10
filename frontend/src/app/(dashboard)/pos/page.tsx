@@ -45,7 +45,7 @@ import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
-import { scannedVariantNeedsCustomizer } from '@/lib/product-variants';
+import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -571,7 +571,10 @@ export default function POSPage() {
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
   const handleProductClick = (product: Product) => {
-    // Always open modal so user can add notes and adjust quantity
+    if (!productNeedsCustomizer(product)) {
+      cart.addItem(product, 1);
+      return;
+    }
     setAddonInitialVariant(null);
     setAddonProduct(product);
   };

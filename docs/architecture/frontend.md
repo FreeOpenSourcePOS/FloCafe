@@ -506,7 +506,7 @@ frontend/src/
 │   │   PrintersSettingsTab, SettingsTabShell, TaxConfigurationPanel,
 │   │   Toggle, WhatsAppEnableCard
 │   ├── support/                The support hub: SupportTicketForm, DiagnosticsPanel
-│   ├── tables/                 Floorplan editor, table turnover badge
+│   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives
 │   └── updates/                Update install guard dialog
 ├── hooks/                      Printer, KDS, theme, update, cash, and formatting hooks

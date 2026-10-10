@@ -6,7 +6,21 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { ArrowRightLeft, ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  ChevronRight,
+  Eye,
+  LayoutGrid,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Sparkles,
+  Table2,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import type { Order, Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n';
@@ -100,7 +114,10 @@ const EMPTY_FORM: TableForm = { name: '', capacity: '4', floor: '', section: '' 
 // using saved positions to maintain drag stability.
 function computeCanvasAspect(placed: Table[]): number {
   if (placed.length === 0) return 4 / 3;
-  let minX = 100, maxX = 0, minY = 100, maxY = 0;
+  let minX = 100,
+    maxX = 0,
+    minY = 100,
+    maxY = 0;
   for (const tb of placed) {
     minX = Math.min(minX, tb.position_x!);
     maxX = Math.max(maxX, tb.position_x!);
@@ -160,21 +177,42 @@ function loadSavedCanvasSize(floor: string): SavedCanvasSize {
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && (parsed.mode === 'auto' || parsed.mode === 'custom') && typeof parsed.w === 'number' && typeof parsed.h === 'number') {
+      if (
+        parsed &&
+        (parsed.mode === 'auto' || parsed.mode === 'custom') &&
+        typeof parsed.w === 'number' &&
+        typeof parsed.h === 'number'
+      ) {
         return { mode: parsed.mode, w: parsed.w, h: parsed.h };
       }
     }
-  } catch { /* ignore — fall back to defaults */ }
+  } catch {
+    /* ignore — fall back to defaults */
+  }
   return { mode: 'auto', w: 10, h: 6 };
 }
 function saveSavedCanvasSize(floor: string, size: SavedCanvasSize): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(`floorplan.size.${floor || '__unassigned__'}`, JSON.stringify(size));
-  } catch { /* quota / private mode — fail silently */ }
+    window.localStorage.setItem(
+      `floorplan.size.${floor || '__unassigned__'}`,
+      JSON.stringify(size),
+    );
+  } catch {
+    /* quota / private mode — fail silently */
+  }
 }
 
-export default function FloorplanEditor({ mode, canManage = false, tables, ordersByTable, onSaved, onReserve, onViewOrder, onMoveTable }: {
+export default function FloorplanEditor({
+  mode,
+  canManage = false,
+  tables,
+  ordersByTable,
+  onSaved,
+  onReserve,
+  onViewOrder,
+  onMoveTable,
+}: {
   mode: 'edit' | 'service';
   canManage?: boolean;
   tables: Table[];
@@ -219,7 +257,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   }
   const [newFloorMode, setNewFloorMode] = useState(false);
   const [newFloorName, setNewFloorName] = useState('');
-  const [canvasMode, setCanvasMode] = useState<'auto' | 'custom'>(() => loadSavedCanvasSize('').mode);
+  const [canvasMode, setCanvasMode] = useState<'auto' | 'custom'>(
+    () => loadSavedCanvasSize('').mode,
+  );
   const [canvasW, setCanvasW] = useState<number>(() => loadSavedCanvasSize('').w);
   const [canvasH, setCanvasH] = useState<number>(() => loadSavedCanvasSize('').h);
 
@@ -289,14 +329,15 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
 
   const floors = useMemo(() => {
     const count = (f: string) => tables.filter((tb) => (tb.floor || '') === f).length;
-    const named = [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))]
-      .sort((a, b) => count(b) - count(a) || a.localeCompare(b));
+    const named = [
+      ...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f))),
+    ].sort((a, b) => count(b) - count(a) || a.localeCompare(b));
     const hasUnassigned = tables.some((tb) => !tb.floor);
     return hasUnassigned ? [...named, ''] : named;
   }, [tables]);
 
   const overview = activeFloor === ALL_FLOORS;
-  const floor = overview ? '' : (floors.includes(activeFloor) ? activeFloor : (floors[0] ?? ''));
+  const floor = overview ? '' : floors.includes(activeFloor) ? activeFloor : (floors[0] ?? '');
   const namedFloors = floors.filter((f) => f !== '');
 
   // Load per-floor canvas size from localStorage when the active floor changes,
@@ -315,7 +356,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
 
   const posOf = (tb: Table): { x: number; y: number } | null => {
     if (tb.id in edits) return edits[tb.id];
-    if (tb.position_x != null && tb.position_y != null) return { x: tb.position_x, y: tb.position_y };
+    if (tb.position_x != null && tb.position_y != null)
+      return { x: tb.position_x, y: tb.position_y };
     return null;
   };
 
@@ -371,7 +413,11 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     setEditingId(null);
     setNewFloorMode(false);
     setNewFloorName('');
-    setForm({ ...EMPTY_FORM, name: suggestName(), floor: !overview && namedFloors.includes(floor) ? floor : '' });
+    setForm({
+      ...EMPTY_FORM,
+      name: suggestName(),
+      floor: !overview && namedFloors.includes(floor) ? floor : '',
+    });
     setFormOpen(true);
   };
 
@@ -380,7 +426,12 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     setEditingId(tb.id);
     setNewFloorMode(false);
     setNewFloorName('');
-    setForm({ name: tb.name, capacity: String(tb.capacity), floor: tb.floor ?? '', section: tb.section ?? '' });
+    setForm({
+      name: tb.name,
+      capacity: String(tb.capacity),
+      floor: tb.floor ?? '',
+      section: tb.section ?? '',
+    });
     setFormOpen(true);
   };
 
@@ -399,28 +450,30 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     }));
   };
 
-  const startDrag = (tb: Table, centerOnPointer = false) => (e: React.PointerEvent<HTMLElement>) => {
-    if (!edit) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const rect = canvas.getBoundingClientRect();
-    const chip = e.currentTarget.getBoundingClientRect();
-    dragRef.current = {
-      id: tb.id,
-      rect,
-      offX: centerOnPointer ? chip.width / 2 : e.clientX - chip.left,
-      offY: centerOnPointer ? chip.height / 2 : e.clientY - chip.top,
-      halfX: (chip.width / 2 / rect.width) * 100,
-      halfY: (chip.height / 2 / rect.height) * 100,
-      startX: e.clientX,
-      startY: e.clientY,
-      moved: false,
+  const startDrag =
+    (tb: Table, centerOnPointer = false) =>
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (!edit) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      const rect = canvas.getBoundingClientRect();
+      const chip = e.currentTarget.getBoundingClientRect();
+      dragRef.current = {
+        id: tb.id,
+        rect,
+        offX: centerOnPointer ? chip.width / 2 : e.clientX - chip.left,
+        offY: centerOnPointer ? chip.height / 2 : e.clientY - chip.top,
+        halfX: (chip.width / 2 / rect.width) * 100,
+        halfY: (chip.height / 2 / rect.height) * 100,
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
+      };
+      setDragId(tb.id);
     };
-    setDragId(tb.id);
-  };
 
   const onDragMove = (e: React.PointerEvent<HTMLElement>) => {
     const d = dragRef.current;
@@ -459,7 +512,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     }
   };
 
-  const canOpenActionSheet = (tb: Table) => canManage || (tb.status === 'occupied' && (!!onViewOrder || !!onMoveTable));
+  const canOpenActionSheet = (tb: Table) =>
+    canManage || (tb.status === 'occupied' && (!!onViewOrder || !!onMoveTable));
   const openActionSheet = (tb: Table) => {
     if (canOpenActionSheet(tb)) setActionTable(tb);
   };
@@ -474,7 +528,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
         if (canvas) {
           clamp(tb.id, 50, 50, 0, 0);
           requestAnimationFrame(() => {
-            canvas.querySelector<HTMLElement>(`[data-testid="floorplan-chip-${CSS.escape(tb.name)}"]`)?.focus();
+            canvas
+              .querySelector<HTMLElement>(`[data-testid="floorplan-chip-${CSS.escape(tb.name)}"]`)
+              ?.focus();
           });
         }
       } else {
@@ -489,7 +545,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       return;
     }
     const arrows: Record<string, [number, number]> = {
-      ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
     };
     const delta = arrows[e.key];
     if (!delta) return;
@@ -500,12 +559,13 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     // would snap straight back); Shift jumps two cells.
     const step = e.shiftKey ? GRID_STEP * 2 : GRID_STEP;
     const rect = canvas?.getBoundingClientRect();
-    const half = rect && rect.width > 0 && rect.height > 0
-      ? {
-          halfX: (e.currentTarget.offsetWidth / 2 / rect.width) * 100,
-          halfY: (e.currentTarget.offsetHeight / 2 / rect.height) * 100,
-        }
-      : { halfX: 0, halfY: 0 };
+    const half =
+      rect && rect.width > 0 && rect.height > 0
+        ? {
+            halfX: (e.currentTarget.offsetWidth / 2 / rect.width) * 100,
+            halfY: (e.currentTarget.offsetHeight / 2 / rect.height) * 100,
+          }
+        : { halfX: 0, halfY: 0 };
     clamp(tb.id, cur.x + delta[0] * step, cur.y + delta[1] * step, half.halfX, half.halfY);
   };
 
@@ -532,7 +592,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
         let position_y: number | null = null;
         if (floor) {
           const others = tables
-            .filter((tb) => (tb.floor || '') === floor && tb.position_x != null && tb.position_y != null)
+            .filter(
+              (tb) => (tb.floor || '') === floor && tb.position_x != null && tb.position_y != null,
+            )
             .map((tb) => ({ x: tb.position_x!, y: tb.position_y!, capacity: tb.capacity }));
           const pos = findNextFreePosition(capacity, others);
           position_x = pos.x;
@@ -644,7 +706,15 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     return list && list.length > 0 ? list[0] : null;
   };
 
-  const TableObject = ({ tb, scale = 1, dragging = false }: { tb: Table; scale?: number; dragging?: boolean }) => {
+  const TableObject = ({
+    tb,
+    scale = 1,
+    dragging = false,
+  }: {
+    tb: Table;
+    scale?: number;
+    dragging?: boolean;
+  }) => {
     const { w, h, round } = shapeFor(tb.capacity, scale);
     const chairs = chairPoints(tb.capacity, w, h, round);
     const reservedName = tb.status === 'reserved' ? tb.reservation_customer_name : null;
@@ -667,12 +737,16 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
             round ? 'rounded-full' : 'rounded-xl'
           } border-[3px] ${statusRing[tb.status]} ${dragging ? 'shadow-2xl' : 'shadow-md'}`}
         >
-          <span className={`max-w-full truncate font-bold leading-tight text-foreground ${scale < 1 ? 'text-[9px]' : 'text-[13px]'}`}>
+          <span
+            className={`max-w-full truncate font-bold leading-tight text-foreground ${scale < 1 ? 'text-[9px]' : 'text-[13px]'}`}
+          >
             <Ltr>{tb.name}</Ltr>
           </span>
           {scale >= 1 && (
             <>
-              <span className={`text-[9px] font-semibold uppercase tracking-wide ${statusText[tb.status]}`}>
+              <span
+                className={`text-[9px] font-semibold uppercase tracking-wide ${statusText[tb.status]}`}
+              >
                 {t(TABLE_STATUS_LABEL_KEYS[tb.status])}
               </span>
               {tb.status === 'occupied' && seatedAt && (
@@ -686,7 +760,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 </span>
               )}
               {reservedName && (
-                <span className="max-w-full truncate text-[9px] font-medium text-amber-600 dark:text-amber-400" title={reservedName}>
+                <span
+                  className="max-w-full truncate text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                  title={reservedName}
+                >
                   {reservedName}
                 </span>
               )}
@@ -711,20 +788,56 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   const sheetActionsFor = (tb: Table) => {
     const actions: Array<{ label: string; icon: React.ReactNode; run: () => void }> = [];
     if (tb.status === 'occupied' && onViewOrder) {
-      actions.push({ label: t('viewOrder'), icon: <Eye size={15} />, run: () => { setActionTable(null); onViewOrder(); } });
+      actions.push({
+        label: t('viewOrder'),
+        icon: <Eye size={15} />,
+        run: () => {
+          setActionTable(null);
+          onViewOrder();
+        },
+      });
     }
     if (tb.status === 'occupied' && onMoveTable) {
-      actions.push({ label: t('moveTable'), icon: <ArrowRightLeft size={15} />, run: () => { setActionTable(null); onMoveTable(tb); } });
+      actions.push({
+        label: t('moveTable'),
+        icon: <ArrowRightLeft size={15} />,
+        run: () => {
+          setActionTable(null);
+          onMoveTable(tb);
+        },
+      });
     }
     if (canManage) {
       if (tb.status === 'available') {
-        actions.push({ label: t('reserveTable'), icon: <Users size={15} />, run: () => { setActionTable(null); onReserve?.(tb); } });
-        actions.push({ label: t('markCleaning'), icon: <Sparkles size={15} />, run: () => setTableStatus(tb, 'cleaning') });
+        actions.push({
+          label: t('reserveTable'),
+          icon: <Users size={15} />,
+          run: () => {
+            setActionTable(null);
+            onReserve?.(tb);
+          },
+        });
+        actions.push({
+          label: t('markCleaning'),
+          icon: <Sparkles size={15} />,
+          run: () => setTableStatus(tb, 'cleaning'),
+        });
       }
       if (tb.status !== 'available' && tb.status !== 'occupied') {
-        actions.push({ label: t('markAvailable'), icon: <Table2 size={15} />, run: () => setTableStatus(tb, 'available') });
+        actions.push({
+          label: t('markAvailable'),
+          icon: <Table2 size={15} />,
+          run: () => setTableStatus(tb, 'available'),
+        });
       }
-      actions.push({ label: t('editTable'), icon: <Pencil size={15} />, run: () => { setActionTable(null); openEdit(tb); } });
+      actions.push({
+        label: t('editTable'),
+        icon: <Pencil size={15} />,
+        run: () => {
+          setActionTable(null);
+          openEdit(tb);
+        },
+      });
       if (posOf(tb) !== null) {
         actions.push({
           label: tCommon('remove'),
@@ -761,7 +874,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
         className={`absolute -translate-x-1/2 -translate-y-1/2 select-none touch-none rounded-2xl p-[9px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
           edit
             ? `cursor-grab ${dragging ? 'z-20 scale-110 cursor-grabbing shadow-2xl' : 'transition-transform hover:scale-[1.03]'}`
-            : interactive ? 'cursor-pointer' : 'cursor-default'
+            : interactive
+              ? 'cursor-pointer'
+              : 'cursor-default'
         } ${!tb.is_active ? 'opacity-50' : ''}`}
         style={{ left: `${p.x}%`, top: `${p.y}%` }}
       >
@@ -773,11 +888,16 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   return (
     <div>
       <div className="sticky top-0 z-20 -mx-1 mb-5 flex flex-wrap items-center justify-between gap-3 rounded-b-2xl bg-card px-2 py-2.5 shadow-sm">
-        <div data-testid="floorplan-floor-tabs" className="flex flex-wrap items-center gap-1 rounded-xl bg-muted/50 p-1 border border-border">
+        <div
+          data-testid="floorplan-floor-tabs"
+          className="flex flex-wrap items-center gap-1 rounded-xl bg-muted/50 p-1 border border-border"
+        >
           <button
             onClick={() => setActiveFloor(ALL_FLOORS)}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-              overview ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              overview
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <LayoutGrid size={14} /> {t('floorplanAllFloors')}
@@ -799,15 +919,21 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 <button
                   onClick={() => setActiveFloor(f)}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                    !overview && f === floor ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    !overview && f === floor
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
                   }`}
                   title={f === '' ? t('floorplanUnassignedHint') : undefined}
                 >
                   {label}
                   {count > 0 && (
-                    <span className={`rounded-full px-1.5 text-[10px] font-semibold ${
-                      !overview && f === floor ? 'bg-muted text-foreground' : 'bg-card/70 text-muted-foreground'
-                    }`}>
+                    <span
+                      className={`rounded-full px-1.5 text-[10px] font-semibold ${
+                        !overview && f === floor
+                          ? 'bg-muted text-foreground'
+                          : 'bg-card/70 text-muted-foreground'
+                      }`}
+                    >
                       {count}
                     </span>
                   )}
@@ -890,7 +1016,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
             <button
               onClick={() => setCanvasMode('auto')}
               className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
-                canvasMode === 'auto' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                canvasMode === 'auto'
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
               title={t('floorplanAutoHint')}
               aria-pressed={canvasMode === 'auto'}
@@ -901,7 +1029,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
               className={`flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs ${
                 edit ? 'cursor-text' : 'cursor-not-allowed'
               } ${
-                canvasMode === 'custom' && edit ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'
+                canvasMode === 'custom' && edit
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground'
               }`}
               title={edit ? t('floorplanCustomHint') : t('floorplanCustomLockedHint')}
               onClick={() => edit && setCanvasMode('custom')}
@@ -976,7 +1106,11 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                   {tCommon('cancel')}
                 </Button>
               )}
-              <Button onClick={save} disabled={saving || Object.keys(edits).length === 0} className="shadow">
+              <Button
+                onClick={save}
+                disabled={saving || Object.keys(edits).length === 0}
+                className="shadow"
+              >
                 {saving ? tCommon('saving') : tCommon('save')}
               </Button>
             </>
@@ -991,9 +1125,15 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
             const ftPlaced = ft.filter((tb) => posOf(tb) !== null);
             const ftPlacedSaved = ft.filter((tb) => tb.position_x != null && tb.position_y != null);
             return (
-              <div key={f || 'unassigned'} data-testid={`floorplan-mini-${f || 'unassigned'}`} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <div
+                key={f || 'unassigned'}
+                data-testid={`floorplan-mini-${f || 'unassigned'}`}
+                className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+              >
                 <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm font-bold text-foreground">{f || t('floorplanUnassigned')}</p>
+                  <p className="text-sm font-bold text-foreground">
+                    {f || t('floorplanUnassigned')}
+                  </p>
                   <button
                     onClick={() => setActiveFloor(f)}
                     className="flex items-center gap-0.5 text-xs font-semibold text-brand hover:text-brand-hover"
@@ -1061,9 +1201,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 transformOrigin: 'top left',
               }}
             >
-              <div className="relative w-full h-full">
-                {placed.map(renderChip)}
-              </div>
+              <div className="relative w-full h-full">{placed.map(renderChip)}</div>
             </div>
             {placed.length === 0 && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center">
@@ -1079,7 +1217,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {LEGEND.map((s) => (
-          <span key={s} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-sm">
+          <span
+            key={s}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-sm"
+          >
             <span className={`inline-block h-2 w-2 rounded-full ${statusDot[s]}`} />
             {t(TABLE_STATUS_LABEL_KEYS[s])}
           </span>
@@ -1091,9 +1232,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
           ref={trayRef}
           data-testid="floorplan-tray"
           className={`mt-5 rounded-2xl border-2 border-dashed p-3 transition-colors ${
-            isOverTray
-              ? 'border-brand bg-brand/10 ring-2 ring-brand'
-              : 'border-border bg-card/60'
+            isOverTray ? 'border-brand bg-brand/10 ring-2 ring-brand' : 'border-border bg-card/60'
           }`}
         >
           <div className="mb-2 flex items-center justify-between px-1">
@@ -1101,9 +1240,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
               {t('floorplanUnplaced')} ({unplaced.length})
             </p>
             {edit && (
-              <span className="text-[11px] text-muted-foreground">
-                {t('floorplanEmptyCanvas')}
-              </span>
+              <span className="text-[11px] text-muted-foreground">{t('floorplanEmptyCanvas')}</span>
             )}
           </div>
           {unplaced.length === 0 ? (
@@ -1131,7 +1268,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                     statusRing[tb.status]
                   } ${edit ? 'cursor-grab touch-none' : canOpenActionSheet(tb) ? 'cursor-pointer' : 'cursor-default'} ${dragId === tb.id ? 'opacity-40' : ''}`}
                 >
-                  <span className={`h-7 w-7 rounded-lg border-2 ${statusRing[tb.status]} ${tb.capacity <= 2 ? 'rounded-full' : ''}`} />
+                  <span
+                    className={`h-7 w-7 rounded-lg border-2 ${statusRing[tb.status]} ${tb.capacity <= 2 ? 'rounded-full' : ''}`}
+                  />
                   <span className="text-sm font-bold text-foreground">
                     <Ltr>{tb.name}</Ltr>
                   </span>
@@ -1144,7 +1283,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       )}
 
       {actionTable && !edit && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={() => setActionTable(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+          onClick={() => setActionTable(null)}
+        >
           <div
             className="w-full max-w-sm rounded-t-2xl bg-card p-5 shadow-2xl sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
@@ -1159,12 +1301,19 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                   <Ltr>{actionTable.name}</Ltr>
                 </p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <p className={`text-xs font-semibold uppercase tracking-wide ${statusText[actionTable.status]}`}>
+                  <p
+                    className={`text-xs font-semibold uppercase tracking-wide ${statusText[actionTable.status]}`}
+                  >
                     {t(TABLE_STATUS_LABEL_KEYS[actionTable.status])} · {seats(actionTable.capacity)}
                   </p>
-                  {actionTable.status === 'occupied' && (actionTable.seated_at || activeOrderOf(actionTable)?.created_at) && (
-                    <TableTurnoverBadge seatedAt={(actionTable.seated_at || activeOrderOf(actionTable)?.created_at)!} />
-                  )}
+                  {actionTable.status === 'occupied' &&
+                    (actionTable.seated_at || activeOrderOf(actionTable)?.created_at) && (
+                      <TableTurnoverBadge
+                        seatedAt={
+                          (actionTable.seated_at || activeOrderOf(actionTable)?.created_at)!
+                        }
+                      />
+                    )}
                 </div>
               </div>
             </div>
@@ -1185,12 +1334,27 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       )}
 
       {formOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => { setFormOpen(false); setEditingId(null); }}>
-          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-table-form" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setFormOpen(false);
+            setEditingId(null);
+          }}
+        >
+          <div
+            className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="floorplan-table-form"
+            role="dialog"
+            aria-modal="true"
+          >
             <h2 className="text-lg font-bold mb-4">{editingId ? t('editTable') : t('addTable')}</h2>
             <form onSubmit={submitForm} className="space-y-4">
               <div>
-                <label htmlFor="floorplan-table-name" className="block text-sm font-medium text-foreground mb-1">
+                <label
+                  htmlFor="floorplan-table-name"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
                   {t('tableName')}
                 </label>
                 <input
@@ -1206,7 +1370,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="floorplan-table-capacity" className="block text-sm font-medium text-foreground mb-1">
+                  <label
+                    htmlFor="floorplan-table-capacity"
+                    className="block text-sm font-medium text-foreground mb-1"
+                  >
                     {t('capacity')}
                   </label>
                   <input
@@ -1220,7 +1387,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                   />
                 </div>
                 <div>
-                  <label htmlFor="floorplan-table-floor" className="block text-sm font-medium text-foreground mb-1">
+                  <label
+                    htmlFor="floorplan-table-floor"
+                    className="block text-sm font-medium text-foreground mb-1"
+                  >
                     {t('floor')}
                   </label>
                   {newFloorMode ? (
@@ -1250,7 +1420,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                     >
                       {form.floor === '' && <option value="">{t('floorplanUnassigned')}</option>}
                       {namedFloors.map((f) => (
-                        <option key={f} value={f}>{f}</option>
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
                       ))}
                       {form.floor !== '' && !namedFloors.includes(form.floor) && (
                         <option value={form.floor}>{form.floor}</option>
@@ -1261,7 +1433,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 </div>
               </div>
               <div>
-                <label htmlFor="floorplan-table-section" className="block text-sm font-medium text-foreground mb-1">
+                <label
+                  htmlFor="floorplan-table-section"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
                   {t('section')}
                 </label>
                 <input
@@ -1295,12 +1470,24 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       )}
 
       {floorFormOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFloorFormOpen(false)}>
-          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-floor-form" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setFloorFormOpen(false)}
+        >
+          <div
+            className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="floorplan-floor-form"
+            role="dialog"
+            aria-modal="true"
+          >
             <h2 className="text-lg font-bold mb-4">{t('newFloor')}</h2>
             <form onSubmit={submitFloorForm} className="space-y-4">
               <div>
-                <label htmlFor="floorplan-floor-name" className="block text-sm font-medium text-foreground mb-1">
+                <label
+                  htmlFor="floorplan-floor-name"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
                   {t('floorName')}
                 </label>
                 <input
@@ -1316,7 +1503,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
               <p className="text-xs text-muted-foreground">{t('floorplanEmptyCanvas')}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="floorplan-floor-table" className="block text-sm font-medium text-foreground mb-1">
+                  <label
+                    htmlFor="floorplan-floor-table"
+                    className="block text-sm font-medium text-foreground mb-1"
+                  >
                     {t('tableName')}
                   </label>
                   <input
@@ -1329,7 +1519,10 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                   />
                 </div>
                 <div>
-                  <label htmlFor="floorplan-floor-capacity" className="block text-sm font-medium text-foreground mb-1">
+                  <label
+                    htmlFor="floorplan-floor-capacity"
+                    className="block text-sm font-medium text-foreground mb-1"
+                  >
                     {t('capacity')}
                   </label>
                   <input
@@ -1344,7 +1537,13 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 </div>
               </div>
               <div className="flex gap-2 pt-1">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setFloorFormOpen(false)} disabled={floorFormSaving}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setFloorFormOpen(false)}
+                  disabled={floorFormSaving}
+                >
                   {tCommon('cancel')}
                 </Button>
                 <Button type="submit" className="flex-1" disabled={floorFormSaving}>
@@ -1357,38 +1556,66 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       )}
 
       {floorRenameOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFloorRenameOpen(null)}>
-          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-floor-rename-form" role="dialog" aria-modal="true">
-            <h2 className="text-lg font-bold mb-1">{t('renameFloorTitle', { name: floorRenameOpen.from })}</h2>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setFloorRenameOpen(null)}
+        >
+          <div
+            className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="floorplan-floor-rename-form"
+            role="dialog"
+            aria-modal="true"
+          >
+            <h2 className="text-lg font-bold mb-1">
+              {t('renameFloorTitle', { name: floorRenameOpen.from })}
+            </h2>
             <p className="text-xs text-muted-foreground mb-4">{t('renameFloorHint')}</p>
             <form onSubmit={submitFloorRename} className="space-y-4">
               <div>
-                <label htmlFor="floorplan-rename-name" className="block text-sm font-medium text-foreground mb-1">
+                <label
+                  htmlFor="floorplan-rename-name"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
                   {t('floorName')}
                 </label>
                 <input
                   id="floorplan-rename-name"
                   type="text"
                   value={floorRenameOpen.to}
-                  onChange={(e) => setFloorRenameOpen({ from: floorRenameOpen!.from, to: e.target.value })}
+                  onChange={(e) =>
+                    setFloorRenameOpen({ from: floorRenameOpen!.from, to: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   autoFocus
                   required
                 />
               </div>
-              {floorRenameOpen.to.trim() && floorRenameOpen.to.trim() !== floorRenameOpen.from && namedFloors.includes(floorRenameOpen.to.trim()) && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                  {t('renameFloorMergeHint', { target: floorRenameOpen.to.trim() })}
-                </div>
-              )}
+              {floorRenameOpen.to.trim() &&
+                floorRenameOpen.to.trim() !== floorRenameOpen.from &&
+                namedFloors.includes(floorRenameOpen.to.trim()) && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                    {t('renameFloorMergeHint', { target: floorRenameOpen.to.trim() })}
+                  </div>
+                )}
               <div className="flex gap-2 pt-1">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setFloorRenameOpen(null)} disabled={floorActionSaving}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setFloorRenameOpen(null)}
+                  disabled={floorActionSaving}
+                >
                   {tCommon('cancel')}
                 </Button>
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={floorActionSaving || !floorRenameOpen.to.trim() || floorRenameOpen.to.trim() === floorRenameOpen.from}
+                  disabled={
+                    floorActionSaving ||
+                    !floorRenameOpen.to.trim() ||
+                    floorRenameOpen.to.trim() === floorRenameOpen.from
+                  }
                 >
                   {floorActionSaving ? tCommon('saving') : t('renameFloorConfirm')}
                 </Button>
@@ -1399,14 +1626,31 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       )}
 
       {floorDeleteTarget && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFloorDeleteTarget(null)}>
-          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-floor-delete-form" role="dialog" aria-modal="true">
-            <h2 className="text-lg font-bold mb-1">{t('deleteFloorTitle', { name: floorDeleteTarget })}</h2>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setFloorDeleteTarget(null)}
+        >
+          <div
+            className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="floorplan-floor-delete-form"
+            role="dialog"
+            aria-modal="true"
+          >
+            <h2 className="text-lg font-bold mb-1">
+              {t('deleteFloorTitle', { name: floorDeleteTarget })}
+            </h2>
             <p className="text-xs text-muted-foreground mb-4">
               {t('deleteFloorHint', { count: tablesOnFloor(floorDeleteTarget) })}
             </p>
             <div className="flex gap-2 pt-1">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setFloorDeleteTarget(null)} disabled={floorActionSaving}>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setFloorDeleteTarget(null)}
+                disabled={floorActionSaving}
+              >
                 {tCommon('cancel')}
               </Button>
               <Button

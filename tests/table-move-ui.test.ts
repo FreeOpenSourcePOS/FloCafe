@@ -202,12 +202,21 @@ function testMoveTableModalFilteringAndEdgeCases() {
   );
   inactiveCandidate.is_active = false;
 
+  const inactiveNumericCandidate = mockTable(
+    'tbl-inactive-num',
+    'Inactive Num Table',
+    'available',
+    'Main Room',
+    4,
+  );
+  (inactiveNumericCandidate as any).is_active = 0;
+
   const activeCandidate = mockTable('tbl-active', 'Active Table', 'available', 'Main Room', 4);
 
   const markup = ReactDOMServer.renderToStaticMarkup(
     React.createElement(MoveTableModal, {
       sourceTable: source,
-      tables: [source, inactiveCandidate, activeCandidate],
+      tables: [source, inactiveCandidate, inactiveNumericCandidate, activeCandidate],
       onClose: () => undefined,
       onSuccess: () => undefined,
     }),
@@ -219,6 +228,10 @@ function testMoveTableModalFilteringAndEdgeCases() {
 
   assert.ok(markup.includes('Active Table'), 'renders active candidate');
   assert.ok(!markup.includes('Inactive Table'), 'filters out inactive tables from candidates');
+  assert.ok(
+    !markup.includes('Inactive Num Table'),
+    'filters out numeric 0 inactive tables from candidates',
+  );
   assert.ok(
     !markup.includes('tables.allFloors'),
     'omits floor filter tabs when only one floor exists',

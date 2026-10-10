@@ -65,7 +65,7 @@ export default function MoveTableModal({
 
   // Filter out source table and inactive tables
   const candidateTables = tablesList.filter(
-    (tb) => tb.id !== sourceTable.id && tb.is_active !== false,
+    (tb) => tb.id !== sourceTable.id && tb.is_active !== false && (tb.is_active as unknown) !== 0,
   );
 
   const floorValues = [

@@ -4,7 +4,18 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin, MapPinned, List, ArrowRightLeft } from 'lucide-react';
+import {
+  Plus,
+  X,
+  Search,
+  UserPlus,
+  RotateCcw,
+  Pencil,
+  MapPin,
+  MapPinned,
+  List,
+  ArrowRightLeft,
+} from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import FloorplanEditor from '@/components/tables/FloorplanEditor';
 import MoveTableModal from '@/components/tables/MoveTableModal';
@@ -15,7 +26,11 @@ import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
-import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import {
+  ORDER_STATUS_LABEL_KEYS,
+  ITEM_STATUS_LABEL_KEYS,
+  TABLE_STATUS_LABEL_KEYS,
+} from '@/lib/i18n-enums';
 import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
 
 const statusColors: Record<string, string> = {
@@ -56,10 +71,12 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const searchRequestRef = useRef(0);
 
-
   const searchCustomers = (q: string) => {
     const requestId = ++searchRequestRef.current;
-    if (q.length < 2) { setResults([]); return; }
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
@@ -81,7 +98,11 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: newName, phone: parsed.e164, country_code: parsed.countryCode });
+      const { data } = await api.post('/customers', {
+        name: newName,
+        phone: parsed.e164,
+        country_code: parsed.countryCode,
+      });
       setSelected(data.customer);
       setShowCreate(false);
       setQuery('');
@@ -117,17 +138,28 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">{tNav('tables')} · {table.name}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+          <h2 className="text-lg font-bold">
+            {tNav('tables')} · {table.name}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground">
+            <X size={20} />
+          </button>
         </div>
 
         {selected ? (
           <div className="flex items-center justify-between px-3 py-2.5 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-xl mb-4">
             <div>
-              <p className="font-semibold text-brand dark:text-indigo-300 text-sm">{selected.name}</p>
-              <p className="text-xs text-brand/70 dark:text-indigo-300"><Ltr>{selected.phone}</Ltr></p>
+              <p className="font-semibold text-brand dark:text-indigo-300 text-sm">
+                {selected.name}
+              </p>
+              <p className="text-xs text-brand/70 dark:text-indigo-300">
+                <Ltr>{selected.phone}</Ltr>
+              </p>
             </div>
-            <button onClick={() => setSelected(null)} className="text-brand dark:text-indigo-300 hover:text-brand-hover dark:hover:text-indigo-200">
+            <button
+              onClick={() => setSelected(null)}
+              className="text-brand dark:text-indigo-300 hover:text-brand-hover dark:hover:text-indigo-200"
+            >
               <X size={14} />
             </button>
           </div>
@@ -135,11 +167,17 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
           <div className="mb-4">
             <p className="text-sm text-muted-foreground mb-2">{tTables('linkCustomer')}</p>
             <div className="relative mb-2">
-              <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search
+                size={14}
+                className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
               <input
                 type="text"
                 value={query}
-                onChange={(e) => { setQuery(e.target.value); searchCustomers(e.target.value); }}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  searchCustomers(e.target.value);
+                }}
                 placeholder={tTables('searchCustomerPlaceholder')}
                 className="w-full ps-8 pe-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
               />
@@ -147,33 +185,64 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
             {results.length > 0 && (
               <div className="border border-border rounded-lg overflow-hidden mb-2 max-h-36 overflow-y-auto">
                 {results.map((c) => (
-                  <button key={c.id} onClick={() => { setSelected(c); setQuery(''); setResults([]); }}
-                    className="w-full text-start px-3 py-2 hover:bg-muted text-sm border-b border-border last:border-0">
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setSelected(c);
+                      setQuery('');
+                      setResults([]);
+                    }}
+                    className="w-full text-start px-3 py-2 hover:bg-muted text-sm border-b border-border last:border-0"
+                  >
                     <span className="font-medium">{c.name}</span>
-                    <span className="text-gray-400 ms-2 text-xs"><Ltr>{c.phone}</Ltr></span>
+                    <span className="text-gray-400 ms-2 text-xs">
+                      <Ltr>{c.phone}</Ltr>
+                    </span>
                   </button>
                 ))}
               </div>
             )}
             {!showCreate ? (
-              <button onClick={() => { setShowCreate(true); if (/^\d+$/.test(query.trim())) setNewPhone(query.trim()); }}
-                className="flex items-center gap-1.5 text-sm text-brand font-medium hover:text-brand-hover">
+              <button
+                onClick={() => {
+                  setShowCreate(true);
+                  if (/^\d+$/.test(query.trim())) setNewPhone(query.trim());
+                }}
+                className="flex items-center gap-1.5 text-sm text-brand font-medium hover:text-brand-hover"
+              >
                 <UserPlus size={14} /> {tTables('newCustomer')}
               </button>
             ) : (
               <div className="space-y-2 border border-border rounded-xl p-3">
-                <input type="text" placeholder={tProducts('nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                <input
+                  type="text"
+                  placeholder={tProducts('nameLabel')}
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand"
+                />
                 <div className="flex items-stretch gap-2">
-
-                  <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${tSettings('phone')}`} value={newPhone}
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder={`${dialCode} ${tSettings('phone')}`}
+                    value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand"
+                  />
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-border rounded-lg hover:bg-muted">{tTables('cancel')}</button>
-                  <button onClick={handleCreateCustomer} disabled={creating || !newName.trim() || !newPhone.trim()}
-                    className="flex-1 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50">
+                  <button
+                    onClick={() => setShowCreate(false)}
+                    className="flex-1 py-1.5 text-sm border border-border rounded-lg hover:bg-muted"
+                  >
+                    {tTables('cancel')}
+                  </button>
+                  <button
+                    onClick={handleCreateCustomer}
+                    disabled={creating || !newName.trim() || !newPhone.trim()}
+                    className="flex-1 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+                  >
                     {creating ? tTables('creating') : tTables('create')}
                   </button>
                 </div>
@@ -183,7 +252,9 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
         )}
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose} className="flex-1">{tTables('cancel')}</Button>
+          <Button variant="outline" onClick={onClose} className="flex-1">
+            {tTables('cancel')}
+          </Button>
           <Button onClick={handleReserve} disabled={saving} className="flex-1">
             {saving ? tTables('reserving') : tTables('reserveTable')}
           </Button>
@@ -194,13 +265,41 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
 }
 
 const itemStatusColors: Record<string, { bg: string; text: string; dot: string }> = {
-  pending: { bg: 'bg-yellow-50 dark:bg-yellow-950', text: 'text-yellow-700 dark:text-yellow-300', dot: 'bg-yellow-400' },
-  preparing: { bg: 'bg-blue-50 dark:bg-blue-950', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500 dark:bg-blue-400' },
-  ready: { bg: 'bg-green-50 dark:bg-green-950', text: 'text-green-700 dark:text-green-300', dot: 'bg-green-500 dark:bg-green-400' },
-  served: { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-300', dot: 'bg-purple-500 dark:bg-purple-400' },
-  cancelled: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
-  voided: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
-  void_adjustment: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
+  pending: {
+    bg: 'bg-yellow-50 dark:bg-yellow-950',
+    text: 'text-yellow-700 dark:text-yellow-300',
+    dot: 'bg-yellow-400',
+  },
+  preparing: {
+    bg: 'bg-blue-50 dark:bg-blue-950',
+    text: 'text-blue-700 dark:text-blue-300',
+    dot: 'bg-blue-500 dark:bg-blue-400',
+  },
+  ready: {
+    bg: 'bg-green-50 dark:bg-green-950',
+    text: 'text-green-700 dark:text-green-300',
+    dot: 'bg-green-500 dark:bg-green-400',
+  },
+  served: {
+    bg: 'bg-purple-50 dark:bg-purple-950',
+    text: 'text-purple-700 dark:text-purple-300',
+    dot: 'bg-purple-500 dark:bg-purple-400',
+  },
+  cancelled: {
+    bg: 'bg-red-50 dark:bg-red-950',
+    text: 'text-red-500 dark:text-red-400',
+    dot: 'bg-red-400',
+  },
+  voided: {
+    bg: 'bg-red-50 dark:bg-red-950',
+    text: 'text-red-500 dark:text-red-400',
+    dot: 'bg-red-400',
+  },
+  void_adjustment: {
+    bg: 'bg-red-50 dark:bg-red-950',
+    text: 'text-red-500 dark:text-red-400',
+    dot: 'bg-red-400',
+  },
 };
 
 export default function TablesPage() {
@@ -251,7 +350,8 @@ export default function TablesPage() {
 
   useEffect(() => {
     const load = () => {
-      api.get('/tables')
+      api
+        .get('/tables')
         .then(({ data }) => setTables(data.tables || []))
         .catch(() => toast.error(tTables('loadFailed')))
         .finally(() => setLoading(false));
@@ -274,7 +374,8 @@ export default function TablesPage() {
   useEffect(() => {
     if (!canReadOrders || (view !== 'plan' && !showDetails)) return;
     const fetchOrders = () => {
-      api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
+      api
+        .get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
         .then(({ data }) => setOrders(data.orders || []))
         .catch(() => {
           // silently fail — tables still show
@@ -341,11 +442,16 @@ export default function TablesPage() {
       };
       if (editingTable) {
         const { data } = await api.put(`/tables/${editingTable.id}`, payload);
-        setTables((current) => current.map((table) => table.id === editingTable.id ? data.table : table));
+        setTables((current) =>
+          current.map((table) => (table.id === editingTable.id ? data.table : table)),
+        );
         toast.success(tTables('tableUpdated'));
       } else {
         const { data } = await api.post('/tables', payload);
-        setTables((current) => [...current, { ...data.table, name: data.table.name || data.table.number }]);
+        setTables((current) => [
+          ...current,
+          { ...data.table, name: data.table.name || data.table.number },
+        ]);
         toast.success(tTables('tableCreated'));
       }
       closeTableForm();
@@ -358,7 +464,10 @@ export default function TablesPage() {
         TABLE_NAME_DUPLICATE: tTables('tableNameDuplicate'),
         TABLE_INACTIVE_DUPLICATE: tTables('tableInactiveDuplicate'),
       };
-      toast.error((code && knownMessages[code]) || (editingTable ? tTables('tableUpdateFailed') : tTables('tableCreateFailed')));
+      toast.error(
+        (code && knownMessages[code]) ||
+          (editingTable ? tTables('tableUpdateFailed') : tTables('tableCreateFailed')),
+      );
     }
   };
 
@@ -388,11 +497,17 @@ export default function TablesPage() {
     );
   }
 
-  const floorValues = [...new Set(
-    tables.filter((table) => table.is_active && table.floor?.trim()).map((table) => table.floor!.trim()),
-  )].sort((a, b) => a.localeCompare(b));
-  const activeFloor = selectedFloor === 'all' || floorValues.includes(selectedFloor) ? selectedFloor : 'all';
-  const visibleTables = activeFloor === 'all' ? tables : tables.filter((table) => table.floor?.trim() === activeFloor);
+  const floorValues = [
+    ...new Set(
+      tables
+        .filter((table) => table.is_active && table.floor?.trim())
+        .map((table) => table.floor!.trim()),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  const activeFloor =
+    selectedFloor === 'all' || floorValues.includes(selectedFloor) ? selectedFloor : 'all';
+  const visibleTables =
+    activeFloor === 'all' ? tables : tables.filter((table) => table.floor?.trim() === activeFloor);
 
   const locationBadge = (table: Table) => {
     if (!table.floor && !table.section) return null;
@@ -410,17 +525,27 @@ export default function TablesPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 rounded-xl bg-muted p-1">
             <button
-              onClick={() => { setView('list'); setLayoutMode(false); }}
+              onClick={() => {
+                setView('list');
+                setLayoutMode(false);
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                view === 'list' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+                view === 'list'
+                  ? 'bg-card text-foreground shadow'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <List size={14} /> {tTables('floorplanViewList')}
             </button>
             <button
-              onClick={() => { setView('plan'); setLayoutMode(false); }}
+              onClick={() => {
+                setView('plan');
+                setLayoutMode(false);
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                view === 'plan' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+                view === 'plan'
+                  ? 'bg-card text-foreground shadow'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <MapPinned size={14} /> {tTables('floorplanViewPlan')}
@@ -489,174 +614,252 @@ export default function TablesPage() {
         </div>
       )}
 
-      {view === 'list' ? (displaysOrderDetails ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {visibleTables.map((table) => {
-            const tableOrders = ordersByTable.get(table.id) || [];
-            const hasOrders = tableOrders.length > 0;
+      {view === 'list' ? (
+        displaysOrderDetails ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleTables.map((table) => {
+              const tableOrders = ordersByTable.get(table.id) || [];
+              const hasOrders = tableOrders.length > 0;
 
-            return (
-              <div key={table.id}
-                className={`bg-card rounded-xl border border-border hover:shadow-md transition-shadow ${
-                  hasOrders ? 'border-s-4 border-s-brand' : ''
-                } ${!table.is_active ? 'opacity-60' : ''}`}>
-                {/* Table header */}
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
-                    <h3 className="font-bold text-foreground">{table.name}</h3>
-                    <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
-                    {locationBadge(table)}
+              return (
+                <div
+                  key={table.id}
+                  className={`bg-card rounded-xl border border-border hover:shadow-md transition-shadow ${
+                    hasOrders ? 'border-s-4 border-s-brand' : ''
+                  } ${!table.is_active ? 'opacity-60' : ''}`}
+                >
+                  {/* Table header */}
+                  <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
+                      <h3 className="font-bold text-foreground">{table.name}</h3>
+                      <span className="text-xs text-gray-400">
+                        · {tTables('capacitySeats', { count: table.capacity })}
+                      </span>
+                      {locationBadge(table)}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {table.status === 'occupied' && table.seated_at && (
+                        <TableTurnoverBadge seatedAt={table.seated_at} />
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {tTables(TABLE_STATUS_LABEL_KEYS[table.status])}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {table.status === 'occupied' && table.seated_at && (
-                      <TableTurnoverBadge seatedAt={table.seated_at} />
-                    )}
-                    <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
-                  </div>
+
+                  {table.status === 'reserved' && table.reservation_customer_name && (
+                    <div className="px-4 pt-2">
+                      <p className="text-xs text-yellow-700 font-medium truncate">
+                        {table.reservation_customer_name}
+                      </p>
+                      {table.reservation_customer_phone && (
+                        <p className="text-xs text-yellow-600 mt-0.5">
+                          <Ltr>{table.reservation_customer_phone}</Ltr>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Orders section */}
+                  {hasOrders ? (
+                    <div className="px-4 py-3 space-y-3">
+                      {tableOrders.map((order) => (
+                        <div key={order.id} className="bg-muted rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-foreground">
+                              #<Ltr>{order.order_number}</Ltr>
+                            </span>
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full ${
+                                order.status === 'pending'
+                                  ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300'
+                                  : order.status === 'preparing'
+                                    ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                                    : order.status === 'ready'
+                                      ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300'
+                                      : order.status === 'served'
+                                        ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300'
+                                        : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
+                            </span>
+                          </div>
+                          {order.customer?.name && (
+                            <p className="text-xs text-muted-foreground mb-1.5">
+                              {order.customer.name}
+                            </p>
+                          )}
+                          <div className="space-y-1">
+                            {order.items
+                              ?.filter((i) => i.status !== 'cancelled')
+                              .map((item) => {
+                                const sc =
+                                  itemStatusColors[item.status] || itemStatusColors.pending;
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${sc.bg}`}
+                                  >
+                                    <div
+                                      className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`}
+                                    />
+                                    <span className="flex-1 truncate text-foreground">
+                                      {item.product_name}
+                                    </span>
+                                    <span className="text-muted-foreground">×{item.quantity}</span>
+                                    <span className={`font-medium capitalize ${sc.text}`}>
+                                      {tOrders(itemStatusLabelKey(item.status))}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-4 text-center text-xs text-gray-400">
+                      {tTables('noActiveOrders')}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {(canManageTables || (canMoveTable && table.status === 'occupied')) && (
+                    <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
+                      {canMoveTable && table.status === 'occupied' && (
+                        <button
+                          onClick={() => setMovingTable(table)}
+                          className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
+                        >
+                          <ArrowRightLeft size={12} /> {tTables('moveTable')}
+                        </button>
+                      )}
+                      {canManageTables && (
+                        <>
+                          <button
+                            onClick={() => openEdit(table)}
+                            className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1"
+                          >
+                            <Pencil size={12} /> {tTables('editTable')}
+                          </button>
+                          {(table.status === 'occupied' || table.status === 'reserved') && (
+                            <button
+                              onClick={() => updateStatus(table.id, 'available')}
+                              className="text-xs text-brand hover:text-brand-hover font-medium"
+                            >
+                              {tTables('markAvailable')}
+                            </button>
+                          )}
+                          {table.status === 'available' && (
+                            <button
+                              onClick={() => setReservingTable(table)}
+                              className="text-xs text-yellow-600 hover:text-yellow-700 font-medium"
+                            >
+                              {tTables('reserve')}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => toggleActive(table)}
+                            className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}
+                          >
+                            {!table.is_active ? (
+                              <>
+                                <RotateCcw size={12} /> {tTables('reactivate')}
+                              </>
+                            ) : (
+                              tTables('deactivate')
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
-
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {visibleTables.map((table) => (
+              <div
+                key={table.id}
+                className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}
+              >
+                <div
+                  className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`}
+                />
+                <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {tTables('capacitySeats', { count: table.capacity })}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {tTables(TABLE_STATUS_LABEL_KEYS[table.status])}
+                </p>
+                {table.status === 'occupied' && table.seated_at && (
+                  <div className="mt-1">
+                    <TableTurnoverBadge seatedAt={table.seated_at} />
+                  </div>
+                )}
+                <div className="mt-2 flex justify-center">{locationBadge(table)}</div>
                 {table.status === 'reserved' && table.reservation_customer_name && (
-                  <div className="px-4 pt-2">
-                    <p className="text-xs text-yellow-700 font-medium truncate">{table.reservation_customer_name}</p>
-                    {table.reservation_customer_phone && (
-                      <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
-                    )}
-                  </div>
+                  <p className="text-xs text-yellow-700 font-medium mt-1 truncate">
+                    {table.reservation_customer_name}
+                  </p>
+                )}
+                {table.status === 'reserved' && table.reservation_customer_phone && (
+                  <p className="text-xs text-yellow-600 mt-0.5">
+                    <Ltr>{table.reservation_customer_phone}</Ltr>
+                  </p>
                 )}
 
-                {/* Orders section */}
-                {hasOrders ? (
-                  <div className="px-4 py-3 space-y-3">
-                    {tableOrders.map((order) => (
-                      <div key={order.id} className="bg-muted rounded-lg p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold text-foreground">#<Ltr>{order.order_number}</Ltr></span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            order.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' :
-                            order.status === 'preparing' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
-                            order.status === 'ready' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
-                            order.status === 'served' ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' :
-                            'bg-muted text-muted-foreground'
-                          }`}>
-                            {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
-                          </span>
-                        </div>
-                        {order.customer?.name && (
-                          <p className="text-xs text-muted-foreground mb-1.5">{order.customer.name}</p>
-                        )}
-                        <div className="space-y-1">
-                          {order.items?.filter(i => i.status !== 'cancelled').map((item) => {
-                            const sc = itemStatusColors[item.status] || itemStatusColors.pending;
-                            return (
-                              <div key={item.id} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${sc.bg}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
-                                <span className="flex-1 truncate text-foreground">{item.product_name}</span>
-                                <span className="text-muted-foreground">×{item.quantity}</span>
-                                <span className={`font-medium capitalize ${sc.text}`}>{tOrders(itemStatusLabelKey(item.status))}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="px-4 py-4 text-center text-xs text-gray-400">
-                    {tTables('noActiveOrders')}
-                  </div>
+                {canMoveTable && table.status === 'occupied' && (
+                  <button
+                    onClick={() => setMovingTable(table)}
+                    className="mt-3 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1"
+                  >
+                    <ArrowRightLeft size={12} /> {tTables('moveTable')}
+                  </button>
                 )}
 
-                {/* Actions */}
-                {(canManageTables || (canMoveTable && table.status === 'occupied')) && (
-                  <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
-                    {canMoveTable && table.status === 'occupied' && (
-                      <button onClick={() => setMovingTable(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
-                        <ArrowRightLeft size={12} /> {tTables('moveTable')}
+                {canManageTables && (
+                  <>
+                    {(table.status === 'occupied' || table.status === 'reserved') && (
+                      <button
+                        onClick={() => updateStatus(table.id, 'available')}
+                        className="mt-3 text-xs text-brand hover:text-brand-hover font-medium"
+                      >
+                        {tTables('markAvailable')}
                       </button>
                     )}
-                    {canManageTables && (
-                      <>
-                        <button onClick={() => openEdit(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
-                          <Pencil size={12} /> {tTables('editTable')}
-                        </button>
-                        {(table.status === 'occupied' || table.status === 'reserved') && (
-                          <button onClick={() => updateStatus(table.id, 'available')}
-                            className="text-xs text-brand hover:text-brand-hover font-medium">
-                            {tTables('markAvailable')}
-                          </button>
-                        )}
-                        {table.status === 'available' && (
-                          <button onClick={() => setReservingTable(table)}
-                            className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                            {tTables('reserve')}
-                          </button>
-                        )}
-                        <button onClick={() => toggleActive(table)}
-                          className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                          {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
-                        </button>
-                      </>
+                    {table.status === 'available' && (
+                      <button
+                        onClick={() => setReservingTable(table)}
+                        className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium"
+                      >
+                        {tTables('reserve')}
+                      </button>
                     )}
-                  </div>
+                    <button
+                      onClick={() => openEdit(table)}
+                      className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1"
+                    >
+                      <Pencil size={12} /> {tTables('editTable')}
+                    </button>
+                    <button
+                      onClick={() => toggleActive(table)}
+                      className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}
+                    >
+                      {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
+                    </button>
+                  </>
                 )}
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {visibleTables.map((table) => (
-            <div key={table.id}
-              className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
-              <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
-              <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
-              <p className="text-sm text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</p>
-              <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
-              {table.status === 'occupied' && table.seated_at && (
-                <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
-              )}
-              <div className="mt-2 flex justify-center">{locationBadge(table)}</div>
-              {table.status === 'reserved' && table.reservation_customer_name && (
-                <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
-              )}
-              {table.status === 'reserved' && table.reservation_customer_phone && (
-                <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
-              )}
-
-              {canMoveTable && table.status === 'occupied' && (
-                <button onClick={() => setMovingTable(table)} className="mt-3 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
-                  <ArrowRightLeft size={12} /> {tTables('moveTable')}
-                </button>
-              )}
-
-              {canManageTables && (
-                <>
-                  {(table.status === 'occupied' || table.status === 'reserved') && (
-                    <button onClick={() => updateStatus(table.id, 'available')}
-                      className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
-                      {tTables('markAvailable')}
-                    </button>
-                  )}
-                  {table.status === 'available' && (
-                    <button onClick={() => setReservingTable(table)}
-                      className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                      {tTables('reserve')}
-                    </button>
-                  )}
-                  <button onClick={() => openEdit(table)} className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
-                    <Pencil size={12} /> {tTables('editTable')}
-                  </button>
-                  <button onClick={() => toggleActive(table)}
-                    className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                    {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      )) : null}
+            ))}
+          </div>
+        )
+      ) : null}
 
       {view === 'list' && visibleTables.length === 0 && (
         <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>
@@ -667,7 +870,10 @@ export default function TablesPage() {
         <ReserveModal
           table={reservingTable}
           onClose={() => setReservingTable(null)}
-          onDone={() => { setReservingTable(null); fetchTables(); }}
+          onDone={() => {
+            setReservingTable(null);
+            fetchTables();
+          }}
         />
       )}
 
@@ -678,39 +884,82 @@ export default function TablesPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-md shadow-xl">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="text-lg font-bold text-foreground">{editingTable ? tTables('editTable') : tTables('add')}</h2>
-                {editingTable && <p className="text-xs text-muted-foreground mt-0.5">{tTables('editTableHelp')}</p>}
+                <h2 className="text-lg font-bold text-foreground">
+                  {editingTable ? tTables('editTable') : tTables('add')}
+                </h2>
+                {editingTable && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{tTables('editTableHelp')}</p>
+                )}
               </div>
-              <button onClick={closeTableForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+              <button
+                onClick={closeTableForm}
+                className="text-gray-400 hover:text-muted-foreground"
+              >
+                <X size={20} />
+              </button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{tTables('tableName')}</label>
-                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  {tTables('tableName')}
+                </label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder={tTables('tableNamePlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  required
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('capacity')}</label>
-                  <input type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {tTables('capacity')}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.capacity}
+                    onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('floor')}</label>
-                  <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    {tTables('floor')}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.floor}
+                    onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">{tTables('section')}</label>
-                <input type="text" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  {tTables('section')}
+                </label>
+                <input
+                  type="text"
+                  value={form.section}
+                  onChange={(e) => setForm({ ...form, section: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                />
               </div>
               <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={closeTableForm} className="flex-1">{tTables('cancel')}</Button>
+                <Button type="button" variant="outline" onClick={closeTableForm} className="flex-1">
+                  {tTables('cancel')}
+                </Button>
                 <Button
                   type="submit"
-                  disabled={!form.name.trim() || !Number.isInteger(Number(form.capacity)) || Number(form.capacity) < 1}
+                  disabled={
+                    !form.name.trim() ||
+                    !Number.isInteger(Number(form.capacity)) ||
+                    Number(form.capacity) < 1
+                  }
                   className="flex-1"
                 >
                   {editingTable ? tTables('saveChanges') : tTables('createTable')}

@@ -572,28 +572,27 @@ exit 0
     );
   }
 
-  const shard0Suites = allSuites.filter((_, i) => i % 2 === 0);
-  const shard1Suites = allSuites.filter((_, i) => i % 2 === 1);
-  const expectedShard0 = Math.ceil(allSuites.length / 2);
-  const expectedShard1 = Math.floor(allSuites.length / 2);
-  assert.strictEqual(
-    shard0Suites.length,
-    expectedShard0,
-    `Shard 0 must have exactly ${expectedShard0} suites`,
-  );
-  assert.strictEqual(
-    shard1Suites.length,
-    expectedShard1,
-    `Shard 1 must have exactly ${expectedShard1} suites`,
-  );
+  const shardSuites = [0, 1, 2, 3].map((s) => allSuites.filter((_, i) => i % 4 === s));
+  for (let s = 0; s < 4; s++) {
+    const expected = Math.floor(allSuites.length / 4) + (s < allSuites.length % 4 ? 1 : 0);
+    assert.strictEqual(
+      shardSuites[s].length,
+      expected,
+      `Shard ${s} must have exactly ${expected} suites`,
+    );
+  }
 
   // Ensure 0 overlap and 100% union coverage
-  const intersection = shard0Suites.filter((s) => shard1Suites.includes(s));
-  assert.strictEqual(intersection.length, 0, 'Shards must not share any duplicate suites');
+  for (let a = 0; a < 4; a++) {
+    for (let b = a + 1; b < 4; b++) {
+      const intersection = shardSuites[a].filter((s) => shardSuites[b].includes(s));
+      assert.strictEqual(intersection.length, 0, `Shards ${a} and ${b} must not share any duplicate suites`);
+    }
+  }
 
   const reconstructed = [];
   for (let i = 0; i < allSuites.length; i++) {
-    reconstructed.push(i % 2 === 0 ? shard0Suites[i / 2] : shard1Suites[(i - 1) / 2]);
+    reconstructed.push(shardSuites[i % 4][Math.floor(i / 4)]);
   }
   assert.deepStrictEqual(
     reconstructed,
@@ -602,7 +601,7 @@ exit 0
   );
 
   console.log(
-    `✓ package.json test suite sharding coverage invariance (${allSuites.length} suites, ${shard0Suites.length}/${shard1Suites.length} per shard) verified`,
+    `✓ package.json test suite sharding coverage invariance (${allSuites.length} suites across 4 shards) verified`,
   );
 
   // CI Workflow schema and configuration assertions
@@ -617,6 +616,7 @@ exit 0
     'tax-category-invariant',
     'linux-baseline',
     'linux-tests',
+    'e2e-playwright-worker',
     'e2e-playwright',
     'native-e2e-playwright',
   ]) {
@@ -631,7 +631,7 @@ exit 0
   assert.strictEqual(linuxTestsJob['timeout-minutes'], 25);
   assert.strictEqual(
     linuxTestsJob.name,
-    'Core Test Suite (Shard ${{ matrix.shard_number }}/2)',
+    'Core Test Suite (Shard ${{ matrix.shard_number }}/4)',
     'linux-tests must display 1-indexed shard numbers in job name',
   );
   assert.strictEqual(
@@ -641,12 +641,12 @@ exit 0
   );
   assert.deepStrictEqual(
     linuxTestsJob.strategy?.matrix?.shard,
-    [0, 1],
-    'linux-tests matrix.shard must be [0, 1]',
+    [0, 1, 2, 3],
+    'linux-tests matrix.shard must be [0, 1, 2, 3]',
   );
   assert.deepStrictEqual(
     linuxTestsJob.strategy?.matrix?.include?.map((entry: any) => entry.shard_number),
-    [1, 2],
+    [1, 2, 3, 4],
     'linux-tests matrix must include 1-indexed shard_number mappings',
   );
 
@@ -656,7 +656,7 @@ exit 0
   assert.ok(shardRunStep, 'linux-tests must define its core test suite step');
   assert.strictEqual(
     shardRunStep.run.trim(),
-    "xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs",
+    "xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=4 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs",
   );
   assert.ok(
     linuxTestsJob.steps.some((step: any) => step.if === 'matrix.shard == 0'),

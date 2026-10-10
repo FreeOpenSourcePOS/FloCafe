@@ -989,7 +989,7 @@ cat "$CI_TEST_RUNS_FIXTURE"
     fs.rmSync(gateTempDir, { recursive: true, force: true });
   }
 
-  const e2eJob = ciWorkflow.jobs['e2e-playwright'];
+  const e2eJob = ciWorkflow.jobs['e2e-playwright-worker'];
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
   assertShellStep(e2eJob, 'Run renderer and printer regression suites');
   assert.equal(releaseRegression.env.REQUIRE_VISUAL_EVIDENCE, '1');

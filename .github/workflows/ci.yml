@@ -250,7 +250,7 @@ jobs:
         working-directory: frontend
         run: npx playwright install chromium
 
-      - name: Run renderer and printer regression suites (Shard 1 only)
+      - name: Run renderer and printer regression suites
         if: matrix.shard == 1
         run: npm run test:release-regressions
         env:
@@ -301,7 +301,11 @@ jobs:
         run: |
           changes_result="${{ needs.changes.result }}"
           worker_result="${{ needs.e2e-playwright-worker.result }}"
-          if [ "$changes_result" = "skipped" ] || [ "$worker_result" = "skipped" ]; then
+          if [ "$changes_result" != "success" ]; then
+            echo "::error::Path Filtering did not succeed (status: $changes_result); its dependents' skipped status cannot be trusted."
+            exit 1
+          fi
+          if [ "$worker_result" = "skipped" ]; then
             echo "Playwright tests skipped via path filtering."
             exit 0
           fi

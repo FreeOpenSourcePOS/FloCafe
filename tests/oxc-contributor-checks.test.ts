@@ -1291,7 +1291,20 @@ const exactStepIndex = (command: string, workingDirectory?: string) =>
         : step['working-directory'] === workingDirectory),
   );
 
-const gateIndex = exactStepIndex('node scripts/ci/check-changed-format.cjs');
+const stepRunsCommand = (step: Record<string, string>, command: string, workingDirectory?: string) => {
+  if (!step?.run) return false;
+  if (workingDirectory !== undefined) {
+    if (step['working-directory'] === workingDirectory && step.run.includes(command)) return true;
+    if (step.run.includes(`cd ${workingDirectory}`) && step.run.includes(command)) return true;
+    return false;
+  }
+  return step.run.includes(command);
+};
+
+const findStepIndex = (command: string, workingDirectory?: string) =>
+  lintJobSteps.findIndex((step) => stepRunsCommand(step, command, workingDirectory));
+
+const gateIndex = findStepIndex('node scripts/ci/check-changed-format.cjs');
 assertOrThrow(gateIndex >= 0, 'CI must run the changed-file formatting gate');
 assertOrThrow(
   exactStepIndex('npm ci') >= 0 && exactStepIndex('npm ci') < gateIndex,
@@ -1307,7 +1320,7 @@ for (const [required, workingDirectory] of [
   ['npm run lint:budget', undefined],
 ] as const) {
   assertOrThrow(
-    exactStepIndex(required, workingDirectory) >= 0,
+    findStepIndex(required, workingDirectory) >= 0,
     `the ${required} gate must stay in the lint job`,
   );
 }

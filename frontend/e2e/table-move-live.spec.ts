@@ -38,21 +38,21 @@ test.describe('Table Move UI Live Validation', () => {
 
       const resT1 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
-        data: { number: t1Num, capacity: 4, floor: 'Ground', section: 'Indoor' },
+        data: { number: t1Num, capacity: 4, floor: 'Ground', section: 'Indoor', position_x: 20, position_y: 20 },
       });
       expect(resT1.ok()).toBeTruthy();
       const table1 = (await resT1.json()).table;
 
       const resT2 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
-        data: { number: t2Num, capacity: 2, floor: 'Ground', section: 'Window' },
+        data: { number: t2Num, capacity: 2, floor: 'Ground', section: 'Window', position_x: 50, position_y: 20 },
       });
       expect(resT2.ok()).toBeTruthy();
       const table2 = (await resT2.json()).table;
 
       const resT3 = await request.post(`${BASE}/api/tables`, {
         headers: authHeaders,
-        data: { number: t3Num, capacity: 6, floor: 'Patio', section: 'Terrace' },
+        data: { number: t3Num, capacity: 6, floor: 'Patio', section: 'Terrace', position_x: 30, position_y: 30 },
       });
       expect(resT3.ok()).toBeTruthy();
       const table3 = (await resT3.json()).table;
@@ -100,8 +100,19 @@ test.describe('Table Move UI Live Validation', () => {
       const floorPlanToggle = page.getByRole('button', { name: 'Floor plan' });
       await floorPlanToggle.click();
 
+      // Ensure we switch to Ground floor tab if multiple floor tabs exist
+      const groundTab = page
+        .locator('[data-testid="floorplan-floor-tabs"]')
+        .getByRole('button', { name: 'Ground' });
+      if (await groundTab.isVisible()) {
+        await groundTab.click();
+      }
+
       // In floorplan view, click table T1 to open action sheet
-      const t1Trigger = page.locator(`text=${t1Num}`).first();
+      const t1Trigger = page
+        .locator(`[data-testid="floorplan-chip-${t1Num}"], [data-testid="floorplan-tray-${t1Num}"]`)
+        .or(page.getByText(t1Num))
+        .first();
       await expect(t1Trigger).toBeVisible();
       await t1Trigger.click();
 

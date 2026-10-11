@@ -168,13 +168,13 @@ interface Props {
   search: string;
   setSearch: (s: string) => void;
   currency: string;
-  onProductClick: (product: Product) => void;
+  onProductClick: (product: Product, quantity: number) => void;
   /** A scanned variant goes through the cart customizer, so required add-ons and sold-out gating still apply. */
-  onScannedVariant?: (product: Product, variant: ProductVariant) => void;
+  onScannedVariant: (product: Product, variant: ProductVariant, quantity: number) => void;
   sidebarOpen?: boolean;
   /** Overrides for hosts that keep their own cart, such as the Server App's tableside draft. */
   cartQuantities?: ReadonlyMap<Product['id'], number>;
-  onScaledProduct?: (product: Product, quantity: number) => void;
+  onScaledProduct: (product: Product, quantity: number) => void;
   formatPrice?: (amount: number) => string;
   showImages?: boolean;
   gridClassName?: string;
@@ -204,6 +204,11 @@ export default function ProductGrid({
   const showProductImages = showImages ?? showProductImagesSetting;
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
+  const validateSelectionQuantity = (product: Product, quantity: number) => {
+    if (isValidProductQuantity(product, quantity)) return true;
+    toast.error(tOrders('orderQuantityInvalid'));
+    return false;
+  };
   const tenantFmt = useFormatCurrency();
   const fmt = formatPrice ?? tenantFmt;
   useEffect(() => {
@@ -260,49 +265,26 @@ export default function ProductGrid({
               if (match) {
                 if (match.scaleBarcode) {
                   const matchedQuantity = match.quantity * quantityToAdd;
-                  if (!isValidProductQuantity(match.product, matchedQuantity)) {
-                    toast.error(tOrders('orderQuantityInvalid'));
-                    return;
-                  }
-                  if (onScaledProduct)
-                    onScaledProduct(match.product, matchedQuantity);
-                  else cart.addItem(match.product, matchedQuantity);
+                  if (!validateSelectionQuantity(match.product, matchedQuantity)) return;
+                  onScaledProduct(match.product, matchedQuantity);
                 } else if (match.variant) {
-                  if (onScannedVariant) onScannedVariant(match.product, match.variant);
-                  else {
-                    if (!isValidProductQuantity(match.product, quantityToAdd)) {
-                      toast.error(tOrders('orderQuantityInvalid'));
-                      return;
-                    }
-                    cart.addItem(match.product, quantityToAdd, [], '', match.variant);
-                  }
-                } else if (productNeedsCustomizer(match.product)) {
-                  onProductClick(match.product);
+                  if (!validateSelectionQuantity(match.product, quantityToAdd)) return;
+                  onScannedVariant(match.product, match.variant, quantityToAdd);
                 } else {
-                  if (!isValidProductQuantity(match.product, quantityToAdd)) {
-                    toast.error(tOrders('orderQuantityInvalid'));
-                    return;
-                  }
-                  cart.addItem(match.product, quantityToAdd);
+                  if (!validateSelectionQuantity(match.product, quantityToAdd)) return;
+                  onProductClick(match.product, quantityToAdd);
                 }
                 setSearch('');
                 return;
               }
 
               const matchedProduct =
-                products.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
+                filtered.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
                 (filtered.length === 1 ? filtered[0] : null);
 
               if (matchedProduct) {
-                if (productNeedsCustomizer(matchedProduct)) {
-                  onProductClick(matchedProduct);
-                } else {
-                  if (!isValidProductQuantity(matchedProduct, quantityToAdd)) {
-                    toast.error(tOrders('orderQuantityInvalid'));
-                    return;
-                  }
-                  cart.addItem(matchedProduct, quantityToAdd);
-                }
+                if (!validateSelectionQuantity(matchedProduct, quantityToAdd)) return;
+                onProductClick(matchedProduct, quantityToAdd);
                 setSearch('');
               }
             }}
@@ -370,7 +352,11 @@ export default function ProductGrid({
                 key={product.id}
                 data-testid="pos-product-card"
                 type="button"
-                onClick={() => onProductClick(product)}
+                onClick={() => {
+                  const quantity = parsedSearch?.quantity ?? 1;
+                  if (!validateSelectionQuantity(product, quantity)) return;
+                  onProductClick(product, quantity);
+                }}
                 className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (

@@ -19,6 +19,7 @@ export interface PosKeyboardShortcutHandlers {
 export interface UsePosKeyboardShortcutsOptions {
   enabled?: boolean;
   anyModalOpen: boolean;
+  tablePickerOpen: boolean;
   cartItemCount: number;
 }
 
@@ -43,7 +44,7 @@ export function usePosKeyboardShortcuts(
   handlers: PosKeyboardShortcutHandlers,
   options: UsePosKeyboardShortcutsOptions,
 ) {
-  const { enabled = true, anyModalOpen, cartItemCount } = options;
+  const { enabled = true, anyModalOpen, tablePickerOpen, cartItemCount } = options;
   const handlersRef = useRef(handlers);
   useEffect(() => {
     handlersRef.current = handlers;
@@ -68,6 +69,15 @@ export function usePosKeyboardShortcuts(
       if (e.key === 'F11') {
         e.preventDefault();
         handlersRef.current.onToggleFullscreen?.();
+        return;
+      }
+
+      if (
+        tablePickerOpen &&
+        (e.key === 'F2' || (e.altKey && !e.ctrlKey && !e.metaKey && e.key === '2'))
+      ) {
+        e.preventDefault();
+        handlersRef.current.onToggleTables?.();
         return;
       }
 
@@ -166,5 +176,5 @@ export function usePosKeyboardShortcuts(
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [enabled, anyModalOpen, cartItemCount]);
+  }, [enabled, anyModalOpen, tablePickerOpen, cartItemCount]);
 }

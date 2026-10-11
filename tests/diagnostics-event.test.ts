@@ -19,6 +19,7 @@ const {
   initTestDb, createApp, startServer, seedOwnerUser, seedProduct, seedTable, seedCategory, seedCustomer,
   api, assert, assertEqual, getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
+const { classifyOrderRequestFailure } = require('../frontend/src/lib/order-attempt');
   const { registerRoutes } = require('../main/routes/index');
 const { cloudSync } = require('../main/services/cloud-sync');
 
@@ -639,6 +640,35 @@ async function main() {
     setSetting('billing_type', 'postpaid');
     await assertPaymentCode(await rejectedPayment(kitchenBillId, { payments: [{ method: 'card', amount: 1 }] }), 'kitchen_undelivered');
     setSetting('require_kitchen_delivered_before_settlement', 'false');
+
+    setSetting('require_open_shift', 'true');
+    const batchCashSessionBillId = createPaymentBill(db, 'DIAG-PAYMENT-CASH-SESSION-BATCH');
+    const batchCashSessionOperationId = crypto.randomUUID();
+    const batchCashSessionFailure = await rejectedPayment(
+      batchCashSessionBillId,
+      { payments: [{ method: 'cash', amount: 10 }] },
+      { 'x-operation-id': batchCashSessionOperationId },
+    );
+    await assertPaymentCode(batchCashSessionFailure, 'cash_session_required');
+    const trustedBatchCashSessionFailure = classifyOrderRequestFailure({
+      response: { status: batchCashSessionFailure.status, data: batchCashSessionFailure.data },
+    }, { operation: 'payment.create', correlationId: batchCashSessionOperationId });
+    assertEqual(trustedBatchCashSessionFailure.trusted, true, 'the cashier trusts a structured batch cash-session rejection');
+    assertEqual(trustedBatchCashSessionFailure.displayCode, 'cash_session_required', 'the batch cash-session code reaches the cashier failure classifier');
+
+    const singleCashSessionBillId = createPaymentBill(db, 'DIAG-PAYMENT-CASH-SESSION-SINGLE');
+    const singleCashSessionOperationId = crypto.randomUUID();
+    const singleCashSessionFailure = await api(baseUrl, `/api/bills/${singleCashSessionBillId}/payment`, {
+      method: 'POST', headers: { ...owner.authHeader, 'x-operation-id': singleCashSessionOperationId },
+      body: { method: 'cash', amount: 10 },
+    });
+    await assertPaymentCode(singleCashSessionFailure, 'cash_session_required');
+    const trustedSingleCashSessionFailure = classifyOrderRequestFailure({
+      response: { status: singleCashSessionFailure.status, data: singleCashSessionFailure.data },
+    }, { operation: 'payment.create', correlationId: singleCashSessionOperationId });
+    assertEqual(trustedSingleCashSessionFailure.trusted, true, 'the cashier trusts a structured single cash-session rejection');
+    assertEqual(trustedSingleCashSessionFailure.displayCode, 'cash_session_required', 'the single cash-session code reaches the cashier failure classifier');
+    setSetting('require_open_shift', 'false');
 
     const diagnosticRows = JSON.stringify(db.prepare('SELECT event_code, metadata_json FROM local_diagnostics').all());
     assert(!diagnosticRows.includes('diag-customer-a'), 'payment captures never include customer identifiers');

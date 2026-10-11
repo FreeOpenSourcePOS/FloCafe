@@ -271,7 +271,7 @@ const PAYMENT_DISPLAY_CODES = [
   'transaction_reference_used', 'transaction_reference_reused', 'bill_refunded', 'bill_already_paid',
   'customer_mismatch', 'customer_unavailable', 'wallet_customer_required', 'amount_required',
   'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient', 'kitchen_undelivered',
-  'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
+  'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid', 'cash_session_required',
 ] as const;
 const CHARGE_DISPLAY_CODES = [
   'charge_required', 'bill_not_found', 'split_check', 'bill_paid', 'bill_refunded', 'order_not_found',

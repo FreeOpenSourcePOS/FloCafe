@@ -2369,7 +2369,7 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
         operationCommitted ? 'fc.backend.payment.create.completion'
           : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
         statusCode >= 500 ? 'Bill payment failed' : error.message,
-        statusCode >= 500 ? undefined : error.displayCode,
+        statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
         operationCommitted ? 'applied' : 'not_applied',
       ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),
@@ -2413,7 +2413,7 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
         operationCommitted ? 'fc.backend.payment.create.completion'
           : statusCode >= 500 ? 'fc.backend.payment.create.persistence' : 'fc.backend.payment.create.validation',
         statusCode >= 500 ? 'Bill payment failed' : error.message,
-        statusCode >= 500 ? undefined : error.displayCode,
+        statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
         operationCommitted ? 'applied' : 'not_applied',
       ),
       ...(error.code ? { code: error.code, undeliveredCount: error.undeliveredCount, undeliveredItems: error.undeliveredItems } : {}),

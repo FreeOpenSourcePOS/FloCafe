@@ -634,6 +634,7 @@ export default function POSPage() {
       idempotency_conflict: t('paymentIdempotencyConflict'),
       payment_method_unavailable: t('paymentMethodUnavailable'),
       payment_input_invalid: t('paymentInputInvalid'),
+      cash_session_required: t('cashSessionClosed'),
     };
     const confirmedNotApplied = failure.trusted && failure.outcome === 'not_applied';
     const expectedRejection = confirmedNotApplied && failure.classification === 'expected_rejection';

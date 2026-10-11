@@ -809,6 +809,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         idempotency_conflict: t('paymentIdempotencyConflict'),
         payment_method_unavailable: t('paymentMethodUnavailable'),
         payment_input_invalid: t('paymentInputInvalid'),
+        cash_session_required: t('cashSessionClosed'),
       };
       const reasonMessage = failure.outcome === 'applied'
         ? t('paymentCompletionApplied')

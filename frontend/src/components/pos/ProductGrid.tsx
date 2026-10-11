@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
+import toast from 'react-hot-toast';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -10,11 +11,18 @@ import TagBadge from './DietaryBadge';
 import { productNeedsCustomizer } from '@/lib/product-variants';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
-import { parseDbTimestamp } from '@/lib/utils';
+import { fractionalQuantityStep, parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { subscribeToQuickSearch } from '@/lib/quick-search';
 import { parseQuantitySearch } from '@/lib/quantity-search';
+
+function isValidProductQuantity(product: Product, quantity: number): boolean {
+  if (!Number.isFinite(quantity) || quantity <= 0) return false;
+  if (Number.isInteger(quantity)) return true;
+  const step = fractionalQuantityStep(product);
+  return step !== null && Math.abs(quantity / step - Math.round(quantity / step)) <= 1e-8;
+}
 
 const CATEGORY_COLORS: Record<
   string,
@@ -195,6 +203,7 @@ export default function ProductGrid({
   const { showProductImages: showProductImagesSetting } = usePosSettingsStore();
   const showProductImages = showImages ?? showProductImagesSetting;
   const t = useTranslations('pos');
+  const tOrders = useTranslations('orders');
   const tenantFmt = useFormatCurrency();
   const fmt = formatPrice ?? tenantFmt;
   useEffect(() => {
@@ -250,15 +259,30 @@ export default function ProductGrid({
               const match = resolveScannedProduct(targetCode, products);
               if (match) {
                 if (match.scaleBarcode) {
+                  const matchedQuantity = match.quantity * quantityToAdd;
+                  if (!isValidProductQuantity(match.product, matchedQuantity)) {
+                    toast.error(tOrders('orderQuantityInvalid'));
+                    return;
+                  }
                   if (onScaledProduct)
-                    onScaledProduct(match.product, match.quantity * quantityToAdd);
-                  else cart.addItem(match.product, match.quantity * quantityToAdd);
+                    onScaledProduct(match.product, matchedQuantity);
+                  else cart.addItem(match.product, matchedQuantity);
                 } else if (match.variant) {
                   if (onScannedVariant) onScannedVariant(match.product, match.variant);
-                  else cart.addItem(match.product, quantityToAdd, [], '', match.variant);
+                  else {
+                    if (!isValidProductQuantity(match.product, quantityToAdd)) {
+                      toast.error(tOrders('orderQuantityInvalid'));
+                      return;
+                    }
+                    cart.addItem(match.product, quantityToAdd, [], '', match.variant);
+                  }
                 } else if (productNeedsCustomizer(match.product)) {
                   onProductClick(match.product);
                 } else {
+                  if (!isValidProductQuantity(match.product, quantityToAdd)) {
+                    toast.error(tOrders('orderQuantityInvalid'));
+                    return;
+                  }
                   cart.addItem(match.product, quantityToAdd);
                 }
                 setSearch('');
@@ -273,6 +297,10 @@ export default function ProductGrid({
                 if (productNeedsCustomizer(matchedProduct)) {
                   onProductClick(matchedProduct);
                 } else {
+                  if (!isValidProductQuantity(matchedProduct, quantityToAdd)) {
+                    toast.error(tOrders('orderQuantityInvalid'));
+                    return;
+                  }
                   cart.addItem(matchedProduct, quantityToAdd);
                 }
                 setSearch('');

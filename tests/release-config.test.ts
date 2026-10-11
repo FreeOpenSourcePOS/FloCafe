@@ -1391,6 +1391,70 @@ cat "$CI_TEST_RUNS_FIXTURE"
     fs.rmSync(gateTempDir, { recursive: true, force: true });
   }
 
+  const e2eGateJob = ciWorkflow.jobs['e2e-playwright'];
+  assert.ok(e2eGateJob, 'CI must define the e2e-playwright required check gate job');
+  assert.equal(
+    e2eGateJob.if,
+    'always()',
+    'the e2e-playwright gate must run even when workers are skipped or cancelled',
+  );
+  assert.deepEqual(e2eGateJob.needs, ['changes', 'e2e-playwright-worker']);
+  const e2eGateStep = findStep(e2eGateJob, 'Verify all Playwright shards passed');
+  assertShellStep(e2eGateJob, 'Verify all Playwright shards passed');
+
+  const e2eGateExpressions = (changesResult: string, workerResult: string) => ({
+    'needs.changes.result': changesResult,
+    'needs.e2e-playwright-worker.result': workerResult,
+  });
+
+  const e2ePasses = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('success', 'success'),
+  });
+  assert.equal(e2ePasses.status, 0, e2ePasses.stderr);
+  assert.match(e2ePasses.stdout, /All Playwright E2E shards completed successfully/);
+
+  const e2ePassesSkipped = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('success', 'skipped'),
+  });
+  assert.equal(e2ePassesSkipped.status, 0, e2ePassesSkipped.stderr);
+  assert.match(e2ePassesSkipped.stdout, /Playwright tests skipped via path filtering/);
+
+  const e2eFailsOnWorkerFailure = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('success', 'failure'),
+  });
+  assert.notEqual(
+    e2eFailsOnWorkerFailure.status,
+    0,
+    'the e2e-playwright gate must not treat a failed worker as passing',
+  );
+
+  const e2eFailsOnWorkerCancelled = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('success', 'cancelled'),
+  });
+  assert.notEqual(
+    e2eFailsOnWorkerCancelled.status,
+    0,
+    'the e2e-playwright gate must not treat a cancelled worker as passing',
+  );
+
+  const e2eFailsWhenChangesFails = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('failure', 'skipped'),
+  });
+  assert.notEqual(
+    e2eFailsWhenChangesFails.status,
+    0,
+    'a failed Path Filtering job makes worker skipped for the wrong reason — the gate must not treat that as passing',
+  );
+
+  const e2eFailsWhenChangesCancelled = executeWorkflowStep(e2eGateStep, {
+    expressions: e2eGateExpressions('cancelled', 'skipped'),
+  });
+  assert.notEqual(
+    e2eFailsWhenChangesCancelled.status,
+    0,
+    'a cancelled Path Filtering job must not allow the gate to pass',
+  );
+
   const e2eJob = ciWorkflow.jobs['e2e-playwright-worker'];
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
   assertShellStep(e2eJob, 'Run renderer and printer regression suites');

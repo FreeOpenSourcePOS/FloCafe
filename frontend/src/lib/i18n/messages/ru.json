@@ -2206,6 +2206,8 @@
     "testPrint": "Пробная печать",
     "testPrintFailed": "Пробная печать не удалась",
     "testPrintSent": "Тестовая печать отправлена!",
+    "cashDrawerPulseSent": "Импульс денежного ящика отправлен.",
+    "cashDrawerPulseFailed": "Не удалось отправить импульс денежного ящика.",
     "testing": "Тестирование…",
     "timezone": "Часовой пояс",
     "businessDayStartTime": "Время начала рабочего дня",

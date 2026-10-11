@@ -2206,6 +2206,8 @@
     "testPrint": "テスト印刷",
     "testPrintFailed": "テスト印刷に失敗しました",
     "testPrintSent": "テスト印刷を送信しました！",
+    "cashDrawerPulseSent": "キャッシュドロワーのパルスを送信しました。",
+    "cashDrawerPulseFailed": "キャッシュドロワーのパルスを送信できませんでした。",
     "testing": "テスト中…",
     "timezone": "タイムゾーン",
     "businessDayStartTime": "営業日の開始時刻",

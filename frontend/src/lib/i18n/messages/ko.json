@@ -2206,6 +2206,8 @@
     "testPrint": "테스트 인쇄",
     "testPrintFailed": "테스트 인쇄 실패",
     "testPrintSent": "테스트 인쇄 전송됨!",
+    "cashDrawerPulseSent": "현금 서랍 펄스를 보냈습니다.",
+    "cashDrawerPulseFailed": "현금 서랍 펄스를 보내지 못했습니다.",
     "testing": "테스트 중…",
     "timezone": "시간대",
     "businessDayStartTime": "영업일 시작 시각",

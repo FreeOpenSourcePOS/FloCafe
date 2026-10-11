@@ -2206,6 +2206,8 @@
     "testPrint": "چاپ آزمون",
     "testPrintFailed": "چاپ آزمون انجام نشد",
     "testPrintSent": "چاپ آزمون ارسال شد!",
+    "cashDrawerPulseSent": "پالس کشوی پول ارسال شد.",
+    "cashDrawerPulseFailed": "ارسال پالس کشوی پول ناموفق بود.",
     "testing": "در حال آزمون…",
     "timezone": "منطقه زمانی",
     "businessDayStartTime": "زمان شروع روز کاری",

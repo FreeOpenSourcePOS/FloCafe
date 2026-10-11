@@ -2206,6 +2206,8 @@
     "testPrint": "Testafdruk",
     "testPrintFailed": "Testafdruk mislukt",
     "testPrintSent": "Testafdruk verzonden!",
+    "cashDrawerPulseSent": "Kassaladepuls verzonden.",
+    "cashDrawerPulseFailed": "Verzenden van kassaladepuls mislukt.",
     "testing": "Testen…",
     "timezone": "Tijdzone",
     "businessDayStartTime": "Begintijd werkdag",

@@ -189,11 +189,11 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       if (res.data?.webusb && Array.isArray(res.data.bytes)) {
         await printerService.print(Uint8Array.from(res.data.bytes));
       }
-      toast.success(tSettings('cashDrawerPulse') || 'Cash drawer pulse sent!');
+      toast.success(tSettings('cashDrawerPulseSent'));
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        'Failed to open cash drawer';
+        tSettings('cashDrawerPulseFailed');
       toast.error(msg);
     } finally {
       setIsKickingDrawer(false);

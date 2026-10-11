@@ -2206,6 +2206,8 @@
     "testPrint": "Test print",
     "testPrintFailed": "Test print failed",
     "testPrintSent": "Test print sent!",
+    "cashDrawerPulseSent": "Cash drawer pulse sent.",
+    "cashDrawerPulseFailed": "Failed to send cash drawer pulse.",
     "testing": "Testing…",
     "timezone": "Timezone",
     "businessDayStartTime": "Business day start time",

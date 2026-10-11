@@ -2217,6 +2217,8 @@
     "testPrint": "Uji cetak",
     "testPrintFailed": "Uji cetak gagal",
     "testPrintSent": "Uji cetak terkirim!",
+    "cashDrawerPulseSent": "Pulsa laci kas berhasil dikirim.",
+    "cashDrawerPulseFailed": "Gagal mengirim pulsa laci kas.",
     "testing": "Menguji…",
     "timezone": "Zona waktu",
     "businessDayStartTime": "Waktu mulai hari usaha",

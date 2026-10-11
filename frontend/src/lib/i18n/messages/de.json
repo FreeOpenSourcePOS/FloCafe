@@ -2207,6 +2207,8 @@
     "testPrint": "Testdruck",
     "testPrintFailed": "Testdruck fehlgeschlagen",
     "testPrintSent": "Testdruck gesendet!",
+    "cashDrawerPulseSent": "Kassenschubladen-Impuls gesendet.",
+    "cashDrawerPulseFailed": "Kassenschubladen-Impuls konnte nicht gesendet werden.",
     "testing": "Wird getestet…",
     "timezone": "Zeitzone",
     "businessDayStartTime": "Startzeit des Geschäftstages",

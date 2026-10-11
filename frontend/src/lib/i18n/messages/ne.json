@@ -2215,6 +2215,8 @@
     "testPrint": "परीक्षण प्रिन्ट",
     "testPrintFailed": "परीक्षण प्रिन्ट असफल भयो",
     "testPrintSent": "परीक्षण प्रिन्ट पठाइयो!",
+    "cashDrawerPulseSent": "नगद दराजको पल्स पठाइयो।",
+    "cashDrawerPulseFailed": "नगद दराजको पल्स पठाउन सकिएन।",
     "testing": "परीक्षण…",
     "timezone": "समय क्षेत्र",
     "businessDayStartTime": "व्यापार दिन सुरु समय",

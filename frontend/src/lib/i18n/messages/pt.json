@@ -2206,6 +2206,8 @@
     "testPrint": "Impressão de teste",
     "testPrintFailed": "Falha na impressão de teste",
     "testPrintSent": "Impressão de teste enviada!",
+    "cashDrawerPulseSent": "Pulso da gaveta de dinheiro enviado.",
+    "cashDrawerPulseFailed": "Não foi possível enviar o pulso da gaveta de dinheiro.",
     "testing": "Testando…",
     "timezone": "Fuso horário",
     "businessDayStartTime": "Hora de início do dia de trabalho",

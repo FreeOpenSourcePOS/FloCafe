@@ -2217,6 +2217,8 @@
     "testPrint": "In kiểm tra",
     "testPrintFailed": "In kiểm tra thất bại",
     "testPrintSent": "Đã gửi lệnh in kiểm tra!",
+    "cashDrawerPulseSent": "Đã gửi xung mở két tiền.",
+    "cashDrawerPulseFailed": "Không thể gửi xung mở két tiền.",
     "testing": "Đang kiểm tra…",
     "timezone": "Múi giờ",
     "businessDayStartTime": "Giờ bắt đầu ngày kinh doanh",

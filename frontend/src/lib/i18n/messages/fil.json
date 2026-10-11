@@ -2217,6 +2217,8 @@
     "testPrint": "Pagsubok sa pag-print",
     "testPrintFailed": "Nabigo ang test print",
     "testPrintSent": "Naipadala ang test print!",
+    "cashDrawerPulseSent": "Naipadala ang pulse sa cash drawer.",
+    "cashDrawerPulseFailed": "Hindi naipadala ang pulse sa cash drawer.",
     "testing": "Sinusubukan…",
     "timezone": "Timezone",
     "businessDayStartTime": "Oras ng simula ng araw ng negosyo",

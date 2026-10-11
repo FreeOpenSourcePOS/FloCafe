@@ -2217,6 +2217,8 @@
     "testPrint": "Test printim",
     "testPrintFailed": "Printimi i testimit dështoi",
     "testPrintSent": "Printimi testues u dërgua!",
+    "cashDrawerPulseSent": "Pulsi i sirtarit të parave u dërgua.",
+    "cashDrawerPulseFailed": "Dërgimi i pulsit të sirtarit të parave dështoi.",
     "testing": "Po teston…",
     "timezone": "Zona kohore",
     "businessDayStartTime": "Koha e fillimit të ditës së punës",

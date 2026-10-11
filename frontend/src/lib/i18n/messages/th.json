@@ -2206,6 +2206,8 @@
     "testPrint": "ทดสอบการพิมพ์",
     "testPrintFailed": "ทดสอบการพิมพ์ไม่สำเร็จ",
     "testPrintSent": "ส่งการทดสอบการพิมพ์แล้ว!",
+    "cashDrawerPulseSent": "ส่งสัญญาณเปิดลิ้นชักเงินสดแล้ว",
+    "cashDrawerPulseFailed": "ส่งสัญญาณเปิดลิ้นชักเงินสดไม่สำเร็จ",
     "testing": "กำลังทดสอบ…",
     "timezone": "เขตเวลา",
     "businessDayStartTime": "เวลาเริ่มต้นวันทำการ",

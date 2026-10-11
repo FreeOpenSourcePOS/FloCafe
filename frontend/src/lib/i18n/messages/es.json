@@ -2207,6 +2207,8 @@
     "testPrint": "Imprimir prueba",
     "testPrintFailed": "Impresión de prueba falló",
     "testPrintSent": "¡Impresión de prueba enviada!",
+    "cashDrawerPulseSent": "Se envió el pulso del cajón de efectivo.",
+    "cashDrawerPulseFailed": "No se pudo enviar el pulso del cajón de efectivo.",
     "testing": "Probando…",
     "timezone": "Zona Horaria",
     "businessDayStartTime": "Hora de inicio del día comercial",

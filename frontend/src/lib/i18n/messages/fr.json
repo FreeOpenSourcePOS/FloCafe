@@ -2206,6 +2206,8 @@
     "testPrint": "Impression de test",
     "testPrintFailed": "Échec de l’impression de test",
     "testPrintSent": "Impression de test envoyée !",
+    "cashDrawerPulseSent": "Impulsion de tiroir-caisse envoyée.",
+    "cashDrawerPulseFailed": "Impossible d’envoyer l’impulsion du tiroir-caisse.",
     "testing": "Test…",
     "timezone": "Fuseau horaire",
     "businessDayStartTime": "Heure de début de la journée d'activité",

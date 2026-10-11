@@ -2206,6 +2206,8 @@
     "testPrint": "টেস্ট প্রিন্ট",
     "testPrintFailed": "পরীক্ষার মুদ্রণ ব্যর্থ হয়েছে।",
     "testPrintSent": "পরীক্ষার প্রিন্ট পাঠানো হয়েছে!",
+    "cashDrawerPulseSent": "ক্যাশ ড্রয়ারের পালস পাঠানো হয়েছে।",
+    "cashDrawerPulseFailed": "ক্যাশ ড্রয়ারের পালস পাঠানো যায়নি।",
     "testing": "পরীক্ষা করা হচ্ছে...",
     "timezone": "টাইমজোন",
     "businessDayStartTime": "ব্যবসার দিন শুরুর সময়",

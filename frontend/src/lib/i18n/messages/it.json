@@ -2206,6 +2206,8 @@
     "testPrint": "Stampa di test",
     "testPrintFailed": "Stampa di test non riuscita",
     "testPrintSent": "Stampa di test inviata!",
+    "cashDrawerPulseSent": "Impulso del cassetto inviato.",
+    "cashDrawerPulseFailed": "Impossibile inviare l’impulso al cassetto.",
     "testing": "Test in corso…",
     "timezone": "Fuso orario",
     "businessDayStartTime": "Ora di inizio giornata operativa",

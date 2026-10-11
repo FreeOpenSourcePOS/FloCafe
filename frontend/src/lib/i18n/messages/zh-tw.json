@@ -2206,6 +2206,8 @@
     "testPrint": "測試列印",
     "testPrintFailed": "測試列印失敗",
     "testPrintSent": "測試列印已傳送！",
+    "cashDrawerPulseSent": "已傳送錢箱脈衝。",
+    "cashDrawerPulseFailed": "無法傳送錢箱脈衝。",
     "testing": "測試中…",
     "timezone": "時區",
     "businessDayStartTime": "營業日起始時間",

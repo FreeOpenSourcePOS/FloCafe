@@ -2217,6 +2217,8 @@
     "testPrint": "Test Fişi Yazdır",
     "testPrintFailed": "Test yazdırma başarısız oldu",
     "testPrintSent": "Test yazdırma komutu gönderildi",
+    "cashDrawerPulseSent": "Para çekmecesi sinyali gönderildi.",
+    "cashDrawerPulseFailed": "Para çekmecesi sinyali gönderilemedi.",
     "testing": "Test ediliyor...",
     "timezone": "Saat Dilimi",
     "businessDayStartTime": "İş günü başlangıç saati",

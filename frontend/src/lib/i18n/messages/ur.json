@@ -2206,6 +2206,8 @@
     "testPrint": "ٹیسٹ پرنٹ",
     "testPrintFailed": "ٹیسٹ پرنٹ ناکام",
     "testPrintSent": "ٹیسٹ پرنٹ بھیج دیا گیا!",
+    "cashDrawerPulseSent": "نقد درج کا پلس بھیج دیا گیا۔",
+    "cashDrawerPulseFailed": "نقد درج کا پلس بھیجنے میں ناکامی ہوئی۔",
     "testing": "ٹیسٹ ہو رہا ہے…",
     "timezone": "ٹائم زون",
     "businessDayStartTime": "کاروباری دن کا آغاز",

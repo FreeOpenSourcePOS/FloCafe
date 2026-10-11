@@ -2206,6 +2206,8 @@
     "testPrint": "طباعة تجريبية",
     "testPrintFailed": "فشل الاختبار الطباعي",
     "testPrintSent": "تم إرسال نسخة تجريبية من الطباعة!",
+    "cashDrawerPulseSent": "تم إرسال نبضة درج النقود.",
+    "cashDrawerPulseFailed": "تعذر إرسال نبضة درج النقود.",
     "testing": "تجربة...",
     "timezone": "المنطقة الزمنية",
     "businessDayStartTime": "وقت بدء يوم العمل",

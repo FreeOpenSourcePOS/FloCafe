@@ -111,6 +111,9 @@ export function usePosKeyboardShortcuts(
 
       // Quick Tender / Place Order (Space)
       if (e.key === ' ' || e.code === 'Space') {
+        if (target instanceof HTMLElement && target.matches('button, [role="button"]')) {
+          return;
+        }
         if (cartItemCount > 0) {
           e.preventDefault();
           handlersRef.current.onTender();

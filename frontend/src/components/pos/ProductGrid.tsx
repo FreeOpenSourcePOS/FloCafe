@@ -256,11 +256,11 @@ export default function ProductGrid({
               // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
               const trimmed = search.trim();
               if (!trimmed) return;
-              const parsedQty = parseQuantitySearch(trimmed);
+              const rawMatch = resolveScannedProduct(trimmed, products);
+              const parsedQty = rawMatch ? null : parseQuantitySearch(trimmed);
               const targetCode = parsedQty ? parsedQty.query : trimmed;
               const quantityToAdd = parsedQty ? parsedQty.quantity : 1;
-
-              const match = resolveScannedProduct(targetCode, products);
+              const match = rawMatch ?? resolveScannedProduct(targetCode, products);
               if (match) {
                 if (match.scaleBarcode) {
                   const matchedQuantity = match.quantity * quantityToAdd;

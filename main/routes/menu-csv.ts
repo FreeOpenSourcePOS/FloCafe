@@ -710,51 +710,46 @@ router.post(
             taxBehavior = r.tax_behavior;
           }
 
-          // If an id is provided, try to update the existing product.
+          // If an id is provided and matches an existing product, update it.
           if (r.id) {
             const existing = db
               .prepare('SELECT id, is_active FROM products WHERE id = ? AND deleted_at IS NULL')
               .get(r.id) as { id: string; is_active: number } | undefined;
-            if (!existing) {
-              failed++;
-              errors.push(
-                `Row ${i + 2} (${r.name}): id "${r.id}" not found — leave id blank to create a new item`,
-              );
-              continue;
-            }
-            db.prepare(
-              `UPDATE products SET name=?, category_id=?, price=?, description=?, cost=?,
+            if (existing) {
+              db.prepare(
+                `UPDATE products SET name=?, category_id=?, price=?, description=?, cost=?,
            tax_type=?, tax_rate=?,
            tax_category_id=CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
            tax_behavior=CASE WHEN ? = 1 THEN ? ELSE tax_behavior END,
            cb_percent=?, tags=?, is_active=?, sku=?, updated_at=?
            WHERE id=?`,
-            ).run(
-              r.name,
-              categoryId,
-              price,
-              r.description || null,
-              cost,
-              'none',
-              0,
-              hasTaxCategoryColumn ? 1 : 0,
-              taxCategoryId,
-              hasTaxBehaviorColumn ? 1 : 0,
-              taxBehavior,
-              cbPercent,
-              tagsJson,
-              isActive,
-              sku,
-              now(),
-              r.id,
-            );
-            if (existing.is_active === 0 && isActive === 1) reactivated++;
-            else updated++;
-            changedRows++;
-            continue;
+              ).run(
+                r.name,
+                categoryId,
+                price,
+                r.description || null,
+                cost,
+                'none',
+                0,
+                hasTaxCategoryColumn ? 1 : 0,
+                taxCategoryId,
+                hasTaxBehaviorColumn ? 1 : 0,
+                taxBehavior,
+                cbPercent,
+                tagsJson,
+                isActive,
+                sku,
+                now(),
+                r.id,
+              );
+              if (existing.is_active === 0 && isActive === 1) reactivated++;
+              else updated++;
+              changedRows++;
+              continue;
+            }
           }
 
-          // No id — insert as new, skip if name+category duplicate.
+          // No id or unrecognized id — insert as new, skip if name+category duplicate.
           const exists = db
             .prepare(
               'SELECT id FROM products WHERE name = ? AND category_id IS ? AND deleted_at IS NULL',

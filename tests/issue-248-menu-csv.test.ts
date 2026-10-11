@@ -421,6 +421,51 @@ async function main() {
       'a round-tripped add-on reconciles with its movement history',
     );
 
+    console.log('\n─── Unrecognized product ID fallback and round trip ───');
+    const existingProdId = 'prod-exist-1';
+    db.prepare(
+      `INSERT INTO products (id, name, category_id, price, description, cost, tax_type, tax_rate,
+       cb_percent, tags, is_active, sku, sort_order, created_at, updated_at)
+       VALUES (?, 'Existing Coffee', 'cat-csv-248', 10, 'Existing desc', 4, 'none', 0, NULL, NULL, 1, 'SKU-EXIST', 0, ?, ?)`
+    ).run(existingProdId, now(), now());
+
+    const importWithIds = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          `${existingProdId},SKU-EXIST,Existing Coffee,CSV Category,15,Updated desc,5,,,,,yes`,
+          'unrecognized-external-id,SKU-NEW,New Fallback Product,CSV Category,20,Fallback desc,8,,,,,yes',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(importWithIds.status, 200, 'import with existing and unrecognized IDs succeeds');
+    assertEqualOrThrow(importWithIds.data.updated, 1, 'existing ID updates the product');
+    assertEqualOrThrow(importWithIds.data.created, 1, 'unrecognized ID falls through to create the product');
+    assertEqualOrThrow(importWithIds.data.failed, 0, 'unrecognized ID is not failed');
+
+    const updatedRow = db.prepare('SELECT price, description, cost FROM products WHERE id = ?').get(existingProdId) as any;
+    assertEqualOrThrow(updatedRow.price, 15, 'existing product price is updated');
+    assertEqualOrThrow(updatedRow.description, 'Updated desc', 'existing product description is updated');
+
+    const createdRow = db.prepare('SELECT id, name, price, sku FROM products WHERE name = ?').get('New Fallback Product') as any;
+    assertEqualOrThrow(createdRow !== undefined, true, 'fallback product is inserted into database');
+    assertEqualOrThrow(createdRow.sku, 'SKU-NEW', 'fallback product preserves sku');
+    assertEqualOrThrow(createdRow.id !== 'unrecognized-external-id', true, 'fallback product receives a generated short id');
+
+    const duplicateImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          'unrecognized-external-id,SKU-NEW,New Fallback Product,CSV Category,20,Fallback desc,8,,,,,yes',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(duplicateImport.status, 200, 'duplicate re-import succeeds');
+    assertEqualOrThrow(duplicateImport.data.skipped, 1, 'duplicate product by name and category is skipped');
+    assertEqualOrThrow(duplicateImport.data.created, 0, 'no duplicate product is created');
+
     console.log('\n─── CSV resource bounds ───');
     const tooManyCells = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',

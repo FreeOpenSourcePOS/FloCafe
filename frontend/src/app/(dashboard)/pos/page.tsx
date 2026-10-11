@@ -48,6 +48,9 @@ import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
 import { AI_HELP_PROVIDERS, copyPrinterDiagnostic } from '@/lib/printer/ai-help';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { usePosKeyboardShortcuts } from '@/hooks/usePosKeyboardShortcuts';
+import KeyboardShortcutsModal from '@/components/pos/KeyboardShortcutsModal';
+import { dispatchQuickSearchRequest } from '@/lib/quick-search';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -234,6 +237,7 @@ export default function POSPage() {
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tExpenses = useTranslations('expenses');
+  const tCommon = useTranslations('common');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
@@ -264,6 +268,7 @@ export default function POSPage() {
   const [checkoutOverridePin, setCheckoutOverridePin] = useState<string | undefined>();
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{
     title: string;
@@ -1101,7 +1106,8 @@ export default function POSPage() {
     cashDrawer.open ||
     shift.openModalOpen ||
     shift.closeModalOpen ||
-    showPrintMenuModal;
+    showPrintMenuModal ||
+    showKeyboardShortcutsModal;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);
@@ -2167,6 +2173,162 @@ export default function POSPage() {
 
   const itemCount = cart.itemCount();
 
+  usePosKeyboardShortcuts(
+    {
+      onFocusSearch: () => {
+        dispatchQuickSearchRequest();
+      },
+      onTender: () => {
+        if (!submitting && cart.items.length > 0) {
+          void handlePlaceOrder();
+        }
+      },
+      onToggleTables: () => {
+        if (isRestaurant && tablesRequired) {
+          setShowTablePicker((prev) => !prev);
+        }
+      },
+      onOpenCheckout: () => {
+        if (cart.items.length === 0) {
+          toast.error(t('cartEmpty'));
+          return;
+        }
+        if (shouldTakePaymentNow) {
+          setShowPrepaidCheckout(true);
+        } else if (cart.tableId) {
+          const tbl = tables.find((t) => t.id === cart.tableId);
+          if (tbl) setCheckoutTable(tbl);
+          else setShowTablePicker(true);
+        } else {
+          setShowTablePicker(true);
+        }
+      },
+      onOpenCashMovement: () => {
+        cashDrawer.setOpen(true);
+      },
+      onFocusCustomer: () => {
+        const input = document.getElementById('customer-phone-search') as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      },
+      onHoldOrder: () => {
+        if (
+          isRestaurant &&
+          cart.orderType === 'dine_in' &&
+          cart.tableId &&
+          cart.items.length > 0 &&
+          billingType === 'postpaid'
+        ) {
+          const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
+          heldOrders
+            .holdOrder(
+              cart.tableId,
+              cart.items,
+              cart.customerId,
+              cart.guestCount,
+              cart.orderNotes,
+              [...cart.waivedChargeIds],
+              [...cart.optedInChargeIds],
+            )
+            .then(() => {
+              cart.clearCart();
+              toast.success(t('orderHeldFor', { table: tableName }));
+            })
+            .catch(() => {
+              toast.error(t('holdOrderFailed'));
+            });
+        }
+      },
+      onToggleFullscreen: () => {
+        toggleFullscreen();
+      },
+      onDismissModalOrBlur: () => {
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+          activeEl.blur();
+          return true;
+        }
+        if (showKeyboardShortcutsModal) {
+          setShowKeyboardShortcutsModal(false);
+          return true;
+        }
+        if (showTablePicker) {
+          setShowTablePicker(false);
+          return true;
+        }
+        if (addonProduct) {
+          setAddonProduct(null);
+          setAddonInitialVariant(null);
+          return true;
+        }
+        if (editingCartItem) {
+          setEditingCartItem(null);
+          return true;
+        }
+        if (showCustomerPrompt) {
+          setShowCustomerPrompt(false);
+          return true;
+        }
+        if (showPrepaidCheckout) {
+          setShowPrepaidCheckout(false);
+          return true;
+        }
+        if (checkoutTable) {
+          setCheckoutTable(null);
+          return true;
+        }
+        if (paymentBill) {
+          setPaymentBill(null);
+          return true;
+        }
+        if (cashDrawer.open) {
+          cashDrawer.setOpen(false);
+          return true;
+        }
+        if (showPrintMenuModal) {
+          setShowPrintMenuModal(false);
+          return true;
+        }
+        if (mobileCartOpen) {
+          setMobileCartOpen(false);
+          return true;
+        }
+        return false;
+      },
+      onIncrementLastItem: () => {
+        const items = useCartStore.getState().items;
+        if (items.length === 0) return;
+        const last = items[items.length - 1];
+        useCartStore.getState().updateQuantity(last.id, last.quantity + 1);
+      },
+      onDecrementLastItem: () => {
+        const items = useCartStore.getState().items;
+        if (items.length === 0) return;
+        const last = items[items.length - 1];
+        if (last.quantity > 1) {
+          useCartStore.getState().updateQuantity(last.id, last.quantity - 1);
+        }
+      },
+      onClearCart: async () => {
+        if (cart.items.length === 0) return;
+        const confirmed = await confirm(t('clearAmount') + '?', {
+          title: t('cart'),
+          confirmLabel: tCommon('clear'),
+          destructive: true,
+        });
+        if (confirmed) cart.clearCart();
+      },
+      onShowHelp: () => {
+        setShowKeyboardShortcutsModal((prev) => !prev);
+      },
+    },
+    {
+      enabled: true,
+      anyModalOpen,
+      cartItemCount: cart.items.length,
+    },
+  );
+
   return (
     <>
       {supportError && (
@@ -2520,6 +2682,11 @@ export default function POSPage() {
           onConfirm={handlePrepaidCheckout}
         />
       )}
+
+      <KeyboardShortcutsModal
+        open={showKeyboardShortcutsModal}
+        onClose={() => setShowKeyboardShortcutsModal(false)}
+      />
     </>
   );
 }

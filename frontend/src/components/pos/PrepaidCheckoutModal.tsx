@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Sparkles, ArrowLeftRight, CheckCircle2, Percent, Wallet, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
@@ -410,8 +410,102 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     onConfirm(splitLines, walletAmt, finalDiscount);
   };
 
+  const handleConfirmRef = useRef(handleConfirm);
+  useEffect(() => {
+    handleConfirmRef.current = handleConfirm;
+  });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable;
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (isInput) return;
+
+      if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
+        e.preventDefault();
+        if (processing || taxLoading || !preview || hasInvalidFixedDiscount) return;
+
+        if (totalPaymentMinor < remainingMinor) {
+          const cashIdx = payments.findIndex((p) => p.method === 'cash');
+          if (cashIdx !== -1) {
+            const allocatedElsewhere = payments.reduce(
+              (sum, payment, index) =>
+                index === cashIdx
+                  ? sum
+                  : sum + toStoredUnit(parseFloat(payment.amount) || 0),
+              walletAmt,
+            );
+            const dueStored = Math.max(0, remaining - allocatedElsewhere);
+            const dueDisplay = toDisplayUnit(dueStored);
+            const updated = payments.map((p, i) =>
+              i === cashIdx ? { ...p, amount: String(dueDisplay) } : p,
+            );
+            setPayments(updated);
+
+            const splitLines: PrepaidPayment[] = updated
+              .map((p) => ({
+                method: p.payment_method_id === undefined ? p.method : 'custom',
+                ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
+                amount: toStoredUnit(parseFloat(p.amount) || 0),
+              }))
+              .filter((p) => p.amount > 0 && !isNaN(p.amount));
+
+            const finalDiscount: PrepaidDiscount | null =
+              preview.discountAmount > 0
+                ? {
+                    type: discountType,
+                    value: previewDiscount?.value ?? 0,
+                    reason: discountReason || undefined,
+                    override_pin:
+                      discountRequiresApproval && discountPin ? discountPin : undefined,
+                  }
+                : null;
+
+            setProcessing(true);
+            onConfirm(splitLines, walletAmt, finalDiscount);
+            return;
+          }
+        }
+
+        handleConfirmRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    onClose,
+    processing,
+    taxLoading,
+    preview,
+    hasInvalidFixedDiscount,
+    totalPaymentMinor,
+    remainingMinor,
+    payments,
+    walletAmt,
+    remaining,
+    toDisplayUnit,
+    toStoredUnit,
+    discountType,
+    previewDiscount,
+    discountReason,
+    discountRequiresApproval,
+    discountPin,
+    onConfirm,
+  ]);
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+    <div data-testid="prepaid-checkout-modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl">
 
         {/* Compact header and bill summary share one block to preserve vertical space. */}

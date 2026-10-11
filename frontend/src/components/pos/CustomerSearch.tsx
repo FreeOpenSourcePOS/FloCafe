@@ -333,6 +333,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       <div className="relative w-full min-w-0">
         <div className="h-10 flex items-center gap-2 min-w-0" onBlur={handleWidgetBlur}>
           <input
+            id="customer-phone-search"
             type="tel"
             inputMode="tel"
             value={phone}

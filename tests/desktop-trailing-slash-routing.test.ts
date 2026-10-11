@@ -17,18 +17,12 @@
  * identically whether or not the trailing slash is present.
  */
 
+const assert = require('node:assert');
 const { normalizePathname } = require('../frontend/src/lib/utils');
 
-let passed = 0;
-let failed = 0;
 function check(label: string, cond: boolean) {
-  if (cond) {
-    console.log(`  ✓ ${label}`);
-    passed++;
-  } else {
-    console.log(`  ✗ ${label}`);
-    failed++;
-  }
+  assert.ok(cond, label);
+  console.log(`  ✓ ${label}`);
 }
 
 console.log('='.repeat(70));
@@ -96,5 +90,4 @@ for (const rawSettings of ['/settings', '/settings/'] as const) {
 }
 
 console.log(`\n${'='.repeat(70)}`);
-console.log(`Total: ${passed + failed} | Passed: ${passed} | Failed: ${failed}`);
-if (failed > 0) process.exit(1);
+console.log('All 20 trailing-slash routing checks passed.');

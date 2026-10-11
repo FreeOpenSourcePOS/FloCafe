@@ -216,6 +216,7 @@ export default function POSPage() {
   } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
+  const tExpenses = useTranslations('expenses');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
@@ -634,7 +635,7 @@ export default function POSPage() {
       idempotency_conflict: t('paymentIdempotencyConflict'),
       payment_method_unavailable: t('paymentMethodUnavailable'),
       payment_input_invalid: t('paymentInputInvalid'),
-      cash_session_required: t('cashSessionClosed'),
+      cash_session_required: tExpenses('cashSessionClosed'),
     };
     const confirmedNotApplied = failure.trusted && failure.outcome === 'not_applied';
     const expectedRejection = confirmedNotApplied && failure.classification === 'expected_rejection';

@@ -96,6 +96,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
   const { confirm, ConfirmDialog } = useConfirm();
   const t = useTranslations('pos');
+  const tExpenses = useTranslations('expenses');
   const locale = useLocale();
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
@@ -809,7 +810,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         idempotency_conflict: t('paymentIdempotencyConflict'),
         payment_method_unavailable: t('paymentMethodUnavailable'),
         payment_input_invalid: t('paymentInputInvalid'),
-        cash_session_required: t('cashSessionClosed'),
+        cash_session_required: tExpenses('cashSessionClosed'),
       };
       const reasonMessage = failure.outcome === 'applied'
         ? t('paymentCompletionApplied')

@@ -47,6 +47,7 @@ const {
   LEGACY_TRUSTED_PACK_DIGESTS,
 } = require('../main/routes/tax-packs');
 const { taxPackSha256 } = require('../main/tax-packs/catalog');
+const { validateTaxRegistrationNumber } = require('../main/services/tax');
 const { TaxEngine } = require('../main/services/tax-engine');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 
@@ -200,6 +201,7 @@ async function main() {
         );
         assert.ok(regex.test('12345678A'), `${file}: must accept 8-digit business UEN`);
         assert.ok(regex.test('52812345X'), `${file}: must accept 8-digit business UEN`);
+        assert.ok(regex.test('123456'), `${file}: must accept 6-digit LLP or branch UEN`);
         assert.ok(regex.test('200812345A'), `${file}: must accept 9-digit company UEN`);
         assert.ok(regex.test('199912345Z'), `${file}: must accept 9-digit company UEN`);
         assert.ok(regex.test('T08LL1234A'), `${file}: must accept LLP UEN`);
@@ -627,6 +629,11 @@ async function main() {
       'owner can activate the pack after acknowledging the disclaimer',
     );
     assert.equal(activated.data.changed, true, 'acknowledged Singapore pack becomes active');
+    assert.equal(
+      validateTaxRegistrationNumber('SG', '123456').valid,
+      true,
+      'the active Singapore pack accepts a six-digit UEN in tax settings',
+    );
     assertStoredDataUnchanged('after acknowledged activation');
 
     const defaultPricedOrder = await api(started.baseUrl, '/api/orders', {

@@ -14,7 +14,7 @@
   "inclusivePricingDefault": true,
   "registrationNumberLabel": "GST Registration No.",
   "registrationNumberFormat": {
-    "pattern": "^(?:\\d{8,9}[A-Z]|[ST]\\d{2}[A-Z]{2}\\d{4}[A-Z]|M(?:\\d{8}|[RBX]\\d{7})[A-Z]|M\\d-\\d{7}-[A-Z])$",
+    "pattern": "^(?:\\d{6}|\\d{8,9}[A-Z]|[ST]\\d{2}[A-Z]{2}\\d{4}[A-Z]|M(?:\\d{8}|[RBX]\\d{7})[A-Z]|M\\d-\\d{7}-[A-Z])$",
     "description": "Singapore GST registration number syntax (UEN or IRAS-issued M-number); this does not verify registration status"
   },
   "categories": [

@@ -27,6 +27,7 @@ const MAX_CORRELATION_ID_CHARS = 64;
 const MAX_METADATA_JSON_BYTES = 4096;
 const MAX_METADATA_DEPTH = 3;
 const MAX_METADATA_KEYS = 40;
+const MAX_METADATA_ARRAY_ITEMS = 40;
 const MAX_METADATA_STRING_CHARS = 300;
 const FRONTEND_CAPTURE_POINTS = new Set([
   'fc.frontend.pos.order.create.transport',
@@ -59,7 +60,7 @@ function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
     const out: unknown[] = [];
-    for (const item of value) {
+    for (const item of value.slice(0, MAX_METADATA_ARRAY_ITEMS)) {
       const child = sanitizeDiagnosticMetadata(item, depth + 1);
       if (child !== undefined) out.push(child);
     }

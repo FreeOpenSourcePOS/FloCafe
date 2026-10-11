@@ -998,17 +998,7 @@ export class CloudSyncService {
         OUTBOX_INTERVAL_MS,
       );
     }
-    const canSendDiagnostics =
-      isDiagnosticsConsentEnabled() &&
-      isDiagnosticsTransmissionEnabled() &&
-      ((cfg.sync_enabled && Boolean(cfg.api_key)) || isTelemetryEnabled());
-    if (canSendDiagnostics) {
-      this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
-      this.diagnosticsOutboxTimer = setInterval(
-        () => this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush'),
-        OUTBOX_INTERVAL_MS,
-      );
-    }
+    this.refreshDiagnosticsOutbox(cfg);
 
     this.maybeStartRelay();
     if (cfg.api_key || cfg.cloud_registration_status !== 'unregistered') {
@@ -1023,6 +1013,32 @@ export class CloudSyncService {
 
   resumeAfterMaintenance() {
     if (this.runtimeStarted && !this.shutdownRequested) this.reload();
+  }
+
+  private refreshDiagnosticsOutbox(cfg: CloudSettings | null, enabled = true): void {
+    const canSendDiagnostics =
+      enabled &&
+      !this.cloudDeletionInProgress &&
+      !this.shutdownRequested &&
+      Boolean(cfg) &&
+      !isCloudDeletionBlocking(cfg?.cloud_deletion_status || '') &&
+      isDiagnosticsConsentEnabled() &&
+      isDiagnosticsTransmissionEnabled() &&
+      Boolean(cfg && ((cfg.sync_enabled && cfg.api_key) || isTelemetryEnabled()));
+    if (!canSendDiagnostics) {
+      if (this.diagnosticsOutboxTimer) {
+        clearInterval(this.diagnosticsOutboxTimer);
+        this.diagnosticsOutboxTimer = null;
+      }
+      return;
+    }
+    this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
+    if (!this.diagnosticsOutboxTimer) {
+      this.diagnosticsOutboxTimer = setInterval(
+        () => this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush'),
+        OUTBOX_INTERVAL_MS,
+      );
+    }
   }
 
   stop() {
@@ -1677,6 +1693,7 @@ export class CloudSyncService {
     const requestedEnabled =
       enabled && isDiagnosticsConsentEnabled() && isDiagnosticsTransmissionEnabled();
     await this.postDiagnosticsConsent(requestedEnabled, changeId, false, signal);
+    this.refreshDiagnosticsOutbox(this.loadSettings(false), requestedEnabled);
   }
 
   private async postDiagnosticsConsent(

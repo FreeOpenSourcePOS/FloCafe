@@ -1152,7 +1152,7 @@ async function main() {
     );
   }) as unknown as typeof fetch;
   delete process.env.FLO_MATRIX_OFFLINE;
-  cloudSync.reload();
+  await cloudSync.setDiagnosticsConsent(true);
   assertOrThrow(
     await settle(
       () =>
@@ -1164,7 +1164,7 @@ async function main() {
             .get() as { permanent_failure: number } | undefined
         )?.permanent_failure === 1,
     ),
-    'the upgraded service marks an unsafe legacy row local-only with a visible retention gap',
+    'the opt-in flush retains an unsafe legacy row locally with a visible gap',
   );
   assertOrThrow(
     await settle(() => {

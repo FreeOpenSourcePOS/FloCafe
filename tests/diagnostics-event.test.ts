@@ -33,6 +33,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { classifyOrderRequestFailure } = require('../frontend/src/lib/order-attempt');
+const { buildDiagnosticEvent } = require('../main/routes/diagnostics');
 const { registerRoutes } = require('../main/routes/index');
 const { cloudSync } = require('../main/services/cloud-sync');
 
@@ -208,6 +209,16 @@ async function main() {
       countLocalDiagnostics(db),
       beforeRejected,
       'rejected event payloads do not create local rows',
+    );
+    const boundedArrayEvent = buildDiagnosticEvent({
+      event_code: 'server.internal_error',
+      severity: 'error',
+      metadata: { items: Array.from({ length: 100_000 }, (_, index) => index) },
+    });
+    assertEqual(
+      boundedArrayEvent?.metadata?.items?.length,
+      40,
+      'metadata array traversal retains only its bounded prefix',
     );
 
     const nestedMetadata = await api(baseUrl, '/api/diagnostics/event', {

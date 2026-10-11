@@ -575,10 +575,9 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `PUT` | `/:key` | `ROLE_ACCESS.ownerManager` + settings write limiter | path: `key`; body: `value` | Body `value`. Only the allow-listed non-sensitive keys are accepted; sensitive keys need their named route. `key: currency` returns `409 currency_change_requires_reset` on any value change. |
 
 `diagnostics_consent` and `diagnostics_transmission_enabled` are owner/manager-writable Boolean
-settings. Both must be enabled for automatic diagnostics delivery. The consent choice synchronizes
-to FloAdmin with an idempotent change ID; a remote opt-out is retained across startup reconciliation.
-`telemetry_enabled` independently controls anonymous usage telemetry and is also required when
-diagnostics use the anonymous collector.
+settings. Their delivery gates and consent synchronization are described in [store-attributed
+diagnostics](../architecture/cloud-integrations.md#store-attributed-diagnostics), including how
+`telemetry_enabled` affects anonymous diagnostic delivery.
 
 ### Tax packs
 
@@ -687,7 +686,7 @@ Router: `main/routes/support-ticket.ts`. Full path: `/api/support-ticket`.
 | `GET` | `/profile` | `ROLE_ACCESS.allStaff` | none | - |
 | `GET` | `/diagnostics-preview` | `ROLE_ACCESS.allStaff` | query: `?category` | - |
 | `GET` | `/:clientTicketId/status` | `ROLE_ACCESS.allStaff` | path: `clientTicketId` | - |
-| `POST` | `/` | `ROLE_ACCESS.allStaff` | none | - |
+| `POST` | `/` | `ROLE_ACCESS.allStaff` | body: support-ticket fields; optional `operation_failure` | Queues the ticket; the structured failure context is validated and normalized as described in [cloud integrations](../architecture/cloud-integrations.md#linking-a-ticket-to-a-known-operation-failure). |
 | `GET` | `/pre-login/profile` | any authenticated role + pre-login limiter | none | Unauthenticated tenant profile for the login-screen ticket form. Body limit 300kb on this subtree. |
 | `GET` | `/pre-login/:clientTicketId/status` | any authenticated role + pre-login limiter | path: `clientTicketId` | Unauthenticated ticket status lookup; `clientTicketId` must be a UUID. |
 | `POST` | `/pre-login` | any authenticated role + pre-login limiter | none | Unauthenticated ticket creation from the login screen. Body limit 300kb on this subtree. |

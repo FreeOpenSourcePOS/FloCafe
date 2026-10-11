@@ -71,27 +71,23 @@ it degrades to `dev` rather than throwing.
 ## Store-attributed diagnostics
 
 Diagnostics have a local support view and a separate automatic aggregate channel. Capture does not
-depend on either transmission setting. The local `local_diagnostics` log is capped at 200 rows and
-is available to staff with `support.use`; clearing it removes only local evidence. The legacy
-`POST /api/diagnostics/event` intake remains for older callers, but is local-only and does not enqueue
-its message or metadata for automatic transmission.
+depend on either transmission setting. The local `local_diagnostics` log is capped at 200 rows. Its
+access controls, legacy event intake, and clearing behavior are documented in the
+[API reference](../reference/api.md#diagnostics).
 
 Automatic reports come from the closed capture registry in
 [`main/lib/operation-failure.ts`](../../main/lib/operation-failure.ts). A report contains the
 registered reason, operation, stage, classification, outcome, count, bounded time window, optional
 UUID correlation references, and allowlisted facts. It contains no exception text, SQL, request path,
-customer, order, or payment data. Frontend captures cover client-owned transport, recovery, and retry
-storage failures; backend routes record authoritative operation failures. Legacy source-derived
-signatures remain local support evidence and are never sent through the v2 automatic channel.
+customer or order identifiers, payment amounts, or transaction references. Frontend, Electron, and
+backend capture call sites use the registry; it owns the exact list and normalized tuples. Legacy
+source-derived signatures remain local support evidence and are never sent through the v2 automatic
+channel.
 
-Backend capture points cover typed staff validation and administration safeguards, recovery races,
-permission administration and input validation, customer validation and phone conflicts, product and
-stock validation, category validation and delete safeguards, add-on validation and selection bounds,
-inventory and supply movement queries, supply and recipe validation, linked-supply deletion, and
-report date-range validation. Menu CSV imports capture malformed input and row rejections with only
-bounded failed and changed-row counts; the outcome is `partial` only when the import actually changed
-at least one row. Routine login failures, authentication middleware rejections, and ordinary empty query
-results are not capture points. The typed list and exact tuple rules live in the source registry.
+Menu CSV imports capture malformed input and row rejections with only bounded failed and changed-row
+counts; the outcome is `partial` only when the import actually changed at least one row. Routine
+login failures, authentication middleware rejections, and ordinary empty query results are not
+capture points.
 
 Reports are aggregated by UTC hour, sealed with immutable report IDs, and stored in
 `store_diagnostics_outbox` before sending. The outbox holds at most 200 rows, and each flush sends at
@@ -109,9 +105,9 @@ deletion blocks all diagnostics delivery. With a configured signed cloud connect
 FloAdmin. Without one, they use the anonymous collector only when `telemetry_enabled` is also on;
 otherwise they remain local. Consent and transmission are separate from anonymous usage telemetry.
 
-`GET /api/diagnostics/health` returns only typed queue counts, delivery-gap counts, consent state,
-transport, and delayed status. It does not return report bytes or local error text. Support tickets
-remain a separate user-initiated channel and their outbox is unaffected by diagnostics preferences.
+The health endpoint's response contract is documented in the
+[API reference](../reference/api.md#diagnostics). Support tickets remain a separate user-initiated
+channel and their outbox is unaffected by diagnostics preferences.
 
 ## WhatsApp receipt delivery
 
@@ -261,10 +257,8 @@ support ticket.
 - `errorDetails(error, fallbackCode)` reads a code and correlation id off any thrown value, falling
   back to a supplied code and a fresh correlation id, and always returns a `message`.
 
-Operation failures use a separate closed registry in `main/lib/operation-failure.ts`. A support
-ticket can carry its validated operation UUID in `correlation_id` and the normalized tuple in
-`diagnostics.operation_failure`, allowing staff to link the report to the same operation without
-deriving context from ticket text.
+For support-ticket correlation, see
+[Linking a ticket to a known operation failure](#linking-a-ticket-to-a-known-operation-failure).
 
 ## Verification
 

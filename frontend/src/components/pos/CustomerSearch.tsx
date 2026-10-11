@@ -528,7 +528,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
                               : 'bg-muted border-border text-muted-foreground'
                           }`}
                         >
-                          ↵ Enter
+                          ↵
                         </kbd>
                       )}
                     </button>

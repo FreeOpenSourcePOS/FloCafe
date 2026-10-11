@@ -1037,7 +1037,7 @@
     "chargeCompletionApplied": "費用已更新，但 FloCafe 無法完成後續步驟。再次變更前請先檢查目前帳單。",
     "swapNameAndPhone": "交換姓名和電話",
     "createWithPhone": "使用電話建立客戶: {phone}",
-    "createWithName": "建立名為客戶: {name}"
+    "createWithName": "建立名為 {name} 的客戶"
   },
   "printTest": {
     "amt": "金額",

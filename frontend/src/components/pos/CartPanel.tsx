@@ -639,7 +639,10 @@ export default function CartPanel({
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">
               <Pause size={14} className="me-1" /> {t('holdButton')}
-              <span className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground">
+              <span
+                aria-hidden="true"
+                className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground"
+              >
                 F8
               </span>
             </Button>
@@ -652,7 +655,10 @@ export default function CartPanel({
           >
             {submitting ? t('placing') : t('placeOrderButton')}
             {!submitting && (
-              <span className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium">
+              <span
+                aria-hidden="true"
+                className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+              >
                 Space
               </span>
             )}

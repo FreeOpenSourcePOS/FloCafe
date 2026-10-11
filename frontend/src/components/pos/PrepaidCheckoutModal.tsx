@@ -512,7 +512,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         return;
       }
 
-      if (isInput) return;
+      if (isInput || target?.closest('button, a, select, [role="button"]')) return;
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
         e.preventDefault();

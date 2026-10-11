@@ -224,13 +224,24 @@ function walletRow(page: Page) {
   return page.getByRole('button', { name: 'Loyalty Wallet' }).locator('..');
 }
 
-/** Pays whatever is currently entered, answering the partial-payment confirmation. */
+/** Checks an unknown outcome first, then submits or replays the current payment draft. */
 async function submitPayment(page: Page): Promise<PaymentAttempt> {
+  const checkStatusButton = page.getByRole('button', {
+    name: 'Check payment status',
+    exact: true,
+  });
+  if (await checkStatusButton.count()) {
+    await checkStatusButton.click();
+    await expect(
+      page.getByRole('button', { name: 'Send same payment', exact: true }),
+    ).toBeEnabled();
+  }
+
   const pending = page.waitForResponse((response) => (
     response.request().method() === 'POST'
     && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(response.url()).pathname)
   ));
-  await page.getByRole('button', { name: /^Pay / }).click();
+  await page.getByRole('button', { name: /^(Pay |Send same payment$)/ }).click();
   const confirmButton = page.getByRole('button', { name: 'Pay', exact: true });
   if (await confirmButton.count()) await confirmButton.click();
   const response = await pending;
@@ -797,7 +808,11 @@ test.describe('equal share payments', () => {
     await page.route('**/api/bills/*/payments', (route) => route.abort('failed'));
     await page.getByRole('button', { name: /^Pay / }).click();
     await page.getByRole('button', { name: 'Pay', exact: true }).click();
-    await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15000 });
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: 'FloCafe could not confirm whether the order or payment was saved.' }),
+    ).toBeVisible();
 
     // Nothing advanced: same amount, same count, same application.
     expect(await tenderAmount(page, 'Cash')).toBe('33.34');
@@ -850,7 +865,11 @@ test.describe('equal share payments', () => {
 
     await page.getByRole('button', { name: /^Pay / }).click();
     await page.getByRole('button', { name: 'Pay', exact: true }).click();
-    await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: 'FloCafe could not confirm whether the order or payment was saved.' }),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Close' })).toBeDisabled();
 
     // The server committed the share even though the page saw a failure.
@@ -900,13 +919,27 @@ test.describe('equal share payments', () => {
     await applyShareTo(page, 'Cash');
 
     // A validation rejection proves nothing committed, so the draft unfreezes.
-    await page.route('**/api/bills/*/payments', (route) => route.fulfill({
-      status: 400,
-      json: { error: 'Payment amount is required for split payments' },
-    }));
+    await page.route('**/api/bills/*/payments', (route) => {
+      const correlationId = route.request().headers()['x-operation-id'];
+      return route.fulfill({
+        status: 400,
+        json: {
+          error: 'Payment amount is required for split payments',
+          reason_code: 'payment.invalid',
+          operation: 'payment.create',
+          stage: 'validation',
+          classification: 'expected_rejection',
+          outcome: 'not_applied',
+          correlation_id: correlationId,
+          display_code: 'amount_required',
+        },
+      });
+    });
     await page.getByRole('button', { name: /^Pay / }).click();
     await page.getByRole('button', { name: 'Pay', exact: true }).click();
-    await expect(page.getByText('Payment failed')).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'Enter an amount for each split payment.' }),
+    ).toBeVisible();
     await expect(payerCount(page), 'a definitive rejection unlocks the payer count').toBeEnabled();
     await expect(tenderRow(page, 'Cash').getByRole('spinbutton')).toBeEnabled();
 

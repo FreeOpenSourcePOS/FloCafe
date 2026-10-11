@@ -611,6 +611,9 @@ export default function PaymentModal({
     }
   };
 
+  const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
+    attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
+
   // A share sized for a balance or payer count that has since moved on is
   // withdrawn so the cashier reviews the new preview; an amount the cashier
   // typed themselves is left alone. Reconciled during render, like the balance
@@ -618,7 +621,12 @@ export default function PaymentModal({
   if (
     appliedEqualShare &&
     (appliedEqualShare.balanceMinor !== remainingMinor ||
-      appliedEqualShare.payers !== equalShareCount)
+      appliedEqualShare.payers !== equalShareCount) &&
+    !(
+      attemptLocked &&
+      pendingAttempt &&
+      attemptTotalMinor(pendingAttempt) === appliedEqualShare.amountMinor
+    )
   ) {
     setAppliedEqualShare(null);
     setEqualShareNotice('invalidated');
@@ -867,9 +875,6 @@ export default function PaymentModal({
     if (onSplit) onSplit(departingBill ?? undefined);
     else onClose();
   };
-
-  const attemptTotalMinor = (attempt: PendingPaymentAttempt) =>
-    attempt.lines.reduce((sum, line) => sum + toMinorUnits(Number(line.amount) || 0), 0);
 
   /** Snapshots the draft fields the backend hashes into the request fingerprint. */
   const buildPendingAttempt = (): PendingPaymentAttempt => {

@@ -426,12 +426,14 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
 
 main()
   .then(() => {
+    cloudSync.stop();
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.log('\n✅ First-run setup tests passed');
   })
   .catch((error) => {
+    cloudSync.stop();
     try { closeDatabase(); } catch { }
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });

@@ -179,7 +179,7 @@ test('prepaid checkout never reports success when the payment response is partia
 
   await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
 
-  await expect(page.getByText(/Payment incomplete/)).toBeVisible();
+  await expect(page.getByRole('status')).toContainText(/Payment incomplete/);
   expect(paymentBatchRequests).toBe(1);
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Place Order' })).toBeEnabled();
@@ -432,10 +432,20 @@ test('payment modal updates applied fees', async ({ page, request }) => {
     const rejectUpdate = async (route: Route) => {
       if (rejectNextUpdate && route.request().method() === 'PATCH') {
         rejectNextUpdate = false;
+        const correlationId = route.request().headers()['x-operation-id'];
         await route.fulfill({
           status: 409,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'split check' }),
+          body: JSON.stringify({
+            error: 'Charges on a split check cannot be changed',
+            reason_code: 'bill.charge_rejected',
+            operation: 'bill.charge.update',
+            stage: 'validation',
+            classification: 'expected_rejection',
+            outcome: 'not_applied',
+            correlation_id: correlationId,
+            display_code: 'split_check',
+          }),
         });
         return;
       }

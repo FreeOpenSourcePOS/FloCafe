@@ -396,11 +396,10 @@ async function runModalKeypadIntegrationTests() {
       }) as typeof React.useState;
       return ReactDOMServer.renderToStaticMarkup(React.createElement(Modal, props));
     };
-    for (const [Modal, props, label] of [
-      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
-      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+    for (const [Modal, props, label, targetStateIndex] of [
+      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 4],
+      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 3],
     ] as const) {
-      const targetStateIndex = 3;
       const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
       assert.equal(paymentMarkup.includes('>.<'), false, `${label} hides JPY payment decimal key in static markup`);
       const discountMarkup = renderModal(Modal, props, 'discount', targetStateIndex);
@@ -418,11 +417,10 @@ async function runModalKeypadIntegrationTests() {
     if (browser) {
       try {
         const page = await browser.newPage();
-        for (const [Modal, props, label] of [
-          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
-          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+        for (const [Modal, props, label, targetStateIndex] of [
+          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 4],
+          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 3],
         ] as const) {
-          const targetStateIndex = 3;
           await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
           assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
           await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));

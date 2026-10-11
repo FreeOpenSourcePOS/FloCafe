@@ -241,7 +241,7 @@ export default function POSPage() {
   const tCommon = useTranslations('common');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
   const cashDrawer = useCashDrawerMovements();
   const shift = useCashSession();
   // Shift actions follow the same owner/manager/cashier group as the
@@ -1108,7 +1108,8 @@ export default function POSPage() {
     shift.openModalOpen ||
     shift.closeModalOpen ||
     showPrintMenuModal ||
-    showKeyboardShortcutsModal;
+    showKeyboardShortcutsModal ||
+    isConfirmOpen;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);

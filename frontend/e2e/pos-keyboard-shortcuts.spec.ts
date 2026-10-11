@@ -84,6 +84,11 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const searchInput = page.getByTestId('pos-product-search');
     await expect(searchInput).toBeFocused();
 
+    // Integer-only products must reject fractional multiplier quantities
+    await searchInput.fill('1.5*Coffee');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
+
     // Type 3*Coffee to test multiplier search
     await searchInput.fill('3*Coffee');
     await page.keyboard.press('Enter');
@@ -122,7 +127,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(tableModal).not.toBeVisible();
   });
 
-  test('Space / F4 opens checkout modal, and Space tenders cash to complete order', async ({
+  test('F4 opens checkout modal, and Space tenders cash to complete order', async ({
     page,
   }) => {
     // Select Takeaway mode so checkout does not require table selection
@@ -137,8 +142,8 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Blur any input
     await page.locator('body').click({ position: { x: 10, y: 10 } });
 
-    // Press Space to trigger checkout
-    await page.keyboard.press('Space');
+    // Press F4 to trigger checkout
+    await page.keyboard.press('F4');
 
     // Checkout modal appears
     const checkoutModal = page.getByTestId('prepaid-checkout-modal');

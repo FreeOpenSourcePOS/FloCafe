@@ -1394,6 +1394,8 @@
     "loginHint": "Porositë në tavolinë për llogaritë e shërbyesit, menaxherit dhe pronarit",
     "loginSubtitle": "Porositë në tavolinë për personelin e shërbimit",
     "newItems": "Artikuj të rinj",
+    "noTablesHint": "Porosia në tavolinë është për shërbimin në lokal. Kërkojini një pronari ose menaxheri të shtojë tavolina ose të çaktivizojë porosinë në tavolinë te Cilësimet.",
+    "noTablesTitle": "Nuk ka tavolina të konfiguruara",
     "openOrder": "Porosi e hapur",
     "orderSent": "Porosia u dërgua",
     "orderSlipDeliveryCharge": "Tarifa e dorëzimit",

@@ -1394,6 +1394,8 @@
     "loginHint": "Prise de commande à table pour les comptes serveur, responsable et propriétaire",
     "loginSubtitle": "Prise de commande à table pour le personnel de service",
     "newItems": "Nouveaux articles",
+    "noTablesHint": "La prise de commande à table est destinée au service en salle. Demandez à un propriétaire ou à un responsable d'ajouter des tables ou de désactiver la prise de commande à table dans les Paramètres.",
+    "noTablesTitle": "Aucune table configurée",
     "openOrder": "Commande ouverte",
     "orderSent": "Commande envoyée",
     "orderSlipDeliveryCharge": "Frais de livraison",
@@ -1416,8 +1418,8 @@
     "statusServed": "Servi",
     "statusWaiting": "En attente",
     "tableLabel": "Table {name}",
-    "title": "Application serveur",
-    "tables": "Tables"
+    "tables": "Tables",
+    "title": "Application serveur"
   },
   "settings": {
     "aboutDescription": "FloPOS est une solution de caisse libre et gratuite à vie pour les cafés, restaurants, boulangeries, camions-restaurants, cuisines virtuelles et bars. Elle comprend la prise de commandes, la gestion des tables et des menus, l’affichage en cuisine, l’impression des reçus, l’accès du personnel et le stockage local des données. Téléchargez-la, lancez le service, conservez vos données et restez propriétaire de votre caisse.",

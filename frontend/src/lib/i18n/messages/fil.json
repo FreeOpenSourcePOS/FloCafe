@@ -1394,6 +1394,8 @@
     "loginHint": "Pag-order sa lamesa para sa mga server, manager, at may-ari",
     "loginSubtitle": "Pag-order sa lamesa para sa service staff",
     "newItems": "Mga bagong item",
+    "noTablesHint": "Ang pag-order sa mesa ay para sa dine-in na serbisyo. Hilingin sa may-ari o manager na magdagdag ng mga mesa, o i-off ang Tableside Ordering sa Settings.",
+    "noTablesTitle": "Walang naka-set up na mesa",
     "openOrder": "Buksan ang order",
     "orderSent": "Naipadala ang order sa kusina",
     "orderSlipDeliveryCharge": "Bayad sa Delivery",

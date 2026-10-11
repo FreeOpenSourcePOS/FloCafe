@@ -8,11 +8,11 @@ import {
   ChefHat,
   Circle,
   Flame,
+  LayoutGrid,
   LogOut,
   Minus,
   Plus,
   RefreshCw,
-  Search,
   Send,
   ShoppingCart,
   Smartphone,
@@ -33,13 +33,20 @@ import { formatItemHeading } from '@/lib/printer/item-heading';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
-import { productNeedsCustomizer } from '@/lib/product-variants';
+import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
-import type { Order as FullOrder, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
+import ProductGrid from '@/components/pos/ProductGrid';
+import type {
+  Order as FullOrder,
+  Product,
+  Addon,
+  CartItem,
+  Category,
+  ProductVariant,
+} from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
 type User = { id: string; name: string; email: string; role: string };
-type Category = { id: string; name: string };
 type Table = {
   id: string;
   name?: string;
@@ -141,9 +148,10 @@ function sendAttemptSignature(
   draft: DraftLine[],
   customerName: string,
   customerPhone: string,
+  orderNotes: string,
 ): string {
   const items = draft.map((line) => `${line.id}:${line.quantity}`).join('|');
-  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}`;
+  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}|${orderNotes.trim()}`;
 }
 
 export default function ServerStandalonePage() {
@@ -152,7 +160,6 @@ export default function ServerStandalonePage() {
   const language = usePosSettingsStore((state) => state.language);
   const t = useTranslations('serverApp');
   const tAuth = useTranslations('auth');
-  const tOrders = useTranslations('orders');
   const tTables = useTranslations('tables');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -172,17 +179,23 @@ export default function ServerStandalonePage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
+  const [tablesLoaded, setTablesLoaded] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>('');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([]);
+  const [orderNotes, setOrderNotes] = useState('');
   const [addonModalProduct, setAddonModalProduct] = useState<Product | null>(null);
+  const [addonModalVariant, setAddonModalVariant] = useState<ProductVariant | null>(null);
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
-  const [customerMatch, setCustomerMatch] = useState<{ id: string; name: string } | null>(null);
+  const [customerMatch, setCustomerMatch] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [customerSearched, setCustomerSearched] = useState(false);
   const phoneDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const phoneAbortRef = useRef<AbortController | null>(null);
@@ -204,6 +217,7 @@ export default function ServerStandalonePage() {
     setProducts(productsRes.data.products || []);
     const loadedTables = tablesRes.data.tables || [];
     setTables(loadedTables);
+    setTablesLoaded(true);
     if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
   }
 
@@ -273,6 +287,7 @@ export default function ServerStandalonePage() {
         setProducts(productsRes.data.products || []);
         const loadedTables = tablesRes.data.tables || [];
         setTables(loadedTables);
+        setTablesLoaded(true);
         if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
       })
       .catch(() => toast.error(t('couldNotLoadData')));
@@ -371,7 +386,11 @@ export default function ServerStandalonePage() {
     if (!api) return;
     setLoginLoading(true);
     try {
-      const res = await api.post('/api/auth/login', { email, password, remember_me: rememberMe });
+      const res = await api.post('/api/auth/login', {
+        email,
+        password,
+        remember_me: rememberMe,
+      });
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
       setUser(res.data.user);
     } catch (error: unknown) {
@@ -500,7 +519,9 @@ export default function ServerStandalonePage() {
       const parsed = regional?.country ? parsePhone(rawPhone, regional.country) : null;
       normalizedPhone = parsed ? parsed.e164 : rawPhone;
       try {
-        const lookup = await api.get('/api/crm/lookup', { params: { phone: normalizedPhone } });
+        const lookup = await api.get('/api/crm/lookup', {
+          params: { phone: normalizedPhone },
+        });
         if (lookup.data.found && lookup.data.customer?.id) return lookup.data.customer.id;
       } catch {}
     }
@@ -516,7 +537,10 @@ export default function ServerStandalonePage() {
   async function printKotForOrder(orderId: number, orderForPrint: Record<string, unknown>) {
     if (!api) return;
     try {
-      await api.post('/api/printers/print-kot', { orderId, items: orderForPrint.items });
+      await api.post('/api/printers/print-kot', {
+        orderId,
+        items: orderForPrint.items,
+      });
       return;
     } catch (printError: unknown) {
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
@@ -585,9 +609,18 @@ export default function ServerStandalonePage() {
     if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
     // Nonce first via the LAN-safe helper: anything thrown after the
     // sending flag is set sticks the UI on Sending... forever.
-    const signature = sendAttemptSignature(selectedTableId, draft, customerName, customerPhone);
+    const signature = sendAttemptSignature(
+      selectedTableId,
+      draft,
+      customerName,
+      customerPhone,
+      orderNotes,
+    );
     if (sendAttemptRef.current?.signature !== signature) {
-      sendAttemptRef.current = { signature, nonce: createPaymentIdempotencyKey() };
+      sendAttemptRef.current = {
+        signature,
+        nonce: createPaymentIdempotencyKey(),
+      };
     }
     const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
     sendInFlightRef.current = true;
@@ -595,13 +628,14 @@ export default function ServerStandalonePage() {
     try {
       const customerId = await ensureCustomer();
       const items = draft.map((line) => cartItemToOrderItem(line));
+      const specialInstructions = orderNotes.trim() || undefined;
       let orderId: number;
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
       if (currentOrder?.id) {
         const { data } = await api.post(
           `/api/orders/${currentOrder.id}/items`,
-          { items },
+          { items, special_instructions: specialInstructions },
           {
             headers: { 'Idempotency-Key': idempotencyKey },
           },
@@ -618,6 +652,7 @@ export default function ServerStandalonePage() {
             table_id: selectedTableId,
             customer_id: customerId,
             type: 'dine_in',
+            special_instructions: specialInstructions,
             items,
           },
           { headers: { 'Idempotency-Key': idempotencyKey } },
@@ -628,6 +663,7 @@ export default function ServerStandalonePage() {
       }
       sendAttemptRef.current = null;
       setDraft([]);
+      setOrderNotes('');
       setMobileCartOpen(false);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
@@ -655,12 +691,6 @@ export default function ServerStandalonePage() {
   }
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
-  const filteredProducts = products.filter((product) => {
-    const matchesCategory =
-      selectedCategoryId === 'all' || product.category_id === selectedCategoryId;
-    const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
-    return matchesCategory && matchesQuery;
-  });
   const draftTotal = draft.reduce((sum, line) => {
     const addonTotal = line.addons.reduce(
       (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
@@ -874,6 +904,22 @@ export default function ServerStandalonePage() {
         )}
       </div>
 
+      {draft.length > 0 && (
+        <div className="mt-3">
+          <textarea
+            value={orderNotes}
+            onChange={(event) => setOrderNotes(event.target.value.slice(0, 200))}
+            placeholder={tPos('orderNotesPlaceholder')}
+            rows={2}
+            maxLength={200}
+            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+          />
+          <p className="mt-0.5 text-end text-xs text-muted-foreground">
+            <Ltr>{orderNotes.length}/200</Ltr>
+          </p>
+        </div>
+      )}
+
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         <span className="text-sm text-muted-foreground">{t('draftTotal')}</span>
         <span className="text-lg font-bold">
@@ -902,7 +948,9 @@ export default function ServerStandalonePage() {
             <h1 className="truncate text-base font-semibold">{t('title')}</h1>
             <p className="truncate text-xs text-muted-foreground">
               {activeTable
-                ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) })
+                ? t('tableLabel', {
+                    name: activeTable.name ?? String(activeTable.number),
+                  })
                 : t('selectTable')}
             </p>
           </div>
@@ -921,93 +969,73 @@ export default function ServerStandalonePage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
-        <section className="rounded-lg border border-border bg-card p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-            {t('tables')}
-          </h2>
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
-            {tables.map((table) => {
-              const selected = table.id === selectedTableId;
-              const order = table.activeOrder || table.current_order;
-              return (
-                <button
-                  key={table.id}
-                  onClick={() => setSelectedTableId(table.id)}
-                  className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
-                >
-                  <span className="block truncate text-sm font-semibold">
-                    {table.name || table.number}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {order ? t('openOrder') : tTables('statusAvailable')}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-border bg-card p-3">
-          <div className="mb-3 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={16} className="absolute start-3 top-3 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t('searchMenu')}
-                className="h-10 w-full rounded-lg border border-border bg-background ps-9 pe-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button
-              onClick={() => setSelectedCategoryId('all')}
-              className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
-            >
-              {tOrders('all')}
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategoryId(category.id)}
-                className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
-              >
-                {category.name}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {filteredProducts.map((product) => {
-              const inCartQty = draftQuantities.get(product.id) || 0;
-              return (
-                <button
-                  key={product.id}
-                  onClick={() => {
-                    if (productNeedsCustomizer(product)) setAddonModalProduct(product);
-                    else addDraftLine(product, 1, [], '');
-                  }}
-                  className="relative min-h-24 rounded-lg border border-border bg-card p-3 text-start hover:border-brand"
-                >
-                  {inCartQty > 0 && (
-                    <span className="absolute top-0 end-0 z-10 flex h-6 w-6 items-center justify-center rounded-es-lg bg-brand text-xs font-bold text-white">
-                      <Ltr>{inCartQty}</Ltr>
+      {tablesLoaded && tables.length === 0 ? (
+        <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center">
+          <LayoutGrid size={44} className="text-muted-foreground" />
+          <h2 className="text-lg font-semibold">{t('noTablesTitle')}</h2>
+          <p className="max-w-sm text-sm text-muted-foreground">{t('noTablesHint')}</p>
+        </div>
+      ) : (
+        <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
+          <section className="rounded-lg border border-border bg-card p-3">
+            <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+              {t('tables')}
+            </h2>
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+              {tables.map((table) => {
+                const selected = table.id === selectedTableId;
+                const order = table.activeOrder || table.current_order;
+                return (
+                  <button
+                    key={table.id}
+                    onClick={() => setSelectedTableId(table.id)}
+                    className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
+                  >
+                    <span className="block truncate text-sm font-semibold">
+                      {table.name || table.number}
                     </span>
-                  )}
-                  <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                  <span className="mt-2 block text-sm text-muted-foreground">
-                    <Ltr>{money(product.price, regional)}</Ltr>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                    <span className="text-xs text-muted-foreground">
+                      {order ? t('openOrder') : tTables('statusAvailable')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
-        <section className="hidden rounded-lg border border-border bg-card p-3 md:block md:sticky md:top-16 md:self-start">
-          {ticketPanelBody}
-        </section>
-      </main>
+          <section className="flex h-[calc(100dvh-5rem)] min-h-96 flex-col rounded-lg border border-border bg-card p-3">
+            <ProductGrid
+              categories={categories}
+              products={products}
+              selectedCategory={selectedCategoryId}
+              setSelectedCategory={setSelectedCategoryId}
+              search={query}
+              setSearch={setQuery}
+              currency={regional?.currency || ''}
+              onProductClick={(product) => {
+                if (productNeedsCustomizer(product)) setAddonModalProduct(product);
+                else addDraftLine(product, 1, [], '');
+              }}
+              onScannedVariant={(product, variant) => {
+                if (scannedVariantNeedsCustomizer(product, variant)) {
+                  setAddonModalVariant(variant);
+                  setAddonModalProduct(product);
+                } else addDraftLine(product, 1, [], '', variant);
+              }}
+              onScaledProduct={(product, quantity) => addDraftLine(product, quantity, [], '')}
+              cartQuantities={draftQuantities}
+              formatPrice={(amount) => money(amount, regional)}
+              showImages={false}
+              gridClassName="grid-cols-2 sm:grid-cols-3 xl:grid-cols-4"
+              searchPlaceholder={t('searchMenu')}
+            />
+          </section>
+
+          <section className="hidden rounded-lg border border-border bg-card p-3 md:block md:sticky md:top-16 md:self-start">
+            {ticketPanelBody}
+          </section>
+        </main>
+      )}
 
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
@@ -1033,10 +1061,14 @@ export default function ServerStandalonePage() {
           product={addonModalProduct}
           currency={regional?.currency || ''}
           country={regional?.country}
+          initialVariant={addonModalVariant}
           onAdd={(addedProduct, quantity, addons, instructions, variant) =>
             addDraftLine(addedProduct, quantity, addons, instructions, variant)
           }
-          onClose={() => setAddonModalProduct(null)}
+          onClose={() => {
+            setAddonModalProduct(null);
+            setAddonModalVariant(null);
+          }}
         />
       )}
 

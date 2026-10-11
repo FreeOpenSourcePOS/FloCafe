@@ -1394,6 +1394,8 @@
     "loginHint": "Pedidos à mesa para contas de garçom, gerente e proprietário",
     "loginSubtitle": "Pedidos à mesa para a equipe de serviço",
     "newItems": "Novos itens",
+    "noTablesHint": "O pedido na mesa é para o serviço no salão. Peça a um proprietário ou gerente para adicionar mesas ou desativar o pedido na mesa nas Configurações.",
+    "noTablesTitle": "Nenhuma mesa configurada",
     "openOrder": "Pedido aberto",
     "orderSent": "Pedido enviado",
     "orderSlipDeliveryCharge": "Taxa de entrega",
@@ -1416,8 +1418,8 @@
     "statusServed": "Servido",
     "statusWaiting": "Aguardando",
     "tableLabel": "Mesa {name}",
-    "title": "App do Garçom",
-    "tables": "Mesas"
+    "tables": "Mesas",
+    "title": "App do Garçom"
   },
   "settings": {
     "aboutDescription": "O FloPOS é um PDV de restaurante gratuito para sempre e de código aberto para cafeterias, restaurantes, padarias, food trucks, dark kitchens e bares. Inclui pedidos, mesas, menus, display de cozinha, impressão de comprovantes, acesso da equipe e armazenamento local de dados. Baixe, execute o serviço, mantenha seus dados e seja dono do seu PDV.",

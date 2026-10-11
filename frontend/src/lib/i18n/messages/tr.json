@@ -1394,6 +1394,8 @@
     "loginHint": "Garson, müdür ve işletme sahibi hesapları için masadan sipariş alma",
     "loginSubtitle": "Servis personeli için masadan sipariş alma",
     "newItems": "Yeni Ürünler",
+    "noTablesHint": "Masada sipariş, restoranda servis içindir. Bir sahipten veya yöneticiden masa eklemesini ya da Ayarlar'dan masada siparişi kapatmasını isteyin.",
+    "noTablesTitle": "Masa tanımlanmamış",
     "openOrder": "Açık Sipariş",
     "orderSent": "Sipariş gönderildi",
     "orderSlipDeliveryCharge": "Teslimat Ücreti",
@@ -1416,8 +1418,8 @@
     "statusServed": "Servis Edildi",
     "statusWaiting": "Bekliyor",
     "tableLabel": "Masa {name}",
-    "title": "Garson & Masa Terminali",
-    "tables": "Masalar"
+    "tables": "Masalar",
+    "title": "Garson & Masa Terminali"
   },
   "settings": {
     "aboutDescription": "FloPOS; kafeler, restoranlar, pastaneler, yemek karavanları ve barlar için tamamen ücretsiz ve açık kaynaklı bir restoran satış noktasıdır. Sipariş, masa, menü, mutfak ekranı, fiş yazdırma, personel erişimi ve yerel veri depolama içerir.",

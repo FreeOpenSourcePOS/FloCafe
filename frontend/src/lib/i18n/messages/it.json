@@ -1394,6 +1394,8 @@
     "loginHint": "Ordinazione al tavolo per account di servizio, gestore e proprietario",
     "loginSubtitle": "Ordinazione al tavolo per il personale di servizio",
     "newItems": "Nuovi articoli",
+    "noTablesHint": "Gli ordini al tavolo sono pensati per il servizio in sala. Chiedi a un titolare o a un manager di aggiungere i tavoli o di disattivare gli ordini al tavolo nelle Impostazioni.",
+    "noTablesTitle": "Nessun tavolo configurato",
     "openOrder": "Apri ordine",
     "orderSent": "Ordine inviato",
     "orderSlipDeliveryCharge": "Spese di consegna",
@@ -1416,8 +1418,8 @@
     "statusServed": "Servito",
     "statusWaiting": "In attesa",
     "tableLabel": "Tavolo {name}",
-    "title": "App cameriere",
-    "tables": "Tavoli"
+    "tables": "Tavoli",
+    "title": "App cameriere"
   },
   "settings": {
     "aboutDescription": "FloPOS è un POS open-source gratuito per sempre per ristoranti, bar, panetterie, food truck, cloud kitchen e locali. Include ordinazione, tavoli, menu, display di cucina, stampa ricevute, accesso del personale e archiviazione locale dei dati. Scaricalo, avvia il servizio, conserva i tuoi dati e possiedi il tuo POS.",

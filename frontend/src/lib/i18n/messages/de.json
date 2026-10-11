@@ -1394,6 +1394,8 @@
     "loginHint": "Tischbestellungen für Bedienung, Manager und Inhaber",
     "loginSubtitle": "Tischbestellungen für das Servicepersonal",
     "newItems": "Neue Artikel",
+    "noTablesHint": "Die Bestellung am Tisch ist für den Restaurantbetrieb vor Ort gedacht. Bitten Sie einen Inhaber oder Manager, Tische anzulegen oder die Bestellung am Tisch in den Einstellungen zu deaktivieren.",
+    "noTablesTitle": "Keine Tische eingerichtet",
     "openOrder": "Offene Bestellung",
     "orderSent": "Bestellung gesendet",
     "orderSlipDeliveryCharge": "Liefergebühr",
@@ -1416,8 +1418,8 @@
     "statusServed": "Serviert",
     "statusWaiting": "Wartend",
     "tableLabel": "Tisch {name}",
-    "title": "Server-App",
-    "tables": "Tische"
+    "tables": "Tische",
+    "title": "Server-App"
   },
   "settings": {
     "aboutDescription": "FloPOS ist ein dauerhaft kostenloses Open-Source-Kassensystem für Cafés, Restaurants, Bäckereien, Imbisse, Cloud-Küchen und Bars. Es umfasst Bestellungen, Tische, Menüs, Küchenanzeige, Belegdruck, Personalzugänge und lokale Datenspeicherung. Laden Sie es herunter, nutzen Sie es und behalten Sie die Kontrolle über Ihre Daten und Ihr Kassensystem.",

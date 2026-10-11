@@ -1394,6 +1394,8 @@
     "loginHint": "웨이터, 관리자, 사장님 계정용 테이블 주문",
     "loginSubtitle": "서비스 직원을 위한 테이블 주문",
     "newItems": "새 항목",
+    "noTablesHint": "테이블 주문은 매장 내 식사 서비스용입니다. 소유자나 매니저에게 테이블을 추가하거나 설정에서 테이블 주문을 끄도록 요청하세요.",
+    "noTablesTitle": "설정된 테이블이 없습니다",
     "openOrder": "주문 열기",
     "orderSent": "주문 전송됨",
     "orderSlipDeliveryCharge": "배달 요금",
@@ -1416,8 +1418,8 @@
     "statusServed": "서빙 완료",
     "statusWaiting": "대기",
     "tableLabel": "테이블 {name}",
-    "title": "서버 앱",
-    "tables": "테이블"
+    "tables": "테이블",
+    "title": "서버 앱"
   },
   "settings": {
     "aboutDescription": "FloPOS는 카페, 레스토랑, 베이커리, 푸드트럭, 클라우드 키친, 바를 위한 무료 오픈소스 레스토랑 POS입니다. 주문, 테이블, 메뉴, 주방 디스플레이, 영수증 인쇄, 직원 접근, 로컬 데이터 저장을 포함합니다. 다운로드하여 실행하고, 데이터를 보유하고, 당신의 POS를 소유하세요.",

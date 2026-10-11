@@ -1394,6 +1394,8 @@
     "loginHint": "Tableside ordering for server, manager, and owner accounts",
     "loginSubtitle": "Tableside ordering for service staff",
     "newItems": "New items",
+    "noTablesHint": "Tableside ordering is for dine-in service. Ask an owner or manager to add tables, or to turn off Tableside Ordering in Settings.",
+    "noTablesTitle": "No tables set up",
     "openOrder": "Open order",
     "orderSent": "Order sent",
     "orderSlipDeliveryCharge": "Delivery Charge",
@@ -1416,8 +1418,8 @@
     "statusServed": "Served",
     "statusWaiting": "Waiting",
     "tableLabel": "Table {name}",
-    "title": "Server App",
-    "tables": "Tables"
+    "tables": "Tables",
+    "title": "Server App"
   },
   "settings": {
     "aboutDescription": "FloPOS is a free forever, open-source restaurant POS for cafes, restaurants, bakeries, food trucks, cloud kitchens, and bars. It includes ordering, tables, menus, kitchen display, receipt printing, staff access, and local data storage. Download it, run service, keep your data, and own your POS.",

@@ -1394,6 +1394,8 @@
     "loginHint": "供服务员、经理和店主账户使用的桌边点单",
     "loginSubtitle": "服务员桌边点单",
     "newItems": "新商品",
+    "noTablesHint": "桌边点餐用于堂食服务。请让店主或经理添加餐桌，或在设置中关闭桌边点餐。",
+    "noTablesTitle": "尚未设置餐桌",
     "openOrder": "打开订单",
     "orderSent": "订单已发送",
     "orderSlipDeliveryCharge": "外送费",

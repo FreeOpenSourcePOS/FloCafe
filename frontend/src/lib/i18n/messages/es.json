@@ -1394,6 +1394,8 @@
     "loginHint": "Pedidos desde la mesa para cuentas de mesero, encargado y propietario",
     "loginSubtitle": "Pedidos desde la mesa para el personal de servicio",
     "newItems": "Ítems nuevos",
+    "noTablesHint": "Los pedidos en mesa son para el servicio en sala. Pide a un propietario o gerente que añada mesas o que desactive los pedidos en mesa en Configuración.",
+    "noTablesTitle": "No hay mesas configuradas",
     "openOrder": "Pedido abierto",
     "orderSent": "Pedido enviado",
     "orderSlipDeliveryCharge": "Costo de envío",
@@ -1416,8 +1418,8 @@
     "statusServed": "Servido",
     "statusWaiting": "En espera",
     "tableLabel": "Mesa {name}",
-    "title": "App de mesero",
-    "tables": "Mesas"
+    "tables": "Mesas",
+    "title": "App de mesero"
   },
   "settings": {
     "aboutDescription": "FloPOS es un POS para restaurantes de código abierto y gratuito para siempre, para cafeterías, restaurantes, panaderías, camiones de comida, cocinas fantasma y bares. Incluye pedidos, mesas, menús, pantalla de cocina, impresión de recibos, acceso de personal y almacenamiento de datos local. Descárgalo, ejecuta el servicio, mantén tus datos y sé dueño de tu POS.",

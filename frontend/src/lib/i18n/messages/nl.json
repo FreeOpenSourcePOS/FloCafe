@@ -1394,6 +1394,8 @@
     "loginHint": "Bestellen aan tafel voor server-, manager- en eigenaaraccounts",
     "loginSubtitle": "Bestellen aan tafel voor servicepersoneel",
     "newItems": "Nieuwe artikelen",
+    "noTablesHint": "Bestellen aan tafel is bedoeld voor service in het restaurant. Vraag een eigenaar of manager om tafels toe te voegen of om Bestellen aan tafel uit te zetten in Instellingen.",
+    "noTablesTitle": "Geen tafels ingesteld",
     "openOrder": "Openstaande bestelling",
     "orderSent": "Bestelling verzonden",
     "orderSlipDeliveryCharge": "Bezorgkosten",
@@ -1416,8 +1418,8 @@
     "statusServed": "Geserveerd",
     "statusWaiting": "Wachten",
     "tableLabel": "Tafel {name}",
-    "title": "Server-app",
-    "tables": "Tafels"
+    "tables": "Tafels",
+    "title": "Server-app"
   },
   "settings": {
     "aboutDescription": "FloPOS is een gratis, open source restaurant POS voor altijd voor cafés, restaurants, bakkerijen, foodtrucks, cloudkeukens en bars. Het omvat bestellen, tafels, menu's, keukendisplay, afdrukken van bonnen, toegang voor personeel en lokale gegevensopslag. Download het, voer de service uit, bewaar uw gegevens en bezit uw POS.",

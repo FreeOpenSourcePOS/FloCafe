@@ -9,14 +9,16 @@ import GlobalNotifications from '@/components/layout/GlobalNotifications';
 import TitleBar from '@/components/layout/TitleBar';
 import UpdateAvailableDialog from '@/components/updates/UpdateAvailableDialog';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
+import { normalizePathname } from '@/lib/utils';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  // The desktop export sets `trailingSlash`, so a direct load resolves to
-  // '/pos/'. Normalize it or those routes fall back to page scrolling.
-  const route = pathname?.replace(/\/+$/, '');
-  const isPos = route === '/pos' || route === '/kds';
-  const isSettings = route === '/settings';
+  // Normalized: the desktop build's trailingSlash:true makes usePathname()
+  // return "/pos/" there but "/pos" in dev — see normalizePathname's doc
+  // comment. Without this, isPos/isSettings silently miss in the built app
+  // and POS falls back to page-level scroll instead of its own scroll panel.
+  const pathname = normalizePathname(usePathname());
+  const isPos = pathname === '/pos' || pathname === '/kds';
+  const isSettings = pathname === '/settings';
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
 

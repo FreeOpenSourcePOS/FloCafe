@@ -5,6 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/**
+ * The desktop build sets `trailingSlash: true` (static export), so
+ * `usePathname()` returns e.g. "/pos/" there but "/pos" in dev and in the
+ * cloud build. Route comparisons must normalize through this first or they
+ * silently diverge between dev and the built app. Root ("/") is untouched.
+ */
+export function normalizePathname(pathname: string | null | undefined): string {
+  if (!pathname) return ''
+  return pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname
+}
+
 /** Parses backend UTC timestamp (YYYY-MM-DD HH:MM:SS or ISO) into Date
  * without shifting for local machine timezone offset. */
 export function parseDbTimestamp(ts: string | null | undefined): Date {

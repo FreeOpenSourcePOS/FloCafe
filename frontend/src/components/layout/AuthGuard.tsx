@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
+import { normalizePathname } from '@/lib/utils';
 import type { Tenant } from '@/lib/types';
 
 export const LANDING_PAGE_CANDIDATES = [
@@ -49,7 +50,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, currentTenant, loading, loadFromStorage, refreshAuthContext } = useAuthStore();
   const printLanguageLoadErrors = useAuthStore((s) => s.printLanguageLoadErrors);
   const router = useRouter();
-  const pathname = usePathname();
+  // Normalized once at the source so every comparison below (public paths,
+  // page permissions, the /staff and /settings gates) agrees with dev mode —
+  // see normalizePathname's doc comment for why this matters.
+  const pathname = normalizePathname(usePathname());
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null); // null = still checking
 
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname?.startsWith(p + '/'));

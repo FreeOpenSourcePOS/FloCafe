@@ -47,6 +47,7 @@ async function run() {
     if (request === '@/lib/permissions') {
       return { tenantCan: (tenant: { permission_ids?: string[] } | null | undefined, permission: string) => tenant?.permission_ids?.includes(permission) === true };
     }
+    if (request === '@/lib/utils') return require(path.join(process.cwd(), 'frontend/src/lib/utils'));
     return originalLoad.apply(this, arguments as any);
   };
 

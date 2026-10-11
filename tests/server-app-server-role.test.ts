@@ -25,7 +25,9 @@ async function getFreeTcpPort(): Promise<number> {
   const address = probe.address();
   assert(address && typeof address !== 'string');
   const port = address.port;
-  await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  await new Promise<void>((resolve, reject) =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
   return port;
 }
 
@@ -74,7 +76,15 @@ async function main() {
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(`server-app-${role}`, `Server App ${role}`, `${role}@server-app.test`, passwordHash, role, now(), now());
+    `).run(
+      `server-app-${role}`,
+      `Server App ${role}`,
+      `${role}@server-app.test`,
+      passwordHash,
+      role,
+      now(),
+      now(),
+    );
   }
 
   await startServerApp();
@@ -85,12 +95,20 @@ async function main() {
   // row, a plain UPDATE against a nonexistent row silently no-ops — upsert
   // instead so these settings always actually take effect.
   const setSetting = (key: string, value: string) =>
-    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+    db
+      .prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value);
 
   try {
     setSetting('country', '');
     const unconfiguredInfo = await getJson(baseUrl, '/api/server-app/info');
-    assert.equal(unconfiguredInfo.status, 409, 'Server App refuses to format regional values before a country is configured');
+    assert.equal(
+      unconfiguredInfo.status,
+      409,
+      'Server App refuses to format regional values before a country is configured',
+    );
     assert.equal(unconfiguredInfo.body.error, 'regional_not_configured');
 
     setSetting('country', 'CO');
@@ -98,38 +116,46 @@ async function main() {
     setSetting('currency_symbol', '$');
     const copInfo = await getJson(baseUrl, '/api/server-app/info');
     assert.equal(copInfo.status, 200);
-    assert.deepEqual({
-      country: copInfo.body.country,
-      currency: copInfo.body.currency,
-      symbol: copInfo.body.currency_symbol,
-      position: copInfo.body.currency_position,
-      fractionDigits: copInfo.body.currency_fraction_digits,
-    }, {
-      country: 'CO',
-      currency: 'COP',
-      symbol: '$',
-      position: 'prefix',
-      fractionDigits: 0,
-    }, 'Server App exposes the COP regional values derived from current settings');
+    assert.deepEqual(
+      {
+        country: copInfo.body.country,
+        currency: copInfo.body.currency,
+        symbol: copInfo.body.currency_symbol,
+        position: copInfo.body.currency_position,
+        fractionDigits: copInfo.body.currency_fraction_digits,
+      },
+      {
+        country: 'CO',
+        currency: 'COP',
+        symbol: '$',
+        position: 'prefix',
+        fractionDigits: 0,
+      },
+      'Server App exposes the COP regional values derived from current settings',
+    );
 
     setSetting('country', 'KW');
     setSetting('currency', 'KWD');
     setSetting('currency_symbol', 'KWD');
     const kwdInfo = await getJson(baseUrl, '/api/server-app/info');
     assert.equal(kwdInfo.status, 200);
-    assert.deepEqual({
-      country: kwdInfo.body.country,
-      currency: kwdInfo.body.currency,
-      symbol: kwdInfo.body.currency_symbol,
-      position: kwdInfo.body.currency_position,
-      fractionDigits: kwdInfo.body.currency_fraction_digits,
-    }, {
-      country: 'KW',
-      currency: 'KWD',
-      symbol: 'د.ك.',
-      position: 'suffix',
-      fractionDigits: 3,
-    }, 'Server App exposes the KWD regional values derived from current settings, from CLDR rather than a stored override');
+    assert.deepEqual(
+      {
+        country: kwdInfo.body.country,
+        currency: kwdInfo.body.currency,
+        symbol: kwdInfo.body.currency_symbol,
+        position: kwdInfo.body.currency_position,
+        fractionDigits: kwdInfo.body.currency_fraction_digits,
+      },
+      {
+        country: 'KW',
+        currency: 'KWD',
+        symbol: 'د.ك.',
+        position: 'suffix',
+        fractionDigits: 3,
+      },
+      'Server App exposes the KWD regional values derived from current settings, from CLDR rather than a stored override',
+    );
 
     for (const role of ['cashier', 'chef']) {
       const response = await postJson(baseUrl, '/api/auth/login', {
@@ -155,40 +181,83 @@ async function main() {
     }
 
     const liveServerLogin = await postJson(baseUrl, '/api/auth/login', {
-      email: 'server@server-app.test', password: 'ServerPass123!',
+      email: 'server@server-app.test',
+      password: 'ServerPass123!',
     });
     db.prepare(`INSERT INTO user_permission_overrides
       (user_id, permission_id, effect, updated_by, created_at, updated_at)
-      VALUES ('server-app-server', 'server-app.use', 'deny', 'server-app-owner', ?, ?)`)
-      .run(now(), now());
-    const deniedLiveSession = await getJson(baseUrl, '/api/auth/me', liveServerLogin.body.access_token);
-    assert.equal(deniedLiveSession.status, 403, 'Server App permission denial applies to an existing session immediately');
+      VALUES ('server-app-server', 'server-app.use', 'deny', 'server-app-owner', ?, ?)`).run(
+      now(),
+      now(),
+    );
+    const deniedLiveSession = await getJson(
+      baseUrl,
+      '/api/auth/me',
+      liveServerLogin.body.access_token,
+    );
+    assert.equal(
+      deniedLiveSession.status,
+      403,
+      'Server App permission denial applies to an existing session immediately',
+    );
     db.prepare("DELETE FROM user_permission_overrides WHERE user_id = 'server-app-server'").run();
 
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
     const customerResponses = await Promise.all(
       Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),
     );
-    assert.equal(customerResponses.filter(({ status }) => status === 401).length, 150, 'customer requests below the limit reach authentication');
-    assert.equal(customerResponses.filter(({ status }) => status === 429).length, 1, 'customer requests over the limit are throttled on localhost');
+    assert.equal(
+      customerResponses.filter(({ status }) => status === 401).length,
+      150,
+      'customer requests below the limit reach authentication',
+    );
+    assert.equal(
+      customerResponses.filter(({ status }) => status === 429).length,
+      1,
+      'customer requests over the limit are throttled on localhost',
+    );
 
     const printKotResponses = await Promise.all(
       Array.from({ length: 29 }, () => postJson(baseUrl, '/api/printers/print-kot', {})),
     );
-    assert(printKotResponses.every(({ status }) => status === 401), 'KOT requests below the shared print limit reach authentication');
+    assert(
+      printKotResponses.every(({ status }) => status === 401),
+      'KOT requests below the shared print limit reach authentication',
+    );
     const printBillBeforeLimit = await postJson(baseUrl, '/api/printers/print-bill', {});
-    assert.equal(printBillBeforeLimit.status, 401, 'KOT and bill requests share the print limit before it is exceeded');
+    assert.equal(
+      printBillBeforeLimit.status,
+      401,
+      'KOT and bill requests share the print limit before it is exceeded',
+    );
     const printLimit = await postJson(baseUrl, '/api/printers/print-kot', {});
-    assert.equal(printLimit.status, 429, 'print requests over the shared limit are throttled on localhost');
+    assert.equal(
+      printLimit.status,
+      429,
+      'print requests over the shared limit are throttled on localhost',
+    );
 
     const imageNoAuth = await fetch(`${baseUrl}/api/products/prod-1/image`);
-    assert.notEqual(imageNoAuth.status, 401, 'Product image forwarder is accessible without auth so browser img tags render');
+    assert.notEqual(
+      imageNoAuth.status,
+      401,
+      'Product image forwarder is accessible without auth so browser img tags render',
+    );
 
     const moveOrderNoAuth = await postJson(baseUrl, '/api/tables/tbl-1/move-order', {});
     assert.equal(moveOrderNoAuth.status, 401, 'Table move forwarder requires authentication');
 
-    const moveOrderWithAuth = await postJson(baseUrl, '/api/tables/tbl-1/move-order', {}, liveServerLogin.body.access_token);
-    assert.notEqual(moveOrderWithAuth.status, 401, 'Table move forwarder reaches forwarder with server token');
+    const moveOrderWithAuth = await postJson(
+      baseUrl,
+      '/api/tables/tbl-1/move-order',
+      {},
+      liveServerLogin.body.access_token,
+    );
+    assert.notEqual(
+      moveOrderWithAuth.status,
+      401,
+      'Table move forwarder reaches forwarder with server token',
+    );
   } finally {
     await stopServerApp();
     closeDatabase();

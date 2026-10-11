@@ -6,17 +6,39 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'node:crypto';
-import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
+import {
+  closeServerResources,
+  createShutdownCancellationError,
+  getHttpRequestSignal,
+  installHttpShutdownTracking,
+  trackHttpRequestWork,
+} from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
 import { getJWTSecret } from './security/jwt-secret';
-import { authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
+import {
+  authRateLimit,
+  staticRouteRateLimit,
+  corsOptions,
+  isTokenRevoked,
+  isTokenStale,
+  rateLimit,
+  revokeToken,
+} from './middleware/security';
 import { getServerPort } from './server';
-import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
+import {
+  getDefaultServerAppPort,
+  getServerAppPort as getActiveServerAppPort,
+  setServerAppPort,
+} from './server-app-state';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { RegionalNotConfiguredError, resolveRegionalSnapshot } from './countries';
-import { effectivePermissionRevision, hasPermission, resolveEffectivePermissions } from './services/authorization';
+import {
+  effectivePermissionRevision,
+  hasPermission,
+  resolveEffectivePermissions,
+} from './services/authorization';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -32,7 +54,9 @@ type ServerAppUser = {
 };
 
 function normalizeEmail(email: unknown): string {
-  return String(email || '').trim().toLowerCase();
+  return String(email || '')
+    .trim()
+    .toLowerCase();
 }
 
 export function isServerAppRunning(): boolean {
@@ -60,7 +84,9 @@ function rewriteNextExportPath(reqPath: string): string {
   const lastDotIndex = rest.lastIndexOf('.');
   if (lastDotIndex === -1) return reqPath;
 
-  return prefix + rest.substring(0, lastDotIndex).replace(/\./g, '/') + rest.substring(lastDotIndex);
+  return (
+    prefix + rest.substring(0, lastDotIndex).replace(/\./g, '/') + rest.substring(lastDotIndex)
+  );
 }
 
 function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
@@ -77,12 +103,19 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
     const db = getDatabase();
-    const user = db.prepare('SELECT id, email, role, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
+    const user = db
+      .prepare(
+        'SELECT id, email, role, tokens_valid_after FROM users WHERE id = ? AND is_active = 1',
+      )
+      .get(decoded.userId) as any;
     if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     if (!hasPermission(user.id, 'server-app.use')) {
-      return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.', code: 'permission_denied' });
+      return res.status(403).json({
+        error: 'Access denied. Only server, manager, or owner accounts allowed.',
+        code: 'permission_denied',
+      });
     }
 
     (req as any).user = {
@@ -178,14 +211,18 @@ export function startServerApp(): Promise<void> {
 
     app.get('/api/server-app/info', (_req: Request, res: Response) => {
       if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
-      const rows = getDatabase().prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+      const rows = getDatabase().prepare('SELECT key, value FROM settings').all() as {
+        key: string;
+        value: string;
+      }[];
       const settings: Record<string, string> = {};
       for (const row of rows) settings[row.key] = row.value;
       let snapshot;
       try {
         snapshot = resolveRegionalSnapshot(settings);
       } catch (error) {
-        if (error instanceof RegionalNotConfiguredError) return res.status(409).json({ error: 'regional_not_configured' });
+        if (error instanceof RegionalNotConfiguredError)
+          return res.status(409).json({ error: 'regional_not_configured' });
         throw error;
       }
       res.json({
@@ -204,11 +241,14 @@ export function startServerApp(): Promise<void> {
       try {
         const email = normalizeEmail(req.body?.email);
         const { password, remember_me } = req.body;
-        if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+        if (!email || !password)
+          return res.status(400).json({ error: 'Email and password required' });
 
         const db = getDatabase();
         const bcrypt = require('bcryptjs');
-        const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+        const user = db
+          .prepare('SELECT * FROM users WHERE email = ? AND is_active = 1')
+          .get(email) as any;
         let passwordMatches = false;
         if (user) {
           try {
@@ -221,7 +261,10 @@ export function startServerApp(): Promise<void> {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
         if (!hasPermission(user.id, 'server-app.use')) {
-          return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.', code: 'permission_denied' });
+          return res.status(403).json({
+            error: 'Access denied. Only server, manager, or owner accounts allowed.',
+            code: 'permission_denied',
+          });
         }
 
         const token = jwt.sign(
@@ -249,7 +292,9 @@ export function startServerApp(): Promise<void> {
 
     app.get('/api/auth/me', requireServerAppAuth, (req: Request, res: Response) => {
       const user = (req as any).user as ServerAppUser;
-      const row = getDatabase().prepare('SELECT id, name, email, role FROM users WHERE id = ? AND is_active = 1').get(user.userId) as any;
+      const row = getDatabase()
+        .prepare('SELECT id, name, email, role FROM users WHERE id = ? AND is_active = 1')
+        .get(user.userId) as any;
       if (!row) return res.status(401).json({ error: 'Invalid token' });
       res.json({
         user: {
@@ -266,31 +311,57 @@ export function startServerApp(): Promise<void> {
       res.json({ success: true });
     });
 
-    app.get('/api/categories', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/categories'));
-    app.get('/api/products', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/products'));
-    app.get('/api/products/:id/image', (req, res) => forwardToMainApi(req, res, `/products/${encodeURIComponent(String(req.params.id))}/image`));
-    app.get('/api/tables', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/tables'));
-    app.post('/api/tables/:id/move-order', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/tables/${encodeURIComponent(String(req.params.id))}/move-order`));
-    app.get('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
-    app.post('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
-    app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));
-    app.get('/api/customers-search', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers-search'));
-    app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
+    app.get('/api/categories', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/categories'),
+    );
+    app.get('/api/products', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/products'),
+    );
+    app.get('/api/products/:id/image', (req, res) =>
+      forwardToMainApi(req, res, `/products/${encodeURIComponent(String(req.params.id))}/image`),
+    );
+    app.get('/api/tables', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/tables'),
+    );
+    app.post('/api/tables/:id/move-order', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, `/tables/${encodeURIComponent(String(req.params.id))}/move-order`),
+    );
+    app.get('/api/orders', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/orders'),
+    );
+    app.post('/api/orders', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/orders'),
+    );
+    app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`),
+    );
+    app.get('/api/customers-search', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/customers-search'),
+    );
+    app.get('/api/crm/lookup', requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/crm/lookup'),
+    );
     const customerWriteRateLimit = expressRateLimit({
       windowMs: 60 * 1000,
       limit: 150,
       standardHeaders: true,
       legacyHeaders: false,
     });
-    app.post('/api/customers', customerWriteRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
+    app.post('/api/customers', customerWriteRateLimit, requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/customers'),
+    );
     const printForwardRateLimit = expressRateLimit({
       windowMs: 60 * 1000,
       limit: 30,
       standardHeaders: true,
       legacyHeaders: false,
     });
-    app.post('/api/printers/print-kot', printForwardRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-kot'));
-    app.post('/api/printers/print-bill', printForwardRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-bill'));
+    app.post('/api/printers/print-kot', printForwardRateLimit, requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/printers/print-kot'),
+    );
+    app.post('/api/printers/print-bill', printForwardRateLimit, requireServerAppAuth, (req, res) =>
+      forwardToMainApi(req, res, '/printers/print-bill'),
+    );
 
     const staticDir = getStaticDir();
     if (staticDir) {
@@ -316,7 +387,9 @@ export function startServerApp(): Promise<void> {
         if (routePath && fs.existsSync(routePath)) {
           res.sendFile(routePath, { dotfiles: 'allow' });
         } else {
-          res.sendFile(path.join(staticDir, 'server-standalone', 'index.html'), { dotfiles: 'allow' });
+          res.sendFile(path.join(staticDir, 'server-standalone', 'index.html'), {
+            dotfiles: 'allow',
+          });
         }
       });
     } else {
@@ -347,13 +420,19 @@ export function startServerApp(): Promise<void> {
       const attemptedPort = currentPort;
       const onListening = () => {
         if (stopping) {
-          try { listeningServer.close(); } catch { return; }
+          try {
+            listeningServer.close();
+          } catch {
+            return;
+          }
           return;
         }
         startReject = null;
         listeningServer.off('error', onError);
         setServerAppPort(attemptedPort);
-        console.log(`[Server App] HTTP server running on http://localhost:${getActiveServerAppPort()}`);
+        console.log(
+          `[Server App] HTTP server running on http://localhost:${getActiveServerAppPort()}`,
+        );
         resolve();
       };
       const onError = (err: NodeJS.ErrnoException) => {
@@ -368,7 +447,9 @@ export function startServerApp(): Promise<void> {
             return;
           }
           currentPort++;
-          console.log(`[Server App] Port ${attemptedPort} in use (${err.code}), trying ${currentPort}`);
+          console.log(
+            `[Server App] Port ${attemptedPort} in use (${err.code}), trying ${currentPort}`,
+          );
           tryListen();
           return;
         }
@@ -395,10 +476,9 @@ export function stopServerApp(): Promise<void> {
   // Mark the server unavailable immediately while active requests drain.
   serverApp = null;
 
-  stopPromise = closeServerResources(serverToClose, null, 'Server App')
-    .then(() => {
-      console.log('[Server App] HTTP server stopped');
-    });
+  stopPromise = closeServerResources(serverToClose, null, 'Server App').then(() => {
+    console.log('[Server App] HTTP server stopped');
+  });
   return stopPromise;
 }
 

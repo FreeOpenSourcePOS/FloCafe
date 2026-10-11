@@ -68,7 +68,7 @@ test.describe('Server Standalone App Live Validation', () => {
 
     // 9. Toast notification and item appears in kitchen section
     await expect(page.getByText('Order sent').first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('1 x E2E Coffee')).toBeVisible();
+    await expect(page.getByText('1 x E2E Coffee').first()).toBeVisible();
 
     // 10. Verify Move Table button is available for the active order and open modal
     const moveTableButton = page.getByRole('button', { name: /move table/i });
@@ -87,6 +87,8 @@ test.describe('Server Standalone App Live Validation', () => {
     await confirmButton.click();
 
     // 13. Toast confirms move and active table header changes to Table T2
-    await expect(page.getByText(/order moved from table t1 to table t2/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/order moved from table t1 to table t2/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });

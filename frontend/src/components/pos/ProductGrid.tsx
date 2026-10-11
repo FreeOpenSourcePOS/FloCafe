@@ -159,6 +159,7 @@ interface Props {
   sidebarOpen?: boolean;
   cartQuantities?: Map<Product['id'], number>;
   formatPrice?: (price: number) => string;
+  searchPlaceholder?: string;
 }
 
 export default function ProductGrid({
@@ -173,6 +174,7 @@ export default function ProductGrid({
   sidebarOpen = true,
   cartQuantities: cartQuantitiesProp,
   formatPrice,
+  searchPlaceholder,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
@@ -234,7 +236,7 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder={t('searchProducts')}
+            placeholder={searchPlaceholder || t('searchProducts')}
             className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>

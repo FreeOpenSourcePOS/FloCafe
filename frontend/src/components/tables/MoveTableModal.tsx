@@ -39,7 +39,7 @@ export default function MoveTableModal({
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [selectedFloor, setSelectedFloor] = useState<string>('all');
-  const basePath = client.defaults.baseURL?.endsWith('/api') ? '' : '/api';
+  const basePath = client?.defaults?.baseURL?.endsWith('/api') ? '' : '/api';
 
   useEffect(() => {
     if (initialTables && initialTables.length > 0) return;
@@ -96,7 +96,10 @@ export default function MoveTableModal({
       if (activeOrder?.id != null) {
         payload.order_id = String(activeOrder.id);
       }
-      const { data } = await client.post(`${basePath}/tables/${sourceTable.id}/move-order`, payload);
+      const { data } = await client.post(
+        `${basePath}/tables/${sourceTable.id}/move-order`,
+        payload,
+      );
       const targetName = selectedTarget?.name || data.targetTable?.name || selectedTargetId;
       toast.success(t('tableMovedSuccess', { from: sourceName, to: targetName }));
       onSuccess(data);

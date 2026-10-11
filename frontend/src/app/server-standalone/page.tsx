@@ -651,7 +651,10 @@ export default function ServerStandalonePage() {
       setDraft([]);
       setOrderNotes('');
       setMobileCartOpen(false);
-      await Promise.all([loadAll(), selectedTableId ? loadOrder(selectedTableId) : Promise.resolve()]);
+      await Promise.all([
+        loadAll(),
+        selectedTableId ? loadOrder(selectedTableId) : Promise.resolve(),
+      ]);
       toast.success(t('orderSent'));
       // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
       const trimmedCustomerName = customerName.trim();
@@ -1002,6 +1005,7 @@ export default function ServerStandalonePage() {
             currency={regional?.currency || 'USD'}
             formatPrice={(price) => money(price, regional)}
             cartQuantities={draftQuantities}
+            searchPlaceholder={t('searchMenu')}
             onProductClick={(product) => {
               if (productNeedsCustomizer(product)) setAddonModalProduct(product);
               else addDraftLine(product, 1, [], '');

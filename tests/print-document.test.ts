@@ -33,12 +33,10 @@ import {
   buildBillPrintData,
   detectPrintLanguageDirection,
   renderBillDocumentToClassicLines,
-  renderClassicReceiptViaDocument,
 } from '../main/printers/document-classic';
-import {
-  renderBillDocumentToCompactLines,
-  renderCompactReceiptViaDocument,
-} from '../main/printers/document-compact';
+import { renderBillDocumentToCompactLines } from '../main/printers/document-compact';
+import { receiptDocumentLines } from '../main/printers/thermal';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
 import { buildParityFixtures } from './print-parity.test';
 
 // ---------------------------------------------------------------------------
@@ -615,6 +613,7 @@ console.log('\n▶ Cash tendered and change projection');
   assert.equal(optionalPaymentAmount(false), undefined);
   assert.equal(optionalPaymentAmount([]), undefined);
   assert.equal(optionalPaymentAmount('200'), 200);
+  assert.equal(optionalPaymentAmount('abc'), undefined);
   ok('projection and optional-amount coercion reject absent or malformed values');
 }
 
@@ -626,15 +625,11 @@ console.log('\n▶ Customer phone unmasked on document render path (#1035)');
     customer_phone: '+1 555 123 4567',
     show_customer_phone: true,
   };
-  const unmaskedClassic = renderClassicReceiptViaDocument(order, bill, rawBusiness, {
-    columns: 42,
-    language: 'en',
-    isReprint: false,
-    useUnicode: false,
-    arabicShaping: false,
-    cutMode: 'full',
-    maskCustomerPhone: false,
-  });
+  const unmaskedClassic = receiptDocumentLines(
+    order, bill, rawBusiness, 'classic', 42, false, false, false, 'en', undefined,
+    'full', GENERIC_THERMAL_CAPABILITIES,
+  );
+  assert.ok(unmaskedClassic, 'classic thermal receipt uses document rendering');
   assert.ok(
     unmaskedClassic.lines.some((line) => line.includes('+1 555 123 4567')),
     'classic receipt lines contain unmasked customer phone when maskCustomerPhone is false',
@@ -644,15 +639,11 @@ console.log('\n▶ Customer phone unmasked on document render path (#1035)');
     'classic receipt lines do not contain masked customer phone when maskCustomerPhone is false',
   );
 
-  const unmaskedCompact = renderCompactReceiptViaDocument(order, bill, rawBusiness, {
-    columns: 42,
-    language: 'en',
-    isReprint: false,
-    useUnicode: false,
-    arabicShaping: false,
-    cutMode: 'full',
-    maskCustomerPhone: false,
-  });
+  const unmaskedCompact = receiptDocumentLines(
+    order, bill, rawBusiness, 'compact', 42, false, false, false, 'en', undefined,
+    'full', GENERIC_THERMAL_CAPABILITIES,
+  );
+  assert.ok(unmaskedCompact, 'compact thermal receipt uses document rendering');
   assert.ok(
     unmaskedCompact.lines.some((line) => line.includes('+1 555 123 4567')),
     'compact receipt lines contain unmasked customer phone when maskCustomerPhone is false',

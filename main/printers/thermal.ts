@@ -1652,7 +1652,7 @@ type RasterDocumentLines = {
 };
 type RasterBusinessInput = Record<string, unknown> | null | undefined;
 
-function receiptDocumentLines(
+export function receiptDocumentLines(
   order: unknown,
   bill: unknown,
   business: RasterBusinessInput,

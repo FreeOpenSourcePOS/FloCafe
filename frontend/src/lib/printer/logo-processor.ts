@@ -105,6 +105,15 @@ function createThermalPreview(dithered: Uint8Array, width: number, height: numbe
   return canvas.toDataURL('image/png');
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function processReceiptLogoFile(file: File): Promise<ProcessedReceiptLogo> {
   if (!file.type.startsWith('image/')) {
     throw new Error('Selected file is not an image');
@@ -113,54 +122,50 @@ export async function processReceiptLogoFile(file: File): Promise<ProcessedRecei
     throw new Error('Image size must be less than 5 MB');
   }
 
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await loadImage(objectUrl);
-    const variants: Record<string, PackedLogoVariant> = {};
-    let previewDataUrl = '';
+  const dataUrl = await readFileAsDataUrl(file);
+  const img = await loadImage(dataUrl);
+  const variants: Record<string, PackedLogoVariant> = {};
+  let previewDataUrl = '';
 
-    for (const tw of TARGET_WIDTHS) {
-      const { variant, dithered, width, height } = renderDitheredVariant(img, tw);
-      variants[String(tw)] = variant;
-      if (tw === 576 || !previewDataUrl) {
-        previewDataUrl = createThermalPreview(dithered, width, height);
-      }
+  for (const tw of TARGET_WIDTHS) {
+    const { variant, dithered, width, height } = renderDitheredVariant(img, tw);
+    variants[String(tw)] = variant;
+    if (tw === 576 || !previewDataUrl) {
+      previewDataUrl = createThermalPreview(dithered, width, height);
     }
-
-    // Generate resized web/browser print data URL (max 576px wide)
-    const scale = img.width > 576 ? 576 / img.width : 1;
-    const webWidth = Math.round(img.width * scale);
-    const webHeight = Math.round(img.height * scale);
-    const webCanvas = document.createElement('canvas');
-    webCanvas.width = webWidth;
-    webCanvas.height = webHeight;
-    const webCtx = webCanvas.getContext('2d');
-    if (!webCtx) throw new Error('Failed to get web canvas context');
-    webCtx.fillStyle = '#FFFFFF';
-    webCtx.fillRect(0, 0, webWidth, webHeight);
-    webCtx.drawImage(img, 0, 0, webWidth, webHeight);
-
-    const originalDataUrl = webCanvas.toDataURL('image/png');
-    if (originalDataUrl.length > MAX_PERSISTED_LOGO_LENGTH) {
-      throw new Error('Processed logo exceeds maximum size (250 KB)');
-    }
-
-    const logoData: ReceiptLogoData = {
-      version: 1,
-      originalDataUrl,
-      variants,
-    };
-    const rasterJson = JSON.stringify(logoData);
-    if (rasterJson.length > MAX_PERSISTED_LOGO_LENGTH) {
-      throw new Error('Processed logo exceeds maximum size (250 KB)');
-    }
-
-    return {
-      originalDataUrl,
-      rasterJson,
-      previewDataUrl,
-    };
-  } finally {
-    URL.revokeObjectURL(objectUrl);
   }
+
+  // Generate resized web/browser print data URL (max 576px wide)
+  const scale = img.width > 576 ? 576 / img.width : 1;
+  const webWidth = Math.round(img.width * scale);
+  const webHeight = Math.round(img.height * scale);
+  const webCanvas = document.createElement('canvas');
+  webCanvas.width = webWidth;
+  webCanvas.height = webHeight;
+  const webCtx = webCanvas.getContext('2d');
+  if (!webCtx) throw new Error('Failed to get web canvas context');
+  webCtx.fillStyle = '#FFFFFF';
+  webCtx.fillRect(0, 0, webWidth, webHeight);
+  webCtx.drawImage(img, 0, 0, webWidth, webHeight);
+
+  const originalDataUrl = webCanvas.toDataURL('image/png');
+  if (originalDataUrl.length > MAX_PERSISTED_LOGO_LENGTH) {
+    throw new Error('Processed logo exceeds maximum size (250 KB)');
+  }
+
+  const logoData: ReceiptLogoData = {
+    version: 1,
+    originalDataUrl,
+    variants,
+  };
+  const rasterJson = JSON.stringify(logoData);
+  if (rasterJson.length > MAX_PERSISTED_LOGO_LENGTH) {
+    throw new Error('Processed logo exceeds maximum size (250 KB)');
+  }
+
+  return {
+    originalDataUrl,
+    rasterJson,
+    previewDataUrl,
+  };
 }

@@ -1500,11 +1500,13 @@ const PRINTING_BOOLEAN_KEYS = [
   'bill_show_customer_phone',
   'bill_show_table_number',
   'bill_delivery_show_customer_phone_always',
-  'bill_show_logo',
 ] as const;
+
+const OPTIONAL_PRINTING_BOOLEAN_KEYS = ['bill_show_logo'] as const;
 
 const PRINTING_BATCH_KEYS = new Set<string>([
   ...PRINTING_BOOLEAN_KEYS,
+  ...OPTIONAL_PRINTING_BOOLEAN_KEYS,
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -1531,6 +1533,12 @@ router.put(
 
       for (const key of PRINTING_BOOLEAN_KEYS) {
         if (typeof values[key] !== 'boolean') {
+          return res.status(400).json({ error: `${key} must be a boolean` });
+        }
+      }
+
+      for (const key of OPTIONAL_PRINTING_BOOLEAN_KEYS) {
+        if (values[key] !== undefined && typeof values[key] !== 'boolean') {
           return res.status(400).json({ error: `${key} must be a boolean` });
         }
       }
@@ -1599,6 +1607,11 @@ router.put(
       }
       for (const key of PRINTING_BOOLEAN_KEYS.slice(1)) {
         entries[key] = values[key] ? 'true' : 'false';
+      }
+      for (const key of OPTIONAL_PRINTING_BOOLEAN_KEYS) {
+        if (values[key] !== undefined) {
+          entries[key] = values[key] ? 'true' : 'false';
+        }
       }
       if (hasCashDrawerEnabled) {
         entries.cash_drawer_pulse_enabled = values.cash_drawer_pulse_enabled ? 'true' : 'false';

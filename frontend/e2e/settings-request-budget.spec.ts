@@ -769,6 +769,7 @@ test('Save All preserves printing edits during business hydration', async ({ pag
     printer_trim_decimals: true,
     bill_language_policy: { primary: { mode: 'inherit' }, additional: [] },
     kot_language_policy: { primary: { mode: 'inherit' }, additional: [] },
+    bill_show_logo: false,
     bill_show_name: true,
     bill_show_address: true,
     bill_show_phone: true,

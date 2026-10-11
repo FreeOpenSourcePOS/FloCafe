@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navegação e controles",
     "shortcutCategorySearch": "Busca e catálogo",
     "showKeyboardShortcutsShortcut": "Exibir o guia de atalhos de teclado",
-    "spaceTenderShortcut": "Enviar o pedido ou receber em dinheiro no checkout"
+    "spaceTenderShortcut": "Enviar o pedido ou receber em dinheiro no checkout",
+    "swapNameAndPhone": "Trocar nome e telefone",
+    "createWithPhone": "Criar cliente com telefone: {phone}",
+    "createWithName": "Criar cliente com nome: {name}"
   },
   "printTest": {
     "amt": "Total",

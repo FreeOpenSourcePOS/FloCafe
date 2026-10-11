@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigatie en bediening",
     "shortcutCategorySearch": "Zoeken en catalogus",
     "showKeyboardShortcutsShortcut": "Sneltoetsengids tonen",
-    "spaceTenderShortcut": "Bestelling plaatsen of contant afrekenen"
+    "spaceTenderShortcut": "Bestelling plaatsen of contant afrekenen",
+    "swapNameAndPhone": "Naam en telefoon wisselen",
+    "createWithPhone": "Klant aanmaken met telefoon: {phone}",
+    "createWithName": "Klant aanmaken met naam: {name}"
   },
   "printTest": {
     "amt": "Bedrag",

@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Gezinme ve kontroller",
     "shortcutCategorySearch": "Arama ve katalog",
     "showKeyboardShortcutsShortcut": "Klavye kısayolları kılavuzunu gösterin",
-    "spaceTenderShortcut": "Sipariş verin veya ödeme ekranında nakit tahsil edin"
+    "spaceTenderShortcut": "Sipariş verin veya ödeme ekranında nakit tahsil edin",
+    "swapNameAndPhone": "Ad ve telefonu değiştir",
+    "createWithPhone": "Telefon ile müşteri oluştur: {phone}",
+    "createWithName": "İsim ile müşteri oluştur: {name}"
   },
   "printTest": {
     "amt": "Tutar",

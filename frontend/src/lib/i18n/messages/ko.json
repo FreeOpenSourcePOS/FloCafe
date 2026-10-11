@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "탐색 및 제어",
     "shortcutCategorySearch": "검색 및 카탈로그",
     "showKeyboardShortcutsShortcut": "단축키 안내 표시",
-    "spaceTenderShortcut": "주문을 진행하거나 결제에서 현금 결제 처리"
+    "spaceTenderShortcut": "주문을 진행하거나 결제에서 현금 결제 처리",
+    "swapNameAndPhone": "이름 및 전화번호 교환",
+    "createWithPhone": "전화번호로 고객 생성: {phone}",
+    "createWithName": "이름으로 고객 생성: {name}"
   },
   "printTest": {
     "amt": "금액",

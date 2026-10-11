@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigazione e controlli",
     "shortcutCategorySearch": "Ricerca e catalogo",
     "showKeyboardShortcutsShortcut": "Mostrare la guida alle scorciatoie da tastiera",
-    "spaceTenderShortcut": "Inviare l’ordine o incassare in contanti al pagamento"
+    "spaceTenderShortcut": "Inviare l’ordine o incassare in contanti al pagamento",
+    "swapNameAndPhone": "Inverti nome e telefono",
+    "createWithPhone": "Crea cliente con telefono: {phone}",
+    "createWithName": "Crea cliente con nome: {name}"
   },
   "printTest": {
     "amt": "Importo",

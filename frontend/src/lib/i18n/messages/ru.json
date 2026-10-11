@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Навигация и управление",
     "shortcutCategorySearch": "Поиск и каталог",
     "showKeyboardShortcutsShortcut": "Показать справочник сочетаний клавиш",
-    "spaceTenderShortcut": "Оформить заказ или принять оплату наличными при расчёте"
+    "spaceTenderShortcut": "Оформить заказ или принять оплату наличными при расчёте",
+    "swapNameAndPhone": "Поменять имя и телефон",
+    "createWithPhone": "Создать клиента с телефоном: {phone}",
+    "createWithName": "Создать клиента с именем: {name}"
   },
   "printTest": {
     "amt": "Сумма",

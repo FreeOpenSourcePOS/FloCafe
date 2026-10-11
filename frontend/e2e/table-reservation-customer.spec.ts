@@ -263,20 +263,24 @@ test('table selection preserves explicit customers and replaces or clears inheri
     });
     await setLanguage(page, 'en');
 
-    const phoneInput = page.locator('input[type="tel"]');
+    const customerSearchInput = page.getByTestId('pos-customer-search-input').first();
     const selectCustomerByPhone = async (phone: string, customerId: string) => {
       const search = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return (
           response.request().method() === 'GET' &&
           url.pathname === '/api/customers-search' &&
-          url.searchParams.get('q') === phone.replace(/\D/g, '')
+          url.searchParams.get('q') === phone
         );
       });
-      await phoneInput.fill(phone);
+      await customerSearchInput.fill(phone);
       const results = await (await search).json();
       expect(results.some((customer: { id: string }) => customer.id === customerId)).toBeTruthy();
-      await page.getByRole('button', { name: 'Select', exact: true }).click();
+      await page
+        .getByRole('button')
+        .filter({ has: page.getByText(phone, { exact: true }) })
+        .first()
+        .click();
     };
     await selectCustomerByPhone(explicitCustomer.phone, customers[2].id);
     await expect(page.getByText(explicitCustomer.name, { exact: true })).toBeVisible();
@@ -316,8 +320,8 @@ test('table selection preserves explicit customers and replaces or clears inheri
     await expect(page.getByText(replacementCustomer.name, { exact: true })).toBeVisible();
 
     await selectTable(tableNames[2], tableNames[1]);
-    await expect(phoneInput).toBeVisible();
-    await expect(phoneInput).toHaveValue('');
+    await expect(customerSearchInput).toBeVisible();
+    await expect(customerSearchInput).toHaveValue('');
     await expect(page.getByText(replacementCustomer.name, { exact: true })).toHaveCount(0);
   } finally {
     for (const tableId of tableIds) {

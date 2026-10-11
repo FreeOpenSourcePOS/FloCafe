@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePhone, dialCodeFor, normalizeOptionalPhone, formatPhoneDisplay } from '../frontend/src/lib/phone';
+import {
+  parsePhone,
+  dialCodeFor,
+  normalizeOptionalPhone,
+  formatPhoneDisplay,
+} from '../frontend/src/lib/phone';
+import { disambiguateCustomerInput } from '../frontend/src/lib/customer-disambiguation';
 
 test('parsePhone: Indian local number parses with +91', () => {
   const r = parsePhone('9876543210', 'IN');
@@ -77,4 +83,35 @@ test('dialCodeFor: known ISO maps to dial code', () => {
 test('dialCodeFor: unknown code returns empty string (not throw)', () => {
   assert.equal(dialCodeFor('XX'), '');
   assert.equal(dialCodeFor(''), '');
+});
+
+test('disambiguateCustomerInput: phone number detection', () => {
+  const r1 = disambiguateCustomerInput('9876543210');
+  assert.equal(r1.category, 'phone');
+
+  const r2 = disambiguateCustomerInput('+1 (555) 234-5678');
+  assert.equal(r2.category, 'phone');
+
+  const r3 = disambiguateCustomerInput('+91 98765 43210');
+  assert.equal(r3.category, 'phone');
+});
+
+test('disambiguateCustomerInput: name detection (alpha and alphanumeric entities)', () => {
+  const r1 = disambiguateCustomerInput('Anita Sharma');
+  assert.equal(r1.category, 'name');
+
+  // Alphanumeric entity with digits and letters (e.g. Studio 54)
+  const r2 = disambiguateCustomerInput('Studio 54');
+  assert.equal(r2.category, 'name');
+
+  const r3 = disambiguateCustomerInput('Apartment 2B');
+  assert.equal(r3.category, 'name');
+});
+
+test('disambiguateCustomerInput: short digits are marked ambiguous', () => {
+  const r1 = disambiguateCustomerInput('123');
+  assert.equal(r1.category, 'ambiguous');
+
+  const r2 = disambiguateCustomerInput('12');
+  assert.equal(r2.category, 'ambiguous');
 });

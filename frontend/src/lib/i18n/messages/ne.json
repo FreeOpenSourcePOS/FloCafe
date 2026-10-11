@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "नेभिगेसन र नियन्त्रण",
     "shortcutCategorySearch": "खोज र सूची",
     "showKeyboardShortcutsShortcut": "सर्टकट मार्गदर्शिका देखाउनुहोस्",
-    "spaceTenderShortcut": "अर्डर राख्नुहोस् वा चेकआउटमा नगद लिनुहोस्"
+    "spaceTenderShortcut": "अर्डर राख्नुहोस् वा चेकआउटमा नगद लिनुहोस्",
+    "swapNameAndPhone": "नाम र फोन साटासाट गर्नुहोस्",
+    "createWithPhone": "फोनबाट नयाँ ग्राहक बनाउनुहोस्: {phone}",
+    "createWithName": "नामको नयाँ ग्राहक बनाउनुहोस्: {name}"
   },
   "printTest": {
     "amt": "रकम",

@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "پیمایش و کنترل‌ها",
     "shortcutCategorySearch": "جستجو و فهرست محصولات",
     "showKeyboardShortcutsShortcut": "نمایش راهنمای میان‌برهای صفحه‌کلید",
-    "spaceTenderShortcut": "ثبت سفارش یا دریافت وجه نقد هنگام تسویه"
+    "spaceTenderShortcut": "ثبت سفارش یا دریافت وجه نقد هنگام تسویه",
+    "swapNameAndPhone": "جابه‌جایی نام و تلفن",
+    "createWithPhone": "ایجاد مشتری با شماره تلفن: {phone}",
+    "createWithName": "ایجاد مشتری با نام: {name}"
   },
   "printTest": {
     "amt": "مبلغ",

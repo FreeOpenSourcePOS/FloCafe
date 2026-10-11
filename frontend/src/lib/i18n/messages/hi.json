@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "नेविगेशन और नियंत्रण",
     "shortcutCategorySearch": "खोज और कैटलॉग",
     "showKeyboardShortcutsShortcut": "शॉर्टकट गाइड दिखाएँ",
-    "spaceTenderShortcut": "ऑर्डर दें या चेकआउट पर नकद भुगतान लें"
+    "spaceTenderShortcut": "ऑर्डर दें या चेकआउट पर नकद भुगतान लें",
+    "swapNameAndPhone": "नाम और फ़ोन बदलें",
+    "createWithPhone": "फ़ोन के साथ ग्राहक बनाएं: {phone}",
+    "createWithName": "नाम का ग्राहक बनाएं: {name}"
   },
   "printTest": {
     "amt": "राशि",

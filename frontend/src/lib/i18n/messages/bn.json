@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "নেভিগেশন ও নিয়ন্ত্রণ",
     "shortcutCategorySearch": "অনুসন্ধান ও ক্যাটালগ",
     "showKeyboardShortcutsShortcut": "শর্টকাট নির্দেশিকা দেখান",
-    "spaceTenderShortcut": "অর্ডার দিন বা চেকআউটে নগদ নিন"
+    "spaceTenderShortcut": "অর্ডার দিন বা চেকআউটে নগদ নিন",
+    "swapNameAndPhone": "নাম এবং ফোন অদলবদল করুন",
+    "createWithPhone": "ফোন নম্বর সহ গ্রাহক তৈরি করুন: {phone}",
+    "createWithName": "নামের গ্রাহক তৈরি করুন: {name}"
   },
   "printTest": {
     "amt": "এএমটি",

@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "移動と操作",
     "shortcutCategorySearch": "検索と商品一覧",
     "showKeyboardShortcutsShortcut": "ショートカットガイドを表示",
-    "spaceTenderShortcut": "注文を確定、または会計で現金を受け取る"
+    "spaceTenderShortcut": "注文を確定、または会計で現金を受け取る",
+    "swapNameAndPhone": "名前と電話番号を入れ替え",
+    "createWithPhone": "電話番号で顧客を作成: {phone}",
+    "createWithName": "名前で顧客を作成: {name}"
   },
   "printTest": {
     "amt": "金額",

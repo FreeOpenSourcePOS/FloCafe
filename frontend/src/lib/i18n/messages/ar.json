@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "التنقل وعناصر التحكم",
     "shortcutCategorySearch": "البحث والكتالوج",
     "showKeyboardShortcutsShortcut": "عرض دليل اختصارات لوحة المفاتيح",
-    "spaceTenderShortcut": "تقديم الطلب أو تحصيل النقد عند الدفع"
+    "spaceTenderShortcut": "تقديم الطلب أو تحصيل النقد عند الدفع",
+    "swapNameAndPhone": "تبديل الاسم والهاتف",
+    "createWithPhone": "إنشاء عميل برقم الهاتف: {phone}",
+    "createWithName": "إنشاء عميل باسم: {name}"
   },
   "printTest": {
     "amt": "المبلغ",

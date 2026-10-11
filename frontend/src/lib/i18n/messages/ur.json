@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "نیویگیشن اور کنٹرولز",
     "shortcutCategorySearch": "تلاش اور کیٹلاگ",
     "showKeyboardShortcutsShortcut": "کی بورڈ شارٹ کٹس کی رہنمائی دکھائیں",
-    "spaceTenderShortcut": "آرڈر دیں یا چیک آؤٹ پر نقد ادائیگی وصول کریں"
+    "spaceTenderShortcut": "آرڈر دیں یا چیک آؤٹ پر نقد ادائیگی وصول کریں",
+    "swapNameAndPhone": "نام اور فون تبدیل کریں",
+    "createWithPhone": "فون کے ساتھ گاہک بنائیں: {phone}",
+    "createWithName": "نام کا گاہک بنائیں: {name}"
   },
   "printTest": {
     "amt": "رقم",

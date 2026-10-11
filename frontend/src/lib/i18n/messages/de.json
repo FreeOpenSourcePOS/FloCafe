@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigation und Steuerung",
     "shortcutCategorySearch": "Suche und Katalog",
     "showKeyboardShortcutsShortcut": "Tastenkombinationshilfe anzeigen",
-    "spaceTenderShortcut": "Bestellung aufgeben oder beim Bezahlen Bargeld kassieren"
+    "spaceTenderShortcut": "Bestellung aufgeben oder beim Bezahlen Bargeld kassieren",
+    "swapNameAndPhone": "Name und Telefon tauschen",
+    "createWithPhone": "Kunde mit Telefonnummer erstellen: {phone}",
+    "createWithName": "Kunde mit Namen erstellen: {name}"
   },
   "printTest": {
     "amt": "Betrag",

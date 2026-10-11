@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigation at mga kontrol",
     "shortcutCategorySearch": "Paghahanap at katalogo",
     "showKeyboardShortcutsShortcut": "Ipakita ang gabay sa keyboard shortcut",
-    "spaceTenderShortcut": "Ilagay ang order o tumanggap ng cash sa checkout"
+    "spaceTenderShortcut": "Ilagay ang order o tumanggap ng cash sa checkout",
+    "swapNameAndPhone": "Pagpalitin ang Pangalan at Telepono",
+    "createWithPhone": "Lumikha ng customer gamit ang telepono: {phone}",
+    "createWithName": "Lumikha ng customer na pinangalanang: {name}"
   },
   "printTest": {
     "amt": "Halaga",

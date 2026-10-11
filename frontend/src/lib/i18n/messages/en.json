@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigation & Controls",
     "shortcutCategorySearch": "Search & Catalog",
     "showKeyboardShortcutsShortcut": "Show keyboard shortcuts guide",
-    "spaceTenderShortcut": "Place order or tender cash at checkout"
+    "spaceTenderShortcut": "Place order or tender cash at checkout",
+    "swapNameAndPhone": "Swap Name & Phone",
+    "createWithPhone": "Create customer with phone: {phone}",
+    "createWithName": "Create customer named: {name}"
   },
   "printTest": {
     "amt": "Amt",

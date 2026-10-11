@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Điều hướng và điều khiển",
     "shortcutCategorySearch": "Tìm kiếm và danh mục",
     "showKeyboardShortcutsShortcut": "Hiển thị hướng dẫn phím tắt",
-    "spaceTenderShortcut": "Đặt đơn hoặc nhận tiền mặt khi thanh toán"
+    "spaceTenderShortcut": "Đặt đơn hoặc nhận tiền mặt khi thanh toán",
+    "swapNameAndPhone": "Đổi tên và số điện thoại",
+    "createWithPhone": "Tạo khách hàng với số điện thoại: {phone}",
+    "createWithName": "Tạo khách hàng có tên: {name}"
   },
   "printTest": {
     "amt": "Số tiền",

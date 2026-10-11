@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigasi dan kontrol",
     "shortcutCategorySearch": "Pencarian dan katalog",
     "showKeyboardShortcutsShortcut": "Tampilkan panduan pintasan keyboard",
-    "spaceTenderShortcut": "Buat pesanan atau terima pembayaran tunai saat checkout"
+    "spaceTenderShortcut": "Buat pesanan atau terima pembayaran tunai saat checkout",
+    "swapNameAndPhone": "Tukar Nama & Telepon",
+    "createWithPhone": "Buat pelanggan dengan telepon: {phone}",
+    "createWithName": "Buat pelanggan bernama: {name}"
   },
   "printTest": {
     "amt": "Jml",

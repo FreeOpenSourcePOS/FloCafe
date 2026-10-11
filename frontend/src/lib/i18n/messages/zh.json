@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "导航与控制",
     "shortcutCategorySearch": "搜索与商品目录",
     "showKeyboardShortcutsShortcut": "显示键盘快捷键指南",
-    "spaceTenderShortcut": "下单或在结账时收取现金"
+    "spaceTenderShortcut": "下单或在结账时收取现金",
+    "swapNameAndPhone": "交换姓名和电话",
+    "createWithPhone": "使用电话创建客户: {phone}",
+    "createWithName": "创建名为 {name} 的客户"
   },
   "printTest": {
     "amt": "金额",

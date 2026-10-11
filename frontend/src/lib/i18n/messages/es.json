@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navegación y controles",
     "shortcutCategorySearch": "Búsqueda y catálogo",
     "showKeyboardShortcutsShortcut": "Mostrar la guía de atajos de teclado",
-    "spaceTenderShortcut": "Realizar el pedido o cobrar en efectivo al finalizar la compra"
+    "spaceTenderShortcut": "Realizar el pedido o cobrar en efectivo al finalizar la compra",
+    "swapNameAndPhone": "Intercambiar nombre y teléfono",
+    "createWithPhone": "Crear cliente con teléfono: {phone}",
+    "createWithName": "Crear cliente llamado: {name}"
   },
   "printTest": {
     "amt": "Total",

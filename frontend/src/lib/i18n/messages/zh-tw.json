@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "導覽與控制",
     "shortcutCategorySearch": "搜尋與商品目錄",
     "showKeyboardShortcutsShortcut": "顯示鍵盤快速鍵指南",
-    "spaceTenderShortcut": "下單或在結帳時收取現金"
+    "spaceTenderShortcut": "下單或在結帳時收取現金",
+    "swapNameAndPhone": "交換姓名和電話",
+    "createWithPhone": "使用電話建立客戶: {phone}",
+    "createWithName": "建立名為 {name} 的客戶"
   },
   "printTest": {
     "amt": "金額",

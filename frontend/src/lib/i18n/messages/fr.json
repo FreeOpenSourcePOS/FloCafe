@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Navigation et commandes",
     "shortcutCategorySearch": "Recherche et catalogue",
     "showKeyboardShortcutsShortcut": "Afficher le guide des raccourcis clavier",
-    "spaceTenderShortcut": "Passer la commande ou encaisser en espèces au paiement"
+    "spaceTenderShortcut": "Passer la commande ou encaisser en espèces au paiement",
+    "swapNameAndPhone": "Inverser nom et téléphone",
+    "createWithPhone": "Créer le client avec le téléphone : {phone}",
+    "createWithName": "Créer le client nommé : {name}"
   },
   "printTest": {
     "amt": "Montant",

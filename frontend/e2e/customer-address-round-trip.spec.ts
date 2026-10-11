@@ -34,7 +34,9 @@ test.afterEach(async ({ page }) => {
  *
  * The defect is the missing write, so this drives the modal rather than the API.
  */
-test('A customer address typed once is saved, reloaded into the editor, and reaches the delivery slip', async ({ page }) => {
+test('A customer address typed once is saved, reloaded into the editor, and reaches the delivery slip', async ({
+  page,
+}) => {
   const loginResponse = await page.request.post(`${BASE}/api/auth/login`, {
     data: { email: 'manager@flo.local', password: E2E_PASSWORD },
   });
@@ -56,7 +58,10 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   await page.waitForURL('**/pos/**', { timeout: 20000 });
 
   await page.goto(`${BASE}/orders`);
-  const orderCard = page.locator('div.bg-card.rounded-xl').filter({ hasText: `#${order.order_number}` }).first();
+  const orderCard = page
+    .locator('div.bg-card.rounded-xl')
+    .filter({ hasText: `#${order.order_number}` })
+    .first();
   await expect(orderCard).toBeVisible();
 
   const attemptId = Date.now();
@@ -66,11 +71,15 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   await orderCard.getByRole('button', { name: 'Link Customer' }).click();
   const searchInput = orderCard.getByPlaceholder('Search by phone or name…');
   await searchInput.fill(customerName);
-  const addButton = orderCard.getByRole('button', { name: new RegExp(`^Add Customer "${customerName}"$`) });
+  const addButton = orderCard.getByRole('button', {
+    name: new RegExp(`^Add Customer "${customerName}"$`),
+  });
   await expect(addButton).toBeVisible({ timeout: 5000 });
   await addButton.click();
 
-  const modal = page.locator('div.fixed.inset-0').filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
+  const modal = page
+    .locator('div.fixed.inset-0')
+    .filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
   await expect(modal).toBeVisible();
   // The name field is the first textbox; the address is labelled, so it is reached
   // by name rather than by position. `input[type="text"]` now matches both.
@@ -80,7 +89,10 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
 
   if (EVIDENCE_DIR) {
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'customer-address-create.png'), fullPage: true });
+    await page.screenshot({
+      path: path.join(EVIDENCE_DIR, 'customer-address-create.png'),
+      fullPage: true,
+    });
   }
 
   const createdResponse = page.waitForResponse((response) => {
@@ -101,19 +113,24 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   // Reached through the POS customer strip, the same control the reporter used.
   await page.goto(`${BASE}/pos`);
   await expect(page.getByTestId('pos-product-grid')).toBeVisible({ timeout: 20000 });
-  const posPhoneInput = page.locator('input[type="tel"]').first();
-  await posPhoneInput.fill(customerPhone);
-  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  const posCustomerInput = page.getByTestId('pos-customer-search-input').first();
+  await posCustomerInput.fill(customerPhone);
+  await page.getByRole('button').filter({ hasText: customerName }).first().click();
   await expect(page.getByText(customerName, { exact: true })).toBeVisible();
 
   const customerChip = page.locator('button[title="Edit Customer"]').first();
   await expect(customerChip).toBeVisible({ timeout: 10000 });
   await customerChip.click();
-  const editModal = page.locator('div.fixed.inset-0').filter({ has: page.getByRole('heading', { name: 'Edit Customer' }) });
+  const editModal = page
+    .locator('div.fixed.inset-0')
+    .filter({ has: page.getByRole('heading', { name: 'Edit Customer' }) });
   await expect(editModal).toBeVisible();
   await expect(editModal.getByLabel('Customer address')).toHaveValue(ADDRESS);
   if (EVIDENCE_DIR) {
-    await page.screenshot({ path: path.join(EVIDENCE_DIR, 'customer-address-edit.png'), fullPage: true });
+    await page.screenshot({
+      path: path.join(EVIDENCE_DIR, 'customer-address-edit.png'),
+      fullPage: true,
+    });
   }
 
   // An over-long address is refused by the tenant setting, and the refusal has to
@@ -140,7 +157,9 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   await expect(editModal.getByLabel('Customer address')).toHaveValue(overLong);
 
   // The original address is still what is stored: the refusal wrote nothing.
-  const afterRefusal = await page.request.get(`${BASE}/api/customers/${created.id}`, { headers: auth });
+  const afterRefusal = await page.request.get(`${BASE}/api/customers/${created.id}`, {
+    headers: auth,
+  });
   expect((await afterRefusal.json()).customer.address).toBe(ADDRESS);
 
   // The slip falls back to the standing customer address, which is the whole point:

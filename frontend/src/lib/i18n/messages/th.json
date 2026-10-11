@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "การนำทางและการควบคุม",
     "shortcutCategorySearch": "ค้นหาและแค็ตตาล็อก",
     "showKeyboardShortcutsShortcut": "แสดงคู่มือแป้นพิมพ์ลัด",
-    "spaceTenderShortcut": "สร้างคำสั่งซื้อหรือรับเงินสดที่หน้าชำระเงิน"
+    "spaceTenderShortcut": "สร้างคำสั่งซื้อหรือรับเงินสดที่หน้าชำระเงิน",
+    "swapNameAndPhone": "สลับชื่อและโทรศัพท์",
+    "createWithPhone": "สร้างลูกค้าด้วยเบอร์โทร: {phone}",
+    "createWithName": "สร้างลูกค้าชื่อ: {name}"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

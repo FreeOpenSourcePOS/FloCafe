@@ -1049,7 +1049,10 @@
     "shortcutCategoryNavigation": "Lundrimi dhe kontrollet",
     "shortcutCategorySearch": "Kërkimi dhe katalogu",
     "showKeyboardShortcutsShortcut": "Shfaq udhëzuesin e shkurtoreve të tastierës",
-    "spaceTenderShortcut": "Vendos porosinë ose arkëto para në dorë te pagesa"
+    "spaceTenderShortcut": "Vendos porosinë ose arkëto para në dorë te pagesa",
+    "swapNameAndPhone": "Ndërro emrin dhe telefonin",
+    "createWithPhone": "Krijo klient me telefon: {phone}",
+    "createWithName": "Krijo klient me emrin: {name}"
   },
   "printTest": {
     "amt": "Shuma",

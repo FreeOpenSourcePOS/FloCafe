@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "Applica automaticamente",
     "chargePercentValue": "{value}% dell'ordine",
     "chargeFixedValue": "{value} per ordine",
-    "chargeOptionalApply": "Aggiunto su richiesta"
+    "chargeOptionalApply": "Aggiunto su richiesta",
+    "storeLogo": "Logo del negozio",
+    "storeLogoHint": "Carica un logo da stampare sulle ricevute. PNG o JPEG trasparente inferiore a 5 MB.",
+    "uploadLogo": "Carica logo",
+    "removeLogo": "Rimuovi logo",
+    "logoUploaded": "Logo caricato con successo",
+    "showLogo": "Logo del negozio"
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

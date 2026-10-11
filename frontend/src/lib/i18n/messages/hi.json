@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "स्वतः लागू करें",
     "chargePercentValue": "ऑर्डर का {value}%",
     "chargeFixedValue": "प्रति ऑर्डर {value}",
-    "chargeOptionalApply": "अनुरोध पर जोड़ा जाता है"
+    "chargeOptionalApply": "अनुरोध पर जोड़ा जाता है",
+    "storeLogo": "स्टोर लोगो",
+    "storeLogoHint": "रसीदों पर प्रिंट करने के लिए स्टोर लोगो अपलोड करें। 5 एमबी से कम पारदर्शी पीएनजी या जेपीईजी।",
+    "uploadLogo": "लोगो अपलोड करें",
+    "removeLogo": "लोगो हटाएं",
+    "logoUploaded": "लोगो सफलतापूर्वक अपलोड हो गया",
+    "showLogo": "स्टोर लोगो"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",

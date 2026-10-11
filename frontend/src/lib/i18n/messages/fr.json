@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "Appliquer automatiquement",
     "chargePercentValue": "{value} % de la commande",
     "chargeFixedValue": "{value} par commande",
-    "chargeOptionalApply": "Ajouté à la demande"
+    "chargeOptionalApply": "Ajouté à la demande",
+    "storeLogo": "Logo du magasin",
+    "storeLogoHint": "Téléchargez un logo pour les reçus thermiques. PNG ou JPEG transparent de moins de 5 Mo.",
+    "uploadLogo": "Télécharger le logo",
+    "removeLogo": "Supprimer le logo",
+    "logoUploaded": "Logo téléchargé avec succès",
+    "showLogo": "Logo du magasin"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "ใช้งานอัตโนมัติ",
     "chargePercentValue": "{value}% ของคำสั่งซื้อ",
     "chargeFixedValue": "{value} ต่อคำสั่งซื้อ",
-    "chargeOptionalApply": "เพิ่มเมื่อร้องขอ"
+    "chargeOptionalApply": "เพิ่มเมื่อร้องขอ",
+    "storeLogo": "โลโก้ร้านค้า",
+    "storeLogoHint": "อัปโหลดโลโก้ร้านค้าเพื่อพิมพ์บนใบเสร็จ PNG หรือ JPEG โปร่งแสงขนาดไม่เกิน 5 MB",
+    "uploadLogo": "อัปโหลดโลโก้",
+    "removeLogo": "ลบโลโก้",
+    "logoUploaded": "อัปโหลดโลโก้สำเร็จแล้ว",
+    "showLogo": "โลโก้ร้านค้า"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",

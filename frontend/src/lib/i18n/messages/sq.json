@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "Apliko automatikisht",
     "chargePercentValue": "{value}% e urdherit",
     "chargeFixedValue": "{value} për urdhër",
-    "chargeOptionalApply": "Shtuar me kërkesë"
+    "chargeOptionalApply": "Shtuar me kërkesë",
+    "storeLogo": "Logoja e Dyqanit",
+    "storeLogoHint": "Ngarkoni logon e dyqanit për t'u printuar në fatura. PNG ose JPEG transparente nën 5 MB.",
+    "uploadLogo": "Ngarko Logon",
+    "removeLogo": "Hiq Logon",
+    "logoUploaded": "Logoja u ngarkua me sukses",
+    "showLogo": "Logoja e Dyqanit"
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

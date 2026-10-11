@@ -2,10 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Language } from '@/lib/i18n';
 import { defaultPrintLanguagePolicy } from '@print/policy';
-import type {
-  KotLanguagePolicy,
-  ReceiptLanguagePolicy,
-} from '@print/types';
+import type { KotLanguagePolicy, ReceiptLanguagePolicy } from '@print/types';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
@@ -37,6 +34,9 @@ export interface PosSettingsState {
   billTaxRegistrationNumber: string;
   billAddress: string;
   billPhone: string;
+  receiptLogo: string;
+  receiptLogoRaster: string;
+  billShowLogo: boolean;
   billShowName: boolean;
   billShowAddress: boolean;
   billShowPhone: boolean;
@@ -78,6 +78,9 @@ export interface PosSettingsState {
   setBillTaxRegistrationNumber: (g: string) => void;
   setBillAddress: (a: string) => void;
   setBillPhone: (p: string) => void;
+  setReceiptLogo: (l: string) => void;
+  setReceiptLogoRaster: (r: string) => void;
+  setBillShowLogo: (v: boolean) => void;
   setBillShowName: (v: boolean) => void;
   setBillShowAddress: (v: boolean) => void;
   setBillShowPhone: (v: boolean) => void;
@@ -124,6 +127,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billTaxRegistrationNumber: '',
       billAddress: '',
       billPhone: '',
+      receiptLogo: '',
+      receiptLogoRaster: '',
+      billShowLogo: false,
       billShowName: true,
       billShowAddress: true,
       billShowPhone: true,
@@ -131,7 +137,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowTaxBreakdown: true,
       billShowCustomerName: true,
       billShowCustomerPhone: true,
-    billDeliveryShowCustomerPhoneAlways: true,
+      billDeliveryShowCustomerPhoneAlways: true,
       billShowTableNumber: true,
       printerUseUnicode: false,
       printerArabicShaping: false,
@@ -163,6 +169,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillTaxRegistrationNumber: (g) => set({ billTaxRegistrationNumber: g }),
       setBillAddress: (a) => set({ billAddress: a }),
       setBillPhone: (p) => set({ billPhone: p }),
+      setReceiptLogo: (l) => set({ receiptLogo: l }),
+      setReceiptLogoRaster: (r) => set({ receiptLogoRaster: r }),
+      setBillShowLogo: (v) => set({ billShowLogo: v }),
       setBillShowName: (v) => set({ billShowName: v }),
       setBillShowAddress: (v) => set({ billShowAddress: v }),
       setBillShowPhone: (v) => set({ billShowPhone: v }),
@@ -170,7 +179,8 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowTaxBreakdown: (v) => set({ billShowTaxBreakdown: v }),
       setBillShowCustomerName: (v) => set({ billShowCustomerName: v }),
       setBillShowCustomerPhone: (v) => set({ billShowCustomerPhone: v }),
-      setBillDeliveryShowCustomerPhoneAlways: (v) => set({ billDeliveryShowCustomerPhoneAlways: v }),
+      setBillDeliveryShowCustomerPhoneAlways: (v) =>
+        set({ billDeliveryShowCustomerPhoneAlways: v }),
       setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
@@ -186,11 +196,15 @@ export const usePosSettingsStore = create<PosSettingsState>()(
     {
       name: 'pos-settings',
       // Exclude backend-synced fields (WhatsApp, print policies) from persistence.
-      partialize: (s) => Object.fromEntries(
-        Object.entries(s).filter(([k]) => k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy'),
-      ) as PosSettingsState,
+      partialize: (s) =>
+        Object.fromEntries(
+          Object.entries(s).filter(
+            ([k]) =>
+              k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy',
+          ),
+        ) as PosSettingsState,
       // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).
-      version: 4,
+      version: 5,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -210,7 +224,8 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           }
         }
         if (version < 3) {
-          if (!state.printerPaperSize && state.webPrintSize) state.printerPaperSize = state.webPrintSize;
+          if (!state.printerPaperSize && state.webPrintSize)
+            state.printerPaperSize = state.webPrintSize;
           delete state.webPrintSize;
           state.billShowTaxBreakdown ??= true;
           state.billShowCustomerName ??= true;
@@ -222,8 +237,13 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           // would stay undefined and the save would send nothing for it.
           state.billDeliveryShowCustomerPhoneAlways ??= true;
         }
+        if (version < 5) {
+          state.receiptLogo ??= '';
+          state.receiptLogoRaster ??= '';
+          state.billShowLogo ??= false;
+        }
         return state as unknown as PosSettingsState;
       },
-    }
-  )
+    },
+  ),
 );

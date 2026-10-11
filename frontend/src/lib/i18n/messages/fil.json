@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "Awtomatikong ilapat",
     "chargePercentValue": "{value}% ng order",
     "chargeFixedValue": "{value} kada order",
-    "chargeOptionalApply": "Idinadagdag kapag hiniling"
+    "chargeOptionalApply": "Idinadagdag kapag hiniling",
+    "storeLogo": "Logo ng Tindahan",
+    "storeLogoHint": "Mag-upload ng logo ng tindahan para sa mga resibo. Transparent na PNG o JPEG na mas mababa sa 5 MB.",
+    "uploadLogo": "I-upload ang Logo",
+    "removeLogo": "Alisin ang Logo",
+    "logoUploaded": "Matagumpay na na-upload ang logo",
+    "showLogo": "Logo ng Tindahan"
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

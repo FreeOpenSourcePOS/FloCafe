@@ -125,7 +125,7 @@
     "test:delivery-address": "ts-node --transpile-only -P tests/tsconfig.json tests/delivery-address-egress.test.ts",
     "test:merchant-print-templates": "ts-node --transpile-only -P tests/tsconfig.json tests/merchant-print-templates.test.ts",
     "test:merchant-template-transfer": "ts-node --transpile-only -P tests/tsconfig.json tests/merchant-template-import-export.test.ts",
-    "test:print-document": "ts-node --transpile-only -P tests/tsconfig.json tests/print-document.test.ts",
+    "test:print-document": "ts-node --transpile-only -P tests/tsconfig.json tests/print-document.test.ts && node tests/run-electron-node-test.cjs tests/receipt-logo-printing.test.ts",
     "test:print-kernel": "ts-node --transpile-only -P tests/tsconfig.json tests/print-kernel.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/kernel-purity.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/print-language-settings.test.ts",
     "test:thermal-capabilities": "ts-node --transpile-only -P tests/tsconfig.json tests/thermal-capabilities.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/windows-print-stderr.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/windows-print-error-detail.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/printer-error-toast-clarity.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/network-print-chunking.test.ts",
     "test:raster": "ts-node --transpile-only -P tests/tsconfig.json tests/raster-printing.test.ts && npm run test:raster-electron",

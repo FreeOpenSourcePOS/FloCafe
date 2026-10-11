@@ -66,7 +66,9 @@ function assertEqual(actual: any, expected: any, message: string) {
     console.log(`  ✓ ${message}`);
   } else {
     failed++;
-    console.error(`  ✗ ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    console.error(
+      `  ✗ ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -99,12 +101,16 @@ function assertOrThrow(condition: boolean, message: string) {
 
 function assertEqualOrThrow(actual: any, expected: any, message: string) {
   assertEqual(actual, expected, message);
-  if (actual !== expected) throw new Error(`${message} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  if (actual !== expected)
+    throw new Error(
+      `${message} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
 }
 
 function assertIncludesOrThrow(haystack: string, needle: string, message: string) {
   assertIncludes(haystack, needle, message);
-  if (!haystack || !haystack.includes(needle)) throw new Error(`${message} - "${haystack}" does not contain "${needle}"`);
+  if (!haystack || !haystack.includes(needle))
+    throw new Error(`${message} - "${haystack}" does not contain "${needle}"`);
 }
 
 function assertGreaterThanOrThrow(actual: number, expected: number, message: string) {
@@ -144,7 +150,9 @@ function isNativeAbiMismatch(error: any): boolean {
 // these via INSERT OR IGNORE (a no-op once a real value exists).
 function seedTestRegionalDefaults(db: any): void {
   const insert = (key: string, value: string) =>
-    db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(key, value, now());
+    db
+      .prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .run(key, value, now());
   insert('country', 'IN');
   insert('currency', 'INR');
   insert('currency_symbol', '₹');
@@ -168,9 +176,12 @@ function initTestDb() {
 
 // ── Express App Factory ──────────────────────────────────────────────────────
 
-function createApp(routeModules: Record<string, any>, options?: { authRole?: string }) {
+function createApp(
+  routeModules: Record<string, any>,
+  options?: { authRole?: string; jsonLimit?: string },
+) {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: options?.jsonLimit || '10mb' }));
 
   // Set JWT_SECRET for tests
   if (!process.env.JWT_SECRET) {
@@ -181,9 +192,18 @@ function createApp(routeModules: Record<string, any>, options?: { authRole?: str
 
   // Auth middleware — matches production behavior
   app.use((req: any, res: any, next: any) => {
-    if (!req.path.startsWith('/api')) { next(); return; }
-    if (req.path === '/api/health') { next(); return; }
-    if (req.path.startsWith('/api/auth') && !req.path.includes('/api/auth/me')) { next(); return; }
+    if (!req.path.startsWith('/api')) {
+      next();
+      return;
+    }
+    if (req.path === '/api/health') {
+      next();
+      return;
+    }
+    if (req.path.startsWith('/api/auth') && !req.path.includes('/api/auth/me')) {
+      next();
+      return;
+    }
 
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -222,26 +242,32 @@ async function startServer(app: any): Promise<{ baseUrl: string; server: any }> 
 
 // ── Seed Data Helpers ────────────────────────────────────────────────────────
 
-function seedOwnerUser(db: any): { userId: string; token: string; authHeader: Record<string, string> } {
+function seedOwnerUser(db: any): {
+  userId: string;
+  token: string;
+  authHeader: Record<string, string>;
+} {
   const { getJWTSecret } = require('../../main/routes/auth');
   const userId = 'owner-test-001';
   const passwordHash = bcrypt.hashSync('testpass123', 10);
 
   db.prepare(
     `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(userId, 'Test Owner', 'owner@test.local', passwordHash, 'owner', 1, now(), now());
 
-  const token = jwt.sign(
-    { userId, email: 'owner@test.local', role: 'owner' },
-    getJWTSecret(),
-    { expiresIn: '1h' }
-  );
+  const token = jwt.sign({ userId, email: 'owner@test.local', role: 'owner' }, getJWTSecret(), {
+    expiresIn: '1h',
+  });
 
   return { userId, token, authHeader: { Authorization: `Bearer ${token}` } };
 }
 
-function seedManagerUser(db: any): { userId: string; token: string; authHeader: Record<string, string> } {
+function seedManagerUser(db: any): {
+  userId: string;
+  token: string;
+  authHeader: Record<string, string>;
+} {
   const { getJWTSecret } = require('../../main/routes/auth');
   const userId = 'mgr-test-001';
   const passwordHash = bcrypt.hashSync('testpass123', 10);
@@ -249,14 +275,22 @@ function seedManagerUser(db: any): { userId: string; token: string; authHeader: 
 
   db.prepare(
     `INSERT OR IGNORE INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(userId, 'Test Manager', 'manager@test.local', passwordHash, 'manager', pinHash, 1, now(), now());
-
-  const token = jwt.sign(
-    { userId, email: 'manager@test.local', role: 'manager' },
-    getJWTSecret(),
-    { expiresIn: '1h' }
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    userId,
+    'Test Manager',
+    'manager@test.local',
+    passwordHash,
+    'manager',
+    pinHash,
+    1,
+    now(),
+    now(),
   );
+
+  const token = jwt.sign({ userId, email: 'manager@test.local', role: 'manager' }, getJWTSecret(), {
+    expiresIn: '1h',
+  });
 
   return { userId, token, authHeader: { Authorization: `Bearer ${token}` } };
 }
@@ -264,38 +298,49 @@ function seedManagerUser(db: any): { userId: string; token: string; authHeader: 
 function seedCategory(db: any, id: string, name: string) {
   db.prepare(
     `INSERT OR IGNORE INTO categories (id, name, sort_order, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, name, 1, 1, now(), now());
 }
 
-function seedProduct(db: any, id: string, categoryId: string, name: string, price: number, options?: {
-  tax_type?: string;
-  tax_category_id?: string | null;
-  tax_behavior?: string;
-  cb_percent?: number | null;
-  track_inventory?: boolean;
-  stock_quantity?: number;
-  sale_unit?: 'each' | 'kg' | 'g' | 'lb' | 'ml' | 'cl' | 'l' | 'fl oz' | 'oz';
-  allow_fractional_quantity?: boolean;
-  weight_precision?: number;
-  inventory_product_id?: string | null;
-  inventory_deduction_quantity?: number;
-}) {
+function seedProduct(
+  db: any,
+  id: string,
+  categoryId: string,
+  name: string,
+  price: number,
+  options?: {
+    tax_type?: string;
+    tax_category_id?: string | null;
+    tax_behavior?: string;
+    cb_percent?: number | null;
+    track_inventory?: boolean;
+    stock_quantity?: number;
+    sale_unit?: 'each' | 'kg' | 'g' | 'lb' | 'ml' | 'cl' | 'l' | 'fl oz' | 'oz';
+    allow_fractional_quantity?: boolean;
+    weight_precision?: number;
+    inventory_product_id?: string | null;
+    inventory_deduction_quantity?: number;
+  },
+) {
   // Most integration fixtures represent taxable menu products. Assign the
   // Fresh stores use the generic no-tax pack, so test products are
   // uncategorized unless a country-tax scenario opts in explicitly.
-  const taxCategoryId = options && Object.prototype.hasOwnProperty.call(options, 'tax_category_id')
-    ? options.tax_category_id
-    : null;
+  const taxCategoryId =
+    options && Object.prototype.hasOwnProperty.call(options, 'tax_category_id')
+      ? options.tax_category_id
+      : null;
   db.prepare(
     `INSERT OR IGNORE INTO products (
        id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
        cb_percent, track_inventory, stock_quantity, sale_unit, allow_fractional_quantity,
        weight_precision, inventory_product_id, inventory_deduction_quantity,
        is_active, sort_order, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    id, categoryId, name, price,
+    id,
+    categoryId,
+    name,
+    price,
     options?.tax_type || 'none',
     taxCategoryId,
     options?.tax_behavior || 'country_default',
@@ -306,31 +351,32 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
     options?.allow_fractional_quantity ? 1 : 0,
     options?.weight_precision ?? 3,
     options?.inventory_product_id || null,
-    options?.inventory_product_id
-      ? (options?.inventory_deduction_quantity ?? 1)
-      : null,
-    1, 1, now(), now()
+    options?.inventory_product_id ? (options?.inventory_deduction_quantity ?? 1) : null,
+    1,
+    1,
+    now(),
+    now(),
   );
 }
 
 function seedCustomer(db: any, id: string, name: string, phone?: string) {
   db.prepare(
     `INSERT OR IGNORE INTO customers (id, name, phone, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, name, phone || null, 1, now(), now());
 }
 
 function seedTable(db: any, id: string, number: number, capacity?: number) {
   db.prepare(
     `INSERT OR IGNORE INTO tables (id, number, capacity, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, number, capacity || 4, 'available', now(), now());
 }
 
 function seedWalletCredit(db: any, customerId: string, amount: number, billId?: number) {
   db.prepare(
     `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
-     VALUES (?, ?, 'credit', ?, ?, ?, ?)`
+     VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
   ).run(customerId, billId || null, amount, 'Test wallet credit', now(), now());
 }
 
@@ -353,8 +399,13 @@ function installAndActivateTestTaxPack(db: any, pack: any) {
         status = 'active',
         updated_at = excluded.updated_at
     `).run(
-      pack.id, pack.publisher, pack.country, pack.jurisdiction,
-      versionId, installedAt, installedAt,
+      pack.id,
+      pack.publisher,
+      pack.country,
+      pack.jurisdiction,
+      versionId,
+      installedAt,
+      installedAt,
     );
     db.prepare(`
       INSERT OR REPLACE INTO country_pack_versions (
@@ -446,13 +497,15 @@ async function api(
     method?: string;
     body?: any;
     headers?: Record<string, string>;
-  } = {}
+  } = {},
 ): Promise<{ status: number; data: any }> {
   const fetchOptions: any = {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   };
   if (options.method) fetchOptions.method = options.method;
-  if (options.body !== undefined) fetchOptions.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+  if (options.body !== undefined)
+    fetchOptions.body =
+      typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
 
   const response = await (globalThis as any).fetch(baseUrl + urlPath, fetchOptions);
   const data = await response.json();

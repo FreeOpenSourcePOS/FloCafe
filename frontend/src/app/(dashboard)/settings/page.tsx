@@ -1322,6 +1322,7 @@ export default function SettingsPage() {
       posSettings.kotLanguagePolicy.primary.mode === 'fixed'
         ? posSettings.kotLanguagePolicy.primary.language
         : 'inherit',
+    billShowLogo: posSettings.billShowLogo,
     billShowName: posSettings.billShowName,
     billShowAddress: posSettings.billShowAddress,
     billShowPhone: posSettings.billShowPhone,
@@ -1406,6 +1407,7 @@ export default function SettingsPage() {
         bill_language_policy: billLanguagePolicy,
         kot_language_policy: kotLanguagePolicy,
         ...(zReportLanguagePolicyLoaded ? { z_report_language_policy: zReportLanguagePolicy } : {}),
+        bill_show_logo: formSnapshot.billShowLogo,
         bill_show_name: formSnapshot.billShowName,
         bill_show_address: formSnapshot.billShowAddress,
         bill_show_phone: formSnapshot.billShowPhone,
@@ -1434,6 +1436,7 @@ export default function SettingsPage() {
       posSettings.setPrinterTrimDecimals(formSnapshot.printerTrimDecimals);
       posSettings.setBillLanguagePolicy(billLanguagePolicy);
       posSettings.setKotLanguagePolicy(kotLanguagePolicy);
+      posSettings.setBillShowLogo(formSnapshot.billShowLogo);
       posSettings.setBillShowName(formSnapshot.billShowName);
       posSettings.setBillShowAddress(formSnapshot.billShowAddress);
       posSettings.setBillShowPhone(formSnapshot.billShowPhone);
@@ -1498,6 +1501,8 @@ export default function SettingsPage() {
     businessAddress: '',
     businessPhone: '',
     instagramHandle: '',
+    receiptLogo: '',
+    receiptLogoRaster: '',
     currencyDisplay: 'rial',
     numberDigits: 'locale',
     calendar: 'locale',
@@ -1731,6 +1736,8 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        receiptLogo: d.receipt_logo || '',
+        receiptLogoRaster: d.receipt_logo_raster || '',
         currencyDisplay:
           d.currency_display === 'toman'
             ? 'toman'
@@ -1750,6 +1757,7 @@ export default function SettingsPage() {
       setTaxIdFormat(d.tax_id_format || null);
       setTaxIdFormatCountryCode(loaded.countryCode);
       const billDisplay = {
+        billShowLogo: d.bill_show_logo === true,
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
         billShowPhone: d.bill_show_phone !== false,
@@ -1762,6 +1770,9 @@ export default function SettingsPage() {
       };
       setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
       setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+      posSettings.setBillShowLogo(billDisplay.billShowLogo);
+      posSettings.setReceiptLogo(d.receipt_logo || '');
+      posSettings.setReceiptLogoRaster(d.receipt_logo_raster || '');
       posSettings.setBillShowName(billDisplay.billShowName);
       posSettings.setBillShowAddress(billDisplay.billShowAddress);
       posSettings.setBillShowPhone(billDisplay.billShowPhone);
@@ -1976,6 +1987,8 @@ export default function SettingsPage() {
           businessAddress: d.business_address || '',
           businessPhone: d.business_phone || '',
           instagramHandle: d.instagram_handle || '',
+          receiptLogo: d.receipt_logo || '',
+          receiptLogoRaster: d.receipt_logo_raster || '',
           currencyDisplay:
             d.currency_display === 'toman'
               ? 'toman'
@@ -2001,6 +2014,7 @@ export default function SettingsPage() {
         setTaxIdFormat(d.tax_id_format || null);
         setTaxIdFormatCountryCode(loaded.countryCode);
         const billDisplay = {
+          billShowLogo: d.bill_show_logo === true,
           billShowName: d.bill_show_name !== false,
           billShowAddress: d.bill_show_address !== false,
           billShowPhone: d.bill_show_phone !== false,
@@ -2013,6 +2027,9 @@ export default function SettingsPage() {
         };
         mergeHydratedPrinting(billDisplay, printingAtHydrationStart, hydrationTouchSnapshot);
         setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+        posSettings.setBillShowLogo(billDisplay.billShowLogo);
+        posSettings.setReceiptLogo(d.receipt_logo || '');
+        posSettings.setReceiptLogoRaster(d.receipt_logo_raster || '');
         posSettings.setBillShowName(billDisplay.billShowName);
         posSettings.setBillShowAddress(billDisplay.billShowAddress);
         posSettings.setBillShowPhone(billDisplay.billShowPhone);
@@ -3230,6 +3247,8 @@ export default function SettingsPage() {
         currency_display: form.currencyDisplay,
         number_digits: form.numberDigits,
         calendar: form.calendar,
+        receipt_logo: form.receiptLogo,
+        receipt_logo_raster: form.receiptLogoRaster,
       });
       let resolvedTaxIdFormat = putRes.data?.tax_id_format || null;
       if (savedBusiness.countryCode !== form.countryCode) {
@@ -3276,6 +3295,8 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
+      posSettings.setReceiptLogo(form.receiptLogo || '');
+      posSettings.setReceiptLogoRaster(form.receiptLogoRaster || '');
       updateCurrentTenant({
         currency: form.currency,
         timezone: form.timezone,

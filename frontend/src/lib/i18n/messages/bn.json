@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "স্বয়ংক্রিয়ভাবে প্রয়োগ করুন",
     "chargePercentValue": "অর্ডারের {value}%",
     "chargeFixedValue": "প্রতি অর্ডার {value}",
-    "chargeOptionalApply": "চাওয়ামাত্র যোগ করা হয়"
+    "chargeOptionalApply": "চাওয়ামাত্র যোগ করা হয়",
+    "storeLogo": "স্টোর লোগো",
+    "storeLogoHint": "রসিদে মুদ্রণের জন্য স্টোর লোগো আপলোড করুন। ৫ এমবি এর নিচে স্বচ্ছ PNG বা JPEG।",
+    "uploadLogo": "লোগো আপলোড করুন",
+    "removeLogo": "লোগো সরান",
+    "logoUploaded": "লোগো সফলভাবে আপলোড হয়েছে",
+    "showLogo": "স্টোর লোগো"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

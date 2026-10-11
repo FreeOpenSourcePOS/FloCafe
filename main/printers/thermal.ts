@@ -14,9 +14,20 @@ import {
   dotsForPaperWidth,
   capabilitiesForPrinter,
 } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency, type CurrencyDisplay, type DigitMode } from '../countries';
+import {
+  getCountryByCode,
+  getCurrencyFractionDigits,
+  getCurrencySymbol,
+  resolveRegionalSnapshot,
+  resolveTenantCurrency,
+  type CurrencyDisplay,
+  type DigitMode,
+} from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
-import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
+import {
+  loadInstalledPrintTemplate,
+  parseBillTemplateSelection,
+} from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
 import { correlationId, type FloErrorCode } from '../errors';
 import { sendEvent } from '../services/telemetry';
@@ -32,8 +43,14 @@ import {
   sanitizeTemplateLabelText,
   type TemplateChargeRowId,
 } from '../print/template-labels';
-import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from './document-classic';
-import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
+import {
+  renderBillDocumentToClassicLines,
+  renderClassicReceiptViaDocument,
+} from './document-classic';
+import {
+  renderBillDocumentToCompactLines,
+  renderCompactReceiptViaDocument,
+} from './document-compact';
 import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
 import {
   renderDeliverySlipViaDocument,
@@ -47,11 +64,26 @@ import {
   type ThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
-import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
-import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled } from '../../shared/print/raster';
+import {
+  ippGetPrinters,
+  ippGetDefaultPrinterName,
+  ippGetPrinterAttributes,
+  ippPrintRaw,
+} from './ipp-client';
+import {
+  buildRasterDiagnosticBands,
+  encodeRasterFeedAndCut,
+  encodeRasterUnits,
+  rasterCapabilityEnabled,
+} from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { columnsForPaperWidth as columnsForConfiguredPaperWidth, displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
+import {
+  columnsForPaperWidth as columnsForConfiguredPaperWidth,
+  displayCellWidth,
+  padToDisplayCells,
+  truncateToDisplayCells,
+} from '../../shared/print/width';
 import {
   bilingualLabelLines,
   buildZReportDocument,
@@ -219,19 +251,52 @@ const NETWORK_UNREACHABLE_RE = /\bconnect (?:econnrefused|ehostunreach|enetunrea
 export function classifyPrintFailure(detail?: string): PrintFailureClass {
   const value = sanitizePowerShellStderr(detail).toLowerCase();
   if (!value) return 'unknown';
-  if (value.includes('no printer configured') || value.includes('no windows printer configured')) return 'not_configured';
+  if (value.includes('no printer configured') || value.includes('no windows printer configured'))
+    return 'not_configured';
   // The queue the till was told to use is gone: `lp` cannot even name it. Anchored
   // on `lp:` so a Node filesystem ENOENT is not blamed on the printer.
-  if (value.includes('lp: no such file or directory') || value.includes('printer or class does not exist') || value.includes('no default destination')) return 'not_configured';
-  if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected') || value.includes('printer is not available') || NETWORK_UNREACHABLE_RE.test(value)) return 'offline';
+  if (
+    value.includes('lp: no such file or directory') ||
+    value.includes('printer or class does not exist') ||
+    value.includes('no default destination')
+  )
+    return 'not_configured';
+  if (
+    value.includes('offline') ||
+    value.includes('use printer offline') ||
+    value.includes('disconnected') ||
+    value.includes('printer is not available') ||
+    NETWORK_UNREACHABLE_RE.test(value)
+  )
+    return 'offline';
   // The printer is present but needs a person: paper, cover, or a vendor error flag.
-  if (value.includes('out of paper') || value.includes('paper jam') || value.includes('cover is open') || value.includes('needs attention') || value.includes('reported an error')) return 'needs_attention';
-  if (value.includes('not accepting') || value.includes('queue is disabled') || value.includes('disabled since') || value.includes('queue') && value.includes('unavailable') || value.includes('cannot open printer')) return 'queue_unavailable';
-  if (value.includes('spool') || value.includes('startdocprinter') || value.includes('startpageprinter')) return 'spooler_error';
+  if (
+    value.includes('out of paper') ||
+    value.includes('paper jam') ||
+    value.includes('cover is open') ||
+    value.includes('needs attention') ||
+    value.includes('reported an error')
+  )
+    return 'needs_attention';
+  if (
+    value.includes('not accepting') ||
+    value.includes('queue is disabled') ||
+    value.includes('disabled since') ||
+    (value.includes('queue') && value.includes('unavailable')) ||
+    value.includes('cannot open printer')
+  )
+    return 'queue_unavailable';
+  if (
+    value.includes('spool') ||
+    value.includes('startdocprinter') ||
+    value.includes('startpageprinter')
+  )
+    return 'spooler_error';
   if (value.includes('driver') || value.includes('no driver')) return 'driver_error';
   if (value.includes('access denied') || value.includes('permission')) return 'permission_denied';
   if (value.includes('timed out') || value.includes('timeout')) return 'timeout';
-  if (value.includes('writeprinter') || value.includes('accepted') && value.includes('of')) return 'write_error';
+  if (value.includes('writeprinter') || (value.includes('accepted') && value.includes('of')))
+    return 'write_error';
   if (value.includes('not supported') || value.includes('unsupported')) return 'unsupported';
   return 'unknown';
 }
@@ -244,8 +309,7 @@ function extractPlatformErrorCode(detail?: string): number | undefined {
 }
 
 const isMasBuild =
-  process.env.MAS_BUILD === '1' ||
-  (process as NodeJS.Process & { mas?: boolean }).mas === true;
+  process.env.MAS_BUILD === '1' || (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
 export type PrinterColumnWidth = 36 | 42 | 48;
@@ -275,7 +339,9 @@ function guessPaperWidth(name: string, model: string): string {
 
 function annotateProfile(info: Omit<PrinterInfo, 'profileId'>): PrinterInfo {
   const profile = matchSupportedPrinterProfile(info.name, info.make, info.model);
-  return profile ? { ...info, profileId: profile.id, paperWidth: info.paperWidth || profile.defaultPaperWidth } : info;
+  return profile
+    ? { ...info, profileId: profile.id, paperWidth: info.paperWidth || profile.defaultPaperWidth }
+    : info;
 }
 
 function parseDeviceUri(uri: string): { ip?: string; port?: number } {
@@ -346,18 +412,20 @@ async function detectMacOSPrinters(signal?: AbortSignal): Promise<PrinterInfo[]>
           const isNetwork = /^(socket|ipp|ipps|http|https|lpd):\/\//i.test(uri);
           const { ip, port } = isNetwork ? parseDeviceUri(uri) : {};
 
-          printers.push(annotateProfile({
-            name,
-            make: makeModel.make,
-            model: makeModel.model,
-            connectionType: isNetwork ? 'network' : 'usb',
-            deviceUri: uri,
-            status,
-            isDefault,
-            ipAddress: ip,
-            port: port || (isNetwork ? 9100 : undefined),
-            paperWidth: guessPaperWidth(name, makeModel.model),
-          }));
+          printers.push(
+            annotateProfile({
+              name,
+              make: makeModel.make,
+              model: makeModel.model,
+              connectionType: isNetwork ? 'network' : 'usb',
+              deviceUri: uri,
+              status,
+              isDefault,
+              ipAddress: ip,
+              port: port || (isNetwork ? 9100 : undefined),
+              paperWidth: guessPaperWidth(name, makeModel.model),
+            }),
+          );
         }
       }
     }
@@ -398,18 +466,20 @@ async function detectPrintersViaIpp(signal?: AbortSignal): Promise<PrinterInfo[]
       const status: 'idle' | 'printing' | 'offline' =
         accepting === false || state === 5 ? 'offline' : state === 4 ? 'printing' : 'idle';
 
-      printers.push(annotateProfile({
-        name,
-        make: parsedUsb?.make || make || 'Unknown',
-        model: parsedUsb?.model || model,
-        connectionType: isNetwork ? 'network' : 'usb',
-        deviceUri,
-        status,
-        isDefault: name === defaultName,
-        ipAddress: ip,
-        port: port || (isNetwork ? 9100 : undefined),
-        paperWidth: guessPaperWidth(name, parsedUsb?.model || model),
-      }));
+      printers.push(
+        annotateProfile({
+          name,
+          make: parsedUsb?.make || make || 'Unknown',
+          model: parsedUsb?.model || model,
+          connectionType: isNetwork ? 'network' : 'usb',
+          deviceUri,
+          status,
+          isDefault: name === defaultName,
+          ipAddress: ip,
+          port: port || (isNetwork ? 9100 : undefined),
+          paperWidth: guessPaperWidth(name, parsedUsb?.model || model),
+        }),
+      );
     }
 
     // When CUPS-Get-Default is unset, fall back to the single configured printer.
@@ -423,7 +493,10 @@ async function detectPrintersViaIpp(signal?: AbortSignal): Promise<PrinterInfo[]
   return printers;
 }
 
-async function getMacOSPrinterStatus(name: string, signal?: AbortSignal): Promise<'idle' | 'printing' | 'offline'> {
+async function getMacOSPrinterStatus(
+  name: string,
+  signal?: AbortSignal,
+): Promise<'idle' | 'printing' | 'offline'> {
   try {
     const { stdout } = await execFileAsync('lpstat', ['-p', name], {
       encoding: 'utf8',
@@ -440,7 +513,10 @@ async function getMacOSPrinterStatus(name: string, signal?: AbortSignal): Promis
   }
 }
 
-async function getMacOSPrinterDetails(name: string, signal?: AbortSignal): Promise<{ make: string; model: string }> {
+async function getMacOSPrinterDetails(
+  name: string,
+  signal?: AbortSignal,
+): Promise<{ make: string; model: string }> {
   let make = 'Unknown';
   let model = 'Thermal Printer';
 
@@ -590,7 +666,13 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
     const { stdout } = await execFileAsync(
       'powershell',
       windowsPowerShellCommandArgs(DETECT_WINDOWS_PRINTERS_SCRIPT),
-      { encoding: 'utf8', timeout: PRINTER_DETECTION_TIMEOUT_MS, signal, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+      {
+        encoding: 'utf8',
+        timeout: PRINTER_DETECTION_TIMEOUT_MS,
+        signal,
+        windowsHide: true,
+        maxBuffer: 10 * 1024 * 1024,
+      },
     );
 
     const trimmed = stdout.trim();
@@ -605,25 +687,28 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
         const driver = typeof entry.DriverName === 'string' ? entry.DriverName : '';
         const makeModel = detectWindowsMakeModel(name, driver);
 
-        printers.push(annotateProfile({
-          name,
-          make: makeModel.make,
-          model: makeModel.model,
-          connectionType: 'usb',
-          deviceUri: name,
-          driver,
-          status: mapWindowsPrinterStatus(entry.PrinterStatus),
-          isDefault: entry.Default === true,
-          paperWidth: guessPaperWidth(name, makeModel.model),
-        }));
+        printers.push(
+          annotateProfile({
+            name,
+            make: makeModel.make,
+            model: makeModel.model,
+            connectionType: 'usb',
+            deviceUri: name,
+            driver,
+            status: mapWindowsPrinterStatus(entry.PrinterStatus),
+            isDefault: entry.Default === true,
+            paperWidth: guessPaperWidth(name, makeModel.model),
+          }),
+        );
       }
     }
   } catch (err) {
     // The detection script is also passed as -EncodedCommand, and the app log
     // tail is attached to support tickets, so the raw error (whose message
     // embeds the command line) must never be logged.
-    const rawDetail = sanitizePowerShellStderr(String((err as { stderr?: unknown })?.stderr || '').trim())
-      || describeWindowsPrintProcessFailure(err);
+    const rawDetail =
+      sanitizePowerShellStderr(String((err as { stderr?: unknown })?.stderr || '').trim()) ||
+      describeWindowsPrintProcessFailure(err);
     const detail = capWindowsPrintDetail(rawDetail);
     console.log(`[Printer] Could not detect Windows printers via Get-CimInstance: ${detail}`);
   }
@@ -639,10 +724,15 @@ function detectWindowsMakeModel(name: string, driver: string): { make: string; m
 
   if (lower.includes('epson') || name.toLowerCase().includes('tm-')) {
     make = 'Epson';
-    model = name.includes('TM-m30') ? 'TM-m30' :
-            name.includes('TM-T88') ? 'TM-T88' :
-            name.includes('TM-T82') ? 'TM-T82' :
-            name.includes('TM-T20') ? 'TM-T20' : 'TM Series';
+    model = name.includes('TM-m30')
+      ? 'TM-m30'
+      : name.includes('TM-T88')
+        ? 'TM-T88'
+        : name.includes('TM-T82')
+          ? 'TM-T82'
+          : name.includes('TM-T20')
+            ? 'TM-T20'
+            : 'TM Series';
   } else if (lower.includes('xprinter')) {
     make = 'Xprinter';
     model = lower.includes('80') ? 'Xprinter 80mm' : 'Xprinter 58mm';
@@ -694,7 +784,9 @@ function parseCupsDeviceUri(uri: string): { make: string; model: string } | null
   return null;
 }
 
-async function getMakeModelFromLpstat(signal?: AbortSignal): Promise<Map<string, { make: string; model: string }>> {
+async function getMakeModelFromLpstat(
+  signal?: AbortSignal,
+): Promise<Map<string, { make: string; model: string }>> {
   const result = new Map<string, { make: string; model: string }>();
   try {
     const { stdout: output } = await execFileAsync('lpstat', ['-l', '-p'], {
@@ -713,12 +805,20 @@ async function getMakeModelFromLpstat(signal?: AbortSignal): Promise<Map<string,
         if (parsed) result.set(currentName, parsed);
       }
     }
-  } catch { /* CUPS not available */ }
+  } catch {
+    /* CUPS not available */
+  }
   return result;
 }
 
-function getUsbPrinterVendorIds(): Map<string, { vendorId: string; manufacturer: string | null; product: string | null }> {
-  const result = new Map<string, { vendorId: string; manufacturer: string | null; product: string | null }>();
+function getUsbPrinterVendorIds(): Map<
+  string,
+  { vendorId: string; manufacturer: string | null; product: string | null }
+> {
+  const result = new Map<
+    string,
+    { vendorId: string; manufacturer: string | null; product: string | null }
+  >();
   const devicesDir = '/sys/bus/usb/devices';
   try {
     const entries = fs.readdirSync(devicesDir);
@@ -732,15 +832,22 @@ function getUsbPrinterVendorIds(): Map<string, { vendorId: string; manufacturer:
         const manufacturer = readSysfsSafe(`${devPath}/manufacturer`);
         const product = readSysfsSafe(`${devPath}/product`);
         result.set(entry, { vendorId, manufacturer, product });
-      } catch { /* skip device */ }
+      } catch {
+        /* skip device */
+      }
     }
-  } catch { /* sysfs not available */ }
+  } catch {
+    /* sysfs not available */
+  }
   return result;
 }
 
 function readSysfsSafe(filePath: string): string | null {
-  try { return fs.readFileSync(filePath, 'utf8').trim(); }
-  catch { return null; }
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return null;
+  }
 }
 
 async function detectLinuxPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
@@ -798,18 +905,20 @@ async function detectLinuxPrinters(signal?: AbortSignal): Promise<PrinterInfo[]>
           }
         }
 
-        printers.push(annotateProfile({
-          name,
-          make,
-          model,
-          connectionType: isNetwork ? 'network' : 'usb',
-          deviceUri: uri,
-          status: 'idle',
-          isDefault: false,
-          ipAddress: ip,
-          port: port || (isNetwork ? 9100 : undefined),
-          paperWidth: guessPaperWidth(name, model),
-        }));
+        printers.push(
+          annotateProfile({
+            name,
+            make,
+            model,
+            connectionType: isNetwork ? 'network' : 'usb',
+            deviceUri: uri,
+            status: 'idle',
+            isDefault: false,
+            ipAddress: ip,
+            port: port || (isNetwork ? 9100 : undefined),
+            paperWidth: guessPaperWidth(name, model),
+          }),
+        );
       }
     }
   } catch {
@@ -833,16 +942,44 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, signal?: AbortSignal, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): Promise<DispatchResult> {
+export async function printReceipt(
+  order: any,
+  bill: any,
+  business?: any,
+  template: string = 'classic',
+  useUnicode: boolean = false,
+  isReprint: boolean = false,
+  signal?: AbortSignal,
+  arabicShapingOverride?: boolean,
+  language?: string,
+  additionalLanguage?: string,
+): Promise<DispatchResult> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
-    console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
+    console.log(
+      '[Printer] printReceipt called, template:',
+      template,
+      'useUnicode:',
+      useUnicode,
+      'isReprint:',
+      isReprint,
+    );
     const printer = getPrinterConfig();
     if (!printer) {
       console.log('[Printer] No printer configured');
       return { ok: false, detail: 'No printer configured' };
     }
-    const prepared = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const prepared = prepareReceipt(
+      order,
+      bill,
+      business,
+      template,
+      useUnicode,
+      isReprint,
+      arabicShapingOverride,
+      language,
+      additionalLanguage,
+    );
     const { data, warnings, columns } = await rasterizeReceiptIfEnabled(
       prepared,
       order,
@@ -864,13 +1001,25 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       };
     }
     const pulseSetting = getSettingValue('cash_drawer_pulse_enabled');
-    const shouldPulse = pulseSetting === null
-      ? printer.cash_drawer_pulse_enabled === 1
-      : pulseSetting === 'true' && shouldPulseForPayment(bill);
+    const shouldPulse =
+      pulseSetting === null
+        ? printer.cash_drawer_pulse_enabled === 1
+        : pulseSetting === 'true' && shouldPulseForPayment(bill);
     const receiptData = shouldPulse ? appendCashDrawerPulse(data) : data;
-    console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
+    console.log(
+      '[Printer] Using printer:',
+      printer.name,
+      printer.connection_type,
+      'columns:',
+      columns,
+    );
     console.log('[Printer] Receipt data length:', receiptData.length, 'bytes');
-    console.log('[Printer] First 100 bytes:', Array.from(receiptData.slice(0, 100)).map(b => b.toString(16)).join(' '));
+    console.log(
+      '[Printer] First 100 bytes:',
+      Array.from(receiptData.slice(0, 100))
+        .map((b) => b.toString(16))
+        .join(' '),
+    );
 
     const dispatch = await dispatchPrint(printer, receiptData, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -891,28 +1040,53 @@ function shouldPulseForPayment(bill: any): boolean {
       // Non-empty array without valid strings restores defaults; empty array stays empty.
       methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
     }
-  } catch { /* Keep the safe cash/card defaults. */ }
+  } catch {
+    /* Keep the safe cash/card defaults. */
+  }
   if (!bill?.payment_details) return false;
   try {
-    const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
+    const payments =
+      typeof bill.payment_details === 'string'
+        ? JSON.parse(bill.payment_details)
+        : bill.payment_details;
     if (!Array.isArray(payments)) return false;
     const db = getDatabase();
     return payments.some((payment: any) => {
       if (!payment || Number(payment.amount || 0) <= 0) return false;
       let method = String(payment.method || '').toLowerCase();
       if (method === 'custom' && Number.isSafeInteger(Number(payment.payment_method_id))) {
-        const row = db.prepare('SELECT name FROM payment_methods WHERE id = ?').get(Number(payment.payment_method_id)) as { name?: string } | undefined;
+        const row = db
+          .prepare('SELECT name FROM payment_methods WHERE id = ?')
+          .get(Number(payment.payment_method_id)) as { name?: string } | undefined;
         method = String(row?.name || method).toLowerCase();
       }
       return methods.some((selected) => selected.toLowerCase() === method);
     });
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal, arabicShapingOverride?: boolean, language?: string): Promise<DispatchResult> {
+export async function printKOT(
+  order: any,
+  items: any[],
+  stationName: string,
+  useUnicode: boolean = false,
+  targetPrinter?: any,
+  signal?: AbortSignal,
+  arabicShapingOverride?: boolean,
+  language?: string,
+): Promise<DispatchResult> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
-    console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode, 'station:', stationName);
+    console.log(
+      '[Printer] printKOT called, items count:',
+      items?.length || 0,
+      'useUnicode:',
+      useUnicode,
+      'station:',
+      stationName,
+    );
     const printer = targetPrinter || getPrinterConfig();
     if (!printer) {
       console.log('[Printer] No printer configured');
@@ -920,10 +1094,14 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     }
     console.log('[Printer] Using printer:', printer.name, printer.connection_type);
 
-    const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
+    const {
+      profile,
+      columns: cols,
+      capabilities,
+    } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
     const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
-    const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
+    const locale = biz?.country ? (getCountryByCode(biz.country)?.locale ?? 'en-US') : 'en-US';
     // Resolves through the country profile when the stored timezone is
     // missing or invalid, matching resolveRegionalSnapshot's own contract.
     // Throws RegionalNotConfiguredError (naming country, the actual missing
@@ -959,22 +1137,39 @@ export async function printKOT(order: any, items: any[], stationName: string, us
         cutMode: profile.cutMode,
         capabilities: nativeCapabilities,
       });
-      const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
-        useUnicode,
-        cutMode: profile.cutMode,
-        arabicShaping: capabilities.shaping.arabic,
-        columns: cols,
-        language: normalizePrintLanguage(language ?? biz?.language),
-        capabilities,
-        requestPrefix: 'kot',
-      }, documentResult.rasterGroups);
-      data = rasterized.rasterSelected && !rasterized.rasterFailed
-        ? rasterized.data
-        : nativeResult.data;
+      const rasterized = await rasterizeDocumentLines(
+        documentResult.lines,
+        documentResult.warnings,
+        {
+          useUnicode,
+          cutMode: profile.cutMode,
+          arabicShaping: capabilities.shaping.arabic,
+          columns: cols,
+          language: normalizePrintLanguage(language ?? biz?.language),
+          capabilities,
+          requestPrefix: 'kot',
+        },
+        documentResult.rasterGroups,
+      );
+      data =
+        rasterized.rasterSelected && !rasterized.rasterFailed ? rasterized.data : nativeResult.data;
       if (rasterized.rasterFailed) warnings.push(...nativeResult.warnings);
       warnings.push(...rasterized.warnings);
     } else {
-      data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+      data = formatKOT(
+        order,
+        items,
+        stationName,
+        cols,
+        useUnicode,
+        profile.cutMode,
+        locale,
+        tzOptions,
+        warnings,
+        capabilities.shaping.arabic,
+        normalizePrintLanguage(language ?? biz?.language),
+        capabilities,
+      );
     }
     if (hasFinancialPrintWarning(warnings)) {
       return {
@@ -997,9 +1192,20 @@ export async function printKOT(order: any, items: any[], stationName: string, us
 export async function printDeliverySlip(
   order: DeliverySlipOrderRow,
   items: readonly DeliverySlipItemRow[],
-  contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
+  contact: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    addressSource?: DeliverySlipAddressSource | null;
+  },
   useUnicode: boolean = false,
-  targetPrinter?: { readonly id?: unknown; readonly name?: unknown; readonly connection_type?: string; readonly paper_width?: string; readonly profile_id?: string },
+  targetPrinter?: {
+    readonly id?: unknown;
+    readonly name?: unknown;
+    readonly connection_type?: string;
+    readonly paper_width?: string;
+    readonly profile_id?: string;
+  },
   signal?: AbortSignal,
   arabicShapingOverride?: boolean,
   language?: string,
@@ -1012,13 +1218,17 @@ export async function printDeliverySlip(
       return { ok: false, detail: 'No printer configured' };
     }
 
-    const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
+    const {
+      profile,
+      columns: cols,
+      capabilities,
+    } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
     // Key/value table: a `SELECT * LIMIT 1` row has no `country` property, so
     // reading it that way silently pins the slip date to en-US.
     const countryCode = getSettingValue('country') ?? '';
     const storeLanguage = getSettingValue('language') ?? undefined;
-    const locale = countryCode ? getCountryByCode(countryCode)?.locale ?? 'en-US' : 'en-US';
+    const locale = countryCode ? (getCountryByCode(countryCode)?.locale ?? 'en-US') : 'en-US';
     const timezone = resolveRegionalSnapshot({
       country: getSettingValue('country') ?? undefined,
       currency: getSettingValue('currency') ?? undefined,
@@ -1028,42 +1238,48 @@ export async function printDeliverySlip(
     const currencyLocale = getCountryByCode(countryCode)?.locale ?? locale;
     const currencyDisplayValue = getSettingValue('currency_display');
     const currencyDisplay = ['rial', 'toman', 'toman_short'].includes(currencyDisplayValue ?? '')
-      ? currencyDisplayValue as CurrencyDisplay
+      ? (currencyDisplayValue as CurrencyDisplay)
       : undefined;
     const digits: DigitMode = getSettingValue('number_digits') === 'latin' ? 'latin' : 'locale';
     const currencySymbol = getCurrencySymbol(currency, currencyLocale);
 
     const warnings: PrintWarning[] = [];
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
-    const renderWith = (caps: ThermalPrinterCapabilities) => renderDeliverySlipViaDocument(order, items, contact, {
-      columns: cols,
-      language: normalizePrintLanguage(language ?? storeLanguage),
-      locale,
-      currency,
-      currencySymbol,
-      currencyDisplay,
-      digits,
-      timezone,
-      useUnicode,
-      arabicShaping: caps.shaping.arabic,
-      cutMode: profile.cutMode,
-      capabilities: caps,
-      showCustomerPhone: showCustomerPhone ?? true,
-    });
+    const renderWith = (caps: ThermalPrinterCapabilities) =>
+      renderDeliverySlipViaDocument(order, items, contact, {
+        columns: cols,
+        language: normalizePrintLanguage(language ?? storeLanguage),
+        locale,
+        currency,
+        currencySymbol,
+        currencyDisplay,
+        digits,
+        timezone,
+        useUnicode,
+        arabicShaping: caps.shaping.arabic,
+        cutMode: profile.cutMode,
+        capabilities: caps,
+        showCustomerPhone: showCustomerPhone ?? true,
+      });
 
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
       const documentResult = renderWith(capabilities);
       const nativeResult = renderWith(nativeCapabilities);
-      const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
-        useUnicode,
-        cutMode: profile.cutMode,
-        arabicShaping: capabilities.shaping.arabic,
-        columns: cols,
-        language: normalizePrintLanguage(language ?? storeLanguage),
-        capabilities,
-        requestPrefix: 'delivery-slip',
-      }, documentResult.rasterGroups);
+      const rasterized = await rasterizeDocumentLines(
+        documentResult.lines,
+        documentResult.warnings,
+        {
+          useUnicode,
+          cutMode: profile.cutMode,
+          arabicShaping: capabilities.shaping.arabic,
+          columns: cols,
+          language: normalizePrintLanguage(language ?? storeLanguage),
+          capabilities,
+          requestPrefix: 'delivery-slip',
+        },
+        documentResult.rasterGroups,
+      );
       if (rasterized.rasterSelected && !rasterized.rasterFailed) {
         data = rasterized.data;
         warnings.push(...rasterized.warnings);
@@ -1080,7 +1296,12 @@ export async function printDeliverySlip(
     }
 
     if (hasFinancialPrintWarning(warnings)) {
-      return { ok: false, detail: makeFinancialPrintRefusalMessage(warnings), failureClass: 'unsupported', warnings };
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
     }
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -1090,30 +1311,41 @@ export async function printDeliverySlip(
   }
 }
 
-export async function printDeliverySlipDetailed(...args: Parameters<typeof printDeliverySlip>): Promise<PrintResult> {
+export async function printDeliverySlipDetailed(
+  ...args: Parameters<typeof printDeliverySlip>
+): Promise<PrintResult> {
   const id = correlationId();
   try {
     const dispatch = await printDeliverySlip(...args);
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
-        ok: false,
-        code: 'print.delivery_slip.failed',
-        correlationId: id,
-        stage: 'dispatch',
-        detail: dispatch.detail,
-        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
-        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
-        jobId: dispatch.jobId,
-        driverName: dispatch.driverName,
-        printerStatus: dispatch.printerStatus,
-        warnings: dispatch.warnings,
-      };
+          ok: false,
+          code: 'print.delivery_slip.failed',
+          correlationId: id,
+          stage: 'dispatch',
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
     if (!result.ok) reportPrintFailure('delivery_slip', result);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
-    const result: PrintResult = { ok: false, code: 'print.delivery_slip.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
+    const result: PrintResult = {
+      ok: false,
+      code: 'print.delivery_slip.failed',
+      correlationId: id,
+      stage: 'dispatch',
+      detail,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+    };
     reportPrintFailure('delivery_slip', result);
     return result;
   }
@@ -1126,7 +1358,9 @@ function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: P
   let connectionType = 'unknown';
   try {
     connectionType = getPrinterConfig()?.connection_type || 'unknown';
-  } catch { /* best-effort only */ }
+  } catch {
+    /* best-effort only */
+  }
 
   const failureClass = result.failureClass || classifyPrintFailure(result.detail);
   void sendEvent('print_failed', {
@@ -1136,7 +1370,9 @@ function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: P
     connection_type: connectionType,
     correlation_id: result.correlationId,
     failure_class: failureClass,
-    ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
+    ...(result.platformErrorCode !== undefined
+      ? { platform_error_code: result.platformErrorCode }
+      : {}),
     ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
   });
 
@@ -1155,7 +1391,9 @@ function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: P
         kind,
         os_platform: process.platform,
         failure_class: failureClass,
-        ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
+        ...(result.platformErrorCode !== undefined
+          ? { platform_error_code: result.platformErrorCode }
+          : {}),
         ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
         ...(result.driverName ? { driver_name: result.driverName.slice(0, 160) } : {}),
         ...(result.printerStatus !== undefined ? { printer_status: result.printerStatus } : {}),
@@ -1169,31 +1407,43 @@ function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: P
 }
 
 /** Typed adapters used by API callers while legacy boolean callers migrate. */
-export async function printReceiptDetailed(...args: Parameters<typeof printReceipt>): Promise<PrintResult> {
+export async function printReceiptDetailed(
+  ...args: Parameters<typeof printReceipt>
+): Promise<PrintResult> {
   const id = correlationId();
   try {
     const dispatch = await printReceipt(...args);
-    const stage = !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
+    const stage =
+      !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
-        ok: false,
-        code: 'print.receipt.failed',
-        correlationId: id,
-        stage,
-        detail: dispatch.detail,
-        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
-        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
-        jobId: dispatch.jobId,
-        driverName: dispatch.driverName,
-        printerStatus: dispatch.printerStatus,
-        warnings: dispatch.warnings,
-      };
+          ok: false,
+          code: 'print.receipt.failed',
+          correlationId: id,
+          stage,
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
     if (!result.ok) reportPrintFailure('receipt', result);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
-    const result: PrintResult = { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
+    const result: PrintResult = {
+      ok: false,
+      code: 'print.receipt.failed',
+      correlationId: id,
+      stage: 'dispatch',
+      detail,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+    };
     reportPrintFailure('receipt', result);
     return result;
   }
@@ -1206,23 +1456,32 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
-        ok: false,
-        code: 'print.kot.failed',
-        correlationId: id,
-        stage: 'dispatch',
-        detail: dispatch.detail,
-        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
-        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
-        jobId: dispatch.jobId,
-        driverName: dispatch.driverName,
-        printerStatus: dispatch.printerStatus,
-        warnings: dispatch.warnings,
-      };
+          ok: false,
+          code: 'print.kot.failed',
+          correlationId: id,
+          stage: 'dispatch',
+          detail: dispatch.detail,
+          failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+          platformErrorCode:
+            dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+          jobId: dispatch.jobId,
+          driverName: dispatch.driverName,
+          printerStatus: dispatch.printerStatus,
+          warnings: dispatch.warnings,
+        };
     if (!result.ok) reportPrintFailure('kot', result);
     return result;
   } catch (error) {
     const detail = (error as Error).message;
-    const result: PrintResult = { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
+    const result: PrintResult = {
+      ok: false,
+      code: 'print.kot.failed',
+      correlationId: id,
+      stage: 'dispatch',
+      detail,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+    };
     reportPrintFailure('kot', result);
     return result;
   }
@@ -1235,7 +1494,9 @@ function getColumnsForPrinter(printer: any, profile: SupportedPrinterProfile): n
   return profile.fontAColumns || 48;
 }
 
-function nativeFallbackCapabilities(capabilities: ThermalPrinterCapabilities): ThermalPrinterCapabilities {
+function nativeFallbackCapabilities(
+  capabilities: ThermalPrinterCapabilities,
+): ThermalPrinterCapabilities {
   return capabilities.raster.enabled
     ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
     : capabilities;
@@ -1260,11 +1521,19 @@ export function resolvePrinterContext(
 ): PrinterContext {
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);
-  const capabilities = capabilitiesForPrinter(profile, printer?.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
+  const capabilities = capabilitiesForPrinter(
+    profile,
+    printer?.paper_width || profile.defaultPaperWidth,
+    arabicShapingOverride,
+  );
   return { profile, columns, capabilities };
 }
 
-async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+async function dispatchPrint(
+  printer: any,
+  data: Buffer,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   switch (printer.connection_type) {
     case 'network':
       return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
@@ -1273,14 +1542,18 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
         if (process.platform === 'darwin') {
           return await printViaLocalIpp(data, printer.name, signal);
         }
-        const detail = 'USB printers are not supported in the App Store build. Use a network printer.';
+        const detail =
+          'USB printers are not supported in the App Store build. Use a network printer.';
         console.log(`[Printer] ${detail}`);
         return { ok: false, detail };
       }
       return await printViaUSB(data, printer.name, signal);
     case 'webusb':
       console.log('[Printer] WebUSB printer — not supported in Electron');
-      return { ok: false, detail: 'WebUSB printers are handled in the browser, not by the desktop app' };
+      return {
+        ok: false,
+        detail: 'WebUSB printers are handled in the browser, not by the desktop app',
+      };
     default:
       console.log(`[Printer] Unsupported connection type: ${printer.connection_type}`);
       return { ok: false, detail: `Unsupported connection type: ${printer.connection_type}` };
@@ -1289,12 +1562,14 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
 
 function getPrinterConfig(): any {
   const db = getDatabase();
-  return db.prepare(
-    `SELECT * FROM printers
+  return db
+    .prepare(
+      `SELECT * FROM printers
      WHERE connection_type != 'webusb'
      ORDER BY is_default DESC, name
      LIMIT 1`,
-  ).get();
+    )
+    .get();
 }
 
 export async function printMenuDocument(
@@ -1332,11 +1607,20 @@ export async function printMenuDocument(
       rendered = { ...rendered, data: rasterized.data, warnings: rasterized.warnings };
     }
     if (rendered.warnings.length > 0) {
-      return { ok: false, detail: 'Menu text is not supported by the selected printer', warnings: rendered.warnings };
+      return {
+        ok: false,
+        detail: 'Menu text is not supported by the selected printer',
+        warnings: rendered.warnings,
+      };
     }
 
     if (printer.connection_type === 'webusb') {
-      return { ok: true, bytes: rendered.data, connection_type: 'webusb', ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}) };
+      return {
+        ok: true,
+        bytes: rendered.data,
+        connection_type: 'webusb',
+        ...(rendered.warnings.length > 0 ? { warnings: rendered.warnings } : {}),
+      };
     }
 
     const result = await dispatchPrint(printer, rendered.data, signal);
@@ -1353,7 +1637,17 @@ export async function printMenuDocument(
   }
 }
 
-export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): {
+export function prepareReceipt(
+  order: any,
+  bill: any,
+  business?: any,
+  template: string = 'classic',
+  useUnicode: boolean = false,
+  isReprint: boolean = false,
+  arabicShapingOverride?: boolean,
+  language?: string,
+  additionalLanguage?: string,
+): {
   printer: any;
   data: Buffer;
   warnings: PrintWarning[];
@@ -1371,11 +1665,29 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const { profile, columns, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
   const warnings: PrintWarning[] = [];
   const nativeCapabilities = nativeFallbackCapabilities(capabilities);
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
+  const data = formatReceipt(
+    order,
+    bill,
+    business,
+    template,
+    columns,
+    useUnicode,
+    isReprint,
+    profile.cutMode,
+    warnings,
+    nativeCapabilities.shaping.arabic,
+    language,
+    additionalLanguage,
+    nativeCapabilities,
+  );
   return { printer, data, warnings, columns };
 }
 
-type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[]; rasterGroups?: readonly RasterSemanticLineGroup[] };
+type RasterDocumentLines = {
+  lines: string[];
+  warnings: PrintWarning[];
+  rasterGroups?: readonly RasterSemanticLineGroup[];
+};
 type RasterBusinessInput = Record<string, unknown> | null | undefined;
 
 function receiptDocumentLines(
@@ -1393,39 +1705,51 @@ function receiptDocumentLines(
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
   // See formatReceipt's identical placeholder below for why country + currency are both required.
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
+  const biz = business || {
+    name: 'Store',
+    address: '',
+    phone: '',
+    taxRegistrationNumber: '',
+    country: 'US',
+    currency: 'USD',
+  };
   const rasterBiz = {
     ...biz,
-    ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
+    ...(biz.customer_phone
+      ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) }
+      : {}),
   };
   const selection = parseBillTemplateSelection(template);
   if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
-  const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
-  const result = normalizedTemplate === 'compact'
-    ? renderCompactReceiptViaDocument(order, bill, rasterBiz, {
-      columns,
-      language,
-      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
-      isReprint,
-      useUnicode,
-      arabicShaping,
-      cutMode,
-      capabilities,
-      preserveCurrencySymbol: true,
-      maskCustomerPhone: false,
-    })
-    : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
-      columns,
-      language,
-      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
-      isReprint,
-      useUnicode,
-      arabicShaping,
-      cutMode,
-      capabilities,
-      preserveCurrencySymbol: true,
-      maskCustomerPhone: false,
-    });
+  const normalizedTemplate = normalizeReceiptTemplate(
+    selection?.source === 'core' ? selection.id : template,
+  );
+  const result =
+    normalizedTemplate === 'compact'
+      ? renderCompactReceiptViaDocument(order, bill, rasterBiz, {
+          columns,
+          language,
+          ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+          isReprint,
+          useUnicode,
+          arabicShaping,
+          cutMode,
+          capabilities,
+          preserveCurrencySymbol: true,
+          maskCustomerPhone: false,
+        })
+      : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
+          columns,
+          language,
+          ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+          isReprint,
+          useUnicode,
+          arabicShaping,
+          cutMode,
+          capabilities,
+          preserveCurrencySymbol: true,
+          maskCustomerPhone: false,
+        });
   return result;
 }
 
@@ -1442,19 +1766,29 @@ async function rasterizeDocumentLines(
     requestPrefix: string;
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
-): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
+): Promise<{
+  data: Buffer;
+  warnings: PrintWarning[];
+  rasterSelected: boolean;
+  rasterFailed: boolean;
+}> {
   const financialRasterContent = (rasterGroups ?? []).some((group) => {
-    const sourceLines = group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
+    const sourceLines =
+      group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
     return sourceLines.some((line, index) => {
       const financial = group.financialSourceLines?.[index] ?? group.financial === true;
-      return financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
+      return (
+        financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities)
+      );
     });
   });
   let selectedFinancial = financialRasterContent;
   const failureResult = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     const financial = selectedFinancial;
-    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
+    const warnings = sourceWarnings.filter(
+      (warning) => warning.kind !== 'line' && warning.kind !== 'financial',
+    );
     warnings.push({
       field: financial ? 'financial row' : 'raster renderer',
       text: '',
@@ -1466,20 +1800,36 @@ async function rasterizeDocumentLines(
   let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render'> | undefined;
   let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
-    const { getSharedRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
+    const { getSharedRasterRenderer, renderUnsupportedRasterLines } =
+      await import('./raster-renderer');
     renderer = getSharedRasterRenderer();
-    const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
-    selectedFinancial = raster.units.some((unit) => unit.unit.financial) || raster.failures.some((failure) => failure.financial);
-    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
-    const data = buildEscPos(lines, options.useUnicode, {
-      cutMode: options.cutMode,
-      arabicShaping: options.arabicShaping,
-      columns: options.columns,
-      language: options.language,
-      capabilities: options.capabilities,
-      rasterUnits: raster.units,
-      rasterFailures: raster.failures,
-    }, warnings);
+    const raster = await renderUnsupportedRasterLines(
+      renderer,
+      lines,
+      options.capabilities,
+      options.requestPrefix,
+      rasterGroups,
+    );
+    selectedFinancial =
+      raster.units.some((unit) => unit.unit.financial) ||
+      raster.failures.some((failure) => failure.financial);
+    const warnings = sourceWarnings.filter(
+      (warning) => warning.kind !== 'line' && warning.kind !== 'financial',
+    );
+    const data = buildEscPos(
+      lines,
+      options.useUnicode,
+      {
+        cutMode: options.cutMode,
+        arabicShaping: options.arabicShaping,
+        columns: options.columns,
+        language: options.language,
+        capabilities: options.capabilities,
+        rasterUnits: raster.units,
+        rasterFailures: raster.failures,
+      },
+      warnings,
+    );
     for (const failure of raster.failures) {
       warnings.push({
         field: failure.financial ? 'financial row' : 'receipt line',
@@ -1488,7 +1838,14 @@ async function rasterizeDocumentLines(
         kind: failure.financial ? 'financial' : 'line',
       });
     }
-    result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 || warnings.some((warning) => warning.kind === 'line' || warning.kind === 'financial') };
+    result = {
+      data,
+      warnings,
+      rasterSelected: raster.units.length > 0,
+      rasterFailed:
+        raster.failures.length > 0 ||
+        warnings.some((warning) => warning.kind === 'line' || warning.kind === 'financial'),
+    };
   } catch (error) {
     result = failureResult(error);
   }
@@ -1510,38 +1867,64 @@ export async function rasterizePrintDocumentForWebUsb(
     arabicShaping: boolean;
     timezone?: string;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true;
+      data: Buffer;
+      warnings: PrintWarning[];
+      rasterSelected: boolean;
+      rasterFailed: boolean;
+    }
+  | { ok: false; error: string }
+> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
-  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const capabilities = capabilitiesForPrinter(
+    profile,
+    `cols-${options.columns}`,
+    options.arabicShaping,
+  );
+  if (!rasterCapabilityEnabled(capabilities, 'mixed'))
+    return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
-  const lines = template === 'compact'
-    ? renderBillDocumentToCompactLines(document, {
+  const lines =
+    template === 'compact'
+      ? renderBillDocumentToCompactLines(document, {
+          ...options,
+          preserveCurrencySymbol: true,
+          cutMode: profile.cutMode,
+          capabilities,
+          maskCustomerPhone: false,
+          rasterGroups,
+        })
+      : renderBillDocumentToClassicLines(document, {
+          ...options,
+          preserveCurrencySymbol: true,
+          cutMode: profile.cutMode,
+          capabilities,
+          maskCustomerPhone: false,
+          rasterGroups,
+        });
+  const result = await rasterizeDocumentLines(
+    lines,
+    [],
+    {
       ...options,
-      preserveCurrencySymbol: true,
       cutMode: profile.cutMode,
       capabilities,
-      maskCustomerPhone: false,
-      rasterGroups,
-    })
-    : renderBillDocumentToClassicLines(document, {
-      ...options,
-      preserveCurrencySymbol: true,
-      cutMode: profile.cutMode,
-      capabilities,
-      maskCustomerPhone: false,
-      rasterGroups,
-    });
-  const result = await rasterizeDocumentLines(lines, [], {
-    ...options,
-    cutMode: profile.cutMode,
-    capabilities,
-    requestPrefix: 'webusb-receipt',
-  }, rasterGroups);
+      requestPrefix: 'webusb-receipt',
+    },
+    rasterGroups,
+  );
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
+  return {
+    ok: true,
+    data: result.data,
+    warnings: result.warnings,
+    rasterSelected: result.rasterSelected,
+    rasterFailed: result.rasterFailed,
+  };
 }
 
 export async function rasterizeKotDocumentForWebUsb(
@@ -1555,10 +1938,24 @@ export async function rasterizeKotDocumentForWebUsb(
     useUnicode: boolean;
     arabicShaping: boolean;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
+): Promise<
+  | {
+      ok: true;
+      data: Buffer;
+      warnings: PrintWarning[];
+      rasterSelected: boolean;
+      rasterFailed: boolean;
+    }
+  | { ok: false; error: string }
+> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
-  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const capabilities = capabilitiesForPrinter(
+    profile,
+    `cols-${options.columns}`,
+    options.arabicShaping,
+  );
+  if (!rasterCapabilityEnabled(capabilities, 'mixed'))
+    return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderKotDocumentToLines(document, {
     ...options,
@@ -1566,16 +1963,27 @@ export async function rasterizeKotDocumentForWebUsb(
     capabilities,
     rasterGroups,
   });
-  const result = await rasterizeDocumentLines(lines, [], {
-    ...options,
-    cutMode: profile.cutMode,
-    capabilities,
-    requestPrefix: 'webusb-kot',
-  }, rasterGroups);
+  const result = await rasterizeDocumentLines(
+    lines,
+    [],
+    {
+      ...options,
+      cutMode: profile.cutMode,
+      capabilities,
+      requestPrefix: 'webusb-kot',
+    },
+    rasterGroups,
+  );
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
+  return {
+    ok: true,
+    data: result.data,
+    warnings: result.warnings,
+    rasterSelected: result.rasterSelected,
+    rasterFailed: result.rasterFailed,
+  };
 }
 
 async function rasterizeReceiptIfEnabled(
@@ -1607,15 +2015,20 @@ async function rasterizeReceiptIfEnabled(
     capabilities,
   );
   if (!document) return prepared;
-  const result = await rasterizeDocumentLines(document.lines, document.warnings, {
-    useUnicode,
-    cutMode: profile.cutMode,
-    arabicShaping: capabilities.shaping.arabic,
-    columns: prepared.columns,
-    language: normalizePrintLanguage(language),
-    capabilities,
-    requestPrefix: 'receipt',
-  }, document.rasterGroups);
+  const result = await rasterizeDocumentLines(
+    document.lines,
+    document.warnings,
+    {
+      useUnicode,
+      cutMode: profile.cutMode,
+      arabicShaping: capabilities.shaping.arabic,
+      columns: prepared.columns,
+      language: normalizePrintLanguage(language),
+      capabilities,
+      requestPrefix: 'receipt',
+    },
+    document.rasterGroups,
+  );
   if (result.rasterFailed) {
     return { ...prepared, warnings: [...prepared.warnings, ...result.warnings] };
   }
@@ -1624,7 +2037,21 @@ async function rasterizeReceiptIfEnabled(
     : prepared;
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
+export function formatReceipt(
+  order: any,
+  bill: any,
+  business?: any,
+  template?: string,
+  cols: number = 48,
+  useUnicode: boolean = false,
+  isReprint: boolean = false,
+  cutMode: PrinterCutMode = 'full',
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  language?: string,
+  additionalLanguage?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
@@ -1634,16 +2061,33 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   // explicit country + currency, never a default country or INR
   // (docs/reference/product-invariants.md). resolveTenantCurrency validates the
   // country before it ever looks at currency, so both must be present.
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
+  const biz = business || {
+    name: 'Store',
+    address: '',
+    phone: '',
+    taxRegistrationNumber: '',
+    country: 'US',
+    currency: 'USD',
+  };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
-  const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
-    ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
-    : capabilities;
+  const templateCapabilities =
+    selection?.source === 'pack' || selection?.source === 'merchant'
+      ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+      : capabilities;
   if (selection?.source === 'pack') {
     return renderPluginReceipt(
       loadInstalledPrintTemplate(selection.id),
-      order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang,
+      order,
+      bill,
+      biz,
+      cols,
+      useUnicode,
+      isReprint,
+      cutMode,
+      warnings,
+      arabicShaping,
+      lang,
       templateCapabilities,
     );
   }
@@ -1651,7 +2095,9 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
     const result = renderMerchantReceiptViaDocument(order, bill, biz, selection.id, {
       columns: cols,
       language: lang,
-      ...(additionalLanguage !== undefined ? { additionalLanguage: normalizePrintLanguage(additionalLanguage) } : {}),
+      ...(additionalLanguage !== undefined
+        ? { additionalLanguage: normalizePrintLanguage(additionalLanguage) }
+        : {}),
       isReprint,
       useUnicode,
       arabicShaping,
@@ -1666,9 +2112,35 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage, capabilities);
+        return formatClassicReceipt(
+          order,
+          bill,
+          biz,
+          cols,
+          useUnicode,
+          isReprint,
+          cutMode,
+          warnings,
+          arabicShaping,
+          lang,
+          additionalLanguage,
+          capabilities,
+        );
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage, capabilities);
+        return formatCompactReceipt(
+          order,
+          bill,
+          biz,
+          cols,
+          useUnicode,
+          isReprint,
+          cutMode,
+          warnings,
+          arabicShaping,
+          lang,
+          additionalLanguage,
+          capabilities,
+        );
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -1677,33 +2149,87 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 }
 
 export function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
-  const normalized = String(template || 'classic').toLowerCase().replace(/[^a-z]/g, '');
+  const normalized = String(template || 'classic')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
   if (normalized.includes('compact') || normalized.includes('minimal')) return 'compact';
   return 'classic';
 }
 
-function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
-  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, undefined, capabilities);
+function renderPluginReceipt(
+  template: ReturnType<typeof loadInstalledPrintTemplate>,
+  order: any,
+  bill: any,
+  biz: any,
+  cols: number,
+  useUnicode: boolean,
+  isReprint: boolean,
+  cutMode: PrinterCutMode,
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
+  if (!template)
+    return formatClassicReceipt(
+      order,
+      bill,
+      biz,
+      cols,
+      useUnicode,
+      isReprint,
+      cutMode,
+      warnings,
+      arabicShaping,
+      lang,
+      undefined,
+      capabilities,
+    );
   const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
   const payload = parseJson(template.template_payload_json, {}) as any;
-  if (renderer.id !== 'flocafe-thermal-receipt-template'
-    || renderer.version !== 1
-    || payload.format !== 'escpos-line-template-v1') {
+  if (
+    renderer.id !== 'flocafe-thermal-receipt-template' ||
+    renderer.version !== 1 ||
+    payload.format !== 'escpos-line-template-v1'
+  ) {
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
   const profile = selectTemplateWidthProfile(payload, cols, warnings);
-  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, capabilities);
+  return renderEscposLineTemplateV1(
+    payload,
+    profile,
+    order,
+    bill,
+    biz,
+    useUnicode,
+    isReprint,
+    cutMode,
+    warnings,
+    arabicShaping,
+    lang,
+    capabilities,
+  );
 }
 
 function parseJson(raw: string, fallback: unknown): unknown {
-  try { return JSON.parse(raw); } catch { return fallback; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
 }
 
-function selectTemplateWidthProfile(payload: any, printerColumns: number, warnings?: PrintWarning[]): { columns: number; layout: any } {
+function selectTemplateWidthProfile(
+  payload: any,
+  printerColumns: number,
+  warnings?: PrintWarning[],
+): { columns: number; layout: any } {
   const profiles = collectTemplateWidthProfiles(payload);
   const exact = profiles.find((profile) => profile.columns === printerColumns);
   if (exact) return exact;
-  const smaller = profiles.filter((profile) => profile.columns < printerColumns).sort((a, b) => b.columns - a.columns)[0];
+  const smaller = profiles
+    .filter((profile) => profile.columns < printerColumns)
+    .sort((a, b) => b.columns - a.columns)[0];
   if (smaller) return smaller;
 
   warnings?.push({
@@ -1721,7 +2247,10 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
       columns: Number(profile?.columns),
       layout: profile?.layout && typeof profile.layout === 'object' ? profile.layout : {},
     }))
-    .filter((profile: { columns: number }) => Number.isInteger(profile.columns) && profile.columns >= 32 && profile.columns <= 48)
+    .filter(
+      (profile: { columns: number }) =>
+        Number.isInteger(profile.columns) && profile.columns >= 32 && profile.columns <= 48,
+    )
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
@@ -1731,7 +2260,20 @@ const TEMPLATE_ROW_TO_CHARGE_ID: Partial<Record<TemplateChargeRowId, string>> = 
   packagingCharge: 'packaging_charge',
 };
 
-function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
+function renderEscposLineTemplateV1(
+  payload: any,
+  profile: { columns: number; layout: any },
+  order: any,
+  bill: any,
+  biz: any,
+  useUnicode: boolean,
+  isReprint: boolean,
+  cutMode: PrinterCutMode,
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   const lines: string[] = [];
   const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const pushFinancialLines = (financialLines: string[]): void => {
@@ -1750,42 +2292,105 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   // CLDR-derived only — a stored currency_symbol setting is not an input
   // (docs/reference/product-invariants.md: no per-store override of a snapshot value).
-  const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
+  const prefix = resolveCurrencyPrefix(
+    getCurrencySymbol(currency, locale) || currency,
+    useUnicode,
+    capabilities,
+    false,
+    currency,
+  );
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
-  const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
+  const configuredTaxLabel = normalize(
+    sanitizeTemplateLabelText(
+      String(
+        payload?.fields?.taxRegistrationNumberLabel ||
+          getCountryByCode(biz.country)?.taxIdLabel ||
+          'Tax ID',
+      ),
+    ),
+  );
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => component.amount !== 0);
+  const hasTax =
+    Number(bill.tax_amount) !== 0 || taxComponents.some((component) => component.amount !== 0);
   // Sanitize pack strings against reserved tokens and clamp to selected width profile.
   const title = hasTax
-    ? fitTemplateLabel(normalize(String(payload?.header?.taxTitleWhenTaxPresent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'taxInvoice', lang)), cols)
-    : fitTemplateLabel(normalize(String(payload?.header?.titleWhenTaxAbsent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'invoice', lang)), cols);
+    ? fitTemplateLabel(normalize(String(payload?.header?.taxTitleWhenTaxPresent || '')), cols) ||
+      fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'taxInvoice', lang)), cols)
+    : fitTemplateLabel(normalize(String(payload?.header?.titleWhenTaxAbsent || '')), cols) ||
+      fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'invoice', lang)), cols);
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(printLabel(lang, 'receipt.reprint')) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (isReprint)
+    lines.push(
+      '{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' +
+        normalize(printLabel(lang, 'receipt.reprint')) +
+        ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}',
+    );
   if (biz.show_name !== false && biz.name) {
-    const name = payload?.header?.businessNameTransform === 'uppercase'
-      ? String(biz.name).toUpperCase()
-      : String(biz.name);
-    lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(name, cols, arabicShaping, lang, capabilities) + '{/BOLD}{/CENTER}');
+    const name =
+      payload?.header?.businessNameTransform === 'uppercase'
+        ? String(biz.name).toUpperCase()
+        : String(biz.name);
+    lines.push(
+      '{STORE_NAME}{CENTER}{BOLD}' +
+        truncateShapedLine(name, cols, arabicShaping, lang, capabilities) +
+        '{/BOLD}{/CENTER}',
+    );
   }
   lines.push(bar);
   lines.push(`{CENTER}${title}{/CENTER}`);
   lines.push(bar);
-  lines.push(normalize(printLabel(lang, 'print.invoiceNumber')) + ' ' + (bill.bill_number || order.order_number));
-  lines.push(normalize(printLabel(lang, 'receipt.date')) + ': ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
-  lines.push(normalize(printLabel(lang, 'print.time')) + ': ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping, lang, capabilities));
+  lines.push(
+    normalize(printLabel(lang, 'print.invoiceNumber')) +
+      ' ' +
+      (bill.bill_number || order.order_number),
+  );
+  lines.push(
+    normalize(printLabel(lang, 'receipt.date')) +
+      ': ' +
+      date.toLocaleDateString(locale + '-u-nu-latn', tzOptions),
+  );
+  lines.push(
+    normalize(printLabel(lang, 'print.time')) +
+      ': ' +
+      date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions),
+  );
+  if (biz.show_table_number !== false && order.table?.name)
+    lines.push(
+      truncateShapedLine(
+        formatTableLabel(order.table.name, lang),
+        cols,
+        arabicShaping,
+        lang,
+        capabilities,
+      ),
+    );
   // The heading marks these as the customer's details, so a receipt that also
   // prints the store address cannot read as carrying a second business address.
   const deliveryAddress = String(order?.delivery_address ?? '').trim();
   if (deliveryAddress.length > 0) lines.push(normalize(printLabel(lang, 'print.customerDetails')));
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping, lang, capabilities));
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(normalize(printLabel(lang, 'print.numberShort')) + ': ' + biz.customer_phone);
+  if (biz.show_customer_name !== false && biz.customer_name)
+    lines.push(
+      truncateShapedLine(
+        printLabel(lang, 'pos.customer') + ': ' + biz.customer_name,
+        cols,
+        arabicShaping,
+        lang,
+        capabilities,
+      ),
+    );
+  if (biz.show_customer_phone !== false && biz.customer_phone)
+    lines.push(normalize(printLabel(lang, 'print.numberShort')) + ': ' + biz.customer_phone);
   if (deliveryAddress.length > 0) {
     // Wrapped, not truncated, so the courier reads the whole address.
-    pushWrapped(lines, normalize(printLabel(lang, 'print.deliverySlip.address')) + ': ' + deliveryAddress, cols, lang, capabilities);
+    pushWrapped(
+      lines,
+      normalize(printLabel(lang, 'print.deliverySlip.address')) + ': ' + deliveryAddress,
+      cols,
+      lang,
+      capabilities,
+    );
   }
   lines.push(dash);
   lines.push(pluginItemHeader(layout, cols, lang, capabilities));
@@ -1793,17 +2398,45 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   if (order.items) {
     for (const item of order.items) {
-      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
+      pushFinancialLines(
+        pluginItemRows(
+          item,
+          layout,
+          cols,
+          prefix,
+          locale,
+          trimDecimals,
+          fractionDigits,
+          lang,
+          capabilities,
+        ),
+      );
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
-          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang, capabilities);
+          pushWrapped(
+            addonLines,
+            '  + ' +
+              addon.name +
+              (addon.price
+                ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits)
+                : ''),
+            cols,
+            lang,
+            capabilities,
+          );
           if (addon.price) pushFinancialLines(addonLines);
           else lines.push(...addonLines);
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
-        pushWrapped(lines, '  ' + normalize(printLabel(lang, 'print.note')) + ': ' + item.special_instructions, cols, lang, capabilities);
+        pushWrapped(
+          lines,
+          '  ' + normalize(printLabel(lang, 'print.note')) + ': ' + item.special_instructions,
+          cols,
+          lang,
+          capabilities,
+        );
       }
     }
   }
@@ -1812,22 +2445,64 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // Row labels share line with right-aligned amount; clamped with 12-column reserve.
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
-    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    const label = fitTemplateLabel(
+      normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)),
+      rowLabelWidth,
+    );
+    pushFinancialLines(
+      financialRows(
+        label,
+        formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits),
+        cols,
+        lang,
+        capabilities,
+      ),
+    );
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
-    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    const label = fitTemplateLabel(
+      normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)),
+      rowLabelWidth,
+    );
+    pushFinancialLines(
+      financialRows(
+        label,
+        '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits),
+        cols,
+        lang,
+        capabilities,
+      ),
+    );
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      pushFinancialLines([pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities)]);
+      pushFinancialLines([
+        pluginSummaryRow(
+          rawLabel,
+          formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits),
+          layout,
+          cols,
+          lang,
+          capabilities,
+        ),
+      ]);
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    const label = fitTemplateLabel(
+      normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)),
+      rowLabelWidth,
+    );
+    pushFinancialLines(
+      financialRows(
+        label,
+        formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits),
+        cols,
+        lang,
+        capabilities,
+      ),
+    );
   }
   // chargeRows capability declaration preserves stable country/legal row order.
   // When the bill carries an engine breakdown it is the itemised source of truth,
@@ -1844,29 +2519,77 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     if (amount === 0) continue;
     const chargeId = TEMPLATE_ROW_TO_CHARGE_ID[row] ?? row;
     if (itemisedIds.has(chargeId)) continue;
-    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    const label = fitTemplateLabel(
+      normalize(resolveTemplateLabel(payload?.labels, row, lang)),
+      rowLabelWidth,
+    );
+    pushFinancialLines(
+      financialRows(
+        label,
+        formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits),
+        cols,
+        lang,
+        capabilities,
+      ),
+    );
   }
   // Merchant-named surcharges have no catalog label; the configured name is the
   // label, so only the amount needs formatting.
   for (const charge of itemisedCharges) {
-    pushFinancialLines(financialRows(charge.name, formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(
+      financialRows(
+        charge.name,
+        formatCurrency(charge.amount, prefix, locale, trimDecimals, fractionDigits),
+        cols,
+        lang,
+        capabilities,
+      ),
+    );
   }
   lines.push(bar);
   // Label precedence: template literal wins, then labels map, then localized catalog.
-  const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
-  pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+  const totalLabel =
+    fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) ||
+    fitTemplateLabel(
+      normalize(resolveTemplateLabel(payload?.labels, 'total', lang)),
+      rowLabelWidth,
+    );
+  pushFinancialLines(
+    financialRows(
+      totalLabel,
+      formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits),
+      cols,
+      lang,
+      capabilities,
+    ).map((line) => `{BOLD}${line}{/BOLD}`),
+  );
 
   if (bill.payment_details) {
     lines.push(dash);
     try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
+      const payments =
+        typeof bill.payment_details === 'string'
+          ? JSON.parse(bill.payment_details)
+          : bill.payment_details;
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
             const amount = Number(payment.amount) || 0;
-            const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            pushFinancialLines(financialRows(methodLabel, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            const methodLabel = truncate(
+              resolvePaymentMethodLabel(String(payment.method), lang),
+              cols - 12,
+              lang,
+              capabilities,
+            );
+            pushFinancialLines(
+              financialRows(
+                methodLabel,
+                formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits),
+                cols,
+                lang,
+                capabilities,
+              ),
+            );
             const tender = projectCashTender({
               method: String(payment.method),
               amount,
@@ -1874,11 +2597,37 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
               change: optionalPaymentAmount(payment.change_amount),
             });
             if (tender) {
-              const tenderedLabel = truncate(printLabel(lang, 'receipt.cashReceived'), cols - 12, lang, capabilities);
-              pushFinancialLines(financialRows(tenderedLabel, formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+              const tenderedLabel = truncate(
+                printLabel(lang, 'receipt.cashReceived'),
+                cols - 12,
+                lang,
+                capabilities,
+              );
+              pushFinancialLines(
+                financialRows(
+                  tenderedLabel,
+                  formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits),
+                  cols,
+                  lang,
+                  capabilities,
+                ),
+              );
               if (tender.change > 0) {
-                const changeLabel = truncate(printLabel(lang, 'pos.changeReturned'), cols - 12, lang, capabilities);
-                pushFinancialLines(financialRows(changeLabel, formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+                const changeLabel = truncate(
+                  printLabel(lang, 'pos.changeReturned'),
+                  cols - 12,
+                  lang,
+                  capabilities,
+                );
+                pushFinancialLines(
+                  financialRows(
+                    changeLabel,
+                    formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits),
+                    cols,
+                    lang,
+                    capabilities,
+                  ),
+                );
               }
             }
           }
@@ -1890,23 +2639,72 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   }
 
   lines.push(bar);
-  if (biz.show_address !== false && biz.address) pushWrapped(lines, normalize(printLabel(lang, 'print.address')) + ': ' + biz.address, cols, lang, capabilities);
-  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, normalize(printLabel(lang, 'print.phoneLong')) + ': ' + biz.phone, cols, lang, capabilities);
-  const showTaxRegistration = payload?.totals?.showTaxRegistrationNumber === 'when_tax_present_or_enabled'
-    ? (hasTax || biz.show_tax_id === true)
-    : biz.show_tax_id === true;
-  if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols, lang, capabilities);
-  if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols, lang, capabilities);
-  else lines.push('{CENTER}' + (fitTemplateLabel(normalize(String(payload?.footer?.defaultMessage || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'footerThanks', lang)), cols)) + '{/CENTER}');
+  if (biz.show_address !== false && biz.address)
+    pushWrapped(
+      lines,
+      normalize(printLabel(lang, 'print.address')) + ': ' + biz.address,
+      cols,
+      lang,
+      capabilities,
+    );
+  if (biz.show_phone !== false && biz.phone)
+    pushWrapped(
+      lines,
+      normalize(printLabel(lang, 'print.phoneLong')) + ': ' + biz.phone,
+      cols,
+      lang,
+      capabilities,
+    );
+  const showTaxRegistration =
+    payload?.totals?.showTaxRegistrationNumber === 'when_tax_present_or_enabled'
+      ? hasTax || biz.show_tax_id === true
+      : biz.show_tax_id === true;
+  if (showTaxRegistration && biz.taxRegistrationNumber)
+    pushWrapped(
+      lines,
+      configuredTaxLabel + ': ' + biz.taxRegistrationNumber,
+      cols,
+      lang,
+      capabilities,
+    );
+  if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note)
+    pushCenteredWrapped(lines, biz.footer_note, cols, lang, capabilities);
+  else
+    lines.push(
+      '{CENTER}' +
+        (fitTemplateLabel(normalize(String(payload?.footer?.defaultMessage || '')), cols) ||
+          fitTemplateLabel(
+            normalize(resolveTemplateLabel(payload?.labels, 'footerThanks', lang)),
+            cols,
+          )) +
+        '{/CENTER}',
+    );
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges }, warnings);
+  return buildEscPos(
+    lines,
+    useUnicode,
+    { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges },
+    warnings,
+  );
 }
 
-
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
-export function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
+export function formatCompactReceipt(
+  order: any,
+  bill: any,
+  biz: any,
+  cols: number = 48,
+  useUnicode: boolean = false,
+  isReprint: boolean = false,
+  cutMode: PrinterCutMode = 'full',
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  lang: string = 'en',
+  additionalLanguage?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   const result = renderCompactReceiptViaDocument(order, bill, biz, {
     columns: cols,
     language: lang,
@@ -1922,7 +2720,20 @@ export function formatCompactReceipt(order: any, bill: any, biz: any, cols: numb
 }
 
 /** Classic thermal receipt: builds PrintDocument and renders via document-classic pipeline. */
-export function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
+export function formatClassicReceipt(
+  order: any,
+  bill: any,
+  biz: any,
+  cols: number = 48,
+  useUnicode: boolean = false,
+  isReprint: boolean = false,
+  cutMode: PrinterCutMode = 'full',
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  lang: string = 'en',
+  additionalLanguage?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   const result = renderClassicReceiptViaDocument(order, bill, biz, {
     columns: cols,
     language: lang,
@@ -1948,28 +2759,56 @@ type PluginLineColumn = {
   ellipsis?: boolean;
 };
 
-function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): PluginLineColumn[] {
+function pluginLineItemColumns(
+  layout: any,
+  cols: number,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): PluginLineColumn[] {
   const configured = layout?.lineItems?.columns;
   if (Array.isArray(configured) && configured.length > 0) {
     const columns = configured
       .map((column: any) => ({
         key: typeof column?.key === 'string' ? column.key : undefined,
-        label: typeof column?.label === 'string'
-          ? normalizeThermalText(column.label, capabilities)
-          : undefined,
+        label:
+          typeof column?.label === 'string'
+            ? normalizeThermalText(column.label, capabilities)
+            : undefined,
         width: Number(column?.width),
         align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
         wrap: column?.wrap === true,
-        maxLines: Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
+        maxLines:
+          Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
         ellipsis: column?.ellipsis !== false,
       }))
-      .filter((column: PluginLineColumn) => column.key && Number.isInteger(column.width) && Number(column.width) > 0);
+      .filter(
+        (column: PluginLineColumn) =>
+          column.key && Number.isInteger(column.width) && Number(column.width) > 0,
+      );
     if (columns.length > 0) return columns;
   }
   return [
-    { key: 'item', label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities), width: itemNameWidth(cols, 10), align: 'left', wrap: true, maxLines: 2, ellipsis: true },
-    { key: 'quantity', label: normalizeThermalText(printLabel(lang, 'receipt.qty'), capabilities), width: 4, align: 'left' },
-    { key: 'amount', label: normalizeThermalText(printLabel(lang, 'receipt.amount'), capabilities), width: 10, align: 'right' },
+    {
+      key: 'item',
+      label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities),
+      width: itemNameWidth(cols, 10),
+      align: 'left',
+      wrap: true,
+      maxLines: 2,
+      ellipsis: true,
+    },
+    {
+      key: 'quantity',
+      label: normalizeThermalText(printLabel(lang, 'receipt.qty'), capabilities),
+      width: 4,
+      align: 'left',
+    },
+    {
+      key: 'amount',
+      label: normalizeThermalText(printLabel(lang, 'receipt.amount'), capabilities),
+      width: 10,
+      align: 'right',
+    },
   ];
 }
 
@@ -1984,7 +2823,12 @@ function pluginDetailLines(layout: any): string[] {
   return detailLines.filter((line: unknown) => typeof line === 'string');
 }
 
-function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+function pluginItemHeader(
+  layout: any,
+  cols: number,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): string {
   return composePluginColumns(
     pluginLineItemColumns(layout, cols, lang, capabilities).map((column) => ({
       ...column,
@@ -1995,35 +2839,66 @@ function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabi
   );
 }
 
-function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
+function pluginItemRows(
+  item: any,
+  layout: any,
+  cols: number,
+  prefix: string,
+  locale: string,
+  trimDecimals: boolean,
+  fractionDigits: number,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): string[] {
   const columns = pluginLineItemColumns(layout, cols, lang, capabilities);
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
-    value: normalizeThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits), capabilities),
+    value: normalizeThermalText(
+      pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+      capabilities,
+    ),
   }));
   const wrappedValues = values.map((column) => {
-    if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
+    if (!column.wrap)
+      return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
     const maxLines = column.maxLines || 2;
     const wrapped = wrapText(column.value, Number(column.width));
     const limited = wrapped.slice(0, maxLines);
     if (wrapped.length > maxLines && limited.length > 0 && column.ellipsis !== false) {
-      limited[limited.length - 1] = truncateCell(limited[limited.length - 1], Number(column.width), true);
+      limited[limited.length - 1] = truncateCell(
+        limited[limited.length - 1],
+        Number(column.width),
+        true,
+      );
     }
     return limited.length > 0 ? limited : [''];
   });
   const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
   const rows: string[] = [];
   for (let index = 0; index < lineCount; index++) {
-    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
-      ...column,
-      value: wrappedValues[columnIndex][index] || '',
-    })), gap, cols));
+    rows.push(
+      composePluginColumns(
+        values.map((column, columnIndex) => ({
+          ...column,
+          value: wrappedValues[columnIndex][index] || '',
+        })),
+        gap,
+        cols,
+      ),
+    );
   }
   return rows;
 }
 
-function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number): string {
+function pluginItemColumnValue(
+  key: string,
+  item: any,
+  prefix: string,
+  locale: string,
+  trimDecimals: boolean,
+  fractionDigits: number,
+): string {
   switch (key) {
     case 'item':
       return String(item.product_name || '');
@@ -2031,7 +2906,9 @@ function pluginItemColumnValue(key: string, item: any, prefix: string, locale: s
       return String(item.quantity ?? '');
     case 'rate': {
       const quantity = Number(item.quantity) || 0;
-      const rate = Number(item.unit_price ?? item.price ?? (quantity ? Number(item.total) / quantity : 0));
+      const rate = Number(
+        item.unit_price ?? item.price ?? (quantity ? Number(item.total) / quantity : 0),
+      );
       return formatCurrency(rate, prefix, locale, trimDecimals, fractionDigits);
     }
     case 'taxRate':
@@ -2047,32 +2924,57 @@ function pluginItemTaxRate(item: any): string {
   const rates = new Set<string>();
   const breakdown = Array.isArray(item.tax_breakdown) ? item.tax_breakdown : [];
   for (const component of breakdown) {
-    if (component?.rate !== null && component?.rate !== undefined) rates.add(String(component.rate));
+    if (component?.rate !== null && component?.rate !== undefined)
+      rates.add(String(component.rate));
   }
   return [...rates].join('+');
 }
 
-function pluginSummaryRow(label: string, amount: string, layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+function pluginSummaryRow(
+  label: string,
+  amount: string,
+  layout: any,
+  cols: number,
+  lang: string = 'en',
+  capabilities?: ThermalPrinterCapabilities,
+): string {
   const normalizedLabel = normalizeThermalText(label, capabilities);
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
-  if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
-    return composePluginColumns([
-      { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
-      { value: amount, width: amountWidth, align: 'right', ellipsis: true },
-    ], Math.max(0, cols - labelWidth - amountWidth), cols);
+  if (
+    Number.isInteger(labelWidth) &&
+    Number.isInteger(amountWidth) &&
+    labelWidth > 0 &&
+    amountWidth > 0
+  ) {
+    return composePluginColumns(
+      [
+        { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
+        { value: amount, width: amountWidth, align: 'right', ellipsis: true },
+      ],
+      Math.max(0, cols - labelWidth - amountWidth),
+      cols,
+    );
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
   return safeLabel + rightAlign(amount, cols - displayCellWidth(safeLabel));
 }
 
-function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
+function composePluginColumns(
+  columns: Array<PluginLineColumn & { value: string }>,
+  gap: number,
+  cols: number,
+): string {
   const separator = ' '.repeat(gap);
-  const line = columns.map((column) => alignCell(
-    truncateCell(column.value, Number(column.width), column.ellipsis !== false),
-    Number(column.width),
-    column.align || 'left',
-  )).join(separator);
+  const line = columns
+    .map((column) =>
+      alignCell(
+        truncateCell(column.value, Number(column.width), column.ellipsis !== false),
+        Number(column.width),
+        column.align || 'left',
+      ),
+    )
+    .join(separator);
   return padToDisplayCells(truncateCell(line, cols, false), cols);
 }
 
@@ -2087,8 +2989,6 @@ function truncateCell(text: string, length: number, ellipsis: boolean): string {
   if (!ellipsis || length <= 2) return truncateToDisplayCells(value, length);
   return truncateToDisplayCells(value, length - 2) + '..';
 }
-
-
 
 const PAYMENT_METHOD_CONCEPTS: Record<string, PrintConceptId> = {
   cash: 'pos.methodCash',
@@ -2112,9 +3012,21 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-
 /** Kitchen order ticket: builds KotDocument and renders via document-kot pipeline. */
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
+export function formatKOT(
+  order: any,
+  items: any[],
+  stationName: string,
+  cols: number = 48,
+  useUnicode: boolean = false,
+  cutMode: PrinterCutMode = 'full',
+  locale: string = 'en-US',
+  tzOptions?: any,
+  warnings?: PrintWarning[],
+  arabicShaping: boolean = false,
+  language?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   const lang = normalizePrintLanguage(language);
   const result = renderKotViaDocument(order, items, stationName, {
     columns: cols,
@@ -2130,10 +3042,17 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   return result.data;
 }
 
-export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
+export function buildTestPage(
+  paperWidth: string = '80mm',
+  cutMode: PrinterCutMode = 'full',
+  language?: string,
+  timezone?: string,
+  capabilities?: ThermalPrinterCapabilities,
+): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
-  const label = (concept: PrintConceptId): string => normalizeThermalText(printLabel(lang, concept));
+  const label = (concept: PrintConceptId): string =>
+    normalizeThermalText(printLabel(lang, concept));
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
   const edgeProbe = 'X'.repeat(width);
@@ -2157,7 +3076,8 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang, columns: width });
+  if (!capabilities || !rasterCapabilityEnabled(capabilities))
+    return buildEscPos(lines, false, { cutMode, language: lang, columns: width });
   // Explicit shaping capability prevents raster profile passing unshaped Arabic to text.
   const textData = buildEscPos(lines.slice(0, -1), false, {
     cutMode,
@@ -2166,13 +3086,25 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     arabicShaping: capabilities.shaping.arabic,
     columns: width,
   });
-  const rasterData = encodeRasterUnits([{
-    unitId: 'diagnostic-test-page',
-    financial: false,
-    complete: true,
-    bands: buildRasterDiagnosticBands(capabilities.raster.widthDots, capabilities.raster.maxBandHeight),
-  }], capabilities);
-  return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
+  const rasterData = encodeRasterUnits(
+    [
+      {
+        unitId: 'diagnostic-test-page',
+        financial: false,
+        complete: true,
+        bands: buildRasterDiagnosticBands(
+          capabilities.raster.widthDots,
+          capabilities.raster.maxBandHeight,
+        ),
+      },
+    ],
+    capabilities,
+  );
+  return Buffer.concat([
+    textData,
+    Buffer.from(rasterData),
+    Buffer.from(encodeRasterFeedAndCut(cutMode)),
+  ]);
 }
 
 /**
@@ -2186,15 +3118,21 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
  * `printZReport` (the route layer) so the byte form is reusable for the
  * WebUSB `bytes: number[]` branch where the renderer dispatches.
  */
-export function buildZReportBody(z: any, language?: string, printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities }, warnings?: PrintWarning[]): Buffer {
+export function buildZReportBody(
+  z: any,
+  language?: string,
+  printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities },
+  warnings?: PrintWarning[],
+): Buffer {
   const cols = printer?.columns || columnsForPaperWidth('80mm') || 48;
   const lang = normalizePrintLanguage(language ?? z?.__language);
   const additionalLanguage = z?.__additionalLanguage
     ? normalizePrintLanguage(z.__additionalLanguage)
     : undefined;
-  const settingsRows = getDatabase()
-    .prepare('SELECT key, value FROM settings')
-    .all() as { key: string; value: string }[];
+  const settingsRows = getDatabase().prepare('SELECT key, value FROM settings').all() as {
+    key: string;
+    value: string;
+  }[];
   const settings: Record<string, string> = Object.fromEntries(
     settingsRows.map((r) => [r.key, r.value]),
   );
@@ -2208,13 +3146,11 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const factor = 10 ** fractionDigits;
   const locale = snapshot.locale;
   const tz = snapshot.timezone;
-  const prefix = resolveCurrencyPrefix(
-    getCurrencySymbol(currency, locale),
-    false,
-  );
+  const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale), false);
   const trimDecimals = false;
   const centsToAmount = (cents: number): number => (Number(cents) || 0) / factor;
-  const formatAmount = (cents: number): string => formatCurrency(centsToAmount(cents), prefix, locale, trimDecimals, fractionDigits);
+  const formatAmount = (cents: number): string =>
+    formatCurrency(centsToAmount(cents), prefix, locale, trimDecimals, fractionDigits);
   const localTime = (iso: string): string => {
     try {
       const d = parseDbTimestamp(iso);
@@ -2224,9 +3160,10 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
       return iso;
     }
   };
-  const languages = additionalLanguage && additionalLanguage !== lang
-    ? [lang, additionalLanguage] as const
-    : [lang] as const;
+  const languages =
+    additionalLanguage && additionalLanguage !== lang
+      ? ([lang, additionalLanguage] as const)
+      : ([lang] as const);
   const documentData: ZReportPrintData = {
     zNumber: z?.z_number ?? 0,
     businessDate: String(z?.business_date || ''),
@@ -2236,11 +3173,13 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
     payInCents: Number(z?.pay_in_cents) || 0,
     payOutCents: Number(z?.pay_out_cents) || 0,
     safeDropCents: Number(z?.safe_drop_cents) || 0,
-    paymentMethods: (Array.isArray(z?.payment_methods) ? z.payment_methods : []).map((row: any) => ({
-      method: String(row?.method || ''),
-      count: Number(row?.count) || 0,
-      totalCents: Number(row?.total_cents ?? row?.total) || 0,
-    })),
+    paymentMethods: (Array.isArray(z?.payment_methods) ? z.payment_methods : []).map(
+      (row: any) => ({
+        method: String(row?.method || ''),
+        count: Number(row?.count) || 0,
+        totalCents: Number(row?.total_cents ?? row?.total) || 0,
+      }),
+    ),
     refundCount: Number(z?.refund_count) || 0,
     refundedCents: Number(z?.refunded_cents) || 0,
     taxComponents: (Array.isArray(z?.tax_components) ? z.tax_components : []).map((row: any) => ({
@@ -2264,31 +3203,59 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const zDocument = buildZReportDocument(documentData, {
     languages,
     baseDirection: containsRtlScript(printLabel(lang, 'print.zReport.title')) ? 'rtl' : 'ltr',
-    resolveLabel: (conceptId, languageCode) => printLabel(languageCode, conceptId as PrintConceptId),
+    resolveLabel: (conceptId, languageCode) =>
+      printLabel(languageCode, conceptId as PrintConceptId),
   });
   const zContext = zLayoutContext(cols, zDocument, printer?.capabilities);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const sections: string[] = [];
   sections.push('{INIT}');
-  if (zDocument.header.businessName) pushCenteredWrapped(sections, zDocument.header.businessName.text, cols, lang, printer?.capabilities);
-  if (zDocument.header.businessAddress) pushCenteredWrapped(sections, zDocument.header.businessAddress.text, cols, lang, printer?.capabilities);
-  if (zDocument.header.taxRegistrationNumber) pushCenteredWrapped(sections, zDocument.header.taxRegistrationNumber.text, cols, lang, printer?.capabilities);
+  if (zDocument.header.businessName)
+    pushCenteredWrapped(
+      sections,
+      zDocument.header.businessName.text,
+      cols,
+      lang,
+      printer?.capabilities,
+    );
+  if (zDocument.header.businessAddress)
+    pushCenteredWrapped(
+      sections,
+      zDocument.header.businessAddress.text,
+      cols,
+      lang,
+      printer?.capabilities,
+    );
+  if (zDocument.header.taxRegistrationNumber)
+    pushCenteredWrapped(
+      sections,
+      zDocument.header.taxRegistrationNumber.text,
+      cols,
+      lang,
+      printer?.capabilities,
+    );
   sections.push('');
 
   const titleLabel: SemanticLabel = {
     primary: `${zDocument.header.title.primary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker ? ` (${zDocument.header.reprintMarker.primary})` : ''}`,
     ...(zDocument.header.title.secondary
-      ? { secondary: `${zDocument.header.title.secondary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker?.secondary ? ` (${zDocument.header.reprintMarker.secondary})` : ''}` }
+      ? {
+          secondary: `${zDocument.header.title.secondary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker?.secondary ? ` (${zDocument.header.reprintMarker.secondary})` : ''}`,
+        }
       : {}),
   };
-  for (const line of layoutStyledUnit({ label: titleLabel, field: 'Z report title' }, zContext).lines) {
-    sections.push('{CENTER}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}');
+  for (const line of layoutStyledUnit({ label: titleLabel, field: 'Z report title' }, zContext)
+    .lines) {
+    sections.push(
+      '{CENTER}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}',
+    );
   }
   sections.push('');
 
   sections.push(bar);
-  for (const row of zDocument.period) pushZReportLabelValue(sections, row.label, row.value.text, zContext);
+  for (const row of zDocument.period)
+    pushZReportLabelValue(sections, row.label, row.value.text, zContext);
   sections.push(bar);
   sections.push('');
 
@@ -2297,42 +3264,89 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.cashMovements.heading, zContext);
-  pushZReportLabelValue(sections, zDocument.cashMovements.payIn.label, formatAmount(zDocument.cashMovements.payIn.cents), zContext);
-  pushZReportLabelValue(sections, zDocument.cashMovements.payOut.label, formatAmount(zDocument.cashMovements.payOut.cents), zContext);
-  pushZReportLabelValue(sections, zDocument.cashMovements.safeDrop.label, formatAmount(zDocument.cashMovements.safeDrop.cents), zContext);
+  pushZReportLabelValue(
+    sections,
+    zDocument.cashMovements.payIn.label,
+    formatAmount(zDocument.cashMovements.payIn.cents),
+    zContext,
+  );
+  pushZReportLabelValue(
+    sections,
+    zDocument.cashMovements.payOut.label,
+    formatAmount(zDocument.cashMovements.payOut.cents),
+    zContext,
+  );
+  pushZReportLabelValue(
+    sections,
+    zDocument.cashMovements.safeDrop.label,
+    formatAmount(zDocument.cashMovements.safeDrop.cents),
+    zContext,
+  );
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.payments.heading, zContext);
-  if (zDocument.payments.rows.length === 0) pushZReportEmpty(sections, zDocument.payments.none, zContext);
+  if (zDocument.payments.rows.length === 0)
+    pushZReportEmpty(sections, zDocument.payments.none, zContext);
   for (const row of zDocument.payments.rows) {
-    pushZReportRow(sections, {
-      primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
-      ...(row.label.secondary && row.countLabel.secondary
-        ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
-        : {}),
-    }, formatAmount(row.totalCents), zContext);
+    pushZReportRow(
+      sections,
+      {
+        primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
+        ...(row.label.secondary && row.countLabel.secondary
+          ? {
+              secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}`,
+            }
+          : {}),
+      },
+      formatAmount(row.totalCents),
+      zContext,
+    );
   }
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.refunds.heading, zContext);
-  pushZReportLabelValue(sections, zDocument.refunds.countLabel, String(zDocument.refunds.count), zContext);
-  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), zContext, true);
+  pushZReportLabelValue(
+    sections,
+    zDocument.refunds.countLabel,
+    String(zDocument.refunds.count),
+    zContext,
+  );
+  pushZReportLabelValue(
+    sections,
+    zDocument.refunds.totalLabel,
+    formatAmount(zDocument.refunds.totalCents),
+    zContext,
+    true,
+  );
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.tax.heading, zContext);
   if (zDocument.tax.rows.length === 0) pushZReportEmpty(sections, zDocument.tax.none, zContext);
-  for (const row of zDocument.tax.rows) pushZReportRow(sections, row.label, formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits), zContext);
+  for (const row of zDocument.tax.rows)
+    pushZReportRow(
+      sections,
+      row.label,
+      formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits),
+      zContext,
+    );
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.staff.heading, zContext);
   if (zDocument.staff.rows.length === 0) pushZReportEmpty(sections, zDocument.staff.none, zContext);
   for (const row of zDocument.staff.rows) {
-    pushZReportRow(sections, {
-      primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
-      ...(row.label.secondary && row.countLabel.secondary
-        ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
-        : {}),
-    }, formatAmount(row.totalCents), zContext);
+    pushZReportRow(
+      sections,
+      {
+        primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
+        ...(row.label.secondary && row.countLabel.secondary
+          ? {
+              secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}`,
+            }
+          : {}),
+      },
+      formatAmount(row.totalCents),
+      zContext,
+    );
   }
   sections.push('');
 
@@ -2345,37 +3359,72 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const varianceLabel: SemanticLabel = {
     primary: `${zDocument.cash.variance.label.primary}  ${formatAmount(zDocument.cash.variance.cents)}`,
     ...(zDocument.cash.variance.label.secondary
-      ? { secondary: `${zDocument.cash.variance.label.secondary}  ${formatAmount(zDocument.cash.variance.cents)}` }
+      ? {
+          secondary: `${zDocument.cash.variance.label.secondary}  ${formatAmount(zDocument.cash.variance.cents)}`,
+        }
       : {}),
   };
   for (const line of zLaidOutLabel(varianceLabel, zContext)) {
-    sections.push('{CENTER}{FINANCIAL}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}');
+    sections.push(
+      '{CENTER}{FINANCIAL}{BOLD}' +
+        normalizeThermalText(line, printer?.capabilities) +
+        '{/BOLD}{/CENTER}',
+    );
   }
   sections.push(dash);
   sections.push('');
 
-  if (zDocument.operator.name) pushZReportTextValue(sections, zDocument.operator.label, zDocument.operator.name.text, zContext);
+  if (zDocument.operator.name)
+    pushZReportTextValue(
+      sections,
+      zDocument.operator.label,
+      zDocument.operator.name.text,
+      zContext,
+    );
   const signatureLines = zLaidOutLabel(zDocument.operator.signatureLabel, zContext);
-  const inlineSignature = signatureLines.length === 1 ? normalizeThermalText(signatureLines[0], printer?.capabilities) : null;
-  const remainingSigCols = inlineSignature === null ? 0 : cols - thermalDisplayWidth(inlineSignature) - 1;
+  const inlineSignature =
+    signatureLines.length === 1
+      ? normalizeThermalText(signatureLines[0], printer?.capabilities)
+      : null;
+  const remainingSigCols =
+    inlineSignature === null ? 0 : cols - thermalDisplayWidth(inlineSignature) - 1;
   if (inlineSignature !== null && remainingSigCols >= 8) {
     sections.push(inlineSignature + ' ' + '_'.repeat(remainingSigCols));
   } else {
-    for (const line of signatureLines) sections.push(normalizeThermalText(line, printer?.capabilities));
+    for (const line of signatureLines)
+      sections.push(normalizeThermalText(line, printer?.capabilities));
     sections.push('_'.repeat(cols));
   }
   sections.push('');
 
-  for (const line of bilingualLabelLines(zDocument.footer, selectBilingualFit(zDocument.footer, cols))) {
+  for (const line of bilingualLabelLines(
+    zDocument.footer,
+    selectBilingualFit(zDocument.footer, cols),
+  )) {
     sections.push('{CENTER}' + normalizeThermalText(line, printer?.capabilities) + '{/CENTER}');
   }
-  sections.push('{CENTER}Z#' + zDocument.header.zNumber.text + ' - ' + normalizeThermalText(documentData.businessDate, printer?.capabilities) + '{/CENTER}');
+  sections.push(
+    '{CENTER}Z#' +
+      zDocument.header.zNumber.text +
+      ' - ' +
+      normalizeThermalText(documentData.businessDate, printer?.capabilities) +
+      '{/CENTER}',
+  );
   sections.push('{CUT}');
 
-  return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities }, warnings);
+  return buildEscPos(
+    sections,
+    false,
+    { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities },
+    warnings,
+  );
 }
 
-function zLayoutContext(columns: number, document: ZReportDocument, capabilities?: ThermalPrinterCapabilities): ThermalLayoutContext {
+function zLayoutContext(
+  columns: number,
+  document: ZReportDocument,
+  capabilities?: ThermalPrinterCapabilities,
+): ThermalLayoutContext {
   return {
     logicalColumns: columns,
     direction: document.direction.base,
@@ -2392,35 +3441,74 @@ function zLaidOutLabel(label: SemanticLabel, context: ThermalLayoutContext): str
   return [...layoutStyledUnit({ label, field: 'Z report label' }, context).lines];
 }
 
-function pushZReportHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext, financial = false): void {
+function pushZReportHeading(
+  lines: string[],
+  label: SemanticLabel,
+  context: ThermalLayoutContext,
+  financial = false,
+): void {
   const layout = layoutStyledUnit({ label, field: 'Z report section' }, context);
-  for (const line of layout.lines) lines.push((financial ? '{FINANCIAL}' : '') + '{BOLD}' + normalizeThermalText(line, context.capabilities) + '{/BOLD}');
+  for (const line of layout.lines)
+    lines.push(
+      (financial ? '{FINANCIAL}' : '') +
+        '{BOLD}' +
+        normalizeThermalText(line, context.capabilities) +
+        '{/BOLD}',
+    );
 }
 
-function pushZReportSectionHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+function pushZReportSectionHeading(
+  lines: string[],
+  label: SemanticLabel,
+  context: ThermalLayoutContext,
+): void {
   pushZReportHeading(lines, label, context);
 }
 
-function pushZReportEmpty(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+function pushZReportEmpty(
+  lines: string[],
+  label: SemanticLabel,
+  context: ThermalLayoutContext,
+): void {
   const indentedContext = { ...context, logicalColumns: Math.max(1, context.logicalColumns - 2) };
   for (const line of zLaidOutLabel(label, indentedContext)) {
     lines.push('  ' + normalizeThermalText(line, context.capabilities));
   }
 }
 
-function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext, financial = false): void {
+function pushZReportLabelValue(
+  lines: string[],
+  label: SemanticLabel,
+  value: string,
+  context: ThermalLayoutContext,
+  financial = false,
+): void {
   const columns = context.logicalColumns;
   const normalizedValue = normalizeThermalText(value, context.capabilities);
   const labelLines = zLaidOutLabel(label, context);
-  if (labelLines.length === 1 && thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
-    lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(labelLines[0], context.capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
+  if (
+    labelLines.length === 1 &&
+    thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns
+  ) {
+    lines.push(
+      (financial ? '{FINANCIAL}' : '') +
+        normalizeThermalText(labelLines[0], context.capabilities) +
+        rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])),
+    );
     return;
   }
-  for (const line of labelLines) lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns)) lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
+  for (const line of labelLines)
+    lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities));
+  for (const line of wrapText(normalizedValue, columns))
+    lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
 }
 
-function pushZReportTextValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
+function pushZReportTextValue(
+  lines: string[],
+  label: SemanticLabel,
+  value: string,
+  context: ThermalLayoutContext,
+): void {
   const labelWithValue: SemanticLabel = {
     primary: `${label.primary} ${value}`,
     ...(label.secondary ? { secondary: `${label.secondary} ${value}` } : {}),
@@ -2430,18 +3518,34 @@ function pushZReportTextValue(lines: string[], label: SemanticLabel, value: stri
   }
 }
 
-function pushZReportRow(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
+function pushZReportRow(
+  lines: string[],
+  label: SemanticLabel,
+  value: string,
+  context: ThermalLayoutContext,
+): void {
   const prefix = '  ';
   const columns = context.logicalColumns;
   const normalizedValue = normalizeThermalText(value, context.capabilities);
   const labelContext = { ...context, logicalColumns: Math.max(1, columns - prefix.length) };
   const labelLines = zLaidOutLabel(label, labelContext);
-  if (labelLines.length === 1 && prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
-    lines.push('{FINANCIAL}' + prefix + labelLines[0] + rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])));
+  if (
+    labelLines.length === 1 &&
+    prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <=
+      columns
+  ) {
+    lines.push(
+      '{FINANCIAL}' +
+        prefix +
+        labelLines[0] +
+        rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])),
+    );
     return;
   }
-  for (const line of labelLines) lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns)) lines.push('{FINANCIAL}' + rightAlign(line, columns));
+  for (const line of labelLines)
+    lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
+  for (const line of wrapText(normalizedValue, columns))
+    lines.push('{FINANCIAL}' + rightAlign(line, columns));
 }
 
 /**
@@ -2450,7 +3554,11 @@ function pushZReportRow(lines: string[], label: SemanticLabel, value: string, co
  * `cash_drawer_pulse_methods` filter): the Z is the document the merchant
  * prints while counting the drawer.
  */
-export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?: any): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
+export async function printZReport(
+  z: any,
+  signal?: AbortSignal,
+  targetPrinter?: any,
+): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     // The route resolves the default receipt printer so it can pick the
@@ -2484,18 +3592,26 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
         // Backend never dispatches WebUSB; return the FULL bytes (including
         // the appended drawer pulse) for the renderer. The route maps this to
         // `bytes: number[]` per the test-page endpoint contract.
-        return { ok: true, bytes: data, connection_type: 'webusb', ...(warnings.length > 0 ? { warnings } : {}) };
+        return {
+          ok: true,
+          bytes: data,
+          connection_type: 'webusb',
+          ...(warnings.length > 0 ? { warnings } : {}),
+        };
       default:
         result = { ok: false, detail: `Unsupported connection type: ${printer.connection_type}` };
     }
-    return { ...result, bytes: data, connection_type: printer.connection_type, ...(warnings.length > 0 ? { warnings } : {}) };
+    return {
+      ...result,
+      bytes: data,
+      connection_type: printer.connection_type,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
   } catch (error: any) {
     console.error('[Printer] Z-report dispatch failed:', error);
     return { ok: false, detail: error?.message };
   }
 }
-
-
 
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */
 export function escPosToText(data: Buffer | Uint8Array): string {
@@ -2512,7 +3628,7 @@ export function escPosToText(data: Buffer | Uint8Array): string {
 
   for (let i = 0; i < bytes.length;) {
     const byte = bytes[i];
-    if (byte === 0x1B) {
+    if (byte === 0x1b) {
       const command = bytes[i + 1];
       if (command === 0x40) {
         flushLine();
@@ -2534,19 +3650,26 @@ export function escPosToText(data: Buffer | Uint8Array): string {
       }
       continue;
     }
-    if (byte === 0x1D && bytes[i + 1] === 0x56) {
+    if (byte === 0x1d && bytes[i + 1] === 0x56) {
       flushLine();
       const mode = bytes[i + 2];
       i += mode === 0x41 || mode === 0x42 ? 4 : 3;
       continue;
     }
-    if (byte === 0x0A) {
+    if (byte === 0x1d && bytes[i + 1] === 0x76 && bytes[i + 2] === 0x30) {
+      flushLine();
+      const widthBytes = bytes[i + 4] | (bytes[i + 5] << 8);
+      const heightDots = bytes[i + 6] | (bytes[i + 7] << 8);
+      i += 8 + widthBytes * heightDots;
+      continue;
+    }
+    if (byte === 0x0a) {
       flushLine();
       text.push('\n');
       i += 1;
       continue;
     }
-    if (byte === 0x0D) {
+    if (byte === 0x0d) {
       i += 1;
       continue;
     }
@@ -2559,10 +3682,14 @@ export function escPosToText(data: Buffer | Uint8Array): string {
 }
 
 const THERMAL_CODE_PAGE_HIGH_HALVES: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {
-  cp437: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
-  cp850: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈıÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ",
-  cp858: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈ€ÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ",
-  windows1252: "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜š›œžŸÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ",
+  cp437:
+    'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ',
+  cp850:
+    'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈıÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ',
+  cp858:
+    'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈ€ÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ',
+  windows1252:
+    '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜š›œžŸÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ',
 };
 const THERMAL_CODE_PAGE_BY_ID: Record<number, ThermalCodePage> = {
   0: 'cp437',
@@ -2575,13 +3702,20 @@ function decodeThermalPreviewBytes(bytes: number[], codePage: ThermalCodePage | 
   if (codePage === 'utf8') return Buffer.from(bytes).toString('utf8');
   if (codePage === 'ascii') return bytes.map((byte) => String.fromCharCode(byte)).join('');
   const highHalf = THERMAL_CODE_PAGE_HIGH_HALVES[codePage];
-  return bytes.map((byte) => byte < 0x80 ? String.fromCharCode(byte) : highHalf[byte - 0x80] ?? '\uFFFD').join('');
+  return bytes
+    .map((byte) => (byte < 0x80 ? String.fromCharCode(byte) : (highHalf[byte - 0x80] ?? '\uFFFD')))
+    .join('');
 }
 
 export const NETWORK_PRINT_CHUNK_SIZE = 4096;
 export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
 
-export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+export async function printViaNetwork(
+  ip: string,
+  port: number,
+  data: Buffer,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
@@ -2660,7 +3794,9 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
       client.destroy();
       finish({
         ok: false,
-        detail: connected ? `Timed out writing to ${ip}:${port}` : `Timed out connecting to ${ip}:${port}`,
+        detail: connected
+          ? `Timed out writing to ${ip}:${port}`
+          : `Timed out connecting to ${ip}:${port}`,
       });
     });
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -2668,7 +3804,11 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
   });
 }
 
-export async function printViaUSB(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+export async function printViaUSB(
+  data: Buffer,
+  printerName?: string,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
   if (process.platform === 'darwin' || process.platform === 'linux') {
@@ -2684,7 +3824,11 @@ export async function printViaUSB(data: Buffer, printerName?: string, signal?: A
 }
 
 // MAS-build counterpart to printViaCups: submits raw bytes to CUPS via local IPP.
-async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+async function printViaLocalIpp(
+  data: Buffer,
+  printerName?: string,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   if (!printerName) {
     return { ok: false, detail: 'No printer configured' };
   }
@@ -2709,7 +3853,9 @@ async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: Abo
       console.error(`[Printer] IPP print failed for "${printerName}": ${result.detail}`);
       return { ok: false, detail: result.detail || `IPP print failed for "${printerName}"` };
     }
-    console.log(`[Printer] IPP print queued for "${printerName}" (job ${result.jobId ?? 'unknown'})`);
+    console.log(
+      `[Printer] IPP print queued for "${printerName}" (job ${result.jobId ?? 'unknown'})`,
+    );
     return { ok: true, jobId: result.jobId };
   } catch (err: any) {
     const detail = String(err?.message || err || '').trim();
@@ -2719,11 +3865,19 @@ async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: Abo
 }
 
 // Pre-flight check whether CUPS queue is disabled; returns problem description or null.
-async function describeCupsQueueProblem(printerName?: string, signal?: AbortSignal): Promise<string | null> {
+async function describeCupsQueueProblem(
+  printerName?: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   if (!printerName) return null;
 
   // LC_ALL=C — the state words below are matched in English, and lpstat is localised.
-  const opts = { encoding: 'utf8' as const, timeout: 5000, signal, env: { ...process.env, LC_ALL: 'C' } };
+  const opts = {
+    encoding: 'utf8' as const,
+    timeout: 5000,
+    signal,
+    env: { ...process.env, LC_ALL: 'C' },
+  };
 
   try {
     const { stdout } = await execFileAsync('lpstat', ['-p', printerName], opts);
@@ -2745,7 +3899,11 @@ async function describeCupsQueueProblem(printerName?: string, signal?: AbortSign
   return null;
 }
 
-async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+async function printViaCups(
+  data: Buffer,
+  printerName?: string,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   const label = printerName || 'default';
 
   const problem = await describeCupsQueueProblem(printerName, signal);
@@ -2760,10 +3918,12 @@ async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSi
   try {
     fs.writeFileSync(tmpFile, data);
 
-    const args = printerName
-      ? ['-d', printerName, '-o', 'raw', tmpFile]
-      : ['-o', 'raw', tmpFile];
-    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000, signal });
+    const args = printerName ? ['-d', printerName, '-o', 'raw', tmpFile] : ['-o', 'raw', tmpFile];
+    const { stdout } = await execFileAsync('lp', args, {
+      encoding: 'utf8',
+      timeout: 20000,
+      signal,
+    });
 
     console.log(`[Printer] CUPS print queued for "${label}" (${stdout.trim()})`);
     return { ok: true };
@@ -2772,7 +3932,9 @@ async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSi
     console.error(`[Printer] CUPS print failed for "${label}": ${detail}`);
     return { ok: false, detail: detail || `CUPS print failed for "${label}"` };
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {}
   }
 }
 
@@ -2949,8 +4111,13 @@ ${WINSPOOL_HELPER_SOURCE}
 
 const execFileAsync = promisify(execFile);
 
-function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' | 'driverName' | 'printerStatus'> {
-  const outputLines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+function parseWindowsPrintOutput(
+  output: unknown,
+): Pick<DispatchResult, 'jobId' | 'driverName' | 'printerStatus'> {
+  const outputLines = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const jobLine = outputLines.find((line) => line.startsWith('FLO_JOB_ID='));
   const infoLine = outputLines.find((line) => line.startsWith('FLO_PRINTER_INFO='));
   const parsed: Pick<DispatchResult, 'jobId' | 'driverName' | 'printerStatus'> = {};
@@ -2961,10 +4128,16 @@ function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' 
   }
   if (infoLine) {
     try {
-      const info = JSON.parse(infoLine.slice('FLO_PRINTER_INFO='.length)) as { DriverName?: unknown; PrinterStatus?: unknown };
-      if (typeof info.DriverName === 'string' && info.DriverName.trim()) parsed.driverName = info.DriverName.trim();
+      const info = JSON.parse(infoLine.slice('FLO_PRINTER_INFO='.length)) as {
+        DriverName?: unknown;
+        PrinterStatus?: unknown;
+      };
+      if (typeof info.DriverName === 'string' && info.DriverName.trim())
+        parsed.driverName = info.DriverName.trim();
       if (typeof info.PrinterStatus === 'number') parsed.printerStatus = info.PrinterStatus;
-    } catch { /* diagnostics metadata is best-effort */ }
+    } catch {
+      /* diagnostics metadata is best-effort */
+    }
   }
   return parsed;
 }
@@ -2978,28 +4151,42 @@ const WINDOWS_PRINT_COMMAND_EVIDENCE = /Command failed:|-EncodedCommand/i;
 
 /** Stable classification of a failed Windows PowerShell subprocess. */
 export function describeWindowsPrintProcessFailure(error: unknown): string {
-  const failure = (error || {}) as { name?: unknown; code?: unknown; killed?: unknown; signal?: unknown };
-  if (failure.name === 'AbortError' || failure.code === 'ABORT_ERR') return 'Windows print command was cancelled';
-  if (failure.killed === true || failure.code === 'ETIMEDOUT') return 'Windows print command timed out';
+  const failure = (error || {}) as {
+    name?: unknown;
+    code?: unknown;
+    killed?: unknown;
+    signal?: unknown;
+  };
+  if (failure.name === 'AbortError' || failure.code === 'ABORT_ERR')
+    return 'Windows print command was cancelled';
+  if (failure.killed === true || failure.code === 'ETIMEDOUT')
+    return 'Windows print command timed out';
   // Spawn-level failures report an errno string instead of an exit status.
   if (typeof failure.code === 'string') return 'Could not start the Windows print helper';
-  if (typeof failure.signal === 'string' && failure.signal) return `Windows print helper was terminated (${failure.signal})`;
-  if (typeof failure.code === 'number') return `Windows print helper exited with code ${failure.code}`;
+  if (typeof failure.signal === 'string' && failure.signal)
+    return `Windows print helper was terminated (${failure.signal})`;
+  if (typeof failure.code === 'number')
+    return `Windows print helper exited with code ${failure.code}`;
   return 'Windows raw print failed';
 }
 
 function redactWindowsPrintPayloadPath(detail: string, payloadPath: string): string {
   if (!detail || !payloadPath) return detail;
   return detail
-    .split(payloadPath).join('<payload file>')
-    .split(path.dirname(payloadPath)).join('<temp directory>');
+    .split(payloadPath)
+    .join('<payload file>')
+    .split(path.dirname(payloadPath))
+    .join('<temp directory>');
 }
 
 const WINDOWS_PRINT_TRUNCATION_SUFFIX = ' [truncated]';
 
 function capWindowsPrintDetail(detail: string): string {
   if (detail.length <= WINDOWS_PRINT_DETAIL_MAX_LENGTH) return detail;
-  const maxContentLength = Math.max(0, WINDOWS_PRINT_DETAIL_MAX_LENGTH - WINDOWS_PRINT_TRUNCATION_SUFFIX.length);
+  const maxContentLength = Math.max(
+    0,
+    WINDOWS_PRINT_DETAIL_MAX_LENGTH - WINDOWS_PRINT_TRUNCATION_SUFFIX.length,
+  );
   return `${detail.slice(0, maxContentLength).trimEnd()}${WINDOWS_PRINT_TRUNCATION_SUFFIX}`;
 }
 
@@ -3008,15 +4195,25 @@ function describeWindowsRawPrintFailure(
   error: unknown,
   options: { payloadPath: string; printerName?: string },
 ): string {
-  const cleanStderr = sanitizePowerShellStderr(String((error as { stderr?: unknown })?.stderr || '').trim());
-  const detail = cleanStderr && !WINDOWS_PRINT_COMMAND_EVIDENCE.test(cleanStderr)
-    ? cleanStderr
-    : describeWindowsPrintProcessFailure(error);
+  const cleanStderr = sanitizePowerShellStderr(
+    String((error as { stderr?: unknown })?.stderr || '').trim(),
+  );
+  const detail =
+    cleanStderr && !WINDOWS_PRINT_COMMAND_EVIDENCE.test(cleanStderr)
+      ? cleanStderr
+      : describeWindowsPrintProcessFailure(error);
   const redacted = redactWindowsPrintPayloadPath(detail, options.payloadPath).trim();
-  return capWindowsPrintDetail(redacted) || `Windows raw print failed for "${options.printerName || 'printer'}"`;
+  return (
+    capWindowsPrintDetail(redacted) ||
+    `Windows raw print failed for "${options.printerName || 'printer'}"`
+  );
 }
 
-async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+async function printViaUSBWindows(
+  data: Buffer,
+  printerName?: string,
+  signal?: AbortSignal,
+): Promise<DispatchResult> {
   if (!printerName) {
     const detail = 'No Windows printer configured; refusing to guess a target';
     console.error(`[Printer] ${detail}`);
@@ -3042,7 +4239,9 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
     );
 
     const metadata = parseWindowsPrintOutput(stdout);
-    console.log(`[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`);
+    console.log(
+      `[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`,
+    );
     return { ok: true, ...metadata };
   } catch (err: any) {
     const detail = describeWindowsRawPrintFailure(err, { payloadPath: tmpFile, printerName });
@@ -3055,7 +4254,9 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
       ...parseWindowsPrintOutput(err.stdout),
     };
   } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {}
   }
 }
 

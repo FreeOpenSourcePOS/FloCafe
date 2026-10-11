@@ -16,6 +16,7 @@ declare module '@point-of-sale/receipt-printer-encoder' {
     newline(): this;
     cut(): this;
     rule(options?: { style: 'single' | 'double' }): this;
+    raw(data: number[] | Uint8Array): this;
     encode(): Uint8Array;
   }
 

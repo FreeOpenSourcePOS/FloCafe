@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "Aplicar automaticamente",
     "chargePercentValue": "{value}% do pedido",
     "chargeFixedValue": "{value} por pedido",
-    "chargeOptionalApply": "Adicionado a pedido"
+    "chargeOptionalApply": "Adicionado a pedido",
+    "storeLogo": "Logotipo da loja",
+    "storeLogoHint": "Carregue um logotipo para imprimir em recibos térmicos. PNG ou JPEG transparente com menos de 5 MB.",
+    "uploadLogo": "Carregar logotipo",
+    "removeLogo": "Remover logotipo",
+    "logoUploaded": "Logotipo carregado com sucesso",
+    "showLogo": "Logotipo da loja"
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

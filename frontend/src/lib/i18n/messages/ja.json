@@ -2246,7 +2246,13 @@
     "chargeAutoApply": "自動適用する",
     "chargePercentValue": "注文額の {value}%",
     "chargeFixedValue": "1 注文あたり {value}",
-    "chargeOptionalApply": "要求されたときに追加"
+    "chargeOptionalApply": "要求されたときに追加",
+    "storeLogo": "店舗ロゴ",
+    "storeLogoHint": "レシートに印刷する店舗ロゴをアップロードします。5MB未満の透明PNGまたはJPEG。",
+    "uploadLogo": "ロゴをアップロード",
+    "removeLogo": "ロゴを削除",
+    "logoUploaded": "ロゴをアップロードしました",
+    "showLogo": "店舗ロゴ"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

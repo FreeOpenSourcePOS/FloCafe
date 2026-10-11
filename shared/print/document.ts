@@ -33,11 +33,7 @@ import type { BilingualLabel } from './bilingual';
 import type { DirectionSpec } from './direction';
 import { resolveDirectionSpec, resolveValueDirection } from './direction';
 import { graphemeSegments } from './width';
-import type {
-  PrintLanguageCode,
-  ResolvedPrintLanguages,
-  TextDirection,
-} from './types';
+import type { PrintLanguageCode, ResolvedPrintLanguages, TextDirection } from './types';
 
 // ---------------------------------------------------------------------------
 // Label & value primitives
@@ -195,6 +191,9 @@ export interface BusinessSnapshot {
   readonly showTableNumber: boolean;
   readonly showCustomerName: boolean;
   readonly showCustomerPhone: boolean;
+  readonly showLogo?: boolean;
+  readonly receiptLogo?: string;
+  readonly receiptLogoRaster?: string;
 }
 
 /**
@@ -258,6 +257,8 @@ export interface BusinessHeaderBlock {
   readonly taxId: { readonly label: SemanticLabel; readonly value: DirectionalText } | null;
   /** Label used when the business phone renders as a labeled contact line. */
   readonly phoneLabel: SemanticLabel | null;
+  readonly logo?: string | null;
+  readonly logoRaster?: string | null;
 }
 
 /** Invoice identity: title concept, number, canonical timestamp, table. */
@@ -443,7 +444,9 @@ export function getBlock<K extends PrintDocumentBlock['kind']>(
   document: PrintDocument,
   kind: K,
 ): Extract<PrintDocumentBlock, { kind: K }> | undefined {
-  return document.blocks.find((block): block is Extract<PrintDocumentBlock, { kind: K }> => block.kind === kind);
+  return document.blocks.find(
+    (block): block is Extract<PrintDocumentBlock, { kind: K }> => block.kind === kind,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -500,7 +503,10 @@ function toTruncatedCount(value: unknown): number {
   return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
 }
 
-function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {
+function optionalDirectional(
+  text: string | undefined | null,
+  base: TextDirection,
+): DirectionalText | null {
   if (text === undefined || text === null || String(text).length === 0) return null;
   return directionalText(String(text), base);
 }
@@ -512,7 +518,8 @@ function toFiniteNumber(value: unknown): number {
 
 /** Coerce a persisted optional payment amount; absent or invalid values stay undefined. */
 export function optionalPaymentAmount(value: unknown): number | undefined {
-  if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') return undefined;
+  if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '')
+    return undefined;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : undefined;
 }
@@ -583,26 +590,29 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
   const hasTax = toFiniteNumber(bill.taxAmount) !== 0 || taxComponents.length > 0;
 
   const showBreakdown = business.showTaxBreakdown && taxComponents.length > 0;
-  const showTaxIdLine = business.taxRegistrationNumber.length > 0
-    && (business.showTaxId === 'force'
-      || (business.showTaxId === 'auto' && hasTax));
+  const showTaxIdLine =
+    business.taxRegistrationNumber.length > 0 &&
+    (business.showTaxId === 'force' || (business.showTaxId === 'auto' && hasTax));
 
   const header: BusinessHeaderBlock = Object.freeze({
     kind: 'business-header',
     direction: base,
+    logo: business.showLogo && business.receiptLogo ? business.receiptLogo : null,
+    logoRaster: business.showLogo && business.receiptLogoRaster ? business.receiptLogoRaster : null,
     name: business.showName ? optionalDirectional(business.name, base) : null,
     address: business.showAddress ? optionalDirectional(business.address, base) : null,
     phone: business.showPhone ? optionalDirectional(business.phone, base) : null,
     instagramHandle: optionalDirectional(business.instagramHandle, base),
     taxId: showTaxIdLine
       ? Object.freeze({
-        label: literalLabel(business.taxIdLabel.length > 0 ? business.taxIdLabel : 'Tax ID'),
-        value: directionalText(business.taxRegistrationNumber, base),
-      })
+          label: literalLabel(business.taxIdLabel.length > 0 ? business.taxIdLabel : 'Tax ID'),
+          value: directionalText(business.taxRegistrationNumber, base),
+        })
       : null,
-    phoneLabel: business.showPhone && business.phone.length > 0
-      ? resolveSemanticLabel(labels, 'receipt.phone')
-      : null,
+    phoneLabel:
+      business.showPhone && business.phone.length > 0
+        ? resolveSemanticLabel(labels, 'receipt.phone')
+        : null,
   });
 
   const meta: DocumentMetaBlock = Object.freeze({
@@ -617,12 +627,13 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       base,
     ),
     timestamp: directionalText(order.createdAt, base),
-    table: business.showTableNumber && order.tableName.length > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.tableLabel'),
-        name: directionalText(order.tableName, base),
-      })
-      : null,
+    table:
+      business.showTableNumber && order.tableName.length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.tableLabel'),
+            name: directionalText(order.tableName, base),
+          })
+        : null,
   });
 
   // A delivery address is what makes this a customer-details block, so it drives the heading too.
@@ -630,7 +641,8 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
   const customer: CustomerBlock = Object.freeze({
     kind: 'customer',
     direction: base,
-    heading: deliveryAddress.length > 0 ? resolveSemanticLabel(labels, 'print.customerDetails') : null,
+    heading:
+      deliveryAddress.length > 0 ? resolveSemanticLabel(labels, 'print.customerDetails') : null,
     name: business.showCustomerName ? optionalDirectional(business.customerName, base) : null,
     phone: business.showCustomerPhone ? optionalDirectional(business.customerPhone, base) : null,
     address: deliveryAddress.length > 0 ? directionalText(deliveryAddress, base) : null,
@@ -649,30 +661,42 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       amount: resolveSemanticLabel(labels, 'receipt.amount'),
     }),
     noteLabel: resolveSemanticLabel(labels, 'print.note'),
-    rows: Object.freeze(order.items.map((item) => Object.freeze({
-      direction: base,
-      name: directionalText(item.productName, base),
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      amount: item.total,
-      addons: Object.freeze(item.addons.map((addon) => Object.freeze({
-        name: directionalText(addon.name, base),
-        price: addon.price,
-        quantity: addon.quantity,
-      }))),
-      specialInstructions: optionalDirectional(item.specialInstructions, base),
-    }))),
+    rows: Object.freeze(
+      order.items.map((item) =>
+        Object.freeze({
+          direction: base,
+          name: directionalText(item.productName, base),
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          amount: item.total,
+          addons: Object.freeze(
+            item.addons.map((addon) =>
+              Object.freeze({
+                name: directionalText(addon.name, base),
+                price: addon.price,
+                quantity: addon.quantity,
+              }),
+            ),
+          ),
+          specialInstructions: optionalDirectional(item.specialInstructions, base),
+        }),
+      ),
+    ),
   });
 
   const breakdown: TaxBreakdownBlock = Object.freeze({
     kind: 'tax-breakdown',
     direction: base,
     heading: resolveSemanticLabel(labels, 'receipt.taxDetails'),
-    lines: Object.freeze((showBreakdown ? taxComponents : []).map((component) => Object.freeze({
-      label: literalLabel(component.title),
-      rate: component.rate,
-      amount: component.amount,
-    }))),
+    lines: Object.freeze(
+      (showBreakdown ? taxComponents : []).map((component) =>
+        Object.freeze({
+          label: literalLabel(component.title),
+          rate: component.rate,
+          amount: component.amount,
+        }),
+      ),
+    ),
   });
 
   const totals: TotalsBlock = Object.freeze({
@@ -682,91 +706,101 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       label: resolveSemanticLabel(labels, 'pos.subtotal'),
       amount: bill.subtotal,
     }),
-    discount: bill.discountAmount > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.discount'),
-        amount: bill.discountAmount,
-      })
-      : null,
-    tax: !showBreakdown && toFiniteNumber(bill.taxAmount) !== 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.tax'),
-        amount: bill.taxAmount,
-      })
-      : null,
-    serviceCharge: toFiniteNumber(bill.serviceCharge) !== 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'receipt.serviceCharge'),
-        amount: toFiniteNumber(bill.serviceCharge),
-      })
-      : null,
-    deliveryCharge: toFiniteNumber(bill.deliveryCharge) !== 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.delivery'),
-        amount: toFiniteNumber(bill.deliveryCharge),
-      })
-      : null,
-    packagingCharge: toFiniteNumber(bill.packagingCharge) !== 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.packaging'),
-        amount: toFiniteNumber(bill.packagingCharge),
-      })
-      : null,
+    discount:
+      bill.discountAmount > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.discount'),
+            amount: bill.discountAmount,
+          })
+        : null,
+    tax:
+      !showBreakdown && toFiniteNumber(bill.taxAmount) !== 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.tax'),
+            amount: bill.taxAmount,
+          })
+        : null,
+    serviceCharge:
+      toFiniteNumber(bill.serviceCharge) !== 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'receipt.serviceCharge'),
+            amount: toFiniteNumber(bill.serviceCharge),
+          })
+        : null,
+    deliveryCharge:
+      toFiniteNumber(bill.deliveryCharge) !== 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.delivery'),
+            amount: toFiniteNumber(bill.deliveryCharge),
+          })
+        : null,
+    packagingCharge:
+      toFiniteNumber(bill.packagingCharge) !== 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.packaging'),
+            amount: toFiniteNumber(bill.packagingCharge),
+          })
+        : null,
     chargesBreakdown: typeof bill.chargesBreakdown === 'string' ? bill.chargesBreakdown : null,
     grandTotal: Object.freeze({
       label: resolveSemanticLabel(labels, 'print.grandTotal'),
       amount: bill.total,
     }),
-    pointsRedeemed: bill.pointsRedeemed > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'print.pointsRedeemed'),
-        points: bill.pointsRedeemed,
-      })
-      : null,
-    pointsEarned: bill.pointsEarned > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'print.pointsEarned'),
-        points: bill.pointsEarned,
-      })
-      : null,
-    pointsBalance: bill.pointsBalance !== null && bill.pointsBalance !== 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'print.pointsBalance'),
-        points: bill.pointsBalance,
-      })
-      : null,
+    pointsRedeemed:
+      bill.pointsRedeemed > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.pointsRedeemed'),
+            points: bill.pointsRedeemed,
+          })
+        : null,
+    pointsEarned:
+      bill.pointsEarned > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.pointsEarned'),
+            points: bill.pointsEarned,
+          })
+        : null,
+    pointsBalance:
+      bill.pointsBalance !== null && bill.pointsBalance !== 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.pointsBalance'),
+            points: bill.pointsBalance,
+          })
+        : null,
   });
 
   const payments: PaymentsBlock = Object.freeze({
     kind: 'payments',
     direction: base,
     heading: resolveSemanticLabel(labels, 'receipt.payments'),
-    lines: Object.freeze(bill.payments
-      .filter((payment) => payment.method.length > 0)
-      .map((payment): PaymentsBlock['lines'][number] => {
-        const line = {
-          method: payment.method,
-          label: paymentLabel(labels, payment.method),
-          amount: payment.amount,
-        };
-        const tender = projectCashTender(payment);
-        if (tender === null) return Object.freeze(line);
-        return Object.freeze({
-          ...line,
-          tendered: Object.freeze({
-            label: resolveSemanticLabel(labels, 'receipt.cashReceived'),
-            amount: tender.tendered,
-          }),
-          ...(tender.change > 0
-            ? {
-              change: Object.freeze({
-                label: resolveSemanticLabel(labels, 'pos.changeReturned'),
-                amount: tender.change,
-              }),
-            }
-            : {}),
-        });
-      })),
+    lines: Object.freeze(
+      bill.payments
+        .filter((payment) => payment.method.length > 0)
+        .map((payment): PaymentsBlock['lines'][number] => {
+          const line = {
+            method: payment.method,
+            label: paymentLabel(labels, payment.method),
+            amount: payment.amount,
+          };
+          const tender = projectCashTender(payment);
+          if (tender === null) return Object.freeze(line);
+          return Object.freeze({
+            ...line,
+            tendered: Object.freeze({
+              label: resolveSemanticLabel(labels, 'receipt.cashReceived'),
+              amount: tender.tendered,
+            }),
+            ...(tender.change > 0
+              ? {
+                  change: Object.freeze({
+                    label: resolveSemanticLabel(labels, 'pos.changeReturned'),
+                    amount: tender.change,
+                  }),
+                }
+              : {}),
+          });
+        }),
+    ),
   });
 
   const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
@@ -776,10 +810,10 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     reprintBanner: printData.isReprint ? resolveSemanticLabel(labels, 'receipt.reprint') : null,
     onlineOrderBanner: hasOnlineOrderInfo
       ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'receipt.onlineOrder'),
-        platform: directionalText(order.onlinePlatform, base),
-        externalOrderId: directionalText(order.externalOrderId, base),
-      })
+          label: resolveSemanticLabel(labels, 'receipt.onlineOrder'),
+          platform: directionalText(order.onlinePlatform, base),
+          externalOrderId: directionalText(order.externalOrderId, base),
+        })
       : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
     thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
@@ -857,7 +891,11 @@ export interface KotHeaderBlock {
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
-  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText; readonly code: string } | null;
+  readonly orderType: {
+    readonly label: SemanticLabel;
+    readonly value: DirectionalText;
+    readonly code: string;
+  } | null;
   readonly customer: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
@@ -956,7 +994,11 @@ export interface DeliverySlipHeaderBlock {
   readonly title: SemanticLabel;
   readonly orderNumberLabel: SemanticLabel;
   readonly orderNumber: DirectionalText;
-  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText; readonly code: string } | null;
+  readonly orderType: {
+    readonly label: SemanticLabel;
+    readonly value: DirectionalText;
+    readonly code: string;
+  } | null;
   readonly timeLabel: SemanticLabel;
   readonly timestamp: DirectionalText;
 }
@@ -1064,7 +1106,9 @@ export function deliverySlipExpectedPaymentText(
     ? resolveLabel('common.unknown')
     : normalized === 'pending'
       ? resolveLabel('orders.pending')
-      : methodConcept !== undefined ? resolveLabel(methodConcept) : method;
+      : methodConcept !== undefined
+        ? resolveLabel(methodConcept)
+        : method;
   return `${resolveLabel('print.deliverySlip.expectedPayment')}: ${value}`;
 }
 
@@ -1090,14 +1134,13 @@ export function resolveDeliverySlipPaymentSummary(
   billOrBills?: DeliverySlipPaymentBill | readonly DeliverySlipPaymentBill[] | null,
   minorUnitFactor = 100,
 ): DeliverySlipPaymentSummary | undefined {
-  const bills = Array.isArray(billOrBills)
-    ? billOrBills
-    : billOrBills
-      ? [billOrBills]
-      : [];
-  const factor = Number.isSafeInteger(minorUnitFactor) && minorUnitFactor > 0 ? minorUnitFactor : 100;
+  const bills = Array.isArray(billOrBills) ? billOrBills : billOrBills ? [billOrBills] : [];
+  const factor =
+    Number.isSafeInteger(minorUnitFactor) && minorUnitFactor > 0 ? minorUnitFactor : 100;
   const closedStatuses = new Set(['paid', 'refunded', 'partially_refunded']);
-  const refundBills = bills.filter((bill) => bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded');
+  const refundBills = bills.filter(
+    (bill) => bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded',
+  );
   const allPaid = bills.length > 0 && bills.every((bill) => bill.payment_status === 'paid');
   const allRefunded = bills.length > 0 && bills.every((bill) => bill.payment_status === 'refunded');
 
@@ -1114,12 +1157,18 @@ export function resolveDeliverySlipPaymentSummary(
 
   const balances = bills.map((bill) => {
     const paymentStatus = String(bill.payment_status ?? '');
-    return bill.balance ?? (closedStatuses.has(paymentStatus) ? 0 : bills.length === 1 ? orderTotal : undefined);
+    return (
+      bill.balance ??
+      (closedStatuses.has(paymentStatus) ? 0 : bills.length === 1 ? orderTotal : undefined)
+    );
   });
   const orderTotalMinorUnits = bills.length === 0 ? toMinorUnits(orderTotal) : undefined;
-  const amountDue = bills.length > 0
-    ? sumAmounts(balances)
-    : orderTotalMinorUnits === undefined ? undefined : orderTotalMinorUnits / factor;
+  const amountDue =
+    bills.length > 0
+      ? sumAmounts(balances)
+      : orderTotalMinorUnits === undefined
+        ? undefined
+        : orderTotalMinorUnits / factor;
 
   let status: DeliverySlipPaymentSummary['status'];
   let paymentAmount: number | undefined;
@@ -1131,7 +1180,9 @@ export function resolveDeliverySlipPaymentSummary(
     paymentAmount = 0;
   } else if (allPaid) {
     status = 'paid';
-    paymentAmount = sumAmounts(bills.map((bill) => bill.total ?? (bills.length === 1 ? orderTotal : undefined)));
+    paymentAmount = sumAmounts(
+      bills.map((bill) => bill.total ?? (bills.length === 1 ? orderTotal : undefined)),
+    );
   } else {
     status = 'unpaid';
     paymentAmount = amountDue;
@@ -1159,13 +1210,19 @@ export function resolveDeliverySlipPaymentSummary(
       for (const line of paymentLines) {
         if (!line || typeof line !== 'object') continue;
         const method = sanitizeDeliverySlipPaymentMethod((line as { method?: unknown }).method);
-        if (method && !paymentMethods.some((existing) => existing.toLowerCase() === method.toLowerCase())) {
+        if (
+          method &&
+          !paymentMethods.some((existing) => existing.toLowerCase() === method.toLowerCase())
+        ) {
           paymentMethods.push(method);
         }
       }
       const billMethod = sanitizeDeliverySlipPaymentMethod(bill.payment_method);
-      if (paymentMethods.length === existingMethodCount && billMethod
-        && !paymentMethods.some((existing) => existing.toLowerCase() === billMethod.toLowerCase())) {
+      if (
+        paymentMethods.length === existingMethodCount &&
+        billMethod &&
+        !paymentMethods.some((existing) => existing.toLowerCase() === billMethod.toLowerCase())
+      ) {
         paymentMethods.push(billMethod);
       }
     }
@@ -1255,24 +1312,30 @@ function isDirection(value: unknown): value is TextDirection {
 }
 
 function isDirectionSpec(value: unknown): value is DirectionSpec {
-  return isRecord(value)
-    && isDirection(value.base)
-    && isDirection(value.document)
-    && isDirection(value.block)
-    && isDirection(value.value);
+  return (
+    isRecord(value) &&
+    isDirection(value.base) &&
+    isDirection(value.document) &&
+    isDirection(value.block) &&
+    isDirection(value.value)
+  );
 }
 
 function isLanguages(value: unknown): value is ResolvedPrintLanguages {
-  return Array.isArray(value)
-    && (value.length === 1 || value.length === 2)
-    && value.every((language) => typeof language === 'string' && language.length > 0);
+  return (
+    Array.isArray(value) &&
+    (value.length === 1 || value.length === 2) &&
+    value.every((language) => typeof language === 'string' && language.length > 0)
+  );
 }
 
 function isSemanticLabel(value: unknown): value is SemanticLabel {
-  return isRecord(value)
-    && typeof value.primary === 'string'
-    && (value.conceptId === undefined || typeof value.conceptId === 'string')
-    && (value.secondary === undefined || typeof value.secondary === 'string');
+  return (
+    isRecord(value) &&
+    typeof value.primary === 'string' &&
+    (value.conceptId === undefined || typeof value.conceptId === 'string') &&
+    (value.secondary === undefined || typeof value.secondary === 'string')
+  );
 }
 
 function isDirectionalText(value: unknown): value is DirectionalText {
@@ -1288,144 +1351,231 @@ function isOptionalDirectionalText(value: unknown): value is DirectionalText | n
 }
 
 function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
-  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string')
+    return false;
   switch (value.kind) {
     case 'business-header':
-      return isOptionalDirectionalText(value.name)
-        && isOptionalDirectionalText(value.address)
-        && isOptionalDirectionalText(value.phone)
-        && isOptionalDirectionalText(value.instagramHandle)
-        && (value.taxId === null || (isRecord(value.taxId) && isSemanticLabel(value.taxId.label) && isDirectionalText(value.taxId.value)))
-        && (value.phoneLabel === null || isSemanticLabel(value.phoneLabel));
+      return (
+        isOptionalDirectionalText(value.name) &&
+        isOptionalDirectionalText(value.address) &&
+        isOptionalDirectionalText(value.phone) &&
+        isOptionalDirectionalText(value.instagramHandle) &&
+        (value.taxId === null ||
+          (isRecord(value.taxId) &&
+            isSemanticLabel(value.taxId.label) &&
+            isDirectionalText(value.taxId.value))) &&
+        (value.phoneLabel === null || isSemanticLabel(value.phoneLabel))
+      );
     case 'document-meta':
-      return isSemanticLabel(value.title)
-        && isSemanticLabel(value.invoiceNumberLabel)
-        && isSemanticLabel(value.billNumberLabel)
-        && isSemanticLabel(value.dateLabel)
-        && isDirectionalText(value.invoiceNumber)
-        && isDirectionalText(value.timestamp)
-        && (value.table === null || (isRecord(value.table) && isSemanticLabel(value.table.label) && isDirectionalText(value.table.name)));
+      return (
+        isSemanticLabel(value.title) &&
+        isSemanticLabel(value.invoiceNumberLabel) &&
+        isSemanticLabel(value.billNumberLabel) &&
+        isSemanticLabel(value.dateLabel) &&
+        isDirectionalText(value.invoiceNumber) &&
+        isDirectionalText(value.timestamp) &&
+        (value.table === null ||
+          (isRecord(value.table) &&
+            isSemanticLabel(value.table.label) &&
+            isDirectionalText(value.table.name)))
+      );
     case 'customer':
-      return (value.heading === null || isSemanticLabel(value.heading))
-        && isOptionalDirectionalText(value.name)
-        && isOptionalDirectionalText(value.phone)
-        && isOptionalDirectionalText(value.address)
-        && isSemanticLabel(value.nameLabel)
-        && isSemanticLabel(value.phoneLabel)
-        && isSemanticLabel(value.addressLabel);
+      return (
+        (value.heading === null || isSemanticLabel(value.heading)) &&
+        isOptionalDirectionalText(value.name) &&
+        isOptionalDirectionalText(value.phone) &&
+        isOptionalDirectionalText(value.address) &&
+        isSemanticLabel(value.nameLabel) &&
+        isSemanticLabel(value.phoneLabel) &&
+        isSemanticLabel(value.addressLabel)
+      );
     case 'item-table':
-      return isRecord(value.header)
-        && isSemanticLabel(value.header.item)
-        && isSemanticLabel(value.header.quantity)
-        && isSemanticLabel(value.header.rate)
-        && isSemanticLabel(value.header.amount)
-        && isSemanticLabel(value.noteLabel)
-        && Array.isArray(value.rows)
-        && value.rows.every((row) => isRecord(row)
-          && isDirection(row.direction)
-          && isDirectionalText(row.name)
-          && isFiniteNumber(row.quantity)
-          && (row.unitPrice === undefined || isFiniteNumber(row.unitPrice))
-          && isFiniteNumber(row.amount)
-          && Array.isArray(row.addons)
-          && row.addons.every((addon) => isRecord(addon)
-            && isDirectionalText(addon.name)
-            && isFiniteNumber(addon.price)
-            && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
-          && isOptionalDirectionalText(row.specialInstructions));
+      return (
+        isRecord(value.header) &&
+        isSemanticLabel(value.header.item) &&
+        isSemanticLabel(value.header.quantity) &&
+        isSemanticLabel(value.header.rate) &&
+        isSemanticLabel(value.header.amount) &&
+        isSemanticLabel(value.noteLabel) &&
+        Array.isArray(value.rows) &&
+        value.rows.every(
+          (row) =>
+            isRecord(row) &&
+            isDirection(row.direction) &&
+            isDirectionalText(row.name) &&
+            isFiniteNumber(row.quantity) &&
+            (row.unitPrice === undefined || isFiniteNumber(row.unitPrice)) &&
+            isFiniteNumber(row.amount) &&
+            Array.isArray(row.addons) &&
+            row.addons.every(
+              (addon) =>
+                isRecord(addon) &&
+                isDirectionalText(addon.name) &&
+                isFiniteNumber(addon.price) &&
+                (addon.quantity === undefined || isFiniteNumber(addon.quantity)),
+            ) &&
+            isOptionalDirectionalText(row.specialInstructions),
+        )
+      );
     case 'tax-breakdown':
-      return isSemanticLabel(value.heading)
-        && Array.isArray(value.lines)
-        && value.lines.every((line) => isRecord(line)
-          && isSemanticLabel(line.label)
-          && (line.rate === null || isFiniteNumber(line.rate))
-          && isFiniteNumber(line.amount));
+      return (
+        isSemanticLabel(value.heading) &&
+        Array.isArray(value.lines) &&
+        value.lines.every(
+          (line) =>
+            isRecord(line) &&
+            isSemanticLabel(line.label) &&
+            (line.rate === null || isFiniteNumber(line.rate)) &&
+            isFiniteNumber(line.amount),
+        )
+      );
     case 'totals':
-      return ['subtotal', 'grandTotal'].every((key) => isRecord(value[key])
-        && isSemanticLabel(value[key].label)
-        && isFiniteNumber(value[key].amount))
-        && ['discount', 'tax', 'serviceCharge', 'deliveryCharge', 'packagingCharge'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].amount)))
-        && (value.chargesBreakdown === null || typeof value.chargesBreakdown === 'string')
-        && ['pointsRedeemed', 'pointsEarned', 'pointsBalance'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].points)));
+      return (
+        ['subtotal', 'grandTotal'].every(
+          (key) =>
+            isRecord(value[key]) &&
+            isSemanticLabel(value[key].label) &&
+            isFiniteNumber(value[key].amount),
+        ) &&
+        ['discount', 'tax', 'serviceCharge', 'deliveryCharge', 'packagingCharge'].every(
+          (key) =>
+            value[key] === null ||
+            (isRecord(value[key]) &&
+              isSemanticLabel(value[key].label) &&
+              isFiniteNumber(value[key].amount)),
+        ) &&
+        (value.chargesBreakdown === null || typeof value.chargesBreakdown === 'string') &&
+        ['pointsRedeemed', 'pointsEarned', 'pointsBalance'].every(
+          (key) =>
+            value[key] === null ||
+            (isRecord(value[key]) &&
+              isSemanticLabel(value[key].label) &&
+              isFiniteNumber(value[key].points)),
+        )
+      );
     case 'payments':
-      return isSemanticLabel(value.heading)
-        && Array.isArray(value.lines)
-        && value.lines.every((line) => isRecord(line)
-          && typeof line.method === 'string'
-          && isSemanticLabel(line.label)
-          && isFiniteNumber(line.amount)
-          && (line.tendered === undefined || (isRecord(line.tendered)
-            && isSemanticLabel(line.tendered.label)
-            && isFiniteNumber(line.tendered.amount)))
-          && (line.change === undefined || (isRecord(line.change)
-            && isSemanticLabel(line.change.label)
-            && isFiniteNumber(line.change.amount))));
+      return (
+        isSemanticLabel(value.heading) &&
+        Array.isArray(value.lines) &&
+        value.lines.every(
+          (line) =>
+            isRecord(line) &&
+            typeof line.method === 'string' &&
+            isSemanticLabel(line.label) &&
+            isFiniteNumber(line.amount) &&
+            (line.tendered === undefined ||
+              (isRecord(line.tendered) &&
+                isSemanticLabel(line.tendered.label) &&
+                isFiniteNumber(line.tendered.amount))) &&
+            (line.change === undefined ||
+              (isRecord(line.change) &&
+                isSemanticLabel(line.change.label) &&
+                isFiniteNumber(line.change.amount))),
+        )
+      );
     case 'message':
-      return (value.reprintBanner === null || isSemanticLabel(value.reprintBanner))
-        && (value.onlineOrderBanner === null || (isRecord(value.onlineOrderBanner)
-          && isSemanticLabel(value.onlineOrderBanner.label)
-          && isDirectionalText(value.onlineOrderBanner.platform)
-          && isDirectionalText(value.onlineOrderBanner.externalOrderId)))
-        && isOptionalDirectionalText(value.footerNote)
-        && (value.thankYou === null || isSemanticLabel(value.thankYou))
-        && isSemanticLabel(value.taxIncluded);
+      return (
+        (value.reprintBanner === null || isSemanticLabel(value.reprintBanner)) &&
+        (value.onlineOrderBanner === null ||
+          (isRecord(value.onlineOrderBanner) &&
+            isSemanticLabel(value.onlineOrderBanner.label) &&
+            isDirectionalText(value.onlineOrderBanner.platform) &&
+            isDirectionalText(value.onlineOrderBanner.externalOrderId))) &&
+        isOptionalDirectionalText(value.footerNote) &&
+        (value.thankYou === null || isSemanticLabel(value.thankYou)) &&
+        isSemanticLabel(value.taxIncluded)
+      );
     default:
       return false;
   }
 }
 
 export function isPrintDocument(value: unknown): value is PrintDocument {
-  const blockKinds = new Set(['business-header', 'document-meta', 'customer', 'item-table', 'tax-breakdown', 'totals', 'payments', 'message']);
-  return isRecord(value)
-    && value.version === 1
-    && isDirectionSpec(value.direction)
-    && isLanguages(value.languages)
-    && Array.isArray(value.blocks)
-    && value.blocks.length === blockKinds.size
-    && value.blocks.every(isPrintDocumentBlock)
-    && value.blocks.every((block) => isRecord(block) && blockKinds.has(block.kind))
-    && new Set(value.blocks.map((block) => isRecord(block) ? block.kind : undefined)).size === value.blocks.length;
+  const blockKinds = new Set([
+    'business-header',
+    'document-meta',
+    'customer',
+    'item-table',
+    'tax-breakdown',
+    'totals',
+    'payments',
+    'message',
+  ]);
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    isDirectionSpec(value.direction) &&
+    isLanguages(value.languages) &&
+    Array.isArray(value.blocks) &&
+    value.blocks.length === blockKinds.size &&
+    value.blocks.every(isPrintDocumentBlock) &&
+    value.blocks.every((block) => isRecord(block) && blockKinds.has(block.kind)) &&
+    new Set(value.blocks.map((block) => (isRecord(block) ? block.kind : undefined))).size ===
+      value.blocks.length
+  );
 }
 
 function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
-  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string')
+    return false;
   if (value.kind === 'kot-header') {
-    return isSemanticLabel(value.banner)
-      && isSemanticLabel(value.stationLabel)
-      && isDirectionalText(value.stationName)
-      && isSemanticLabel(value.orderNumberLabel)
-      && isDirectionalText(value.orderNumber)
-      && (value.table === null || (isRecord(value.table) && isSemanticLabel(value.table.label) && isDirectionalText(value.table.name)))
-      && (value.orderType === null || (isRecord(value.orderType) && isSemanticLabel(value.orderType.label) && isDirectionalText(value.orderType.value) && typeof value.orderType.code === 'string'))
-      && (value.customer === null || (isRecord(value.customer) && isSemanticLabel(value.customer.label) && isDirectionalText(value.customer.name)))
-      && isSemanticLabel(value.timeLabel)
-      && isDirectionalText(value.timestamp);
+    return (
+      isSemanticLabel(value.banner) &&
+      isSemanticLabel(value.stationLabel) &&
+      isDirectionalText(value.stationName) &&
+      isSemanticLabel(value.orderNumberLabel) &&
+      isDirectionalText(value.orderNumber) &&
+      (value.table === null ||
+        (isRecord(value.table) &&
+          isSemanticLabel(value.table.label) &&
+          isDirectionalText(value.table.name))) &&
+      (value.orderType === null ||
+        (isRecord(value.orderType) &&
+          isSemanticLabel(value.orderType.label) &&
+          isDirectionalText(value.orderType.value) &&
+          typeof value.orderType.code === 'string')) &&
+      (value.customer === null ||
+        (isRecord(value.customer) &&
+          isSemanticLabel(value.customer.label) &&
+          isDirectionalText(value.customer.name))) &&
+      isSemanticLabel(value.timeLabel) &&
+      isDirectionalText(value.timestamp)
+    );
   }
   if (value.kind !== 'kot-items' || !Array.isArray(value.rows)) return false;
-  return value.rows.every((row) => isRecord(row)
-    && isFiniteNumber(row.quantity)
-    && isDirectionalText(row.name)
-    && Array.isArray(row.addons)
-    && row.addons.every((addon) => isRecord(addon) && isDirectionalText(addon)
-      && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
-    && isOptionalDirectionalText(row.specialInstructions));
+  return value.rows.every(
+    (row) =>
+      isRecord(row) &&
+      isFiniteNumber(row.quantity) &&
+      isDirectionalText(row.name) &&
+      Array.isArray(row.addons) &&
+      row.addons.every(
+        (addon) =>
+          isRecord(addon) &&
+          isDirectionalText(addon) &&
+          (addon.quantity === undefined || isFiniteNumber(addon.quantity)),
+      ) &&
+      isOptionalDirectionalText(row.specialInstructions),
+  );
 }
 
 export function isKotDocument(value: unknown): value is KotDocument {
-  return isRecord(value)
-    && value.version === 1
-    && isDirectionSpec(value.direction)
-    && isLanguages(value.languages)
-    && value.languages.length === 1
-    && Array.isArray(value.blocks)
-    && value.blocks.length === 2
-    && isRecord(value.blocks[0])
-    && value.blocks[0].kind === 'kot-header'
-    && isRecord(value.blocks[1])
-    && value.blocks[1].kind === 'kot-items'
-    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-header').length === 1
-    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-items').length === 1
-    && value.blocks.every(isKotDocumentBlock);
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    isDirectionSpec(value.direction) &&
+    isLanguages(value.languages) &&
+    value.languages.length === 1 &&
+    Array.isArray(value.blocks) &&
+    value.blocks.length === 2 &&
+    isRecord(value.blocks[0]) &&
+    value.blocks[0].kind === 'kot-header' &&
+    isRecord(value.blocks[1]) &&
+    value.blocks[1].kind === 'kot-items' &&
+    value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-header').length === 1 &&
+    value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-items').length === 1 &&
+    value.blocks.every(isKotDocumentBlock)
+  );
 }
 
 /**
@@ -1446,25 +1596,28 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     stationName: directionalText(String(printData.stationName ?? ''), base),
     orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
-    table: typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.tableLabel'),
-        name: directionalText(printData.order.tableName, base),
-      })
-      : null,
-    orderType: typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'print.kot.type'),
-        value: directionalText(kotOrderTypeValue(labels, printData.order.orderType), base),
-        code: printData.order.orderType,
-      })
-      : null,
-    customer: typeof printData.order?.customerName === 'string' && printData.order.customerName.length > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.customer'),
-        name: directionalText(printData.order.customerName, base),
-      })
-      : null,
+    table:
+      typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.tableLabel'),
+            name: directionalText(printData.order.tableName, base),
+          })
+        : null,
+    orderType:
+      typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.kot.type'),
+            value: directionalText(kotOrderTypeValue(labels, printData.order.orderType), base),
+            code: printData.order.orderType,
+          })
+        : null,
+    customer:
+      typeof printData.order?.customerName === 'string' && printData.order.customerName.length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'pos.customer'),
+            name: directionalText(printData.order.customerName, base),
+          })
+        : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
   });
@@ -1472,19 +1625,32 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
   const items: KotItemsBlock = Object.freeze({
     kind: 'kot-items',
     direction: base,
-    rows: Object.freeze((Array.isArray(printData.items) ? printData.items : []).map((item) => Object.freeze({
-      quantity: Number(item?.quantity) || 0,
-      name: directionalText(String(item?.productName ?? ''), base),
-      addons: Object.freeze((item?.addons ?? new Array<KotAddonSnapshot>())
-        .filter((addon: KotAddonSnapshot) => typeof addon?.name === 'string' && addon.name.length > 0)
-        .map((addon: KotAddonSnapshot) => Object.freeze({
-          ...directionalText(String(addon.name), base),
-          ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
-            ? { quantity: addon.quantity }
-            : {}),
-        }))),
-      specialInstructions: optionalDirectional(item?.specialInstructions, base),
-    }))),
+    rows: Object.freeze(
+      (Array.isArray(printData.items) ? printData.items : []).map((item) =>
+        Object.freeze({
+          quantity: Number(item?.quantity) || 0,
+          name: directionalText(String(item?.productName ?? ''), base),
+          addons: Object.freeze(
+            (item?.addons ?? new Array<KotAddonSnapshot>())
+              .filter(
+                (addon: KotAddonSnapshot) =>
+                  typeof addon?.name === 'string' && addon.name.length > 0,
+              )
+              .map((addon: KotAddonSnapshot) =>
+                Object.freeze({
+                  ...directionalText(String(addon.name), base),
+                  ...(typeof addon.quantity === 'number' &&
+                  Number.isFinite(addon.quantity) &&
+                  addon.quantity > 0
+                    ? { quantity: addon.quantity }
+                    : {}),
+                }),
+              ),
+          ),
+          specialInstructions: optionalDirectional(item?.specialInstructions, base),
+        }),
+      ),
+    ),
   });
 
   return Object.freeze({
@@ -1496,80 +1662,118 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
 }
 
 function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocumentBlock {
-  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string')
+    return false;
   if (value.kind === 'delivery-slip-contact') {
-    return (value.name === null || isDirectionalText(value.name))
-      && (value.phone === null || isDirectionalText(value.phone))
-      && (value.address === null || isDirectionalText(value.address))
-      && (value.addressSource === null || value.addressSource === 'order' || value.addressSource === 'customer')
-      && isFiniteNumber(value.addressTruncatedChars)
-      && isSemanticLabel(value.nameLabel)
-      && isSemanticLabel(value.phoneLabel)
-      && isSemanticLabel(value.addressLabel);
+    return (
+      (value.name === null || isDirectionalText(value.name)) &&
+      (value.phone === null || isDirectionalText(value.phone)) &&
+      (value.address === null || isDirectionalText(value.address)) &&
+      (value.addressSource === null ||
+        value.addressSource === 'order' ||
+        value.addressSource === 'customer') &&
+      isFiniteNumber(value.addressTruncatedChars) &&
+      isSemanticLabel(value.nameLabel) &&
+      isSemanticLabel(value.phoneLabel) &&
+      isSemanticLabel(value.addressLabel)
+    );
   }
   if (value.kind === 'delivery-slip-header') {
-    return isSemanticLabel(value.banner)
-      && isSemanticLabel(value.title)
-      && isSemanticLabel(value.orderNumberLabel)
-      && isDirectionalText(value.orderNumber)
-      && (value.orderType === null || (isRecord(value.orderType)
-        && isSemanticLabel(value.orderType.label)
-        && isDirectionalText(value.orderType.value)
-        && typeof value.orderType.code === 'string'))
-      && isSemanticLabel(value.timeLabel)
-      && isDirectionalText(value.timestamp);
+    return (
+      isSemanticLabel(value.banner) &&
+      isSemanticLabel(value.title) &&
+      isSemanticLabel(value.orderNumberLabel) &&
+      isDirectionalText(value.orderNumber) &&
+      (value.orderType === null ||
+        (isRecord(value.orderType) &&
+          isSemanticLabel(value.orderType.label) &&
+          isDirectionalText(value.orderType.value) &&
+          typeof value.orderType.code === 'string')) &&
+      isSemanticLabel(value.timeLabel) &&
+      isDirectionalText(value.timestamp)
+    );
   }
   if (value.kind === 'delivery-slip-notes') {
-    return isOptionalDirectionalText(value.note)
-      && isSemanticLabel(value.label)
-      && isFiniteNumber(value.noteTruncatedChars)
-      && isOptionalDirectionalText(value.deliveryNote)
-      && isSemanticLabel(value.deliveryNoteLabel)
-      && isFiniteNumber(value.deliveryNoteTruncatedChars);
+    return (
+      isOptionalDirectionalText(value.note) &&
+      isSemanticLabel(value.label) &&
+      isFiniteNumber(value.noteTruncatedChars) &&
+      isOptionalDirectionalText(value.deliveryNote) &&
+      isSemanticLabel(value.deliveryNoteLabel) &&
+      isFiniteNumber(value.deliveryNoteTruncatedChars)
+    );
   }
   if (value.kind === 'delivery-slip-payment') {
-    return (value.status === 'paid' || value.status === 'unpaid'
-      || value.status === 'refunded' || value.status === 'partially_refunded')
-      && isSemanticLabel(value.label)
-      && (value.methodLabel === undefined || isSemanticLabel(value.methodLabel))
-      && (value.methodName === undefined || isDirectionalText(value.methodName))
-      && isDirectionalText(value.amountText)
-      && (value.detailsText === undefined || isDirectionalText(value.detailsText));
+    return (
+      (value.status === 'paid' ||
+        value.status === 'unpaid' ||
+        value.status === 'refunded' ||
+        value.status === 'partially_refunded') &&
+      isSemanticLabel(value.label) &&
+      (value.methodLabel === undefined || isSemanticLabel(value.methodLabel)) &&
+      (value.methodName === undefined || isDirectionalText(value.methodName)) &&
+      isDirectionalText(value.amountText) &&
+      (value.detailsText === undefined || isDirectionalText(value.detailsText))
+    );
   }
   if (value.kind !== 'delivery-slip-items' || !Array.isArray(value.rows)) return false;
-  return value.rows.every((row) => isRecord(row)
-    && isDirectionalText(row.name)
-    && isFiniteNumber(row.quantity)
-    && Array.isArray(row.addons)
-    && row.addons.every((addon) => isRecord(addon) && isDirectionalText(addon)
-      && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
-    && isOptionalDirectionalText(row.specialInstructions));
+  return value.rows.every(
+    (row) =>
+      isRecord(row) &&
+      isDirectionalText(row.name) &&
+      isFiniteNumber(row.quantity) &&
+      Array.isArray(row.addons) &&
+      row.addons.every(
+        (addon) =>
+          isRecord(addon) &&
+          isDirectionalText(addon) &&
+          (addon.quantity === undefined || isFiniteNumber(addon.quantity)),
+      ) &&
+      isOptionalDirectionalText(row.specialInstructions),
+  );
 }
 
 export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDocument {
-  if (!isRecord(value)
-    || value.version !== 1
-    || !isDirectionSpec(value.direction)
-    || !isLanguages(value.languages)
-    || value.languages.length !== 1
-    || !Array.isArray(value.blocks)
-    || !value.blocks.every(isDeliverySlipDocumentBlock)) return false;
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !isDirectionSpec(value.direction) ||
+    !isLanguages(value.languages) ||
+    value.languages.length !== 1 ||
+    !Array.isArray(value.blocks) ||
+    !value.blocks.every(isDeliverySlipDocumentBlock)
+  )
+    return false;
 
   // Header first, exactly one contact, optional notes and payment, items last.
   const kinds = value.blocks.map((block) => (block as { kind: string }).kind);
-  const count = (kind: DeliverySlipBlockKind): number => kinds.filter((entry) => entry === kind).length;
+  const count = (kind: DeliverySlipBlockKind): number =>
+    kinds.filter((entry) => entry === kind).length;
   const at = (kind: DeliverySlipBlockKind): number => kinds.indexOf(kind);
-  if (count('delivery-slip-header') !== 1 || count('delivery-slip-contact') !== 1 || count('delivery-slip-items') !== 1) {
+  if (
+    count('delivery-slip-header') !== 1 ||
+    count('delivery-slip-contact') !== 1 ||
+    count('delivery-slip-items') !== 1
+  ) {
     return false;
   }
   if (count('delivery-slip-notes') > 1) return false;
   if (count('delivery-slip-payment') > 1) return false;
-  if (at('delivery-slip-header') !== 0 || at('delivery-slip-items') !== kinds.length - 1) return false;
+  if (at('delivery-slip-header') !== 0 || at('delivery-slip-items') !== kinds.length - 1)
+    return false;
   if (at('delivery-slip-contact') > at('delivery-slip-items')) return false;
   const notesAt = at('delivery-slip-notes');
   const paymentAt = at('delivery-slip-payment');
-  if (notesAt !== -1 && !(at('delivery-slip-contact') < notesAt && notesAt < at('delivery-slip-items'))) return false;
-  if (paymentAt !== -1 && !(at('delivery-slip-contact') < paymentAt && paymentAt < at('delivery-slip-items'))) return false;
+  if (
+    notesAt !== -1 &&
+    !(at('delivery-slip-contact') < notesAt && notesAt < at('delivery-slip-items'))
+  )
+    return false;
+  if (
+    paymentAt !== -1 &&
+    !(at('delivery-slip-contact') < paymentAt && paymentAt < at('delivery-slip-items'))
+  )
+    return false;
   return notesAt === -1 || paymentAt === -1 || notesAt < paymentAt;
 }
 
@@ -1589,13 +1793,14 @@ export function buildDeliverySlipDocument(
     title: resolveSemanticLabel(labels, 'print.deliverySlip.title'),
     orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
-    orderType: orderTypeCode.length > 0
-      ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'print.kot.type'),
-        value: directionalText(kotOrderTypeValue(labels, orderTypeCode), base),
-        code: orderTypeCode,
-      })
-      : null,
+    orderType:
+      orderTypeCode.length > 0
+        ? Object.freeze({
+            label: resolveSemanticLabel(labels, 'print.kot.type'),
+            value: directionalText(kotOrderTypeValue(labels, orderTypeCode), base),
+            code: orderTypeCode,
+          })
+        : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
   });
@@ -1609,7 +1814,8 @@ export function buildDeliverySlipDocument(
     phone: optionalDirectional(printData.contact?.phone, base),
     address: optionalDirectional(address, base),
     addressSource: address.length > 0 ? (printData.contact?.addressSource ?? 'customer') : null,
-    addressTruncatedChars: address.length > 0 ? toTruncatedCount(printData.contact?.addressTruncatedChars) : 0,
+    addressTruncatedChars:
+      address.length > 0 ? toTruncatedCount(printData.contact?.addressTruncatedChars) : 0,
     nameLabel: resolveSemanticLabel(labels, 'pos.customer'),
     phoneLabel: resolveSemanticLabel(labels, 'print.numberShort'),
     addressLabel: resolveSemanticLabel(labels, 'print.deliverySlip.address'),
@@ -1634,88 +1840,117 @@ export function buildDeliverySlipDocument(
     .filter(Boolean);
   const hasMultiplePaymentMethods = paymentMethods.length > 1;
   const paymentMethod = sanitizeDeliverySlipPaymentMethod(paymentData?.method ?? paymentMethods[0]);
-  const paymentStatusLabel = paymentData?.status === 'paid'
-    ? 'print.deliverySlip.paid'
-    : paymentData?.status === 'refunded'
-      ? 'print.deliverySlip.refunded'
-      : paymentData?.status === 'partially_refunded'
-        ? 'print.deliverySlip.partiallyRefunded'
-        : paymentData?.amount === 0
-          ? 'print.deliverySlip.amountDue'
-          : 'print.deliverySlip.toCollect';
-  const paymentBlock: DeliverySlipPaymentBlock | null = paymentData
-    && (paymentData.status === 'paid' || paymentData.status === 'unpaid'
-      || paymentData.status === 'refunded' || paymentData.status === 'partially_refunded')
-    && Number.isFinite(paymentData.amount)
-    && paymentData.amount >= 0
-    && typeof paymentData.formattedAmount === 'string'
-    ? Object.freeze({
-      kind: 'delivery-slip-payment',
-      direction: base,
-      status: paymentData.status,
-      label: resolveSemanticLabel(labels, paymentStatusLabel),
-      ...(paymentData.status === 'paid' && hasMultiplePaymentMethods
-        ? { methodLabel: resolveSemanticLabel(labels, 'print.deliverySlip.multiplePaymentMethods') }
-        : paymentData.status === 'paid' && paymentMethod
-          ? { methodLabel: paymentLabel(labels, paymentMethod) }
-          : {}),
-      ...(paymentData.status === 'paid' && paymentMethod ? { methodName: directionalText(paymentMethod, base) } : {}),
-      amountText: directionalText(
-        paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
-          ? ''
-          : paymentData.formattedAmount,
-        base,
-      ),
-      ...(paymentData.status === 'paid' && typeof paymentData.formattedAmountDue === 'string'
-        ? {
-          detailsText: directionalText(
-            `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue}`,
+  const paymentStatusLabel =
+    paymentData?.status === 'paid'
+      ? 'print.deliverySlip.paid'
+      : paymentData?.status === 'refunded'
+        ? 'print.deliverySlip.refunded'
+        : paymentData?.status === 'partially_refunded'
+          ? 'print.deliverySlip.partiallyRefunded'
+          : paymentData?.amount === 0
+            ? 'print.deliverySlip.amountDue'
+            : 'print.deliverySlip.toCollect';
+  const paymentBlock: DeliverySlipPaymentBlock | null =
+    paymentData &&
+    (paymentData.status === 'paid' ||
+      paymentData.status === 'unpaid' ||
+      paymentData.status === 'refunded' ||
+      paymentData.status === 'partially_refunded') &&
+    Number.isFinite(paymentData.amount) &&
+    paymentData.amount >= 0 &&
+    typeof paymentData.formattedAmount === 'string'
+      ? Object.freeze({
+          kind: 'delivery-slip-payment',
+          direction: base,
+          status: paymentData.status,
+          label: resolveSemanticLabel(labels, paymentStatusLabel),
+          ...(paymentData.status === 'paid' && hasMultiplePaymentMethods
+            ? {
+                methodLabel: resolveSemanticLabel(
+                  labels,
+                  'print.deliverySlip.multiplePaymentMethods',
+                ),
+              }
+            : paymentData.status === 'paid' && paymentMethod
+              ? { methodLabel: paymentLabel(labels, paymentMethod) }
+              : {}),
+          ...(paymentData.status === 'paid' && paymentMethod
+            ? { methodName: directionalText(paymentMethod, base) }
+            : {}),
+          amountText: directionalText(
+            paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
+              ? ''
+              : paymentData.formattedAmount,
             base,
           ),
-        }
-        : paymentData.status === 'unpaid' && paymentData.amount > 0
-          ? {
-            detailsText: directionalText(
-              deliverySlipExpectedPaymentText(
-                paymentData.expectedMethod,
-                (conceptId) => resolveSemanticLabel(labels, conceptId).primary,
-                paymentData.expectedMethodIsCustom === true,
-              ),
-              base,
-            ),
-          }
-          : paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
+          ...(paymentData.status === 'paid' && typeof paymentData.formattedAmountDue === 'string'
             ? {
-              detailsText: directionalText(
-                `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue ?? ''}`,
-                base,
-              ),
-            }
-            : {}),
-    })
-    : null;
+                detailsText: directionalText(
+                  `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue}`,
+                  base,
+                ),
+              }
+            : paymentData.status === 'unpaid' && paymentData.amount > 0
+              ? {
+                  detailsText: directionalText(
+                    deliverySlipExpectedPaymentText(
+                      paymentData.expectedMethod,
+                      (conceptId) => resolveSemanticLabel(labels, conceptId).primary,
+                      paymentData.expectedMethodIsCustom === true,
+                    ),
+                    base,
+                  ),
+                }
+              : paymentData.status === 'refunded' || paymentData.status === 'partially_refunded'
+                ? {
+                    detailsText: directionalText(
+                      `${resolveSemanticLabel(labels, 'print.deliverySlip.amountDue').primary}: ${paymentData.formattedAmountDue ?? ''}`,
+                      base,
+                    ),
+                  }
+                : {}),
+        })
+      : null;
 
   const items: DeliverySlipItemsBlock = Object.freeze({
     kind: 'delivery-slip-items',
     direction: base,
-    rows: Object.freeze((Array.isArray(printData.items) ? printData.items : []).map((item) => Object.freeze({
-      direction: base,
-      name: directionalText(String(item?.productName ?? ''), base),
-      quantity: Number(item?.quantity) || 0,
-      addons: Object.freeze((item?.addons ?? [])
-        .filter((addon: { readonly name?: string } | undefined) => typeof addon?.name === 'string' && addon.name.length > 0)
-        .map((addon: { readonly name: string; readonly quantity?: number }) => Object.freeze({
-          ...directionalText(String(addon.name), base),
-          ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
-            ? { quantity: addon.quantity }
-            : {}),
-        }))),
-      specialInstructions: optionalDirectional(item?.specialInstructions, base),
-    }))),
+    rows: Object.freeze(
+      (Array.isArray(printData.items) ? printData.items : []).map((item) =>
+        Object.freeze({
+          direction: base,
+          name: directionalText(String(item?.productName ?? ''), base),
+          quantity: Number(item?.quantity) || 0,
+          addons: Object.freeze(
+            (item?.addons ?? [])
+              .filter(
+                (addon: { readonly name?: string } | undefined) =>
+                  typeof addon?.name === 'string' && addon.name.length > 0,
+              )
+              .map((addon: { readonly name: string; readonly quantity?: number }) =>
+                Object.freeze({
+                  ...directionalText(String(addon.name), base),
+                  ...(typeof addon.quantity === 'number' &&
+                  Number.isFinite(addon.quantity) &&
+                  addon.quantity > 0
+                    ? { quantity: addon.quantity }
+                    : {}),
+                }),
+              ),
+          ),
+          specialInstructions: optionalDirectional(item?.specialInstructions, base),
+        }),
+      ),
+    ),
   });
 
   const blocks: DeliverySlipDocumentBlock[] = [header, contact];
-  if (note.length > 0 || notes.noteTruncatedChars > 0 || deliveryNote.length > 0 || notes.deliveryNoteTruncatedChars > 0) {
+  if (
+    note.length > 0 ||
+    notes.noteTruncatedChars > 0 ||
+    deliveryNote.length > 0 ||
+    notes.deliveryNoteTruncatedChars > 0
+  ) {
     blocks.push(notes);
   }
   if (paymentBlock) blocks.push(paymentBlock);

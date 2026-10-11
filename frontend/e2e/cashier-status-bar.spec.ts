@@ -130,13 +130,20 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await expect(drawer).toHaveClass(/translate-y-0/);
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute('aria-hidden', 'false');
+    await expect(drawer).toHaveAttribute('aria-modal', 'true');
 
     // Verify Hardware Actions
+    const closeDrawerBtn = page.getByTestId('btn-close-telemetry-drawer');
+    await expect(closeDrawerBtn).toBeFocused();
     const testPrintBtn = page.getByTestId('btn-test-receipt-print');
     await expect(testPrintBtn).toBeVisible();
 
     const kickDrawerBtn = page.getByTestId('btn-kick-cash-drawer');
     await expect(kickDrawerBtn).toBeVisible();
+    await page.keyboard.press('Shift+Tab');
+    await expect(kickDrawerBtn).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(closeDrawerBtn).toBeFocused();
 
     // Verify Diagnostic Telemetry Metrics
     await expect(page.getByTestId('telemetry-uptime')).toBeVisible();
@@ -147,7 +154,6 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await page.screenshot({ path: 'test-results/open-telemetry-drawer.png' });
 
     // 9. Close drawer using close button
-    const closeDrawerBtn = page.getByTestId('btn-close-telemetry-drawer');
     await closeDrawerBtn.click();
     await expect(drawer).toHaveClass(/translate-y-full/);
     await expect(drawerToggleBtn).toBeFocused();

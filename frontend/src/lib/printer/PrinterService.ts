@@ -135,7 +135,8 @@ class PrinterService {
   private isSameDevice(left: USBDevice, right: USBDevice): boolean {
     return left.vendorId === right.vendorId
       && left.productId === right.productId
-      && left.serialNumber === right.serialNumber;
+      && left.serialNumber === right.serialNumber
+      && left.productName === right.productName;
   }
 
   private async findUniqueConfiguredDevice(productName: string): Promise<USBDevice | null> {

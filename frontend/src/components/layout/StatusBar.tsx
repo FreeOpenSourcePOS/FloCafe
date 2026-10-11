@@ -72,6 +72,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
 
   const inFlightRef = useRef(false);
   const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   // Fetch Electron system status (uptime, memory, port)
   useEffect(() => {
@@ -175,6 +176,11 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     drawerToggleRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    drawerRef.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+  }, [isDrawerOpen]);
+
   // Handle drawer Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -276,10 +282,31 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       {/* Slide-Up Telemetry & Hardware Drawer */}
       <div
         data-testid="telemetry-drawer"
+        ref={drawerRef}
         role="dialog"
         aria-label={tSettings('storeDiagnostics')}
+        aria-modal={isDrawerOpen}
         aria-hidden={!isDrawerOpen}
         inert={!isDrawerOpen}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return;
+          const focusableElements = drawerRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          );
+          if (!focusableElements?.length) {
+            event.preventDefault();
+            return;
+          }
+          const firstFocusable = focusableElements[0];
+          const lastFocusable = focusableElements[focusableElements.length - 1];
+          if (event.shiftKey && document.activeElement === firstFocusable) {
+            event.preventDefault();
+            lastFocusable.focus();
+          } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            firstFocusable.focus();
+          }
+        }}
         className={`fixed bottom-8 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
           isDrawerOpen
             ? 'translate-y-0 opacity-100'

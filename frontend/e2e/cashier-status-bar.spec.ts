@@ -7,11 +7,16 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     page,
   }) => {
     let holdShiftResponses = false;
+    let shiftIsOpen = false;
     let shiftRequestCount = 0;
     let releaseStaleShiftResponse: (() => Promise<void>) | undefined;
     await page.route('**/cash-sessions/current', async (route) => {
       if (!holdShiftResponses) {
-        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: shiftIsOpen ? JSON.stringify({ status: 'open' }) : 'null',
+        });
         return;
       }
 
@@ -88,6 +93,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     const shiftPill = page.getByTestId('status-bar-shift');
     await expect(shiftPill).toBeVisible();
     await expect(shiftPill).toContainText('Open shift');
+    await expect(page.getByTestId('btn-kick-cash-drawer')).toHaveCount(0);
 
     holdShiftResponses = true;
     await page.evaluate(() => window.dispatchEvent(new Event('flo-shift-changed')));
@@ -102,6 +108,14 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
 
     await releaseStaleShiftResponse?.();
     await expect(shiftPill).toContainText('unknown');
+
+    const kickDrawerBtn = page.getByTestId('btn-kick-cash-drawer');
+    await expect(kickDrawerBtn).toHaveCount(0);
+    shiftIsOpen = true;
+    holdShiftResponses = false;
+    await page.evaluate(() => window.dispatchEvent(new Event('flo-shift-changed')));
+    await expect(shiftPill).toContainText('Shift opened');
+    await expect(kickDrawerBtn).toHaveCount(1);
 
     // 6. Capture screenshot of clean frontline bar
     await page.screenshot({ path: 'test-results/clean-frontline-status-bar.png' });
@@ -141,7 +155,6 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     const testPrintBtn = page.getByTestId('btn-test-receipt-print');
     await expect(testPrintBtn).toBeVisible();
 
-    const kickDrawerBtn = page.getByTestId('btn-kick-cash-drawer');
     await expect(kickDrawerBtn).toBeVisible();
     await page.keyboard.press('Shift+Tab');
     await expect(kickDrawerBtn).toBeFocused();

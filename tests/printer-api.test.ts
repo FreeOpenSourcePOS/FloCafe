@@ -692,6 +692,16 @@ async function runTests() {
     const ownerPrintersRes = await request(app).get('/api/printers');
     assert(ownerPrintersRes.body.printers.length > 1, 'printers.manage can still read the full printer list');
 
+    const noShiftKickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(
+      noShiftKickRes.status === 409 && noShiftKickRes.body.error === 'open_cash_shift_required',
+      'kick-drawer requires an open cash shift',
+    );
+    db.prepare(`
+      INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+      VALUES ('owner-1', 'Owner', ?, 0, 'open')
+    `).run(now());
+
     const kickRes = await request(app).post('/api/printers/kick-drawer');
     assert(kickRes.status === 200, `kick-drawer returns 200 for WebUSB printer (got ${kickRes.status})`);
     assert(kickRes.body.webusb === true, 'kick-drawer reports webusb: true');

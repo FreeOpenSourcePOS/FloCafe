@@ -48,6 +48,7 @@ import {
   capabilitiesForPrinter,
 } from '../printers/profiles';
 import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
+import { getOpenSession } from '../services/shift-session-gate';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -526,6 +527,9 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
+      if (!getOpenSession(db)) {
+        return res.status(409).json({ error: 'open_cash_shift_required' });
+      }
       const printer = getDefaultPrinter(db);
 
       const drawerPulseBytes = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);

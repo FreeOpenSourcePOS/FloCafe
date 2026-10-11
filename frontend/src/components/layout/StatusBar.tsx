@@ -226,12 +226,12 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const isPrinterConfigured = defaultPrinter !== null;
   const isPrinterConnecting =
     defaultPrinter?.connection_type === 'webusb' && printerConnStatus === 'connecting';
-  const canKickDrawer = tenantCan(currentTenant, 'cash.movements.manage');
   const canTestPrint = tenantCan(currentTenant, 'printing.execute');
 
   // Shift state
   const isShiftKnown = session !== undefined;
   const isShiftOpen = session?.status === 'open';
+  const canKickDrawer = tenantCan(currentTenant, 'cash.movements.manage') && isShiftOpen;
 
   // Hardware Quick Actions
   const handleTestPrint = async () => {

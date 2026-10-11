@@ -78,6 +78,14 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(modal).toBeVisible({ timeout: 5_000 });
     await expect(modal.getByRole('heading', { name: 'Keyboard Shortcuts' })).toBeVisible();
     await expect(modal.getByText('Speed Cashier & Tendering')).toBeVisible();
+    const clippedDescriptions = await modal
+      .getByTestId('keyboard-shortcut-description')
+      .evaluateAll((descriptions) =>
+        descriptions
+          .filter((description) => description.scrollWidth > description.clientWidth)
+          .map((description) => description.textContent?.trim()),
+      );
+    expect(clippedDescriptions).toEqual([]);
 
     // Take screenshot of modal
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'keyboard-shortcuts-modal.png') });

@@ -99,7 +99,10 @@ export default function KeyboardShortcutsModal({ open, onClose }: Props) {
                     key={idx}
                     className="flex items-center justify-between p-2 rounded-lg bg-muted/50 border border-border/50 text-xs"
                   >
-                    <span className="text-foreground/80 font-medium pe-2 truncate">
+                    <span
+                      data-testid="keyboard-shortcut-description"
+                      className="text-foreground/80 font-medium pe-2 flex-1 min-w-0"
+                    >
                       {item.description}
                     </span>
                     <div className="flex items-center gap-1 shrink-0">

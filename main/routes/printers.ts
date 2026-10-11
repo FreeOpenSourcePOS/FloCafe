@@ -215,12 +215,14 @@ router.get(
       const db = getDatabase();
       const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
       const canManagePrinters = hasPermission(userId, 'printers.manage');
-      const printers = canManagePrinters
-        ? db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all()
-        : [getDefaultPrinter(db)].filter(Boolean);
-      res.json({
-        printers: printers.map(canManagePrinters ? printerShape : printerReadinessShape),
-      });
+      if (canManagePrinters) {
+        const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all();
+        res.json({ printers: printers.map(printerShape) });
+        return;
+      }
+
+      const defaultPrinter = getDefaultPrinter(db);
+      res.json({ printers: defaultPrinter ? [printerReadinessShape(defaultPrinter)] : [] });
     } catch (error: any) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });

@@ -111,13 +111,15 @@ Module._load = function (request, parent, isMain) {
     getServerAppPort: () => 0,
     isServerAppRunning: () => false,
   };
-  if (request === './services/cloud-sync') return { cloudSync: { shutdown: async () => { events.push('cloud.shutdown'); } } };
+  if (request === './services/cloud-sync') return { cloudSync: {
+    captureOperationFailure: () => { events.push('diagnostics.capture'); },
+    shutdown: async () => { events.push('cloud.shutdown'); },
+  } };
   if (request === './services/telemetry') return {
     telemetry: {
       start() { events.push('telemetry.start'); },
       stop: () => { events.push('telemetry.stop'); },
     },
-    sendEvent: async () => { events.push('telemetry.startup-failed'); return true; },
   };
   if (request === './services/google-drive') return {
     googleDrive: {
@@ -159,7 +161,7 @@ setTimeout(() => {
     : [
       'database.init',
       'dialog.showErrorBox',
-      'telemetry.startup-failed',
+      'diagnostics.capture',
       'server-app.stop',
       'server.stop',
       'kds.stop',

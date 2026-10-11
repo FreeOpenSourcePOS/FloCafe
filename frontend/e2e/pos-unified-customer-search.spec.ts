@@ -38,9 +38,33 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   });
 
   // 1. Search by Name
-  await customerSearchInput.fill(existingName.slice(0, 10));
+  const nameLookupQuery = existingName.slice(0, 10);
+  let resolveLookupStarted!: () => void;
+  let releaseLookup!: () => void;
+  const lookupStarted = new Promise<void>((resolve) => {
+    resolveLookupStarted = resolve;
+  });
+  const lookupGate = new Promise<void>((resolve) => {
+    releaseLookup = resolve;
+  });
+  await page.route('**/api/customers-search**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('q') === nameLookupQuery) {
+      resolveLookupStarted();
+      await lookupGate;
+    }
+    await route.continue();
+  });
+  await customerSearchInput.fill(nameLookupQuery);
+  await lookupStarted;
+  try {
+    await customerSearchInput.press('Enter');
+    await expect(modal).not.toBeVisible();
+  } finally {
+    releaseLookup();
+  }
   const nameResult = page.getByRole('button').filter({ hasText: existingName }).first();
   await expect(nameResult).toBeVisible({ timeout: 5_000 });
+  await page.unroute('**/api/customers-search**');
   await customerSearchInput.fill(`${existingName} no match`);
   await expect(nameResult).toBeHidden();
   await customerSearchInput.fill(existingName.slice(0, 10));

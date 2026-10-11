@@ -53,6 +53,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchSucceeded, setSearchSucceeded] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -127,6 +128,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     clearTimeout(debounceRef.current);
     requestAbortRef.current?.abort();
     setResults([]);
+    setSearchSucceeded(false);
 
     const trimmed = q.trim();
     setActiveIndex(disambiguateCustomerInput(trimmed).category === 'ambiguous' ? -1 : 0);
@@ -146,6 +148,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         if (requestId !== searchRequestIdRef.current) return;
         const list = Array.isArray(data) ? data : data.customers || [];
         setResults(list);
+        setSearchSucceeded(true);
       } catch {
         if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
         setResults([]);
@@ -186,7 +189,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   }
 
   const actions: IntentAction[] = [];
-  if (trimmedQuery.length >= 2) {
+  if (trimmedQuery.length >= 2 && searchSucceeded && !loading) {
     if (disambiguation.category === 'phone') {
       actions.push({
         id: 'create-phone',
@@ -479,7 +482,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             )}
 
             {/* Zero matching customers header */}
-            {results.length === 0 && !loading && (
+            {results.length === 0 && !loading && searchSucceeded && (
               <div className="px-2.5 py-2 text-xs text-muted-foreground text-center">
                 {tCommon('noResults')}
               </div>

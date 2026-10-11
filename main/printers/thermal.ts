@@ -114,7 +114,6 @@ import {
   pushCenteredWrapped,
   appendPoweredByFooter,
   normalizeThermalText,
-  maskPhoneOnReceipt,
   resolveCurrencyPrefix,
   appendCashDrawerPulse,
   buildEscPos,
@@ -139,7 +138,6 @@ export {
   pushCenteredWrapped,
   appendPoweredByFooter,
   normalizeThermalText,
-  maskPhoneOnReceipt,
   resolveCurrencyPrefix,
   appendCashDrawerPulse,
   buildEscPos,
@@ -1677,12 +1675,7 @@ function receiptDocumentLines(
     country: 'US',
     currency: 'USD',
   };
-  const rasterBiz = {
-    ...biz,
-    ...(biz.customer_phone
-      ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) }
-      : {}),
-  };
+  const rasterBiz = { ...biz };
   const selection = parseBillTemplateSelection(template);
   if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
   const normalizedTemplate = normalizeReceiptTemplate(

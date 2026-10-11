@@ -26,6 +26,14 @@ Enable **Open cash drawer on checkout** on a receipt printer only when a till is
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to
 printed receipt jobs for that printer, and only for payment methods on the drawer's allowlist.
 
+## Receipt logos
+
+Upload a PNG, JPEG, or WebP image under **Settings > General > Store Logo**. The source file can be
+up to 5 MB. FloCafe processes it in the browser and creates a monochrome raster for ESC/POS output.
+In **Settings > Printers > Bill Content**, enable **Store Logo** to include the logo on supported
+bill print paths. The setting is off by default. Browser bills center the logo above the business
+header. See the [printing architecture](architecture/printing.md) for the renderer details.
+
 ## Menu printing
 
 From **Products** or **POS**, open **Print Menu** and choose a destination before printing:

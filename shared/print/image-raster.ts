@@ -9,7 +9,7 @@ import { type RasterBand, DEFAULT_RASTER_MAX_BAND_HEIGHT } from './raster';
 
 const MAX_LOGO_RASTER_JSON_LENGTH = 250_000;
 const MAX_LOGO_WIDTH_DOTS = 576;
-const MAX_LOGO_HEIGHT_DOTS = 0xFFFF;
+const MAX_LOGO_HEIGHT_DOTS = 0xffff;
 
 export interface PackedLogoVariant {
   readonly width: number;
@@ -58,7 +58,10 @@ function parseReceiptLogoData(value: ReceiptLogoData | string): ReceiptLogoData 
 
   const variants = parsed.variants;
   const variantWidths = Object.keys(variants);
-  if (variantWidths.length === 0 || variantWidths.some((width) => width !== '384' && width !== '576')) {
+  if (
+    variantWidths.length === 0 ||
+    variantWidths.some((width) => width !== '384' && width !== '576')
+  ) {
     return null;
   }
 
@@ -84,9 +87,7 @@ function parseReceiptLogoData(value: ReceiptLogoData | string): ReceiptLogoData 
     if (
       !Number.isSafeInteger(packedLength) ||
       variant.dataBase64.length !== base64Length ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-        variant.dataBase64,
-      )
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(variant.dataBase64)
     ) {
       return null;
     }

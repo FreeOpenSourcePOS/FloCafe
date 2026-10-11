@@ -198,6 +198,10 @@ call behind it will succeed, and a renderer that hides one is not a security con
 
 Route gating lives in `AuthGuard`:
 
+- `AuthGuard` and the dashboard layout remove one trailing slash from `usePathname()` before
+  comparing routes. This keeps permission gates for `/staff` and `/settings` and POS/KDS/settings
+  scroll-shell selection consistent with the desktop export's `trailingSlash` setting (see the
+  [build-time fork](desktop-build.md#the-build-time-fork)).
 - `getLandingPage` returns the first page in a fixed list the tenant can reach. The list is ordered,
   not role-aware: `pos.use` is checked before `dashboard.view`, and `pos.use` ships to owners, so
   an owner lands on the POS like anyone else. The list is a fallback order for whichever surfaces

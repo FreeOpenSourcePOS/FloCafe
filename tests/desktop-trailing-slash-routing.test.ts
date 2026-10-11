@@ -22,8 +22,13 @@ const { normalizePathname } = require('../frontend/src/lib/utils');
 let passed = 0;
 let failed = 0;
 function check(label: string, cond: boolean) {
-  if (cond) { console.log(`  ✓ ${label}`); passed++; }
-  else { console.log(`  ✗ ${label}`); failed++; }
+  if (cond) {
+    console.log(`  ✓ ${label}`);
+    passed++;
+  } else {
+    console.log(`  ✗ ${label}`);
+    failed++;
+  }
 }
 
 console.log('='.repeat(70));
@@ -34,14 +39,17 @@ console.log('\n─── normalizePathname ───');
 check('strips a single trailing slash', normalizePathname('/pos/') === '/pos');
 check('leaves a path with no trailing slash alone', normalizePathname('/pos') === '/pos');
 check('leaves root "/" alone, not emptied', normalizePathname('/') === '/');
-check('strips the trailing slash on a nested path', normalizePathname('/settings/billing/') === '/settings/billing');
+check(
+  'strips the trailing slash on a nested path',
+  normalizePathname('/settings/billing/') === '/settings/billing',
+);
 check('null is handled without throwing', normalizePathname(null) === '');
 check('undefined is handled without throwing', normalizePathname(undefined) === '');
 
 console.log('\n─── (dashboard)/layout.tsx: isPos / isSettings parity ───');
 for (const [rawPos, rawKds, rawSettings] of [
-  ['/pos', '/kds', '/settings'],       // dev / cloud build
-  ['/pos/', '/kds/', '/settings/'],    // desktop build (trailingSlash: true)
+  ['/pos', '/kds', '/settings'], // dev / cloud build
+  ['/pos/', '/kds/', '/settings/'], // desktop build (trailingSlash: true)
 ] as const) {
   const pos = normalizePathname(rawPos);
   const isPos = pos === '/pos' || pos === '/kds';

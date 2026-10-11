@@ -379,7 +379,8 @@ test('receipt column oracle: GS ! character sizing decodes high nibble as width 
   // Low nibble (bits 0..3) is height magnification - 1.
   // High nibble (bits 4..7) is width magnification - 1.
   // Height alone does not consume extra horizontal columns/cells.
-  const sample = (n: number, text: string) => Buffer.from([0x1d, 0x21, n, ...Buffer.from(text, 'ascii'), 0x0a]);
+  const sample = (n: number, text: string) =>
+    Buffer.from([0x1d, 0x21, n, ...Buffer.from(text, 'ascii'), 0x0a]);
 
   // 1x width, 1x height (0x00): "ABCDE" -> 5 cells
   const normal = measureEscPos(sample(0x00, 'ABCDE'));
@@ -395,5 +396,9 @@ test('receipt column oracle: GS ! character sizing decodes high nibble as width 
 
   // 2x width, 2x height (0x11): "ABCDE" -> 10 cells (both height and width)
   const doubleBoth = measureEscPos(sample(0x11, 'ABCDE'));
-  assert.equal(doubleBoth.lines[0].cells, 10, 'double width & height (0x11) should measure 10 cells');
+  assert.equal(
+    doubleBoth.lines[0].cells,
+    10,
+    'double width & height (0x11) should measure 10 cells',
+  );
 });

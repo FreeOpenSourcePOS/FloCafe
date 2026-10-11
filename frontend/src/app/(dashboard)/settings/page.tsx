@@ -1601,7 +1601,7 @@ export default function SettingsPage() {
   const [telemetryEnabled, setTelemetryEnabled] = useState(false);
   const [savingTelemetry, setSavingTelemetry] = useState(false);
 
-  const [diagnosticsConsent, setDiagnosticsConsent] = useState(false);
+  const [diagnosticsConsent, setDiagnosticsConsent] = useState(true);
   const [savingDiagnosticsConsent, setSavingDiagnosticsConsent] = useState(false);
 
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveStatus>({

@@ -119,6 +119,7 @@ export interface AppendAttempt {
   orderId: string;
   fingerprint: string;
   idempotencyKey: string;
+  operationId?: string;
   items: unknown[];
   specialInstructions?: string;
   orderNumber?: string;
@@ -243,6 +244,7 @@ interface AppendAttemptOptions {
   orderId: number | string;
   fingerprint: string;
   createKey: () => string;
+  operationId?: string;
   items: unknown[];
   specialInstructions?: string;
   orderNumber?: string;
@@ -713,6 +715,7 @@ export function getOrCreateAppendAttempt(
     orderId,
     fingerprint: options.fingerprint,
     idempotencyKey,
+    operationId: options.operationId,
     items: options.items,
     specialInstructions: options.specialInstructions,
     orderNumber: options.orderNumber,

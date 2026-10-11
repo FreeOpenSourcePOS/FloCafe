@@ -771,8 +771,16 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         item.addons = resolveItemAddons(db, item.product_id, item.addons, item.quantity);
       }
     } catch (err: any) {
+      const msg = err?.message || 'Item validation failed';
+      const isRequiredGroup = typeof msg === 'string' && (msg.includes('requires at least') || msg.includes('exceeds maximum allowed') || msg.includes('does not allow multiple'));
+      const isAddonUnavailable = typeof msg === 'string' && (msg.includes('is not available') || msg.includes('was not found') || msg.includes('is out of stock'));
+      const point = isRequiredGroup
+        ? 'fc.backend.order.create.addon_group_validation'
+        : isAddonUnavailable
+          ? 'fc.backend.order.create.addon_item_validation'
+          : 'fc.backend.order.create.other_validation';
       return res.status(400).json(structuredOperationFailure(
-        req, 'fc.backend.order.create.other_validation', 'not_applied', err.message,
+        req, point, 'not_applied', msg,
       ));
     }
     const result = withTxn(() => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import api from '@/lib/api';
+import api, { captureClientOperationFailure, createOperationReference, operationHeaders } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
@@ -50,6 +50,7 @@ import { preferChildScopedBill } from '@/lib/printer/tax-components';
 import { fetchLoadedOrderPages } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { classifyOrderRequestFailure } from '@/lib/order-attempt';
 
 import { OrderCard } from '@/components/orders/OrderCard';
 import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
@@ -105,6 +106,7 @@ export default function OrdersPage() {
   const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } =
     usePosSettingsStore();
   const tOrders = useTranslations('orders');
+  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -198,6 +200,7 @@ export default function OrdersPage() {
     }[]
   >([]);
   const [addingItems, setAddingItems] = useState(false);
+  const [appendOutcomeUnknown, setAppendOutcomeUnknown] = useState(false);
   const [addonPickerProduct, setAddonPickerProduct] = useState<Product | null>(null);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
@@ -453,27 +456,27 @@ export default function OrdersPage() {
     if (!pendingAttempt) return;
     appendRecoveryStartedUsersRef.current.add(activeUserId);
     addItemsAttemptRef.current = pendingAttempt;
-    api
-      .post(
-        `/orders/${pendingAttempt.orderId}/items`,
-        {
-          items: pendingAttempt.items,
-          special_instructions: pendingAttempt.specialInstructions,
-        },
-        { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } },
-      )
-      .then(() => {
-        if (!clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!))
-          throw new Error('Unable to clear append retry state');
-        if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
-        addItemsAttemptRef.current = null;
-        toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
-        fetchOrders(undefined, { refreshLoadedPages: true });
-      })
-      .catch(() => {
-        toast.error(tOrders('addItemsFailed'));
-      });
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    api.post(`/orders/${pendingAttempt.orderId}/items`, {
+      items: pendingAttempt.items,
+      special_instructions: pendingAttempt.specialInstructions,
+    }, { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey, ...operationHeaders(pendingAttempt.operationId) } }).then(() => {
+      const cleared = clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+      if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
+      addItemsAttemptRef.current = null;
+      setAppendOutcomeUnknown(false);
+      toast.success(cleared ? tOrders('itemsAdded', { count: pendingAttempt!.items.length }) : `${tOrders('itemsAdded', { count: pendingAttempt!.items.length })} ${tPos('appendCompleteCleanupFailed')}`);
+      if (!cleared && pendingAttempt!.operationId) void captureClientOperationFailure({ operation: 'order.append', phase: 'retry_cleanup', correlationId: pendingAttempt!.operationId });
+      fetchOrders(undefined, { refreshLoadedPages: true });
+    }).catch((error) => {
+      setAppendOutcomeUnknown(true);
+      const failure = classifyOrderRequestFailure(error, { operation: 'order.append', correlationId: pendingAttempt!.operationId || '' });
+      toast.error(failure.trusted && failure.outcome === 'not_applied'
+        ? `${tPos('operationNotSaved')} ${tPos('operationCorrectAndRetry')}`
+        : failure.trusted && failure.outcome === 'applied'
+          ? `${tPos('operationMayHaveCompleted')} ${tPos('appendCompleteCheckOrders')}`
+          : `${tPos('appendOutcomeUnknown')} ${tPos('appendCompleteCheckOrders')}`);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
 
   useEffect(() => {
@@ -739,11 +742,18 @@ export default function OrdersPage() {
 
   const handleCheckout = async (orderId: number) => {
     setGeneratingBill(orderId);
+    const operationId = createOperationReference();
     try {
-      const { data } = await api.post('/bills/generate', { order_id: orderId });
+      const { data } = await api.post('/bills/generate', { order_id: orderId }, { headers: operationHeaders(operationId) });
       setPaymentBill(data.bill);
-    } catch {
-      toast.error(tOrders('generateBillFailed'));
+    } catch (error) {
+      const failure = classifyOrderRequestFailure(error, { operation: 'bill.generate', correlationId: operationId || '' });
+      toast.error(failure.trusted && failure.outcome === 'not_applied'
+        ? `${tPos('operationNotSaved')} ${tPos('operationNotSavedNextStep')}`
+        : failure.trusted && failure.outcome === 'applied'
+          ? `${tPos('operationMayHaveCompleted')} ${tPos('operationCheckBeforeRetry')}`
+          : `${tPos('billOutcomeUnknown')} ${tPos('operationCheckBeforeRetry')}`);
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } finally {
       setGeneratingBill(null);
     }
@@ -793,7 +803,7 @@ export default function OrdersPage() {
         }
       } catch (err) {
         const msg = extractPrinterErrorMessage(err);
-        toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
+        toast.error(`${tPos('saleCompletePrintFailed')} ${tPos('saleCompleteReprintNextStep')} ${formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint'))}`);
       }
     }
   };
@@ -847,14 +857,21 @@ export default function OrdersPage() {
       return;
     }
     setGeneratingBill(order.id);
+    const operationId = createOperationReference();
     try {
-      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      const { data } = await api.post('/bills/generate', { order_id: order.id }, { headers: operationHeaders(operationId) });
       const bill = data.bill as Bill;
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bill } : o)));
       await fetchOrders(undefined, { refreshLoadedPages: true });
       setConfirmPrintBillId(bill.id);
-    } catch {
-      toast.error(tOrders('generateBillFailed'));
+    } catch (error) {
+      const failure = classifyOrderRequestFailure(error, { operation: 'bill.generate', correlationId: operationId || '' });
+      toast.error(failure.trusted && failure.outcome === 'not_applied'
+        ? `${tPos('operationNotSaved')} ${tPos('operationNotSavedNextStep')}`
+        : failure.trusted && failure.outcome === 'applied'
+          ? `${tPos('operationMayHaveCompleted')} ${tPos('operationCheckBeforeRetry')}`
+          : `${tPos('billOutcomeUnknown')} ${tPos('operationCheckBeforeRetry')}`);
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } finally {
       setGeneratingBill(null);
     }
@@ -1020,18 +1037,31 @@ export default function OrdersPage() {
       return;
     }
 
+    const operationId = createOperationReference();
     try {
       await api.patch(`/orders/${discountModal.order.id}/discount`, {
         discount_type: discountModal.type,
         discount_value: normalizedDiscountValue,
         discount_reason: discountModal.reason || undefined,
-        override_pin:
-          discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
-      });
+        override_pin: discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
+      }, { headers: operationHeaders(operationId) });
       toast.success(tOrders('discountApplied'));
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('discountFailed'));
+    } catch (error) {
+      const failure = classifyOrderRequestFailure(error, { operation: 'order.discount', correlationId: operationId || '' });
+      const discountMessages: Record<string, string> = {
+        invalid_type: tPos('discountInvalidType'), invalid_value: tPos('discountInvalidValue'),
+        disabled: tPos('discountDisabled'), type_disabled: tPos('discountTypeDisabled'),
+        limit_exceeded: tPos('discountLimitExceeded'), order_not_discountable: tPos('orderNotDiscountable'),
+        bill_not_discountable: tPos('billNotDiscountable'), split_check: tPos('splitCheckDiscountUnavailable'),
+        refunded: tPos('refundedDiscountUnavailable'), paid: tPos('paidDiscountUnavailable'),
+      };
+      toast.error(failure.trusted && failure.outcome === 'not_applied'
+        ? `${failure.displayCode ? discountMessages[failure.displayCode] : tPos('operationNotSaved')} ${tPos('operationCorrectAndRetry')}`
+        : failure.trusted && failure.outcome === 'applied'
+          ? `${tPos('operationMayHaveCompleted')} ${tPos('operationCheckBeforeRetry')}`
+          : `${tPos('discountOutcomeUnknown')} ${tPos('operationCheckBeforeRetry')}`);
+      fetchOrders(undefined, { refreshLoadedPages: true });
     } finally {
       setDiscountModal(null);
       setDiscountPin('');
@@ -1138,13 +1168,16 @@ export default function OrdersPage() {
   };
 
   const handleSubmitAddItems = async () => {
-    if (!addItemsOrder || selectedItems.length === 0) return;
+    if (!addItemsOrder || selectedItems.length === 0 || appendOutcomeUnknown) return;
     setAddingItems(true);
+    const operationId = createOperationReference();
+    let attempt: AppendAttempt | null = null;
+    let requestSubmitted = false;
     try {
       const items = selectedItems.map((i) => cartItemToOrderItem(i));
       const fingerprint = buildAppendItemsFingerprint(addItemsOrder.id, items);
       const storage = getAppendAttemptStorage();
-      const attempt = getOrCreateAppendAttempt(storage, {
+      attempt = getOrCreateAppendAttempt(storage, {
         userId: activeUserId || '',
         orderId: addItemsOrder.id,
         fingerprint,
@@ -1154,23 +1187,43 @@ export default function OrdersPage() {
             : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         items,
         orderNumber: addItemsOrder.order_number,
+        operationId: operationId || undefined,
       });
       addItemsAttemptRef.current = attempt;
-      await api.post(
-        `/orders/${addItemsOrder.id}/items`,
-        {
-          items,
-        },
-        { headers: { 'Idempotency-Key': attempt.idempotencyKey } },
-      );
-      if (!clearAppendAttempt(storage, attempt))
-        throw new Error('Unable to clear append retry state');
+      requestSubmitted = true;
+      await api.post(`/orders/${addItemsOrder.id}/items`, {
+        items,
+      }, { headers: { 'Idempotency-Key': attempt.idempotencyKey, ...operationHeaders(attempt.operationId) } });
+      const cleared = clearAppendAttempt(storage, attempt);
       addItemsAttemptRef.current = null;
-      toast.success(tOrders('itemsAdded', { count: selectedItems.length }));
+      setAppendOutcomeUnknown(false);
+      toast.success(cleared ? tOrders('itemsAdded', { count: selectedItems.length }) : `${tOrders('itemsAdded', { count: selectedItems.length })} ${tPos('appendCompleteCleanupFailed')}`);
+      if (!cleared && attempt.operationId) void captureClientOperationFailure({ operation: 'order.append', phase: 'retry_cleanup', correlationId: attempt.operationId });
       openAddItemsModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
-      toast.error(tOrders('addItemsFailed'));
+    } catch (error) {
+      if (requestSubmitted && attempt) {
+        const failure = classifyOrderRequestFailure(error, { operation: 'order.append', correlationId: attempt.operationId || '' });
+        if (failure.trusted && failure.outcome === 'not_applied') {
+          const cleared = clearAppendAttempt(getAppendAttemptStorage(), attempt);
+          if (cleared) addItemsAttemptRef.current = null;
+          setAppendOutcomeUnknown(!cleared);
+          toast.error(`${tPos('operationNotSaved')} ${tPos('operationCorrectAndRetry')}`);
+        } else {
+          setAppendOutcomeUnknown(true);
+          toast.error(failure.trusted && failure.outcome === 'applied'
+            ? `${tPos('operationMayHaveCompleted')} ${tPos('appendCompleteCheckOrders')}`
+            : `${tPos('appendOutcomeUnknown')} ${tPos('appendCompleteCheckOrders')}`);
+        }
+      } else {
+        if (error instanceof Error && /^(Unable to persist append retry state|Unable to verify append retry state|Unable to complete legacy append retry migration)$/.test(error.message) && operationId) {
+          void captureClientOperationFailure({ operation: 'order.append', phase: 'retry_storage', correlationId: operationId });
+        }
+        setAppendOutcomeUnknown(false);
+        toast.error(error instanceof Error && error.message === 'A previous append attempt is still pending'
+          ? `${tPos('appendOutcomeUnknown')} ${tPos('appendCompleteCheckOrders')}`
+          : tOrders('addItemsFailed'));
+      }
     } finally {
       setAddingItems(false);
     }
@@ -1951,9 +2004,8 @@ export default function OrdersPage() {
       {addItemsOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
-            <h2 className="text-lg font-bold text-foreground mb-4">
-              {tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr>
-            </h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">{tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
+            {appendOutcomeUnknown && <p role="alert" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-100">{tPos('appendOutcomeUnknown')} {tPos('appendCompleteCheckOrders')}</p>}
 
             {/* Search */}
             <div className="relative mb-3">
@@ -2067,7 +2119,7 @@ export default function OrdersPage() {
               <Button
                 size="sm"
                 onClick={handleSubmitAddItems}
-                disabled={selectedItems.length === 0 || addingItems}
+                disabled={selectedItems.length === 0 || addingItems || appendOutcomeUnknown}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 <Plus size={14} className="me-1.5" />

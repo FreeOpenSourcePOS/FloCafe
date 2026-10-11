@@ -38,7 +38,71 @@ type DiagnosticsSnapshot = {
   failures: LocalFailure[];
   bundle: SupportBundle | null;
   settings: Record<string, string>;
+  health: DiagnosticsHealth | null;
 };
+
+type DiagnosticsHealth = {
+  effective_consent: boolean;
+  transmission_enabled: boolean;
+  consent_sync_pending: boolean;
+  delayed: boolean;
+  transport: 'signed' | 'anonymous' | 'local' | 'disabled';
+  pending_reports: number;
+  pending_occurrences: number;
+  pending_aggregates: number;
+  pending_aggregate_occurrences: number;
+  permanently_rejected_reports: number;
+  gaps: Array<{ reason_code: 'queue_eviction' | 'permanent_rejection' | 'invalid_ack' | 'report_id_mismatch' | 'local_retention'; count: number }>;
+};
+
+const GAP_REASONS = ['queue_eviction', 'permanent_rejection', 'invalid_ack', 'report_id_mismatch', 'local_retention'] as const;
+const TRANSPORT_LABEL_KEYS = {
+  signed: 'diagnosticsTransportSigned',
+  anonymous: 'diagnosticsTransportAnonymous',
+  local: 'diagnosticsTransportLocal',
+  disabled: 'diagnosticsTransportDisabled',
+} as const;
+const GAP_LABEL_KEYS = {
+  queue_eviction: 'diagnosticsGapQueueEviction',
+  permanent_rejection: 'diagnosticsGapPermanentRejection',
+  invalid_ack: 'diagnosticsGapInvalidAck',
+  report_id_mismatch: 'diagnosticsGapReportMismatch',
+  local_retention: 'diagnosticsGapLocalRetention',
+} as const;
+
+function parseDiagnosticsHealth(value: unknown): DiagnosticsHealth | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const countKeys = ['pending_reports', 'pending_occurrences', 'pending_aggregates', 'pending_aggregate_occurrences', 'permanently_rejected_reports'] as const;
+  if (typeof raw.effective_consent !== 'boolean'
+    || typeof raw.transmission_enabled !== 'boolean'
+    || typeof raw.consent_sync_pending !== 'boolean'
+    || typeof raw.delayed !== 'boolean'
+    || typeof raw.transport !== 'string'
+    || !['signed', 'anonymous', 'local', 'disabled'].includes(raw.transport)
+    || countKeys.some((key) => !Number.isSafeInteger(raw[key]) || Number(raw[key]) < 0)
+    || !Array.isArray(raw.gaps)) return null;
+  const gaps = raw.gaps.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return [];
+    const gap = item as Record<string, unknown>;
+    if (typeof gap.reason_code !== 'string' || !GAP_REASONS.includes(gap.reason_code as typeof GAP_REASONS[number])
+      || !Number.isSafeInteger(gap.count) || Number(gap.count) < 0) return [];
+    return [{ reason_code: gap.reason_code as DiagnosticsHealth['gaps'][number]['reason_code'], count: Number(gap.count) }];
+  });
+  return {
+    effective_consent: raw.effective_consent,
+    transmission_enabled: raw.transmission_enabled,
+    consent_sync_pending: raw.consent_sync_pending,
+    delayed: raw.delayed,
+    transport: raw.transport as DiagnosticsHealth['transport'],
+    pending_reports: Number(raw.pending_reports),
+    pending_occurrences: Number(raw.pending_occurrences),
+    pending_aggregates: Number(raw.pending_aggregates),
+    pending_aggregate_occurrences: Number(raw.pending_aggregate_occurrences),
+    permanently_rejected_reports: Number(raw.permanently_rejected_reports),
+    gaps,
+  };
+}
 
 function readSettings(canViewSettings: boolean): Promise<Record<string, string>> {
   if (!canViewSettings) return Promise.resolve({});
@@ -53,15 +117,20 @@ function readSettings(canViewSettings: boolean): Promise<Record<string, string>>
 }
 
 /** Read-only; the screen's state is applied by the caller so no effect sets state synchronously. */
-function readDiagnostics(canViewSettings: boolean): Promise<DiagnosticsSnapshot> {
+function readDiagnostics(canViewSettings: boolean, canViewHealth: boolean): Promise<DiagnosticsSnapshot> {
   return Promise.all([
     api.get('/diagnostics/recent'),
     api.get('/diagnostics/support-bundle'),
     readSettings(canViewSettings),
-  ]).then(([recent, bundleData, settings]) => ({
+    canViewHealth ? api.get('/diagnostics/health').catch((error: { response?: { status?: number } }) => {
+      if (error?.response?.status === 401 || error?.response?.status === 403) return null;
+      throw error;
+    }) : Promise.resolve(null),
+  ]).then(([recent, bundleData, settings, healthData]) => ({
     failures: recent.data.failures || [],
     bundle: bundleData.data.bundle || null,
     settings,
+    health: parseDiagnosticsHealth(healthData?.data),
   }));
 }
 
@@ -75,8 +144,10 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
   // The switch reads its state from /settings, which needs settings.view; without
   // it the value stays unconfirmed rather than guessed to be off.
   const canViewSettings = tenantCan(currentTenant, 'settings.view');
+  const canViewHealth = tenantCan(currentTenant, 'support.use');
   const [failures, setFailures] = useState<LocalFailure[]>([]);
   const [bundle, setBundle] = useState<SupportBundle | null>(null);
+  const [health, setHealth] = useState<DiagnosticsHealth | null>(null);
   const [loading, setLoading] = useState(true);
   const [includeLogTail, setIncludeLogTail] = useState(false);
   const [logTail, setLogTail] = useState('');
@@ -92,18 +163,19 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
   const applySnapshot = useCallback((snapshot: DiagnosticsSnapshot) => {
     setFailures(snapshot.failures);
     setBundle(snapshot.bundle);
+    setHealth(snapshot.health);
     if (readStartedAtSaveRef.current === savesRef.current) {
       // Absent means the read was refused or not permitted, and null keeps the
       // hint off both claims; false would claim nothing is sent while it is.
       const raw = snapshot.settings.diagnostics_transmission_enabled;
-      setTransmissionEnabled(typeof raw === 'string' ? raw === 'true' : null);
+      setTransmissionEnabled(typeof raw === 'string' ? raw === 'true' : snapshot.health?.transmission_enabled ?? null);
     }
   }, []);
 
   const runRead = useCallback(() => {
     readStartedAtSaveRef.current = savesRef.current;
-    return readDiagnostics(canViewSettings);
-  }, [canViewSettings]);
+    return readDiagnostics(canViewSettings, canViewHealth);
+  }, [canViewSettings, canViewHealth]);
 
   const reportLoadFailure = useCallback(() => toast.error(t('diagnosticsLoadFailed')), [t]);
 
@@ -157,6 +229,7 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
       savesRef.current += 1;
       setTransmissionEnabled(next);
       toast.success(t('diagnosticsSettingSaved'));
+      void refresh();
     } catch {
       toast.error(t('diagnosticsSaveFailed'));
     } finally {
@@ -188,10 +261,31 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
         {/* Either claim is only true once the server has confirmed the setting,
             so an unconfirmed state gets a sentence that asserts neither. */}
         <p className="text-sm text-muted-foreground">
-          {t(savingTransmission || transmissionEnabled === null
+          {t(savingTransmission || health === null || health.consent_sync_pending
             ? 'diagnosticsLocalOnlyHintPending'
-            : transmissionEnabled ? 'diagnosticsLocalOnlyHintTransmitting' : 'diagnosticsLocalOnlyHint')}
+            : health.effective_consent && health.transmission_enabled && ['signed', 'anonymous'].includes(health.transport)
+              ? 'diagnosticsLocalOnlyHintTransmitting'
+              : 'diagnosticsLocalOnlyHint')}
         </p>
+
+        {health && (
+          <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-3 text-xs" data-testid="diagnostics-health">
+            {health.consent_sync_pending && <p>{t('diagnosticsConsentSyncPending')}</p>}
+            <p>{t('diagnosticsTransportState', { transport: t(TRANSPORT_LABEL_KEYS[health.transport]) })}</p>
+            {health.delayed && <p>{t('diagnosticsDeliveryDelayed', {
+              reports: health.pending_reports,
+              occurrences: health.pending_occurrences,
+              aggregates: health.pending_aggregates,
+              aggregateOccurrences: health.pending_aggregate_occurrences,
+            })}</p>}
+            {health.permanently_rejected_reports > 0 && <p>{t('diagnosticsPermanentRejections', { count: health.permanently_rejected_reports })}</p>}
+            {health.gaps.filter((gap) => gap.count > 0).map((gap) => (
+              <p key={gap.reason_code}>{gap.reason_code === 'local_retention'
+                ? t('diagnosticsLocalRetentionGap', { count: gap.count })
+                : t('diagnosticsGapCount', { reason: t(GAP_LABEL_KEYS[gap.reason_code]), count: gap.count })}</p>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
           <h3 className="text-sm font-semibold text-foreground">{t('diagnosticsRecentFailures')}</h3>

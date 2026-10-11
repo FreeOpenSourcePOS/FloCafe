@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import api from '@/lib/api';
+import api, { captureClientOperationFailure, createOperationReference, operationHeaders } from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Order } from '@/lib/types';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
@@ -34,6 +34,7 @@ import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { allocateEqualShares } from '@/lib/money';
 import { parseAppliedCharges, type AppliedCharge } from '@/lib/charges';
 import { useChargesStore, chargesForOrderType } from '@/store/charges';
+import { classifyOrderRequestFailure, type OperationFailureMetadata } from '@/lib/order-attempt';
 
 interface Props {
   bill: Bill;
@@ -68,6 +69,7 @@ type AppliedEqualShare = { index: number; amountMinor: number; amountInput: stri
 type PendingPaymentAttempt = {
   billId: string | number;
   key: string;
+  operationId: string | null;
   zeroBalance: boolean;
   lines: { method: string; amount: number | null; payment_method_id?: number }[];
   customerId: string | number | null;
@@ -141,6 +143,13 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
   const [kitchenUndeliveredCount, setKitchenUndeliveredCount] = useState(0);
   const [kitchenUndeliveredItems, setKitchenUndeliveredItems] = useState<string[]>([]);
   const [kitchenDeliveryError, setKitchenDeliveryError] = useState('');
+  const [requestFailure, setRequestFailure] = useState<{
+    message: string;
+    nextStep: string;
+    details: Pick<OperationFailureMetadata, 'operation' | 'stage' | 'outcome' | 'reasonCode' | 'correlationId'>;
+    status: number | null;
+  } | null>(null);
+  const [paymentOutcomeUnknown, setPaymentOutcomeUnknown] = useState(false);
 
   // Discount state
   const [showDiscount, setShowDiscount] = useState(false);
@@ -229,15 +238,72 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     if (!canEditCharges || processing || applyingDiscount || updatingChargeId) return;
     setUpdatingChargeId(chargeId);
     setChargeStateUncertain(true);
+    const operationId = createOperationReference();
     try {
-      const { data } = await api.patch(`/bills/${bill.id}/charges`, { charge_id: chargeId, ...change });
+      const { data } = await api.patch(`/bills/${bill.id}/charges`, { charge_id: chargeId, ...change }, { headers: operationHeaders(operationId) });
       if (!data.bill) throw new Error('Bill charge update returned no bill');
       if (onBillUpdate) onBillUpdate({ ...bill, ...data.bill, order: bill.order });
       setChargeStateUncertain(false);
     } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } } | null)?.response?.status;
-      if (status !== undefined && status >= 400 && status < 500) setChargeStateUncertain(false);
-      toast.error(t('chargeUpdateFailed'));
+      const failure = classifyOrderRequestFailure(error, { operation: 'bill.charge.update', correlationId: operationId || '' });
+      const chargeMessages: Record<string, string> = {
+        charge_required: t('chargeRequired'),
+        bill_not_found: t('chargeBillNotFound'),
+        split_check: t('chargeSplitCheck'),
+        bill_paid: t('chargeBillPaid'),
+        bill_refunded: t('chargeBillRefunded'),
+        order_not_found: t('chargeOrderNotFound'),
+        order_cancelled: t('chargeOrderCancelled'),
+        charge_unavailable: t('chargeUnavailable'),
+        order_type_unsupported: t('chargeOrderTypeUnsupported'),
+        change_required: t('chargeChangeRequired'),
+        invalid_change_type: t('chargeInvalidChangeType'),
+        charge_not_waivable: t('chargeNotWaivable'),
+        charge_always_applied: t('chargeAlwaysApplied'),
+      };
+      if (failure.trusted && failure.outcome === 'not_applied') {
+        setChargeStateUncertain(false);
+        setRequestFailure({
+          message: failure.displayCode ? chargeMessages[failure.displayCode] || t('operationNotSaved') : t('operationNotSaved'),
+          nextStep: t('operationCorrectAndRetry'),
+          details: { operation: 'bill.charge.update', stage: failure.stage || 'validation', outcome: 'not_applied', reasonCode: failure.reasonCode, correlationId: failure.correlationId },
+          status: failure.status,
+        });
+        return;
+      }
+
+      try {
+        const { data } = await api.get(`/bills/${bill.id}`, { headers: operationHeaders(operationId) });
+        if (!data?.bill) throw new Error('Bill status unavailable');
+        onBillUpdate?.({ ...bill, ...data.bill, order: bill.order });
+        setChargeStateUncertain(!failure.trusted || failure.outcome === 'unknown');
+        setRequestFailure({
+          message: failure.trusted && failure.outcome === 'applied' ? t('chargeCompletionApplied') : t('operationOutcomeUnknown'),
+          nextStep: t('operationCheckBeforeRetry'),
+          details: {
+            operation: 'bill.charge.update',
+            stage: failure.trusted ? failure.stage || 'recovery' : 'recovery',
+            outcome: failure.trusted ? failure.outcome || 'unknown' : 'unknown',
+            reasonCode: failure.reasonCode,
+            correlationId: failure.correlationId || operationId,
+          },
+          status: failure.status,
+        });
+      } catch {
+        toast.error(t('chargeUpdateFailed'));
+        setRequestFailure({
+          message: failure.trusted && failure.outcome === 'applied' ? t('chargeCompletionApplied') : t('operationOutcomeUnknown'),
+          nextStep: t('operationCheckBeforeRetry'),
+          details: {
+            operation: 'bill.charge.update',
+            stage: failure.trusted ? failure.stage || 'recovery' : 'recovery',
+            outcome: failure.trusted ? failure.outcome || 'unknown' : 'unknown',
+            reasonCode: failure.reasonCode,
+            correlationId: failure.correlationId || operationId,
+          },
+          status: failure.status,
+        });
+      }
     } finally {
       setUpdatingChargeId(null);
     }
@@ -515,6 +581,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
       return;
     }
     setApplyingDiscount(true);
+    const operationId = createOperationReference();
     try {
       const storedDiscountValue = discountType === 'amount' && customVal === undefined ? toStoredUnit(val) : val;
       await api.patch(`/orders/${bill.order_id}/discount`, {
@@ -522,7 +589,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         discount_value: storedDiscountValue,
         discount_reason: val > 0 ? discountReason || undefined : undefined,
         override_pin: discountRequiresApproval && val > 0 ? discountPin : undefined,
-      });
+      }, { headers: operationHeaders(operationId) });
       toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
       if (val === 0) {
@@ -531,12 +598,41 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         setDiscountReason('');
       }
       // Refresh bill without closing modal
-      const { data } = await api.get(`/bills/order/${bill.order_id}`);
+      const { data } = await api.get(`/bills/order/${bill.order_id}`, { headers: operationHeaders(operationId) });
       if (data.bill && onBillUpdate) {
         onBillUpdate(data.bill);
       }
-    } catch {
-      toast.error(t('failedToUpdateDiscount'));
+    } catch (error) {
+      const failure = classifyOrderRequestFailure(error, { operation: 'order.discount', correlationId: operationId || '' });
+      const confirmedNoChange = failure.trusted && failure.outcome === 'not_applied';
+      const displayMessages: Record<string, string> = {
+        invalid_type: t('discountInvalidType'),
+        invalid_value: t('discountInvalidValue'),
+        disabled: t('discountDisabled'),
+        type_disabled: t('discountTypeDisabled'),
+        limit_exceeded: t('discountLimitExceeded'),
+        order_not_discountable: t('orderNotDiscountable'),
+        bill_not_discountable: t('billNotDiscountable'),
+        split_check: t('splitCheckDiscountUnavailable'),
+        refunded: t('refundedDiscountUnavailable'),
+        paid: t('paidDiscountUnavailable'),
+      };
+      const message = confirmedNoChange
+        ? failure.displayCode ? displayMessages[failure.displayCode] || t('operationNotSaved') : t('operationNotSaved')
+        : t('discountOutcomeUnknown');
+      setRequestFailure({
+        message,
+        nextStep: confirmedNoChange ? t('operationNotSavedNextStep') : t('operationCheckBeforeRetry'),
+        details: {
+          operation: 'order.discount',
+          stage: failure.stage || 'unknown',
+          outcome: confirmedNoChange ? 'not_applied' : 'unknown',
+          reasonCode: failure.reasonCode,
+          correlationId: failure.correlationId || operationId,
+        },
+        status: failure.status,
+      });
+      toast.error(message);
       // Clear the PIN on any failure (wrong PIN or rate-limited) so a stale/rejected
       // PIN doesn't sit in the field looking like it might still work on retry.
       setDiscountPin('');
@@ -600,6 +696,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     return {
       billId: bill.id,
       key: createPaymentIdempotencyKey(),
+      operationId: createOperationReference(),
       zeroBalance,
       lines: zeroBalance ? [{ method: 'cash', amount: null }] : splitLines,
       customerId: effectiveCustomerId,
@@ -615,6 +712,7 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     setProcessing(true);
+    setRequestFailure(null);
     try {
       const res = await api.post(
         attempt.zeroBalance ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
@@ -630,15 +728,25 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
               customer_id: attempt.customerId,
               override_pin: kitchenOverridePin || undefined,
             },
-        { headers: { 'Idempotency-Key': attempt.key } },
+        { headers: { 'Idempotency-Key': attempt.key, ...operationHeaders(attempt.operationId) } },
       );
       const updatedBill = res.data?.bill as Bill | undefined;
       if (!updatedBill) {
         // A 2xx without a bill is no evidence of an outcome: replay the attempt.
-        toast.error(t('paymentFailed'));
+        lockAttempt(attempt);
+        setPaymentOutcomeUnknown(true);
+        setRequestFailure({
+          message: t('operationOutcomeUnknown'),
+          nextStep: t('operationCheckBeforeRetry'),
+          details: { operation: 'payment.create', stage: 'response', outcome: 'unknown', reasonCode: null, correlationId: attempt.operationId },
+          status: res.status,
+        });
+        void captureClientOperationFailure({ operation: 'payment.create', phase: 'transport', correlationId: attempt.operationId, failureClass: 'invalid_response' });
         return;
       }
       lockAttempt(null);
+      setPaymentOutcomeUnknown(false);
+      setRequestFailure(null);
       setKitchenOverrideRequired(false);
       if (updatedBill.payment_status !== 'paid') {
         if (onBillUpdate) onBillUpdate({ ...bill, ...updatedBill, order: bill.order });
@@ -675,6 +783,53 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         };
       } | null)?.response;
       const payload = response?.data;
+      const failure = classifyOrderRequestFailure(error, { operation: 'payment.create', correlationId: attempt.operationId || '' });
+      const knownNotApplied = failure.trusted && failure.outcome === 'not_applied';
+      if (!response) {
+        const code = (error as { code?: unknown } | null)?.code;
+        const failureClass = code === 'ECONNABORTED' || code === 'ETIMEDOUT' ? 'timeout'
+          : code === 'ENOTFOUND' || code === 'EAI_AGAIN' ? 'dns'
+            : code === 'ECONNREFUSED' ? 'connection_refused'
+              : typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'unreachable';
+        void captureClientOperationFailure({ operation: 'payment.create', phase: 'transport', correlationId: attempt.operationId, failureClass });
+      }
+      const paymentDisplayMessages: Record<string, string> = {
+        transaction_reference_used: t('paymentTransactionReferenceUsed'),
+        transaction_reference_reused: t('paymentTransactionReferenceReused'),
+        bill_refunded: t('paymentBillRefunded'),
+        bill_already_paid: t('paymentBillAlreadyPaid'),
+        customer_mismatch: t('paymentCustomerMismatch'),
+        customer_unavailable: t('paymentCustomerUnavailable'),
+        wallet_customer_required: t('paymentWalletCustomerRequired'),
+        amount_required: t('paymentAmountRequired'),
+        non_cash_exceeds_balance: t('paymentAboveBalance'),
+        cash_reference_zero_applied: t('paymentCashReferenceZeroApplied'),
+        wallet_insufficient: t('paymentWalletInsufficient'),
+        kitchen_undelivered: t('kitchenDeliveryOverridePrompt'),
+        idempotency_conflict: t('paymentIdempotencyConflict'),
+        payment_method_unavailable: t('paymentMethodUnavailable'),
+        payment_input_invalid: t('paymentInputInvalid'),
+      };
+      const reasonMessage = failure.outcome === 'applied'
+        ? t('paymentCompletionApplied')
+        : failure.reasonCode === 'payment.invalid'
+          ? failure.displayCode ? paymentDisplayMessages[failure.displayCode] || t('paymentValidationRejected') : t('paymentValidationRejected')
+        : knownNotApplied ? t('operationNotSaved') : t('operationOutcomeUnknown');
+      const setFailure = (outcome: 'not_applied' | 'applied' | 'unknown') => {
+        setPaymentOutcomeUnknown(outcome !== 'not_applied');
+        setRequestFailure({
+          message: reasonMessage,
+          nextStep: outcome === 'not_applied' ? t('operationNotSavedNextStep') : t('operationCheckBeforeRetry'),
+          details: {
+            operation: failure.operation,
+            stage: failure.stage || 'unknown',
+            outcome,
+            reasonCode: failure.reasonCode,
+            correlationId: failure.correlationId || attempt.operationId,
+          },
+          status: failure.status,
+        });
+      };
       if (payload?.code === 'KITCHEN_ITEMS_UNDELIVERED') {
         // The kitchen gate runs before any write: nothing committed, and the
         // cashier must be able to retry with a manager PIN.
@@ -684,29 +839,70 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
         setKitchenUndeliveredCount(Number(payload.undeliveredCount) || 0);
         setKitchenUndeliveredItems(Array.isArray(payload.undeliveredItems) ? payload.undeliveredItems : []);
         setKitchenDeliveryError('');
+        setRequestFailure(null);
+        setPaymentOutcomeUnknown(false);
       } else if (payload?.error === 'Invalid manager PIN') {
         // A definitive challenge rejection: no payment was recorded.
         lockAttempt(null);
         setKitchenOverrideRequired(true);
         setKitchenOverridePin('');
         setKitchenDeliveryError(t('kitchenDeliveryOverrideInvalid'));
-      } else if (
-        response?.status === undefined
-        || response.status >= 500
-        || payload?.error === IDEMPOTENCY_CONFLICT_ERROR
-      ) {
+        setRequestFailure(null);
+        setPaymentOutcomeUnknown(false);
+      } else if (knownNotApplied && payload?.error !== IDEMPOTENCY_CONFLICT_ERROR) {
+        lockAttempt(null);
+        setFailure('not_applied');
+        toast.error(reasonMessage);
+      } else if (failure.trusted && failure.outcome === 'applied') {
+        lockAttempt(attempt);
+        setFailure('applied');
+        toast.error(reasonMessage);
+      } else {
         // No response, a server fault, or a key already recorded for another
         // request: the outcome is unknown, so the attempt stays frozen and the
         // retry replays it rather than issuing a new charge.
-        toast.error(t('paymentFailed'));
-      } else {
-        // A definitive 4xx rejection cannot have committed: the draft is
-        // editable again and the next Pay starts a new attempt.
-        lockAttempt(null);
-        toast.error(t('paymentFailed'));
+        lockAttempt(attempt);
+        setFailure('unknown');
+        toast.error(t('operationOutcomeUnknown'));
       }
     } finally {
       inFlightRef.current = false;
+      setProcessing(false);
+    }
+  };
+
+  const checkPaymentStatus = async () => {
+    const attempt = pendingAttemptRef.current;
+    if (!attempt || attempt.billId !== bill.id || processing) return;
+    setProcessing(true);
+    setRequestFailure(null);
+    try {
+      const { data } = await api.get(`/bills/${bill.id}`, { headers: operationHeaders(attempt.operationId) });
+      const currentBill = data?.bill as Bill | undefined;
+      if (!currentBill || !['paid', 'partial', 'unpaid'].includes(currentBill.payment_status)) throw new Error('Bill status unavailable');
+      onBillUpdate?.({ ...bill, ...currentBill, order: bill.order });
+      // A bill read cannot attribute another payment's balance change to this
+      // request. Keep the exact request and idempotency key until replay returns
+      // an authoritative result for this attempt.
+      setPaymentOutcomeUnknown(false);
+      setRequestFailure({
+        message: t('paymentStatusUnconfirmed'),
+        nextStep: t('paymentRetrySameRequest'),
+        details: { operation: 'payment.create', stage: 'recovery', outcome: 'unknown', reasonCode: null, correlationId: attempt.operationId },
+        status: null,
+      });
+    } catch (error) {
+      if (!(error as { response?: unknown } | null)?.response) {
+        void captureClientOperationFailure({ operation: 'payment.create', phase: 'recovery', correlationId: attempt.operationId });
+      }
+      setPaymentOutcomeUnknown(true);
+      setRequestFailure({
+        message: t('operationOutcomeUnknown'),
+        nextStep: t('operationCheckBeforeRetry'),
+        details: { operation: 'payment.create', stage: 'recovery', outcome: 'unknown', reasonCode: null, correlationId: attempt.operationId },
+        status: null,
+      });
+    } finally {
       setProcessing(false);
     }
   };
@@ -717,6 +913,10 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
     // key. Resubmitting the live draft here is the hazard this guards.
     const unresolved = pendingAttemptRef.current;
     if (unresolved && unresolved.billId === bill.id) {
+      if (paymentOutcomeUnknown) {
+        await checkPaymentStatus();
+        return;
+      }
       await submitPaymentAttempt(unresolved);
       return;
     }
@@ -825,6 +1025,17 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
             <X size={16} />
           </button>
         </div>
+
+        {requestFailure && (
+          <div role="alert" className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-amber-950 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-100">
+            <p className="text-sm font-medium">{requestFailure.message}</p>
+            <p className="mt-1 text-xs">{requestFailure.nextStep}</p>
+            <details className="mt-2 text-xs">
+              <summary className="cursor-pointer">{t('operationTechnicalDetails')}</summary>
+              <pre className="mt-1 whitespace-pre-wrap break-all font-mono">{JSON.stringify({ ...requestFailure.details, httpStatus: requestFailure.status }, null, 2)}</pre>
+            </details>
+          </div>
+        )}
 
         <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-2 lg:gap-5">
 
@@ -1328,8 +1539,8 @@ export default function PaymentModal({ bill, initialOverridePin, onClose, onPaid
                   {t('splitCheck')}
                 </Button>
               )}
-              <Button onClick={handlePay} disabled={processing || applyingDiscount || Boolean(updatingChargeId) || chargeStateUncertain || (totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
-                {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
+              <Button onClick={handlePay} disabled={processing || applyingDiscount || Boolean(updatingChargeId) || chargeStateUncertain || (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0)} className="w-full" size="lg">
+                {processing ? t('processingPayment') : paymentOutcomeUnknown ? t('checkPaymentStatus') : pendingAttempt ? t('retrySamePayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
               </Button>
             </>
           )}

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Bug, CheckCircle2, Loader2, LifeBuoy, MessageSquareText, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
@@ -12,6 +12,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
+import { createOperationReference } from '@/lib/api';
 
 export interface SupportTicketEndpoints {
   profile: string;
@@ -29,6 +30,13 @@ export const PRE_LOGIN_SUPPORT_ENDPOINTS: SupportTicketEndpoints = {
   profile: '/support-ticket/pre-login/profile',
   submit: '/support-ticket/pre-login',
   statusBase: '/support-ticket/pre-login',
+};
+
+export type SupportOperationFailure = {
+  capture_point: string;
+  operation_id: string;
+  outcome: string;
+  facts?: { display_code?: string; failure_class?: string };
 };
 
 type SupportProfile = {
@@ -56,6 +64,10 @@ interface SupportTicketFormProps {
   initialCategory?: string;
   initialSubject?: string;
   initialMessage?: string;
+  initialEventCode?: string;
+  initialCorrelationId?: string;
+  initialOperationFailure?: SupportOperationFailure;
+  initialDiagnostics?: Record<string, unknown>;
 }
 
 export function SupportTicketForm({
@@ -65,6 +77,10 @@ export function SupportTicketForm({
   initialCategory,
   initialSubject,
   initialMessage,
+  initialEventCode,
+  initialCorrelationId,
+  initialOperationFailure,
+  initialDiagnostics,
 }: SupportTicketFormProps) {
   const t = useTranslations('support');
   const fmtNum = useFormatNumber();
@@ -77,6 +93,13 @@ export function SupportTicketForm({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const submissionIdentityRef = useRef<{
+    fingerprint: string;
+    correlationId: string;
+    clientTicketId: string;
+    payload: Record<string, unknown>;
+  } | null>(null);
+  const submissionInProgressRef = useRef(false);
   const delivery = useSupportTicketStatus(submittedId || null, endpoints.statusBase);
   const diagnosticsPreview = useSupportDiagnosticsPreview(showDiagnosticsPreview ? category : null);
 
@@ -89,15 +112,11 @@ export function SupportTicketForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!subject.trim() || !message.trim()) return;
+    if (submissionInProgressRef.current || !subject.trim() || !message.trim()) return;
+    submissionInProgressRef.current = true;
     setSubmitting(true);
     try {
-      let logTail: string | undefined;
-      if (attachLog && typeof window !== 'undefined' && window.electronAPI?.getLogTail) {
-        const result = await window.electronAPI.getLogTail().catch(() => null);
-        if (result && 'text' in result) logTail = result.text;
-      }
-      const { data } = await api.post(endpoints.submit, {
+      const userFields = {
         category,
         severity,
         subject: subject.trim(),
@@ -105,10 +124,49 @@ export function SupportTicketForm({
         contact_name: profile.contact_name.trim(),
         contact_email: profile.contact_email.trim(),
         contact_phone: profile.contact_phone.trim(),
-        correlation_id: crypto.randomUUID(),
-        client_ticket_id: crypto.randomUUID(),
-        log_tail: logTail,
+      };
+      const fingerprint = JSON.stringify({
+        ...userFields,
+        attachLog,
+        initialEventCode,
+        initialCorrelationId,
+        initialOperationFailure,
+        initialDiagnostics,
       });
+      if (submissionIdentityRef.current?.fingerprint !== fingerprint) {
+        const correlationId = initialCorrelationId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(initialCorrelationId)
+          ? initialCorrelationId
+          : createOperationReference();
+        const clientTicketId = createOperationReference();
+        if (!correlationId || !clientTicketId) throw new Error('Secure ticket reference unavailable');
+        let logTail: string | undefined;
+        if (attachLog && typeof window !== 'undefined' && window.electronAPI?.getLogTail) {
+          const result = await window.electronAPI.getLogTail().catch(() => null);
+          if (result && 'text' in result) logTail = result.text;
+        }
+        submissionIdentityRef.current = {
+          fingerprint,
+          correlationId,
+          clientTicketId,
+          payload: {
+            ...userFields,
+            log_tail: logTail,
+            ...(initialEventCode ? { event_code: initialEventCode } : {}),
+            ...(initialDiagnostics ? { diagnostics: initialDiagnostics } : {}),
+            ...(initialOperationFailure?.operation_id === correlationId
+              ? { operation_failure: initialOperationFailure }
+              : {}),
+          },
+        };
+      }
+      const identity = submissionIdentityRef.current;
+      if (!identity) throw new Error('Secure ticket reference unavailable');
+      const { data } = await api.post(endpoints.submit, {
+        ...identity.payload,
+        correlation_id: identity.correlationId,
+        client_ticket_id: identity.clientTicketId,
+      });
+      submissionIdentityRef.current = null;
       setSubmittedId(data.client_ticket_id || '');
       setSubject('');
       setMessage('');
@@ -117,6 +175,7 @@ export function SupportTicketForm({
     } catch {
       toast.error(t('submitFailed'));
     } finally {
+      submissionInProgressRef.current = false;
       setSubmitting(false);
     }
   }

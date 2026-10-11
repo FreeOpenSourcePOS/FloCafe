@@ -13,7 +13,11 @@
 
 const assert = require('node:assert/strict');
 const {
+  buildAppendItemsFingerprint,
+  getAppendAttemptStorageKey,
   getPostpaidOrderAttemptStorageKey,
+  getOrCreateAppendAttempt,
+  readAppendAttempt,
   createSafeAppendAttemptStorage,
 } = require('../frontend/src/lib/append-attempt');
 const {
@@ -279,6 +283,119 @@ function main() {
     'a local (non-request) failure is not misreported as a server rejection',
   );
 
+  // Structured outcomes are trusted only when every field matches the user
+  // operation and its independent UUIDv4 reference. Server text stays private.
+  const operationReference = '123e4567-e89b-42d3-a456-426614174000';
+  const classifyOrder = (data) => classifyOrderRequestFailure({
+    response: { status: 400, data },
+  }, { operation: 'order.create', correlationId: operationReference });
+  const quantityRejected = classifyOrder({
+    error: 'Invalid quantity for secret product', reason_code: 'order.quantity_invalid',
+    operation: 'order.create', stage: 'validation', outcome: 'not_applied',
+    classification: 'expected_rejection', correlation_id: operationReference,
+  });
+  const stockRejected = classifyOrder({
+    error: 'Insufficient stock for secret product', reason_code: 'order.stock_insufficient',
+    operation: 'order.create', stage: 'validation', outcome: 'not_applied',
+    classification: 'expected_rejection', correlation_id: operationReference,
+  });
+  assert.equal(quantityRejected.reasonCode, 'order.quantity_invalid');
+  assert.equal(stockRejected.reasonCode, 'order.stock_insufficient');
+  assert.equal(quantityRejected.outcome, 'not_applied');
+  assert.equal(quantityRejected.detail.includes('secret'), false, 'trusted structured detail never includes server text');
+  assert.notEqual(quantityRejected.reasonCode, stockRejected.reasonCode, 'different validation reasons stay distinct');
+  assert.equal(classifyOrder({
+    error: 'secret', reason_code: 'order.stock_insufficient', operation: 'payment.create',
+    stage: 'validation', outcome: 'not_applied', classification: 'expected_rejection',
+    correlation_id: operationReference,
+  }).reasonCode, null, 'a reason for another operation is not trusted');
+  assert.equal(classifyOrder({
+    error: 'secret', reason_code: 'order.stock_insufficient', operation: 'order.create',
+    stage: 'persistence', outcome: 'applied', classification: 'expected_rejection',
+    correlation_id: operationReference,
+  }).reasonCode, null, 'an impossible stage/outcome tuple is not trusted');
+  assert.equal(classifyOrder({
+    error: 'secret', reason_code: 'order.stock_insufficient', operation: 'order.create',
+    stage: 'validation', outcome: 'not_applied', classification: 'expected_rejection',
+    correlation_id: '123e4567-e89b-42d3-a456-426614174001',
+  }).reasonCode, null, 'a mismatched operation reference is not trusted');
+  assert.equal(classifyOrder({
+    error: 'secret', reason_code: 'private.raw.message', operation: 'order.create',
+    stage: 'validation', outcome: 'not_applied', classification: 'expected_rejection',
+    correlation_id: operationReference,
+  }).reasonCode, null, 'an unregistered reason falls back safely');
+  assert.doesNotThrow(() => classifyOrder({
+    reason_code: 'order.stock_insufficient', operation: 'order.create', stage: { toString: null },
+  }), 'malformed structured stages never crash the failure UI');
+  assert.doesNotThrow(() => classifyOrderRequestFailure({ response: { status: Symbol('invalid') } }), 'malformed statuses never crash the failure UI');
+  assert.equal(classifyOrder({
+    reason_code: 'order.stock_insufficient', operation: 'order.create', stage: 'validation',
+    outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+    facts: { product_name: 'secret product' },
+  }).outcome, 'unknown', 'unregistered response facts make the result untrusted');
+  const legacyResponse = classifyOrderFailureWithMissingReference();
+  assert.equal(legacyResponse.outcome, 'unknown', 'legacy server responses do not prove a financial request was not applied');
+  assert.equal(legacyResponse.trusted, false, 'legacy server responses use the safe fallback');
+
+  for (const operation of ['order.create', 'payment.create', 'bill.generate'] as const) {
+    const completed = classifyOrderRequestFailure({ response: { status: 500, data: {
+      reason_code: 'operation.completion_failed', operation, stage: 'completion',
+      outcome: 'applied', classification: 'unexpected_failure', correlation_id: operationReference,
+    } } }, { operation, correlationId: operationReference });
+    assert.equal(completed.trusted, true, `${operation} accepts the server's post-commit completion tuple`);
+    assert.equal(completed.outcome, 'applied', `${operation} does not turn a committed operation into an unknown result`);
+  }
+  const unavailableBillOrder = classifyOrderRequestFailure({ response: { status: 404, data: {
+    reason_code: 'bill.order_unavailable', operation: 'bill.generate', stage: 'validation',
+    outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+  } } }, { operation: 'bill.generate', correlationId: operationReference });
+  assert.equal(unavailableBillOrder.reasonCode, 'bill.order_unavailable', 'bill generation recognizes its safe validation response');
+  const discountWithoutDisplayCode = classifyOrderRequestFailure({ response: { status: 400, data: {
+    reason_code: 'discount.rejected', operation: 'order.discount', stage: 'validation',
+    outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+  } } }, { operation: 'order.discount', correlationId: operationReference });
+  assert.equal(discountWithoutDisplayCode.trusted, true, 'discount response can be trusted when optional display_code is absent');
+  assert.equal(discountWithoutDisplayCode.displayCode, null, 'missing optional display_code uses a safe generic translation');
+  for (const displayCode of [
+    'transaction_reference_used', 'transaction_reference_reused', 'bill_refunded', 'bill_already_paid',
+    'customer_mismatch', 'customer_unavailable', 'wallet_customer_required', 'amount_required',
+    'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient', 'kitchen_undelivered',
+    'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
+  ]) {
+    const paymentRejection = classifyOrderRequestFailure({ response: { status: 400, data: {
+      reason_code: 'payment.invalid', operation: 'payment.create', stage: 'validation',
+      outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+      display_code: displayCode,
+    } } }, { operation: 'payment.create', correlationId: operationReference });
+    assert.equal(paymentRejection.trusted, true, `payment rejection accepts the approved display code ${displayCode}`);
+    assert.equal(paymentRejection.displayCode, displayCode, `payment rejection preserves the approved display code ${displayCode}`);
+  }
+  const unregisteredPaymentDisplayCode = classifyOrderRequestFailure({ response: { status: 400, data: {
+    reason_code: 'payment.invalid', operation: 'payment.create', stage: 'validation',
+    outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+    display_code: 'raw server text',
+  } } }, { operation: 'payment.create', correlationId: operationReference });
+  assert.equal(unregisteredPaymentDisplayCode.trusted, false, 'unregistered payment display codes make metadata untrusted');
+  for (const displayCode of [
+    'charge_required', 'bill_not_found', 'split_check', 'bill_paid', 'bill_refunded', 'order_not_found',
+    'order_cancelled', 'charge_unavailable', 'order_type_unsupported', 'change_required',
+    'invalid_change_type', 'charge_not_waivable', 'charge_always_applied',
+  ]) {
+    const chargeRejection = classifyOrderRequestFailure({ response: { status: 409, data: {
+      reason_code: 'bill.charge_rejected', operation: 'bill.charge.update', stage: 'validation',
+      outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+      display_code: displayCode,
+    } } }, { operation: 'bill.charge.update', correlationId: operationReference });
+    assert.equal(chargeRejection.trusted, true, `bill charge rejection accepts the approved display code ${displayCode}`);
+    assert.equal(chargeRejection.displayCode, displayCode, `bill charge rejection preserves the approved display code ${displayCode}`);
+  }
+  const unregisteredChargeDisplayCode = classifyOrderRequestFailure({ response: { status: 409, data: {
+    reason_code: 'bill.charge_rejected', operation: 'bill.charge.update', stage: 'validation',
+    outcome: 'not_applied', classification: 'expected_rejection', correlation_id: operationReference,
+    display_code: 'raw server text',
+  } } }, { operation: 'bill.charge.update', correlationId: operationReference });
+  assert.equal(unregisteredChargeDisplayCode.trusted, false, 'unregistered charge display codes make metadata untrusted');
+
   // 7. A completed attempt whose deletion the browser blocks is closed durably:
   //    a later sale over a fresh wrapper never reuses the confirmed key.
   const removalBlockedLocal = new RemovalBlockedStorage();
@@ -347,7 +464,36 @@ function main() {
     'the stored payment key is unchanged by the failed update',
   );
 
+  // 10. Append recovery retains the same operation reference as its
+  //     idempotency key across a renderer reload.
+  const appendStorage = createSafeAppendAttemptStorage(new MemoryStorage(), new MemoryStorage());
+  const appendItems = [{ product_id: 'p2', quantity: 1 }];
+  const appendFingerprint = buildAppendItemsFingerprint(14, appendItems);
+  const appendOperationId = '123e4567-e89b-42d3-a456-426614174000';
+  const appendAttempt = getOrCreateAppendAttempt(appendStorage, {
+    userId: USER_ID,
+    orderId: 14,
+    fingerprint: appendFingerprint,
+    createKey: () => 'append-key-1',
+    operationId: appendOperationId,
+    items: appendItems,
+  });
+  assert.equal(appendAttempt.operationId, appendOperationId);
+  assert.equal(
+    readAppendAttempt(appendStorage, { userId: USER_ID }).operationId,
+    appendOperationId,
+    'append recovery reads back the persisted operation reference',
+  );
+  assert.notEqual(appendStorage.getItem(getAppendAttemptStorageKey(USER_ID)), null);
+
   console.log('Issue #788 order-attempt storage tests passed');
+}
+
+function classifyOrderFailureWithMissingReference() {
+  return classifyOrderRequestFailure(
+    { response: { status: 400, data: { error: 'secret legacy response' } } },
+    { operation: 'order.create', correlationId: '' },
+  );
 }
 
 function createDamagedPrepaidStorage() {

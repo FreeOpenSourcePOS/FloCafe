@@ -141,14 +141,229 @@ export function clearOrderAttempt(
   return removalVerified || markerPersisted;
 }
 
-/** Bounded, payload-free classification of a failed order request. */
-export function classifyOrderRequestFailure(error: unknown): { code: string; detail: string; status: number | null } {
-  const status = Number((error as { response?: { status?: unknown } })?.response?.status);
-  if (Number.isInteger(status) && status > 0) {
-    return { code: 'order.place.rejected', detail: `Order rejected by the local server (HTTP ${status})`, status };
+export type OperationFailureMetadata = {
+  reasonCode: string | null;
+  operation: string;
+  stage: string | null;
+  outcome: 'not_applied' | 'applied' | 'partial' | 'unknown' | 'not_applicable' | null;
+  classification: 'expected_rejection' | 'unexpected_failure' | null;
+  correlationId: string | null;
+  displayCode: string | null;
+  serverError: string | null;
+  trusted: boolean;
+};
+
+export type OperationName = 'order.create' | 'payment.create' | 'order.append' | 'order.discount' | 'bill.discount' | 'bill.generate' | 'bill.charge.update';
+type FailureDefinition = {
+  stage: string;
+  classification: OperationFailureMetadata['classification'];
+  outcomes: readonly NonNullable<OperationFailureMetadata['outcome']>[];
+};
+
+const STRUCTURED_FAILURES: Record<OperationName, Record<string, Record<string, FailureDefinition>>> = {
+  'order.create': {
+    validation: {
+      'order.quantity_invalid': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+      'order.stock_insufficient': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+      'order.addon_selection_required': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+      'order.addon_unavailable': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+      'validation.rejected': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied', 'partial', 'unknown'] },
+      'server.internal_error': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied', 'partial', 'unknown'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+    submission: {
+      'request.transport_failed': { stage: 'submission', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+    recovery: {
+      'request.outcome_unknown': { stage: 'recovery', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+  },
+  'payment.create': {
+    validation: {
+      'payment.invalid': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied', 'partial', 'unknown'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+    submission: {
+      'request.transport_failed': { stage: 'submission', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+    recovery: {
+      'request.outcome_unknown': { stage: 'recovery', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+  },
+  'order.append': {
+    validation: {
+      'validation.rejected': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+    submission: {
+      'request.transport_failed': { stage: 'submission', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+    recovery: {
+      'request.outcome_unknown': { stage: 'recovery', classification: 'unexpected_failure', outcomes: ['unknown'] },
+    },
+  },
+  'order.discount': {
+    validation: {
+      'discount.rejected': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+  },
+  'bill.discount': {
+    validation: {
+      'discount.rejected': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+  },
+  'bill.generate': {
+    validation: {
+      'bill.order_unavailable': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied', 'partial', 'unknown'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+  },
+  'bill.charge.update': {
+    validation: {
+      'bill.charge_rejected': { stage: 'validation', classification: 'expected_rejection', outcomes: ['not_applied'] },
+    },
+    persistence: {
+      'persistence.failed': { stage: 'persistence', classification: 'unexpected_failure', outcomes: ['not_applied', 'unknown'] },
+    },
+    completion: {
+      'operation.completion_failed': { stage: 'completion', classification: 'unexpected_failure', outcomes: ['applied'] },
+    },
+  },
+};
+
+const DISCOUNT_DISPLAY_CODES = [
+  'invalid_type', 'invalid_value', 'disabled', 'type_disabled', 'limit_exceeded',
+  'order_not_discountable', 'bill_not_discountable', 'split_check', 'refunded', 'paid',
+] as const;
+const PAYMENT_DISPLAY_CODES = [
+  'transaction_reference_used', 'transaction_reference_reused', 'bill_refunded', 'bill_already_paid',
+  'customer_mismatch', 'customer_unavailable', 'wallet_customer_required', 'amount_required',
+  'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient', 'kitchen_undelivered',
+  'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
+] as const;
+const CHARGE_DISPLAY_CODES = [
+  'charge_required', 'bill_not_found', 'split_check', 'bill_paid', 'bill_refunded', 'order_not_found',
+  'order_cancelled', 'charge_unavailable', 'order_type_unsupported', 'change_required',
+  'invalid_change_type', 'charge_not_waivable', 'charge_always_applied',
+] as const;
+
+export function isSupportedFailureOperation(value: string): value is OperationName {
+  return Object.prototype.hasOwnProperty.call(STRUCTURED_FAILURES, value);
+}
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+/** Trusts additive server metadata only when the closed tuple and operation reference match. */
+export function classifyOrderRequestFailure(
+  error: unknown,
+  expected: { operation: OperationName; correlationId: string } = { operation: 'order.create', correlationId: '' },
+): {
+  code: string;
+  detail: string;
+  status: number | null;
+} & OperationFailureMetadata {
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null)?.response;
+  let rawStatus = Number.NaN;
+  try {
+    rawStatus = Number(response?.status);
+  } catch {
+    // A malformed transport error must not break the cashier's fallback message.
   }
-  if ((error as { isAxiosError?: unknown })?.isAxiosError === true) {
-    return { code: 'order.place.unreachable', detail: 'The order request did not reach the local server', status: null };
-  }
-  return { code: 'order.place.failed', detail: 'The order could not be completed on this device', status: null };
+  const status = Number.isInteger(rawStatus) && rawStatus > 0 ? rawStatus : null;
+  const fallback = {
+    code: status !== null ? 'order.place.rejected' : (error as { isAxiosError?: unknown } | null)?.isAxiosError === true
+      ? 'order.place.unreachable'
+      : 'order.place.failed',
+    detail: status !== null
+      ? `The local server response did not confirm the result (HTTP ${status})`
+      : (error as { isAxiosError?: unknown } | null)?.isAxiosError === true
+        ? 'The request did not receive confirmation from the local server'
+        : 'The request result could not be confirmed on this device',
+    status,
+    reasonCode: null,
+    operation: expected.operation,
+    stage: null,
+    outcome: 'unknown' as const,
+    classification: null,
+    correlationId: null,
+    displayCode: null,
+    serverError: null,
+    trusted: false,
+  };
+
+  if (!UUID_V4.test(expected.correlationId) || !plainRecord(response?.data)) return fallback;
+  const payload = response.data;
+  if (payload.operation !== expected.operation || typeof payload.reason_code !== 'string' || typeof payload.stage !== 'string') return fallback;
+  if (payload.facts !== undefined && (!plainRecord(payload.facts) || Object.keys(payload.facts).length > 0)) return fallback;
+  const operationDefinitions = STRUCTURED_FAILURES[expected.operation];
+  if (!Object.prototype.hasOwnProperty.call(operationDefinitions, payload.stage)) return fallback;
+  const stageDefinitions = operationDefinitions[payload.stage];
+  if (!Object.prototype.hasOwnProperty.call(stageDefinitions, payload.reason_code)) return fallback;
+  const definition = stageDefinitions[payload.reason_code];
+  const displayCode = payload.display_code;
+  const isDiscountRejection = payload.reason_code === 'discount.rejected'
+    && (expected.operation === 'order.discount' || expected.operation === 'bill.discount');
+  const isPaymentRejection = payload.reason_code === 'payment.invalid' && expected.operation === 'payment.create';
+  const isChargeRejection = payload.reason_code === 'bill.charge_rejected' && expected.operation === 'bill.charge.update';
+  const allowedDisplayCodes: readonly string[] = isDiscountRejection ? DISCOUNT_DISPLAY_CODES
+    : isPaymentRejection ? PAYMENT_DISPLAY_CODES
+      : isChargeRejection ? CHARGE_DISPLAY_CODES : [];
+  if (!definition
+    || payload.stage !== definition.stage
+    || payload.classification !== definition.classification
+    || typeof payload.outcome !== 'string'
+    || !definition.outcomes.includes(payload.outcome as NonNullable<OperationFailureMetadata['outcome']>)
+    || payload.correlation_id !== expected.correlationId
+    || (displayCode !== undefined && (typeof displayCode !== 'string' || !allowedDisplayCodes.includes(displayCode)))) return fallback;
+
+  return {
+    ...fallback,
+    code: payload.reason_code,
+    reasonCode: payload.reason_code,
+    stage: definition.stage,
+    outcome: payload.outcome as NonNullable<OperationFailureMetadata['outcome']>,
+    classification: definition.classification,
+    correlationId: expected.correlationId,
+    displayCode: typeof displayCode === 'string' ? displayCode : null,
+    serverError: typeof payload.error === 'string' ? payload.error : null,
+    trusted: true,
+  };
 }

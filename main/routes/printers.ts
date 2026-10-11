@@ -47,7 +47,7 @@ import {
   resolvePrinterProfile,
   capabilitiesForPrinter,
 } from '../printers/profiles';
-import { requirePermission, requireAnyPermission } from '../services/authorization';
+import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -169,6 +169,10 @@ function printerShape(printer: any) {
   };
 }
 
+function getDefaultPrinter(db: ReturnType<typeof getDatabase>): any {
+  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any;
+}
+
 // Hydrates order items with add-ons from normalized order_item_addons.
 export function getEffectiveOrderItems(db: any, orderId: string): any[] {
   return attachEffectiveAddons(
@@ -179,20 +183,24 @@ export function getEffectiveOrderItems(db: any, orderId: string): any[] {
   );
 }
 
-// GET /api/printers — list all
-router.get('/', requirePermission('printers.manage'), (_req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const printers = db
-      .prepare('SELECT * FROM printers ORDER BY is_default DESC, name')
-      .all()
-      .map(printerShape);
-    res.json({ printers });
-  } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// GET /api/printers
+router.get(
+  '/',
+  requireAnyPermission('printers.manage', 'printing.execute'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const userId = String((req as any).user?.userId || '');
+      const printers = hasPermission(userId, 'printers.manage')
+        ? db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all()
+        : [getDefaultPrinter(db)].filter(Boolean);
+      res.json({ printers: printers.map(printerShape) });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // GET /api/printers/detect — detect connected USB/network printers
 router.get(
@@ -501,13 +509,11 @@ router.post(
 // POST /api/printers/kick-drawer — send a cash drawer pulse to the default/active printer
 router.post(
   '/kick-drawer',
-  requireAnyPermission('cash.movements.manage', 'printing.execute'),
+  requirePermission('cash.movements.manage'),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const printer =
-        (db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any) ||
-        (db.prepare('SELECT * FROM printers ORDER BY created_at ASC LIMIT 1').get() as any);
+      const printer = getDefaultPrinter(db);
 
       const drawerPulseBytes = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
 
@@ -532,7 +538,12 @@ router.post(
           result = await printViaUSB(drawerPulseBytes, printer.name, getHttpRequestSignal(req));
           break;
         case 'webusb':
-          return res.json({ success: true, webusb: true, bytes: Array.from(drawerPulseBytes) });
+          return res.json({
+            success: true,
+            webusb: true,
+            bytes: Array.from(drawerPulseBytes),
+            printerName: printer.name,
+          });
         default:
           return res.status(400).json({ error: 'Unsupported printer connection type' });
       }
@@ -559,9 +570,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const printer =
-        (db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any) ||
-        (db.prepare('SELECT * FROM printers ORDER BY created_at ASC LIMIT 1').get() as any);
+      const printer = getDefaultPrinter(db);
 
       if (!printer) return res.status(404).json({ error: 'No default printer configured' });
 
@@ -597,7 +606,12 @@ router.post(
           result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
           break;
         case 'webusb':
-          return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
+          return res.json({
+            success: true,
+            webusb: true,
+            bytes: Array.from(testData),
+            printerName: printer.name,
+          });
       }
 
       if (result.ok) {

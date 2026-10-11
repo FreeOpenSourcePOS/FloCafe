@@ -129,6 +129,7 @@ interface PrinterState {
   printMethod: PrintMode;
   hardwarePrinter: HardwarePrinter | null;
   webusbPrinter: HardwarePrinter | null;
+  defaultPrinter: HardwarePrinter | null;
   refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -169,6 +170,7 @@ export const usePrinterStore = create<PrinterState>()(
       printMethod: 'escpos',
       hardwarePrinter: null,
       webusbPrinter: null,
+      defaultPrinter: null,
 
       refreshHardwarePrinter: async () => {
         try {
@@ -180,9 +182,10 @@ export const usePrinterStore = create<PrinterState>()(
             null;
           const webusbPrinters = list.filter((p) => p.connection_type === 'webusb');
           const webusbPrinter = webusbPrinters.length === 1 ? webusbPrinters[0] : null;
-          set({ hardwarePrinter: defaultPrinter, webusbPrinter });
+          const configuredDefault = list.find((p) => p.is_default === 1) || null;
+          set({ hardwarePrinter: defaultPrinter, webusbPrinter, defaultPrinter: configuredDefault });
         } catch {
-          set({ hardwarePrinter: null, webusbPrinter: null });
+          set({ hardwarePrinter: null, webusbPrinter: null, defaultPrinter: null });
         }
       },
 

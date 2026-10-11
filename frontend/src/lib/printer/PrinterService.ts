@@ -206,6 +206,26 @@ class PrinterService {
     return this.reconnectPromise;
   }
 
+  async printToConfiguredDevice(data: Uint8Array, productName: string): Promise<void> {
+    if (this._printMode === 'browser') {
+      throw new Error('Browser print mode is active. Use window.print() instead.');
+    }
+    if (typeof navigator === 'undefined' || !navigator.usb) {
+      throw new Error('WebUSB API is not supported in this browser. Use Chrome or Edge 89+.');
+    }
+
+    await this.runExclusive(async () => {
+      const matches = (await navigator.usb!.getDevices()).filter(
+        (device) => device.productName === productName,
+      );
+      if (matches.length !== 1) {
+        throw new Error('Configured WebUSB printer does not match one available device.');
+      }
+      await this.openDevice(matches[0]);
+      await this.print(data);
+    });
+  }
+
   /** Waits for an in-flight silent reconnect to settle before caller checks connection. */
   async awaitPendingReconnect(): Promise<void> {
     if (this.reconnectPromise) await this.reconnectPromise;

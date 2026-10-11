@@ -19,6 +19,7 @@ import {
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import api from '@/lib/api';
@@ -38,6 +39,23 @@ interface CashSession {
   opening_float_cents?: number;
 }
 
+interface PrinterActionResponse {
+  webusb?: boolean;
+  bytes?: number[];
+  printerName?: string;
+}
+
+async function printWebUsbAction(response: PrinterActionResponse): Promise<void> {
+  if (!response.webusb) return;
+  if (!Array.isArray(response.bytes) || !response.printerName) {
+    throw new Error('WebUSB printer action is missing its configured printer.');
+  }
+  await printerService.printToConfiguredDevice(
+    Uint8Array.from(response.bytes),
+    response.printerName,
+  );
+}
+
 export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?: boolean }) {
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -48,7 +66,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const tSupport = useTranslations('support');
 
   const { user, currentTenant } = useAuthStore();
-  const { status: printerConnStatus, hardwarePrinter } = usePrinterStore();
+  const { status: printerConnStatus, deviceInfo, defaultPrinter } = usePrinterStore();
 
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [session, setSession] = useState<CashSession | null | undefined>(undefined);
@@ -151,8 +169,14 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     : null;
 
   // Printer readiness
-  const isPrinterReady = hardwarePrinter !== null || printerConnStatus === 'connected';
-  const isPrinterConnecting = printerConnStatus === 'connecting';
+  const isPrinterReady =
+    defaultPrinter?.connection_type === 'webusb' &&
+    printerConnStatus === 'connected' &&
+    deviceInfo?.productName === defaultPrinter.name;
+  const isPrinterConfigured = defaultPrinter !== null;
+  const isPrinterConnecting =
+    defaultPrinter?.connection_type === 'webusb' && printerConnStatus === 'connecting';
+  const canKickDrawer = tenantCan(currentTenant, 'cash.movements.manage');
 
   // Shift state
   const isShiftKnown = session !== undefined;
@@ -162,12 +186,8 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const handleTestPrint = async () => {
     setIsTestingPrint(true);
     try {
-      const res = await api.post<{ success: boolean; webusb?: boolean; bytes?: number[] }>(
-        '/printers/test-active',
-      );
-      if (res.data?.webusb && Array.isArray(res.data.bytes)) {
-        await printerService.print(Uint8Array.from(res.data.bytes));
-      }
+      const res = await api.post<PrinterActionResponse>('/printers/test-active');
+      await printWebUsbAction(res.data);
       toast.success(tSettings('testPrintSent') || 'Test print sent!');
     } catch (err: unknown) {
       const msg =
@@ -183,12 +203,8 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const handleKickDrawer = async () => {
     setIsKickingDrawer(true);
     try {
-      const res = await api.post<{ success: boolean; webusb?: boolean; bytes?: number[] }>(
-        '/printers/kick-drawer',
-      );
-      if (res.data?.webusb && Array.isArray(res.data.bytes)) {
-        await printerService.print(Uint8Array.from(res.data.bytes));
-      }
+      const res = await api.post<PrinterActionResponse>('/printers/kick-drawer');
+      await printWebUsbAction(res.data);
       toast.success(tSettings('cashDrawerPulseSent'));
     } catch (err: unknown) {
       const msg =
@@ -267,20 +283,22 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                   <span>{tSettings('testPrint')}</span>
                 </button>
 
-                <button
-                  type="button"
-                  data-testid="btn-kick-cash-drawer"
-                  onClick={handleKickDrawer}
-                  disabled={isKickingDrawer}
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
-                >
-                  {isKickingDrawer ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <LockOpen size={14} />
-                  )}
-                  <span>{tSettings('sendPulseToCashDrawer')}</span>
-                </button>
+                {canKickDrawer && (
+                  <button
+                    type="button"
+                    data-testid="btn-kick-cash-drawer"
+                    onClick={handleKickDrawer}
+                    disabled={isKickingDrawer}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
+                  >
+                    {isKickingDrawer ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <LockOpen size={14} />
+                    )}
+                    <span>{tSettings('sendPulseToCashDrawer')}</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -371,10 +389,10 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             data-testid="status-bar-printer"
             className="flex items-center gap-1.5 px-1.5 py-0.5"
             title={
-              hardwarePrinter
-                ? hardwarePrinter.name
-                : isPrinterReady
-                  ? tPos('printerReady')
+              isPrinterReady
+                ? tPos('printerReady')
+                : isPrinterConfigured
+                  ? tSettings('printerConfigured')
                   : tSettings('printerOffline')
             }
           >
@@ -382,7 +400,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
               <>
                 <PrinterCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
                 <span className="hidden sm:inline font-medium text-emerald-700 dark:text-emerald-300">
-                  {hardwarePrinter ? hardwarePrinter.name : tPos('printerReady')}
+                  {defaultPrinter?.name || tPos('printerReady')}
                 </span>
               </>
             ) : isPrinterConnecting ? (
@@ -390,6 +408,13 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                 <Loader2 size={13} className="animate-spin text-amber-500" />
                 <span className="hidden sm:inline text-amber-600 dark:text-amber-400">
                   {tPos('printerConnecting')}
+                </span>
+              </>
+            ) : isPrinterConfigured ? (
+              <>
+                <Printer size={13} className="text-muted-foreground/80" />
+                <span className="hidden sm:inline text-muted-foreground">
+                  {tSettings('printerConfigured')}
                 </span>
               </>
             ) : (

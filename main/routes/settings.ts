@@ -37,6 +37,7 @@ import {
 } from '../services/print-templates';
 import { listMerchantPrintTemplates } from '../services/merchant-print-templates';
 import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
+import { parseReceiptLogoData } from '../../shared/print/image-raster';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -316,6 +317,11 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       }
       if (receipt_logo_raster.length > 250_000) {
         return res.status(400).json({ error: 'receipt_logo_raster exceeds maximum size (250 KB)' });
+      }
+      if (receipt_logo_raster.length > 0 && !parseReceiptLogoData(receipt_logo_raster)) {
+        return res
+          .status(400)
+          .json({ error: 'receipt_logo_raster must contain valid raster data' });
       }
       normalizedReceiptLogoRaster = receipt_logo_raster;
     }

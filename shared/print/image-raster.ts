@@ -34,7 +34,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
-function parseReceiptLogoData(value: ReceiptLogoData | string): ReceiptLogoData | null {
+export function parseReceiptLogoData(value: ReceiptLogoData | string): ReceiptLogoData | null {
   let parsed: unknown = value;
   if (typeof value === 'string') {
     if (value.length > MAX_LOGO_RASTER_JSON_LENGTH || !value.startsWith('{')) return null;

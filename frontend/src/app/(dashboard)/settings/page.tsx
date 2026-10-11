@@ -3250,8 +3250,13 @@ export default function SettingsPage() {
         currency_display: form.currencyDisplay,
         number_digits: form.numberDigits,
         calendar: form.calendar,
-        receipt_logo: form.receiptLogo,
-        receipt_logo_raster: form.receiptLogoRaster,
+        ...(form.receiptLogo !== savedBusiness.receiptLogo ||
+        form.receiptLogoRaster !== savedBusiness.receiptLogoRaster
+          ? {
+              receipt_logo: form.receiptLogo ?? '',
+              receipt_logo_raster: form.receiptLogoRaster ?? '',
+            }
+          : {}),
       });
       let resolvedTaxIdFormat = putRes.data?.tax_id_format || null;
       if (savedBusiness.countryCode !== form.countryCode) {

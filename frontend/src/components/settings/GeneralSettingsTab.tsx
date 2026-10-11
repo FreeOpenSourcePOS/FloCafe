@@ -523,7 +523,7 @@ export function GeneralSettingsTab({
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={form.receiptLogo}
-                        alt="Store Logo"
+                        alt={t('storeLogo')}
                         className="max-h-16 max-w-[200px] object-contain"
                       />
                     </div>
@@ -579,7 +579,11 @@ export function GeneralSettingsTab({
             ) : form.receiptLogo ? (
               <div className="p-2 border border-border rounded-lg bg-white dark:bg-zinc-900 max-w-[200px]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.receiptLogo} alt="Store Logo" className="max-h-16 object-contain" />
+                <img
+                  src={form.receiptLogo}
+                  alt={t('storeLogo')}
+                  className="max-h-16 object-contain"
+                />
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">-</p>

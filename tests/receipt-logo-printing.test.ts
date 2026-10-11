@@ -380,6 +380,20 @@ async function run() {
       'PUT /api/settings/business with non-data URI should return 400',
     );
 
+    // Reject malformed receipt_logo_raster
+    const malformedRasterRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: authHeaders,
+      body: {
+        receipt_logo_raster: '{"invalid":"json_structure"}',
+      },
+    });
+    assertEqualOrThrow(
+      malformedRasterRes.status,
+      400,
+      'PUT /api/settings/business with malformed raster should return 400',
+    );
+
     // Accept valid logo and persist
     const acceptRes = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',

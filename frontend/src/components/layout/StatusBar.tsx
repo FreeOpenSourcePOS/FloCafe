@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import {
   User,
   PrinterCheck,
@@ -50,12 +50,13 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const { status: printerConnStatus, hardwarePrinter } = usePrinterStore();
 
   const [status, setStatus] = useState<StatusInfo | null>(null);
-  const [session, setSession] = useState<CashSession | null>(null);
+  const [session, setSession] = useState<CashSession | null | undefined>(undefined);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTestingPrint, setIsTestingPrint] = useState(false);
   const [isKickingDrawer, setIsKickingDrawer] = useState(false);
 
   const inFlightRef = useRef(false);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
 
   // Fetch Electron system status (uptime, memory, port)
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
           if (!cancelled) setSession(res.data ?? null);
         })
         .catch(() => {
-          if (!cancelled) setSession(null);
+          if (!cancelled) setSession(undefined);
         });
     };
 
@@ -106,16 +107,21 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     };
   }, []);
 
+  const closeDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+    drawerToggleRef.current?.focus();
+  }, []);
+
   // Handle drawer Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isDrawerOpen) {
-        setIsDrawerOpen(false);
+        closeDrawer();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isDrawerOpen]);
+  }, [closeDrawer, isDrawerOpen]);
 
   function formatUptime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
@@ -146,7 +152,8 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const isPrinterConnecting = printerConnStatus === 'connecting';
 
   // Shift state
-  const isShiftOpen = session !== null && session.status === 'open';
+  const isShiftKnown = session !== undefined;
+  const isShiftOpen = session?.status === 'open';
 
   // Hardware Quick Actions
   const handleTestPrint = async () => {
@@ -181,15 +188,6 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       }
       toast.success(tSettings('cashDrawerPulse') || 'Cash drawer pulse sent!');
     } catch (err: unknown) {
-      if (printerService.isConnected) {
-        try {
-          await printerService.print(new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]));
-          toast.success(tSettings('cashDrawerPulse') || 'Cash drawer pulse sent!');
-          return;
-        } catch {
-          // ignore
-        }
-      }
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
         'Failed to open cash drawer';
@@ -205,7 +203,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       {isDrawerOpen && (
         <div
           data-testid="telemetry-drawer-backdrop"
-          onClick={() => setIsDrawerOpen(false)}
+          onClick={closeDrawer}
           className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] transition-opacity"
           aria-hidden="true"
         />
@@ -216,6 +214,8 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
         data-testid="telemetry-drawer"
         role="dialog"
         aria-label="Terminal Telemetry & Diagnostics"
+        aria-hidden={!isDrawerOpen}
+        inert={!isDrawerOpen}
         className={`fixed bottom-8 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
           isDrawerOpen
             ? 'translate-y-0 opacity-100'
@@ -234,7 +234,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             <button
               type="button"
               data-testid="btn-close-telemetry-drawer"
-              onClick={() => setIsDrawerOpen(false)}
+              onClick={closeDrawer}
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               aria-label="Close telemetry drawer"
             >
@@ -405,9 +405,19 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
           <div
             data-testid="status-bar-shift"
             className="flex items-center gap-1.5 px-1.5 py-0.5"
-            title={isShiftOpen ? tDashboard('shiftOpened') : tDashboard('openShift')}
+            title={
+              !isShiftKnown
+                ? tNav('serverUnknown')
+                : isShiftOpen
+                  ? tDashboard('shiftOpened')
+                  : tDashboard('openShift')
+            }
           >
-            {isShiftOpen ? (
+            {!isShiftKnown ? (
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-inset ring-border/70">
+                {tNav('serverUnknown')}
+              </span>
+            ) : isShiftOpen ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800">
                 <Lock size={10} />
                 <span>{tDashboard('shiftOpened')}</span>
@@ -426,7 +436,8 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
           <button
             type="button"
             data-testid="btn-toggle-telemetry-drawer"
-            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+            ref={drawerToggleRef}
+            onClick={() => (isDrawerOpen ? closeDrawer() : setIsDrawerOpen(true))}
             className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted transition-colors"
             title="Terminal Telemetry & Diagnostics"
             aria-expanded={isDrawerOpen}

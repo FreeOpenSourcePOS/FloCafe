@@ -68,7 +68,9 @@ function minorAmount(value: number | string): number {
 }
 
 async function readSplitSetting(request: APIRequestContext): Promise<string> {
-  const response = await request.get(`${BASE}/api/settings/split_checks_enabled`, { headers: managerHeaders });
+  const response = await request.get(`${BASE}/api/settings/split_checks_enabled`, {
+    headers: managerHeaders,
+  });
   expect(response.ok()).toBeTruthy();
   return (await response.json()).setting?.value ?? 'false';
 }
@@ -132,8 +134,15 @@ async function createCheck(
  * works on and left unplaced. A table with no floor would add an unassigned
  * bucket ahead of every named floor and hide the placed tables of that suite.
  */
-async function createPosTable(request: APIRequestContext, suffix: string): Promise<{ id: string; number: string }> {
-  const letters = suffix.replace(/[^a-z]/gi, '').slice(0, 4).toUpperCase() || 'XX';
+async function createPosTable(
+  request: APIRequestContext,
+  suffix: string,
+): Promise<{ id: string; number: string }> {
+  const letters =
+    suffix
+      .replace(/[^a-z]/gi, '')
+      .slice(0, 4)
+      .toUpperCase() || 'XX';
   const number = `EQS-${letters}`;
   const response = await request.post(`${BASE}/api/tables`, {
     headers: managerHeaders,
@@ -144,7 +153,9 @@ async function createPosTable(request: APIRequestContext, suffix: string): Promi
 }
 
 async function readBills(request: APIRequestContext, orderId: number): Promise<Bill[]> {
-  const response = await request.get(`${BASE}/api/bills?order_id=${orderId}`, { headers: managerHeaders });
+  const response = await request.get(`${BASE}/api/bills?order_id=${orderId}`, {
+    headers: managerHeaders,
+  });
   expect(response.ok()).toBeTruthy();
   return (await response.json()).bills as Bill[];
 }
@@ -173,10 +184,16 @@ async function login(page: Page): Promise<void> {
 /** Opens the check from the Orders master/detail list and starts its checkout. */
 async function openOrderCheckout(page: Page, orderNumber: string): Promise<void> {
   await page.goto(`${BASE}/orders`);
-  const masterRow = page.getByRole('button').filter({ hasText: `#${orderNumber}` }).first();
+  const masterRow = page
+    .getByRole('button')
+    .filter({ hasText: `#${orderNumber}` })
+    .first();
   await expect(masterRow).toBeVisible();
   await masterRow.click();
-  await page.getByRole('button', { name: /Checkout|Take Payment/ }).first().click();
+  await page
+    .getByRole('button', { name: /Checkout|Take Payment/ })
+    .first()
+    .click();
   await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
 }
 
@@ -237,10 +254,11 @@ async function submitPayment(page: Page): Promise<PaymentAttempt> {
     ).toBeEnabled();
   }
 
-  const pending = page.waitForResponse((response) => (
-    response.request().method() === 'POST'
-    && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(response.url()).pathname)
-  ));
+  const pending = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /^\/api\/bills\/[^/]+\/payments$/.test(new URL(response.url()).pathname),
+  );
   await page.getByRole('button', { name: /^(Pay |Send same payment$)/ }).click();
   const confirmButton = page.getByRole('button', { name: 'Pay', exact: true });
   if (await confirmButton.count()) await confirmButton.click();
@@ -248,7 +266,10 @@ async function submitPayment(page: Page): Promise<PaymentAttempt> {
   return {
     status: response.status(),
     body: await response.json(),
-    payments: (response.request().postDataJSON()?.payments ?? []) as { method: string; amount: number }[],
+    payments: (response.request().postDataJSON()?.payments ?? []) as {
+      method: string;
+      amount: number;
+    }[],
   };
 }
 
@@ -261,7 +282,10 @@ function recordedPayments(bill: Bill): { method: string; amount: number }[] {
 function paymentRequestBodies(page: Page): unknown[] {
   const bodies: unknown[] = [];
   page.on('request', (browserRequest) => {
-    if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+    if (
+      browserRequest.method() === 'POST' &&
+      /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)
+    ) {
       bodies.push(browserRequest.postDataJSON());
     }
   });
@@ -285,7 +309,9 @@ test.describe('equal share payments', () => {
     // The suite shares a database; the fixture products are soft-deleted so no
     // later spec sees them in the catalog.
     await request.delete(`${BASE}/api/products/${fixture.productId}`, { headers: managerHeaders });
-    await request.delete(`${BASE}/api/products/${fixture.centProductId}`, { headers: managerHeaders });
+    await request.delete(`${BASE}/api/products/${fixture.centProductId}`, {
+      headers: managerHeaders,
+    });
   });
 
   test.beforeEach(async ({ page, request }) => {
@@ -297,8 +323,16 @@ test.describe('equal share payments', () => {
 
   test.afterEach(async ({ page, request }) => {
     const failures: unknown[] = [];
-    try { await writeSplitSetting(request, splitSettingBefore); } catch (error) { failures.push(error); }
-    try { await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutToken); } catch (error) { failures.push(error); }
+    try {
+      await writeSplitSetting(request, splitSettingBefore);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await setOrdersLayout(page, ordersLayoutBefore, BASE, ordersLayoutToken);
+    } catch (error) {
+      failures.push(error);
+    }
     if (failures.length) throw failures[0];
   });
 
@@ -340,7 +374,9 @@ test.describe('equal share payments', () => {
 
     const first = await submitPayment(page);
     expect(first.status).toBe(200);
-    expect(first.payments, 'the applied share is submitted as its own stored amount').toEqual([{ method: 'cash', amount: 33.34 }]);
+    expect(first.payments, 'the applied share is submitted as its own stored amount').toEqual([
+      { method: 'cash', amount: 33.34 },
+    ]);
     expect(minorAmount(first.body.bill!.balance)).toBe(66.66);
     expect(first.body.bill!.payment_status).toBe('partial');
 
@@ -365,7 +401,9 @@ test.describe('equal share payments', () => {
     expect(third.body.bill!.payment_status).toBe('paid');
 
     const settled = await readBill(request, bill.id);
-    expect(recordedPayments(settled).map((payment) => payment.amount)).toEqual([33.34, 33.33, 33.33]);
+    expect(recordedPayments(settled).map((payment) => payment.amount)).toEqual([
+      33.34, 33.33, 33.33,
+    ]);
     expect(recordedPayments(settled).every((payment) => payment.method === 'cash')).toBe(true);
     expect(minorAmount(settled.paid_amount)).toBe(100);
     expect(minorAmount(settled.balance)).toBe(0);
@@ -376,19 +414,29 @@ test.describe('equal share payments', () => {
     expect(bills[0].split_group_id).toBeNull();
     const completedOrder = await readOrder(request, order.id);
     expect(completedOrder.items).toHaveLength(1);
-    expect(completedOrder.items.every((item) => Number.isInteger(Number(item.quantity)))).toBe(true);
+    expect(completedOrder.items.every((item) => Number.isInteger(Number(item.quantity)))).toBe(
+      true,
+    );
     expect(completedOrder.status).toBe('completed');
     expect(printRequests).toEqual([]);
   });
 
   test('an IRR Toman share advances after its stored amount is paid', async ({ page, request }) => {
     const suffix = Math.random().toString(36).slice(2, 8);
-    const productId = await createProduct(request, await activeCategoryId(request), `Equal share Toman ${suffix}`, 100000.01);
+    const productId = await createProduct(
+      request,
+      await activeCategoryId(request),
+      `Equal share Toman ${suffix}`,
+      100000.01,
+    );
     try {
       const order = await createCheck(request, productId, 'Equal share Toman display', 3);
       await page.route('**/api/auth/login', async (route) => {
         const response = await route.fetch();
-        const data = await response.json() as { tenants: Record<string, unknown>[]; [key: string]: unknown };
+        const data = (await response.json()) as {
+          tenants: Record<string, unknown>[];
+          [key: string]: unknown;
+        };
         await route.fulfill({
           response,
           json: {
@@ -420,7 +468,10 @@ test.describe('equal share payments', () => {
     }
   });
 
-  test('payer count stays fixed while an equal-share payment is pending', async ({ page, request }) => {
+  test('payer count stays fixed while an equal-share payment is pending', async ({
+    page,
+    request,
+  }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share pending payment', 3);
     await login(page);
     await openOrderCheckout(page, order.order_number);
@@ -431,7 +482,9 @@ test.describe('equal share payments', () => {
 
     let releaseRequest = () => {};
     let signalRequest = () => {};
-    const intercepted = new Promise<void>((resolve) => { signalRequest = resolve; });
+    const intercepted = new Promise<void>((resolve) => {
+      signalRequest = resolve;
+    });
     await page.route('**/api/bills/*/payments', async (route) => {
       await new Promise<void>((resolve) => {
         releaseRequest = resolve;
@@ -459,10 +512,19 @@ test.describe('equal share payments', () => {
   });
 
   test('the shortcut is independent of item splitting', async ({ page, request }) => {
-    const order = await createCheck(request, fixture.productId, 'Equal share splitting independent', 3, { quantity: 3 });
+    const order = await createCheck(
+      request,
+      fixture.productId,
+      'Equal share splitting independent',
+      3,
+      { quantity: 3 },
+    );
     const splitRequests: string[] = [];
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /\/split-check$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /\/split-check$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         splitRequests.push(new URL(browserRequest.url()).pathname);
       }
     });
@@ -492,7 +554,10 @@ test.describe('equal share payments', () => {
     expect(minorAmount(bills[0].paid_amount)).toBe(0);
   });
 
-  test('impossible payer counts are refused before anything is applied', async ({ page, request }) => {
+  test('impossible payer counts are refused before anything is applied', async ({
+    page,
+    request,
+  }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share invalid counts');
     const centOrder = await createCheck(request, fixture.centProductId, 'Equal share tiny balance');
 
@@ -528,14 +593,24 @@ test.describe('equal share payments', () => {
     await openOrderCheckout(page, centOrder.order_number);
     await openEqualShare(page);
     await setPayers(page, '2');
-    await expect(page.getByText('The balance is too small to divide between that many payers')).toBeVisible();
+    await expect(
+      page.getByText('The balance is too small to divide between that many payers'),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Apply to Cash' })).toHaveCount(0);
   });
 
-  test('other tenders and a wallet amount block applying until they are cleared', async ({ page, request }) => {
+  test('other tenders and a wallet amount block applying until they are cleared', async ({
+    page,
+    request,
+  }) => {
     const customerResponse = await request.post(`${BASE}/api/customers`, {
       headers: managerHeaders,
-      data: { name: 'Equal Share Diner', phone: `0812${Math.floor(Math.random() * 1e6).toString().padStart(6, '0')}` },
+      data: {
+        name: 'Equal Share Diner',
+        phone: `0812${Math.floor(Math.random() * 1e6)
+          .toString()
+          .padStart(6, '0')}`,
+      },
     });
     expect(customerResponse.status(), 'the fixture customer is created').toBe(201);
     const customerId = (await customerResponse.json()).customer.id as string;
@@ -554,8 +629,12 @@ test.describe('equal share payments', () => {
     const order = await orderResponse.json().then((body) => body.order);
 
     // The wallet row is driven by the loyalty settings and the wallet balance.
-    await page.route('**/api/settings/loyalty', (route) => route.fulfill({ json: { loyalty_enabled: true } }));
-    await page.route('**/api/customers/*/wallet', (route) => route.fulfill({ json: { balance: 500 } }));
+    await page.route('**/api/settings/loyalty', (route) =>
+      route.fulfill({ json: { loyalty_enabled: true } }),
+    );
+    await page.route('**/api/customers/*/wallet', (route) =>
+      route.fulfill({ json: { balance: 500 } }),
+    );
 
     await login(page);
     await openOrderCheckout(page, order.order_number);
@@ -579,7 +658,10 @@ test.describe('equal share payments', () => {
     await expect(page.getByText('Clear the other amounts before applying a share')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Apply to Cash' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Apply to Card' })).toBeDisabled();
-    expect(await tenderAmount(page, 'Cash'), 'the applied share is never discarded on its own').toBe('50');
+    expect(
+      await tenderAmount(page, 'Cash'),
+      'the applied share is never discarded on its own',
+    ).toBe('50');
 
     await page.unroute('**/api/settings/loyalty');
     await page.unroute('**/api/customers/*/wallet');
@@ -604,7 +686,9 @@ test.describe('equal share payments', () => {
       expect(await tenderAmount(page, methodName)).toBe('50');
 
       const share = await submitPayment(page);
-      expect(share.payments).toEqual([{ method: 'custom', payment_method_id: methodId, amount: 50 }]);
+      expect(share.payments).toEqual([
+        { method: 'custom', payment_method_id: methodId, amount: 50 },
+      ]);
       expect(minorAmount(share.body.bill!.balance)).toBe(50);
       const [bill] = await readBills(request, order.id);
       expect(recordedPayments(bill)).toHaveLength(1);
@@ -618,14 +702,25 @@ test.describe('equal share payments', () => {
     }
   });
 
-  test('a changed balance invalidates the applied share, an edited one becomes a custom payment', async ({ page, request }) => {
-    const settingsResponse = await request.get(`${BASE}/api/settings/discount`, { headers: managerHeaders });
+  test('a changed balance invalidates the applied share, an edited one becomes a custom payment', async ({
+    page,
+    request,
+  }) => {
+    const settingsResponse = await request.get(`${BASE}/api/settings/discount`, {
+      headers: managerHeaders,
+    });
     expect(settingsResponse.ok()).toBeTruthy();
     const settingsBefore = (await settingsResponse.json()) as DiscountSettings;
-    const writeDiscount = (mode: string) => request.put(`${BASE}/api/settings/discount`, {
-      headers: managerHeaders,
-      data: { ...settingsBefore, discount_mode: mode, discount_requires_approval: false, discount_max_percentage: 100 },
-    });
+    const writeDiscount = (mode: string) =>
+      request.put(`${BASE}/api/settings/discount`, {
+        headers: managerHeaders,
+        data: {
+          ...settingsBefore,
+          discount_mode: mode,
+          discount_requires_approval: false,
+          discount_max_percentage: 100,
+        },
+      });
 
     const order = await createCheck(request, fixture.productId, 'Equal share balance change', 2);
     try {
@@ -645,12 +740,17 @@ test.describe('equal share payments', () => {
       await expect(page.getByText('Discount updated')).toBeVisible();
 
       // The balance moved, so the stale share is withdrawn and must be reapplied.
-      await expect(page.getByText('The balance changed. Review and apply the share again.')).toBeVisible();
+      await expect(
+        page.getByText('The balance changed. Review and apply the share again.'),
+      ).toBeVisible();
       expect(await tenderAmount(page, 'Cash')).toBe('');
       await expect(tenderRow(page, 'Cash')).not.toContainText('Equal share');
       await expect(page.getByRole('button', { name: /^Pay / })).toBeDisabled();
 
-      await expect(equalShareToggle(page), 'the preview stays open for the reapplication').toHaveAttribute('aria-expanded', 'true');
+      await expect(
+        equalShareToggle(page),
+        'the preview stays open for the reapplication',
+      ).toHaveAttribute('aria-expanded', 'true');
       await applyShareTo(page, 'Cash');
       expect(await tenderAmount(page, 'Cash'), '90.00 over two payers').toBe('45');
 
@@ -669,14 +769,27 @@ test.describe('equal share payments', () => {
   });
 
   test('discount and payment balance changes cannot overlap', async ({ page, request }) => {
-    const settingsResponse = await request.get(`${BASE}/api/settings/discount`, { headers: managerHeaders });
+    const settingsResponse = await request.get(`${BASE}/api/settings/discount`, {
+      headers: managerHeaders,
+    });
     expect(settingsResponse.ok()).toBeTruthy();
     const settingsBefore = (await settingsResponse.json()) as DiscountSettings;
-    const writeDiscount = (mode: string) => request.put(`${BASE}/api/settings/discount`, {
-      headers: managerHeaders,
-      data: { ...settingsBefore, discount_mode: mode, discount_requires_approval: false, discount_max_percentage: 100 },
-    });
-    const order = await createCheck(request, fixture.productId, 'Equal share concurrent discount', 2);
+    const writeDiscount = (mode: string) =>
+      request.put(`${BASE}/api/settings/discount`, {
+        headers: managerHeaders,
+        data: {
+          ...settingsBefore,
+          discount_mode: mode,
+          discount_requires_approval: false,
+          discount_max_percentage: 100,
+        },
+      });
+    const order = await createCheck(
+      request,
+      fixture.productId,
+      'Equal share concurrent discount',
+      2,
+    );
     const discountPath = `/api/orders/${order.id}/discount`;
     let discountRequests = 0;
 
@@ -692,12 +805,18 @@ test.describe('equal share payments', () => {
       await page.getByRole('button', { name: 'Apply Discount' }).click();
       await discountValue.fill('10');
       page.on('request', (browserRequest) => {
-        if (browserRequest.method() === 'PATCH' && new URL(browserRequest.url()).pathname === discountPath) discountRequests += 1;
+        if (
+          browserRequest.method() === 'PATCH' &&
+          new URL(browserRequest.url()).pathname === discountPath
+        )
+          discountRequests += 1;
       });
 
       let releaseDiscount = () => {};
       let signalDiscount = () => {};
-      const discountIntercepted = new Promise<void>((resolve) => { signalDiscount = resolve; });
+      const discountIntercepted = new Promise<void>((resolve) => {
+        signalDiscount = resolve;
+      });
       await page.route(`**${discountPath}`, async (route) => {
         await new Promise<void>((resolve) => {
           releaseDiscount = resolve;
@@ -715,7 +834,9 @@ test.describe('equal share payments', () => {
       await pendingDiscount;
       await page.unroute(`**${discountPath}`);
       await expect(page.getByText('Discount updated')).toBeVisible();
-      await expect(page.getByText('The balance changed. Review and apply the share again.')).toBeVisible();
+      await expect(
+        page.getByText('The balance changed. Review and apply the share again.'),
+      ).toBeVisible();
 
       await applyShareTo(page, 'Cash');
       expect(await tenderAmount(page, 'Cash')).toBe('45');
@@ -723,7 +844,9 @@ test.describe('equal share payments', () => {
 
       let releasePayment = () => {};
       let signalPayment = () => {};
-      const paymentIntercepted = new Promise<void>((resolve) => { signalPayment = resolve; });
+      const paymentIntercepted = new Promise<void>((resolve) => {
+        signalPayment = resolve;
+      });
       await page.route('**/api/bills/*/payments', async (route) => {
         await new Promise<void>((resolve) => {
           releasePayment = resolve;
@@ -748,8 +871,16 @@ test.describe('equal share payments', () => {
     }
   });
 
-  test('an earlier partial payment leaves only the remaining balance to split', async ({ page, request }) => {
-    const order = await createCheck(request, fixture.productId, 'Equal share after partial payment', 3);
+  test('an earlier partial payment leaves only the remaining balance to split', async ({
+    page,
+    request,
+  }) => {
+    const order = await createCheck(
+      request,
+      fixture.productId,
+      'Equal share after partial payment',
+      3,
+    );
     await login(page);
     await openOrderCheckout(page, order.order_number);
     const [bill] = await readBills(request, order.id);
@@ -771,14 +902,19 @@ test.describe('equal share payments', () => {
 
     // The second payer was the last one, so the shortcut stands down.
     await expect(payerCount(page)).toHaveCount(0);
-    await expect(page.getByText('One payer remains; collect the remaining balance as a normal payment.')).toBeVisible();
+    await expect(
+      page.getByText('One payer remains; collect the remaining balance as a normal payment.'),
+    ).toBeVisible();
 
     // Closing and reopening re-reads the authoritative balance and asks again:
     // the payer count is session state, never a durable guest roster.
     await page.getByRole('button', { name: 'Close' }).click();
     await openOrderCheckout(page, order.order_number);
     await openEqualShare(page);
-    await expect(payerCount(page), 'the count restarts from the order, not from the last session').toHaveValue('3');
+    await expect(
+      payerCount(page),
+      'the count restarts from the order, not from the last session',
+    ).toHaveValue('3');
     expect(await shareAmounts(page)).toEqual(['10.00', '10.00', '10.00']);
     expect(await tenderAmount(page, 'Card')).toBe('');
 
@@ -787,12 +923,23 @@ test.describe('equal share payments', () => {
     expect(minorAmount(settled.balance)).toBe(30);
   });
 
-  test('an uncertain response keeps the request key and never advances the count', async ({ page, request }) => {
+  test('an uncertain response keeps the request key and never advances the count', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(60_000);
-    const order = await createCheck(request, fixture.productId, 'Equal share uncertain response', 3);
+    const order = await createCheck(
+      request,
+      fixture.productId,
+      'Equal share uncertain response',
+      3,
+    );
     const keys: (string | undefined)[] = [];
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         keys.push(browserRequest.headers()['idempotency-key']);
       }
     });
@@ -833,13 +980,19 @@ test.describe('equal share payments', () => {
     await expect(payerCount(page)).toHaveValue('2');
   });
 
-  test('a committed payment with a lost response is frozen and replays exactly', async ({ page, request }) => {
+  test('a committed payment with a lost response is frozen and replays exactly', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(90_000);
     const order = await createCheck(request, fixture.productId, 'Equal share lost response', 3);
     const keys: (string | undefined)[] = [];
     const bodies: unknown[] = [];
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /^\/api\/bills\/[^/]+\/payments$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         keys.push(browserRequest.headers()['idempotency-key']);
         bodies.push(browserRequest.postDataJSON());
       }
@@ -875,7 +1028,10 @@ test.describe('equal share payments', () => {
     // The server committed the share even though the page saw a failure.
     const committed = await readBill(request, bill.id);
     expect(forwarded, 'the payment was forwarded exactly once').toBe(1);
-    expect(recordedPayments(committed).map((payment) => payment.amount), 'exactly one share committed').toEqual([33.34]);
+    expect(
+      recordedPayments(committed).map((payment) => payment.amount),
+      'exactly one share committed',
+    ).toEqual([33.34]);
     expect(minorAmount(committed.balance)).toBe(66.66);
 
     // The outcome is unknown to the page, so the attempt is frozen: the draft
@@ -907,9 +1063,17 @@ test.describe('equal share payments', () => {
     expect(minorAmount(settled.balance)).toBe(66.66);
   });
 
-  test('a definitive rejection lets the cashier edit the draft again', async ({ page, request }) => {
+  test('a definitive rejection lets the cashier edit the draft again', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(60_000);
-    const order = await createCheck(request, fixture.productId, 'Equal share definitive rejection', 2);
+    const order = await createCheck(
+      request,
+      fixture.productId,
+      'Equal share definitive rejection',
+      2,
+    );
 
     await login(page);
     await openOrderCheckout(page, order.order_number);
@@ -957,7 +1121,9 @@ test.describe('equal share payments', () => {
   test('the POS table checkout collects the same equal shares', async ({ page, request }) => {
     test.setTimeout(60_000);
     const table = await createPosTable(request, Math.random().toString(36).slice(2, 8));
-    const order = await createCheck(request, fixture.productId, 'Equal share POS table', 2, { tableId: table.id });
+    const order = await createCheck(request, fixture.productId, 'Equal share POS table', 2, {
+      tableId: table.id,
+    });
     const printRequests: string[] = [];
     page.on('request', (browserRequest) => {
       if (new URL(browserRequest.url()).pathname.startsWith('/api/printers/print')) {
@@ -999,17 +1165,27 @@ test.describe('equal share payments', () => {
       expect((await readOrder(request, order.id)).status).toBe('completed');
     } finally {
       await writeSetting(request, 'tables_required', tablesRequiredBefore ?? 'false');
-      await request.post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: managerHeaders }).catch(() => {});
+      await request
+        .post(`${BASE}/api/tables/${table.id}/deactivate`, { headers: managerHeaders })
+        .catch(() => {});
     }
     expect(printRequests).toEqual([]);
   });
 
-  test('splitting off a guest never routes a payment to the old remainder', async ({ page, request }) => {
+  test('splitting off a guest never routes a payment to the old remainder', async ({
+    page,
+    request,
+  }) => {
     await writeSplitSetting(request, 'true');
-    const order = await createCheck(request, fixture.productId, 'Equal share remainder race', 3, { quantity: 3 });
+    const order = await createCheck(request, fixture.productId, 'Equal share remainder race', 3, {
+      quantity: 3,
+    });
     const paymentRequests: string[] = [];
     page.on('request', (browserRequest) => {
-      if (browserRequest.method() === 'POST' && /\/payments$/.test(new URL(browserRequest.url()).pathname)) {
+      if (
+        browserRequest.method() === 'POST' &&
+        /\/payments$/.test(new URL(browserRequest.url()).pathname)
+      ) {
         paymentRequests.push(new URL(browserRequest.url()).pathname);
       }
     });
@@ -1031,7 +1207,11 @@ test.describe('equal share payments', () => {
 
     await page.getByRole('button', { name: 'Split check' }).click();
     await page.getByRole('button', { name: 'Selected items' }).click();
-    await page.getByRole('row').filter({ hasText: fixture.productName }).getByRole('spinbutton').fill('1');
+    await page
+      .getByRole('row')
+      .filter({ hasText: fixture.productName })
+      .getByRole('spinbutton')
+      .fill('1');
     await page.getByRole('button', { name: 'Create checks' }).click();
 
     // The check that was just split must not be payable while the departing one loads.
@@ -1054,7 +1234,10 @@ test.describe('equal share payments', () => {
     expect(paymentRequests).toEqual([]);
   });
 
-  test('the equal-share controls stay reachable by keyboard on a narrow screen', async ({ page, request }) => {
+  test('the equal-share controls stay reachable by keyboard on a narrow screen', async ({
+    page,
+    request,
+  }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share keyboard reach', 3);
     await page.setViewportSize({ width: 390, height: 844 });
     await login(page);
@@ -1077,7 +1260,10 @@ test.describe('equal share payments', () => {
     expect(await tenderAmount(page, 'Cash')).toBe('33.34');
   });
 
-  test('an abandoned preview changes nothing and the count is asked again on reopen', async ({ page, request }) => {
+  test('an abandoned preview changes nothing and the count is asked again on reopen', async ({
+    page,
+    request,
+  }) => {
     const order = await createCheck(request, fixture.productId, 'Equal share abandoned preview', 3);
     const paymentBodies = paymentRequestBodies(page);
 

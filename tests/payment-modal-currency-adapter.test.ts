@@ -32,22 +32,34 @@ const moduleApi = require('module') as {
   _load: (...args: any[]) => any;
 };
 const originalResolveFilename = moduleApi._resolveFilename;
-moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-  const resolvedRequest = request === '@countries'
-    ? path.resolve(ROOT, 'main/countries.ts')
-    : request.startsWith('@print/')
-      ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
-    : request.startsWith('@shared/')
-      ? path.resolve(ROOT, 'shared', request.slice('@shared/'.length))
-    : request.startsWith('@/')
-      ? path.resolve(ROOT, 'frontend/src', request.slice(2))
-      : request;
+moduleApi._resolveFilename = function (
+  request: string,
+  parent: any,
+  isMain: boolean,
+  options?: any,
+) {
+  const resolvedRequest =
+    request === '@countries'
+      ? path.resolve(ROOT, 'main/countries.ts')
+      : request.startsWith('@print/')
+        ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
+        : request.startsWith('@shared/')
+          ? path.resolve(ROOT, 'shared', request.slice('@shared/'.length))
+          : request.startsWith('@/')
+            ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+            : request;
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 const React = frontendRequire('react');
 const ReactDOMServer = frontendRequire('react-dom/server');
-const CurrencyTouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').CurrencyTouchNumberPad;
-const { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue, roundCurrencyValue } = require('../frontend/src/lib/currency-input');
+const CurrencyTouchNumberPad =
+  require('../frontend/src/components/pos/TouchNumberPad').CurrencyTouchNumberPad;
+const {
+  allowCurrencyDecimalKey,
+  getDiscountInputStep,
+  normalizeFixedDiscountValue,
+  roundCurrencyValue,
+} = require('../frontend/src/lib/currency-input');
 
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
@@ -62,21 +74,35 @@ function runUnitTests() {
   assert.equal(tomanAdapter.label, 'تومان', 'Toman label should be تومان');
   assert.equal(tomanAdapter.step, '0.001', 'Toman step should be 0.001');
   assert.equal(tomanAdapter.maxDecimals, 3, 'Toman maxDecimals should be 3');
-  assert.equal(tomanAdapter.toDisplay(5000000), 500000, '5,000,000 Rial stored should be 500,000 Toman displayed');
-  assert.equal(tomanAdapter.toStored(500000), 5000000, '500,000 Toman input should be 5,000,000 Rial stored');
+  assert.equal(
+    tomanAdapter.toDisplay(5000000),
+    500000,
+    '5,000,000 Rial stored should be 500,000 Toman displayed',
+  );
+  assert.equal(
+    tomanAdapter.toStored(500000),
+    5000000,
+    '500,000 Toman input should be 5,000,000 Rial stored',
+  );
   assert.equal(tomanAdapter.formatInput(500000), '500000');
   assert.equal(tomanAdapter.formatInput(123.4567), '123.457');
   console.log('  ✓ IRR with Toman display unit adapter verified');
 
   // Test 2: Iran IRR with Toman short display (Latin digits)
-  const tomanShortLatin = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'toman_short', digits: 'latin' });
+  const tomanShortLatin = getCurrencyUnitAdapter('IRR', 'IR', {
+    currencyDisplay: 'toman_short',
+    digits: 'latin',
+  });
   assert.equal(tomanShortLatin.scale, 0.1);
   assert.equal(tomanShortLatin.label, 'T', 'Toman short Latin label should be T');
   assert.equal(tomanShortLatin.step, '0.001');
   console.log('  ✓ IRR with Toman short Latin adapter verified');
 
   // Test 3: Iran IRR with Toman short display (Locale/Persian digits)
-  const tomanShortLocale = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'toman_short', digits: 'locale' });
+  const tomanShortLocale = getCurrencyUnitAdapter('IRR', 'IR', {
+    currencyDisplay: 'toman_short',
+    digits: 'locale',
+  });
   assert.equal(tomanShortLocale.scale, 0.1);
   assert.equal(tomanShortLocale.label, 'ت', 'Toman short Persian label should be ت');
   assert.equal(tomanShortLocale.step, '0.001');
@@ -98,8 +124,8 @@ function runUnitTests() {
   assert.equal(usdAdapter.label, 'USD');
   assert.equal(usdAdapter.step, '0.01');
   assert.equal(usdAdapter.maxDecimals, 2);
-  assert.equal(usdAdapter.toDisplay(45.50), 45.50);
-  assert.equal(usdAdapter.toStored(45.50), 45.50);
+  assert.equal(usdAdapter.toDisplay(45.5), 45.5);
+  assert.equal(usdAdapter.toStored(45.5), 45.5);
 
   const inrAdapter = getCurrencyUnitAdapter('INR', 'IN');
   assert.equal(inrAdapter.scale, 1);
@@ -200,12 +226,17 @@ function runPaymentMathTests() {
     ['IRR', 'IR', 100000000, 3],
   ];
   for (const [currency, country, balanceMinor, payers] of cases) {
-    const adapter = currency === 'IRR'
-      ? getCurrencyUnitAdapter(currency, country, { currencyDisplay: 'toman' })
-      : getCurrencyUnitAdapter(currency, country);
+    const adapter =
+      currency === 'IRR'
+        ? getCurrencyUnitAdapter(currency, country, { currencyDisplay: 'toman' })
+        : getCurrencyUnitAdapter(currency, country);
     const minorFactor = getCurrencyMinorUnitFactor(currency);
     const shares = allocateEqualShares(balanceMinor, payers);
-    assert.equal(shares.reduce((sum, share) => sum + share, 0), balanceMinor, `${currency} shares sum to the balance`);
+    assert.equal(
+      shares.reduce((sum, share) => sum + share, 0),
+      balanceMinor,
+      `${currency} shares sum to the balance`,
+    );
     for (const share of shares) {
       const displayed = adapter.toDisplay(share / minorFactor);
       assert.equal(
@@ -248,30 +279,47 @@ async function runCurrencyInputBehaviorTests() {
     currencyMaxDecimals: number,
     amountTarget: 'payment' | 'wallet' | 'discount',
     discountType: 'percentage' | 'amount',
-  ) => ReactDOMServer.renderToStaticMarkup(
-    React.createElement(CurrencyTouchNumberPad, {
-      value: '',
-      onChange: () => undefined,
-      ariaLabel: 'Amount keypad',
-      clearLabel: 'Clear',
-      backspaceLabel: 'Backspace',
-      currencyMaxDecimals,
-      amountTarget,
-      discountType,
-    }),
-  );
+  ) =>
+    ReactDOMServer.renderToStaticMarkup(
+      React.createElement(CurrencyTouchNumberPad, {
+        value: '',
+        onChange: () => undefined,
+        ariaLabel: 'Amount keypad',
+        clearLabel: 'Clear',
+        backspaceLabel: 'Backspace',
+        currencyMaxDecimals,
+        amountTarget,
+        discountType,
+      }),
+    );
 
   const jpyKeypadMarkup = renderKeypad(jpyAdapter.maxDecimals, 'payment', 'amount');
-  assert.equal(jpyKeypadMarkup.includes('>.<'), false, 'JPY keypad omits the decimal button in static markup');
+  assert.equal(
+    jpyKeypadMarkup.includes('>.<'),
+    false,
+    'JPY keypad omits the decimal button in static markup',
+  );
 
   const usdKeypadMarkup = renderKeypad(usdAdapter.maxDecimals, 'payment', 'amount');
-  assert.equal(usdKeypadMarkup.includes('>.<'), true, 'USD keypad renders the decimal button in static markup');
+  assert.equal(
+    usdKeypadMarkup.includes('>.<'),
+    true,
+    'USD keypad renders the decimal button in static markup',
+  );
 
   const kwdKeypadMarkup = renderKeypad(kwdAdapter.maxDecimals, 'payment', 'amount');
-  assert.equal(kwdKeypadMarkup.includes('>.<'), true, 'KWD keypad renders the decimal button in static markup');
+  assert.equal(
+    kwdKeypadMarkup.includes('>.<'),
+    true,
+    'KWD keypad renders the decimal button in static markup',
+  );
 
   const jpyDiscountMarkup = renderKeypad(jpyAdapter.maxDecimals, 'discount', 'percentage');
-  assert.equal(jpyDiscountMarkup.includes('>.<'), true, 'Percentage discount keypad renders the decimal button in static markup');
+  assert.equal(
+    jpyDiscountMarkup.includes('>.<'),
+    true,
+    'Percentage discount keypad renders the decimal button in static markup',
+  );
 
   let browser: any;
   try {
@@ -279,7 +327,9 @@ async function runCurrencyInputBehaviorTests() {
     browser = await chromium.launch({ headless: true });
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
-    console.warn(`  ! Playwright browser not available in this runner; static markup verified: ${err?.message || err}`);
+    console.warn(
+      `  ! Playwright browser not available in this runner; static markup verified: ${err?.message || err}`,
+    );
   }
 
   if (browser) {
@@ -336,25 +386,59 @@ async function runModalKeypadIntegrationTests() {
   };
   const currentTenant = { currency: 'JPY', country: 'JP' };
   const mocks: Record<string, unknown> = {
-    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon },
+    'lucide-react': {
+      X: Icon,
+      Wallet: Icon,
+      ArrowLeftRight: Icon,
+      CheckCircle2: Icon,
+      Sparkles: Icon,
+      User: Icon,
+      Percent: Icon,
+      Send: Icon,
+      ChevronDown: Icon,
+      Banknote: Icon,
+      CreditCard: Icon,
+    },
     '@/components/ui/button': {
-      Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement('button', props, children),
+      Button: ({ children, variant: _variant, size: _size, ...props }: any) =>
+        React.createElement('button', props, children),
     },
     '@/components/pos/TaxBreakdown': { __esModule: true, default: () => null },
-    '@/lib/api': { __esModule: true, default: { get: async () => ({ data: {} }), patch: async () => ({ data: {} }) } },
-    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
+    '@/lib/api': {
+      __esModule: true,
+      default: { get: async () => ({ data: {} }), patch: async () => ({ data: {} }) },
+    },
+    'react-hot-toast': {
+      __esModule: true,
+      default: { success: () => undefined, error: () => undefined },
+    },
     '@/lib/printer/tax-components': { resolveTaxComponents: () => [] },
-    '@/store/cart': { useCartStore: (selector?: (state: typeof cart) => unknown) => selector ? selector(cart) : cart },
-    '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
+    '@/store/cart': {
+      useCartStore: (selector?: (state: typeof cart) => unknown) =>
+        selector ? selector(cart) : cart,
+    },
+    '@/hooks/use-confirm': {
+      useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }),
+    },
     'use-intl': { useTranslations: () => translate, useLocale: () => 'en-US' },
-    '@/lib/payment-methods': { PAYMENT_METHODS: [{ key: 'cash', icon: Icon }, { key: 'card', icon: Icon }] },
+    '@/lib/payment-methods': {
+      PAYMENT_METHODS: [
+        { key: 'cash', icon: Icon },
+        { key: 'card', icon: Icon },
+      ],
+    },
     '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
     '@/hooks/useFormatNumber': { useFormatNumber: () => (amount: number) => String(amount) },
     '@/hooks/useCurrencyUnitAdapter': { useCurrencyUnitAdapter: () => jpyAdapter },
     '@/hooks/useWhatsAppReady': { useWhatsAppReady: () => false },
-    '@/lib/whatsapp-share': { sendBillViaFlo: async () => undefined, shareBillViaWhatsApp: async () => undefined },
+    '@/lib/whatsapp-share': {
+      sendBillViaFlo: async () => undefined,
+      shareBillViaWhatsApp: async () => undefined,
+    },
     '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
-    '@/hooks/use-tax-preview': { useTaxPreview: () => ({ tax: null, loading: false, error: null }) },
+    '@/hooks/use-tax-preview': {
+      useTaxPreview: () => ({ tax: null, loading: false, error: null }),
+    },
     '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' ') },
   };
   const originalLoad = moduleApi._load;
@@ -367,7 +451,8 @@ async function runModalKeypadIntegrationTests() {
   try {
     let nullStateCount = 0;
     const PaymentModal = require('../frontend/src/components/pos/PaymentModal').default;
-    const PrepaidCheckoutModal = require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
+    const PrepaidCheckoutModal =
+      require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
     const bill = {
       id: 1,
       bill_number: 'B-1',
@@ -384,9 +469,17 @@ async function runModalKeypadIntegrationTests() {
       total: 100,
       paid_amount: 0,
     };
-    const renderModal = (Modal: any, props: Record<string, unknown>, target: 'payment' | 'discount', targetStateIndex: number) => {
+    const renderModal = (
+      Modal: any,
+      props: Record<string, unknown>,
+      target: 'payment' | 'discount',
+      targetStateIndex: number,
+    ) => {
       nullStateCount = 0;
-      const amountTarget = target === 'payment' ? { kind: 'payment' as const, index: 0 } : { kind: 'discount' as const };
+      const amountTarget =
+        target === 'payment'
+          ? { kind: 'payment' as const, index: 0 }
+          : { kind: 'discount' as const };
       React.useState = ((initial: unknown) => {
         if (initial === null) {
           nullStateCount += 1;
@@ -397,13 +490,31 @@ async function runModalKeypadIntegrationTests() {
       return ReactDOMServer.renderToStaticMarkup(React.createElement(Modal, props));
     };
     for (const [Modal, props, label, targetStateIndex] of [
-      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 4],
-      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 3],
+      [
+        PaymentModal,
+        { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
+        'PaymentModal',
+        4,
+      ],
+      [
+        PrepaidCheckoutModal,
+        { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
+        'PrepaidCheckoutModal',
+        3,
+      ],
     ] as const) {
       const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
-      assert.equal(paymentMarkup.includes('>.<'), false, `${label} hides JPY payment decimal key in static markup`);
+      assert.equal(
+        paymentMarkup.includes('>.<'),
+        false,
+        `${label} hides JPY payment decimal key in static markup`,
+      );
       const discountMarkup = renderModal(Modal, props, 'discount', targetStateIndex);
-      assert.equal(discountMarkup.includes('>.<'), true, `${label} keeps decimal key for percentage discount in static markup`);
+      assert.equal(
+        discountMarkup.includes('>.<'),
+        true,
+        `${label} keeps decimal key for percentage discount in static markup`,
+      );
     }
 
     let browser: any;
@@ -411,20 +522,40 @@ async function runModalKeypadIntegrationTests() {
       browser = await frontendRequire('playwright').chromium.launch({ headless: true });
     } catch (err: any) {
       if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
-      console.warn(`  ! Playwright browser not available in this runner; modal static markup verified: ${err?.message || err}`);
+      console.warn(
+        `  ! Playwright browser not available in this runner; modal static markup verified: ${err?.message || err}`,
+      );
     }
 
     if (browser) {
       try {
         const page = await browser.newPage();
         for (const [Modal, props, label, targetStateIndex] of [
-          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 4],
-          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 3],
+          [
+            PaymentModal,
+            { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
+            'PaymentModal',
+            4,
+          ],
+          [
+            PrepaidCheckoutModal,
+            { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
+            'PrepaidCheckoutModal',
+            3,
+          ],
         ] as const) {
           await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
-          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
+          assert.equal(
+            await page.getByRole('button', { name: '.', exact: true }).count(),
+            0,
+            `${label} hides JPY payment decimal key`,
+          );
           await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
-          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
+          assert.equal(
+            await page.getByRole('button', { name: '.', exact: true }).count(),
+            1,
+            `${label} keeps decimal key for percentage discount`,
+          );
         }
       } finally {
         await browser.close();
@@ -437,7 +568,11 @@ async function runModalKeypadIntegrationTests() {
   console.log('  ✓ PaymentModal and PrepaidCheckoutModal keypad wiring verified');
 }
 
-function collectElements(node: unknown, predicate: (element: any) => boolean, result: any[] = []): any[] {
+function collectElements(
+  node: unknown,
+  predicate: (element: any) => boolean,
+  result: any[] = [],
+): any[] {
   if (Array.isArray(node)) {
     for (const child of node) collectElements(child, predicate, result);
     return result;
@@ -451,7 +586,8 @@ function collectElements(node: unknown, predicate: (element: any) => boolean, re
 
 function elementText(element: any): string {
   const children = element.props?.children;
-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+  if (Array.isArray(children))
+    return children.filter((child) => typeof child === 'string').join('');
   return typeof children === 'string' ? children : '';
 }
 
@@ -478,7 +614,11 @@ async function runCatalogSaveBoundaryTests() {
     '@/components/ui/button': {
       Button: ({ children, ...props }: any) => React.createElement('button', props, children),
     },
-    '@/components/pos/DietaryBadge': { __esModule: true, default: () => null, tagLabel: (tag: string) => tag },
+    '@/components/pos/DietaryBadge': {
+      __esModule: true,
+      default: () => null,
+      tagLabel: (tag: string) => tag,
+    },
     '@/components/products/ImageUploader': { __esModule: true, default: () => null },
     '@/lib/api': { __esModule: true, default: api },
     '@/lib/countries': {
@@ -488,15 +628,43 @@ async function runCatalogSaveBoundaryTests() {
     },
     '@/lib/currency-input': { roundCurrencyValue },
     '@/lib/image-utils': { nameToColor: () => '#000000' },
-    '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' '), parseDbTimestamp: (value: string) => value },
+    '@/lib/utils': {
+      cn: (...values: unknown[]) => values.filter(Boolean).join(' '),
+      parseDbTimestamp: (value: string) => value,
+    },
     '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
-    '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
+    '@/hooks/use-confirm': {
+      useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }),
+    },
     '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
-    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
+    'react-hot-toast': {
+      __esModule: true,
+      default: { success: () => undefined, error: () => undefined },
+    },
     'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
-    '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true, isRole: () => true },
+    '@shared/role-permissions': {
+      ROLE_ACCESS: { ownerManager: ['owner', 'manager'] },
+      hasRole: () => true,
+      isRole: () => true,
+    },
     '@shared/permissions': { permissionDefaultAllows: () => true },
-    'lucide-react': { Plus: Icon, Pencil: Icon, Trash2: Icon, X: Icon, Package: Icon, Folder: Icon, Puzzle: Icon, FileSpreadsheet: Icon, Download: Icon, Upload: Icon, CheckCircle: Icon, AlertCircle: Icon, AlertTriangle: Icon, ChevronDown: Icon, ChevronRight: Icon },
+    'lucide-react': {
+      Plus: Icon,
+      Pencil: Icon,
+      Trash2: Icon,
+      X: Icon,
+      Package: Icon,
+      Folder: Icon,
+      Puzzle: Icon,
+      FileSpreadsheet: Icon,
+      Download: Icon,
+      Upload: Icon,
+      CheckCircle: Icon,
+      AlertCircle: Icon,
+      AlertTriangle: Icon,
+      ChevronDown: Icon,
+      ChevronRight: Icon,
+    },
   };
   const originalLoad = moduleApi._load;
   const originalUseState = React.useState;
@@ -519,19 +687,43 @@ async function runCatalogSaveBoundaryTests() {
         if (stateCall === 10) return [activeTab === 'products', () => undefined];
         if (stateCall === 16) return [activeTab === 'addons', () => undefined];
         if (stateCall === 17) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
-        if (stateCall === 18) return [{
-          name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
-          sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
-          tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
-          low_stock_threshold: '5', is_active: true, tags: [], customTag: '', addon_group_ids: [], image_url: null,
-        }, () => undefined];
+        if (stateCall === 18)
+          return [
+            {
+              name: 'Coffee',
+              category_id: '',
+              price: '1.5',
+              cost_price: '2.5',
+              cb_percent: '',
+              sku: '',
+              barcode: '',
+              sale_unit: 'each',
+              allow_fractional_quantity: false,
+              weight_precision: '3',
+              tax_category_id: '',
+              tax_behavior: 'country_default',
+              description: '',
+              track_inventory: false,
+              stock_quantity: '0',
+              low_stock_threshold: '5',
+              is_active: true,
+              tags: [],
+              customTag: '',
+              addon_group_ids: [],
+              image_url: null,
+            },
+            () => undefined,
+          ];
         return [initial, () => undefined];
       }) as typeof React.useState;
       React.useRef = ((initial: unknown) => ({ current: initial })) as typeof React.useRef;
       return ProductsPage();
     };
     const productTree = renderProductsPage('products');
-    const submitForms = collectElements(productTree, (element) => typeof element.props?.onSubmit === 'function');
+    const submitForms = collectElements(
+      productTree,
+      (element) => typeof element.props?.onSubmit === 'function',
+    );
     // The shared Tabs markup keeps every tab's form in the element tree, so the
     // product form is picked by its id rather than by being the only form.
     const productForm = submitForms.find((form) => form.props?.id === 'product-form');
@@ -539,18 +731,41 @@ async function runCatalogSaveBoundaryTests() {
     await productForm.props.onSubmit({ preventDefault: () => undefined });
     const productSave = calls.find((call) => call.method === 'post' && call.path === '/products');
     assert.equal(productSave?.payload?.price, 2, 'product price is rounded at the save handler');
-    assert.equal(productSave?.payload?.cost_price, 3, 'product cost price is rounded at the save handler');
+    assert.equal(
+      productSave?.payload?.cost_price,
+      3,
+      'product cost price is rounded at the save handler',
+    );
 
     const addonGroupTree = renderProductsPage('addons');
-    const addonGroupForms = collectElements(addonGroupTree, (element) => typeof element.props?.onSubmit === 'function');
+    const addonGroupForms = collectElements(
+      addonGroupTree,
+      (element) => typeof element.props?.onSubmit === 'function',
+    );
     assert.equal(addonGroupForms.length, 1, 'ProductsPage exposes the add-on group save form');
     await addonGroupForms[0].props.onSubmit({ preventDefault: () => undefined });
-    const addonGroupSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups');
-    assert.equal(addonGroupSave?.payload?.addons?.[0]?.price, 2, 'inline add-on price is rounded at the save handler');
+    const addonGroupSave = calls.find(
+      (call) => call.method === 'post' && call.path === '/addon-groups',
+    );
+    assert.equal(
+      addonGroupSave?.payload?.addons?.[0]?.price,
+      2,
+      'inline add-on price is rounded at the save handler',
+    );
 
     const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
     const addon = { id: 'addon-1', name: 'Old Sauce', price: 1, is_active: true };
-    const group = { id: 'group-1', name: 'Extras', description: null, is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 1, is_active: true, addons: [addon] };
+    const group = {
+      id: 'group-1',
+      name: 'Extras',
+      description: null,
+      is_required: false,
+      allow_multiple_quantities: false,
+      min_selection: 0,
+      max_selection: 1,
+      is_active: true,
+      addons: [addon],
+    };
     const renderAddonPage = (editing: boolean) => {
       let addonStateCall = 0;
       React.useState = ((initial: unknown) => {
@@ -560,23 +775,34 @@ async function runCatalogSaveBoundaryTests() {
         if (addonStateCall === 5) return ['group-1', () => undefined];
         if (addonStateCall === 8) return [{ name: 'New Sauce', price: '1.5' }, () => undefined];
         if (addonStateCall === 9) return [editing ? null : 'group-1', () => undefined];
-        if (addonStateCall === 10) return [editing ? { groupId: 'group-1', addon } : null, () => undefined];
+        if (addonStateCall === 10)
+          return [editing ? { groupId: 'group-1', addon } : null, () => undefined];
         return [initial, () => undefined];
       }) as typeof React.useState;
       return AddonGroupsPage();
     };
     const addTree = renderAddonPage(false);
-    const addButton = collectElements(addTree, (element) => elementText(element) === 'products.addButton')[0];
+    const addButton = collectElements(
+      addTree,
+      (element) => elementText(element) === 'products.addButton',
+    )[0];
     assert(addButton, 'AddonGroupsPage exposes the add add-on handler');
     await addButton.props.onClick();
-    const addSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups/group-1/addons');
+    const addSave = calls.find(
+      (call) => call.method === 'post' && call.path === '/addon-groups/group-1/addons',
+    );
     assert.equal(addSave?.payload?.price, 2, 'add add-on handler rounds JPY price');
 
     const updateTree = renderAddonPage(true);
-    const updateButton = collectElements(updateTree, (element) => elementText(element) === 'common.save')[0];
+    const updateButton = collectElements(
+      updateTree,
+      (element) => elementText(element) === 'common.save',
+    )[0];
     assert(updateButton, 'AddonGroupsPage exposes the update add-on handler');
     await updateButton.props.onClick();
-    const updateSave = calls.find((call) => call.method === 'put' && call.path === '/addon-groups/group-1/addons/addon-1');
+    const updateSave = calls.find(
+      (call) => call.method === 'put' && call.path === '/addon-groups/group-1/addons/addon-1',
+    );
     assert.equal(updateSave?.payload?.price, 2, 'update add-on handler rounds JPY price');
   } finally {
     React.useState = originalUseState;
@@ -656,11 +882,15 @@ function generatePaymentModalHtml(config: {
             <span>${config.dir === 'rtl' ? 'جمع کل' : 'Subtotal'}</span>
             <span>${config.subtotalFormatted}</span>
           </div>
-          ${config.discountFormatted ? `
+          ${
+            config.discountFormatted
+              ? `
           <div class="flex justify-between text-emerald-400 font-medium">
             <span>${config.dir === 'rtl' ? 'تخفیف' : 'Discount'}</span>
             <span>− ${config.discountFormatted}</span>
-          </div>` : ''}
+          </div>`
+              : ''
+          }
           <div class="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5 mt-1">
             <span>${config.dir === 'rtl' ? 'مجموع' : 'Total'}</span>
             <span>${config.totalDueFormatted}</span>
@@ -670,10 +900,14 @@ function generatePaymentModalHtml(config: {
 
       <!-- Payment Methods Inputs -->
       <div class="space-y-2">
-        ${config.payments.map((p) => `
+        ${config.payments
+          .map(
+            (p) => `
         <div class="flex h-11">
           <button type="button" class="w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${
-            p.active ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-700 border-gray-200'
+            p.active
+              ? 'bg-blue-600 text-white border-blue-600'
+              : 'bg-gray-50 text-gray-700 border-gray-200'
           }">
             <span>${p.icon}</span>
             <span class="truncate">${p.label}</span>
@@ -690,21 +924,29 @@ function generatePaymentModalHtml(config: {
             />
           </div>
         </div>
-        `).join('')}
+        `,
+          )
+          .join('')}
       </div>
 
       <!-- Change Returned -->
-      ${config.change ? `
+      ${
+        config.change
+          ? `
       <div class="rounded-xl px-4 py-3 flex items-center justify-between border-2 bg-emerald-50 border-emerald-200">
         <div class="flex items-center gap-2.5">
           <div class="w-7 h-7 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-600 font-bold text-xs">✓</div>
           <span class="text-sm font-semibold text-emerald-800">${config.dir === 'rtl' ? 'باقی‌مانده بازگشتی' : 'Change Returned'}</span>
         </div>
         <span class="text-xl font-bold tabular-nums text-emerald-600">${config.change}</span>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
 
       <!-- Loyalty Wallet -->
-      ${config.wallet ? `
+      ${
+        config.wallet
+          ? `
       <div class="space-y-1">
         <div class="flex h-11">
           <button type="button" class="w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold bg-purple-50 text-purple-800 border-purple-200">
@@ -723,7 +965,9 @@ function generatePaymentModalHtml(config: {
           </div>
         </div>
         <p class="px-1 text-[11px] text-gray-400 text-end">${config.wallet.hint}</p>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
     </div>
 
     <!-- Footer Button -->
@@ -852,7 +1096,9 @@ async function captureEvidenceArtifacts() {
   // Use Playwright to capture pixel screenshots when a browser is available.
   let browser: any;
   try {
-    const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
+    const playwright = require(
+      path.resolve(__dirname, '../frontend/node_modules/@playwright/test'),
+    );
     browser = await playwright.chromium.launch({ headless: true });
     const page = await browser.newPage({
       viewport: { width: 600, height: 850 },

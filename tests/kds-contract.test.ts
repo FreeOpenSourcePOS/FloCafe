@@ -6,7 +6,8 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-kds-contract-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
@@ -16,7 +17,14 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const {
-  initTestDb, createApp, seedOwnerUser, assert, assertEqual, getResults, closeDatabase, now,
+  initTestDb,
+  createApp,
+  seedOwnerUser,
+  assert,
+  assertEqual,
+  getResults,
+  closeDatabase,
+  now,
 } = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { kdsRoutes } = require('../main/routes/kds');
@@ -26,60 +34,134 @@ async function main() {
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
   db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-    VALUES ('kds-contract-station', 'Contract Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-category']), now(), now());
+    VALUES ('kds-contract-station', 'Contract Station', ?, 1, ?, ?)`).run(
+    JSON.stringify(['kds-contract-category']),
+    now(),
+    now(),
+  );
   db.prepare(`INSERT INTO tables (id, number, kitchen_station_id, created_at, updated_at)
     VALUES ('kds-contract-table', '42', 'kds-contract-station', ?, ?)`).run(now(), now());
-  db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-category', 'Food', 1)`).run();
+  db.prepare(
+    `INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-category', 'Food', 1)`,
+  ).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
     VALUES ('kds-contract-product', 'kds-contract-category', 'Contract food', 10, 1, 1)`).run();
   db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('KDS-CONTRACT-001', 'kds-contract-table', 'dine_in', 'pending', 10, 10, ?, ?)`).run(now(), now());
-  const orderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-001'").get() as any).id;
+    VALUES ('KDS-CONTRACT-001', 'kds-contract-table', 'dine_in', 'pending', 10, 10, ?, ?)`).run(
+    now(),
+    now(),
+  );
+  const orderId = (
+    db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-001'").get() as any
+  ).id;
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-    VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(orderId, now(), now());
-  const foodItemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
+    VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+    orderId,
+    now(),
+    now(),
+  );
+  const foodItemId = (
+    db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any
+  ).id;
 
-  db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-bar', 'Bar', 2)`).run();
+  db.prepare(
+    `INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-bar', 'Bar', 2)`,
+  ).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
     VALUES ('kds-contract-bar-product', 'kds-contract-bar', 'Contract bar', 12, 1, 1)`).run();
   db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-    VALUES ('KDS-CONTRACT-002', 'kds-contract-table', 'dine_in', 'pending', 12, 12, ?, ?)`).run(now(), now());
-  const barOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-002'").get() as any).id;
+    VALUES ('KDS-CONTRACT-002', 'kds-contract-table', 'dine_in', 'pending', 12, 12, ?, ?)`).run(
+    now(),
+    now(),
+  );
+  const barOrderId = (
+    db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-002'").get() as any
+  ).id;
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-    VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
-  const barItemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(barOrderId) as any).id;
+    VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(
+    barOrderId,
+    now(),
+    now(),
+  );
+  const barItemId = (
+    db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(barOrderId) as any
+  ).id;
   db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
     VALUES ('KDS-CONTRACT-003', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now());
-  const tablelessOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-003'").get() as any).id;
+  const tablelessOrderId = (
+    db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-003'").get() as any
+  ).id;
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-    VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(tablelessOrderId, now(), now());
+    VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+    tablelessOrderId,
+    now(),
+    now(),
+  );
 
   db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-    VALUES ('kds-contract-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(now(), now());
+    VALUES ('kds-contract-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(
+    now(),
+    now(),
+  );
   const unrestrictedChefId = 'kds-contract-unrestricted-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
     VALUES (?, 'Unrestricted Chef', ?, ?, 'chef', 1, 1, ?, ?)`).run(
-    unrestrictedChefId, 'kds-contract-unrestricted@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    unrestrictedChefId,
+    'kds-contract-unrestricted@flo.local',
+    bcrypt.hashSync('testpass123', 10),
+    now(),
+    now(),
   );
-  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(unrestrictedChefId, 'kds-contract-unrestricted-station', now());
-  const unrestrictedChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: unrestrictedChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+    unrestrictedChefId,
+    'kds-contract-unrestricted-station',
+    now(),
+  );
+  const unrestrictedChefAuth = {
+    Authorization: `Bearer ${jwt.sign({ userId: unrestrictedChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+  };
 
   const chefId = 'kds-contract-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, category_ids, is_active, created_at, updated_at)
     VALUES (?, 'Restricted Chef', ?, ?, 'chef', ?, 1, ?, ?)`).run(
-    chefId, 'kds-contract-chef@flo.local', bcrypt.hashSync('testpass123', 10), JSON.stringify(['kds-contract-category']), now(), now(),
+    chefId,
+    'kds-contract-chef@flo.local',
+    bcrypt.hashSync('testpass123', 10),
+    JSON.stringify(['kds-contract-category']),
+    now(),
+    now(),
   );
-  const chefAuth = { Authorization: `Bearer ${jwt.sign({ userId: chefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
-  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-station', now());
+  const chefAuth = {
+    Authorization: `Bearer ${jwt.sign({ userId: chefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+  };
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+    chefId,
+    'kds-contract-station',
+    now(),
+  );
   db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-    VALUES ('kds-contract-inactive-station', 'Inactive Station', ?, 0, ?, ?)`).run(JSON.stringify(['kds-contract-category']), now(), now());
+    VALUES ('kds-contract-inactive-station', 'Inactive Station', ?, 0, ?, ?)`).run(
+    JSON.stringify(['kds-contract-category']),
+    now(),
+    now(),
+  );
   const inactiveChefId = 'kds-contract-inactive-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
     VALUES (?, 'Inactive Station Chef', ?, ?, 'chef', 1, ?, ?)`).run(
-    inactiveChefId, 'kds-contract-inactive@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    inactiveChefId,
+    'kds-contract-inactive@flo.local',
+    bcrypt.hashSync('testpass123', 10),
+    now(),
+    now(),
   );
-  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(inactiveChefId, 'kds-contract-inactive-station', now());
-  const inactiveChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: inactiveChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+    inactiveChefId,
+    'kds-contract-inactive-station',
+    now(),
+  );
+  const inactiveChefAuth = {
+    Authorization: `Bearer ${jwt.sign({ userId: inactiveChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+  };
 
   const app = createApp({ '/api/kds': kdsRoutes, '/api/order-items': orderItemRoutes });
   try {
@@ -88,136 +170,397 @@ async function main() {
     const order = orders.body.orders.find((entry: any) => entry.id === orderId);
     assertEqual(order?.table?.name, '42', 'embedded KDS orders uses table.name');
 
-    const display = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(authHeader);
+    const display = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-station')
+      .set(authHeader);
     assertEqual(display.status, 200, 'embedded KDS display request succeeds');
     assertEqual(display.body.orders[0]?.table?.name, '42', 'embedded KDS display uses table.name');
 
     const inactiveStationOrders = await request(app).get('/api/kds/orders').set(inactiveChefAuth);
-    assertEqual(inactiveStationOrders.status, 403, 'inactive-only station assignments do not fail open');
-    const inactiveOwnerOrders = await request(app).get('/api/kds/orders?station_id=kds-contract-inactive-station').set(authHeader);
+    assertEqual(
+      inactiveStationOrders.status,
+      403,
+      'inactive-only station assignments do not fail open',
+    );
+    const inactiveOwnerOrders = await request(app)
+      .get('/api/kds/orders?station_id=kds-contract-inactive-station')
+      .set(authHeader);
     assertEqual(inactiveOwnerOrders.status, 404, 'station-scoped orders reject inactive stations');
 
     const restrictedOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(restrictedOrders.status, 200, 'restricted chef can access embedded KDS orders');
-    assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === barOrderId), false, 'embedded KDS orders hide unauthorized categories');
-    assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId), true, 'station-scoped KDS includes routed tableless orders');
-    assert(!('unit_price' in (restrictedOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'restricted KDS items omit line pricing');
+    assertEqual(
+      restrictedOrders.body.orders.some((entry: any) => entry.id === barOrderId),
+      false,
+      'embedded KDS orders hide unauthorized categories',
+    );
+    assertEqual(
+      restrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId),
+      true,
+      'station-scoped KDS includes routed tableless orders',
+    );
+    assert(
+      !(
+        'unit_price' in
+        (restrictedOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})
+      ),
+      'restricted KDS items omit line pricing',
+    );
 
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-      VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
-    const deniedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(chefAuth);
-    assertEqual(deniedDisplay.status, 403, 'restricted chef cannot open a disallowed station display');
-    const deniedStationOrders = await request(app).get('/api/kds/orders?station_id=kds-contract-bar-station').set(chefAuth);
-    assertEqual(deniedStationOrders.status, 403, 'restricted chef cannot list a disallowed station');
-    const barDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(authHeader);
+      VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(
+      JSON.stringify(['kds-contract-bar']),
+      now(),
+      now(),
+    );
+    const deniedDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-bar-station')
+      .set(chefAuth);
+    assertEqual(
+      deniedDisplay.status,
+      403,
+      'restricted chef cannot open a disallowed station display',
+    );
+    const deniedStationOrders = await request(app)
+      .get('/api/kds/orders?station_id=kds-contract-bar-station')
+      .set(chefAuth);
+    assertEqual(
+      deniedStationOrders.status,
+      403,
+      'restricted chef cannot list a disallowed station',
+    );
+    const barDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-bar-station')
+      .set(authHeader);
     assertEqual(barDisplay.status, 200, 'owner can inspect the bar station display');
-    assertEqual(barDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station category routing does not duplicate table-assigned orders');
+    assertEqual(
+      barDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId),
+      false,
+      'station category routing does not duplicate table-assigned orders',
+    );
 
     const pairing = await request(app).get('/api/kds/pairing').set(chefAuth);
     assertEqual(pairing.status, 200, 'restricted chef can list assigned KDS stations');
-    assertEqual(pairing.body.stations.some((station: any) => station.id === 'kds-contract-bar-station'), false, 'station assignments hide unassigned stations');
-    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-contract-category', 'kds-contract-bar']), 'kds-contract-bar-station');
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-bar-station', now());
+    assertEqual(
+      pairing.body.stations.some((station: any) => station.id === 'kds-contract-bar-station'),
+      false,
+      'station assignments hide unassigned stations',
+    );
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(
+      JSON.stringify(['kds-contract-category', 'kds-contract-bar']),
+      'kds-contract-bar-station',
+    );
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+      chefId,
+      'kds-contract-bar-station',
+      now(),
+    );
     const mixedPairing = await request(app).get('/api/kds/pairing').set(chefAuth);
-    const mixedStation = mixedPairing.body.stations.find((station: any) => station.id === 'kds-contract-bar-station');
-    assertEqual(mixedStation?.category_ids, JSON.stringify(['kds-contract-category']), 'restricted station metadata omits disallowed categories');
+    const mixedStation = mixedPairing.body.stations.find(
+      (station: any) => station.id === 'kds-contract-bar-station',
+    );
+    assertEqual(
+      mixedStation?.category_ids,
+      JSON.stringify(['kds-contract-category']),
+      'restricted station metadata omits disallowed categories',
+    );
 
-    const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
+    const restrictedDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-station')
+      .set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');
-    assertEqual(restrictedDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display hides unauthorized categories');
-    assertEqual(restrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId), true, 'station display includes routed tableless orders');
-    assert(!('subtotal' in (restrictedDisplay.body.orders[0]?.items?.[0] || {})), 'restricted station items omit line totals');
+    assertEqual(
+      restrictedDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId),
+      false,
+      'station display hides unauthorized categories',
+    );
+    assertEqual(
+      restrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId),
+      true,
+      'station display includes routed tableless orders',
+    );
+    assert(
+      !('subtotal' in (restrictedDisplay.body.orders[0]?.items?.[0] || {})),
+      'restricted station items omit line totals',
+    );
 
-    const deniedEmbeddedMutation = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
-    assertEqual(deniedEmbeddedMutation.status, 403, 'restricted chef cannot mutate an unauthorized embedded KDS item');
-    const deniedOrderItemMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
-    assertEqual(deniedOrderItemMutation.status, 403, 'restricted chef cannot mutate an unauthorized order item');
-    assertEqual(deniedOrderItemMutation.body.display_code, 'category_scope_denied', 'KDS category denial has a safe branch code');
+    const deniedEmbeddedMutation = await request(app)
+      .patch(`/api/kds/items/${barItemId}/status`)
+      .set(chefAuth)
+      .send({ status: 'ready' });
+    assertEqual(
+      deniedEmbeddedMutation.status,
+      403,
+      'restricted chef cannot mutate an unauthorized embedded KDS item',
+    );
+    const deniedOrderItemMutation = await request(app)
+      .patch(`/api/order-items/${barItemId}/status`)
+      .set(chefAuth)
+      .send({ status: 'ready' });
+    assertEqual(
+      deniedOrderItemMutation.status,
+      403,
+      'restricted chef cannot mutate an unauthorized order item',
+    );
+    assertEqual(
+      deniedOrderItemMutation.body.display_code,
+      'category_scope_denied',
+      'KDS category denial has a safe branch code',
+    );
 
     db.prepare('UPDATE users SET category_ids = NULL WHERE id = ?').run(chefId);
     const stationOnlyOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(stationOnlyOrders.status, 200, 'station-only chef can access embedded KDS orders');
-    const stationOnlyItem = stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {};
-    assert(!('unit_price' in stationOnlyItem), 'station-only chef receives redacted embedded KDS items');
-    assert(!('table_id' in stationOnlyItem), 'station-only chef does not receive raw item table IDs');
-    assertEqual(stationOnlyOrders.body.orders.find((entry: any) => entry.id === barOrderId)?.items?.length || 0, 0, 'mixed station ACLs do not cross-route table-assigned categories');
-    const deniedMixedStationMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
-    assertEqual(deniedMixedStationMutation.status, 403, 'mixed station ACLs block cross-station mutations');
-    assertEqual(deniedMixedStationMutation.body.display_code, 'station_scope_denied', 'KDS station denial has a safe branch code');
-    const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
+    const stationOnlyItem =
+      stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {};
+    assert(
+      !('unit_price' in stationOnlyItem),
+      'station-only chef receives redacted embedded KDS items',
+    );
+    assert(
+      !('table_id' in stationOnlyItem),
+      'station-only chef does not receive raw item table IDs',
+    );
+    assertEqual(
+      stationOnlyOrders.body.orders.find((entry: any) => entry.id === barOrderId)?.items?.length ||
+        0,
+      0,
+      'mixed station ACLs do not cross-route table-assigned categories',
+    );
+    const deniedMixedStationMutation = await request(app)
+      .patch(`/api/order-items/${barItemId}/status`)
+      .set(chefAuth)
+      .send({ status: 'ready' });
+    assertEqual(
+      deniedMixedStationMutation.status,
+      403,
+      'mixed station ACLs block cross-station mutations',
+    );
+    assertEqual(
+      deniedMixedStationMutation.body.display_code,
+      'station_scope_denied',
+      'KDS station denial has a safe branch code',
+    );
+    const stationOnlyDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-station')
+      .set(chefAuth);
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
-    assertEqual(stationOnlyDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display enforces per-station categories for table-assigned orders');
-    assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');
-    assert(!('kitchen_station_id' in (stationOnlyDisplay.body.orders[0]?.table || {})), 'station-only chef receives projected table metadata');
-    assertEqual(stationOnlyDisplay.body.orders[0]?.table_id, null, 'station-only display does not expose raw table IDs');
-    const casUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'preparing', expected_status: 'pending' });
+    assertEqual(
+      stationOnlyDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId),
+      false,
+      'station display enforces per-station categories for table-assigned orders',
+    );
+    assert(
+      !('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})),
+      'station-only chef receives redacted station display items',
+    );
+    assert(
+      !('kitchen_station_id' in (stationOnlyDisplay.body.orders[0]?.table || {})),
+      'station-only chef receives projected table metadata',
+    );
+    assertEqual(
+      stationOnlyDisplay.body.orders[0]?.table_id,
+      null,
+      'station-only display does not expose raw table IDs',
+    );
+    const casUpdate = await request(app)
+      .patch(`/api/kds/items/${barItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'preparing', expected_status: 'pending' });
     assertEqual(casUpdate.status, 200, 'KDS status update accepts the expected current status');
-    const staleCasUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'ready', expected_status: 'pending' });
+    const staleCasUpdate = await request(app)
+      .patch(`/api/kds/items/${barItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'ready', expected_status: 'pending' });
     assertEqual(staleCasUpdate.status, 409, 'KDS status update rejects a stale expected status');
 
-    const invalidStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`)
+    const invalidStatus = await request(app)
+      .patch(`/api/order-items/${foodItemId}/status`)
       .set({ ...authHeader, 'x-operation-id': '3e6f5e32-7ae8-4f6f-a59c-35eb7e9f4601' })
       .send({ status: 'boiling' });
-    assertEqual(invalidStatus.status, 400, 'invalid KDS status retains its existing response status');
-    assertEqual(invalidStatus.body.reason_code, 'kds.status_rejected', 'invalid KDS status has a stable reason');
-    assertEqual(invalidStatus.body.display_code, 'invalid_status', 'invalid KDS status has a safe branch code');
-    assertEqual(invalidStatus.body.correlation_id, '3e6f5e32-7ae8-4f6f-a59c-35eb7e9f4601', 'KDS status failure preserves the operation reference');
-    const missingItem = await request(app).patch('/api/order-items/missing-kds-item/status').set(authHeader).send({ status: 'ready' });
+    assertEqual(
+      invalidStatus.status,
+      400,
+      'invalid KDS status retains its existing response status',
+    );
+    assertEqual(
+      invalidStatus.body.reason_code,
+      'kds.status_rejected',
+      'invalid KDS status has a stable reason',
+    );
+    assertEqual(
+      invalidStatus.body.display_code,
+      'invalid_status',
+      'invalid KDS status has a safe branch code',
+    );
+    assertEqual(
+      invalidStatus.body.correlation_id,
+      '3e6f5e32-7ae8-4f6f-a59c-35eb7e9f4601',
+      'KDS status failure preserves the operation reference',
+    );
+    const missingItem = await request(app)
+      .patch('/api/order-items/missing-kds-item/status')
+      .set(authHeader)
+      .send({ status: 'ready' });
     assertEqual(missingItem.status, 404, 'missing KDS item keeps its existing response status');
-    assertEqual(missingItem.body.display_code, 'item_unavailable', 'missing KDS item has a safe branch code');
-    const staleOrderItemStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(authHeader)
+    assertEqual(
+      missingItem.body.display_code,
+      'item_unavailable',
+      'missing KDS item has a safe branch code',
+    );
+    const staleOrderItemStatus = await request(app)
+      .patch(`/api/order-items/${foodItemId}/status`)
+      .set(authHeader)
       .send({ status: 'preparing', expected_status: 'ready' });
-    assertEqual(staleOrderItemStatus.status, 409, 'stale order-item compare-and-set keeps its existing response status');
-    assertEqual(staleOrderItemStatus.body.display_code, 'status_conflict', 'stale order-item compare-and-set has a safe branch code');
+    assertEqual(
+      staleOrderItemStatus.status,
+      409,
+      'stale order-item compare-and-set keeps its existing response status',
+    );
+    assertEqual(
+      staleOrderItemStatus.body.display_code,
+      'status_conflict',
+      'stale order-item compare-and-set has a safe branch code',
+    );
 
     db.exec(`CREATE TRIGGER diagnostics_force_kds_status_rollback BEFORE UPDATE ON order_items
       WHEN NEW.id = ${Number(foodItemId)} BEGIN SELECT RAISE(ABORT, 'synthetic KDS status rollback'); END`);
-    const rollbackStatus = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(authHeader).send({ status: 'preparing' });
+    const rollbackStatus = await request(app)
+      .patch(`/api/order-items/${foodItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'preparing' });
     db.exec('DROP TRIGGER diagnostics_force_kds_status_rollback');
     assertEqual(rollbackStatus.status, 500, 'a KDS write failure keeps the route error status');
-    assertEqual(rollbackStatus.body.reason_code, 'persistence.failed', 'a KDS write failure is not mislabeled as expected validation');
-    assertEqual(rollbackStatus.body.outcome, 'not_applied', 'failed KDS transaction is reported as rolled back');
-    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status, 'pending', 'failed KDS transaction leaves the item unchanged');
-    const rollbackRow = db.prepare("SELECT metadata_json FROM local_diagnostics WHERE event_code = 'persistence.failed' ORDER BY id DESC LIMIT 1").get() as { metadata_json: string };
+    assertEqual(
+      rollbackStatus.body.reason_code,
+      'persistence.failed',
+      'a KDS write failure is not mislabeled as expected validation',
+    );
+    assertEqual(
+      rollbackStatus.body.outcome,
+      'not_applied',
+      'failed KDS transaction is reported as rolled back',
+    );
+    assertEqual(
+      (db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status,
+      'pending',
+      'failed KDS transaction leaves the item unchanged',
+    );
+    const rollbackRow = db
+      .prepare(
+        "SELECT metadata_json FROM local_diagnostics WHERE event_code = 'persistence.failed' ORDER BY id DESC LIMIT 1",
+      )
+      .get() as { metadata_json: string };
     const rollbackMetadata = JSON.parse(rollbackRow.metadata_json);
-    assertEqual(rollbackMetadata.outcome, 'not_applied', 'stored KDS rollback row preserves the proven outcome');
-    assertEqual(JSON.stringify(rollbackMetadata).includes('synthetic KDS status rollback'), false, 'KDS rollback diagnostics omit exception text');
+    assertEqual(
+      rollbackMetadata.outcome,
+      'not_applied',
+      'stored KDS rollback row preserves the proven outcome',
+    );
+    assertEqual(
+      JSON.stringify(rollbackMetadata).includes('synthetic KDS status rollback'),
+      false,
+      'KDS rollback diagnostics omit exception text',
+    );
 
-    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run('{invalid-json', 'kds-contract-station');
-    const invalidStationState = await request(app).patch(`/api/order-items/${foodItemId}/status`).set(chefAuth).send({ status: 'preparing' });
-    assertEqual(invalidStationState.status, 403, 'malformed station permissions preserve the existing 403 response');
-    assertEqual(invalidStationState.body.reason_code, 'kds.permissions_unavailable', 'malformed station configuration is an unexpected permission-state failure');
-    assertEqual(invalidStationState.body.classification, 'unexpected_failure', 'permission resolver failure is not mislabeled as expected denial');
-    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-contract-category']), 'kds-contract-station');
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(
+      '{invalid-json',
+      'kds-contract-station',
+    );
+    const invalidStationState = await request(app)
+      .patch(`/api/order-items/${foodItemId}/status`)
+      .set(chefAuth)
+      .send({ status: 'preparing' });
+    assertEqual(
+      invalidStationState.status,
+      403,
+      'malformed station permissions preserve the existing 403 response',
+    );
+    assertEqual(
+      invalidStationState.body.reason_code,
+      'kds.permissions_unavailable',
+      'malformed station configuration is an unexpected permission-state failure',
+    );
+    assertEqual(
+      invalidStationState.body.classification,
+      'unexpected_failure',
+      'permission resolver failure is not mislabeled as expected denial',
+    );
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(
+      JSON.stringify(['kds-contract-category']),
+      'kds-contract-station',
+    );
 
     const kdsService = require('../main/services/kds');
     const originalNotifyKdsUpdate = kdsService.notifyKdsUpdate;
-    kdsService.notifyKdsUpdate = () => { throw new Error('synthetic KDS notification failure'); };
+    kdsService.notifyKdsUpdate = () => {
+      throw new Error('synthetic KDS notification failure');
+    };
     let completionFailure;
     try {
-      completionFailure = await request(app).patch(`/api/order-items/${foodItemId}/status`)
+      completionFailure = await request(app)
+        .patch(`/api/order-items/${foodItemId}/status`)
         .set({ ...authHeader, 'x-operation-id': '0d3374a2-4e1e-47a6-8e4f-f2c0278d15b1' })
         .send({ status: 'preparing' });
     } finally {
       kdsService.notifyKdsUpdate = originalNotifyKdsUpdate;
     }
-    assertEqual(completionFailure.status, 500, 'post-commit KDS notification failure retains the route error status');
-    assertEqual(completionFailure.body.reason_code, 'operation.completion_failed', 'post-commit notification failure is classified as completion');
-    assertEqual(completionFailure.body.outcome, 'applied', 'post-commit notification failure reports the committed KDS status');
-    assertEqual(completionFailure.body.correlation_id, '0d3374a2-4e1e-47a6-8e4f-f2c0278d15b1', 'post-commit KDS failure preserves the operation reference');
-    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status, 'preparing', 'post-commit notification failure does not undo the item status');
+    assertEqual(
+      completionFailure.status,
+      500,
+      'post-commit KDS notification failure retains the route error status',
+    );
+    assertEqual(
+      completionFailure.body.reason_code,
+      'operation.completion_failed',
+      'post-commit notification failure is classified as completion',
+    );
+    assertEqual(
+      completionFailure.body.outcome,
+      'applied',
+      'post-commit notification failure reports the committed KDS status',
+    );
+    assertEqual(
+      completionFailure.body.correlation_id,
+      '0d3374a2-4e1e-47a6-8e4f-f2c0278d15b1',
+      'post-commit KDS failure preserves the operation reference',
+    );
+    assertEqual(
+      (db.prepare('SELECT status FROM order_items WHERE id = ?').get(foodItemId) as any).status,
+      'preparing',
+      'post-commit notification failure does not undo the item status',
+    );
 
     const unrestrictedOrders = await request(app).get('/api/kds/orders').set(unrestrictedChefAuth);
     assertEqual(unrestrictedOrders.status, 200, 'unrestricted station KDS request succeeds');
-    assertEqual(unrestrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId), true, 'unrestricted station receives tableless orders');
-    const unrestrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-unrestricted-station').set(unrestrictedChefAuth);
+    assertEqual(
+      unrestrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId),
+      true,
+      'unrestricted station receives tableless orders',
+    );
+    const unrestrictedDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-unrestricted-station')
+      .set(unrestrictedChefAuth);
     assertEqual(unrestrictedDisplay.status, 200, 'unrestricted station display request succeeds');
-    assertEqual(unrestrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId), true, 'unrestricted station display receives tableless orders');
+    assertEqual(
+      unrestrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId),
+      true,
+      'unrestricted station display receives tableless orders',
+    );
 
-    const pairingCreate = await request(app).post('/api/kds/pairing').set(authHeader).send({ station_id: 'kds-contract-station' });
+    const pairingCreate = await request(app)
+      .post('/api/kds/pairing')
+      .set(authHeader)
+      .send({ station_id: 'kds-contract-station' });
     assertEqual(pairingCreate.status, 201, 'pairing token creation succeeds');
-    const storedPairing = db.prepare('SELECT id FROM kds_pairing_tokens WHERE token = ?').get(pairingCreate.body.pairingToken.token) as { id: string };
-    assertEqual(pairingCreate.body.pairingToken.id, storedPairing.id, 'pairing response returns stored identifier');
+    const storedPairing = db
+      .prepare('SELECT id FROM kds_pairing_tokens WHERE token = ?')
+      .get(pairingCreate.body.pairingToken.token) as { id: string };
+    assertEqual(
+      pairingCreate.body.pairingToken.id,
+      storedPairing.id,
+      'pairing response returns stored identifier',
+    );
 
     // Regression for the reported bug: a dine-in order (table has no
     // kitchen_station_id of its own — there's no settings UI to set one)
@@ -226,56 +569,144 @@ async function main() {
     db.prepare(`INSERT INTO tables (id, number, created_at, updated_at)
       VALUES ('kds-split-table', '7', ?, ?)`).run(now(), now());
     db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-      VALUES ('KDS-SPLIT-001', 'kds-split-table', 'dine_in', 'pending', 22, 22, ?, ?)`).run(now(), now());
-    const splitOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-SPLIT-001'").get() as any).id;
+      VALUES ('KDS-SPLIT-001', 'kds-split-table', 'dine_in', 'pending', 22, 22, ?, ?)`).run(
+      now(),
+      now(),
+    );
+    const splitOrderId = (
+      db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-SPLIT-001'").get() as any
+    ).id;
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(splitOrderId, now(), now());
+      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(
+      splitOrderId,
+      now(),
+      now(),
+    );
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-      VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(splitOrderId, now(), now());
+      VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(
+      splitOrderId,
+      now(),
+      now(),
+    );
 
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-      VALUES ('kds-split-counter-station', 'Split Counter Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
+      VALUES ('kds-split-counter-station', 'Split Counter Station', ?, 1, ?, ?)`).run(
+      JSON.stringify(['kds-contract-bar']),
+      now(),
+      now(),
+    );
     const splitKitchenChefId = 'kds-split-kitchen-chef';
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, 'Split Kitchen Chef', ?, ?, 'chef', 1, ?, ?)`).run(
-      splitKitchenChefId, 'kds-split-kitchen@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+      splitKitchenChefId,
+      'kds-split-kitchen@flo.local',
+      bcrypt.hashSync('testpass123', 10),
+      now(),
+      now(),
     );
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(splitKitchenChefId, 'kds-contract-station', now());
-    const splitKitchenAuth = { Authorization: `Bearer ${jwt.sign({ userId: splitKitchenChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+      splitKitchenChefId,
+      'kds-contract-station',
+      now(),
+    );
+    const splitKitchenAuth = {
+      Authorization: `Bearer ${jwt.sign({ userId: splitKitchenChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+    };
 
     const splitCounterChefId = 'kds-split-counter-chef';
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, 'Split Counter Chef', ?, ?, 'chef', 1, ?, ?)`).run(
-      splitCounterChefId, 'kds-split-counter@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+      splitCounterChefId,
+      'kds-split-counter@flo.local',
+      bcrypt.hashSync('testpass123', 10),
+      now(),
+      now(),
     );
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(splitCounterChefId, 'kds-split-counter-station', now());
-    const splitCounterAuth = { Authorization: `Bearer ${jwt.sign({ userId: splitCounterChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(
+      splitCounterChefId,
+      'kds-split-counter-station',
+      now(),
+    );
+    const splitCounterAuth = {
+      Authorization: `Bearer ${jwt.sign({ userId: splitCounterChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
+    };
 
     const kitchenSplitOrders = await request(app).get('/api/kds/orders').set(splitKitchenAuth);
-    assertEqual(kitchenSplitOrders.status, 200, 'kitchen-station chef can access embedded KDS orders for a dine-in split order');
-    const kitchenSplitOrder = kitchenSplitOrders.body.orders.find((entry: any) => entry.id === splitOrderId);
-    assertEqual(kitchenSplitOrder?.items?.length, 1, 'kitchen-station chef sees only the food item on a dine-in order with category-split stations');
+    assertEqual(
+      kitchenSplitOrders.status,
+      200,
+      'kitchen-station chef can access embedded KDS orders for a dine-in split order',
+    );
+    const kitchenSplitOrder = kitchenSplitOrders.body.orders.find(
+      (entry: any) => entry.id === splitOrderId,
+    );
+    assertEqual(
+      kitchenSplitOrder?.items?.length,
+      1,
+      'kitchen-station chef sees only the food item on a dine-in order with category-split stations',
+    );
 
     const counterSplitOrders = await request(app).get('/api/kds/orders').set(splitCounterAuth);
-    assertEqual(counterSplitOrders.status, 200, 'counter-station chef can access embedded KDS orders for a dine-in split order');
-    const counterSplitOrder = counterSplitOrders.body.orders.find((entry: any) => entry.id === splitOrderId);
-    assertEqual(counterSplitOrder?.items?.length, 1, 'counter-station chef sees only the drink item on a dine-in order with category-split stations');
+    assertEqual(
+      counterSplitOrders.status,
+      200,
+      'counter-station chef can access embedded KDS orders for a dine-in split order',
+    );
+    const counterSplitOrder = counterSplitOrders.body.orders.find(
+      (entry: any) => entry.id === splitOrderId,
+    );
+    assertEqual(
+      counterSplitOrder?.items?.length,
+      1,
+      'counter-station chef sees only the drink item on a dine-in order with category-split stations',
+    );
 
-    const kitchenSplitDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(splitKitchenAuth);
-    assertEqual(kitchenSplitDisplay.status, 200, 'kitchen-station display request succeeds for a dine-in split order');
-    assertEqual(kitchenSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId), true, 'kitchen station display shows the dine-in split order food item');
+    const kitchenSplitDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-contract-station')
+      .set(splitKitchenAuth);
+    assertEqual(
+      kitchenSplitDisplay.status,
+      200,
+      'kitchen-station display request succeeds for a dine-in split order',
+    );
+    assertEqual(
+      kitchenSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId),
+      true,
+      'kitchen station display shows the dine-in split order food item',
+    );
 
-    const counterSplitDisplay = await request(app).get('/api/kds/display?station_id=kds-split-counter-station').set(splitCounterAuth);
-    assertEqual(counterSplitDisplay.status, 200, 'counter-station display request succeeds for a dine-in split order');
-    assertEqual(counterSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId), true, 'counter station display shows the dine-in split order drink item');
+    const counterSplitDisplay = await request(app)
+      .get('/api/kds/display?station_id=kds-split-counter-station')
+      .set(splitCounterAuth);
+    assertEqual(
+      counterSplitDisplay.status,
+      200,
+      'counter-station display request succeeds for a dine-in split order',
+    );
+    assertEqual(
+      counterSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId),
+      true,
+      'counter station display shows the dine-in split order drink item',
+    );
 
     db.exec('PRAGMA foreign_keys = OFF');
     db.prepare('UPDATE order_items SET order_id = ? WHERE id = ?').run('missing-order', barItemId);
     db.exec('PRAGMA foreign_keys = ON');
-    const orphanUpdate = await request(app).patch(`/api/order-items/${barItemId}/status`).set(authHeader).send({ status: 'ready' });
+    const orphanUpdate = await request(app)
+      .patch(`/api/order-items/${barItemId}/status`)
+      .set(authHeader)
+      .send({ status: 'ready' });
     assertEqual(orphanUpdate.status, 404, 'orphaned order item update returns 404');
-    assertEqual(orphanUpdate.body.display_code, 'orphaned_order', 'orphaned order-item rejection has a safe branch code');
-    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(barItemId) as any).status, 'preparing', 'orphaned update does not commit a status change');
+    assertEqual(
+      orphanUpdate.body.display_code,
+      'orphaned_order',
+      'orphaned order-item rejection has a safe branch code',
+    );
+    assertEqual(
+      (db.prepare('SELECT status FROM order_items WHERE id = ?').get(barItemId) as any).status,
+      'preparing',
+      'orphaned update does not commit a status change',
+    );
   } finally {
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });
@@ -283,4 +714,7 @@ async function main() {
   if (getResults().failed > 0) process.exit(1);
 }
 
-main().catch((error: any) => { console.error(error); process.exit(1); });
+main().catch((error: any) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -6,7 +6,10 @@
 import { getDatabase, getSettingValue } from '../db';
 
 function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
-  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
+  return Object.assign(new Error(message), {
+    statusCode,
+    ...(diagnosticCode ? { diagnosticCode } : {}),
+  });
 }
 
 export interface CashSessionRow {
@@ -27,7 +30,9 @@ export interface CashSessionRow {
 export const NO_CASH_SESSION_ID = 0;
 
 export function getOpenSession(db: ReturnType<typeof getDatabase>): CashSessionRow | undefined {
-  return db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1`).get() as CashSessionRow | undefined;
+  return db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1`).get() as
+    | CashSessionRow
+    | undefined;
 }
 
 const BUILT_IN_PAYMENT_METHODS = new Set(['cash', 'card', 'wallet']);
@@ -43,11 +48,17 @@ export function isCashTender(db: ReturnType<typeof getDatabase>, payment: unknow
   const method = (payment as { method?: unknown } | null)?.method;
   if (typeof method !== 'string') return false;
   if (BUILT_IN_PAYMENT_METHODS.has(method)) return method === 'cash';
-  const row = (method === 'custom'
-    ? db.prepare('SELECT name FROM payment_methods WHERE id = ? AND is_active = 1')
-      .get((payment as { payment_method_id?: unknown }).payment_method_id)
-    : db.prepare('SELECT name FROM payment_methods WHERE lower(name) = lower(?) AND is_active = 1')
-      .get(method)) as { name?: string } | undefined;
+  const row = (
+    method === 'custom'
+      ? db
+          .prepare('SELECT name FROM payment_methods WHERE id = ? AND is_active = 1')
+          .get((payment as { payment_method_id?: unknown }).payment_method_id)
+      : db
+          .prepare(
+            'SELECT name FROM payment_methods WHERE lower(name) = lower(?) AND is_active = 1',
+          )
+          .get(method)
+  ) as { name?: string } | undefined;
   return typeof row?.name === 'string' && row.name.toLowerCase() === 'cash';
 }
 
@@ -67,7 +78,10 @@ export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): v
  * Payment-line variant: gates when any line is effectively cash (see
  * isCashTender), so a custom method named "Cash" cannot bypass the gate.
  */
-export function requireOpenSessionForCashTender(db: ReturnType<typeof getDatabase>, payments: unknown[]): void {
+export function requireOpenSessionForCashTender(
+  db: ReturnType<typeof getDatabase>,
+  payments: unknown[],
+): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
   if (payments.some((line) => isCashTender(db, line)) && !getOpenSession(db)) {
     throw httpError('No open shift: open a shift before taking cash', 409, 'cash_session_required');

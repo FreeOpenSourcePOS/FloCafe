@@ -65,15 +65,25 @@ function mobilePairingErrorMessage(error: any): string {
   return error?.message || 'Could not reach FloAdmin';
 }
 
-const inlineCustomerLookupRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const inlineCustomerLookupRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 export function registerRoutes(app: Express): void {
   app.use((req: Request, res, next) => {
     res.once('finish', () => {
       const request = req as Request & { diagnosticsCaptured?: boolean };
       const requestPath = req.path.toLowerCase();
-      if (res.statusCode < 500 || !requestPath.startsWith('/api/')
-        || requestPath.startsWith('/api/diagnostics') || request.diagnosticsCaptured) return;
+      if (
+        res.statusCode < 500 ||
+        !requestPath.startsWith('/api/') ||
+        requestPath.startsWith('/api/diagnostics') ||
+        request.diagnosticsCaptured
+      )
+        return;
       try {
         const operationId = req.get('x-operation-id');
         const failure = serializeOperationFailure({
@@ -113,8 +123,8 @@ export function registerRoutes(app: Express): void {
   app.use('/api/tables', tableRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);
-  app.use('/api/staff', staffRoutes);   // users with POS roles
-  app.use('/api/users', staffRoutes);   // same router, dual-mounted
+  app.use('/api/staff', staffRoutes); // users with POS roles
+  app.use('/api/users', staffRoutes); // same router, dual-mounted
   app.use('/api/settings', settingsRoutes);
   app.use('/api/payment-methods', paymentMethodRoutes);
   app.use('/api/reports', reportRoutes);
@@ -140,160 +150,200 @@ export function registerRoutes(app: Express): void {
   // manager) would 403 a cashier mid-checkout, and a 403 makes the API client
   // refresh the whole auth context. Any one of the three sale-facing permissions
   // resolves to the same role set the ungated endpoint had before this migration.
-  app.post('/api/tax/preview', requireAnyPermission('pos.use', 'orders.create', 'kitchen.use'), asyncHandler(async (req, res) => {
-    const { calculateTaxPreview } = await import('../services/tax');
-    calculateTaxPreview(req, res);
-  }));
+  app.post(
+    '/api/tax/preview',
+    requireAnyPermission('pos.use', 'orders.create', 'kitchen.use'),
+    asyncHandler(async (req, res) => {
+      const { calculateTaxPreview } = await import('../services/tax');
+      calculateTaxPreview(req, res);
+    }),
+  );
 
   // Returns active tax categories for product configuration.
-  app.get('/api/tax/categories', requirePermission('tax-packs.view-test'), asyncHandler(async (req, res) => {
-    try {
-      const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
-      const country = getSettingValue('country') || '';
-      const businessType = getSettingValue('business_type') || 'restaurant';
-      const pack = getActiveCountryPack(country);
-      const configurationReady = hasConfiguredTaxCategories(pack, businessType);
-      res.json({
-        pack_id: pack.id,
-        country: pack.country,
-        // Categories available only when configuration is ready.
-        categories: configurationReady
-          ? pack.categories.map((category) => {
-            const preview = previewCategoryRate(pack, businessType, category.id);
-            return {
-              id: category.id,
-              label: category.label,
-              rate_percent: preview?.percent ?? null,
-              rate_label: preview?.label ?? null,
-            };
-          })
-          : [],
-        default_category_id: configurationReady ? pack.defaultCategories.product : null,
-        configuration_ready: configurationReady,
-        unclassified_category_id: pack.unclassifiedCategoryId,
-      });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }));
+  app.get(
+    '/api/tax/categories',
+    requirePermission('tax-packs.view-test'),
+    asyncHandler(async (req, res) => {
+      try {
+        const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } =
+          await import('../services/tax');
+        const country = getSettingValue('country') || '';
+        const businessType = getSettingValue('business_type') || 'restaurant';
+        const pack = getActiveCountryPack(country);
+        const configurationReady = hasConfiguredTaxCategories(pack, businessType);
+        res.json({
+          pack_id: pack.id,
+          country: pack.country,
+          // Categories available only when configuration is ready.
+          categories: configurationReady
+            ? pack.categories.map((category) => {
+                const preview = previewCategoryRate(pack, businessType, category.id);
+                return {
+                  id: category.id,
+                  label: category.label,
+                  rate_percent: preview?.percent ?? null,
+                  rate_label: preview?.label ?? null,
+                };
+              })
+            : [],
+          default_category_id: configurationReady ? pack.defaultCategories.product : null,
+          configuration_ready: configurationReady,
+          unclassified_category_id: pack.unclassifiedCategoryId,
+        });
+      } catch (error: any) {
+        console.error('[API] Internal error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    }),
+  );
 
   // Returns cached mobile pairing code or generates fresh code if missing or expired.
-  app.get('/api/mobile/pairing-code', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
-    try {
-      const cached = getCachedPairingCode();
-      if (cached) {
-        return res.json({
-          pairing_code: cached.code,
-          expires_at: cached.expiresAt,
-          qr_data_url: await QRCode.toDataURL(cached.code, { errorCorrectionLevel: 'M', width: 256 }),
+  app.get(
+    '/api/mobile/pairing-code',
+    requirePermission('mobile-access.manage'),
+    asyncHandler(async (req, res) => {
+      try {
+        const cached = getCachedPairingCode();
+        if (cached) {
+          return res.json({
+            pairing_code: cached.code,
+            expires_at: cached.expiresAt,
+            qr_data_url: await QRCode.toDataURL(cached.code, {
+              errorCorrectionLevel: 'M',
+              width: 256,
+            }),
+          });
+        }
+        const { code, expires_at } = await cloudSync.generatePairingCode(false);
+        setCachedPairingCode(code, expires_at);
+        res.json({
+          pairing_code: code,
+          expires_at,
+          qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
         });
+      } catch (error: any) {
+        res
+          .status(mobilePairingErrorStatus(error))
+          .json({ error: mobilePairingErrorMessage(error) });
       }
-      const { code, expires_at } = await cloudSync.generatePairingCode(false);
-      setCachedPairingCode(code, expires_at);
-      res.json({
-        pairing_code: code,
-        expires_at,
-        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
-      });
-    } catch (error: any) {
-      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
-    }
-  }));
+    }),
+  );
 
   // Explicit rotate — disconnects every currently-paired RevFlo device.
-  app.post('/api/mobile/rotate-code', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
-    try {
-      const { code, expires_at } = await cloudSync.generatePairingCode(true);
-      setCachedPairingCode(code, expires_at);
-      res.json({
-        pairing_code: code,
-        expires_at,
-        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
-      });
-    } catch (error: any) {
-      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
-    }
-  }));
+  app.post(
+    '/api/mobile/rotate-code',
+    requirePermission('mobile-access.manage'),
+    asyncHandler(async (req, res) => {
+      try {
+        const { code, expires_at } = await cloudSync.generatePairingCode(true);
+        setCachedPairingCode(code, expires_at);
+        res.json({
+          pairing_code: code,
+          expires_at,
+          qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
+        });
+      } catch (error: any) {
+        res
+          .status(mobilePairingErrorStatus(error))
+          .json({ error: mobilePairingErrorMessage(error) });
+      }
+    }),
+  );
 
   // Paired RevFlo devices for this store — Settings > Mobile App session list.
-  app.get('/api/mobile/devices', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
-    try {
-      const devices = await cloudSync.listPairedDevices();
-      res.json({ devices });
-    } catch (error: any) {
-      console.error('[API] FloAdmin request failed:', error);
-      res.status(502).json({ error: 'Could not reach FloAdmin' });
-    }
-  }));
+  app.get(
+    '/api/mobile/devices',
+    requirePermission('mobile-access.manage'),
+    asyncHandler(async (req, res) => {
+      try {
+        const devices = await cloudSync.listPairedDevices();
+        res.json({ devices });
+      } catch (error: any) {
+        console.error('[API] FloAdmin request failed:', error);
+        res.status(502).json({ error: 'Could not reach FloAdmin' });
+      }
+    }),
+  );
 
   // Legacy/flat customer search endpoint (frontend uses this)
-  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requirePermission('customers.view'), (req, res) => {
-    try {
-      const { q } = req.query;
-      const rawSearch = String(q || '').trim();
-      if (rawSearch.length < 2) {
-        return res.json([]);
-      }
+  app.get(
+    '/api/customers-search',
+    inlineCustomerLookupRateLimit,
+    requirePermission('customers.view'),
+    (req, res) => {
+      try {
+        const { q } = req.query;
+        const rawSearch = String(q || '').trim();
+        if (rawSearch.length < 2) {
+          return res.json([]);
+        }
 
-      const db = getDatabase();
-      const digitsSearch = stripPhoneDigits(rawSearch);
-      const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
-      const searchTerm = `%${rawSearch}%`;
-      const phoneDigitsSearch = `REPLACE(phone_digits, '/', '')`;
-      const query = isPhoneLikeSearch
-        ? `
+        const db = getDatabase();
+        const digitsSearch = stripPhoneDigits(rawSearch);
+        const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
+        const searchTerm = `%${rawSearch}%`;
+        const phoneDigitsSearch = `REPLACE(phone_digits, '/', '')`;
+        const query = isPhoneLikeSearch
+          ? `
         SELECT * FROM customers
         WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
       `
-        : `
+          : `
         SELECT * FROM customers
         WHERE is_active = 1 AND (name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
       `;
-      const params = isPhoneLikeSearch
-        ? [`%${digitsSearch}%`, searchTerm, searchTerm]
-        : [searchTerm, searchTerm];
+        const params = isPhoneLikeSearch
+          ? [`%${digitsSearch}%`, searchTerm, searchTerm]
+          : [searchTerm, searchTerm];
 
-      const customers = db.prepare(query).all(...params) as any[];
+        const customers = db.prepare(query).all(...params) as any[];
 
-      const results = customers.map((c) => ({
-        ...parseCustomer(c),
-        wallet_balance: getWalletBalance(c.id),
-      }));
+        const results = customers.map((c) => ({
+          ...parseCustomer(c),
+          wallet_balance: getWalletBalance(c.id),
+        }));
 
-      res.json(results);
-    } catch (error: any) {
-      console.error("[API] Internal error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
+        res.json(results);
+      } catch (error: any) {
+        console.error('[API] Internal error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    },
+  );
 
   // CRM lookup endpoint (frontend uses this)
-  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requirePermission('customers.view'), (req, res) => {
-    try {
-      const { phone, country_code } = req.query;
-      if (!phone) {
-        return res.status(400).json({ error: 'Phone number required' });
+  app.get(
+    '/api/crm/lookup',
+    inlineCustomerLookupRateLimit,
+    requirePermission('customers.view'),
+    (req, res) => {
+      try {
+        const { phone, country_code } = req.query;
+        if (!phone) {
+          return res.status(400).json({ error: 'Phone number required' });
+        }
+
+        const db = getDatabase();
+        const tenantCountry = getSettingValue('country') || '';
+        const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
+        const lookupPhone = parsed ? parsed.e164 : String(phone).trim();
+        const phoneDigits = stripPhoneDigits(lookupPhone);
+
+        const customer = db
+          .prepare('SELECT * FROM customers WHERE phone_digits = ?')
+          .get(phoneDigits);
+
+        if (customer) {
+          res.json({ found: true, customer });
+        } else {
+          res.json({ found: false, customer: null });
+        }
+      } catch (error: any) {
+        console.error('[API] Internal error:', error);
+        res.status(500).json({ error: 'Internal server error' });
       }
-
-      const db = getDatabase();
-      const tenantCountry = getSettingValue('country') || '';
-      const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
-      const lookupPhone = parsed ? parsed.e164 : String(phone).trim();
-      const phoneDigits = stripPhoneDigits(lookupPhone);
-
-      const customer = db.prepare('SELECT * FROM customers WHERE phone_digits = ?').get(phoneDigits);
-
-      if (customer) {
-        res.json({ found: true, customer });
-      } else {
-        res.json({ found: false, customer: null });
-      }
-    } catch (error: any) {
-      console.error("[API] Internal error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
+    },
+  );
 }

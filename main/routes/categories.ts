@@ -6,7 +6,12 @@ import { cloudSync } from '../services/cloud-sync';
 import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
-const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+const categoryWriteRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 function hasOwn(body: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, field);
@@ -41,18 +46,29 @@ function validateCategoryAddonGroupIds(
   }
 
   const uniqueIds = [...new Set(ids)];
-  if (uniqueIds.length !== ids.length) return { error: 'addon_group_ids must not contain duplicates' };
+  if (uniqueIds.length !== ids.length)
+    return { error: 'addon_group_ids must not contain duplicates' };
   if (uniqueIds.length === 0) return { ids: [] };
 
   const placeholders = uniqueIds.map(() => '?').join(',');
-  const activeIds = new Set((db.prepare(
-    `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`,
-  ).all(...uniqueIds) as { id: string }[]).map((row) => row.id));
+  const activeIds = new Set(
+    (
+      db
+        .prepare(`SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`)
+        .all(...uniqueIds) as { id: string }[]
+    ).map((row) => row.id),
+  );
   const retainedIds = categoryId
-    ? new Set((db.prepare(
-      `SELECT addon_group_id FROM category_addon_groups
+    ? new Set(
+        (
+          db
+            .prepare(
+              `SELECT addon_group_id FROM category_addon_groups
        WHERE category_id = ? AND addon_group_id IN (${placeholders})`,
-    ).all(categoryId, ...uniqueIds) as { addon_group_id: string }[]).map((row) => row.addon_group_id))
+            )
+            .all(categoryId, ...uniqueIds) as { addon_group_id: string }[]
+        ).map((row) => row.addon_group_id),
+      )
     : new Set<string>();
   const missingIds = uniqueIds.filter((id) => !activeIds.has(id) && !retainedIds.has(id));
   if (missingIds.length > 0) {
@@ -62,15 +78,20 @@ function validateCategoryAddonGroupIds(
   return { ids: uniqueIds };
 }
 
-function loadAddonGroupIdsByCategory(db: ReturnType<typeof getDatabase>, categories: { id: string }[]): Map<string, string[]> {
+function loadAddonGroupIdsByCategory(
+  db: ReturnType<typeof getDatabase>,
+  categories: { id: string }[],
+): Map<string, string[]> {
   const categoryIds = [...new Set(categories.map((category) => category.id).filter(Boolean))];
   if (categoryIds.length === 0) return new Map();
 
   const placeholders = categoryIds.map(() => '?').join(',');
-  const rows = db.prepare(
-    `SELECT category_id, addon_group_id FROM category_addon_groups
+  const rows = db
+    .prepare(
+      `SELECT category_id, addon_group_id FROM category_addon_groups
      WHERE category_id IN (${placeholders}) ORDER BY category_id, addon_group_id`,
-  ).all(...categoryIds) as { category_id: string; addon_group_id: string }[];
+    )
+    .all(...categoryIds) as { category_id: string; addon_group_id: string }[];
   const result = new Map<string, string[]>();
   for (const row of rows) {
     const ids = result.get(row.category_id) || [];
@@ -81,7 +102,10 @@ function loadAddonGroupIdsByCategory(db: ReturnType<typeof getDatabase>, categor
 }
 
 function slugForName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
 }
 
 function validateParentCategory(
@@ -90,25 +114,39 @@ function validateParentCategory(
   categoryId?: string,
 ): { kind: 'reference_invalid' | 'cycle'; message: string } | null {
   if (parentId === null || parentId === undefined || parentId === '') return null;
-  if (typeof parentId !== 'string') return { kind: 'reference_invalid', message: 'parent_id must be a string or null' };
-  if (categoryId && parentId === categoryId) return { kind: 'cycle', message: 'Category cannot be its own parent' };
+  if (typeof parentId !== 'string')
+    return { kind: 'reference_invalid', message: 'parent_id must be a string or null' };
+  if (categoryId && parentId === categoryId)
+    return { kind: 'cycle', message: 'Category cannot be its own parent' };
 
-  let current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(parentId) as any;
-  if (!current) return { kind: 'reference_invalid', message: 'Parent category not found or inactive' };
+  let current = db
+    .prepare(
+      'SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1',
+    )
+    .get(parentId) as any;
+  if (!current)
+    return { kind: 'reference_invalid', message: 'Parent category not found or inactive' };
 
   const seen = new Set<string>();
   while (current?.parent_id) {
-    if (categoryId && current.parent_id === categoryId) return { kind: 'cycle', message: 'Category parent cannot create a cycle' };
-    if (seen.has(current.parent_id)) return { kind: 'cycle', message: 'Category tree already contains a cycle' };
+    if (categoryId && current.parent_id === categoryId)
+      return { kind: 'cycle', message: 'Category parent cannot create a cycle' };
+    if (seen.has(current.parent_id))
+      return { kind: 'cycle', message: 'Category tree already contains a cycle' };
     seen.add(current.parent_id);
-    current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(current.parent_id) as any;
+    current = db
+      .prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
+      .get(current.parent_id) as any;
   }
   return null;
 }
 
 function captureParentCategoryRejection(kind: 'reference_invalid' | 'cycle'): void {
   const failure = serializeOperationFailure({
-    capture_point: kind === 'cycle' ? 'fc.backend.category.parent_cycle' : 'fc.backend.category.parent_reference_invalid',
+    capture_point:
+      kind === 'cycle'
+        ? 'fc.backend.category.parent_cycle'
+        : 'fc.backend.category.parent_reference_invalid',
     outcome: 'not_applied',
   });
   try {
@@ -118,7 +156,9 @@ function captureParentCategoryRejection(kind: 'reference_invalid' | 'cycle'): vo
   }
 }
 
-function captureCategoryValidation(validationCode: 'name_required' | 'addon_group_ids_invalid'): void {
+function captureCategoryValidation(
+  validationCode: 'name_required' | 'addon_group_ids_invalid',
+): void {
   const failure = serializeOperationFailure({
     capture_point: 'fc.backend.category.save.validation',
     outcome: 'not_applied',
@@ -132,7 +172,12 @@ function captureCategoryValidation(validationCode: 'name_required' | 'addon_grou
 }
 
 function captureCategoryDeleteRejection(
-  validationCode: 'requires_resolution' | 'action_invalid' | 'target_invalid' | 'target_cycle' | 'self_target',
+  validationCode:
+    | 'requires_resolution'
+    | 'action_invalid'
+    | 'target_invalid'
+    | 'target_cycle'
+    | 'self_target',
 ): void {
   const failure = serializeOperationFailure({
     capture_point: 'fc.backend.category.delete.action_rejected',
@@ -147,19 +192,30 @@ function captureCategoryDeleteRejection(
 }
 
 class CategoryDeleteValidationError extends Error {
-  constructor(readonly validationCode: 'action_invalid' | 'target_invalid' | 'target_cycle' | 'self_target', message: string) {
+  constructor(
+    readonly validationCode: 'action_invalid' | 'target_invalid' | 'target_cycle' | 'self_target',
+    message: string,
+  ) {
     super(message);
   }
 }
 
-function isDescendantCategory(db: ReturnType<typeof getDatabase>, categoryId: string, possibleDescendantId: string): boolean {
-  let current = db.prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(possibleDescendantId) as any;
+function isDescendantCategory(
+  db: ReturnType<typeof getDatabase>,
+  categoryId: string,
+  possibleDescendantId: string,
+): boolean {
+  let current = db
+    .prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
+    .get(possibleDescendantId) as any;
   const seen = new Set<string>();
   while (current?.parent_id) {
     if (current.parent_id === categoryId) return true;
     if (seen.has(current.parent_id)) return false;
     seen.add(current.parent_id);
-    current = db.prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(current.parent_id) as any;
+    current = db
+      .prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL')
+      .get(current.parent_id) as any;
   }
   return false;
 }
@@ -169,7 +225,9 @@ function serializeCategory(category: any): any {
   return {
     ...category,
     is_active: Boolean(category.is_active),
-    children: Array.isArray(category.children) ? category.children.map(serializeCategory) : category.children,
+    children: Array.isArray(category.children)
+      ? category.children.map(serializeCategory)
+      : category.children,
     products: Array.isArray(category.products)
       ? category.products.map((product: any) => ({
           ...product,
@@ -204,11 +262,13 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const childRowsByParent = new Map<string, any[]>();
     if (categories.length > 0) {
       const placeholders = categories.map(() => '?').join(',');
-      const children = db.prepare(
-        `SELECT * FROM categories
+      const children = db
+        .prepare(
+          `SELECT * FROM categories
          WHERE parent_id IN (${placeholders}) AND deleted_at IS NULL
-         ORDER BY parent_id, sort_order, name`
-      ).all(...categories.map((cat) => cat.id)) as any[];
+         ORDER BY parent_id, sort_order, name`,
+        )
+        .all(...categories.map((cat) => cat.id)) as any[];
       for (const child of children) {
         const rows = childRowsByParent.get(child.parent_id) || [];
         rows.push(child);
@@ -219,52 +279,65 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const allCategories = [...categories, ...[...childRowsByParent.values()].flat()];
     const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, allCategories);
 
-    const categoriesWithChildren = categories.map((cat) => serializeCategory({
-      ...cat,
-      addon_group_ids: addonGroupIdsByCategory.get(cat.id) || [],
-      children: (childRowsByParent.get(cat.id) || []).map((child) => ({
-        ...child,
-        addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
-      })),
-    }));
+    const categoriesWithChildren = categories.map((cat) =>
+      serializeCategory({
+        ...cat,
+        addon_group_ids: addonGroupIdsByCategory.get(cat.id) || [],
+        children: (childRowsByParent.get(cat.id) || []).map((child) => ({
+          ...child,
+          addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
+        })),
+      }),
+    );
 
     res.json({ categories: categoriesWithChildren });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as ({ id: string } & Record<string, unknown>) | undefined;
+    const category = db
+      .prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL')
+      .get(req.params.id) as ({ id: string } & Record<string, unknown>) | undefined;
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
-    const children = db.prepare('SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(req.params.id) as ({ id: string } & Record<string, unknown>)[];
-    const products = db.prepare('SELECT * FROM products WHERE category_id = ? AND deleted_at IS NULL').all(req.params.id);
+    const children = db
+      .prepare(
+        'SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name',
+      )
+      .all(req.params.id) as ({ id: string } & Record<string, unknown>)[];
+    const products = db
+      .prepare('SELECT * FROM products WHERE category_id = ? AND deleted_at IS NULL')
+      .all(req.params.id);
     const addonGroupIdsByCategory = loadAddonGroupIdsByCategory(db, [category, ...children]);
 
-    res.json({ category: serializeCategory({
-      ...category,
-      addon_group_ids: addonGroupIdsByCategory.get(String(req.params.id)) || [],
-      children: children.map((child) => ({
-        ...child,
-        addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
-      })),
-      products,
-    }) });
+    res.json({
+      category: serializeCategory({
+        ...category,
+        addon_group_ids: addonGroupIdsByCategory.get(String(req.params.id)) || [],
+        children: children.map((child) => ({
+          ...child,
+          addon_group_ids: addonGroupIdsByCategory.get(child.id) || [],
+        })),
+        products,
+      }),
+    });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 function createCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } =
+      req.body;
 
     const categoryName = normalizeCategoryName(name);
     if (!categoryName) {
@@ -302,21 +375,31 @@ function createCategory(req: Request, res: Response) {
         normalizeOptionalString(color),
         normalizeOptionalString(icon),
         now(),
-        now()
+        now(),
       );
 
       if (addonGroupValidation.ids) {
-        const insertAddonGroup = db.prepare('INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)');
+        const insertAddonGroup = db.prepare(
+          'INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)',
+        );
         for (const addonGroupId of addonGroupValidation.ids) insertAddonGroup.run(id, addonGroupId);
       }
     });
     insertCategory();
 
-    const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Record<string, unknown>;
-    res.status(201).json({ category: serializeCategory({ ...category, addon_group_ids: addonGroupValidation.ids || [] }) });
+    const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Record<
+      string,
+      unknown
+    >;
+    res.status(201).json({
+      category: serializeCategory({
+        ...category,
+        addon_group_ids: addonGroupValidation.ids || [],
+      }),
+    });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -324,11 +407,14 @@ router.post('/', categoryWriteRateLimit, requirePermission('catalog.manage'), cr
 
 function updateCategory(req: Request, res: Response) {
   try {
-    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } = req.body;
+    const { name, description, parent_id, sort_order, is_active, color, icon, addon_group_ids } =
+      req.body;
     const db = getDatabase();
     const categoryId = String(req.params.id);
 
-    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(categoryId);
+    const category = db
+      .prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL')
+      .get(categoryId);
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
@@ -347,7 +433,10 @@ function updateCategory(req: Request, res: Response) {
       }
     }
 
-    const addonGroupValidation: { ids?: string[]; error?: string } = hasOwn(req.body, 'addon_group_ids')
+    const addonGroupValidation: { ids?: string[]; error?: string } = hasOwn(
+      req.body,
+      'addon_group_ids',
+    )
       ? validateCategoryAddonGroupIds(db, addon_group_ids, categoryId)
       : {};
     if (addonGroupValidation.error) {
@@ -393,18 +482,27 @@ function updateCategory(req: Request, res: Response) {
 
       if (addonGroupValidation.ids !== undefined) {
         db.prepare('DELETE FROM category_addon_groups WHERE category_id = ?').run(categoryId);
-        const insertAddonGroup = db.prepare('INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)');
-        for (const addonGroupId of addonGroupValidation.ids) insertAddonGroup.run(categoryId, addonGroupId);
+        const insertAddonGroup = db.prepare(
+          'INSERT INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)',
+        );
+        for (const addonGroupId of addonGroupValidation.ids)
+          insertAddonGroup.run(categoryId, addonGroupId);
       }
     });
     saveCategory();
 
-    const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId) as Record<string, unknown>;
-    const updatedAddonGroupIds = loadAddonGroupIdsByCategory(db, [{ id: categoryId }]).get(categoryId) || [];
-    res.json({ category: serializeCategory({ ...updated, addon_group_ids: updatedAddonGroupIds }) });
+    const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(categoryId) as Record<
+      string,
+      unknown
+    >;
+    const updatedAddonGroupIds =
+      loadAddonGroupIdsByCategory(db, [{ id: categoryId }]).get(categoryId) || [];
+    res.json({
+      category: serializeCategory({ ...updated, addon_group_ids: updatedAddonGroupIds }),
+    });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -414,20 +512,26 @@ function deleteCategory(req: Request, res: Response) {
   try {
     const db = getDatabase();
     const categoryId = String(req.params.id);
-    const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(categoryId);
+    const category = db
+      .prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL')
+      .get(categoryId);
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
     const { action, reassign_to } = req.query as { action?: string; reassign_to?: string };
 
-    const { count: productCount } = db.prepare(
-      'SELECT COUNT(*) as count FROM products WHERE category_id = ? AND deleted_at IS NULL'
-    ).get(categoryId) as { count: number };
+    const { count: productCount } = db
+      .prepare(
+        'SELECT COUNT(*) as count FROM products WHERE category_id = ? AND deleted_at IS NULL',
+      )
+      .get(categoryId) as { count: number };
 
-    const { count: childCount } = db.prepare(
-      'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL'
-    ).get(categoryId) as { count: number };
+    const { count: childCount } = db
+      .prepare(
+        'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND deleted_at IS NULL',
+      )
+      .get(categoryId) as { count: number };
 
     if ((productCount > 0 || childCount > 0) && !action) {
       captureCategoryDeleteRejection('requires_resolution');
@@ -440,39 +544,68 @@ function deleteCategory(req: Request, res: Response) {
 
     const deleteCategory = db.transaction(() => {
       if (action === 'reassign') {
-        if (!reassign_to) throw new CategoryDeleteValidationError('target_invalid', 'reassign_to is required for reassign action');
-        if (reassign_to === categoryId) throw new CategoryDeleteValidationError('self_target', 'Cannot reassign a category to itself');
-        const targetCategory = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL').get(reassign_to);
-        if (!targetCategory) throw new CategoryDeleteValidationError('target_invalid', 'Target category not found or deleted');
+        if (!reassign_to)
+          throw new CategoryDeleteValidationError(
+            'target_invalid',
+            'reassign_to is required for reassign action',
+          );
+        if (reassign_to === categoryId)
+          throw new CategoryDeleteValidationError(
+            'self_target',
+            'Cannot reassign a category to itself',
+          );
+        const targetCategory = db
+          .prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL')
+          .get(reassign_to);
+        if (!targetCategory)
+          throw new CategoryDeleteValidationError(
+            'target_invalid',
+            'Target category not found or deleted',
+          );
         if (isDescendantCategory(db, categoryId, reassign_to)) {
-          throw new CategoryDeleteValidationError('target_cycle', 'Cannot reassign a category to one of its descendants');
+          throw new CategoryDeleteValidationError(
+            'target_cycle',
+            'Cannot reassign a category to one of its descendants',
+          );
         }
-        db.prepare('UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
-          .run(reassign_to, now(), categoryId);
-        db.prepare('UPDATE categories SET parent_id = ?, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL')
-          .run(reassign_to, now(), categoryId);
+        db.prepare(
+          'UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL',
+        ).run(reassign_to, now(), categoryId);
+        db.prepare(
+          'UPDATE categories SET parent_id = ?, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL',
+        ).run(reassign_to, now(), categoryId);
       } else if (action === 'delete_all') {
-        db.prepare('UPDATE products SET deleted_at = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
-          .run(now(), now(), categoryId);
-        db.prepare('UPDATE categories SET parent_id = NULL, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL')
-          .run(now(), categoryId);
+        db.prepare(
+          'UPDATE products SET deleted_at = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL',
+        ).run(now(), now(), categoryId);
+        db.prepare(
+          'UPDATE categories SET parent_id = NULL, updated_at = ? WHERE parent_id = ? AND deleted_at IS NULL',
+        ).run(now(), categoryId);
       } else if (!action && productCount === 0 && childCount === 0) {
         // Empty categories have no dependent rows to resolve.
       } else {
-        throw new CategoryDeleteValidationError('action_invalid', 'Invalid action. Must be reassign or delete_all.');
+        throw new CategoryDeleteValidationError(
+          'action_invalid',
+          'Invalid action. Must be reassign or delete_all.',
+        );
       }
-      db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now(), now(), categoryId);
+      db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(
+        now(),
+        now(),
+        categoryId,
+      );
     });
     try {
       deleteCategory();
     } catch (error: any) {
-      if (error instanceof CategoryDeleteValidationError) captureCategoryDeleteRejection(error.validationCode);
+      if (error instanceof CategoryDeleteValidationError)
+        captureCategoryDeleteRejection(error.validationCode);
       return res.status(400).json({ error: error.message });
     }
     res.json({ message: 'Category deleted' });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }
 

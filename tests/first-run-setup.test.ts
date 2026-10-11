@@ -30,7 +30,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  getCurrentSchemaVersion,
+  MIGRATIONS,
+} = require('../main/db');
 const { cloudSync } = require('../main/services/cloud-sync');
 const { authRoutes } = require('../main/routes/auth');
 
@@ -41,7 +47,9 @@ function count(table: string): number {
 
 function setting(key: string): string | null {
   const db = getDatabase();
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined;
   return row?.value ?? null;
 }
 
@@ -63,8 +71,10 @@ async function request(baseUrl: string, pathName: string, options: Record<string
 }
 
 function isNativeAbiMismatch(error: any): boolean {
-  return error?.code === 'ERR_DLOPEN_FAILED'
-    && String(error?.message || '').includes('NODE_MODULE_VERSION');
+  return (
+    error?.code === 'ERR_DLOPEN_FAILED' &&
+    String(error?.message || '').includes('NODE_MODULE_VERSION')
+  );
 }
 
 async function main() {
@@ -73,34 +83,51 @@ async function main() {
 
   let profileRefreshes = 0;
   const originalRefreshRegistrationProfile = cloudSync.refreshRegistrationProfile.bind(cloudSync);
-  cloudSync.refreshRegistrationProfile = () => { profileRefreshes++; };
+  cloudSync.refreshRegistrationProfile = () => {
+    profileRefreshes++;
+  };
 
   try {
     initDatabase();
   } catch (error: any) {
     if (isNativeAbiMismatch(error)) {
       console.log('   ⚠ Skipping: better-sqlite3 is not built for this shell Node ABI.');
-      console.log(`     Node ${process.version} uses ABI ${process.versions.modules}; rebuild native modules for Node to run this test outside Electron.`);
+      console.log(
+        `     Node ${process.version} uses ABI ${process.versions.modules}; rebuild native modules for Node to run this test outside Electron.`,
+      );
       process.exit(77); // exit code 77 = skip (GNU convention)
     }
     throw error;
   }
 
-assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].version, 'fresh database migrates to latest schema');
+  assert.equal(
+    getCurrentSchemaVersion(),
+    MIGRATIONS[MIGRATIONS.length - 1].version,
+    'fresh database migrates to latest schema',
+  );
   assert.equal(count('users'), 0, 'fresh install starts without users');
   assert.equal(count('categories'), 0, 'fresh install starts with no sample categories');
   assert.equal(count('products'), 0, 'fresh install starts with no sample products');
   assert.equal(count('tables'), 0, 'fresh install starts with no sample tables');
   assert.equal(count('printers'), 0, 'fresh install starts with no default printer');
-  assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com/', 'cloud server URL is seeded');
-  assert.match(setting('cloud_pos_hash') || '', /^pos_[a-f0-9]{40}$/, 'fresh install has a POS hash');
-  assert.ok((setting('cloud_device_secret') || '').length >= 32, 'fresh install has a local cloud secret');
+  assert.equal(
+    setting('cloud_server_url'),
+    'https://blue.flopos.com/',
+    'cloud server URL is seeded',
+  );
+  assert.match(
+    setting('cloud_pos_hash') || '',
+    /^pos_[a-f0-9]{40}$/,
+    'fresh install has a POS hash',
+  );
+  assert.ok(
+    (setting('cloud_device_secret') || '').length >= 32,
+    'fresh install has a local cloud secret',
+  );
   assert.equal(count('cloud_sync_outbox'), 0, 'fresh install starts with an empty cloud outbox');
   assert.equal(count('country_packs'), 1, 'fresh install registers only the generic tax pack');
   assert.deepEqual(
-    getDatabase().prepare(
-      'SELECT id, country, status FROM country_packs ORDER BY id'
-    ).all(),
+    getDatabase().prepare('SELECT id, country, status FROM country_packs ORDER BY id').all(),
     [{ id: 'local-generic', country: '*', status: 'active' }],
     'fresh setup does not preinstall a country-specific tax pack',
   );
@@ -114,7 +141,9 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     server = await listen(api);
   } catch (error: any) {
     if (error?.code === 'EPERM' || error?.code === 'EACCES') {
-      console.log('   ⚠ Skipping setup API assertions: local port binding is blocked in this environment.');
+      console.log(
+        '   ⚠ Skipping setup API assertions: local port binding is blocked in this environment.',
+      );
       return;
     }
     throw error;
@@ -147,16 +176,28 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         country: 'CA',
       }),
     });
-    assert.equal(withoutTerms.status, 400, 'setup rejects account creation without terms acceptance');
+    assert.equal(
+      withoutTerms.status,
+      400,
+      'setup rejects account creation without terms acceptance',
+    );
     assert.equal(count('users'), 0, 'no user is created when terms are not accepted');
     console.log('   ✓ setup endpoint requires terms_accepted before creating the owner account');
 
     const missingApprovalPin = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
-        name: 'First Owner', email: 'owner@example.com', password: 'TestPass123',
-        business_type: 'restaurant', business_name: 'First Cafe', setup_profile: 'express', service_model: 'qsr',
-        terms_accepted: true, country: 'CA', currency: 'CAD', timezone: 'America/Vancouver',
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'CA',
+        currency: 'CAD',
+        timezone: 'America/Vancouver',
       }),
     });
     assert.equal(missingApprovalPin.status, 400, 'setup requires an owner Staff Approval PIN');
@@ -165,13 +206,26 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     const mismatchedApprovalPin = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
-        name: 'First Owner', email: 'owner@example.com', password: 'TestPass123',
-        business_type: 'restaurant', business_name: 'First Cafe', setup_profile: 'express', service_model: 'qsr',
-        terms_accepted: true, country: 'CA', currency: 'CAD', timezone: 'America/Vancouver',
-        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5679',
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'CA',
+        currency: 'CAD',
+        timezone: 'America/Vancouver',
+        owner_approval_pin: '5678',
+        owner_approval_pin_confirmation: '5679',
       }),
     });
-    assert.equal(mismatchedApprovalPin.status, 400, 'setup rejects mismatched owner Staff Approval PIN confirmation');
+    assert.equal(
+      mismatchedApprovalPin.status,
+      400,
+      'setup rejects mismatched owner Staff Approval PIN confirmation',
+    );
     assert.equal(count('users'), 0, 'mismatched Approval PIN does not create an owner');
 
     const invalidTimezone = await request(baseUrl, '/setup/initialize', {
@@ -191,7 +245,11 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       }),
     });
     assert.equal(invalidTimezone.status, 400, 'setup rejects an invalid IANA timezone');
-    assert.equal(invalidTimezone.data.error, 'Invalid timezone', 'setup reports a timezone-specific validation error');
+    assert.equal(
+      invalidTimezone.data.error,
+      'Invalid timezone',
+      'setup reports a timezone-specific validation error',
+    );
     assert.equal(count('users'), 0, 'no owner is created when the timezone is invalid');
     console.log('   ✓ setup rejects an invalid IANA timezone');
 
@@ -211,8 +269,16 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         timezone: 'America/Vancouver',
       }),
     });
-    assert.equal(invalidCurrency.status, 400, 'setup rejects a currency that is not a three-letter code');
-    assert.equal(invalidCurrency.data.error, 'Invalid currency', 'setup reports a currency-specific validation error');
+    assert.equal(
+      invalidCurrency.status,
+      400,
+      'setup rejects a currency that is not a three-letter code',
+    );
+    assert.equal(
+      invalidCurrency.data.error,
+      'Invalid currency',
+      'setup reports a currency-specific validation error',
+    );
     assert.equal(count('users'), 0, 'no owner is created when the currency is invalid');
     console.log('   ✓ setup rejects an invalid currency code');
 
@@ -234,8 +300,16 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         timezone: 'America/Vancouver',
       }),
     });
-    assert.equal(unsupportedCurrency.status, 400, 'setup rejects a three-letter currency code unsupported by Intl');
-    assert.equal(unsupportedCurrency.data.error, 'Invalid currency', 'setup reports a currency-specific validation error');
+    assert.equal(
+      unsupportedCurrency.status,
+      400,
+      'setup rejects a three-letter currency code unsupported by Intl',
+    );
+    assert.equal(
+      unsupportedCurrency.data.error,
+      'Invalid currency',
+      'setup reports a currency-specific validation error',
+    );
     assert.equal(count('users'), 0, 'no owner is created when the currency is unsupported');
     console.log('   ✓ setup rejects an unsupported currency code');
 
@@ -257,8 +331,16 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         timezone: 'America/Vancouver',
       }),
     });
-    assert.equal(nonStringCountry.status, 400, 'setup rejects a non-string country with 400, not a crash');
-    assert.equal(nonStringCountry.data.error, 'A valid country is required', 'setup reports the country-specific validation error');
+    assert.equal(
+      nonStringCountry.status,
+      400,
+      'setup rejects a non-string country with 400, not a crash',
+    );
+    assert.equal(
+      nonStringCountry.data.error,
+      'A valid country is required',
+      'setup reports the country-specific validation error',
+    );
     assert.equal(count('users'), 0, 'no owner is created when country is not a string');
     console.log('   ✓ setup rejects a non-string country without crashing');
 
@@ -292,26 +374,58 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(first.data.user.email, 'owner@example.com');
     assert.equal(first.data.user.role, 'owner');
     assert.equal(count('users'), 1, 'setup creates the first owner');
-    const ownerRow = getDatabase().prepare('SELECT terms_accepted_at, pin_hash FROM users WHERE email = ?').get('owner@example.com') as { terms_accepted_at: string | null; pin_hash: string | null };
-    assert.ok(ownerRow.terms_accepted_at, 'terms acceptance is stamped with a timestamp on the owner record');
+    const ownerRow = getDatabase()
+      .prepare('SELECT terms_accepted_at, pin_hash FROM users WHERE email = ?')
+      .get('owner@example.com') as { terms_accepted_at: string | null; pin_hash: string | null };
+    assert.ok(
+      ownerRow.terms_accepted_at,
+      'terms acceptance is stamped with a timestamp on the owner record',
+    );
     assert.ok(ownerRow.pin_hash, 'setup stores an owner Staff Approval PIN hash');
-    assert.equal(bcrypt.compareSync('5678', ownerRow.pin_hash), true, 'owner Staff Approval PIN verifies against users.pin_hash');
+    assert.equal(
+      bcrypt.compareSync('5678', ownerRow.pin_hash),
+      true,
+      'owner Staff Approval PIN verifies against users.pin_hash',
+    );
     assert.equal(setting('business_name'), 'First Cafe');
     assert.equal(setting('business_type'), 'restaurant');
     assert.equal(setting('setup_profile'), 'express');
     assert.equal(setting('service_model'), 'qsr');
     assert.equal(setting('country'), 'CA', 'setup persists the chosen country');
     assert.equal(setting('currency'), 'CAD', 'setup persists the chosen currency');
-    assert.equal(setting('timezone'), 'America/Vancouver', 'setup persists a custom tenant timezone independently of the country default');
-    assert.equal(setting('instagram_handle'), '@'.repeat(100), 'setup truncates overlong Instagram handles to 100 characters');
+    assert.equal(
+      setting('timezone'),
+      'America/Vancouver',
+      'setup persists a custom tenant timezone independently of the country default',
+    );
+    assert.equal(
+      setting('instagram_handle'),
+      '@'.repeat(100),
+      'setup truncates overlong Instagram handles to 100 characters',
+    );
     assert.equal(setting('billing_type'), 'prepaid');
     assert.equal(setting('tables_required'), 'false');
     assert.equal(setting('onboarding_completed'), 'true');
-    assert.equal(setting('anonymous_data_consent'), 'true', 'setup ignores a client-supplied consent field');
+    assert.equal(
+      setting('anonymous_data_consent'),
+      'true',
+      'setup ignores a client-supplied consent field',
+    );
     assert.equal(setting('telemetry_enabled'), 'true', 'telemetry is on by default after setup');
-    assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
-    assert.equal(setting('diagnostics_consent'), 'true', 'store diagnostics are on by default for a new install');
-    assert.equal(profileRefreshes, 1, 'setup immediately refreshes the completed store profile in FloAdmin');
+    assert.equal(
+      setting('telemetry_scope'),
+      'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
+    );
+    assert.equal(
+      setting('diagnostics_consent'),
+      'true',
+      'store diagnostics are on by default for a new install',
+    );
+    assert.equal(
+      profileRefreshes,
+      1,
+      'setup immediately refreshes the completed store profile in FloAdmin',
+    );
     assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
@@ -348,16 +462,31 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         timezone: 'Not/A_Real_Zone',
       }),
     });
-    assert.equal(disabledWithBadTimezone.status, 403, 'disabled setup keeps 403 even with an invalid timezone');
-    assert.equal(disabledWithBadTimezone.data.error, 'Setup already complete. This endpoint is disabled.');
+    assert.equal(
+      disabledWithBadTimezone.status,
+      403,
+      'disabled setup keeps 403 even with an invalid timezone',
+    );
+    assert.equal(
+      disabledWithBadTimezone.data.error,
+      'Setup already complete. This endpoint is disabled.',
+    );
     assert.equal(count('users'), 1, 'disabled setup still cannot create a third owner');
     console.log('   ✓ disabled setup returns 403 before timezone validation');
 
     // Cloud v2 coordination is automatic for new installs.
     // '1', not 'true' — cloud-sync.ts reads this key with a strict '1' check
     // everywhere, matching FloAdmin's own `stores` table.
-    assert.equal(setting('cloud_sync_enabled'), '1', 'cloud coordination is enabled automatically on v2 setup');
-    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com', 'cloud server URL keeps the default');
+    assert.equal(
+      setting('cloud_sync_enabled'),
+      '1',
+      'cloud coordination is enabled automatically on v2 setup',
+    );
+    assert.equal(
+      setting('cloud_server_url'),
+      'https://blue.flopos.com',
+      'cloud server URL keeps the default',
+    );
     console.log('   ✓ setup endpoint enables cloud coordination automatically');
   } finally {
     cloudSync.refreshRegistrationProfile = originalRefreshRegistrationProfile;
@@ -382,7 +511,9 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     cloudServer = await listen(cloudApi);
   } catch (error: any) {
     if (error?.code === 'EPERM' || error?.code === 'EACCES') {
-      console.log('   ⚠ Skipping cloud opt-in assertions: local port binding is blocked in this environment.');
+      console.log(
+        '   ⚠ Skipping cloud opt-in assertions: local port binding is blocked in this environment.',
+      );
       return;
     }
     throw error;
@@ -394,30 +525,60 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     const badUrl = await request(cloudBaseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
-        name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
-        business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true, country: 'US',
-        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
-        cloud_sync_enabled: true, cloud_server_url: 'not-a-valid-url',
+        name: 'Cloud Owner',
+        email: 'cloud-owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        setup_profile: 'empty',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'US',
+        owner_approval_pin: '5678',
+        owner_approval_pin_confirmation: '5678',
+        cloud_sync_enabled: true,
+        cloud_server_url: 'not-a-valid-url',
       }),
     });
-    assert.equal(badUrl.status, 400, 'an invalid cloud server URL is rejected when cloud sync is enabled');
+    assert.equal(
+      badUrl.status,
+      400,
+      'an invalid cloud server URL is rejected when cloud sync is enabled',
+    );
     assert.equal(count('users'), 0, 'no owner is created when the cloud server URL is invalid');
     console.log('   ✓ setup rejects an invalid cloud server URL when cloud sync is enabled');
 
     const enabled = await request(cloudBaseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
-        name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
-        business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true, country: 'US',
-        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
-        cloud_sync_enabled: true, cloud_server_url: 'https://cloud.example.test/relay',
+        name: 'Cloud Owner',
+        email: 'cloud-owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        setup_profile: 'empty',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'US',
+        owner_approval_pin: '5678',
+        owner_approval_pin_confirmation: '5678',
+        cloud_sync_enabled: true,
+        cloud_server_url: 'https://cloud.example.test/relay',
       }),
     });
-    assert.equal(enabled.status, 200, `setup succeeds with a valid custom cloud server URL (got ${enabled.status}, ${JSON.stringify(enabled.data)})`);
-    assert.equal(setting('cloud_sync_enabled'), '1', 'cloud sync is enabled when requested at setup');
-    assert.equal(setting('cloud_server_url'), 'https://cloud.example.test/relay', 'the custom cloud server URL is persisted, normalized');
+    assert.equal(
+      enabled.status,
+      200,
+      `setup succeeds with a valid custom cloud server URL (got ${enabled.status}, ${JSON.stringify(enabled.data)})`,
+    );
+    assert.equal(
+      setting('cloud_sync_enabled'),
+      '1',
+      'cloud sync is enabled when requested at setup',
+    );
+    assert.equal(
+      setting('cloud_server_url'),
+      'https://cloud.example.test/relay',
+      'the custom cloud server URL is persisted, normalized',
+    );
     console.log('   ✓ setup persists an explicit cloud_sync_enabled + custom cloud_server_url');
   } finally {
     await new Promise<void>((resolve) => cloudServer.close(() => resolve()));
@@ -434,7 +595,9 @@ main()
   })
   .catch((error) => {
     cloudSync.stop();
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.error(error);

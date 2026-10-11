@@ -433,7 +433,7 @@ async function main() {
     .get() as { count: number } | undefined;
   const sealedGapReport = db
     .prepare(
-      "SELECT payload FROM store_diagnostics_outbox WHERE payload LIKE '%\"gap_reason\":\"permanent_rejection\"%'",
+      'SELECT payload FROM store_diagnostics_outbox WHERE payload LIKE \'%"gap_reason":"permanent_rejection"%\'',
     )
     .get() as { payload: string } | undefined;
   const totalPermanentRejectionGapCount =

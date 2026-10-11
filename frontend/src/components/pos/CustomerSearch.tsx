@@ -92,6 +92,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         setLoyaltyPoints(null);
       });
     return () => controller.abort();
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id]);
 
   useEffect(() => {
@@ -103,6 +104,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         .catch(() => {});
       return () => controller.abort();
     }
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.customerId]);
 
   useEffect(() => {

@@ -671,8 +671,12 @@ async function runTests() {
     assert(
       Array.isArray(serverPrintersRes.body.printers) &&
         serverPrintersRes.body.printers.length === 1 &&
-        serverPrintersRes.body.printers[0].id === webusbRes.body.printer.id,
-      'printing.execute receives only the active printer',
+        serverPrintersRes.body.printers[0].name === 'Counter WebUSB Printer' &&
+        serverPrintersRes.body.printers[0].readiness_state === 'configured' &&
+        serverPrintersRes.body.printers[0].print_method === 'webusb' &&
+        Object.keys(serverPrintersRes.body.printers[0]).sort().join(',') ===
+          'name,print_method,readiness_state',
+      'printing.execute receives only default-printer readiness fields',
     );
 
     const deniedKickRes = await request(app).post('/api/printers/kick-drawer');

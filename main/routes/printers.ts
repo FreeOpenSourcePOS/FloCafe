@@ -169,6 +169,14 @@ function printerShape(printer: any) {
   };
 }
 
+function printerReadinessShape(printer: any) {
+  return {
+    name: printer.name,
+    readiness_state: 'configured',
+    print_method: printer.connection_type,
+  };
+}
+
 function getDefaultPrinter(db: ReturnType<typeof getDatabase>): any {
   return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any;
 }
@@ -191,10 +199,13 @@ router.get(
     try {
       const db = getDatabase();
       const userId = String((req as any).user?.userId || '');
-      const printers = hasPermission(userId, 'printers.manage')
+      const canManagePrinters = hasPermission(userId, 'printers.manage');
+      const printers = canManagePrinters
         ? db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all()
         : [getDefaultPrinter(db)].filter(Boolean);
-      res.json({ printers: printers.map(printerShape) });
+      res.json({
+        printers: printers.map(canManagePrinters ? printerShape : printerReadinessShape),
+      });
     } catch (error: any) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });

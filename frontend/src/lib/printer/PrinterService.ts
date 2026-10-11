@@ -88,11 +88,7 @@ class PrinterService {
   /** Opens (or re-opens) a device and claims its ESC/POS interface. */
   private async openDevice(device: USBDevice): Promise<void> {
     if (this.device) {
-      // Check if this is the exact same physical device.
-      const sameDevice = this.device.vendorId === device.vendorId
-        && this.device.productId === device.productId
-        && this.device.serialNumber === device.serialNumber;
-      if (sameDevice) {
+      if (this.isSameDevice(this.device, device)) {
         return;
       }
       // Release claim/interface on the previously connected device before switching.
@@ -134,6 +130,19 @@ class PrinterService {
 
     this.setStatus('connected', this.deviceInfo ?? undefined);
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
+  }
+
+  private isSameDevice(left: USBDevice, right: USBDevice): boolean {
+    return left.vendorId === right.vendorId
+      && left.productId === right.productId
+      && left.serialNumber === right.serialNumber;
+  }
+
+  private async findUniqueConfiguredDevice(productName: string): Promise<USBDevice | null> {
+    const matches = (await navigator.usb!.getDevices()).filter(
+      (device) => device.productName === productName,
+    );
+    return matches.length === 1 ? matches[0] : null;
   }
 
   // Serializes openDevice() to prevent concurrent mutations of device/interface state.
@@ -206,6 +215,32 @@ class PrinterService {
     return this.reconnectPromise;
   }
 
+  async isConfiguredDeviceReady(productName: string): Promise<boolean> {
+    if (
+      this._printMode === 'browser' ||
+      !this.isConnected ||
+      !this.device ||
+      typeof navigator === 'undefined' ||
+      !navigator.usb
+    ) {
+      return false;
+    }
+
+    return this.runExclusive(async () => {
+      const activeDevice = this.device;
+      if (this._printMode === 'browser' || this._status !== 'connected' || !activeDevice) {
+        return false;
+      }
+      const configuredDevice = await this.findUniqueConfiguredDevice(productName);
+      return (
+        configuredDevice !== null &&
+        this._status === 'connected' &&
+        this.device === activeDevice &&
+        this.isSameDevice(activeDevice, configuredDevice)
+      );
+    });
+  }
+
   async printToConfiguredDevice(data: Uint8Array, productName: string): Promise<void> {
     if (this._printMode === 'browser') {
       throw new Error('Browser print mode is active. Use window.print() instead.');
@@ -215,13 +250,14 @@ class PrinterService {
     }
 
     await this.runExclusive(async () => {
-      const matches = (await navigator.usb!.getDevices()).filter(
-        (device) => device.productName === productName,
-      );
-      if (matches.length !== 1) {
+      if (this._printMode === 'browser') {
+        throw new Error('Browser print mode is active. Use window.print() instead.');
+      }
+      const configuredDevice = await this.findUniqueConfiguredDevice(productName);
+      if (!configuredDevice) {
         throw new Error('Configured WebUSB printer does not match one available device.');
       }
-      await this.openDevice(matches[0]);
+      await this.openDevice(configuredDevice);
       await this.print(data);
     });
   }

@@ -24,6 +24,7 @@ import { usePrinterStore } from '@/hooks/usePrinter';
 import { printerService } from '@/lib/printer/PrinterService';
 import api from '@/lib/api';
 import UpdateBadge from './UpdateBadge';
+import { Ltr } from './Ltr';
 
 interface StatusInfo {
   server: string;
@@ -66,13 +67,14 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const tSupport = useTranslations('support');
 
   const { user, currentTenant } = useAuthStore();
-  const { status: printerConnStatus, deviceInfo, defaultPrinter } = usePrinterStore();
+  const { status: printerConnStatus, deviceInfo, defaultPrinter, printMethod } = usePrinterStore();
 
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [session, setSession] = useState<CashSession | null | undefined>(undefined);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTestingPrint, setIsTestingPrint] = useState(false);
   const [isKickingDrawer, setIsKickingDrawer] = useState(false);
+  const [isConfiguredWebUsbReady, setIsConfiguredWebUsbReady] = useState(false);
 
   const inFlightRef = useRef(false);
   const drawerToggleRef = useRef<HTMLButtonElement>(null);
@@ -128,6 +130,52 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    let latestRequest = 0;
+    setIsConfiguredWebUsbReady(false);
+    if (
+      defaultPrinter?.connection_type !== 'webusb' ||
+      printMethod !== 'escpos' ||
+      printerConnStatus !== 'connected'
+    ) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refreshReadiness = () => {
+      const request = ++latestRequest;
+      setIsConfiguredWebUsbReady(false);
+      printerService
+        .isConfiguredDeviceReady(defaultPrinter.name)
+        .then((ready) => {
+          if (!cancelled && request === latestRequest) setIsConfiguredWebUsbReady(ready);
+        })
+        .catch(() => {
+          if (!cancelled && request === latestRequest) setIsConfiguredWebUsbReady(false);
+        });
+    };
+
+    refreshReadiness();
+    navigator.usb?.addEventListener('connect', refreshReadiness);
+    navigator.usb?.addEventListener('disconnect', refreshReadiness);
+
+    return () => {
+      cancelled = true;
+      navigator.usb?.removeEventListener('connect', refreshReadiness);
+      navigator.usb?.removeEventListener('disconnect', refreshReadiness);
+    };
+  }, [
+    defaultPrinter?.connection_type,
+    defaultPrinter?.name,
+    deviceInfo?.productId,
+    deviceInfo?.productName,
+    deviceInfo?.serialNumber,
+    printMethod,
+    printerConnStatus,
+  ]);
+
   const closeDrawer = useCallback(() => {
     setIsDrawerOpen(false);
     drawerToggleRef.current?.focus();
@@ -171,12 +219,15 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   // Printer readiness
   const isPrinterReady =
     defaultPrinter?.connection_type === 'webusb' &&
+    printMethod === 'escpos' &&
     printerConnStatus === 'connected' &&
-    deviceInfo?.productName === defaultPrinter.name;
+    deviceInfo?.productName === defaultPrinter.name &&
+    isConfiguredWebUsbReady;
   const isPrinterConfigured = defaultPrinter !== null;
   const isPrinterConnecting =
     defaultPrinter?.connection_type === 'webusb' && printerConnStatus === 'connecting';
   const canKickDrawer = tenantCan(currentTenant, 'cash.movements.manage');
+  const canTestPrint = tenantCan(currentTenant, 'printing.execute');
 
   // Shift state
   const isShiftKnown = session !== undefined;
@@ -268,20 +319,22 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                 {tSettings('hardwarePrinters')}
               </h3>
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  data-testid="btn-test-receipt-print"
-                  onClick={handleTestPrint}
-                  disabled={isTestingPrint}
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
-                >
-                  {isTestingPrint ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Printer size={14} />
-                  )}
-                  <span>{tSettings('testPrint')}</span>
-                </button>
+                {canTestPrint && (
+                  <button
+                    type="button"
+                    data-testid="btn-test-receipt-print"
+                    onClick={handleTestPrint}
+                    disabled={isTestingPrint}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
+                  >
+                    {isTestingPrint ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Printer size={14} />
+                    )}
+                    <span>{tSettings('testPrint')}</span>
+                  </button>
+                )}
 
                 {canKickDrawer && (
                   <button
@@ -370,7 +423,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             className="truncate font-medium text-foreground max-w-[160px] sm:max-w-[220px]"
             title={staffName}
           >
-            {staffName}
+            {!user?.name && user?.email ? <Ltr>{staffName}</Ltr> : staffName}
           </span>
           {roleLabel && (
             <span

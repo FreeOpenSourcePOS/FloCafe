@@ -70,12 +70,8 @@ export default function KeyboardShortcutsModal({ open, onClose }: Props) {
               <Keyboard size={18} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-foreground">
-                {t('keyboardShortcutsTitle')}
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {t('keyboardShortcutsSubtitle')}
-              </p>
+              <h2 className="text-base font-bold text-foreground">{t('keyboardShortcutsTitle')}</h2>
+              <p className="text-xs text-muted-foreground">{t('keyboardShortcutsSubtitle')}</p>
             </div>
           </div>
           <button

@@ -166,9 +166,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(tableModal).not.toBeVisible();
   });
 
-  test('F4 opens checkout modal, and Space tenders cash to complete order', async ({
-    page,
-  }) => {
+  test('F4 opens checkout modal, and Space tenders cash to complete order', async ({ page }) => {
     // Select Takeaway mode so checkout does not require table selection
     await page.getByRole('button', { name: 'Takeaway' }).click();
 

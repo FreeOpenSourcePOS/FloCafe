@@ -90,7 +90,12 @@ function ItemQuantityControl({
         >
           <Minus size={16} />
         </button>
-        <span data-testid="cart-item-qty" className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
+        <span
+          data-testid="cart-item-qty"
+          className="w-6 text-center text-base font-semibold tabular-nums"
+        >
+          {item.quantity}
+        </span>
         <button
           onClick={() => stepBy(1)}
           className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
@@ -384,7 +389,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         ) : (
           <div className="space-y-3">
             {cart.items.map((item) => (
-              <div key={item.id} data-testid="cart-item" className="border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
+              <div
+                key={item.id}
+                data-testid="cart-item"
+                className="border-b border-border/60 pb-3 last:border-b-0 last:pb-0"
+              >
                 <div className="flex items-start gap-2">
                   <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
                     {item.variant
@@ -524,7 +533,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">
               <Pause size={14} className="me-1" /> {t('holdButton')}
-              <span className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground">
+              <span
+                className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-border text-[10px] font-mono text-muted-foreground"
+              >
                 F8
               </span>
             </Button>
@@ -537,7 +548,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           >
             {submitting ? t('placing') : t('placeOrderButton')}
             {!submitting && (
-              <span className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium">
+              <span
+                className="hidden sm:inline-flex ms-1.5 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono font-medium"
+              >
                 Space
               </span>
             )}

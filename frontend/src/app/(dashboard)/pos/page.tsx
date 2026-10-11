@@ -2314,20 +2314,24 @@ export default function POSPage() {
         if (items.length === 0) return;
         const last = items[items.length - 1];
         const step = fractionalQuantityStep(last.product);
-        useCartStore.getState().updateQuantity(
-          last.id,
-          step == null ? last.quantity + 1 : roundToQuantityPrecision(last.quantity + step, step),
-        );
+        useCartStore
+          .getState()
+          .updateQuantity(
+            last.id,
+            step == null ? last.quantity + 1 : roundToQuantityPrecision(last.quantity + step, step),
+          );
       },
       onDecrementLastItem: () => {
         const items = useCartStore.getState().items;
         if (items.length === 0) return;
         const last = items[items.length - 1];
         const step = fractionalQuantityStep(last.product);
-        useCartStore.getState().updateQuantity(
-          last.id,
-          step == null ? last.quantity - 1 : roundToQuantityPrecision(last.quantity - step, step),
-        );
+        useCartStore
+          .getState()
+          .updateQuantity(
+            last.id,
+            step == null ? last.quantity - 1 : roundToQuantityPrecision(last.quantity - step, step),
+          );
       },
       onClearCart: async () => {
         if (cart.items.length === 0) return;

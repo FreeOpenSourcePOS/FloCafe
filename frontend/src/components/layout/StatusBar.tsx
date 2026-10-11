@@ -381,7 +381,32 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {tSupport('tabDiagnostics')}
               </h3>
-              <div className="grid grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+                <div className="rounded-md border border-border/50 bg-card p-2.5">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Server size={13} />
+                    <span>{tNav('serverLabel').trim()}</span>
+                  </div>
+                  <div
+                    data-testid="telemetry-server-status"
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      status?.server === 'running'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                        : status?.server === 'stopped'
+                          ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+                          : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {status?.server === 'running'
+                      ? tNav('serverStatusRunning')
+                      : status?.server === 'starting'
+                        ? tNav('serverStatusStarting')
+                        : status?.server === 'stopped'
+                          ? tNav('serverStatusStopped')
+                          : status?.server || tNav('serverUnknown')}
+                  </div>
+                </div>
+
                 <div className="rounded-md border border-border/50 bg-card p-2.5">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <Clock size={13} />

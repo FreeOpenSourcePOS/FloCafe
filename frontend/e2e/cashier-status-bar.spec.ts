@@ -149,6 +149,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await expect(closeDrawerBtn).toBeFocused();
 
     // Verify Diagnostic Telemetry Metrics
+    await expect(page.getByTestId('telemetry-server-status')).toContainText('running');
     await expect(page.getByTestId('telemetry-uptime')).toBeVisible();
     await expect(page.getByTestId('telemetry-port')).toBeVisible();
     await expect(page.getByTestId('telemetry-memory')).toBeVisible();

@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "자동 적용",
     "chargePercentValue": "주문 금액의 {value}%",
     "chargeFixedValue": "주문당 {value}",
-    "chargeOptionalApply": "요청 시 추가"
+    "chargeOptionalApply": "요청 시 추가",
+    "storeLogo": "매장 로고",
+    "storeLogoHint": "영수증에 인쇄할 매장 로고를 업로드하세요. 5MB 미만의 투명 PNG 또는 JPEG.",
+    "uploadLogo": "로고 업로드",
+    "removeLogo": "로고 삭제",
+    "logoUploaded": "로고가 성공적으로 업로드되었습니다",
+    "showLogo": "매장 로고"
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

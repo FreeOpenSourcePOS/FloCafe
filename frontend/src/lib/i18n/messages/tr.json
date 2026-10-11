@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Otomatik uygula",
     "chargePercentValue": "Siparişin %{value} kadarı",
     "chargeFixedValue": "Sipariş başına {value}",
-    "chargeOptionalApply": "İstek üzerine eklenir"
+    "chargeOptionalApply": "İstek üzerine eklenir",
+    "storeLogo": "Mağaza Logosu",
+    "storeLogoHint": "Fişlerde yazdırmak için mağaza logosu yükleyin. 5 MB altı şeffaf PNG veya JPEG.",
+    "uploadLogo": "Logo Yükle",
+    "removeLogo": "Logoyu Kaldır",
+    "logoUploaded": "Logo başarıyla yüklendi",
+    "showLogo": "Mağaza Logosu"
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

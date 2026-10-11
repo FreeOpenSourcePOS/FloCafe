@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Apply automatically",
     "chargePercentValue": "{value}% of the order",
     "chargeFixedValue": "{value} per order",
-    "chargeOptionalApply": "Added on request"
+    "chargeOptionalApply": "Added on request",
+    "storeLogo": "Store Logo",
+    "storeLogoHint": "Upload a store logo to print on thermal receipts and browser bills. Transparent PNG or JPEG under 5 MB. Automatically converted to 1-bit thermal raster.",
+    "uploadLogo": "Upload Logo",
+    "removeLogo": "Remove Logo",
+    "logoUploaded": "Logo uploaded successfully",
+    "showLogo": "Store Logo"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

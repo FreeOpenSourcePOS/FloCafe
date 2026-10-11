@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Automatisch anwenden",
     "chargePercentValue": "{value}% der Bestellung",
     "chargeFixedValue": "{value} pro Bestellung",
-    "chargeOptionalApply": "Auf Anfrage hinzugefügt"
+    "chargeOptionalApply": "Auf Anfrage hinzugefügt",
+    "storeLogo": "Geschäftslogo",
+    "storeLogoHint": "Laden Sie ein Geschäftslogo hoch, um es auf Quittungen zu drucken. Transparentes PNG oder JPEG unter 5 MB.",
+    "uploadLogo": "Logo hochladen",
+    "removeLogo": "Logo entfernen",
+    "logoUploaded": "Logo erfolgreich hochgeladen",
+    "showLogo": "Geschäftslogo"
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

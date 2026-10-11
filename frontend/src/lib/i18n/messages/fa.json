@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "اعمال خودکار",
     "chargePercentValue": "{value} درصد سفارش",
     "chargeFixedValue": "{value} برای هر سفارش",
-    "chargeOptionalApply": "در صورت درخواست افزوده می‌شود"
+    "chargeOptionalApply": "در صورت درخواست افزوده می‌شود",
+    "storeLogo": "لوگوی فروشگاه",
+    "storeLogoHint": "بارگذاری لوگوی فروشگاه برای چاپ روی فیش. تصویر PNG یا JPEG با حجم کمتر از ۵ مگابایت.",
+    "uploadLogo": "بارگذاری لوگو",
+    "removeLogo": "حذف لوگو",
+    "logoUploaded": "لوگو با موفقیت بارگذاری شد",
+    "showLogo": "لوگوی فروشگاه"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

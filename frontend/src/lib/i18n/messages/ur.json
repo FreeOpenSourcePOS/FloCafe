@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "خودکار لاگو کریں",
     "chargePercentValue": "آرڈر کا {value}%",
     "chargeFixedValue": "فی آرڈر {value}",
-    "chargeOptionalApply": "درخواست پر شامل کیا جاتا ہے"
+    "chargeOptionalApply": "درخواست پر شامل کیا جاتا ہے",
+    "storeLogo": "دکان کا لوگو",
+    "storeLogoHint": "رسیدوں پر پرنٹ کرنے کے لیے دکان کا لوگو اپ لوڈ کریں۔ شفاف PNG یا JPEG جو 5 MB سے کم ہو۔",
+    "uploadLogo": "لوگو اپ لوڈ کریں",
+    "removeLogo": "لوگو ہٹائیں",
+    "logoUploaded": "لوگو کامیابی کے ساتھ اپ لوڈ ہو گیا",
+    "showLogo": "دکان کا لوگو"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

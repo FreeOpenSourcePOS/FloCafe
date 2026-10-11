@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "تطبيق تلقائي",
     "chargePercentValue": "{value}% من الطلب",
     "chargeFixedValue": "{value} لكل طلب",
-    "chargeOptionalApply": "يُضاف عند الطلب"
+    "chargeOptionalApply": "يُضاف عند الطلب",
+    "storeLogo": "شعار المتجر",
+    "storeLogoHint": "قم بتحميل شعار المتجر للطباعة على إيصالات الدفع. ملف PNG أو JPEG شفاف أقل من 5 ميغابايت.",
+    "uploadLogo": "تحميل الشعار",
+    "removeLogo": "إزالة الشعار",
+    "logoUploaded": "تم تحميل الشعار بنجاح",
+    "showLogo": "شعار المتجر"
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

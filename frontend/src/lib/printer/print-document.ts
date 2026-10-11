@@ -13,7 +13,11 @@ import {
   type PrintDocument,
 } from '@print/document';
 import { defaultPrintLanguagePolicy, resolveReceiptLanguages } from '@print/policy';
-import type { PrintLanguageCode, ReceiptLanguagePolicy, ResolvedPrintLanguages } from '@print/types';
+import type {
+  PrintLanguageCode,
+  ReceiptLanguagePolicy,
+  ResolvedPrintLanguages,
+} from '@print/types';
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
@@ -40,6 +44,9 @@ export interface BillBusinessOptions {
   useBillCustomer?: boolean;
   showTaxBreakdown?: boolean;
   showBusinessName?: boolean;
+  showLogo?: boolean;
+  receiptLogo?: string;
+  receiptLogoRaster?: string;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
   deliveryShowCustomerPhoneAlways?: boolean;
@@ -100,7 +107,9 @@ export const printLabelResolver: LabelResolver = (conceptId: string, language: s
 };
 
 /** Loads requested receipt language message bundles into memory before building documents. */
-export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguages): Promise<PrintLanguageCode[]> {
+export async function ensurePrintLanguagesLoaded(
+  languages: ResolvedPrintLanguages,
+): Promise<PrintLanguageCode[]> {
   const outcomes = await Promise.allSettled(
     languages.map((language) => loadLocaleMessages(language as Language)),
   );
@@ -108,7 +117,9 @@ export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguag
 }
 
 /** Base document direction for the primary language, from the central registry. */
-function baseDirectionFor(languages: ResolvedPrintLanguages): ReturnType<typeof getLanguageDirection> {
+function baseDirectionFor(
+  languages: ResolvedPrintLanguages,
+): ReturnType<typeof getLanguageDirection> {
   const primary = languages[0] as Language;
   try {
     return getLanguageDirection(primary);
@@ -134,13 +145,17 @@ function parsePaymentDetails(raw: Bill['payment_details']): PaymentSnapshot[] {
 /** Normalize a Bill and nested Order into authoritative PrintData. */
 export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
   const order = bill.order;
-  const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }).customer;
-  const customer = opts.useBillCustomer === true ? billCustomer ?? order?.customer : order?.customer;
+  const billCustomer = (
+    bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }
+  ).customer;
+  const customer =
+    opts.useBillCustomer === true ? (billCustomer ?? order?.customer) : order?.customer;
   const customerPhone = String(customer?.phone ?? '');
   const customerCountryCode = String(customer?.country_code ?? '');
-  const rasterCustomerPhone = customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
-    ? `${customerCountryCode} ${customerPhone}`
-    : customerPhone;
+  const rasterCustomerPhone =
+    customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
+      ? `${customerCountryCode} ${customerPhone}`
+      : customerPhone;
   const items = order?.items ?? [];
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
@@ -160,8 +175,13 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
         unitPrice: Number(item?.unit_price) || 0,
         total: Number(item?.total) || 0,
         addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon) => {
-          const addonQty = (addon !== null && typeof addon === 'object' && 'quantity' in addon
-            && typeof addon.quantity === 'number' && addon.quantity) || 1;
+          const addonQty =
+            (addon !== null &&
+              typeof addon === 'object' &&
+              'quantity' in addon &&
+              typeof addon.quantity === 'number' &&
+              addon.quantity) ||
+            1;
           return {
             name: String(addon?.name ?? ''),
             price: (Number(addon?.price) || 0) * addonQty * (Number(item?.quantity) || 0),
@@ -198,9 +218,11 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       instagramHandle: String(opts.instagramHandle ?? ''),
       footerNote: String(opts.footerNote ?? ''),
       customerName: String(customer?.name ?? ''),
-      customerPhone: opts.maskCustomerPhone === true
-        ? maskPhoneOnReceipt(rasterCustomerPhone)
-        : customerPhone,
+      customerPhone:
+        opts.maskCustomerPhone === true ? maskPhoneOnReceipt(rasterCustomerPhone) : customerPhone,
+      showLogo: opts.showLogo === true,
+      receiptLogo: opts.receiptLogo,
+      receiptLogoRaster: opts.receiptLogoRaster,
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,
@@ -252,7 +274,11 @@ export function buildBillPrintContext(opts: {
 export function buildFrontendBillDocument(
   bill: Bill,
   tenant: Parameters<typeof buildBillPrintContext>[0]['tenant'],
-  opts: BillBusinessOptions & { columns?: number; trimDecimals?: boolean; languages?: ResolvedPrintLanguages } = {},
+  opts: BillBusinessOptions & {
+    columns?: number;
+    trimDecimals?: boolean;
+    languages?: ResolvedPrintLanguages;
+  } = {},
 ): PrintDocument {
   const languages = opts.languages ?? resolveBillPrintLanguages();
   const printData = buildBillPrintData(bill, opts);
@@ -297,9 +323,12 @@ export function buildFrontendKotDocument(
       }
     }
     if (!Array.isArray(candidates)) return [];
-    return candidates.filter((addon): addon is { name: string; quantity?: number } => (
-      typeof addon === 'object' && addon !== null && typeof (addon as { name?: unknown }).name === 'string'
-    ));
+    return candidates.filter(
+      (addon): addon is { name: string; quantity?: number } =>
+        typeof addon === 'object' &&
+        addon !== null &&
+        typeof (addon as { name?: unknown }).name === 'string',
+    );
   };
   const languages = [opts.language] as ResolvedPrintLanguages;
   const items = opts.items ?? order.items ?? [];
@@ -310,19 +339,27 @@ export function buildFrontendKotDocument(
       createdAt: String(order.created_at ?? ''),
       tableName: firstText(order.table?.name, orderShape.table_name, orderShape.tableName),
       orderType: String(order.type ?? '').trim(),
-      customerName: firstText(order.customer?.name, orderShape.customer_name, orderShape.customerName),
+      customerName: firstText(
+        order.customer?.name,
+        orderShape.customer_name,
+        orderShape.customerName,
+      ),
     },
-    items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
-      productName: formatItemHeading(String(item.product_name ?? ''), item.variant_selection),
-      quantity: Number(item.quantity) || 0,
-      addons: parseKotAddons(item.addons).map((addon) => ({
-        name: String(addon?.name ?? ''),
-        ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
-          ? { quantity: addon.quantity }
-          : {}),
+    items: items
+      .filter((item) => isKotItemPending(item.status))
+      .map((item) => ({
+        productName: formatItemHeading(String(item.product_name ?? ''), item.variant_selection),
+        quantity: Number(item.quantity) || 0,
+        addons: parseKotAddons(item.addons).map((addon) => ({
+          name: String(addon?.name ?? ''),
+          ...(typeof addon?.quantity === 'number' &&
+          Number.isFinite(addon.quantity) &&
+          addon.quantity > 0
+            ? { quantity: addon.quantity }
+            : {}),
+        })),
+        specialInstructions: String(item.special_instructions ?? ''),
       })),
-      specialInstructions: String(item.special_instructions ?? ''),
-    })),
   };
   const printContext: PrintContext = {
     columns: opts.columns,

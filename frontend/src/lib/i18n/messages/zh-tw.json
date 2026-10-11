@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "自動套用",
     "chargePercentValue": "訂單金額的 {value}%",
     "chargeFixedValue": "每單 {value}",
-    "chargeOptionalApply": "依需求新增"
+    "chargeOptionalApply": "依需求新增",
+    "storeLogo": "店鋪標誌",
+    "storeLogoHint": "上傳在收據上列印的店鋪標誌。5 MB 以下的透明 PNG 或 JPEG。",
+    "uploadLogo": "上傳標誌",
+    "removeLogo": "移除標誌",
+    "logoUploaded": "標誌上傳成功",
+    "showLogo": "店鋪標誌"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

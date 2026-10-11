@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Tự động áp dụng",
     "chargePercentValue": "{value}% đơn hàng",
     "chargeFixedValue": "{value} mỗi đơn hàng",
-    "chargeOptionalApply": "Thêm theo yêu cầu"
+    "chargeOptionalApply": "Thêm theo yêu cầu",
+    "storeLogo": "Logo Cửa Hàng",
+    "storeLogoHint": "Tải lên logo cửa hàng để in trên hóa đơn. PNG hoặc JPEG trong suốt dưới 5 MB.",
+    "uploadLogo": "Tải Lên Logo",
+    "removeLogo": "Xóa Logo",
+    "logoUploaded": "Đã tải lên logo thành công",
+    "showLogo": "Logo Cửa Hàng"
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

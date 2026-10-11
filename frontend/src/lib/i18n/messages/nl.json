@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Automatisch toepassen",
     "chargePercentValue": "{value}% van de bestelling",
     "chargeFixedValue": "{value} per bestelling",
-    "chargeOptionalApply": "Op verzoek toegevoegd"
+    "chargeOptionalApply": "Op verzoek toegevoegd",
+    "storeLogo": "Winkellogo",
+    "storeLogoHint": "Upload een winkellogo om op kassabonnen af te drukken. Transparante PNG of JPEG onder 5 MB.",
+    "uploadLogo": "Logo uploaden",
+    "removeLogo": "Logo verwijderen",
+    "logoUploaded": "Logo succesvol geüpload",
+    "showLogo": "Winkellogo"
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

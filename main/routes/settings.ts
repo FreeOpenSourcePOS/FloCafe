@@ -1,24 +1,43 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, getSettingValue, now } from '../db';
-import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
-import { DRIVE_RESTORE_CONFIRMATION, getGoogleDriveErrorCode, googleDrive } from '../services/google-drive';
+import {
+  cloudSync,
+  DEFAULT_CLOUD_SERVER_URL,
+  normalizeCloudServerUrl,
+} from '../services/cloud-sync';
+import {
+  DRIVE_RESTORE_CONFIRMATION,
+  getGoogleDriveErrorCode,
+  googleDrive,
+} from '../services/google-drive';
 import { requireAnyPermission, requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import {
-  getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, isValidTimeZone,
-  isLocalePreferenceKey, isLocalePreferenceSupported, resolveStoredLocalePreference,
+  getCountryByCode,
+  getCurrencyFractionDigits,
+  getCurrencySymbol,
+  isValidTimeZone,
+  isLocalePreferenceKey,
+  isLocalePreferenceSupported,
+  resolveStoredLocalePreference,
   type LocalePreferenceKey,
 } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
-import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates, upgradeBillTemplateValue } from '../services/print-templates';
+import {
+  CORE_BILL_TEMPLATES,
+  isAvailableBillTemplate,
+  listInstalledPrintTemplates,
+  upgradeBillTemplateValue,
+} from '../services/print-templates';
 import { listMerchantPrintTemplates } from '../services/merchant-print-templates';
 import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
+import { parseReceiptLogoData } from '../../shared/print/image-raster';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -36,21 +55,29 @@ import {
 } from '../services/charges';
 
 const router = Router();
-const configuredSettingsReadLimit = Number.parseInt(process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX || '', 10);
+const configuredSettingsReadLimit = Number.parseInt(
+  process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX || '',
+  10,
+);
 const settingsReadRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: Number.isFinite(configuredSettingsReadLimit) && configuredSettingsReadLimit > 0
-    ? configuredSettingsReadLimit
-    : 120,
+  limit:
+    Number.isFinite(configuredSettingsReadLimit) && configuredSettingsReadLimit > 0
+      ? configuredSettingsReadLimit
+      : 120,
   standardHeaders: true,
   legacyHeaders: false,
 });
-const configuredSettingsWriteLimit = Number.parseInt(process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '', 10);
+const configuredSettingsWriteLimit = Number.parseInt(
+  process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '',
+  10,
+);
 const settingsWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: Number.isFinite(configuredSettingsWriteLimit) && configuredSettingsWriteLimit > 0
-    ? configuredSettingsWriteLimit
-    : 60,
+  limit:
+    Number.isFinite(configuredSettingsWriteLimit) && configuredSettingsWriteLimit > 0
+      ? configuredSettingsWriteLimit
+      : 60,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -79,7 +106,8 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
   if (timezone !== undefined && !isValidTimeZone(timezone)) return false;
   if (currency !== undefined && !isSyntacticallyValidCurrencyCode(currency)) return false;
-  if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
+  if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country)))
+    return false;
   return true;
 }
 
@@ -98,6 +126,9 @@ function isGoogleDriveSettingKey(key: string): boolean {
 const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_template: 'classic',
   bill_footer_message: '',
+  bill_show_logo: 'false',
+  receipt_logo: '',
+  receipt_logo_raster: '',
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
   // Print language policies (#441) — inherit store language, no second
@@ -182,9 +213,17 @@ function businessShape(s: Record<string, string>) {
     bill_show_tax_breakdown: s.bill_show_tax_breakdown !== 'false',
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
-    bill_delivery_show_customer_phone_always: s.bill_delivery_show_customer_phone_always !== 'false',
+    bill_delivery_show_customer_phone_always:
+      s.bill_delivery_show_customer_phone_always !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
-    currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || ''),
+    bill_show_logo: s.bill_show_logo === 'true',
+    receipt_logo: s.receipt_logo || '',
+    receipt_logo_raster: s.receipt_logo_raster || '',
+    currency_display: resolveStoredLocalePreference(
+      'currency_display',
+      s.currency_display,
+      s.country || '',
+    ),
     number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || ''),
     calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || ''),
     // Non-blocking informational tax format description for the UI.
@@ -210,32 +249,95 @@ router.get('/business', requirePermission('settings.view'), (req: Request, res: 
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 router.put('/business', requirePermission('settings.manage'), (req: Request, res: Response) => {
   try {
-    const { business_name, timezone, business_day_start_time, currency, country, language,
-      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
-      billing_type, tables_required, tax_registered,
-      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
-      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+    const {
+      business_name,
+      timezone,
+      business_day_start_time,
+      currency,
+      country,
+      language,
+      tax_registration_number,
+      state_code,
+      business_address,
+      business_phone,
+      instagram_handle,
+      billing_type,
+      tables_required,
+      tax_registered,
+      bill_show_name,
+      bill_show_address,
+      bill_show_phone,
+      bill_show_tax_id,
+      bill_show_tax_breakdown,
+      bill_show_customer_name,
+      bill_show_customer_phone,
+      bill_show_table_number,
       bill_delivery_show_customer_phone_always,
-      currency_display, number_digits, calendar } = req.body;
-    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
-    const normalizedInstagramHandle = instagram_handle !== undefined
-      ? String(instagram_handle || '').trim().slice(0, 100)
-      : undefined;
+      receipt_logo,
+      receipt_logo_raster,
+      bill_show_logo,
+      currency_display,
+      number_digits,
+      calendar,
+    } = req.body;
+    const normalizedCurrency =
+      typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
+    const normalizedInstagramHandle =
+      instagram_handle !== undefined
+        ? String(instagram_handle || '')
+            .trim()
+            .slice(0, 100)
+        : undefined;
+
+    let normalizedReceiptLogo: string | undefined = undefined;
+    if (receipt_logo !== undefined) {
+      if (typeof receipt_logo !== 'string') {
+        return res.status(400).json({ error: 'receipt_logo must be a string' });
+      }
+      if (receipt_logo.length > 250_000) {
+        return res.status(400).json({ error: 'receipt_logo exceeds maximum size (250 KB)' });
+      }
+      if (receipt_logo.length > 0 && !receipt_logo.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'receipt_logo must be a valid data URI' });
+      }
+      normalizedReceiptLogo = receipt_logo;
+    }
+
+    let normalizedReceiptLogoRaster: string | undefined = undefined;
+    if (receipt_logo_raster !== undefined) {
+      if (typeof receipt_logo_raster !== 'string') {
+        return res.status(400).json({ error: 'receipt_logo_raster must be a string' });
+      }
+      if (receipt_logo_raster.length > 250_000) {
+        return res.status(400).json({ error: 'receipt_logo_raster exceeds maximum size (250 KB)' });
+      }
+      if (receipt_logo_raster.length > 0 && !parseReceiptLogoData(receipt_logo_raster)) {
+        return res
+          .status(400)
+          .json({ error: 'receipt_logo_raster must contain valid raster data' });
+      }
+      normalizedReceiptLogoRaster = receipt_logo_raster;
+    }
 
     if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
 
     if (business_day_start_time !== undefined) {
-      if (typeof business_day_start_time !== 'string' || !/^(?:0\d|1[01]):[0-5]\d$/.test(business_day_start_time.trim())) {
-        return res.status(400).json({ error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)' });
+      if (
+        typeof business_day_start_time !== 'string' ||
+        !/^(?:0\d|1[01]):[0-5]\d$/.test(business_day_start_time.trim())
+      ) {
+        return res.status(400).json({
+          error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)',
+        });
       }
     }
 
@@ -259,17 +361,27 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       { key: 'calendar', submitted: calendar },
     ] as Array<{ key: LocalePreferenceKey; submitted: unknown }>) {
       if (submitted !== undefined) {
-        if (typeof submitted !== 'string' || !isLocalePreferenceSupported(key, submitted, effectiveCountry)) {
+        if (
+          typeof submitted !== 'string' ||
+          !isLocalePreferenceSupported(key, submitted, effectiveCountry)
+        ) {
           return res.status(400).json({ error: `Invalid ${key} for country ${effectiveCountry}` });
         }
         localeUpdates[key] = submitted;
       } else {
-        localeUpdates[key] = resolveStoredLocalePreference(key, currentSettings[key], effectiveCountry);
+        localeUpdates[key] = resolveStoredLocalePreference(
+          key,
+          currentSettings[key],
+          effectiveCountry,
+        );
       }
     }
 
     if (tax_registration_number) {
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      const { valid, format } = validateTaxRegistrationNumber(
+        effectiveCountry,
+        tax_registration_number,
+      );
       if (!valid && format) {
         return res.status(400).json({
           error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
@@ -288,19 +400,37 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
     }
 
     upsertSettings(db, {
-      business_name, timezone,
-      business_day_start_time: business_day_start_time !== undefined ? business_day_start_time.trim() : undefined,
-      currency: normalizedCurrency, country, language,
-      currency_symbol: (normalizedCurrency !== undefined || country !== undefined)
-        ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
-        : undefined,
-      tax_registration_number, state_code, business_address,
+      business_name,
+      timezone,
+      business_day_start_time:
+        business_day_start_time !== undefined ? business_day_start_time.trim() : undefined,
+      currency: normalizedCurrency,
+      country,
+      language,
+      currency_symbol:
+        normalizedCurrency !== undefined || country !== undefined
+          ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
+          : undefined,
+      tax_registration_number,
+      state_code,
+      business_address,
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
       instagram_handle: normalizedInstagramHandle,
-      billing_type, tables_required, tax_registered,
-      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
-      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      billing_type,
+      tables_required,
+      tax_registered,
+      bill_show_name,
+      bill_show_address,
+      bill_show_phone,
+      bill_show_tax_id,
+      bill_show_tax_breakdown,
+      bill_show_customer_name,
+      bill_show_customer_phone,
+      bill_show_table_number,
       bill_delivery_show_customer_phone_always,
+      bill_show_logo: boolFlag(bill_show_logo),
+      receipt_logo: normalizedReceiptLogo,
+      receipt_logo_raster: normalizedReceiptLogoRaster,
       ...localeUpdates,
       // Only mark country as user-confirmed if it actually changed in this submission.
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
@@ -309,8 +439,8 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
 
     res.json(businessShape(getAllSettings(db)));
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -319,8 +449,8 @@ router.get('/tax', requirePermission('settings.view'), (req: Request, res: Respo
     const s = getAllSettings(getDatabase());
     res.json(taxShape(s));
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -336,7 +466,10 @@ router.put('/tax', requirePermission('tax-configuration.manage'), (req: Request,
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || '';
     if (tax_registration_number) {
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      const { valid, format } = validateTaxRegistrationNumber(
+        effectiveCountry,
+        tax_registration_number,
+      );
       if (!valid && format) {
         return res.status(400).json({
           error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
@@ -350,15 +483,19 @@ router.put('/tax', requirePermission('tax-configuration.manage'), (req: Request,
       state_code,
       tax_scheme,
       country,
-      currency_symbol: country !== undefined
-        ? deriveCurrencySymbol(currentSettings.currency || '', country || currentSettings.country || '')
-        : undefined,
+      currency_symbol:
+        country !== undefined
+          ? deriveCurrencySymbol(
+              currentSettings.currency || '',
+              country || currentSettings.country || '',
+            )
+          : undefined,
     });
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -370,8 +507,8 @@ router.get('/loyalty', requirePermission('settings.view'), (req: Request, res: R
       global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -381,8 +518,15 @@ router.put('/loyalty', requirePermission('settings.manage'), (req: Request, res:
 
     let finalGlobalCb: number | undefined = undefined;
     if (global_cashback_percent !== undefined) {
-      if (typeof global_cashback_percent !== 'number' || !Number.isFinite(global_cashback_percent) || global_cashback_percent < 0 || global_cashback_percent > 100) {
-        return res.status(400).json({ error: 'Global cashback percent must be a number between 0 and 100' });
+      if (
+        typeof global_cashback_percent !== 'number' ||
+        !Number.isFinite(global_cashback_percent) ||
+        global_cashback_percent < 0 ||
+        global_cashback_percent > 100
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'Global cashback percent must be a number between 0 and 100' });
       }
       finalGlobalCb = global_cashback_percent;
     }
@@ -390,7 +534,7 @@ router.put('/loyalty', requirePermission('settings.manage'), (req: Request, res:
     const db = getDatabase();
     upsertSettings(db, {
       loyalty_enabled,
-      ...(finalGlobalCb !== undefined && { global_cashback_percent: String(finalGlobalCb) })
+      ...(finalGlobalCb !== undefined && { global_cashback_percent: String(finalGlobalCb) }),
     });
     const s = getAllSettings(db);
     res.json({
@@ -398,8 +542,8 @@ router.put('/loyalty', requirePermission('settings.manage'), (req: Request, res:
       global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -412,11 +556,12 @@ router.get('/discount', requirePermission('settings.view'), (req: Request, res: 
       discount_max_percentage: parseFloat(s.discount_max_percentage || '25'),
       discount_max_amount: parseFloat(s.discount_max_amount || '0'),
       discount_mode: s.discount_mode || 'percentage',
-      discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
+      discount_requires_approval:
+        s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -433,17 +578,26 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
     if (discount_max_percentage !== undefined) {
       const val = parseFloat(discount_max_percentage);
       if (isNaN(val) || val < 1 || val > 100) {
-        return res.status(400).json({ error: 'discount_max_percentage must be a number between 1 and 100' });
+        return res
+          .status(400)
+          .json({ error: 'discount_max_percentage must be a number between 1 and 100' });
       }
     }
     if (discount_max_amount !== undefined) {
       const val = parseFloat(discount_max_amount);
       if (isNaN(val) || val < 0 || val > 999999) {
-        return res.status(400).json({ error: 'discount_max_amount must be a number between 0 and 999999' });
+        return res
+          .status(400)
+          .json({ error: 'discount_max_amount must be a number between 0 and 999999' });
       }
     }
-    if (discount_mode !== undefined && !['percentage', 'flat', 'both', 'none'].includes(discount_mode)) {
-      return res.status(400).json({ error: 'discount_mode must be "percentage", "flat", "both", or "none"' });
+    if (
+      discount_mode !== undefined &&
+      !['percentage', 'flat', 'both', 'none'].includes(discount_mode)
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'discount_mode must be "percentage", "flat", "both", or "none"' });
     }
 
     const db = getDatabase();
@@ -451,18 +605,22 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
       discount_max_percentage,
       discount_max_amount,
       discount_mode,
-      discount_requires_approval: discount_requires_approval === true || discount_requires_approval === 'true' ? 'true' : 'false',
+      discount_requires_approval:
+        discount_requires_approval === true || discount_requires_approval === 'true'
+          ? 'true'
+          : 'false',
     });
     const s = getAllSettings(db);
     res.json({
       discount_max_percentage: parseFloat(s.discount_max_percentage || '25'),
       discount_max_amount: parseFloat(s.discount_max_amount || '0'),
       discount_mode: s.discount_mode || 'percentage',
-      discount_requires_approval: s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
+      discount_requires_approval:
+        s.discount_requires_approval === 'true' || s.discount_requires_approval === '1',
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -476,8 +634,8 @@ router.get('/kds', requirePermission('settings.view'), (_req: Request, res: Resp
       kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -495,8 +653,8 @@ router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Res
       kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -509,10 +667,17 @@ function orderNumberingShape(s: Record<string, string>) {
     order_number_reset_daily: s.order_number_reset_daily !== 'false',
     invoice_number_prefix: s.invoice_number_prefix ?? 'INV',
     invoice_number_include_period: s.invoice_number_include_period !== 'false',
-    invoice_number_reset_period: ['never', 'daily', 'monthly', 'financial_year'].includes(s.invoice_number_reset_period)
+    invoice_number_reset_period: ['never', 'daily', 'monthly', 'financial_year'].includes(
+      s.invoice_number_reset_period,
+    )
       ? s.invoice_number_reset_period
       : 'daily',
-    invoice_financial_year_start_month: parseBoundedInt(s.invoice_financial_year_start_month, 1, 12, 4),
+    invoice_financial_year_start_month: parseBoundedInt(
+      s.invoice_financial_year_start_month,
+      1,
+      12,
+      4,
+    ),
     invoice_financial_year_start_day: parseBoundedInt(s.invoice_financial_year_start_day, 1, 31, 1),
   };
 }
@@ -526,71 +691,109 @@ function parseBoundedInt(value: unknown, min: number, max: number, fallback: num
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-router.get('/order-numbering', requirePermission('settings.view'), (req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-    res.json(orderNumberingShape(s));
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+router.get(
+  '/order-numbering',
+  requirePermission('settings.view'),
+  (req: Request, res: Response) => {
+    try {
+      const s = getAllSettings(getDatabase());
+      res.json(orderNumberingShape(s));
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
-router.put('/order-numbering', requirePermission('settings.manage'), (req: Request, res: Response) => {
-  try {
-    const {
-      order_number_prefix,
-      order_number_include_date,
-      order_number_reset_daily,
-      invoice_number_prefix,
-      invoice_number_include_period,
-      invoice_number_reset_period,
-      invoice_financial_year_start_month,
-      invoice_financial_year_start_day,
-    } = req.body;
+router.put(
+  '/order-numbering',
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const {
+        order_number_prefix,
+        order_number_include_date,
+        order_number_reset_daily,
+        invoice_number_prefix,
+        invoice_number_include_period,
+        invoice_number_reset_period,
+        invoice_financial_year_start_month,
+        invoice_financial_year_start_day,
+      } = req.body;
 
-    if (order_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(order_number_prefix)) {
-      return res.status(400).json({ error: 'order_number_prefix must be up to 12 letters and numbers only' });
-    }
-    if (invoice_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(invoice_number_prefix)) {
-      return res.status(400).json({ error: 'invoice_number_prefix must be up to 12 letters and numbers only' });
-    }
-    if (invoice_number_reset_period !== undefined && !INVOICE_RESET_PERIODS.has(invoice_number_reset_period)) {
-      return res.status(400).json({ error: 'invoice_number_reset_period must be one of never, daily, monthly, financial_year' });
-    }
-    if (invoice_financial_year_start_month !== undefined && parseBoundedInt(invoice_financial_year_start_month, 1, 12, NaN) !== Number(invoice_financial_year_start_month)) {
-      return res.status(400).json({ error: 'invoice_financial_year_start_month must be a whole number between 1 and 12' });
-    }
-    if (invoice_financial_year_start_day !== undefined && parseBoundedInt(invoice_financial_year_start_day, 1, 31, NaN) !== Number(invoice_financial_year_start_day)) {
-      return res.status(400).json({ error: 'invoice_financial_year_start_day must be a whole number between 1 and 31' });
-    }
+      if (
+        order_number_prefix !== undefined &&
+        !ORDER_NUMBER_PREFIX_PATTERN.test(order_number_prefix)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'order_number_prefix must be up to 12 letters and numbers only' });
+      }
+      if (
+        invoice_number_prefix !== undefined &&
+        !ORDER_NUMBER_PREFIX_PATTERN.test(invoice_number_prefix)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'invoice_number_prefix must be up to 12 letters and numbers only' });
+      }
+      if (
+        invoice_number_reset_period !== undefined &&
+        !INVOICE_RESET_PERIODS.has(invoice_number_reset_period)
+      ) {
+        return res.status(400).json({
+          error: 'invoice_number_reset_period must be one of never, daily, monthly, financial_year',
+        });
+      }
+      if (
+        invoice_financial_year_start_month !== undefined &&
+        parseBoundedInt(invoice_financial_year_start_month, 1, 12, NaN) !==
+          Number(invoice_financial_year_start_month)
+      ) {
+        return res.status(400).json({
+          error: 'invoice_financial_year_start_month must be a whole number between 1 and 12',
+        });
+      }
+      if (
+        invoice_financial_year_start_day !== undefined &&
+        parseBoundedInt(invoice_financial_year_start_day, 1, 31, NaN) !==
+          Number(invoice_financial_year_start_day)
+      ) {
+        return res.status(400).json({
+          error: 'invoice_financial_year_start_day must be a whole number between 1 and 31',
+        });
+      }
 
-    const db = getDatabase();
-    upsertSettings(db, {
-      order_number_prefix,
-      order_number_include_date: boolFlag(order_number_include_date),
-      order_number_reset_daily: boolFlag(order_number_reset_daily),
-      invoice_number_prefix,
-      invoice_number_include_period: boolFlag(invoice_number_include_period),
-      invoice_number_reset_period,
-      invoice_financial_year_start_month,
-      invoice_financial_year_start_day,
-    });
-    res.json(orderNumberingShape(getAllSettings(db)));
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      const db = getDatabase();
+      upsertSettings(db, {
+        order_number_prefix,
+        order_number_include_date: boolFlag(order_number_include_date),
+        order_number_reset_daily: boolFlag(order_number_reset_daily),
+        invoice_number_prefix,
+        invoice_number_include_period: boolFlag(invoice_number_include_period),
+        invoice_number_reset_period,
+        invoice_financial_year_start_month,
+        invoice_financial_year_start_day,
+      });
+      res.json(orderNumberingShape(getAllSettings(db)));
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
-function publicDeletionRequest(request: Record<string, unknown> | null): Record<string, unknown> | null {
+function publicDeletionRequest(
+  request: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   if (!request) return null;
   const safe: Record<string, unknown> = {};
   const requestId = request.request_id ?? request.id;
   if (typeof requestId === 'string' && requestId) safe.id = requestId;
   if (typeof request.status === 'string') safe.status = request.status;
   if (typeof request.requested_at === 'string') safe.requested_at = request.requested_at;
-  if (typeof request.reviewed_at === 'string' || request.reviewed_at === null) safe.reviewed_at = request.reviewed_at;
+  if (typeof request.reviewed_at === 'string' || request.reviewed_at === null)
+    safe.reviewed_at = request.reviewed_at;
   if (typeof request.decision_note === 'string') safe.decision_note = request.decision_note;
   return safe;
 }
@@ -599,14 +802,19 @@ function publicEmailPreferences(data: Record<string, unknown>): Record<string, u
   return {
     email: typeof data.email === 'string' ? data.email : null,
     verified: data.verified === true,
-    verified_at: typeof data.verified_at === 'string' || data.verified_at === null ? data.verified_at : null,
-    verification_sent_at: typeof data.verification_sent_at === 'string' || data.verification_sent_at === null ? data.verification_sent_at : null,
+    verified_at:
+      typeof data.verified_at === 'string' || data.verified_at === null ? data.verified_at : null,
+    verification_sent_at:
+      typeof data.verification_sent_at === 'string' || data.verification_sent_at === null
+        ? data.verification_sent_at
+        : null,
     product_updates: data.product_updates === true,
     marketing: data.marketing === true,
   };
 }
 
-const CLOUD_ACCOUNT_UNAVAILABLE_ERROR = 'Cloud account services are unavailable while Cloud services are stopped or unregistered';
+const CLOUD_ACCOUNT_UNAVAILABLE_ERROR =
+  'Cloud account services are unavailable while Cloud services are stopped or unregistered';
 
 // ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
 
@@ -614,8 +822,8 @@ router.get('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
   try {
     res.json(cloudSync.getStatus());
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -640,14 +848,21 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
     };
 
     if (cloud_server_url !== undefined) {
-      updates.cloud_server_url = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+      updates.cloud_server_url = normalizeCloudServerUrl(
+        cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+      );
     }
     if (cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key)) {
       updates.cloud_api_key = String(cloud_api_key || '');
     }
-    const enablingCloud = [cloud_sync_enabled, cloud_orders_enabled, cloud_reports_enabled, cloud_command_polling_enabled]
-      .some((value) => bool01Flag(value) === '1');
-    const resumingStoppedCloud = cloudSync.getStatus().cloud_services_disabled_by_user && enablingCloud;
+    const enablingCloud = [
+      cloud_sync_enabled,
+      cloud_orders_enabled,
+      cloud_reports_enabled,
+      cloud_command_polling_enabled,
+    ].some((value) => bool01Flag(value) === '1');
+    const resumingStoppedCloud =
+      cloudSync.getStatus().cloud_services_disabled_by_user && enablingCloud;
     if (resumingStoppedCloud) {
       // Stop All disables every cloud feature. Re-enabling the Cloud Services
       // control is a resume action, not just a sync preference change.
@@ -658,7 +873,10 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
     }
     if (enablingCloud) updates.cloud_services_disabled_by_user = 'false';
     if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
-      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
+      return res.status(409).json({
+        error:
+          'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
+      });
     }
 
     upsertSettings(db, updates);
@@ -671,221 +889,399 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
   }
 });
 
-router.post('/cloud/register', requirePermission('cloud.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({
-      allowRemote: cloudSync.isCloudAccountAvailable(),
-      signal: getHttpRequestSignal(req),
-    });
-    if (deletionRequest?.status === 'pending') {
-      return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
-    }
-    if (cloudSync.getStatus().cloud_services_disabled_by_user) {
-      return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-    }
-    if (req.body?.cloud_server_url !== undefined) {
-      upsertSettings(getDatabase(), {
-        cloud_server_url: normalizeCloudServerUrl(req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL),
+router.post(
+  '/cloud/register',
+  requirePermission('cloud.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const deletionRequest = await cloudSync.getDeletionRequestStatus({
+        allowRemote: cloudSync.isCloudAccountAvailable(),
+        signal: getHttpRequestSignal(req),
       });
+      if (deletionRequest?.status === 'pending') {
+        return res.status(409).json({
+          error:
+            'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.',
+        });
+      }
+      if (cloudSync.getStatus().cloud_services_disabled_by_user) {
+        return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
+      }
+      if (req.body?.cloud_server_url !== undefined) {
+        upsertSettings(getDatabase(), {
+          cloud_server_url: normalizeCloudServerUrl(
+            req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+          ),
+        });
+      }
+      if (cloudSync.getStatus().cloud_deletion_blocked) {
+        return res.status(409).json({
+          error:
+            'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
+        });
+      }
+      // Registration sends contact metadata for FloAdmin support; it does not
+      // create a cloud owner account or grant authentication access.
+      await cloudSync.register(getHttpRequestSignal(req));
+      upsertSettings(getDatabase(), {
+        cloud_sync_enabled: '1',
+        cloud_reports_enabled: '1',
+        cloud_command_polling_enabled: '1',
+        cloud_services_disabled_by_user: 'false',
+      });
+      cloudSync.reload();
+      res.json(cloudSync.getStatus());
+    } catch (error: any) {
+      console.error('[API] Cloud registration failed:', error);
+      res.status(502).json({ error: 'Cloud registration failed' });
     }
-    if (cloudSync.getStatus().cloud_deletion_blocked) {
-      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
+  }),
+);
+
+router.post(
+  '/cloud/test',
+  requirePermission('cloud.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const result = await cloudSync.testConnection(getHttpRequestSignal(req));
+      res.json(result);
+    } catch (error: any) {
+      console.error('[API] Cloud test failed:', error);
+      res.status(502).json({ error: 'Cloud test failed' });
     }
-    // Registration sends contact metadata for FloAdmin support; it does not
-    // create a cloud owner account or grant authentication access.
-    await cloudSync.register(getHttpRequestSignal(req));
-    upsertSettings(getDatabase(), {
-      cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
-      cloud_services_disabled_by_user: 'false',
-    });
-    cloudSync.reload();
-    res.json(cloudSync.getStatus());
-  } catch (error: any) {
-    console.error('[API] Cloud registration failed:', error);
-    res.status(502).json({ error: 'Cloud registration failed' });
-  }
-}));
+  }),
+);
 
-router.post('/cloud/test', requirePermission('cloud.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const result = await cloudSync.testConnection(getHttpRequestSignal(req));
-    res.json(result);
-  } catch (error: any) {
-    console.error('[API] Cloud test failed:', error);
-    res.status(502).json({ error: 'Cloud test failed' });
-  }
-}));
-
-router.get('/cloud/account', requirePermission('cloud.account.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
-    const signal = getHttpRequestSignal(req);
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable, signal });
-    const safeDeletionRequest = publicDeletionRequest(deletionRequest);
-    if (deletionRequest?.status === 'approved' || !cloudSync.isCloudAccountAvailable()) {
-      return res.json({
-        email: null,
-        verified: false,
-        verified_at: null,
-        verification_sent_at: null,
-        product_updates: false,
-        marketing: false,
-        cloud_account_available: false,
+router.get(
+  '/cloud/account',
+  requirePermission('cloud.account.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
+      const signal = getHttpRequestSignal(req);
+      const deletionRequest = await cloudSync.getDeletionRequestStatus({
+        allowRemote: cloudAccountAvailable,
+        signal,
+      });
+      const safeDeletionRequest = publicDeletionRequest(deletionRequest);
+      if (deletionRequest?.status === 'approved' || !cloudSync.isCloudAccountAvailable()) {
+        return res.json({
+          email: null,
+          verified: false,
+          verified_at: null,
+          verification_sent_at: null,
+          product_updates: false,
+          marketing: false,
+          cloud_account_available: false,
+          deletion_request: safeDeletionRequest,
+        });
+      }
+      res.json({
+        ...publicEmailPreferences(await cloudSync.getEmailPreferences(signal)),
+        cloud_account_available: true,
         deletion_request: safeDeletionRequest,
       });
+    } catch {
+      res.status(502).json({ error: 'Could not load cloud account status' });
     }
-    res.json({
-      ...publicEmailPreferences(await cloudSync.getEmailPreferences(signal)),
-      cloud_account_available: true,
-      deletion_request: safeDeletionRequest,
-    });
-  } catch {
-    res.status(502).json({ error: 'Could not load cloud account status' });
-  }
-}));
+  }),
+);
 
-router.put('/cloud/account/preferences', requirePermission('cloud.account.manage'), asyncHandler(async (req: Request, res: Response) => {
-  if (!cloudSync.isCloudAccountAvailable()) {
-    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-  }
-  try {
-    res.json(publicEmailPreferences(await cloudSync.updateEmailPreferences({
-      product_updates: req.body?.product_updates,
-      marketing: req.body?.marketing,
-    }, getHttpRequestSignal(req))));
-  } catch {
-    res.status(502).json({ error: 'Could not update email preferences' });
-  }
-}));
+router.put(
+  '/cloud/account/preferences',
+  requirePermission('cloud.account.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudSync.isCloudAccountAvailable()) {
+      return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
+    }
+    try {
+      res.json(
+        publicEmailPreferences(
+          await cloudSync.updateEmailPreferences(
+            {
+              product_updates: req.body?.product_updates,
+              marketing: req.body?.marketing,
+            },
+            getHttpRequestSignal(req),
+          ),
+        ),
+      );
+    } catch {
+      res.status(502).json({ error: 'Could not update email preferences' });
+    }
+  }),
+);
 
-router.post('/cloud/account/verification', requirePermission('cloud.account.manage'), asyncHandler(async (req: Request, res: Response) => {
-  if (!cloudSync.isCloudAccountAvailable()) {
-    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
-  }
-  try {
-    res.json(publicEmailPreferences(await cloudSync.requestEmailVerification({ source: 'settings' }, getHttpRequestSignal(req))));
-  } catch {
-    res.status(502).json({ error: 'Could not send verification email' });
-  }
-}));
+router.post(
+  '/cloud/account/verification',
+  requirePermission('cloud.account.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!cloudSync.isCloudAccountAvailable()) {
+      return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
+    }
+    try {
+      res.json(
+        publicEmailPreferences(
+          await cloudSync.requestEmailVerification(
+            { source: 'settings' },
+            getHttpRequestSignal(req),
+          ),
+        ),
+      );
+    } catch {
+      res.status(502).json({ error: 'Could not send verification email' });
+    }
+  }),
+);
 
-router.get('/cloud/delete-data/status', requirePermission('cloud.account.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: getHttpRequestSignal(req) });
-    res.json({
-      cloud_account_available: cloudSync.isCloudAccountAvailable(),
-      deletion_request: publicDeletionRequest(deletionRequest),
-    });
-  } catch {
-    res.status(502).json({ error: 'Could not refresh cloud deletion status' });
-  }
-}));
+router.get(
+  '/cloud/delete-data/status',
+  requirePermission('cloud.account.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const deletionRequest = await cloudSync.getDeletionRequestStatus({
+        allowRemote: true,
+        signal: getHttpRequestSignal(req),
+      });
+      res.json({
+        cloud_account_available: cloudSync.isCloudAccountAvailable(),
+        deletion_request: publicDeletionRequest(deletionRequest),
+      });
+    } catch {
+      res.status(502).json({ error: 'Could not refresh cloud deletion status' });
+    }
+  }),
+);
 
-router.post('/cloud/stop-all', requirePermission('cloud.account.manage'), asyncHandler(async (req: Request, res: Response) => {
-  res.json(await cloudSync.stopAllCloudServices(getHttpRequestSignal(req)));
-}));
+router.post(
+  '/cloud/stop-all',
+  requirePermission('cloud.account.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    res.json(await cloudSync.stopAllCloudServices(getHttpRequestSignal(req)));
+  }),
+);
 
-router.post('/cloud/delete-data', requirePermission('cloud.account.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
-  if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
-    return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
-  }
-  try {
-    res.json(await cloudSync.deleteCloudData(getHttpRequestSignal(req)));
-  } catch {
-    res.status(502).json({ error: 'Cloud data deletion failed' });
-  }
-}));
+router.post(
+  '/cloud/delete-data',
+  requirePermission('cloud.account.manage'),
+  requireMasterPin,
+  asyncHandler(async (req: Request, res: Response) => {
+    if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
+      return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
+    }
+    try {
+      res.json(await cloudSync.deleteCloudData(getHttpRequestSignal(req)));
+    } catch {
+      res.status(502).json({ error: 'Cloud data deletion failed' });
+    }
+  }),
+);
 
-router.post('/cloud/delete-data/cancel', requirePermission('cloud.account.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
-  try {
-    res.json(await cloudSync.cancelDeletionRequest(getHttpRequestSignal(req)));
-  } catch {
-    res.status(502).json({ error: 'Could not cancel deletion request' });
-  }
-}));
+router.post(
+  '/cloud/delete-data/cancel',
+  requirePermission('cloud.account.manage'),
+  requireMasterPin,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      res.json(await cloudSync.cancelDeletionRequest(getHttpRequestSignal(req)));
+    } catch {
+      res.status(502).json({ error: 'Could not cancel deletion request' });
+    }
+  }),
+);
 
 // Google Drive backups - every Drive route is owner-only and returns only the
 // service's redacted status or an allowlisted error code.
 function googleDriveErrorResponse(res: Response, error: unknown): Response {
   const code = getGoogleDriveErrorCode(error);
-  const status = code === 'permission_denied' ? 403
-    : code === 'conflict' ? 409
-      : ['warning_acknowledgement_required', 'restore_validation_failed', 'preferences_invalid'].includes(code) ? 400
-        : ['offline', 'rate_limited'].includes(code) ? 503
-          : ['configuration_unavailable', 'secure_storage_unavailable', 'not_connected', 'reauth_required', 'destination_required', 'destination_invalid'].includes(code) ? 409
-            : 502;
+  const status =
+    code === 'permission_denied'
+      ? 403
+      : code === 'conflict'
+        ? 409
+        : [
+              'warning_acknowledgement_required',
+              'restore_validation_failed',
+              'preferences_invalid',
+            ].includes(code)
+          ? 400
+          : ['offline', 'rate_limited'].includes(code)
+            ? 503
+            : [
+                  'configuration_unavailable',
+                  'secure_storage_unavailable',
+                  'not_connected',
+                  'reauth_required',
+                  'destination_required',
+                  'destination_invalid',
+                ].includes(code)
+              ? 409
+              : 502;
   return res.status(status).json({ error: code });
 }
 
-router.get('/google-drive', requirePermission('google-drive.manage'), (_req: Request, res: Response) => {
-  try { return res.json(googleDrive.getStatus()); } catch (error) { return googleDriveErrorResponse(res, error); }
-});
-
-router.put('/google-drive', requirePermission('google-drive.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const { frequency, retention_count, destination_folder_id, warning_acknowledged } = req.body || {};
-    if (warning_acknowledged === true) googleDrive.acknowledgeWarning();
-    let status = googleDrive.updatePreferences({ frequency, retention_count });
-    if (destination_folder_id !== undefined) status = await googleDrive.setDestination(destination_folder_id);
-    return res.json(status);
-  } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
-
-router.get('/google-drive/destinations', requirePermission('google-drive.manage'), asyncHandler(async (_req: Request, res: Response) => {
-  try { return res.json({ destinations: await googleDrive.listDestinations() }); } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
-
-router.post('/google-drive/destinations', requirePermission('google-drive.manage'), asyncHandler(async (_req: Request, res: Response) => {
-  try { return res.json(await googleDrive.createDestination()); } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
-
-router.post('/google-drive/connect', requirePermission('google-drive.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const body = req.body || {};
-    const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req), body.allow_switch === true, body.warning_acknowledged === true));
-    return res.json(status);
-  } catch (error) {
-    if (getHttpRequestSignal(req)?.aborted) {
-      if (!res.headersSent) res.status(503).end();
-      else if (!res.writableEnded) res.destroy();
-      return res;
+router.get(
+  '/google-drive',
+  requirePermission('google-drive.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      return res.json(googleDrive.getStatus());
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
     }
-    return googleDriveErrorResponse(res, error);
-  }
-}));
+  },
+);
 
-router.post('/google-drive/disconnect', requirePermission('google-drive.manage'), asyncHandler(async (_req: Request, res: Response) => {
-  try { return res.json(await googleDrive.disconnect()); } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
+router.put(
+  '/google-drive',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const { frequency, retention_count, destination_folder_id, warning_acknowledged } =
+        req.body || {};
+      if (warning_acknowledged === true) googleDrive.acknowledgeWarning();
+      let status = googleDrive.updatePreferences({ frequency, retention_count });
+      if (destination_folder_id !== undefined)
+        status = await googleDrive.setDestination(destination_folder_id);
+      return res.json(status);
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
-router.post('/google-drive/backup-now', requirePermission('google-drive.manage'), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    if (req.body?.warning_acknowledged === true) googleDrive.acknowledgeWarning();
-    return res.status(202).json(googleDrive.startBackupJob('manual', req.body?.warning_acknowledged === true));
-  } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
+router.get(
+  '/google-drive/destinations',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      return res.json({ destinations: await googleDrive.listDestinations() });
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
-router.get('/google-drive/jobs/:jobId', requirePermission('google-drive.manage'), (_req: Request, res: Response) => {
-  const job = googleDrive.getJob(_req.params.jobId as string);
-  if (!job) return res.status(404).json({ error: 'not_found' });
-  return res.json({ job });
-});
+router.post(
+  '/google-drive/destinations',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      return res.json(await googleDrive.createDestination());
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
-router.post('/google-drive/jobs/:jobId/cancel', requirePermission('google-drive.manage'), (_req: Request, res: Response) => {
-  try { return res.json(googleDrive.cancelJob(_req.params.jobId as string)); } catch (error) { return googleDriveErrorResponse(res, error); }
-});
+router.post(
+  '/google-drive/connect',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      const status = await trackHttpRequestWork(
+        req,
+        googleDrive.connect(
+          getHttpRequestSignal(req),
+          body.allow_switch === true,
+          body.warning_acknowledged === true,
+        ),
+      );
+      return res.json(status);
+    } catch (error) {
+      if (getHttpRequestSignal(req)?.aborted) {
+        if (!res.headersSent) res.status(503).end();
+        else if (!res.writableEnded) res.destroy();
+        return res;
+      }
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
-router.get('/google-drive/backups', requirePermission('google-drive.manage'), asyncHandler(async (_req: Request, res: Response) => {
-  try { return res.json({ backups: await googleDrive.listRemoteBackups() }); } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
+router.post(
+  '/google-drive/disconnect',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      return res.json(await googleDrive.disconnect());
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
-router.post('/google-drive/restore', requirePermission('google-drive.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const body = req.body || {};
-    if (body.confirmation !== DRIVE_RESTORE_CONFIRMATION) return res.status(400).json({ error: 'confirmation_required' });
-    return res.status(202).json(googleDrive.startRestoreJob({ fileId: body.file_id, expectedSha256: body.expected_sha256, confirmation: body.confirmation }));
-  } catch (error) { return googleDriveErrorResponse(res, error); }
-}));
+router.post(
+  '/google-drive/backup-now',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      if (req.body?.warning_acknowledged === true) googleDrive.acknowledgeWarning();
+      return res
+        .status(202)
+        .json(googleDrive.startBackupJob('manual', req.body?.warning_acknowledged === true));
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.get(
+  '/google-drive/jobs/:jobId',
+  requirePermission('google-drive.manage'),
+  (_req: Request, res: Response) => {
+    const job = googleDrive.getJob(_req.params.jobId as string);
+    if (!job) return res.status(404).json({ error: 'not_found' });
+    return res.json({ job });
+  },
+);
+
+router.post(
+  '/google-drive/jobs/:jobId/cancel',
+  requirePermission('google-drive.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      return res.json(googleDrive.cancelJob(_req.params.jobId as string));
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  },
+);
+
+router.get(
+  '/google-drive/backups',
+  requirePermission('google-drive.manage'),
+  asyncHandler(async (_req: Request, res: Response) => {
+    try {
+      return res.json({ backups: await googleDrive.listRemoteBackups() });
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
+
+router.post(
+  '/google-drive/restore',
+  requirePermission('google-drive.manage'),
+  requireMasterPin,
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      if (body.confirmation !== DRIVE_RESTORE_CONFIRMATION)
+        return res.status(400).json({ error: 'confirmation_required' });
+      return res.status(202).json(
+        googleDrive.startRestoreJob({
+          fileId: body.file_id,
+          expectedSha256: body.expected_sha256,
+          confirmation: body.confirmation,
+        }),
+      );
+    } catch (error) {
+      return googleDriveErrorResponse(res, error);
+    }
+  }),
+);
 
 // ── Charges & fees (must come BEFORE /:key wildcard) ───────────────────────
 
@@ -895,41 +1291,51 @@ router.post('/google-drive/restore', requirePermission('google-drive.manage'), r
  * definition needs range, enum and order-type validation that the wildcard
  * handler does not perform, and PR #829 shipped exactly that gap.
  */
-router.get('/charges', settingsReadRateLimit, requireAnyPermission('settings.view', 'orders.create', 'bills.discount.apply'), (_req: Request, res: Response) => {
-  try {
-    return res.json({ charges: getChargeDefinitions() });
-  } catch (error) {
-    console.error('[API] Internal error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manage'), (req: Request, res: Response) => {
-  try {
-    const payload = (req.body || {}).charges ?? req.body;
-    let definitions;
+router.get(
+  '/charges',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.create', 'bills.discount.apply'),
+  (_req: Request, res: Response) => {
     try {
-      const currencyDecimals = getCurrencyFractionDigits(getSettingValue('currency') || 'USD');
-      definitions = normalizeChargeDefinitions(payload, currencyDecimals);
-    } catch (error: unknown) {
-      if (error instanceof ChargeValidationError) {
-        return res.status(400).json({ error: error.message });
-      }
-      throw error;
+      return res.json({ charges: getChargeDefinitions() });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
+  },
+);
 
-    const db = getDatabase();
-    db.prepare(`
+router.put(
+  '/charges',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const payload = (req.body || {}).charges ?? req.body;
+      let definitions;
+      try {
+        const currencyDecimals = getCurrencyFractionDigits(getSettingValue('currency') || 'USD');
+        definitions = normalizeChargeDefinitions(payload, currencyDecimals);
+      } catch (error: unknown) {
+        if (error instanceof ChargeValidationError) {
+          return res.status(400).json({ error: error.message });
+        }
+        throw error;
+      }
+
+      const db = getDatabase();
+      db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(CUSTOM_CHARGES_SETTING_KEY, JSON.stringify(definitions), now());
 
-    return res.json({ charges: definitions });
-  } catch (error) {
-    console.error('[API] Internal error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+      return res.json({ charges: definitions });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ── Orders screen layout (must come BEFORE /:key wildcard) ─────────────────
 
@@ -938,41 +1344,80 @@ router.put('/charges', settingsWriteRateLimit, requirePermission('settings.manag
  * open Orders has to read it — including roles denied `settings.view`. Writes
  * stay on the generic settings route, which requires `settings.manage`.
  */
-router.get('/orders_layout', settingsReadRateLimit, requireAnyPermission('settings.view', 'orders.read', 'orders.create'), (_req: Request, res: Response) => {
-  try {
-    const setting = getDatabase().prepare('SELECT * FROM settings WHERE key = ?').get('orders_layout');
-    if (setting) return res.json({ setting });
-    return res.json({ setting: { key: 'orders_layout', value: OPTIONAL_SETTING_DEFAULTS.orders_layout, updated_at: null } });
-  } catch (error) {
-    console.error('[API] Internal error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+router.get(
+  '/orders_layout',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
+  (_req: Request, res: Response) => {
+    try {
+      const setting = getDatabase()
+        .prepare('SELECT * FROM settings WHERE key = ?')
+        .get('orders_layout');
+      if (setting) return res.json({ setting });
+      return res.json({
+        setting: {
+          key: 'orders_layout',
+          value: OPTIONAL_SETTING_DEFAULTS.orders_layout,
+          updated_at: null,
+        },
+      });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
 // Sensitive keys (cloud_*, tax_registration_number, etc.) must use their explicit routes above.
 const ALLOWED_WILDCARD_KEYS = new Set([
-  'business_name', 'timezone', 'currency', 'country',
-  'state_code', 'business_address', 'business_phone',
-  'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_tax_id', 'bill_show_tax_breakdown', 'bill_show_customer_name',
-  'bill_show_customer_phone', 'bill_show_table_number',
+  'business_name',
+  'timezone',
+  'currency',
+  'country',
+  'state_code',
+  'business_address',
+  'business_phone',
+  'billing_type',
+  'tables_required',
+  'tax_registered',
+  'bill_show_name',
+  'bill_show_address',
+  'bill_show_phone',
+  'bill_show_tax_id',
+  'bill_show_tax_breakdown',
+  'bill_show_customer_name',
+  'bill_show_customer_phone',
+  'bill_show_table_number',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',
   'language',
   'kds_default_view',
-  'printer_method', 'paper_size', 'bill_template', 'bill_footer_message', 'printer_trim_decimals',
-  'cash_drawer_pulse_enabled', 'cash_drawer_pulse_methods',
+  'printer_method',
+  'paper_size',
+  'bill_template',
+  'bill_footer_message',
+  'printer_trim_decimals',
+  'cash_drawer_pulse_enabled',
+  'cash_drawer_pulse_methods',
   'telemetry_enabled',
   'diagnostics_consent',
   'diagnostics_transmission_enabled',
-  'kds_enabled', 'require_kitchen_delivered_before_settlement', 'server_app_enabled', 'kot_printing_enabled', 'server_app_bill_printing_enabled',
+  'kds_enabled',
+  'require_kitchen_delivered_before_settlement',
+  'server_app_enabled',
+  'kot_printing_enabled',
+  'server_app_bill_printing_enabled',
   'split_checks_enabled',
-  BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
-  'currency_display', 'number_digits', 'calendar',
+  BILL_LANGUAGE_POLICY_KEY,
+  KOT_LANGUAGE_POLICY_KEY,
+  Z_REPORT_LANGUAGE_POLICY_KEY,
+  'currency_display',
+  'number_digits',
+  'calendar',
   'theme_mode',
   'orders_layout',
 ]);
@@ -982,9 +1427,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
  * Listed as an explicit deny so widening ALLOWED_WILDCARD_KEYS can never
  * quietly reopen the unvalidated path.
  */
-const DEDICATED_SETTING_KEYS = new Set<string>([
-  CUSTOM_CHARGES_SETTING_KEY,
-]);
+const DEDICATED_SETTING_KEYS = new Set<string>([CUSTOM_CHARGES_SETTING_KEY]);
 
 function isAllowedWildcardKey(key: string): boolean {
   // Explicit deny: `custom_charges` is a validated JSON document owned by the
@@ -998,51 +1441,59 @@ router.get('/', requirePermission('settings.view'), (req: Request, res: Response
     const s = getAllSettings(getDatabase());
     res.json({ settings: publicSettingsShape(s) });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-router.get('/bill-templates', requirePermission('print-templates.view'), (_req: Request, res: Response) => {
-  try {
-    const plugins = listInstalledPrintTemplates().map((template) => {
-      let storedWidths: string[] = [];
-      try {
-        const parsed = JSON.parse(template.paper_widths_json);
-        storedWidths = Array.isArray(parsed) ? parsed.filter((width) => typeof width === 'string') : [];
-      } catch { /* Ignore malformed rows; install validation owns the contract. */ }
-      const paperColumns = storedWidths
-        .map((width) => /^cols-(\d+)$/.exec(width)?.[1])
-        .filter((width): width is string => !!width)
-        .map((width) => Number(width));
-      return {
-        id: template.template_id,
-        displayName: template.display_name,
-        country: template.country,
-        jurisdiction: template.jurisdiction,
-        paperColumns,
+router.get(
+  '/bill-templates',
+  requirePermission('print-templates.view'),
+  (_req: Request, res: Response) => {
+    try {
+      const plugins = listInstalledPrintTemplates().map((template) => {
+        let storedWidths: string[] = [];
+        try {
+          const parsed = JSON.parse(template.paper_widths_json);
+          storedWidths = Array.isArray(parsed)
+            ? parsed.filter((width) => typeof width === 'string')
+            : [];
+        } catch {
+          /* Ignore malformed rows; install validation owns the contract. */
+        }
+        const paperColumns = storedWidths
+          .map((width) => /^cols-(\d+)$/.exec(width)?.[1])
+          .filter((width): width is string => !!width)
+          .map((width) => Number(width));
+        return {
+          id: template.template_id,
+          displayName: template.display_name,
+          country: template.country,
+          jurisdiction: template.jurisdiction,
+          paperColumns,
+          status: template.status,
+          packId: template.pack_id,
+          packVersionId: template.pack_version_id,
+        };
+      });
+      // Active merchant print templates for receipt formatting.
+      const merchant = listMerchantPrintTemplates().map((template) => ({
+        id: template.id,
+        displayName: template.name,
+        origin: template.origin,
+        derivedFrom: template.derived_from ? JSON.parse(template.derived_from) : null,
+        documentType: template.document_type,
+        schemaVersion: template.schema_version,
         status: template.status,
-        packId: template.pack_id,
-        packVersionId: template.pack_version_id,
-      };
-    });
-    // Active merchant print templates for receipt formatting.
-    const merchant = listMerchantPrintTemplates().map((template) => ({
-      id: template.id,
-      displayName: template.name,
-      origin: template.origin,
-      derivedFrom: template.derived_from ? JSON.parse(template.derived_from) : null,
-      documentType: template.document_type,
-      schemaVersion: template.schema_version,
-      status: template.status,
-      updatedAt: template.updated_at,
-    }));
-    res.json({ core: [...CORE_BILL_TEMPLATES], plugins, merchant });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+        updatedAt: template.updated_at,
+      }));
+      res.json({ core: [...CORE_BILL_TEMPLATES], plugins, merchant });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 const PRINTING_BOOLEAN_KEYS = [
   'printer_trim_decimals',
@@ -1057,8 +1508,11 @@ const PRINTING_BOOLEAN_KEYS = [
   'bill_delivery_show_customer_phone_always',
 ] as const;
 
+const OPTIONAL_PRINTING_BOOLEAN_KEYS = ['bill_show_logo'] as const;
+
 const PRINTING_BATCH_KEYS = new Set<string>([
   ...PRINTING_BOOLEAN_KEYS,
+  ...OPTIONAL_PRINTING_BOOLEAN_KEYS,
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
   Z_REPORT_LANGUAGE_POLICY_KEY,
@@ -1066,203 +1520,261 @@ const PRINTING_BATCH_KEYS = new Set<string>([
   'cash_drawer_pulse_methods',
 ]);
 
-router.put('/printing', settingsWriteRateLimit, requirePermission('printers.manage'), (req: Request, res: Response) => {
-  try {
-    const payload = req.body;
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return res.status(400).json({ error: 'Printing settings payload must be an object' });
-    }
-
-    const values = payload as Record<string, unknown>;
-    const unknownKey = Object.keys(values).find((key) => !PRINTING_BATCH_KEYS.has(key));
-    if (unknownKey) {
-      return res.status(400).json({ error: `Unknown printing setting: ${unknownKey}` });
-    }
-
-    for (const key of PRINTING_BOOLEAN_KEYS) {
-      if (typeof values[key] !== 'boolean') {
-        return res.status(400).json({ error: `${key} must be a boolean` });
+router.put(
+  '/printing',
+  settingsWriteRateLimit,
+  requirePermission('printers.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const payload = req.body;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return res.status(400).json({ error: 'Printing settings payload must be an object' });
       }
-    }
 
-    const billLanguagePolicy = validateLanguagePolicySetting(BILL_LANGUAGE_POLICY_KEY, values[BILL_LANGUAGE_POLICY_KEY]);
-    if (!billLanguagePolicy.ok) {
-      return res.status(400).json({ error: billLanguagePolicy.error });
-    }
-    const kotLanguagePolicy = validateLanguagePolicySetting(KOT_LANGUAGE_POLICY_KEY, values[KOT_LANGUAGE_POLICY_KEY]);
-    if (!kotLanguagePolicy.ok) {
-      return res.status(400).json({ error: kotLanguagePolicy.error });
-    }
-    const hasZReportLanguagePolicy = Object.prototype.hasOwnProperty.call(values, Z_REPORT_LANGUAGE_POLICY_KEY);
-    const zReportLanguagePolicy = hasZReportLanguagePolicy
-      ? validateLanguagePolicySetting(Z_REPORT_LANGUAGE_POLICY_KEY, values[Z_REPORT_LANGUAGE_POLICY_KEY])
-      : null;
-    if (zReportLanguagePolicy && !zReportLanguagePolicy.ok) {
-      return res.status(400).json({ error: zReportLanguagePolicy.error });
-    }
-
-    const hasCashDrawerEnabled = Object.prototype.hasOwnProperty.call(values, 'cash_drawer_pulse_enabled');
-    const hasCashDrawerMethods = Object.prototype.hasOwnProperty.call(values, 'cash_drawer_pulse_methods');
-    if (hasCashDrawerEnabled !== hasCashDrawerMethods) {
-      return res.status(400).json({ error: 'Cash drawer settings must be provided together' });
-    }
-    if (hasCashDrawerEnabled && typeof values.cash_drawer_pulse_enabled !== 'boolean') {
-      return res.status(400).json({ error: 'cash_drawer_pulse_enabled must be a boolean' });
-    }
-    if (
-      hasCashDrawerMethods
-      && (!Array.isArray(values.cash_drawer_pulse_methods)
-        || values.cash_drawer_pulse_methods.some((method) => typeof method !== 'string' || method.trim().length === 0))
-    ) {
-      return res.status(400).json({ error: 'cash_drawer_pulse_methods must be a non-empty string array' });
-    }
-
-    const entries: Record<string, string> = {
-      printer_trim_decimals: values.printer_trim_decimals ? 'true' : 'false',
-      [BILL_LANGUAGE_POLICY_KEY]: billLanguagePolicy.stored,
-      [KOT_LANGUAGE_POLICY_KEY]: kotLanguagePolicy.stored,
-    };
-    if (zReportLanguagePolicy?.ok) {
-      entries[Z_REPORT_LANGUAGE_POLICY_KEY] = zReportLanguagePolicy.stored;
-    }
-    for (const key of PRINTING_BOOLEAN_KEYS.slice(1)) {
-      entries[key] = values[key] ? 'true' : 'false';
-    }
-    if (hasCashDrawerEnabled) {
-      entries.cash_drawer_pulse_enabled = values.cash_drawer_pulse_enabled ? 'true' : 'false';
-      entries.cash_drawer_pulse_methods = JSON.stringify(values.cash_drawer_pulse_methods);
-    }
-
-    upsertSettings(getDatabase(), entries);
-    res.json({ settings: entries });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get('/:key', settingsReadRateLimit, requirePermission('settings.view'), (req: Request, res: Response) => {
-  try {
-    if (SENSITIVE_SETTING_KEYS.has(req.params.key as string) || isGoogleDriveSettingKey(req.params.key as string)) {
-      return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
-    }
-    const key = String(req.params.key);
-    const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
-    if (!setting) {
-      const defaultValue = OPTIONAL_SETTING_DEFAULTS[key];
-      if (defaultValue !== undefined) {
-        return res.json({ setting: { key, value: defaultValue, updated_at: null } });
+      const values = payload as Record<string, unknown>;
+      const unknownKey = Object.keys(values).find((key) => !PRINTING_BATCH_KEYS.has(key));
+      if (unknownKey) {
+        return res.status(400).json({ error: `Unknown printing setting: ${unknownKey}` });
       }
-      return res.status(404).json({ error: 'Setting not found' });
-    }
-    res.json({ setting });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
 
-router.put('/:key', settingsWriteRateLimit, requirePermission('settings.manage'), (req: Request, res: Response) => {
-  try {
-    if (!isAllowedWildcardKey(req.params.key as string)) {
-      return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });
-    }
-    const { value } = req.body;
-    if (value === undefined) {
-      return res.status(400).json({ error: 'Value is required' });
-    }
-    // Upgrades legacy string values to canonical structured JSON on save.
-    if (req.params.key === 'bill_template' && !isAvailableBillTemplate(value)) {
-      return res.status(400).json({ error: 'Unsupported bill template' });
-    }
-    if (req.params.key === 'theme_mode' && !isThemeMode(value)) {
-      return res.status(400).json({ error: 'Invalid theme_mode value' });
-    }
-    if (req.params.key === 'orders_layout' && !isOrdersLayout(value)) {
-      return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
-    }
-    let valueToPersist: unknown = value;
-    if (req.params.key === 'currency') {
-      valueToPersist = typeof value === 'string' ? value.trim().toUpperCase() : value;
-      if (!isSyntacticallyValidCurrencyCode(valueToPersist)) {
-        return res.status(400).json({ error: 'Invalid currency' });
+      for (const key of PRINTING_BOOLEAN_KEYS) {
+        if (typeof values[key] !== 'boolean') {
+          return res.status(400).json({ error: `${key} must be a boolean` });
+        }
       }
-    }
-    if (req.params.key === 'bill_template') {
-      valueToPersist = upgradeBillTemplateValue(value);
-    }
-    if (typeof req.params.key === 'string' && LANGUAGE_POLICY_SETTING_KEYS.has(req.params.key)) {
-      const validation = validateLanguagePolicySetting(req.params.key, value);
-      if (!validation.ok) {
-        return res.status(400).json({ error: validation.error });
-      }
-      valueToPersist = validation.stored;
-    }
-    const db = getDatabase();
-    if (req.params.key === 'currency') {
-      const currentCurrency = getAllSettings(db).currency || '';
-      if (valueToPersist !== currentCurrency) {
-        return res.status(409).json({
-          error: 'currency_change_requires_reset',
-          current_currency: currentCurrency,
-          requested_currency: valueToPersist,
-        });
-      }
-    }
-    const wildcardKey = String(req.params.key);
-    if (isLocalePreferenceKey(wildcardKey)) {
-      const countryCode = getAllSettings(db).country || '';
-      if (typeof value !== 'string' || !isLocalePreferenceSupported(wildcardKey, value, countryCode)) {
-        return res.status(400).json({ error: `Invalid ${wildcardKey} for country ${countryCode}` });
-      }
-    }
 
-    if (req.params.key === 'business_phone') {
-      const effectiveCountry = getAllSettings(db).country || '';
-      const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
-      if (!phoneRes.valid) {
-        return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
+      for (const key of OPTIONAL_PRINTING_BOOLEAN_KEYS) {
+        if (values[key] !== undefined && typeof values[key] !== 'boolean') {
+          return res.status(400).json({ error: `${key} must be a boolean` });
+        }
       }
-      valueToPersist = phoneRes.e164 || '';
-    }
 
-    // Invalidate outstanding pairing tokens when KDS is disabled.
-    if (req.params.key === 'kds_enabled') {
-      const wasEnabled = getAllSettings(db).kds_enabled !== 'false';
-      const turningOff = boolFlag(value) === 'false';
-      if (wasEnabled && turningOff) {
-        db.prepare('DELETE FROM kds_pairing_tokens').run();
+      const billLanguagePolicy = validateLanguagePolicySetting(
+        BILL_LANGUAGE_POLICY_KEY,
+        values[BILL_LANGUAGE_POLICY_KEY],
+      );
+      if (!billLanguagePolicy.ok) {
+        return res.status(400).json({ error: billLanguagePolicy.error });
       }
-    }
+      const kotLanguagePolicy = validateLanguagePolicySetting(
+        KOT_LANGUAGE_POLICY_KEY,
+        values[KOT_LANGUAGE_POLICY_KEY],
+      );
+      if (!kotLanguagePolicy.ok) {
+        return res.status(400).json({ error: kotLanguagePolicy.error });
+      }
+      const hasZReportLanguagePolicy = Object.prototype.hasOwnProperty.call(
+        values,
+        Z_REPORT_LANGUAGE_POLICY_KEY,
+      );
+      const zReportLanguagePolicy = hasZReportLanguagePolicy
+        ? validateLanguagePolicySetting(
+            Z_REPORT_LANGUAGE_POLICY_KEY,
+            values[Z_REPORT_LANGUAGE_POLICY_KEY],
+          )
+        : null;
+      if (zReportLanguagePolicy && !zReportLanguagePolicy.ok) {
+        return res.status(400).json({ error: zReportLanguagePolicy.error });
+      }
 
-    db.prepare(`
+      const hasCashDrawerEnabled = Object.prototype.hasOwnProperty.call(
+        values,
+        'cash_drawer_pulse_enabled',
+      );
+      const hasCashDrawerMethods = Object.prototype.hasOwnProperty.call(
+        values,
+        'cash_drawer_pulse_methods',
+      );
+      if (hasCashDrawerEnabled !== hasCashDrawerMethods) {
+        return res.status(400).json({ error: 'Cash drawer settings must be provided together' });
+      }
+      if (hasCashDrawerEnabled && typeof values.cash_drawer_pulse_enabled !== 'boolean') {
+        return res.status(400).json({ error: 'cash_drawer_pulse_enabled must be a boolean' });
+      }
+      if (
+        hasCashDrawerMethods &&
+        (!Array.isArray(values.cash_drawer_pulse_methods) ||
+          values.cash_drawer_pulse_methods.some(
+            (method) => typeof method !== 'string' || method.trim().length === 0,
+          ))
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'cash_drawer_pulse_methods must be a non-empty string array' });
+      }
+
+      const entries: Record<string, string> = {
+        printer_trim_decimals: values.printer_trim_decimals ? 'true' : 'false',
+        [BILL_LANGUAGE_POLICY_KEY]: billLanguagePolicy.stored,
+        [KOT_LANGUAGE_POLICY_KEY]: kotLanguagePolicy.stored,
+      };
+      if (zReportLanguagePolicy?.ok) {
+        entries[Z_REPORT_LANGUAGE_POLICY_KEY] = zReportLanguagePolicy.stored;
+      }
+      for (const key of PRINTING_BOOLEAN_KEYS.slice(1)) {
+        entries[key] = values[key] ? 'true' : 'false';
+      }
+      for (const key of OPTIONAL_PRINTING_BOOLEAN_KEYS) {
+        if (values[key] !== undefined) {
+          entries[key] = values[key] ? 'true' : 'false';
+        }
+      }
+      if (hasCashDrawerEnabled) {
+        entries.cash_drawer_pulse_enabled = values.cash_drawer_pulse_enabled ? 'true' : 'false';
+        entries.cash_drawer_pulse_methods = JSON.stringify(values.cash_drawer_pulse_methods);
+      }
+
+      upsertSettings(getDatabase(), entries);
+      res.json({ settings: entries });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.get(
+  '/:key',
+  settingsReadRateLimit,
+  requirePermission('settings.view'),
+  (req: Request, res: Response) => {
+    try {
+      if (
+        SENSITIVE_SETTING_KEYS.has(req.params.key as string) ||
+        isGoogleDriveSettingKey(req.params.key as string)
+      ) {
+        return res
+          .status(403)
+          .json({ error: 'This setting is sensitive and cannot be read directly' });
+      }
+      const key = String(req.params.key);
+      const db = getDatabase();
+      const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
+      if (!setting) {
+        const defaultValue = OPTIONAL_SETTING_DEFAULTS[key];
+        if (defaultValue !== undefined) {
+          return res.json({ setting: { key, value: defaultValue, updated_at: null } });
+        }
+        return res.status(404).json({ error: 'Setting not found' });
+      }
+      res.json({ setting });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.put(
+  '/:key',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      if (!isAllowedWildcardKey(req.params.key as string)) {
+        return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });
+      }
+      const { value } = req.body;
+      if (value === undefined) {
+        return res.status(400).json({ error: 'Value is required' });
+      }
+      // Upgrades legacy string values to canonical structured JSON on save.
+      if (req.params.key === 'bill_template' && !isAvailableBillTemplate(value)) {
+        return res.status(400).json({ error: 'Unsupported bill template' });
+      }
+      if (req.params.key === 'theme_mode' && !isThemeMode(value)) {
+        return res.status(400).json({ error: 'Invalid theme_mode value' });
+      }
+      if (req.params.key === 'orders_layout' && !isOrdersLayout(value)) {
+        return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
+      }
+      let valueToPersist: unknown = value;
+      if (req.params.key === 'currency') {
+        valueToPersist = typeof value === 'string' ? value.trim().toUpperCase() : value;
+        if (!isSyntacticallyValidCurrencyCode(valueToPersist)) {
+          return res.status(400).json({ error: 'Invalid currency' });
+        }
+      }
+      if (req.params.key === 'bill_template') {
+        valueToPersist = upgradeBillTemplateValue(value);
+      }
+      if (typeof req.params.key === 'string' && LANGUAGE_POLICY_SETTING_KEYS.has(req.params.key)) {
+        const validation = validateLanguagePolicySetting(req.params.key, value);
+        if (!validation.ok) {
+          return res.status(400).json({ error: validation.error });
+        }
+        valueToPersist = validation.stored;
+      }
+      const db = getDatabase();
+      if (req.params.key === 'currency') {
+        const currentCurrency = getAllSettings(db).currency || '';
+        if (valueToPersist !== currentCurrency) {
+          return res.status(409).json({
+            error: 'currency_change_requires_reset',
+            current_currency: currentCurrency,
+            requested_currency: valueToPersist,
+          });
+        }
+      }
+      const wildcardKey = String(req.params.key);
+      if (isLocalePreferenceKey(wildcardKey)) {
+        const countryCode = getAllSettings(db).country || '';
+        if (
+          typeof value !== 'string' ||
+          !isLocalePreferenceSupported(wildcardKey, value, countryCode)
+        ) {
+          return res
+            .status(400)
+            .json({ error: `Invalid ${wildcardKey} for country ${countryCode}` });
+        }
+      }
+
+      if (req.params.key === 'business_phone') {
+        const effectiveCountry = getAllSettings(db).country || '';
+        const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
+        if (!phoneRes.valid) {
+          return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
+        }
+        valueToPersist = phoneRes.e164 || '';
+      }
+
+      // Invalidate outstanding pairing tokens when KDS is disabled.
+      if (req.params.key === 'kds_enabled') {
+        const wasEnabled = getAllSettings(db).kds_enabled !== 'false';
+        const turningOff = boolFlag(value) === 'false';
+        if (wasEnabled && turningOff) {
+          db.prepare('DELETE FROM kds_pairing_tokens').run();
+        }
+      }
+
+      db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(req.params.key, valueToPersist as string, now());
 
-    // Sync legacy anonymous_data_consent mirror with canonical telemetry_enabled.
-    if (req.params.key === 'telemetry_enabled') {
-      db.prepare(`
+      // Sync legacy anonymous_data_consent mirror with canonical telemetry_enabled.
+      if (req.params.key === 'telemetry_enabled') {
+        db.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', ?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
       `).run(value, now());
-    }
+      }
 
-    // Best-effort push of diagnostics consent to FloAdmin.
-    if (req.params.key === 'diagnostics_consent') {
-      void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
-    }
-    if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
-      void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
-    }
+      // Best-effort push of diagnostics consent to FloAdmin.
+      if (req.params.key === 'diagnostics_consent') {
+        void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
+      }
+      if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
+        void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
+      }
 
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
-    res.json({ setting });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+      res.json({ setting });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 export const settingsRoutes = router;

@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "स्वतः लागू गर्नुहोस्",
     "chargePercentValue": "अर्डरको {value}%",
     "chargeFixedValue": "प्रति अर्डर {value}",
-    "chargeOptionalApply": "अनुरोधमा थपिन्छ"
+    "chargeOptionalApply": "अनुरोधमा थपिन्छ",
+    "storeLogo": "स्टोर लोगो",
+    "storeLogoHint": "रसिदहरूमा छाप्न स्टोर लोगो अपलोड गर्नुहोस्। ५ एमबी भन्दा कम पारदर्शी PNG वा JPEG।",
+    "uploadLogo": "लोगो अपलोड गर्नुहोस्",
+    "removeLogo": "लोगो हटाउनुहोस्",
+    "logoUploaded": "लोगो सफलतापूर्वक अपलोड गरियो",
+    "showLogo": "स्टोर लोगो"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

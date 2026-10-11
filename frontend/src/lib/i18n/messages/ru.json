@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Применять автоматически",
     "chargePercentValue": "{value}% от заказа",
     "chargeFixedValue": "{value} за заказ",
-    "chargeOptionalApply": "Добавляется по запросу"
+    "chargeOptionalApply": "Добавляется по запросу",
+    "storeLogo": "Логотип магазина",
+    "storeLogoHint": "Загрузите логотип для печати на чеках. Прозрачный PNG или JPEG до 5 МБ.",
+    "uploadLogo": "Загрузить логотип",
+    "removeLogo": "Удалить логотип",
+    "logoUploaded": "Логотип успешно загружен",
+    "showLogo": "Логотип магазина"
   },
   "setup": {
     "alreadyCompleted": "Настройка этой установки уже завершена. Перенаправление на вход…",

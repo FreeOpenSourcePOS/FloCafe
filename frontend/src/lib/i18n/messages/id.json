@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "Terapkan otomatis",
     "chargePercentValue": "{value}% dari pesanan",
     "chargeFixedValue": "{value} per pesanan",
-    "chargeOptionalApply": "Ditambahkan atas permintaan"
+    "chargeOptionalApply": "Ditambahkan atas permintaan",
+    "storeLogo": "Logo Toko",
+    "storeLogoHint": "Unggah logo toko untuk dicetak pada struk. PNG atau JPEG transparan di bawah 5 MB.",
+    "uploadLogo": "Unggah Logo",
+    "removeLogo": "Hapus Logo",
+    "logoUploaded": "Logo berhasil diunggah",
+    "showLogo": "Logo Toko"
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

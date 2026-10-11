@@ -2248,7 +2248,13 @@
     "chargeAutoApply": "自动应用",
     "chargePercentValue": "订单金额的 {value}%",
     "chargeFixedValue": "每单 {value}",
-    "chargeOptionalApply": "按需添加"
+    "chargeOptionalApply": "按需添加",
+    "storeLogo": "店铺标志",
+    "storeLogoHint": "上传在小票上打印的店铺标志。5 MB 以下的透明 PNG 或 JPEG。",
+    "uploadLogo": "上传标志",
+    "removeLogo": "移除标志",
+    "logoUploaded": "标志上传成功",
+    "showLogo": "店铺标志"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

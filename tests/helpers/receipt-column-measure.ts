@@ -150,6 +150,14 @@ export function measureEscPos(data: Buffer | Uint8Array): EscPosMeasurement {
         // doesn't consume extra horizontal cells, so only the high nibble counts.
         sizeWidth = (((bytes[i + 2] ?? 0) >> 4) & 0x0f) + 1;
       }
+      if (byte === 0x1d && command === 0x76 && bytes[i + 2] === 0x30) {
+        // GS v 0 m xL xH yL yH: raster bit image.
+        const widthBytes = bytes[i + 4] | (bytes[i + 5] << 8);
+        const heightDots = bytes[i + 6] | (bytes[i + 7] << 8);
+        const dataLength = widthBytes * heightDots;
+        i += 8 + dataLength;
+        continue;
+      }
       const params = byte === 0x1b ? ESC_PARAMS : byte === 0x1d ? GS_PARAMS : FS_PARAMS;
       const paramCount = params(command);
       if (!observedCommands.some((seen) => seen.intro === byte && seen.command === command)) {

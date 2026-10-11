@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "税の内訳",
     "showTaxId": "税ID番号",
     "softwareUpdates": "ソフトウェア更新",
-    "softwareUpdatesHintDefault": "Flo Cafeは自動的に更新を確認します。下で手動確認もできます。",
+    "softwareUpdatesHintDefault": "Flo Cafe は下でオフにしない限り起動時にアップデートを確認し、ダウンロード前には必ず確認します。手動で確認することもできます。",
     "softwareUpdatesHintBrowser": "更新はFloCafeデスクトップアプリで管理されます。",
     "softwareUpdatesHintLinuxManaged": "このインストールはFloのアプリ内アップデーターではなく、Linuxパッケージマネージャー（deb/rpm）またはSnap Storeで管理されています。AppImageビルドは自動更新されます。",
     "softwareUpdatesHintStore": "このバージョンはApp Store経由で配布されています。更新はストアで管理されます。",
@@ -2883,7 +2883,16 @@
     "betaOn": "オン",
     "betaOff": "オフ",
     "betaToggleFailed": "ベータチャンネル設定を変更できませんでした。",
-    "betaGraduationNote": "ベータチャンネルを離れても次の安定版が公開されるまで現在のバージョンが維持され、データベースのダウングレードを防ぎます。"
+    "betaGraduationNote": "ベータチャンネルを離れても次の安定版が公開されるまで現在のバージョンが維持され、データベースのダウングレードを防ぎます。",
+    "availableTitle": "アップデートがあります",
+    "availableDescription": "Flo Cafe のバージョン {version} が利用可能です。今すぐダウンロードしますか？ダウンロード中も作業を続けられ、再起動のタイミングはご自身で選べます。",
+    "versionAvailable": "バージョン {version} が利用可能です",
+    "downloadNow": "ダウンロード",
+    "later": "後で",
+    "downloadFailedToStart": "ダウンロードを開始できませんでした。もう一度お試しください。",
+    "autoCheckTitle": "アップデートを自動で確認",
+    "autoCheckDescription": "オンの場合、Flo Cafe は起動時に新しいバージョンを確認し、ダウンロード前に確認します。オフの場合は「アップデートを確認」で手動で確認してください。",
+    "autoCheckToggleFailed": "自動アップデートの設定を変更できませんでした。"
   },
   "whatsapp": {
     "active": {

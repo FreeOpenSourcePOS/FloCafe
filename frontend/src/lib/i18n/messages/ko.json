@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "세금 내역",
     "showTaxId": "세금 ID 번호",
     "softwareUpdates": "소프트웨어 업데이트",
-    "softwareUpdatesHintDefault": "Flo Cafe가 자동으로 업데이트를 확인합니다. 아래에서 수동으로 확인할 수도 있습니다.",
+    "softwareUpdatesHintDefault": "아래에서 끄지 않는 한 Flo Cafe는 시작할 때 업데이트를 확인하며, 다운로드 전에는 항상 묻습니다. 직접 확인할 수도 있습니다.",
     "softwareUpdatesHintBrowser": "업데이트는 FloCafe 데스크톱 앱에서 처리됩니다.",
     "softwareUpdatesHintLinuxManaged": "이 설치는 Flo의 앱 내 업데이터가 아니라 Linux 패키지 관리자(deb/rpm) 또는 Snap Store에서 관리합니다. AppImage 빌드는 자동으로 업데이트됩니다.",
     "softwareUpdatesHintStore": "이 버전은 App Store를 통해 배포됩니다. 업데이트는 스토어에서 관리합니다.",
@@ -2883,7 +2883,16 @@
     "betaOn": "켬",
     "betaOff": "끔",
     "betaToggleFailed": "베타 채널 설정을 변경할 수 없습니다.",
-    "betaGraduationNote": "베타 채널을 떠나면 다음 정식 버전이 나올 때까지 현재 버전이 유지되어, 데이터베이스가 다운그레이드되지 않습니다."
+    "betaGraduationNote": "베타 채널을 떠나면 다음 정식 버전이 나올 때까지 현재 버전이 유지되어, 데이터베이스가 다운그레이드되지 않습니다.",
+    "availableTitle": "업데이트 사용 가능",
+    "availableDescription": "Flo Cafe 버전 {version}을(를) 사용할 수 있습니다. 지금 다운로드할까요? 다운로드 중에도 계속 작업할 수 있으며 재시작 시점은 직접 선택합니다.",
+    "versionAvailable": "버전 {version} 사용 가능",
+    "downloadNow": "다운로드",
+    "later": "나중에",
+    "downloadFailedToStart": "다운로드를 시작할 수 없습니다. 다시 시도하세요.",
+    "autoCheckTitle": "업데이트 자동 확인",
+    "autoCheckDescription": "켜면 Flo Cafe가 시작할 때 새 버전을 확인하고 다운로드 전에 묻습니다. 끄면 업데이트 확인으로 직접 확인하세요.",
+    "autoCheckToggleFailed": "자동 업데이트 설정을 변경할 수 없습니다."
   },
   "whatsapp": {
     "active": {

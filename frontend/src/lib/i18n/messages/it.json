@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "Dettaglio imposte",
     "showTaxId": "Partita IVA",
     "softwareUpdates": "Aggiornamenti software",
-    "softwareUpdatesHintDefault": "Flo Cafe controlla automaticamente gli aggiornamenti. Puoi anche controllare manualmente qui sotto.",
+    "softwareUpdatesHintDefault": "Flo Cafe cerca aggiornamenti all'avvio, a meno che tu non lo disattivi qui sotto, e chiede sempre prima di scaricare. Puoi anche controllare manualmente.",
     "softwareUpdatesHintBrowser": "Gli aggiornamenti sono gestiti dall'app desktop FloCafe.",
     "softwareUpdatesHintLinuxManaged": "Questa installazione è gestita dal package manager di Linux (deb/rpm) o dallo Snap Store, non dall'aggiornatore integrato di Flo. Le build AppImage si aggiornano automaticamente.",
     "softwareUpdatesHintStore": "Questa versione è distribuita tramite l'App Store. Gli aggiornamenti sono gestiti dallo store.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Attivo",
     "betaOff": "Disattivo",
     "betaToggleFailed": "Impossibile cambiare l'impostazione del canale beta.",
-    "betaGraduationNote": "Uscire dal canale beta mantiene la tua versione corrente fino alla pubblicazione della prossima release stabile, proteggendo il tuo database dai downgrade."
+    "betaGraduationNote": "Uscire dal canale beta mantiene la tua versione corrente fino alla pubblicazione della prossima release stabile, proteggendo il tuo database dai downgrade.",
+    "availableTitle": "Aggiornamento disponibile",
+    "availableDescription": "La versione {version} di Flo Cafe è disponibile. Scaricarla ora? Puoi continuare a lavorare durante il download e scegliere quando riavviare.",
+    "versionAvailable": "La versione {version} è disponibile",
+    "downloadNow": "Scarica",
+    "later": "Più tardi",
+    "downloadFailedToStart": "Impossibile avviare il download. Riprova.",
+    "autoCheckTitle": "Cerca aggiornamenti automaticamente",
+    "autoCheckDescription": "Se attivo, Flo Cafe cerca nuove versioni all'avvio e chiede prima di scaricare. Se disattivo, usa Cerca aggiornamenti manualmente.",
+    "autoCheckToggleFailed": "Impossibile modificare l'impostazione degli aggiornamenti automatici."
   },
   "whatsapp": {
     "active": {

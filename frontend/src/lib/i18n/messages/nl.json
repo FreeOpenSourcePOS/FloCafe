@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "Belastingoverzicht",
     "showTaxId": "Belastingnummer",
     "softwareUpdates": "Software-updates",
-    "softwareUpdatesHintDefault": "Flo Cafe controleert automatisch op updates. U kunt hieronder ook handmatig controleren.",
+    "softwareUpdatesHintDefault": "Flo Cafe zoekt bij het opstarten naar updates, tenzij je dat hieronder uitzet, en vraagt altijd voor het downloaden. Je kunt ook handmatig zoeken.",
     "softwareUpdatesHintBrowser": "Updates worden afgehandeld door de FloCafe desktop-app.",
     "softwareUpdatesHintLinuxManaged": "Deze installatie wordt beheerd door uw Linux-pakketbeheerder (deb/rpm) of de Snap Store, niet door de in-app updater van Flo. AppImage bouwt de update automatisch op.",
     "softwareUpdatesHintStore": "Deze versie wordt verspreid via de App Store. Updates worden beheerd door de winkel.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Aan",
     "betaOff": "Uit",
     "betaToggleFailed": "Kan de bètakanaalinstelling niet wijzigen.",
-    "betaGraduationNote": "Als u het bètakanaal verlaat, blijft uw huidige versie behouden totdat de volgende stabiele release wordt gepubliceerd, waardoor uw database wordt beschermd tegen downgrades."
+    "betaGraduationNote": "Als u het bètakanaal verlaat, blijft uw huidige versie behouden totdat de volgende stabiele release wordt gepubliceerd, waardoor uw database wordt beschermd tegen downgrades.",
+    "availableTitle": "Update beschikbaar",
+    "availableDescription": "Versie {version} van Flo Cafe is beschikbaar. Nu downloaden? Je kunt blijven werken tijdens het downloaden en zelf kiezen wanneer je herstart.",
+    "versionAvailable": "Versie {version} is beschikbaar",
+    "downloadNow": "Downloaden",
+    "later": "Straks",
+    "downloadFailedToStart": "Het downloaden kon niet worden gestart. Probeer het opnieuw.",
+    "autoCheckTitle": "Automatisch naar updates zoeken",
+    "autoCheckDescription": "Indien aan, zoekt Flo Cafe bij het opstarten naar nieuwe versies en vraagt het voor het downloaden. Indien uit, gebruik Naar updates zoeken handmatig.",
+    "autoCheckToggleFailed": "De instelling voor automatische updates kon niet worden gewijzigd."
   },
   "whatsapp": {
     "active": {

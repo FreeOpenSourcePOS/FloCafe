@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
+import { normalizePathname } from '@/lib/utils';
 import type { Tenant } from '@/lib/types';
 
 export const LANDING_PAGE_CANDIDATES = [
@@ -26,10 +27,21 @@ export const LANDING_PAGE_CANDIDATES = [
 ] as const;
 
 export function getLandingPage(tenant?: Tenant | null): string {
-  return LANDING_PAGE_CANDIDATES.find(([permission]) => tenantCan(tenant, permission))?.[1] ?? '/auth/login';
+  return (
+    LANDING_PAGE_CANDIDATES.find(([permission]) => tenantCan(tenant, permission))?.[1] ??
+    '/auth/login'
+  );
 }
 
-const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
+const PUBLIC_PATHS = [
+  '/kds',
+  '/kds-standalone',
+  '/server-standalone',
+  '/auth/login',
+  '/auth/register',
+  '/auth/recover',
+  '/setup',
+];
 
 export const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
@@ -49,12 +61,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, currentTenant, loading, loadFromStorage, refreshAuthContext } = useAuthStore();
   const printLanguageLoadErrors = useAuthStore((s) => s.printLanguageLoadErrors);
   const router = useRouter();
-  const pathname = usePathname();
+  // Normalized once at the source so every comparison below (public paths,
+  // page permissions, the /staff and /settings gates) agrees with dev mode —
+  // see normalizePathname's doc comment for why this matters.
+  const pathname = normalizePathname(usePathname());
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null); // null = still checking
 
-  const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname?.startsWith(p + '/'));
+  const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname?.startsWith(p + '/'));
   const isSetupPath = pathname === '/setup' || pathname?.startsWith('/setup/');
-  const isStandalonePath = pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
+  const isStandalonePath =
+    pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
 
   useEffect(() => {
     // Standalone KDS and Server App pages manage their own auth sessions;
@@ -65,7 +81,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isStandalonePath || !user || !currentTenant) return;
-    const refresh = () => { void refreshAuthContext(); };
+    const refresh = () => {
+      void refreshAuthContext();
+    };
     window.addEventListener('focus', refresh);
     window.addEventListener('flo:authorization-denied', refresh);
     const interval = window.setInterval(refresh, 30_000);
@@ -88,12 +106,17 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!isStandalonePath && needsSetup === null) {
       const controller = new AbortController();
       let active = true;
-      api.get('/auth/setup/status', { signal: controller.signal })
+      api
+        .get('/auth/setup/status', { signal: controller.signal })
         .then(({ data }) => {
           if (active) setNeedsSetup(data.needsSetup);
         })
         .catch((err) => {
-          if (!active || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+          if (
+            !active ||
+            (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))
+          )
+            return;
           console.error('[AuthGuard] Failed to check setup status:', err);
           // Fail closed: do not allow normal app routes when setup state is unknown.
           setNeedsSetup(true);
@@ -117,23 +140,54 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (!currentTenant) {
       router.push('/auth/login?select_tenant=true');
     } else {
-      const pagePermission = PAGE_PERMISSIONS.find(([prefix]) => pathname === prefix || pathname?.startsWith(`${prefix}/`));
-      const canOpenStaff = pathname === '/staff'
-        && (tenantCan(currentTenant, 'staff.view') || tenantCan(currentTenant, 'authorization.manage'));
-      const canOpenSettings = pathname === '/settings'
-        && [
-          'settings.view', 'settings.manage', 'tax-packs.view-test', 'tax-configuration.manage',
-          'tax-packs.manage', 'printers.manage', 'print-templates.view', 'print-templates.manage',
-          'payment-methods.manage', 'cloud.manage', 'cloud.account.manage', 'google-drive.manage',
-          'database.manage', 'mobile-access.manage', 'kitchen.stations.manage', 'whatsapp.manage',
-        ].some((permission) => tenantCan(currentTenant, permission as import('@shared/permissions').PermissionId));
-      if ((pagePermission && !tenantCan(currentTenant, pagePermission[1]))
-        || (pathname === '/staff' && !canOpenStaff)
-        || (pathname === '/settings' && !canOpenSettings)) {
+      const pagePermission = PAGE_PERMISSIONS.find(
+        ([prefix]) => pathname === prefix || pathname?.startsWith(`${prefix}/`),
+      );
+      const canOpenStaff =
+        pathname === '/staff' &&
+        (tenantCan(currentTenant, 'staff.view') ||
+          tenantCan(currentTenant, 'authorization.manage'));
+      const canOpenSettings =
+        pathname === '/settings' &&
+        [
+          'settings.view',
+          'settings.manage',
+          'tax-packs.view-test',
+          'tax-configuration.manage',
+          'tax-packs.manage',
+          'printers.manage',
+          'print-templates.view',
+          'print-templates.manage',
+          'payment-methods.manage',
+          'cloud.manage',
+          'cloud.account.manage',
+          'google-drive.manage',
+          'database.manage',
+          'mobile-access.manage',
+          'kitchen.stations.manage',
+          'whatsapp.manage',
+        ].some((permission) =>
+          tenantCan(currentTenant, permission as import('@shared/permissions').PermissionId),
+        );
+      if (
+        (pagePermission && !tenantCan(currentTenant, pagePermission[1])) ||
+        (pathname === '/staff' && !canOpenStaff) ||
+        (pathname === '/settings' && !canOpenSettings)
+      ) {
         router.replace(getLandingPage(currentTenant));
       }
     }
-  }, [loading, user, currentTenant, isPublicPath, isSetupPath, isStandalonePath, needsSetup, pathname, router]);
+  }, [
+    loading,
+    user,
+    currentTenant,
+    isPublicPath,
+    isSetupPath,
+    isStandalonePath,
+    needsSetup,
+    pathname,
+    router,
+  ]);
 
   if (isStandalonePath || isSetupPath) {
     return <>{children}</>;

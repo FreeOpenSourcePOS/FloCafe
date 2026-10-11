@@ -34,10 +34,12 @@ export function useUpdateStatus() {
         ...(status.version !== undefined ? { version: status.version } : {}),
         ...(status.percent !== undefined ? { percent: status.percent } : {}),
         ...(status.reason !== undefined ? { reason: status.reason } : {}),
-        ...(status.error !== undefined ? { error: status.error } : {})
+        ...(status.error !== undefined ? { error: status.error } : {}),
       });
     });
-    return () => { unsubscribe?.(); };
+    return () => {
+      unsubscribe?.();
+    };
   }, []);
 
   const checkForUpdates = () => {
@@ -46,13 +48,33 @@ export function useUpdateStatus() {
     }
   };
 
+  const downloadUpdate = () => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      return window.electronAPI.downloadUpdate();
+    }
+    return Promise.resolve({
+      success: false,
+      error: 'not-available',
+    } satisfies ElectronActionResult);
+  };
+
   // Forwards PIN to main process restart-and-install handler and returns result.
   const restartAndInstall = (pin?: string) => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return window.electronAPI.restartAndInstall(pin);
     }
-    return Promise.resolve({ success: false, error: 'not-available' } satisfies ElectronActionResult);
+    return Promise.resolve({
+      success: false,
+      error: 'not-available',
+    } satisfies ElectronActionResult);
   };
 
-  return { updateStatus, appVersion, isElectron, checkForUpdates, restartAndInstall };
+  return {
+    updateStatus,
+    appVersion,
+    isElectron,
+    checkForUpdates,
+    downloadUpdate,
+    restartAndInstall,
+  };
 }

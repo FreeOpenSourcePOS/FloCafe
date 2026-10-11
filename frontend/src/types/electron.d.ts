@@ -2,24 +2,39 @@
 
 export interface ElectronAPI {
   // Menu
-  onMenuAction: (callback: (action: string) => void) => (() => void);
+  onMenuAction: (callback: (action: string) => void) => () => void;
   // Windows/Linux title-bar menu row; macOS keeps its native menu bar and the
   // main process answers with an empty entry list there.
   getApplicationMenu: () => Promise<{ entries: ApplicationMenuEntry[] } | ElectronIpcError>;
-  openApplicationMenu: (key: string, x: number, y: number) => Promise<ElectronActionResult | ElectronIpcError>;
+  openApplicationMenu: (
+    key: string,
+    x: number,
+    y: number,
+  ) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Window controls
   windowAction: (action: WindowControlAction) => Promise<ElectronActionResult | ElectronIpcError>;
   getWindowState?: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
-  onWindowStateChanged?: (callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void) => () => void;
+  onWindowStateChanged?: (
+    callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void,
+  ) => () => void;
 
   // Database
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-  restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
+  restoreBackup: (
+    pin?: string,
+    backupPath?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
   pickRestoreFile: () => Promise<{ canceled: boolean; path?: string; token?: string }>;
   dbHealthCheck: () => Promise<HealthCheckReport | { error: string }>;
-  dbApplySafeFixes: (pin: string, findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>;
-  dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
+  dbApplySafeFixes: (
+    pin: string,
+    findingIds?: string[],
+  ) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>;
+  dbInitialize: (
+    pin: string,
+    confirmationPhrase: string,
+  ) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
   getMasterPinStatus: () => Promise<ElectronMasterPinStatus | ElectronIpcError>;
 
   // Settings
@@ -39,12 +54,21 @@ export interface ElectronAPI {
   getLogTail: () => Promise<{ text: string; truncated: boolean } | ElectronIpcError>;
 
   // Reports caught renderer errors to anonymous telemetry via main process.
-  reportRendererError?: (report: { message?: string; stack?: string; digest?: string; route?: string }) => Promise<ElectronActionResult>;
+  reportRendererError?: (report: {
+    message?: string;
+    stack?: string;
+    digest?: string;
+    route?: string;
+  }) => Promise<ElectronActionResult>;
 
   // Printers. Writing one goes through the permission-gated HTTP route.
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
   /** Renders print HTML to a PDF file the user picks in a native save dialog. */
-  saveHtmlAsPdf?: (request: { html: string; defaultFileName?: string; pageSize?: 'A4' | 'Letter' }) => Promise<{
+  saveHtmlAsPdf?: (request: {
+    html: string;
+    defaultFileName?: string;
+    pageSize?: 'A4' | 'Letter';
+  }) => Promise<{
     success: boolean;
     path?: string;
     canceled?: boolean;
@@ -74,13 +98,25 @@ export interface ElectronAPI {
   windowReady: (payload: { epoch: number }) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Updates
-  onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
-  getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; version?: string; percent?: number; reason?: UpdateFailureReason; error?: string; info: { version: string } }>;
+  onUpdateStatus: (callback: (status: UpdateStatus) => void) => () => void;
+  getUpdateStatus: () => Promise<{
+    status: UpdateStatus['status'];
+    version?: string;
+    percent?: number;
+    reason?: UpdateFailureReason;
+    error?: string;
+    info: { version: string };
+  }>;
   /** Persisted beta opt-in (#463); returns true if subscribed to the beta feed. */
   getBetaChannel: () => Promise<boolean>;
   /** Change the beta channel opt-in; refused while an update is staged or in flight. */
   setBetaChannel: (enabled: boolean) => Promise<ElectronActionResult>;
   checkForUpdates: () => Promise<void>;
+  /** Start downloading an available update; refused unless one is waiting. */
+  downloadUpdate: () => Promise<ElectronActionResult>;
+  /** Persisted preference for the automatic startup update check (default on). */
+  getAutoUpdateCheck: () => Promise<boolean>;
+  setAutoUpdateCheck: (enabled: boolean) => Promise<ElectronActionResult>;
   // #463: the main process authorizes the manager/owner PIN before quitting
   // to install; a denied request resolves with success:false instead of restarting.
   restartAndInstall: (pin?: string) => Promise<ElectronActionResult>;

@@ -1,7 +1,7 @@
 'use client';
 
-/** UpdateBadge: subtle in-app indicator shown only when background update
- * download is in progress or restart is pending. */
+/** UpdateBadge: subtle in-app indicator shown while an update awaits
+ * download approval, is downloading, or awaits restart. */
 
 import { Download, Sparkles } from 'lucide-react';
 import { useState } from 'react';
@@ -19,18 +19,22 @@ import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { UpdateInstallGuardDialog } from '@/components/updates/UpdateInstallGuardDialog';
 
 export default function UpdateBadge() {
-  const { updateStatus, appVersion, restartAndInstall } = useUpdateStatus();
+  const { updateStatus, appVersion, downloadUpdate, restartAndInstall } = useUpdateStatus();
   // #463: restart-to-install always goes through the PIN-guarded confirmation
   // dialog; the dropdown item only opens it and can never restart directly.
   const [guardOpen, setGuardOpen] = useState(false);
   const t = useTranslations('update');
 
   const status = updateStatus?.status;
-  if (!status || (status !== 'downloading' && status !== 'ready-to-install')) {
+  if (
+    !status ||
+    (status !== 'available' && status !== 'downloading' && status !== 'ready-to-install')
+  ) {
     return null;
   }
 
   const isReady = status === 'ready-to-install';
+  const isAvailable = status === 'available';
 
   return (
     <DropdownMenu>
@@ -49,15 +53,17 @@ export default function UpdateBadge() {
             <Download size={12} />
           )}
           <span className="text-xs font-medium">
-            {isReady ? t('readyBadge') : t('downloadingBadge', { percent: Math.round(updateStatus?.percent || 0) })}
+            {isReady
+              ? t('readyBadge')
+              : isAvailable
+                ? t('availableTitle')
+                : t('downloadingBadge', { percent: Math.round(updateStatus?.percent || 0) })}
           </span>
         </Button>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="text-xs text-gray-500">
-          {t('sectionLabel')}
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-gray-500">{t('sectionLabel')}</DropdownMenuLabel>
 
         <div className="px-2 py-1.5 text-xs text-gray-500">
           {isReady ? (
@@ -65,9 +71,15 @@ export default function UpdateBadge() {
               <Sparkles size={13} className="text-brand" />
               {t('versionReady', { version: updateStatus?.version || '' })}
             </p>
+          ) : isAvailable ? (
+            <p className="text-gray-700">
+              {t('versionAvailable', { version: updateStatus?.version || '' })}
+            </p>
           ) : (
             <div>
-              <p className="text-gray-700">{t('downloadingDetail', { version: updateStatus?.version || '' })}</p>
+              <p className="text-gray-700">
+                {t('downloadingDetail', { version: updateStatus?.version || '' })}
+              </p>
               <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
                 <div
                   className="bg-brand h-1.5 rounded-full transition-all"
@@ -78,6 +90,18 @@ export default function UpdateBadge() {
           )}
           <p className="mt-1.5 text-gray-400">{t('currentVersion', { version: appVersion })}</p>
         </div>
+
+        {isAvailable && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => void downloadUpdate()}
+              className="text-sm cursor-pointer"
+            >
+              {t('downloadNow')}
+            </DropdownMenuItem>
+          </>
+        )}
 
         {isReady && (
           <>

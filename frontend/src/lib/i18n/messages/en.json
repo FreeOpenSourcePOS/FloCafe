@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "Tax Breakdown",
     "showTaxId": "Tax ID Number",
     "softwareUpdates": "Software Updates",
-    "softwareUpdatesHintDefault": "Flo Cafe checks for updates automatically. You can also check manually below.",
+    "softwareUpdatesHintDefault": "Flo Cafe checks for updates at startup unless you turn that off below, and always asks before downloading. You can also check manually.",
     "softwareUpdatesHintBrowser": "Updates are handled by the FloCafe desktop app.",
     "softwareUpdatesHintLinuxManaged": "This install is managed by your Linux package manager (deb/rpm) or the Snap Store, not Flo's in-app updater. AppImage builds update automatically.",
     "softwareUpdatesHintStore": "This version is distributed via the App Store. Updates are managed by the store.",
@@ -2883,7 +2883,16 @@
     "betaOn": "On",
     "betaOff": "Off",
     "betaToggleFailed": "Could not change the beta channel setting.",
-    "betaGraduationNote": "Leaving the beta channel keeps your current version until the next stable release is published, protecting your database from downgrades."
+    "betaGraduationNote": "Leaving the beta channel keeps your current version until the next stable release is published, protecting your database from downgrades.",
+    "availableTitle": "Update available",
+    "availableDescription": "Version {version} of Flo Cafe is available. Download it now? You can keep working while it downloads, and you choose when to restart.",
+    "versionAvailable": "Version {version} is available",
+    "downloadNow": "Download",
+    "later": "Later",
+    "downloadFailedToStart": "Could not start the download. Try again.",
+    "autoCheckTitle": "Check for updates automatically",
+    "autoCheckDescription": "When on, Flo Cafe checks for new versions at startup and asks before downloading. When off, use Check for Updates to look manually.",
+    "autoCheckToggleFailed": "Could not change the automatic update setting."
   },
   "whatsapp": {
     "active": {

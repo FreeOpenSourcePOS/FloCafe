@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "Ventilation des taxes",
     "showTaxId": "Numéro d’identification fiscale",
     "softwareUpdates": "Mises à jour logicielles",
-    "softwareUpdatesHintDefault": "Flo Cafe recherche automatiquement les mises à jour. Vous pouvez également lancer une recherche manuelle ci-dessous.",
+    "softwareUpdatesHintDefault": "Flo Cafe recherche les mises à jour au démarrage, sauf si vous le désactivez ci-dessous, et demande toujours avant de télécharger. Vous pouvez aussi vérifier manuellement.",
     "softwareUpdatesHintBrowser": "Les mises à jour sont gérées par l’application de bureau FloCafe.",
     "softwareUpdatesHintLinuxManaged": "Cette installation est gérée par votre gestionnaire de paquets Linux (deb/rpm) ou par le Snap Store, et non par le programme de mise à jour intégré de Flo. Les versions AppImage se mettent à jour automatiquement.",
     "softwareUpdatesHintStore": "Cette version est distribuée par l’App Store. Les mises à jour sont gérées par la boutique.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Activé",
     "betaOff": "Désactivé",
     "betaToggleFailed": "Impossible de modifier le paramètre du canal bêta.",
-    "betaGraduationNote": "Lorsque vous quittez le canal bêta, votre version actuelle est conservée jusqu’à la publication de la prochaine version stable, ce qui protège votre base de données contre les retours à une version antérieure."
+    "betaGraduationNote": "Lorsque vous quittez le canal bêta, votre version actuelle est conservée jusqu’à la publication de la prochaine version stable, ce qui protège votre base de données contre les retours à une version antérieure.",
+    "availableTitle": "Mise à jour disponible",
+    "availableDescription": "La version {version} de Flo Cafe est disponible. La télécharger maintenant ? Vous pouvez continuer à travailler pendant le téléchargement et choisir quand redémarrer.",
+    "versionAvailable": "La version {version} est disponible",
+    "downloadNow": "Télécharger",
+    "later": "Plus tard",
+    "downloadFailedToStart": "Impossible de démarrer le téléchargement. Réessayez.",
+    "autoCheckTitle": "Rechercher automatiquement les mises à jour",
+    "autoCheckDescription": "Si activé, Flo Cafe recherche les nouvelles versions au démarrage et demande avant de télécharger. Si désactivé, utilisez Rechercher des mises à jour manuellement.",
+    "autoCheckToggleFailed": "Impossible de modifier le paramètre de mise à jour automatique."
   },
   "whatsapp": {
     "active": {

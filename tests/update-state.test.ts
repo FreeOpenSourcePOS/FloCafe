@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { shouldApplyInitialUpdateStatus } from '../frontend/src/hooks/update-status-sync';
 import {
   UPDATE_STATES,
+  canStartUpdateDownload,
   classifyUpdateError,
   initialUpdateState,
   isDevelopmentOrUnpackedArtifact,
@@ -25,6 +26,7 @@ import {
   isOneShotUpdateState,
   missingUpdateConfigState,
   oneShotUpdateState,
+  parseStoredAutoUpdateCheckEnabled,
   toIpcUpdateStatus,
   type StoredUpdateStatus,
 } from '../main/update-state';
@@ -37,25 +39,31 @@ function updaterError(codeOrMessage: string, message?: string): Error & { code?:
 }
 
 test('UPDATE_STATES contains exactly the approved enum members', () => {
-  assert.deepEqual([...UPDATE_STATES].sort(), [
-    'available',
-    'check-failed',
-    'checking',
-    'dev-mode',
-    'downloading',
-    'linux-managed',
-    'not-checked-yet',
-    'offline',
-    'ready-to-install',
-    'store-managed',
-    'up-to-date',
-  ].sort());
+  assert.deepEqual(
+    [...UPDATE_STATES].sort(),
+    [
+      'available',
+      'check-failed',
+      'checking',
+      'dev-mode',
+      'downloading',
+      'linux-managed',
+      'not-checked-yet',
+      'offline',
+      'ready-to-install',
+      'store-managed',
+      'up-to-date',
+    ].sort(),
+  );
 });
 
 // ── Error classification ────────────────────────────────────────────────────
 
 test('classifyUpdateError: channel file not found -> check-failed/manifest-missing', () => {
-  const err = updaterError('ERR_UPDATER_CHANNEL_FILE_NOT_FOUND', 'Cannot find latest.yml in the latest release');
+  const err = updaterError(
+    'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+    'Cannot find latest.yml in the latest release',
+  );
   assert.deepEqual(classifyUpdateError(err, 'check'), {
     state: 'check-failed',
     reason: 'manifest-missing',
@@ -72,7 +80,11 @@ test('classifyUpdateError: HTTP 404 message (no code) -> check-failed/manifest-m
 
 test('classifyUpdateError: legacy masked messages now classify as failures, not up-to-date', () => {
   // These are exactly the substrings the old code masked as "up to date".
-  for (const message of ['HTTP status 404', 'Cannot find latest-linux.yml', 'ENOENT: no such file app-update.yml']) {
+  for (const message of [
+    'HTTP status 404',
+    'Cannot find latest-linux.yml',
+    'ENOENT: no such file app-update.yml',
+  ]) {
     const out = classifyUpdateError(new Error(message));
     assert.equal(out.state, 'check-failed', message);
     assert.equal(out.reason, 'manifest-missing', message);
@@ -89,8 +101,14 @@ test('classifyUpdateError: unreadable app-update.yml -> check-failed/unknown', (
 });
 
 test('isMissingUpdateConfigError distinguishes absent and unreadable config', () => {
-  assert.equal(isMissingUpdateConfigError(updaterError('ENOENT', 'no such file app-update.yml')), true);
-  assert.equal(isMissingUpdateConfigError(updaterError('EACCES', 'permission denied app-update.yml')), false);
+  assert.equal(
+    isMissingUpdateConfigError(updaterError('ENOENT', 'no such file app-update.yml')),
+    true,
+  );
+  assert.equal(
+    isMissingUpdateConfigError(updaterError('EACCES', 'permission denied app-update.yml')),
+    false,
+  );
 });
 
 test('classifyUpdateError: DNS failure code ENOTFOUND -> offline', () => {
@@ -100,7 +118,14 @@ test('classifyUpdateError: DNS failure code ENOTFOUND -> offline', () => {
 });
 
 test('classifyUpdateError: other network codes -> offline', () => {
-  for (const code of ['EAI_AGAIN', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH']) {
+  for (const code of [
+    'EAI_AGAIN',
+    'ETIMEDOUT',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EHOSTUNREACH',
+    'ENETUNREACH',
+  ]) {
     const err = updaterError(code, `request to https://updates.example.com failed (${code})`);
     const out = classifyUpdateError(err);
     assert.equal(out.state, 'offline', code);
@@ -145,7 +170,11 @@ test('classifyUpdateError: manifest-looking download failures -> download-failed
 test('classifyUpdateError: generic error during download phase -> check-failed/download-failed', () => {
   const err = new Error('Checksum mismatch');
   const out = classifyUpdateError(err, 'download');
-  assert.deepEqual(out, { state: 'check-failed', reason: 'download-failed', detail: 'Checksum mismatch' });
+  assert.deepEqual(out, {
+    state: 'check-failed',
+    reason: 'download-failed',
+    detail: 'Checksum mismatch',
+  });
 });
 
 test('classifyUpdateError: generic error during check phase -> check-failed/unknown', () => {
@@ -209,26 +238,38 @@ test('missingUpdateConfigState distinguishes development and packaged artifacts'
 });
 
 test('isDevelopmentOrUnpackedArtifact distinguishes runtime artifact boundaries', () => {
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: true,
-    packaged: false,
-    unpackedMarker: false,
-  }), true);
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: false,
-    packaged: false,
-    unpackedMarker: false,
-  }), true);
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: false,
-    packaged: true,
-    unpackedMarker: true,
-  }), true);
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: false,
-    packaged: true,
-    unpackedMarker: false,
-  }), false);
+  assert.equal(
+    isDevelopmentOrUnpackedArtifact({
+      defaultApp: true,
+      packaged: false,
+      unpackedMarker: false,
+    }),
+    true,
+  );
+  assert.equal(
+    isDevelopmentOrUnpackedArtifact({
+      defaultApp: false,
+      packaged: false,
+      unpackedMarker: false,
+    }),
+    true,
+  );
+  assert.equal(
+    isDevelopmentOrUnpackedArtifact({
+      defaultApp: false,
+      packaged: true,
+      unpackedMarker: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isDevelopmentOrUnpackedArtifact({
+      defaultApp: false,
+      packaged: true,
+      unpackedMarker: false,
+    }),
+    false,
+  );
 });
 
 test('initial update seed is ignored after a live status arrives', () => {
@@ -253,7 +294,16 @@ test('isOneShotUpdateState discriminates one-shot states from runtime states', (
   assert.ok(isOneShotUpdateState('store-managed'));
   assert.ok(isOneShotUpdateState('linux-managed'));
   assert.ok(isOneShotUpdateState('dev-mode'));
-  for (const state of ['not-checked-yet', 'checking', 'up-to-date', 'available', 'downloading', 'ready-to-install', 'check-failed', 'offline'] as const) {
+  for (const state of [
+    'not-checked-yet',
+    'checking',
+    'up-to-date',
+    'available',
+    'downloading',
+    'ready-to-install',
+    'check-failed',
+    'offline',
+  ] as const) {
     assert.equal(isOneShotUpdateState(state), false, state);
   }
 });
@@ -302,4 +352,34 @@ test('toIpcUpdateStatus omits optional fields when absent', () => {
   assert.equal(payload.percent, undefined);
   assert.equal(payload.reason, undefined);
   assert.equal(payload.error, undefined);
+});
+
+test('canStartUpdateDownload only allows a download the user approves for an available update', () => {
+  assert.equal(
+    canStartUpdateDownload({ status: 'available', version: '9.9.9' }, 'check', false),
+    true,
+  );
+  assert.equal(
+    canStartUpdateDownload({ status: 'available', version: '9.9.9' }, 'download', false),
+    false,
+  );
+  assert.equal(
+    canStartUpdateDownload({ status: 'available', version: '9.9.9' }, 'check', true),
+    false,
+  );
+  for (const status of UPDATE_STATES.filter((state) => state !== 'available')) {
+    assert.equal(
+      canStartUpdateDownload({ status }, 'check', false),
+      false,
+      `${status} must not start a download`,
+    );
+  }
+});
+
+test('parseStoredAutoUpdateCheckEnabled defaults on and only an explicit false disables it', () => {
+  assert.equal(parseStoredAutoUpdateCheckEnabled(undefined), true);
+  assert.equal(parseStoredAutoUpdateCheckEnabled(null), true);
+  assert.equal(parseStoredAutoUpdateCheckEnabled('true'), true);
+  assert.equal(parseStoredAutoUpdateCheckEnabled('garbage'), true);
+  assert.equal(parseStoredAutoUpdateCheckEnabled('false'), false);
 });

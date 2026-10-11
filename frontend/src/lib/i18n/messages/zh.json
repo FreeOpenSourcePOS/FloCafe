@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "税费明细",
     "showTaxId": "税号",
     "softwareUpdates": "软件更新",
-    "softwareUpdatesHintDefault": "Flo Cafe 会自动检查更新。您也可以在下方手动检查。",
+    "softwareUpdatesHintDefault": "除非在下方关闭，Flo Cafe 会在启动时检查更新，并且下载前总会询问。你也可以手动检查。",
     "softwareUpdatesHintBrowser": "更新由 FloCafe 桌面应用处理。",
     "softwareUpdatesHintLinuxManaged": "此安装由您的 Linux 包管理器（deb/rpm）或 Snap Store 管理，而非 Flo 的应用内更新器。AppImage 构建会自动更新。",
     "softwareUpdatesHintStore": "此版本通过 App Store 分发。更新由商店管理。",
@@ -2883,7 +2883,16 @@
     "betaOn": "开",
     "betaOff": "关",
     "betaToggleFailed": "无法更改 Beta 渠道设置。",
-    "betaGraduationNote": "离开 Beta 渠道后，您将保留当前版本，直到下一个稳定版发布，以保护数据库免受降级影响。"
+    "betaGraduationNote": "离开 Beta 渠道后，您将保留当前版本，直到下一个稳定版发布，以保护数据库免受降级影响。",
+    "availableTitle": "有可用更新",
+    "availableDescription": "Flo Cafe {version} 版本已可用。现在下载吗？下载期间可以继续工作，重启时间由你决定。",
+    "versionAvailable": "{version} 版本已可用",
+    "downloadNow": "下载",
+    "later": "稍后",
+    "downloadFailedToStart": "无法开始下载，请重试。",
+    "autoCheckTitle": "自动检查更新",
+    "autoCheckDescription": "开启后，Flo Cafe 会在启动时检查新版本，并在下载前询问。关闭后，请使用“检查更新”手动检查。",
+    "autoCheckToggleFailed": "无法更改自动更新设置。"
   },
   "whatsapp": {
     "active": {

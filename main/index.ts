@@ -1,11 +1,35 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, powerMonitor, nativeTheme } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  Menu,
+  Tray,
+  nativeImage,
+  shell,
+  powerMonitor,
+  nativeTheme,
+} from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
 import { Bonjour } from 'bonjour-service';
-import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
-import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
+import {
+  getDatabase,
+  initDatabase,
+  closeDatabase,
+  waitForDatabaseRequests,
+  beginDatabaseShutdown,
+  SchemaVersionMismatchError,
+  now,
+  withDatabaseRequest,
+} from './db';
+import {
+  BETA_CHANNEL_SETTING_KEY,
+  parseStoredBetaChannelEnabled,
+  resolveUpdateChannel,
+} from './update-channel';
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
@@ -17,11 +41,16 @@ import { initPrinter } from './printers/thermal';
 import { destroySharedRasterRenderer } from './printers/raster-renderer';
 import { registerIpcHandlers, isTrustedSender } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
-import { requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
+import {
+  requestShutdown as requestWhatsAppShutdown,
+  shutdown as shutdownWhatsApp,
+} from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
 import {
+  AUTO_UPDATE_CHECK_SETTING_KEY,
+  canStartUpdateDownload,
   classifyUpdateError,
   initialUpdateState,
   isMissingUpdateConfigError,
@@ -30,14 +59,30 @@ import {
   isDevelopmentOrUnpackedArtifact,
   missingUpdateConfigState,
   oneShotUpdateState,
+  parseStoredAutoUpdateCheckEnabled,
   toIpcUpdateStatus,
   type StoredUpdateStatus,
   type UpdateErrorPhase,
 } from './update-state';
-import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
+import {
+  createAutoUpdaterErrorHandler,
+  createRestartAndInstallHandler,
+  type UpdateShutdownState,
+} from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
-import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
-import { applyTitleBarOverlayTheme, resolveTitleBarOverlayColors, resolveInitialIsDark, resolveThemeMode, type ThemeMode } from './title-bar-theme';
+import {
+  createLocalWindowOpenHandler,
+  createMainWindow,
+  resolveTitleBarMode,
+  type TitleBarMode,
+} from './window-options';
+import {
+  applyTitleBarOverlayTheme,
+  resolveTitleBarOverlayColors,
+  resolveInitialIsDark,
+  resolveThemeMode,
+  type ThemeMode,
+} from './title-bar-theme';
 import {
   beginRendererDocument,
   getRendererDocumentNonce,
@@ -76,13 +121,11 @@ if (process.platform === 'win32') {
 // Mac App Store builds: Electron sets process.mas = true inside the MAS sandbox.
 // MAS_BUILD=1 is the build-time fallback (dev/CI).
 const isMasBuild =
-  process.env.MAS_BUILD === '1' ||
-  (process as NodeJS.Process & { mas?: boolean }).mas === true;
+  process.env.MAS_BUILD === '1' || (process as NodeJS.Process & { mas?: boolean }).mas === true;
 
 // MSIX apps install under WindowsApps; check path for runtime detection.
 const isMsixBuild =
-  process.platform === 'win32' &&
-  process.execPath.toLowerCase().includes('windowsapps');
+  process.platform === 'win32' && process.execPath.toLowerCase().includes('windowsapps');
 
 // Either store build: skip third-party auto-updater entirely.
 const isStoreBuild = isMasBuild || isMsixBuild;
@@ -124,9 +167,30 @@ function writeBetaChannelEnabled(enabled: boolean): void {
     .run(BETA_CHANNEL_SETTING_KEY, enabled ? 'true' : 'false', now());
 }
 
+function readAutoUpdateCheckEnabled(): boolean {
+  try {
+    const row = getDatabase()
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get(AUTO_UPDATE_CHECK_SETTING_KEY) as { value: string | null } | undefined;
+    return parseStoredAutoUpdateCheckEnabled(row?.value);
+  } catch (error) {
+    log.warn('[Update] Could not read automatic update preference; checking anyway:', error);
+    return true;
+  }
+}
+
+function writeAutoUpdateCheckEnabled(enabled: boolean): void {
+  getDatabase()
+    .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+    .run(AUTO_UPDATE_CHECK_SETTING_KEY, enabled ? 'true' : 'false', now());
+}
+
 function enqueueBetaChannelTransition<T>(operation: () => Promise<T>): Promise<T> {
   const transition = betaChannelTransitionTail.then(operation, operation);
-  betaChannelTransitionTail = transition.then(() => undefined, () => undefined);
+  betaChannelTransitionTail = transition.then(
+    () => undefined,
+    () => undefined,
+  );
   return transition;
 }
 
@@ -147,14 +211,18 @@ function configureAutoUpdaterChannel(betaOptInOverride?: boolean): void {
     log.info(`[Update] Opted into ${resolved.channel} release channel`);
   } else if (versionChannel) {
     // Unsupported prerelease channels fall back to stable updates.
-    log.warn(`[Update] Unsupported prerelease channel ${versionChannel}; using stable updates only`);
+    log.warn(
+      `[Update] Unsupported prerelease channel ${versionChannel}; using stable updates only`,
+    );
   }
 }
 
 function setUpdateStatus(next: StoredUpdateStatus): void {
   if (next.status !== storedUpdateStatus.status) {
     const reasonSuffix = next.reason ? ` (${next.reason})` : '';
-    log.info(`[Update] Status change: ${storedUpdateStatus.status} -> ${next.status}${reasonSuffix}`);
+    log.info(
+      `[Update] Status change: ${storedUpdateStatus.status} -> ${next.status}${reasonSuffix}`,
+    );
   }
   storedUpdateStatus = next;
   mainWindow?.webContents.send('update-status', storedUpdateStatus);
@@ -163,8 +231,8 @@ function setUpdateStatus(next: StoredUpdateStatus): void {
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
   configureAutoUpdaterChannel();
-  // Auto-download update packages silently, but require explicit user confirmation to install.
-  autoUpdater.autoDownload = true;
+  // The user approves both the download and the restart-to-install.
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
@@ -174,15 +242,13 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('update-available', (info) => {
-    // autoDownload is true, so electron-updater starts downloading right after
-    // this fires on its own — no dialog, no manual download-update call needed.
-    console.log('[Update] Update available, downloading silently:', info.version);
-    updaterPhase = 'download';
+    console.log('[Update] Update available, awaiting user approval to download:', info.version);
+    updaterPhase = 'check';
     setUpdateStatus({
       status: 'available',
       version: info.version,
       releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes
+      releaseNotes: info.releaseNotes,
     });
   });
 
@@ -196,7 +262,7 @@ function setupAutoUpdater(): void {
     setUpdateStatus({
       status: 'downloading',
       percent: progress.percent,
-      version: storedUpdateStatus.version
+      version: storedUpdateStatus.version,
     });
   });
 
@@ -208,19 +274,24 @@ function setupAutoUpdater(): void {
     updaterPhase = 'check';
     setUpdateStatus({
       status: 'ready-to-install',
-      version: info.version
+      version: info.version,
     });
   });
 
-  autoUpdater.on('error', createAutoUpdaterErrorHandler({
-    getPhase: () => updaterPhase,
-    setPhase: (phase) => { updaterPhase = phase; },
-    isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
-    isInstallingUpdate: () => isInstallingUpdate,
-    setUpdateStatus,
-    onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
-    logInfo: (message, detail) => log.info(message, detail),
-  }));
+  autoUpdater.on(
+    'error',
+    createAutoUpdaterErrorHandler({
+      getPhase: () => updaterPhase,
+      setPhase: (phase) => {
+        updaterPhase = phase;
+      },
+      isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+      isInstallingUpdate: () => isInstallingUpdate,
+      setUpdateStatus,
+      onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
+      logInfo: (message, detail) => log.info(message, detail),
+    }),
+  );
 }
 
 function checkForUpdates(): void {
@@ -280,12 +351,13 @@ function checkForUpdates(): void {
     const classified = classifyUpdateError(configProbeError, 'check');
     log.info(
       `[Update] Update configuration probe classified as ${classified.state}` +
-      `/${classified.reason}:`, classified.detail
+        `/${classified.reason}:`,
+      classified.detail,
     );
     setUpdateStatus({
       status: classified.state,
       reason: classified.reason,
-      error: classified.detail
+      error: classified.detail,
     });
     return;
   }
@@ -304,30 +376,54 @@ function checkForUpdates(): void {
   });
 }
 
+function downloadUpdate(): { success: boolean; error?: string } {
+  if (!canStartUpdateDownload(storedUpdateStatus, updaterPhase, stagedUpdateReady)) {
+    return { success: false, error: 'No update is waiting to be downloaded' };
+  }
+  log.info(`[Update] User approved download of ${storedUpdateStatus.version ?? 'update'}`);
+  updaterPhase = 'download';
+  setUpdateStatus({ status: 'downloading', percent: 0, version: storedUpdateStatus.version });
+  autoUpdater.downloadUpdate().catch((err) => {
+    // The updater 'error' event records the failure state.
+    console.error('[Update] Download failed:', err);
+  });
+  return { success: true };
+}
+
 // Best-effort startup check for tax pack plugin updates.
 async function checkTaxPackUpdatesOnStartup(): Promise<void> {
   try {
     const remote = await fetchRemoteTaxPackCatalog();
-    const installedRows = getDatabase().prepare(`
+    const installedRows = getDatabase()
+      .prepare(`
       SELECT pack.id AS pack_id, pack.country, pack.publisher, version.version
       FROM country_packs AS pack
       JOIN country_pack_versions AS version ON version.id = pack.active_version_id
       WHERE pack.status = 'active'
-    `).all() as Array<{ pack_id: string; country: string; publisher: string; version: string }>;
+    `)
+      .all() as Array<{ pack_id: string; country: string; publisher: string; version: string }>;
     const updates = computeTaxPackUpdates(
-      installedRows.map((row) => (
-        { packId: row.pack_id, country: row.country, publisher: row.publisher, version: row.version }
-      )),
+      installedRows.map((row) => ({
+        packId: row.pack_id,
+        country: row.country,
+        publisher: row.publisher,
+        version: row.version,
+      })),
       remote.catalog,
     );
     if (updates.length > 0) {
-      const summary = updates.map((update) => `${update.packId} ${update.currentVersion} -> ${update.latestVersion}`).join(', ');
+      const summary = updates
+        .map((update) => `${update.packId} ${update.currentVersion} -> ${update.latestVersion}`)
+        .join(', ');
       console.log(`[Tax Packs] ${updates.length} plugin update(s) available: ${summary}`);
     } else {
       console.log('[Tax Packs] Plugin update check: all installed tax packs are up to date');
     }
   } catch (error) {
-    console.warn('[Tax Packs] Startup plugin update check skipped (offline or catalog unavailable):', error);
+    console.warn(
+      '[Tax Packs] Startup plugin update check skipped (offline or catalog unavailable):',
+      error,
+    );
   }
 }
 
@@ -348,7 +444,11 @@ let initializationPromise: Promise<void> | null = null;
 let activationPending = false;
 let runtimeRelaunchRequested = false;
 // Last did-fail-load detail captured for diagnostic dialog; cleared on successful load.
-let lastWindowLoadFailure: { errorCode: number; errorDescription: string; validatedURL?: string } | null = null;
+let lastWindowLoadFailure: {
+  errorCode: number;
+  errorDescription: string;
+  validatedURL?: string;
+} | null = null;
 // Self-healing GPU fallback: relaunch with --disable-gpu after repeated crashes.
 let shouldDisableGpuOnRelaunch = false;
 let consecutiveRendererCrashes = 0;
@@ -364,7 +464,9 @@ function clearRendererStabilityResetTimer(): void {
   }
 }
 const updateShutdownState: UpdateShutdownState = {
-  setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+  setInstallingUpdate: (value) => {
+    isInstallingUpdate = value;
+  },
   setQuitting: (value) => {
     isQuitting = value;
     if (value) {
@@ -386,9 +488,7 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
     recoverFailedWindow(mainWindow);
     return false;
   }
-  if (
-    (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
-  ) return false;
+  if (!isWindowRendererReady() && !isRendererReadinessFailSafeShown()) return false;
   // Native E2E drives the real app without popping a window on the developer's
   // desktop; the renderer keeps running unthrottled (see createWindow).
   if (process.env.FLO_E2E_HIDDEN_WINDOW === '1') return true;
@@ -418,7 +518,8 @@ function isFailedWindowDocument(window: BrowserWindow): boolean {
 const failedWindowRecovery = createFailedWindowRecovery({
   getMainWindow: () => mainWindow,
   isAborted: () => isQuitting || isShutdownRequested() || runtimeState === 'stopping',
-  isRuntimeHealthy: () => isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested()),
+  isRuntimeHealthy: () =>
+    isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested()),
   requestRelaunch: (reason) => requestRuntimeRelaunchOnce(reason),
   createWindow,
   logError: (message, error) => log.error(message, error),
@@ -450,17 +551,22 @@ function performAppRelaunch(): void {
     if (wantsGpuDisabled && !relaunchArgs.includes('--disable-gpu')) {
       relaunchArgs.push('--disable-gpu');
     }
-    if (app.commandLine.hasSwitch('disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
+    if (
+      app.commandLine.hasSwitch('disable-dev-shm-usage') &&
+      !relaunchArgs.includes('--disable-dev-shm-usage')
+    ) {
       relaunchArgs.push('--disable-dev-shm-usage');
     }
-    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG)) relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
+    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG))
+      relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
     app.relaunch({ execPath: process.execPath, args: relaunchArgs });
   } else {
     const relaunchArgs = process.argv.slice(1);
     if (wantsGpuDisabled && !relaunchArgs.includes('--disable-gpu')) {
       relaunchArgs.push('--disable-gpu');
     }
-    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG)) relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
+    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG))
+      relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
     app.relaunch({ args: relaunchArgs });
   }
 }
@@ -483,10 +589,11 @@ async function showRuntimeStuckDialog(reason: string): Promise<void> {
   const { response } = await dialog.showMessageBox({
     type: 'error',
     title: 'Flo needs to restart',
-    message: 'Flo could not recover automatically. This usually means another program '
-      + '(antivirus, firewall, or a leftover Flo process) is blocking its local server.\n\n'
-      + 'Please quit and reopen the app. If this keeps happening, sending a diagnostic '
-      + 'report helps us fix it — it contains no order, customer, or business data.',
+    message:
+      'Flo could not recover automatically. This usually means another program ' +
+      '(antivirus, firewall, or a leftover Flo process) is blocking its local server.\n\n' +
+      'Please quit and reopen the app. If this keeps happening, sending a diagnostic ' +
+      'report helps us fix it — it contains no order, customer, or business data.',
     detail: detailLines.join('\n'),
     buttons: ['Send Diagnostic Report', 'Quit'],
     defaultId: 0,
@@ -509,8 +616,8 @@ async function showRuntimeStuckDialog(reason: string): Promise<void> {
     title: 'Flo',
     message: sent
       ? 'Diagnostic report sent. Thank you.'
-      : 'Could not send the diagnostic report (diagnostics may be disabled in '
-        + 'Settings > Privacy, or there is no internet connection).',
+      : 'Could not send the diagnostic report (diagnostics may be disabled in ' +
+        'Settings > Privacy, or there is no internet connection).',
     buttons: ['Quit'],
   });
 }
@@ -526,7 +633,9 @@ function requestRuntimeRelaunch(reason: string): void {
 
   const finishRelaunch = (): void => {
     if (alreadyAttempted) {
-      log.error(`[Lifecycle] Runtime already relaunched once and failed again (${reason}); not relaunching again.`);
+      log.error(
+        `[Lifecycle] Runtime already relaunched once and failed again (${reason}); not relaunching again.`,
+      );
       void showRuntimeStuckDialog(reason)
         .catch((error) => log.error('[Lifecycle] Runtime-stuck dialog failed:', error))
         .finally(() => {
@@ -549,13 +658,10 @@ function requestRuntimeRelaunch(reason: string): void {
     }
   };
 
-  void runCleanup().then(
-    finishRelaunch,
-    (error) => {
-      log.error('[Lifecycle] Runtime recovery cleanup failed; proceeding anyway:', error);
-      finishRelaunch();
-    },
-  );
+  void runCleanup().then(finishRelaunch, (error) => {
+    log.error('[Lifecycle] Runtime recovery cleanup failed; proceeding anyway:', error);
+    finishRelaunch();
+  });
 }
 
 const requestRuntimeRelaunchOnce = createRelaunchGate(requestRuntimeRelaunch);
@@ -667,13 +773,19 @@ function createWindow(): void {
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
   // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
-  const localWindowOpenHandler = createLocalWindowOpenHandler(isAllowedLocalWindowUrl, getServerPort, getLocalIP);
+  const localWindowOpenHandler = createLocalWindowOpenHandler(
+    isAllowedLocalWindowUrl,
+    getServerPort,
+    getLocalIP,
+  );
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const localWindowResponse = localWindowOpenHandler({ url });
     if (localWindowResponse) return localWindowResponse;
 
     if (isSafeExternalUrl(url)) {
-      shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
+      shell
+        .openExternal(url)
+        .catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
     } else {
       console.warn('[Flo] Blocked unsafe external URL scheme:', url);
     }
@@ -690,7 +802,10 @@ function createWindow(): void {
 
   // Register WebUSB permissions for direct thermal printer connection.
   if (!usbDevicePermissionsRegistered) {
-    registerUsbDevicePermissions(mainWindow.webContents.session, `http://localhost:${getServerPort()}`);
+    registerUsbDevicePermissions(
+      mainWindow.webContents.session,
+      `http://localhost:${getServerPort()}`,
+    );
     usbDevicePermissionsRegistered = true;
   }
 
@@ -748,38 +863,49 @@ function createWindow(): void {
       });
       if (consecutiveRendererCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
         shouldDisableGpuOnRelaunch = true;
-        log.error('[Window] Repeated renderer crashes — requesting relaunch with hardware acceleration disabled.');
+        log.error(
+          '[Window] Repeated renderer crashes — requesting relaunch with hardware acceleration disabled.',
+        );
         requestRuntimeRelaunchOnce('renderer-repeated-crash-gpu-fallback');
       }
     }
 
     if (details.reason !== 'clean-exit' && mainWindow === createdWindow) {
-      dialog.showMessageBox({
-        type: 'error',
-        title: 'App Crashed',
-        message: 'The app crashed and will restart.',
-        detail: `Reason: ${details.reason}`,
-        buttons: ['OK'],
-      }).then(() => {
-        if (mainWindow !== createdWindow) return;
-        failedWindowRecovery.suppressAllClosedQuit(() => {
-          createdWindow.destroy();
-          if (mainWindow === createdWindow) mainWindow = null;
-          void handleMainWindowActivation();
+      dialog
+        .showMessageBox({
+          type: 'error',
+          title: 'App Crashed',
+          message: 'The app crashed and will restart.',
+          detail: `Reason: ${details.reason}`,
+          buttons: ['OK'],
+        })
+        .then(() => {
+          if (mainWindow !== createdWindow) return;
+          failedWindowRecovery.suppressAllClosedQuit(() => {
+            createdWindow.destroy();
+            if (mainWindow === createdWindow) mainWindow = null;
+            void handleMainWindowActivation();
+          });
+        })
+        .catch((error) => {
+          log.error('[Window] Renderer crash recovery failed:', error);
+          if (!isQuitting && !isShutdownRequested()) {
+            requestRuntimeRelaunchOnce('renderer-crash-recovery-failed');
+          }
         });
-      }).catch((error) => {
-        log.error('[Window] Renderer crash recovery failed:', error);
-        if (!isQuitting && !isShutdownRequested()) {
-          requestRuntimeRelaunchOnce('renderer-crash-recovery-failed');
-        }
-      });
     }
   });
 
   setupWindowLoadRetry(createdWindow, () => `http://localhost:${getServerPort()}`, {
     log,
     onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
-      log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
+      log.error(
+        '[Window] Load retry exhaustion:',
+        errorCode,
+        errorDescription,
+        validatedURL,
+        `retries=${retries}`,
+      );
       lastWindowLoadFailure = { errorCode, errorDescription, validatedURL };
       recoverFailedWindow(createdWindow);
     },
@@ -804,8 +930,8 @@ async function handleMainWindowActivation(): Promise<void> {
     shutdownRequested: isQuitting || isShutdownRequested(),
   });
   log.info(
-    `[Lifecycle] Activation action=${action} state=${runtimeState}`
-      + ` services=${services.main ? 'main' : 'no-main'},${services.kds ? 'kds' : 'no-kds'},${services.serverApp ? 'server-app' : 'no-server-app'}`,
+    `[Lifecycle] Activation action=${action} state=${runtimeState}` +
+      ` services=${services.main ? 'main' : 'no-main'},${services.kds ? 'kds' : 'no-kds'},${services.serverApp ? 'server-app' : 'no-server-app'}`,
   );
 
   if (action === 'show') {
@@ -834,7 +960,9 @@ async function handleMainWindowActivation(): Promise<void> {
       return;
     }
     void initializationPromise.then(
-      () => { void handleMainWindowActivation(); },
+      () => {
+        void handleMainWindowActivation();
+      },
       (error) => {
         log.error('[Lifecycle] Startup failed while activation was waiting:', error);
         requestRuntimeRelaunchOnce('activation-startup-failed');
@@ -864,9 +992,10 @@ function registerPowerMonitorRecovery(): void {
 // Track child process crashes and trigger GPU fallback relaunch on GPU crash.
 function registerChildProcessCrashTelemetry(): void {
   app.on('child-process-gone', (_event, details) => {
-    const systemErrorCode = 'systemErrorCode' in details
-      ? (details as { systemErrorCode?: number }).systemErrorCode
-      : undefined;
+    const systemErrorCode =
+      'systemErrorCode' in details
+        ? (details as { systemErrorCode?: number }).systemErrorCode
+        : undefined;
     log.error(
       '[Process] Child process gone:',
       details.type,
@@ -882,10 +1011,11 @@ function registerChildProcessCrashTelemetry(): void {
       systemErrorCode !== undefined ? `systemErrorCode=${systemErrorCode}` : '',
     );
     // Ignore normal shutdown/clean-exit signals.
-    const isGpuFailure = details.type === 'GPU'
-      && details.reason !== 'clean-exit'
-      && !isQuitting
-      && !isShutdownRequested();
+    const isGpuFailure =
+      details.type === 'GPU' &&
+      details.reason !== 'clean-exit' &&
+      !isQuitting &&
+      !isShutdownRequested();
     if (isGpuFailure) {
       // Cancel stability reset timer and increment GPU crash count.
       clearRendererStabilityResetTimer();
@@ -904,7 +1034,9 @@ function registerChildProcessCrashTelemetry(): void {
     if (isGpuFailure) {
       // Hardware acceleration fallback after GPU process crash.
       shouldDisableGpuOnRelaunch = true;
-      log.error('[Process] GPU process crashed — requesting relaunch with hardware acceleration disabled.');
+      log.error(
+        '[Process] GPU process crashed — requesting relaunch with hardware acceleration disabled.',
+      );
       requestRuntimeRelaunchOnce('gpu-process-crashed');
     }
   });
@@ -979,14 +1111,27 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Flo', click: () => { showMainWindow(); } },
+      {
+        label: 'Open Flo',
+        click: () => {
+          showMainWindow();
+        },
+      },
       { type: 'separator' },
-      { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+      {
+        label: 'Quit',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
     ]);
 
     tray.setToolTip('Flo');
     tray.setContextMenu(contextMenu);
-    tray.on('double-click', () => { showMainWindow(); });
+    tray.on('double-click', () => {
+      showMainWindow();
+    });
   } catch {
     console.log('[Tray] Icon not found, skipping tray');
   }
@@ -999,13 +1144,25 @@ function startMdns(): void {
       name: 'Flo',
       type: 'http',
       port: getServerPort(),
-      host: 'flo',   // resolves as flo.local on the LAN
-      txt: { version: app.getVersion(), kds: `/kds`, kds_port: String(getKdsPort()), server_app: '/server-standalone', server_app_port: String(getServerAppPort()) },
+      host: 'flo', // resolves as flo.local on the LAN
+      txt: {
+        version: app.getVersion(),
+        kds: `/kds`,
+        kds_port: String(getKdsPort()),
+        server_app: '/server-standalone',
+        server_app_port: String(getServerAppPort()),
+      },
     });
     const ip = getLocalIP();
-    console.log(`[mDNS] Advertising flo.local:${getServerPort()}  (IP fallback: http://${ip}:${getServerPort()})`);
-    console.log(`[mDNS] KDS available at http://flo.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`);
-    console.log(`[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`);
+    console.log(
+      `[mDNS] Advertising flo.local:${getServerPort()}  (IP fallback: http://${ip}:${getServerPort()})`,
+    );
+    console.log(
+      `[mDNS] KDS available at http://flo.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`,
+    );
+    console.log(
+      `[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`,
+    );
   } catch (err) {
     console.warn('[mDNS] Could not start Bonjour:', err);
   }
@@ -1052,34 +1209,69 @@ function stopMdns(): Promise<void> {
 
 function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{
-      label: app.getName(),
-      submenu: [
-        { label: `About ${app.getName()}`, click: () => showAbout() },
-        { type: 'separator' as const },
-        { role: 'services' as const },
-        { type: 'separator' as const },
-        { role: 'hide' as const },
-        { role: 'hideOthers' as const },
-        { role: 'unhide' as const },
-        { type: 'separator' as const },
-        { label: 'Quit', accelerator: 'Cmd+Q', click: () => { isQuitting = true; app.quit(); } },
-      ],
-    }] : []),
+    ...(process.platform === 'darwin'
+      ? [
+          {
+            label: app.getName(),
+            submenu: [
+              { label: `About ${app.getName()}`, click: () => showAbout() },
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              {
+                label: 'Quit',
+                accelerator: 'Cmd+Q',
+                click: () => {
+                  isQuitting = true;
+                  app.quit();
+                },
+              },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
-        { label: 'New Order', accelerator: 'CmdOrCtrl+N', click: () => mainWindow?.webContents.send('new-order') },
-        { label: 'Quick Search', accelerator: 'CmdOrCtrl+K', click: () => mainWindow?.webContents.send('quick-search') },
+        {
+          label: 'New Order',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('new-order'),
+        },
+        {
+          label: 'Quick Search',
+          accelerator: 'CmdOrCtrl+K',
+          click: () => mainWindow?.webContents.send('quick-search'),
+        },
         { type: 'separator' },
         { label: 'Backup Database', click: () => mainWindow?.webContents.send('backup-database') },
-        { label: 'Restore Backup', click: () => mainWindow?.webContents.send('menu-restore-from-file') },
+        {
+          label: 'Restore Backup',
+          click: () => mainWindow?.webContents.send('menu-restore-from-file'),
+        },
         { type: 'separator' },
-        { label: 'Database Health Check', click: () => mainWindow?.webContents.send('menu-db-health-check') },
-        { label: 'Initialize Database', click: () => mainWindow?.webContents.send('menu-db-initialize') },
+        {
+          label: 'Database Health Check',
+          click: () => mainWindow?.webContents.send('menu-db-health-check'),
+        },
+        {
+          label: 'Initialize Database',
+          click: () => mainWindow?.webContents.send('menu-db-initialize'),
+        },
         { label: 'Master PIN…', click: () => mainWindow?.webContents.send('menu-master-pin') },
         { type: 'separator' },
-        { label: 'Exit', accelerator: process.platform === 'darwin' ? undefined : 'CmdOrCtrl+Q', click: () => { isQuitting = true; app.quit(); } },
+        {
+          label: 'Exit',
+          accelerator: process.platform === 'darwin' ? undefined : 'CmdOrCtrl+Q',
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
+        },
       ],
     },
     {
@@ -1091,27 +1283,67 @@ function createMenu(): void {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' }
+        { role: 'selectAll' },
       ],
     },
     {
       label: 'View',
       submenu: [
-        { label: 'POS', accelerator: 'CmdOrCtrl+1', click: () => mainWindow?.webContents.send('go-pos') },
-        { label: 'Dashboard', accelerator: 'CmdOrCtrl+2', click: () => mainWindow?.webContents.send('go-dashboard') },
-        { label: 'Orders', accelerator: 'CmdOrCtrl+3', click: () => mainWindow?.webContents.send('go-orders') },
-        { label: 'Kitchen Display', accelerator: 'CmdOrCtrl+4', click: () => mainWindow?.webContents.send('go-kds') },
-        { label: 'Tables', accelerator: 'CmdOrCtrl+5', click: () => mainWindow?.webContents.send('go-tables') },
-        { label: 'Catalog', accelerator: 'CmdOrCtrl+6', click: () => mainWindow?.webContents.send('go-products') },
-        { label: 'Inventory', accelerator: 'CmdOrCtrl+7', click: () => mainWindow?.webContents.send('go-inventory') },
-        { label: 'Customers', accelerator: 'CmdOrCtrl+8', click: () => mainWindow?.webContents.send('go-customers') },
-        { label: 'Staff', accelerator: 'CmdOrCtrl+9', click: () => mainWindow?.webContents.send('go-staff') },
+        {
+          label: 'POS',
+          accelerator: 'CmdOrCtrl+1',
+          click: () => mainWindow?.webContents.send('go-pos'),
+        },
+        {
+          label: 'Dashboard',
+          accelerator: 'CmdOrCtrl+2',
+          click: () => mainWindow?.webContents.send('go-dashboard'),
+        },
+        {
+          label: 'Orders',
+          accelerator: 'CmdOrCtrl+3',
+          click: () => mainWindow?.webContents.send('go-orders'),
+        },
+        {
+          label: 'Kitchen Display',
+          accelerator: 'CmdOrCtrl+4',
+          click: () => mainWindow?.webContents.send('go-kds'),
+        },
+        {
+          label: 'Tables',
+          accelerator: 'CmdOrCtrl+5',
+          click: () => mainWindow?.webContents.send('go-tables'),
+        },
+        {
+          label: 'Catalog',
+          accelerator: 'CmdOrCtrl+6',
+          click: () => mainWindow?.webContents.send('go-products'),
+        },
+        {
+          label: 'Inventory',
+          accelerator: 'CmdOrCtrl+7',
+          click: () => mainWindow?.webContents.send('go-inventory'),
+        },
+        {
+          label: 'Customers',
+          accelerator: 'CmdOrCtrl+8',
+          click: () => mainWindow?.webContents.send('go-customers'),
+        },
+        {
+          label: 'Staff',
+          accelerator: 'CmdOrCtrl+9',
+          click: () => mainWindow?.webContents.send('go-staff'),
+        },
       ],
     },
     {
       label: 'Orders',
       submenu: [
-        { label: 'View All Orders', accelerator: 'CmdOrCtrl+O', click: () => mainWindow?.webContents.send('view-orders') },
+        {
+          label: 'View All Orders',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('view-orders'),
+        },
       ],
     },
     {
@@ -1126,33 +1358,45 @@ function createMenu(): void {
     {
       label: 'Settings',
       submenu: [
-        { label: 'Business Settings', click: () => mainWindow?.webContents.send('settings-business') },
+        {
+          label: 'Business Settings',
+          click: () => mainWindow?.webContents.send('settings-business'),
+        },
         { label: 'Tax Settings', click: () => mainWindow?.webContents.send('settings-tax') },
         { label: 'Printer Setup', click: () => mainWindow?.webContents.send('settings-printer') },
-        { label: 'Kitchen Stations', click: () => mainWindow?.webContents.send('settings-kitchen') },
+        {
+          label: 'Kitchen Stations',
+          click: () => mainWindow?.webContents.send('settings-kitchen'),
+        },
       ],
     },
     {
       label: 'Window',
       submenu: [
-        { label: 'Flo Cafe', click: () => { if (showMainWindow()) mainWindow?.focus(); } },
+        {
+          label: 'Flo Cafe',
+          click: () => {
+            if (showMainWindow()) mainWindow?.focus();
+          },
+        },
         { type: 'separator' },
         { role: 'minimize' },
-        ...(process.platform === 'darwin' ? [
-          { role: 'zoom' as const },
-          { type: 'separator' as const },
-          { role: 'front' as const },
-        ] : []),
+        ...(process.platform === 'darwin'
+          ? [{ role: 'zoom' as const }, { type: 'separator' as const }, { role: 'front' as const }]
+          : []),
       ],
     },
     {
       label: 'Help',
       submenu: [
-        ...(process.platform !== 'darwin' ? [{ label: 'About Flo', click: () => showAbout() }] : []),
-        ...(isStoreBuild
-          ? []
-          : [{ label: 'Check for Updates', click: () => checkForUpdates() }]),
-        { label: 'Open Logs Folder', click: () => shell.showItemInFolder(log.transports.file.getFile().path) },
+        ...(process.platform !== 'darwin'
+          ? [{ label: 'About Flo', click: () => showAbout() }]
+          : []),
+        ...(isStoreBuild ? [] : [{ label: 'Check for Updates', click: () => checkForUpdates() }]),
+        {
+          label: 'Open Logs Folder',
+          click: () => shell.showItemInFolder(log.transports.file.getFile().path),
+        },
       ],
     },
   ];
@@ -1161,8 +1405,16 @@ function createMenu(): void {
     template.push({
       label: 'Developer',
       submenu: [
-        { label: 'Toggle DevTools', accelerator: 'F12', click: () => mainWindow?.webContents.toggleDevTools() },
-        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => mainWindow?.webContents.reload() },
+        {
+          label: 'Toggle DevTools',
+          accelerator: 'F12',
+          click: () => mainWindow?.webContents.toggleDevTools(),
+        },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => mainWindow?.webContents.reload(),
+        },
       ],
     });
   }
@@ -1236,61 +1488,101 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow, () => currentEffectiveIsDark);
+    registerIpcHandlers(
+      shutdownSignal,
+      () => mainWindow,
+      showMainWindow,
+      () => currentEffectiveIsDark,
+    );
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and
       // one-shot states) so renderer reloads recover it.
-      toIpcUpdateStatus(storedUpdateStatus, app.getVersion())
+      toIpcUpdateStatus(storedUpdateStatus, app.getVersion()),
     );
 
     ipcMain.handle('check-for-updates', () => {
       checkForUpdates();
     });
 
+    ipcMain.handle('download-update', () => downloadUpdate());
+
+    ipcMain.handle('updates:get-auto-check', () =>
+      withDatabaseRequest(() => readAutoUpdateCheckEnabled()),
+    );
+
+    ipcMain.handle('updates:set-auto-check', (_event, enabled: unknown) => {
+      if (typeof enabled !== 'boolean') {
+        return { success: false, error: 'enabled must be a boolean' };
+      }
+      return withDatabaseRequest(() => {
+        try {
+          writeAutoUpdateCheckEnabled(enabled);
+        } catch (error) {
+          log.error('[Update] Failed to persist automatic update preference:', error);
+          return { success: false, error: 'Could not save the automatic update preference' };
+        }
+        log.info(`[Update] Automatic update checks ${enabled ? 'enabled' : 'disabled'} by user`);
+        return { success: true };
+      });
+    });
+
     ipcMain.handle('updates:get-beta-channel', () =>
       // Returns persisted beta channel preference.
-      withDatabaseRequest(() => readBetaChannelEnabled())
+      withDatabaseRequest(() => readBetaChannelEnabled()),
     );
 
     ipcMain.handle('updates:set-beta-channel', (_event, enabled: unknown) => {
       if (typeof enabled !== 'boolean') {
         return { success: false, error: 'enabled must be a boolean' };
       }
-      return enqueueBetaChannelTransition(() => withDatabaseRequest(async () => {
-        // Prevent channel switch if an update check/download is active or staged.
-        if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-          return { success: false, error: 'A downloaded update is waiting to be installed — install it before switching channels' };
-        }
-        if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
-          return { success: false, error: 'An update check or download is in progress — try again once it finishes' };
-        }
-        try {
-          writeBetaChannelEnabled(enabled);
-        } catch (error) {
-          log.error('[Update] Failed to persist beta-channel preference:', error);
-          return { success: false, error: 'Could not save the channel preference' };
-        }
-        log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
-        // Reconfigure channel settings and initiate immediate update re-check.
-        configureAutoUpdaterChannel(enabled);
-        setUpdateStatus(initialUpdateState());
-        checkForUpdates();
-        return { success: true };
-      }));
+      return enqueueBetaChannelTransition(() =>
+        withDatabaseRequest(async () => {
+          // Prevent channel switch if an update check/download is active or staged.
+          if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
+            return {
+              success: false,
+              error:
+                'A downloaded update is waiting to be installed — install it before switching channels',
+            };
+          }
+          if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
+            return {
+              success: false,
+              error: 'An update check or download is in progress — try again once it finishes',
+            };
+          }
+          try {
+            writeBetaChannelEnabled(enabled);
+          } catch (error) {
+            log.error('[Update] Failed to persist beta-channel preference:', error);
+            return { success: false, error: 'Could not save the channel preference' };
+          }
+          log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
+          // Reconfigure channel settings and initiate immediate update re-check.
+          configureAutoUpdaterChannel(enabled);
+          setUpdateStatus(initialUpdateState());
+          checkForUpdates();
+          return { success: true };
+        }),
+      );
     });
 
     // Requires master PIN authorization and runs cleanup before quitAndInstall.
-    ipcMain.handle('restart-and-install', createRestartAndInstallHandler({
-      isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
-      authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
-      runCleanup,
-      quitAndInstall: (isSilent, isForceRunAfter) => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
-      updateState: updateShutdownState,
-      onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
-      warn: (message) => log.warn(message),
-      error: (message, error) => log.error(message, error),
-    }));
+    ipcMain.handle(
+      'restart-and-install',
+      createRestartAndInstallHandler({
+        isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+        authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
+        runCleanup,
+        quitAndInstall: (isSilent, isForceRunAfter) =>
+          autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+        updateState: updateShutdownState,
+        onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
+        warn: (message) => log.warn(message),
+        error: (message, error) => log.error(message, error),
+      }),
+    );
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();
@@ -1341,14 +1633,20 @@ async function initialize(): Promise<void> {
     if (!isStoreBuild) {
       if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
         setupAutoUpdater();
-        setTimeout(() => checkForUpdates(), 5000);
+        if (readAutoUpdateCheckEnabled()) {
+          setTimeout(() => checkForUpdates(), 5000);
+        } else {
+          log.info('[Update] Automatic update check disabled; waiting for a manual check');
+        }
       }
     } else {
       // Store builds skip auto-updater and report store-managed status.
       setUpdateStatus(oneShotUpdateState('store-managed'));
     }
     if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
-      setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
+      setTimeout(() => {
+        void checkTaxPackUpdatesOnStartup();
+      }, 5000);
     }
 
     console.log('[Flo] Ready!');
@@ -1357,9 +1655,10 @@ async function initialize(): Promise<void> {
     log.error('[Lifecycle] Runtime initialization failed:', error);
     console.error('[Flo] Initialization error:', error);
     const errorDetails = error as { code?: unknown; name?: unknown } | null;
-    const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
-      || errorDetails?.code === 'ABORT_ERR'
-      || errorDetails?.name === 'AbortError';
+    const expectedShutdownCancellation =
+      errorDetails?.code === 'ERR_SHUTDOWN_ABORTED' ||
+      errorDetails?.code === 'ABORT_ERR' ||
+      errorDetails?.name === 'AbortError';
     if (!expectedShutdownCancellation) startupFailure = true;
     if (isShutdownRequested()) {
       try {
@@ -1410,7 +1709,8 @@ app.whenReady().then(() => {
       if (!activationPending) return;
       activationPending = false;
       log.error('[Lifecycle] Startup failed while activation was pending:', error);
-      if (!isQuitting && !isShutdownRequested()) requestRuntimeRelaunchOnce('activation-startup-failed');
+      if (!isQuitting && !isShutdownRequested())
+        requestRuntimeRelaunchOnce('activation-startup-failed');
     },
   );
 });
@@ -1434,38 +1734,41 @@ if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {
 }
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
-const cleanupCoordinator = createShutdownCoordinator(() => [
+const cleanupCoordinator = createShutdownCoordinator(
+  () => [
+    {
+      name: 'tray',
+      run: () => {
+        const currentTray = tray;
+        tray = null;
+        if (currentTray) currentTray.destroy();
+      },
+    },
+    { name: 'raster surface', run: () => destroySharedRasterRenderer() },
+    // Drain Server App before shutting down main API.
+    { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
+    { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
+    { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
+    { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
+    { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
+    { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
+    { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
+    { name: 'Bonjour', run: () => stopMdns() },
+    { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
+    { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
+    { name: 'database requests', run: () => waitForDatabaseRequests(), blocksDatabase: true },
+    // Close database after all in-flight handlers have finished.
+    { name: 'database', run: () => closeDatabase(), databaseClose: true },
+  ],
   {
-    name: 'tray',
-    run: () => {
-      const currentTray = tray;
-      tray = null;
-      if (currentTray) currentTray.destroy();
+    onFatalTimeout: () => {
+      // Avoid exit(1) on timeout during update installation so updater can hand off.
+      if (!isInstallingUpdate && !runtimeRelaunchRequested) {
+        app.exit(1);
+      }
     },
   },
-  { name: 'raster surface', run: () => destroySharedRasterRenderer() },
-  // Drain Server App before shutting down main API.
-  { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
-  { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
-  { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
-  { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
-  { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
-  { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
-  { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
-  { name: 'Bonjour', run: () => stopMdns() },
-  { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
-  { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
-  { name: 'database requests', run: () => waitForDatabaseRequests(), blocksDatabase: true },
-  // Close database after all in-flight handlers have finished.
-  { name: 'database', run: () => closeDatabase(), databaseClose: true },
-], {
-  onFatalTimeout: () => {
-    // Avoid exit(1) on timeout during update installation so updater can hand off.
-    if (!isInstallingUpdate && !runtimeRelaunchRequested) {
-      app.exit(1);
-    }
-  },
-});
+);
 
 const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
   app: app as unknown as ShutdownEntrypointApp,
@@ -1495,8 +1798,8 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   reportFailure: (context, error) => {
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },
-  getSignalExitCode: () => startupFailure ? 1 : 0,
-  getQuitExitCode: () => startupFailure ? 1 : 0,
+  getSignalExitCode: () => (startupFailure ? 1 : 0),
+  getQuitExitCode: () => (startupFailure ? 1 : 0),
 });
 
 process.on('uncaughtException', (error) => {

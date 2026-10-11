@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Ndarja e taksave",
     "showTaxId": "Numri i ID-së tatimore",
     "softwareUpdates": "Përditësimet e softuerit",
-    "softwareUpdatesHintDefault": "Flo Cafe kontrollon automatikisht për përditësime. Ju gjithashtu mund të kontrolloni manualisht më poshtë.",
+    "softwareUpdatesHintDefault": "Flo Cafe kontrollon për përditësime në nisje, përveç nëse e çaktivizoni më poshtë, dhe gjithmonë pyet para shkarkimit. Mund të kontrolloni edhe manualisht.",
     "softwareUpdatesHintBrowser": "Përditësimet trajtohen nga aplikacioni i desktopit FloCafe.",
     "softwareUpdatesHintLinuxManaged": "Ky instalim menaxhohet nga menaxheri juaj i paketave Linux (deb/rpm) ose Snap Store, jo përditësuesi i Flo në aplikacion. AppImage përditësohet automatikisht.",
     "softwareUpdatesHintStore": "Ky version shpërndahet përmes App Store. Përditësimet menaxhohen nga dyqani.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Aktiv",
     "betaOff": "Jashtë",
     "betaToggleFailed": "Cilësimi i kanalit beta nuk mund të ndryshohej.",
-    "betaGraduationNote": "Largimi nga kanali beta e ruan versionin tuaj aktual deri sa të publikohet versioni tjetër i qëndrueshëm, duke mbrojtur bazën tuaj të të dhënave nga uljet."
+    "betaGraduationNote": "Largimi nga kanali beta e ruan versionin tuaj aktual deri sa të publikohet versioni tjetër i qëndrueshëm, duke mbrojtur bazën tuaj të të dhënave nga uljet.",
+    "availableTitle": "Përditësim i disponueshëm",
+    "availableDescription": "Versioni {version} i Flo Cafe është i disponueshëm. Ta shkarkoj tani? Mund të vazhdoni punën gjatë shkarkimit dhe ju zgjidhni kur të rinisni.",
+    "versionAvailable": "Versioni {version} është i disponueshëm",
+    "downloadNow": "Shkarko",
+    "later": "Më vonë",
+    "downloadFailedToStart": "Shkarkimi nuk mund të nisej. Provoni sërish.",
+    "autoCheckTitle": "Kontrollo automatikisht për përditësime",
+    "autoCheckDescription": "Kur është aktiv, Flo Cafe kontrollon për versione të reja në nisje dhe pyet para shkarkimit. Kur është joaktiv, përdorni Kontrollo për përditësime manualisht.",
+    "autoCheckToggleFailed": "Cilësimi i përditësimeve automatike nuk mund të ndryshohej."
   },
   "whatsapp": {
     "active": {

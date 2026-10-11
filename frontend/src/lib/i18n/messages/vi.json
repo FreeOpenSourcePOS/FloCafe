@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Chi tiết thuế",
     "showTaxId": "Mã số thuế",
     "softwareUpdates": "Cập nhật phần mềm",
-    "softwareUpdatesHintDefault": "Flo Cafe tự động kiểm tra cập nhật. Bạn cũng có thể kiểm tra thủ công bên dưới.",
+    "softwareUpdatesHintDefault": "Flo Cafe kiểm tra cập nhật lúc khởi động trừ khi bạn tắt bên dưới, và luôn hỏi trước khi tải xuống. Bạn cũng có thể kiểm tra thủ công.",
     "softwareUpdatesHintBrowser": "Ứng dụng FloCafe trên máy tính quản lý cập nhật.",
     "softwareUpdatesHintLinuxManaged": "Bản cài đặt này được quản lý bởi trình quản lý gói Linux (deb/rpm) hoặc Snap Store, không phải trình cập nhật trong ứng dụng Flo. Bản AppImage tự cập nhật.",
     "softwareUpdatesHintStore": "Phiên bản này được phân phối qua App Store. Cửa hàng quản lý cập nhật.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Bật",
     "betaOff": "Tắt",
     "betaToggleFailed": "Không thể thay đổi cài đặt kênh beta.",
-    "betaGraduationNote": "Rời kênh beta sẽ giữ phiên bản hiện tại cho đến khi phát hành bản ổn định tiếp theo, bảo vệ cơ sở dữ liệu khỏi việc hạ phiên bản."
+    "betaGraduationNote": "Rời kênh beta sẽ giữ phiên bản hiện tại cho đến khi phát hành bản ổn định tiếp theo, bảo vệ cơ sở dữ liệu khỏi việc hạ phiên bản.",
+    "availableTitle": "Có bản cập nhật",
+    "availableDescription": "Đã có Flo Cafe phiên bản {version}. Tải xuống ngay? Bạn có thể tiếp tục làm việc trong khi tải và tự chọn lúc khởi động lại.",
+    "versionAvailable": "Đã có phiên bản {version}",
+    "downloadNow": "Tải xuống",
+    "later": "Để sau",
+    "downloadFailedToStart": "Không thể bắt đầu tải xuống. Hãy thử lại.",
+    "autoCheckTitle": "Tự động kiểm tra cập nhật",
+    "autoCheckDescription": "Khi bật, Flo Cafe kiểm tra phiên bản mới lúc khởi động và hỏi trước khi tải xuống. Khi tắt, dùng Kiểm tra cập nhật để kiểm tra thủ công.",
+    "autoCheckToggleFailed": "Không thể thay đổi cài đặt cập nhật tự động."
   },
   "whatsapp": {
     "active": {

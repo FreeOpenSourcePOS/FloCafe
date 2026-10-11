@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Buwis Breakdown",
     "showTaxId": "Buwis ID Number",
     "softwareUpdates": "Mga Update sa Software",
-    "softwareUpdatesHintDefault": "Kusang sumusuri ang Flo Cafe para sa mga update. Maaari ka ring sumuri nang manual sa ibaba.",
+    "softwareUpdatesHintDefault": "Tinitingnan ng Flo Cafe ang mga update sa pagsisimula maliban kung i-off mo ito sa ibaba, at palaging nagtatanong bago mag-download. Puwede ka ring tumingin nang mano-mano.",
     "softwareUpdatesHintBrowser": "Pinamamahalaan ang mga update ng FloCafe desktop app.",
     "softwareUpdatesHintLinuxManaged": "Pinamamahalaan ang install na ito ng iyong Linux package manager (deb/rpm) o ng Snap Store.",
     "softwareUpdatesHintStore": "Ipinapamahagi ang bersyong ito sa pamamagitan ng App Store. Pinamamahalaan ng store ang mga update.",
@@ -2883,7 +2883,16 @@
     "betaOn": "On",
     "betaOff": "Off",
     "betaToggleFailed": "Hindi mabago ang setting ng beta channel.",
-    "betaGraduationNote": "Ang pag-alis sa beta channel ay nagpapanatili ng iyong kasalukuyang bersyon hanggang sa susunod na stable release."
+    "betaGraduationNote": "Ang pag-alis sa beta channel ay nagpapanatili ng iyong kasalukuyang bersyon hanggang sa susunod na stable release.",
+    "availableTitle": "May available na update",
+    "availableDescription": "Available na ang bersyon {version} ng Flo Cafe. I-download na ngayon? Puwede kang magpatuloy sa trabaho habang nagda-download, at ikaw ang pipili kung kailan magre-restart.",
+    "versionAvailable": "Available na ang bersyon {version}",
+    "downloadNow": "I-download",
+    "later": "Mamaya",
+    "downloadFailedToStart": "Hindi masimulan ang pag-download. Subukan ulit.",
+    "autoCheckTitle": "Awtomatikong tingnan ang mga update",
+    "autoCheckDescription": "Kapag naka-on, tinitingnan ng Flo Cafe ang mga bagong bersyon sa pagsisimula at nagtatanong bago mag-download. Kapag naka-off, gamitin ang Tingnan ang mga Update nang mano-mano.",
+    "autoCheckToggleFailed": "Hindi mabago ang setting ng awtomatikong update."
   },
   "whatsapp": {
     "active": {

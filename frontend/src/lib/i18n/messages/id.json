@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Rincian Pajak",
     "showTaxId": "Nomor ID Pajak",
     "softwareUpdates": "Pembaruan Perangkat Lunak",
-    "softwareUpdatesHintDefault": "Flo Cafe memeriksa pembaruan secara otomatis. Anda juga dapat memeriksa secara manual di bawah.",
+    "softwareUpdatesHintDefault": "Flo Cafe memeriksa pembaruan saat dimulai kecuali Anda menonaktifkannya di bawah, dan selalu bertanya sebelum mengunduh. Anda juga bisa memeriksa secara manual.",
     "softwareUpdatesHintBrowser": "Pembaruan ditangani oleh aplikasi desktop FloCafe.",
     "softwareUpdatesHintLinuxManaged": "Instasi ini dikelola oleh paket manajer Linux Anda (deb/rpm) atau Snap Store, bukan pembaruan bawaan Flo. Build AppImage diperbarui secara otomatis.",
     "softwareUpdatesHintStore": "Versi ini didistribusikan melalui App Store. Pembaruan dikelola oleh toko.",
@@ -2883,7 +2883,16 @@
     "betaOn": "Aktif",
     "betaOff": "Nonaktif",
     "betaToggleFailed": "Tidak dapat mengubah pengaturan saluran beta.",
-    "betaGraduationNote": "Meninggalkan saluran beta mempertahankan versi Anda saat ini hingga rilis stabil berikutnya diterbitkan, melindungi basis data Anda dari penurunan versi."
+    "betaGraduationNote": "Meninggalkan saluran beta mempertahankan versi Anda saat ini hingga rilis stabil berikutnya diterbitkan, melindungi basis data Anda dari penurunan versi.",
+    "availableTitle": "Pembaruan tersedia",
+    "availableDescription": "Versi {version} Flo Cafe tersedia. Unduh sekarang? Anda bisa tetap bekerja selama pengunduhan dan memilih kapan memulai ulang.",
+    "versionAvailable": "Versi {version} tersedia",
+    "downloadNow": "Unduh",
+    "later": "Nanti",
+    "downloadFailedToStart": "Tidak dapat memulai unduhan. Coba lagi.",
+    "autoCheckTitle": "Periksa pembaruan secara otomatis",
+    "autoCheckDescription": "Jika aktif, Flo Cafe memeriksa versi baru saat dimulai dan bertanya sebelum mengunduh. Jika nonaktif, gunakan Periksa Pembaruan secara manual.",
+    "autoCheckToggleFailed": "Tidak dapat mengubah pengaturan pembaruan otomatis."
   },
   "whatsapp": {
     "active": {

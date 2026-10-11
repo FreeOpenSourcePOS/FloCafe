@@ -65,9 +65,9 @@ export async function injectElectronFixture(
     focused: options.focused ?? true,
     api: options.api ?? true,
     applicationMenuEntries:
-      options.applicationMenuEntries
+      options.applicationMenuEntries ??
       // macOS keeps its authoritative native menu bar; main answers with none.
-      ?? (platform === 'darwin' ? [] : DEFAULT_APPLICATION_MENU_ENTRIES),
+      (platform === 'darwin' ? [] : DEFAULT_APPLICATION_MENU_ENTRIES),
   };
 
   await page.addInitScript((config: SerializedElectronFixtureOptions) => {
@@ -155,10 +155,16 @@ export async function injectElectronFixture(
         callback(updateStatus);
         return () => {};
       },
-      getUpdateStatus: async () => ({ status: updateStatus.status, info: { version: appInfo.version } }),
+      getUpdateStatus: async () => ({
+        status: updateStatus.status,
+        info: { version: appInfo.version },
+      }),
       getBetaChannel: async () => false,
       setBetaChannel: async () => result,
       checkForUpdates: async () => undefined,
+      downloadUpdate: async () => result,
+      getAutoUpdateCheck: async () => true,
+      setAutoUpdateCheck: async () => result,
       restartAndInstall: async () => result,
     };
 

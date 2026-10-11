@@ -244,6 +244,48 @@ async function main() {
   );
   assertEqualOrThrow(countRows(db, 'diagnostics_hourly_aggregates'), 15, 'reports that do not fit remain in the bounded aggregate table');
 
+  console.log('\n3b continued. Permanent rejections release queue space after gap accounting');
+  await drain(db);
+  db.prepare('DELETE FROM local_diagnostics').run();
+  db.prepare('DELETE FROM store_diagnostics_outbox').run();
+  db.prepare('DELETE FROM diagnostics_hourly_aggregates').run();
+  db.prepare('DELETE FROM diagnostics_delivery_gaps').run();
+  setSetting(db, 'diagnostics_transmission_enabled', 'true');
+  setSetting(db, 'diagnostics_consent', 'true');
+  setSetting(db, 'telemetry_enabled', 'true');
+  setSetting(db, 'cloud_sync_enabled', '0');
+  setSetting(db, 'cloud_api_key', '');
+  delete process.env.FLO_MATRIX_OFFLINE;
+  for (let i = 0; i < DIAGNOSTIC_LOG_MAX_ROWS; i++) {
+    const id = `permanent-rejection-${i}`;
+    db.prepare(`INSERT INTO store_diagnostics_outbox (
+      event_id, payload, status, created_at, updated_at, transport, permanent_failure
+    ) VALUES (?, ?, 'failed', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'anonymous', 1)`)
+      .run(id, JSON.stringify({ schema_version: 2, report_id: id, capture_point: 'fc.backend.order.create.quantity_validation', count: 1 }));
+  }
+  db.prepare(`INSERT INTO diagnostics_delivery_gaps (reason_code, count, updated_at)
+    VALUES ('permanent_rejection', ?, ?)`).run(DIAGNOSTIC_LOG_MAX_ROWS, now());
+  globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': '3600' } })) as unknown as typeof fetch;
+  const recoveredEventId = crypto.randomUUID();
+  cloudSync.captureOperationFailure({
+    capture_point: 'fc.backend.order.create.quantity_validation', outcome: 'not_applied',
+    correlation_id: recoveredEventId, occurred_at: new Date().toISOString(),
+  });
+  assertOrThrow(await settle(() => localHas(recoveredEventId)), 'the recovery probe is captured');
+  await (cloudSync as any).flushDiagnosticsOutbox();
+  const queuedRecoveryReport = (db.prepare("SELECT payload FROM store_diagnostics_outbox WHERE permanent_failure = 0 AND payload LIKE '%fc.backend.order.create.quantity_validation%' ORDER BY created_at DESC LIMIT 1").get() as { payload: string } | undefined);
+  assertOrThrow(Boolean(queuedRecoveryReport), 'the new aggregate is queued after reclaiming permanent rejections');
+  assertEqualOrThrow(countRows(db, 'store_diagnostics_outbox'), DIAGNOSTIC_LOG_MAX_ROWS, 'reclaiming terminal rows keeps the outbox at its cap');
+  assertOrThrow(
+    (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE permanent_failure = 1').get() as { count: number }).count < DIAGNOSTIC_LOG_MAX_ROWS,
+    'permanent rejection rows no longer block all outbox capacity',
+  );
+  assertEqualOrThrow(
+    (db.prepare("SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'permanent_rejection'").get() as { count: number }).count,
+    DIAGNOSTIC_LOG_MAX_ROWS,
+    'reclaiming already-accounted rejections does not count their occurrences twice',
+  );
+
   console.log('\n3c. Local retention gaps reach the collector after a full queue drains, without a new capture');
   await drain(db);
   db.prepare('DELETE FROM local_diagnostics').run();

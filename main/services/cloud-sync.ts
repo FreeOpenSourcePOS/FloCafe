@@ -294,30 +294,31 @@ function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagno
     .run(max);
 }
 
-// Evicts delivered rows first, oldest-first within each group, falling back to
-// the oldest undelivered rows: during an outage the oldest pending rows are the
-// ones still waiting to be sent, and they are the whole point of the queue.
+// Evicts resolved rows first, then oldest undelivered rows.
 function evictOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
   const overflow = ((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count) - max;
   if (overflow <= 0) return;
   const rows = db.prepare(`
-    SELECT rowid, payload, status FROM store_diagnostics_outbox
-     ORDER BY CASE status WHEN 'delivered' THEN 0 ELSE 1 END, rowid ASC
+    SELECT rowid, payload, status, permanent_failure FROM store_diagnostics_outbox
+     ORDER BY CASE WHEN status = 'delivered' THEN 0 WHEN permanent_failure = 1 THEN 1 ELSE 2 END, rowid ASC
      LIMIT ?
-  `).all(overflow) as Array<{ rowid: number; payload: string; status: string }>;
+  `).all(overflow) as Array<{ rowid: number; payload: string; status: string; permanent_failure: number }>;
   const remove = db.prepare('DELETE FROM store_diagnostics_outbox WHERE rowid = ?');
   for (const row of rows) {
-    if (row.status !== 'delivered') addDiagnosticsDeliveryGap(db, 'queue_eviction', diagnosticPayloadCount(row.payload));
+    if (row.status !== 'delivered' && row.permanent_failure !== 1) {
+      addDiagnosticsDeliveryGap(db, 'queue_eviction', diagnosticPayloadCount(row.payload));
+    }
     remove.run(row.rowid);
   }
 }
 
-function evictDeliveredOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
-  const overflow = ((db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered'").get() as { count: number }).count)
+function evictResolvedOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
+  const overflow = ((db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered' OR permanent_failure = 1").get() as { count: number }).count)
     - max;
   if (overflow <= 0) return;
   db.prepare(`DELETE FROM store_diagnostics_outbox WHERE rowid IN (
-    SELECT rowid FROM store_diagnostics_outbox WHERE status = 'delivered' ORDER BY rowid ASC LIMIT ?
+    SELECT rowid FROM store_diagnostics_outbox WHERE status = 'delivered' OR permanent_failure = 1
+    ORDER BY CASE WHEN status = 'delivered' THEN 0 ELSE 1 END, rowid ASC LIMIT ?
   )`).run(overflow);
 }
 
@@ -440,11 +441,11 @@ function enqueueDiagnosticReport(
     const queued = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
     const needed = Math.max(0, queued - (DIAGNOSTIC_LOG_MAX_ROWS - 1));
     if (needed > 0) {
-      const delivered = (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered'").get() as { count: number }).count;
-      evictDeliveredOutboxDiagnostics(db, Math.max(0, delivered - needed));
+      const resolved = (db.prepare("SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE status = 'delivered' OR permanent_failure = 1").get() as { count: number }).count;
+      evictResolvedOutboxDiagnostics(db, Math.max(0, resolved - needed));
     }
-    const queuedAfterDeliveredEviction = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
-    if (queuedAfterDeliveredEviction >= DIAGNOSTIC_LOG_MAX_ROWS) return false;
+    const queuedAfterResolvedEviction = (db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count;
+    if (queuedAfterResolvedEviction >= DIAGNOSTIC_LOG_MAX_ROWS) return false;
   } else {
     evictOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS - 1);
   }

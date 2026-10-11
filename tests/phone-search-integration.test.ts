@@ -108,14 +108,23 @@ async function main() {
     // Verify ranked relevance ordering: exact phone match ranking
     insertCustomer(db, 'ci-exact-phone', 'Zoe Exact', '+917777777777', '+91', 1);
     insertCustomer(db, 'ci-sub-phone', 'Aaron Substring', '+91777777777700', '+91', 1);
+    insertCustomer(db, 'ci-formatted-sub', 'Aaron Formatted Substring', '+91987654321299', '+91', 1);
     let rankRes = await api(apiBase, '/customers-search?q=7777777777', { headers: authHeader });
     let rankIds = (rankRes.data || []).map((c: any) => c.id);
     assertEqual(rankIds[0], 'ci-exact-phone', 'exact phone match ranks first before substring phone match');
+
+    rankRes = await api(apiBase, '/customers-search?q=919876543212', { headers: authHeader });
+    rankIds = (rankRes.data || []).map((c: any) => c.id);
+    assertEqual(rankIds[0], 'ci-formatted', 'slash-normalized exact phone match ranks before longer match');
 
     // Verify ranked relevance ordering in /customers?search=
     let adminRank = await api(apiBase, '/customers?search=7777777777&per_page=10', { headers: authHeader });
     let adminRankIds = (adminRank.data?.data || []).map((c: any) => c.id);
     assertEqual(adminRankIds[0], 'ci-exact-phone', 'admin list filter ranks exact phone match first');
+
+    adminRank = await api(apiBase, '/customers?search=919876543212&per_page=10', { headers: authHeader });
+    adminRankIds = (adminRank.data?.data || []).map((c: any) => c.id);
+    assertEqual(adminRankIds[0], 'ci-formatted', 'admin list ranks slash-normalized exact phone match first');
 
     // ── /api/customers?search= (admin list filter) ──────────────────────────
     res = await api(apiBase, '/customers?search=9876543210&per_page=10', { headers: authHeader });

@@ -320,13 +320,13 @@ router.get(
       WHERE c.is_active = 1
     `;
       const params: any[] = [];
+      const phoneDigitsSearch = `REPLACE(c.phone_digits, '/', '')`;
 
       if (req.query.search) {
         const rawSearch = String(req.query.search || '').trim();
         const digitsSearch = stripPhoneDigits(rawSearch);
         const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
         const search = `%${rawSearch}%`;
-        const phoneDigitsSearch = `REPLACE(c.phone_digits, '/', '')`;
 
         if (isPhoneLikeSearch) {
           query += ` AND (c.name LIKE ? OR ${phoneDigitsSearch} LIKE ? OR c.email LIKE ?)`;
@@ -350,9 +350,9 @@ router.get(
         if (isPhoneLikeSearch) {
           query += ` ORDER BY
             CASE
-              WHEN c.phone_digits = ? THEN 1
-              WHEN c.phone_digits LIKE ? THEN 2
-              WHEN c.phone_digits LIKE ? THEN 3
+              WHEN ${phoneDigitsSearch} = ? THEN 1
+              WHEN ${phoneDigitsSearch} LIKE ? THEN 2
+              WHEN ${phoneDigitsSearch} LIKE ? THEN 3
               WHEN LOWER(c.name) = LOWER(?) THEN 4
               WHEN c.name LIKE ? THEN 5
               ELSE 6

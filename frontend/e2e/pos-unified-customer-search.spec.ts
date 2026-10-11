@@ -40,6 +40,10 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   await customerSearchInput.fill(existingName.slice(0, 10));
   const nameResult = page.getByRole('button').filter({ hasText: existingName }).first();
   await expect(nameResult).toBeVisible({ timeout: 5_000 });
+  await customerSearchInput.fill(`${existingName} no match`);
+  await expect(nameResult).toBeHidden();
+  await customerSearchInput.fill(existingName.slice(0, 10));
+  await expect(nameResult).toBeVisible({ timeout: 5_000 });
   await nameResult.click();
   await expect(page.getByText(existingName, { exact: true })).toBeVisible();
 
@@ -76,6 +80,7 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   const phoneField = modal.locator('input[type="tel"]');
   const nameField = modal.getByRole('textbox').first();
   await expect(phoneField).toHaveValue(newCustomerPhone);
+  await expect(phoneField).toBeFocused();
   await expect(nameField).toHaveValue('');
 
   // 5. Test Swap Name & Phone

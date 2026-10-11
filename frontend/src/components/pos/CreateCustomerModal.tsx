@@ -136,7 +136,7 @@ export default function CreateCustomerModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-              autoFocus={isPhoneInitial}
+              autoFocus={!isPhoneInitial}
             />
           </div>
           <div>
@@ -151,7 +151,7 @@ export default function CreateCustomerModal({
               placeholder={dialCode}
               className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               dir="ltr"
-              autoFocus={!isPhoneInitial}
+              autoFocus={isPhoneInitial}
             />
           </div>
           <div>

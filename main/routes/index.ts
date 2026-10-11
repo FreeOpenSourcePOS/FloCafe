@@ -289,9 +289,9 @@ export function registerRoutes(app: Express): void {
         WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY
           CASE
-            WHEN phone_digits = ? THEN 1
-            WHEN phone_digits LIKE ? THEN 2
-            WHEN phone_digits LIKE ? THEN 3
+            WHEN ${phoneDigitsSearch} = ? THEN 1
+            WHEN ${phoneDigitsSearch} LIKE ? THEN 2
+            WHEN ${phoneDigitsSearch} LIKE ? THEN 3
             WHEN LOWER(name) = LOWER(?) THEN 4
             WHEN name LIKE ? THEN 5
             ELSE 6

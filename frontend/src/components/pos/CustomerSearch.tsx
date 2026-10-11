@@ -69,6 +69,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const searchRequestIdRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -108,6 +109,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   useEffect(() => {
     return () => {
+      searchRequestIdRef.current += 1;
       clearTimeout(debounceRef.current);
       requestAbortRef.current?.abort();
     };
@@ -125,12 +127,14 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   }, []);
 
   const searchCustomers = (q: string) => {
+    const requestId = ++searchRequestIdRef.current;
     clearTimeout(debounceRef.current);
     requestAbortRef.current?.abort();
+    setResults([]);
+    setActiveIndex(0);
 
     const trimmed = q.trim();
     if (trimmed.length < 2) {
-      setResults([]);
       setLoading(false);
       return;
     }
@@ -143,14 +147,15 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
+        if (requestId !== searchRequestIdRef.current) return;
         const list = Array.isArray(data) ? data : data.customers || [];
         setResults(list);
         setActiveIndex(0);
       } catch {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
         setResults([]);
       } finally {
-        setLoading(false);
+        if (requestId === searchRequestIdRef.current) setLoading(false);
       }
     }, 250);
   };
@@ -164,8 +169,8 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   const handleSelectCustomer = (selected: Customer) => {
     cart.setCustomer(selected);
+    searchCustomers('');
     setQuery('');
-    setResults([]);
     setIsOpen(false);
     onSelected?.();
   };
@@ -414,8 +419,8 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           <button
             type="button"
             onClick={() => {
+              searchCustomers('');
               setQuery('');
-              setResults([]);
               setIsOpen(false);
               inputRef.current?.focus();
             }}
@@ -540,8 +545,8 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           onCreated={(created) => {
             cart.setCustomer(created);
             setCreatingModal(null);
+            searchCustomers('');
             setQuery('');
-            setResults([]);
             onSelected?.();
           }}
         />

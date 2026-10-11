@@ -495,6 +495,11 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     onConfirm(splitLines, walletAmt, finalDiscount);
   };
 
+  const modalRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    modalRef.current?.focus();
+  }, []);
+
   const handleConfirmRef = useRef(handleConfirm);
   useEffect(() => {
     handleConfirmRef.current = handleConfirm;
@@ -512,7 +517,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         return;
       }
 
-      if (isInput || target?.closest('button, a, select, [role="button"]')) return;
+      const isInteractive =
+        Boolean(target?.closest('button, a, select, [role="button"]')) &&
+        (modalRef.current ? modalRef.current.contains(target) : true);
+      if (isInput || isInteractive) return;
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
         e.preventDefault();
@@ -560,8 +568,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
   return (
     <div
+      ref={modalRef}
+      tabIndex={-1}
       data-testid="prepaid-checkout-modal"
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 outline-none"
     >
       <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl">
         {/* Compact header and bill summary share one block to preserve vertical space. */}

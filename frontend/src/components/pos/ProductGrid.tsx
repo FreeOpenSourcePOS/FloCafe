@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
+import toast from 'react-hot-toast';
 import type { Category, Product, ProductVariant } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -10,10 +11,18 @@ import TagBadge from './DietaryBadge';
 import { productNeedsCustomizer } from '@/lib/product-variants';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
-import { parseDbTimestamp } from '@/lib/utils';
+import { fractionalQuantityStep, parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { subscribeToQuickSearch } from '@/lib/quick-search';
+import { parseQuantitySearch } from '@/lib/quantity-search';
+
+function isValidProductQuantity(product: Product, quantity: number): boolean {
+  if (!Number.isFinite(quantity) || quantity <= 0) return false;
+  if (Number.isInteger(quantity)) return true;
+  const step = fractionalQuantityStep(product);
+  return step !== null && Math.abs(quantity / step - Math.round(quantity / step)) <= 1e-8;
+}
 
 const CATEGORY_COLORS: Record<
   string,
@@ -159,13 +168,13 @@ interface Props {
   search: string;
   setSearch: (s: string) => void;
   currency: string;
-  onProductClick: (product: Product) => void;
+  onProductClick: (product: Product, quantity: number) => void;
   /** A scanned variant goes through the cart customizer, so required add-ons and sold-out gating still apply. */
-  onScannedVariant?: (product: Product, variant: ProductVariant) => void;
+  onScannedVariant: (product: Product, variant: ProductVariant, quantity: number) => void;
   sidebarOpen?: boolean;
   /** Overrides for hosts that keep their own cart, such as the Server App's tableside draft. */
   cartQuantities?: ReadonlyMap<Product['id'], number>;
-  onScaledProduct?: (product: Product, quantity: number) => void;
+  onScaledProduct: (product: Product, quantity: number) => void;
   formatPrice?: (amount: number) => string;
   showImages?: boolean;
   gridClassName?: string;
@@ -194,6 +203,11 @@ export default function ProductGrid({
   const { showProductImages: showProductImagesSetting } = usePosSettingsStore();
   const showProductImages = showImages ?? showProductImagesSetting;
   const t = useTranslations('pos');
+  const validateSelectionQuantity = (product: Product, quantity: number) => {
+    if (isValidProductQuantity(product, quantity)) return true;
+    toast.error(t('orderQuantityInvalid'));
+    return false;
+  };
   const tenantFmt = useFormatCurrency();
   const fmt = formatPrice ?? tenantFmt;
   useEffect(() => {
@@ -212,9 +226,12 @@ export default function ProductGrid({
   }, [cart.items]);
   const cartQuantities = cartQuantitiesOverride ?? cartStoreQuantities;
 
+  const parsedSearch = useMemo(() => parseQuantitySearch(search), [search]);
+  const activeQuery = parsedSearch ? parsedSearch.query : search;
+
   const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
   });
 
@@ -236,25 +253,49 @@ export default function ProductGrid({
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
-              // Typed or pasted barcode, not just a scanner — a dedicated
-              // action into this field works regardless of typing speed.
+              // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
               const trimmed = search.trim();
               if (!trimmed) return;
-              const match = resolveScannedProduct(trimmed, products);
+              const rawMatch = resolveScannedProduct(trimmed, products);
+              const parsedQty = rawMatch ? null : parseQuantitySearch(trimmed);
+              const targetCode = parsedQty ? parsedQty.query : trimmed;
+              const quantityToAdd = parsedQty ? parsedQty.quantity : 1;
+              const match = rawMatch ?? resolveScannedProduct(targetCode, products);
               if (match) {
                 if (match.scaleBarcode) {
-                  if (onScaledProduct) onScaledProduct(match.product, match.quantity);
-                  else cart.addItem(match.product, match.quantity);
+                  const matchedQuantity = match.quantity * quantityToAdd;
+                  if (!validateSelectionQuantity(match.product, matchedQuantity)) return;
+                  onScaledProduct(match.product, matchedQuantity);
                 } else if (match.variant) {
-                  if (onScannedVariant) onScannedVariant(match.product, match.variant);
-                  else cart.addItem(match.product, 1, [], '', match.variant);
-                } else onProductClick(match.product);
+                  if (!validateSelectionQuantity(match.product, quantityToAdd)) return;
+                  onScannedVariant(match.product, match.variant, quantityToAdd);
+                } else {
+                  if (!validateSelectionQuantity(match.product, quantityToAdd)) return;
+                  onProductClick(match.product, quantityToAdd);
+                }
+                setSearch('');
+                return;
+              }
+
+              const matchedProduct =
+                filtered.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
+                (filtered.length === 1 ? filtered[0] : null);
+
+              if (matchedProduct) {
+                if (!validateSelectionQuantity(matchedProduct, quantityToAdd)) return;
+                onProductClick(matchedProduct, quantityToAdd);
                 setSearch('');
               }
             }}
-            placeholder={searchPlaceholder ?? t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            placeholder={searchPlaceholder ?? `${t('searchProducts')} [/]`}
+            data-testid="pos-product-search"
+            className="w-full ps-9 pe-8 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
+          {!search && (
+            <kbd className="hidden sm:inline-flex absolute end-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono text-muted-foreground pointer-events-none">
+              /
+            </kbd>
+          )}
         </div>
         <div data-testid="pos-category-row" className="flex flex-nowrap gap-2 pb-1 overflow-x-auto">
           <button
@@ -310,7 +351,11 @@ export default function ProductGrid({
                 key={product.id}
                 data-testid="pos-product-card"
                 type="button"
-                onClick={() => onProductClick(product)}
+                onClick={() => {
+                  const quantity = parsedSearch?.quantity ?? 1;
+                  if (!validateSelectionQuantity(product, quantity)) return;
+                  onProductClick(product, quantity);
+                }}
                 className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (

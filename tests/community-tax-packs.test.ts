@@ -23,7 +23,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => floVersion } };
   }
-  if (request.includes('trusted-signing-key') && parent?.filename?.includes('/main/')) {
+  if (
+    request.includes('trusted-signing-key') &&
+    parent?.filename?.includes(`${path.sep}main${path.sep}`)
+  ) {
     return { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY: testSigningKeyPair.publicKey };
   }
   return originalLoad.apply(this, arguments as any);

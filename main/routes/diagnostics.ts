@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import expressRateLimit from 'express-rate-limit';
 import { requirePermission } from '../services/authorization';
+import { isAllowedPrivateIp } from '../middleware/security';
 import {
   cloudSync,
   DiagnosticEventInput,
@@ -18,6 +19,7 @@ const diagnosticsWriteRateLimit = expressRateLimit({
   limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
 });
 
 const EVENT_CODE_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;

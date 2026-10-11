@@ -48,6 +48,9 @@ import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
 import { AI_HELP_PROVIDERS, copyPrinterDiagnostic } from '@/lib/printer/ai-help';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
+import { usePosKeyboardShortcuts } from '@/hooks/usePosKeyboardShortcuts';
+import KeyboardShortcutsModal from '@/components/pos/KeyboardShortcutsModal';
+import { dispatchQuickSearchRequest } from '@/lib/quick-search';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -60,6 +63,7 @@ import {
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
+import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -234,9 +238,10 @@ export default function POSPage() {
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tExpenses = useTranslations('expenses');
+  const tCommon = useTranslations('common');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
-  const { confirm, ConfirmDialog } = useConfirm();
+  const { confirm, ConfirmDialog, isConfirmOpen } = useConfirm();
   const cashDrawer = useCashDrawerMovements();
   const shift = useCashSession();
   // Shift actions follow the same owner/manager/cashier group as the
@@ -256,6 +261,7 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
+  const [addonInitialQuantity, setAddonInitialQuantity] = useState(1);
   // The variant a scanned barcode named, preselected in the customizer.
   const [addonInitialVariant, setAddonInitialVariant] = useState<ProductVariant | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
@@ -264,6 +270,7 @@ export default function POSPage() {
   const [checkoutOverridePin, setCheckoutOverridePin] = useState<string | undefined>();
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [showKeyboardShortcutsModal, setShowKeyboardShortcutsModal] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{
     title: string;
@@ -1049,22 +1056,24 @@ export default function POSPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
-      cart.addItem(product, 1);
+      cart.addItem(product, quantity);
       return;
     }
+    setAddonInitialQuantity(quantity);
     setAddonInitialVariant(null);
     setAddonProduct(product);
   };
 
-  const handleScannedVariant = (product: Product, variant: ProductVariant) => {
+  const handleScannedVariant = (product: Product, variant: ProductVariant, quantity = 1) => {
     if (scannedVariantNeedsCustomizer(product, variant)) {
+      setAddonInitialQuantity(quantity);
       setAddonInitialVariant(variant);
       setAddonProduct(product);
       return;
     }
-    cart.addItem(product, 1, [], '', variant);
+    cart.addItem(product, quantity, [], '', variant);
   };
 
   const handleAddonAdd = (
@@ -1090,8 +1099,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen =
-    showTablePicker ||
+  const anyOtherModalOpen =
     !!addonProduct ||
     !!editingCartItem ||
     !!checkoutTable ||
@@ -1101,7 +1109,10 @@ export default function POSPage() {
     cashDrawer.open ||
     shift.openModalOpen ||
     shift.closeModalOpen ||
-    showPrintMenuModal;
+    showPrintMenuModal ||
+    showKeyboardShortcutsModal ||
+    isConfirmOpen;
+  const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);
@@ -1114,19 +1125,24 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
-  const handlePlaceOrder = async () => {
+  const validateOrderPreflight = () => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
-      return;
+      return false;
     }
     if (customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
-      return;
+      return false;
     }
     if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
       setShowTablePicker(true);
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!validateOrderPreflight()) return;
 
     // Prepaid stores collect payment before finishing the order.
     if (shouldTakePaymentNow) {
@@ -2167,6 +2183,177 @@ export default function POSPage() {
 
   const itemCount = cart.itemCount();
 
+  usePosKeyboardShortcuts(
+    {
+      onFocusSearch: () => {
+        dispatchQuickSearchRequest();
+      },
+      onTender: () => {
+        if (!submitting && cart.items.length > 0) {
+          void handlePlaceOrder();
+        }
+      },
+      onToggleTables: () => {
+        if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired) {
+          setShowTablePicker((prev) => !prev);
+        }
+      },
+      onOpenCheckout: () => {
+        if (
+          shouldTakePaymentNow ||
+          !isRestaurant ||
+          cart.orderType !== 'dine_in' ||
+          !tablesRequired
+        ) {
+          void handlePlaceOrder();
+          return;
+        }
+        if (!validateOrderPreflight()) return;
+        if (cart.tableId) {
+          const tbl = tables.find((t) => t.id === cart.tableId);
+          if (tbl) setCheckoutTable(tbl);
+          else setShowTablePicker(true);
+        } else {
+          setShowTablePicker(true);
+        }
+      },
+      onOpenCashMovement: () => {
+        cashDrawer.openModal();
+      },
+      onFocusCustomer: () => {
+        const input = document.getElementById('customer-phone-search') as HTMLInputElement | null;
+        input?.focus();
+        input?.select();
+      },
+      onHoldOrder: () => {
+        if (
+          isRestaurant &&
+          cart.orderType === 'dine_in' &&
+          cart.tableId &&
+          cart.items.length > 0 &&
+          billingType === 'postpaid'
+        ) {
+          const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
+          heldOrders
+            .holdOrder(
+              cart.tableId,
+              cart.items,
+              cart.customerId,
+              cart.guestCount,
+              cart.orderNotes,
+              [...cart.waivedChargeIds],
+              [...cart.optedInChargeIds],
+            )
+            .then(() => {
+              cart.clearCart();
+              toast.success(t('orderHeldFor', { table: tableName }));
+            })
+            .catch(() => {
+              toast.error(t('holdOrderFailed'));
+            });
+        }
+      },
+      onToggleFullscreen: () => {
+        toggleFullscreen();
+      },
+      onDismissModalOrBlur: () => {
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+          activeEl.blur();
+          return true;
+        }
+        if (showKeyboardShortcutsModal) {
+          setShowKeyboardShortcutsModal(false);
+          return true;
+        }
+        if (showTablePicker) {
+          setShowTablePicker(false);
+          return true;
+        }
+        if (addonProduct) {
+          setAddonProduct(null);
+          setAddonInitialVariant(null);
+          return true;
+        }
+        if (editingCartItem) {
+          setEditingCartItem(null);
+          return true;
+        }
+        if (showCustomerPrompt) {
+          setShowCustomerPrompt(false);
+          return true;
+        }
+        if (showPrepaidCheckout) {
+          setShowPrepaidCheckout(false);
+          return true;
+        }
+        if (checkoutTable) {
+          setCheckoutTable(null);
+          return true;
+        }
+        if (paymentBill) {
+          setPaymentBill(null);
+          return true;
+        }
+        if (cashDrawer.open) {
+          cashDrawer.setOpen(false);
+          return true;
+        }
+        if (showPrintMenuModal) {
+          setShowPrintMenuModal(false);
+          return true;
+        }
+        if (mobileCartOpen) {
+          setMobileCartOpen(false);
+          return true;
+        }
+        return false;
+      },
+      onIncrementLastItem: () => {
+        const items = useCartStore.getState().items;
+        if (items.length === 0) return;
+        const last = items[items.length - 1];
+        const step = fractionalQuantityStep(last.product);
+        useCartStore
+          .getState()
+          .updateQuantity(
+            last.id,
+            step == null ? last.quantity + 1 : roundToQuantityPrecision(last.quantity + step, step),
+          );
+      },
+      onDecrementLastItem: () => {
+        const items = useCartStore.getState().items;
+        if (items.length === 0) return;
+        const last = items[items.length - 1];
+        const step = fractionalQuantityStep(last.product);
+        useCartStore
+          .getState()
+          .updateQuantity(
+            last.id,
+            step == null ? last.quantity - 1 : roundToQuantityPrecision(last.quantity - step, step),
+          );
+      },
+      onClearCart: async () => {
+        if (cart.items.length === 0) return;
+        const confirmed = await confirm(t('clearAmount') + '?', {
+          title: t('cart'),
+          confirmLabel: tCommon('clear'),
+          destructive: true,
+        });
+        if (confirmed) cart.clearCart();
+      },
+      onShowHelp: () => {
+        setShowKeyboardShortcutsModal((prev) => !prev);
+      },
+    },
+    {
+      enabled: true,
+      anyModalOpen,
+      tablePickerOpen: showTablePicker && !anyOtherModalOpen,
+      cartItemCount: cart.items.length,
+    },
+  );
+
   return (
     <>
       {supportError && (
@@ -2336,6 +2523,7 @@ export default function POSPage() {
             currency={currency}
             onProductClick={handleProductClick}
             onScannedVariant={handleScannedVariant}
+            onScaledProduct={(product, quantity) => cart.addItem(product, quantity)}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
@@ -2389,6 +2577,7 @@ export default function POSPage() {
         <AddonModal
           product={addonProduct}
           currency={currency}
+          initialQuantity={addonInitialQuantity}
           initialVariant={addonInitialVariant}
           onlinePlatformSelected={
             cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
@@ -2396,6 +2585,7 @@ export default function POSPage() {
           onAdd={handleAddonAdd}
           onClose={() => {
             setAddonProduct(null);
+            setAddonInitialQuantity(1);
             setAddonInitialVariant(null);
           }}
         />
@@ -2520,6 +2710,11 @@ export default function POSPage() {
           onConfirm={handlePrepaidCheckout}
         />
       )}
+
+      <KeyboardShortcutsModal
+        open={showKeyboardShortcutsModal}
+        onClose={() => setShowKeyboardShortcutsModal(false)}
+      />
     </>
   );
 }

@@ -13,6 +13,7 @@ const managerHeaders = {
 };
 
 let originalBusiness: Record<string, unknown> = {};
+let createdTableId: string | null = null;
 
 test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
   test.beforeAll(async () => {
@@ -29,21 +30,34 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     }
 
     // Ensure at least one table exists for F2 picker
-    await req
+    const tableResponse = await req
       .post(`${BASE}/api/tables`, {
         headers: managerHeaders,
         data: { number: 'E2E-KB-T1', capacity: 4 },
       })
-      .catch(() => {});
+      .catch(() => null);
+    if (tableResponse?.ok()) {
+      const { table } = await tableResponse.json();
+      createdTableId = table.id;
+    }
+    await req.dispose();
   });
 
   test.afterAll(async () => {
-    if (Object.keys(originalBusiness).length > 0) {
+    if (Object.keys(originalBusiness).length > 0 || createdTableId) {
       const req = await playwrightRequest.newContext();
-      await req.put(`${BASE}/api/settings/business`, {
-        headers: managerHeaders,
-        data: originalBusiness,
-      });
+      if (Object.keys(originalBusiness).length > 0) {
+        await req.put(`${BASE}/api/settings/business`, {
+          headers: managerHeaders,
+          data: originalBusiness,
+        });
+      }
+      if (createdTableId) {
+        await req.post(`${BASE}/api/tables/${createdTableId}/deactivate`, {
+          headers: managerHeaders,
+        });
+      }
+      await req.dispose();
     }
   });
 
@@ -99,19 +113,23 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const qtySpan = cartItem.getByTestId('cart-item-qty');
     await expect(qtySpan).toHaveText('3');
 
+    await searchInput.fill('2*Coffee');
+    await page.getByTestId('pos-product-card').first().click();
+    await expect(qtySpan).toHaveText('5');
+
     // Take screenshot of multiplier cart
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'keyboard-multiplier-cart.png') });
 
     // Blur search input by clicking body
     await page.locator('body').click({ position: { x: 10, y: 10 } });
 
-    // Test '+' key increments cart quantity to 4
+    // Test '+' key increments cart quantity to 6
     await page.keyboard.press('+');
-    await expect(qtySpan).toHaveText('4');
+    await expect(qtySpan).toHaveText('6');
 
-    // Test '-' key decrements cart quantity back to 3
+    // Test '-' key decrements cart quantity back to 5
     await page.keyboard.press('-');
-    await expect(qtySpan).toHaveText('3');
+    await expect(qtySpan).toHaveText('5');
   });
 
   test('F2 toggles table picker, and Escape dismisses it', async ({ page }) => {
@@ -120,6 +138,19 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const tableModal = page
       .locator('div.fixed.inset-0')
       .filter({ hasText: /select table|tables/i });
+    await expect(tableModal).toBeVisible({ timeout: 5_000 });
+
+    // F2 toggles the active table picker closed
+    await page.keyboard.press('F2');
+    await expect(tableModal).not.toBeVisible();
+
+    // F2 does not open the table picker for takeaway orders
+    await page.getByRole('button', { name: 'Takeaway' }).click();
+    await page.keyboard.press('F2');
+    await expect(tableModal).not.toBeVisible();
+
+    await page.getByRole('button', { name: /Dine in/i }).click();
+    await page.keyboard.press('F2');
     await expect(tableModal).toBeVisible({ timeout: 5_000 });
 
     // Press Escape to close table picker

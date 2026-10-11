@@ -261,6 +261,7 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
+  const [addonInitialQuantity, setAddonInitialQuantity] = useState(1);
   // The variant a scanned barcode named, preselected in the customizer.
   const [addonInitialVariant, setAddonInitialVariant] = useState<ProductVariant | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
@@ -1055,22 +1056,24 @@ export default function POSPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
 
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: Product, quantity = 1) => {
     if (!productNeedsCustomizer(product)) {
-      cart.addItem(product, 1);
+      cart.addItem(product, quantity);
       return;
     }
+    setAddonInitialQuantity(quantity);
     setAddonInitialVariant(null);
     setAddonProduct(product);
   };
 
-  const handleScannedVariant = (product: Product, variant: ProductVariant) => {
+  const handleScannedVariant = (product: Product, variant: ProductVariant, quantity = 1) => {
     if (scannedVariantNeedsCustomizer(product, variant)) {
+      setAddonInitialQuantity(quantity);
       setAddonInitialVariant(variant);
       setAddonProduct(product);
       return;
     }
-    cart.addItem(product, 1, [], '', variant);
+    cart.addItem(product, quantity, [], '', variant);
   };
 
   const handleAddonAdd = (
@@ -1096,8 +1099,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen =
-    showTablePicker ||
+  const anyOtherModalOpen =
     !!addonProduct ||
     !!editingCartItem ||
     !!checkoutTable ||
@@ -1110,6 +1112,7 @@ export default function POSPage() {
     showPrintMenuModal ||
     showKeyboardShortcutsModal ||
     isConfirmOpen;
+  const anyModalOpen = showTablePicker || anyOtherModalOpen;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);
@@ -2191,12 +2194,17 @@ export default function POSPage() {
         }
       },
       onToggleTables: () => {
-        if (isRestaurant && tablesRequired) {
+        if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired) {
           setShowTablePicker((prev) => !prev);
         }
       },
       onOpenCheckout: () => {
-        if (shouldTakePaymentNow || !isRestaurant) {
+        if (
+          shouldTakePaymentNow ||
+          !isRestaurant ||
+          cart.orderType !== 'dine_in' ||
+          !tablesRequired
+        ) {
           void handlePlaceOrder();
           return;
         }
@@ -2210,7 +2218,7 @@ export default function POSPage() {
         }
       },
       onOpenCashMovement: () => {
-        cashDrawer.setOpen(true);
+        cashDrawer.openModal();
       },
       onFocusCustomer: () => {
         const input = document.getElementById('customer-phone-search') as HTMLInputElement | null;
@@ -2337,6 +2345,7 @@ export default function POSPage() {
     {
       enabled: true,
       anyModalOpen,
+      tablePickerOpen: showTablePicker && !anyOtherModalOpen,
       cartItemCount: cart.items.length,
     },
   );
@@ -2510,6 +2519,7 @@ export default function POSPage() {
             currency={currency}
             onProductClick={handleProductClick}
             onScannedVariant={handleScannedVariant}
+            onScaledProduct={(product, quantity) => cart.addItem(product, quantity)}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
@@ -2563,6 +2573,7 @@ export default function POSPage() {
         <AddonModal
           product={addonProduct}
           currency={currency}
+          initialQuantity={addonInitialQuantity}
           initialVariant={addonInitialVariant}
           onlinePlatformSelected={
             cart.orderType === 'online' && cart.onlinePlatform.trim().length > 0
@@ -2570,6 +2581,7 @@ export default function POSPage() {
           onAdd={handleAddonAdd}
           onClose={() => {
             setAddonProduct(null);
+            setAddonInitialQuantity(1);
             setAddonInitialVariant(null);
           }}
         />

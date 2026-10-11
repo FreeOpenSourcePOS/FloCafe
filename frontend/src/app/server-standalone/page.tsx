@@ -186,6 +186,7 @@ export default function ServerStandalonePage() {
   const [draft, setDraft] = useState<DraftLine[]>([]);
   const [orderNotes, setOrderNotes] = useState('');
   const [addonModalProduct, setAddonModalProduct] = useState<Product | null>(null);
+  const [addonModalQuantity, setAddonModalQuantity] = useState(1);
   const [addonModalVariant, setAddonModalVariant] = useState<ProductVariant | null>(null);
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
@@ -1012,15 +1013,19 @@ export default function ServerStandalonePage() {
               search={query}
               setSearch={setQuery}
               currency={regional?.currency || ''}
-              onProductClick={(product) => {
-                if (productNeedsCustomizer(product)) setAddonModalProduct(product);
-                else addDraftLine(product, 1, [], '');
+              onProductClick={(product, quantity) => {
+                if (productNeedsCustomizer(product)) {
+                  setAddonModalQuantity(quantity);
+                  setAddonModalVariant(null);
+                  setAddonModalProduct(product);
+                } else addDraftLine(product, quantity, [], '');
               }}
-              onScannedVariant={(product, variant) => {
+              onScannedVariant={(product, variant, quantity) => {
                 if (scannedVariantNeedsCustomizer(product, variant)) {
+                  setAddonModalQuantity(quantity);
                   setAddonModalVariant(variant);
                   setAddonModalProduct(product);
-                } else addDraftLine(product, 1, [], '', variant);
+                } else addDraftLine(product, quantity, [], '', variant);
               }}
               onScaledProduct={(product, quantity) => addDraftLine(product, quantity, [], '')}
               cartQuantities={draftQuantities}
@@ -1061,12 +1066,14 @@ export default function ServerStandalonePage() {
           product={addonModalProduct}
           currency={regional?.currency || ''}
           country={regional?.country}
+          initialQuantity={addonModalQuantity}
           initialVariant={addonModalVariant}
           onAdd={(addedProduct, quantity, addons, instructions, variant) =>
             addDraftLine(addedProduct, quantity, addons, instructions, variant)
           }
           onClose={() => {
             setAddonModalProduct(null);
+            setAddonModalQuantity(1);
             setAddonModalVariant(null);
           }}
         />

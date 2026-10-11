@@ -54,6 +54,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchSucceeded, setSearchSucceeded] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
 
@@ -129,6 +130,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     requestAbortRef.current?.abort();
     setResults([]);
     setSearchSucceeded(false);
+    setSearchFailed(false);
 
     const trimmed = q.trim();
     setActiveIndex(disambiguateCustomerInput(trimmed).category === 'ambiguous' ? -1 : 0);
@@ -152,6 +154,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       } catch {
         if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
         setResults([]);
+        setSearchFailed(true);
       } finally {
         if (requestId === searchRequestIdRef.current) setLoading(false);
       }
@@ -482,9 +485,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             )}
 
             {/* Zero matching customers header */}
-            {results.length === 0 && !loading && searchSucceeded && (
+            {results.length === 0 && !loading && (searchSucceeded || searchFailed) && (
               <div className="px-2.5 py-2 text-xs text-muted-foreground text-center">
-                {tCommon('noResults')}
+                {searchFailed ? tCommon('somethingWrong') : tCommon('noResults')}
               </div>
             )}
 

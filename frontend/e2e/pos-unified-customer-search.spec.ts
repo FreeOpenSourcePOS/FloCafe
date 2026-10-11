@@ -76,6 +76,27 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(customerSearchInput).toBeVisible();
 
+  const failedLookupQuery = 'lookup failure';
+  await page.route('**/api/customers-search**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('q') === failedLookupQuery) {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'lookup failed' }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await customerSearchInput.fill(failedLookupQuery);
+  await expect(page.getByText('Something went wrong', { exact: true })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(page.getByRole('button').filter({ hasText: failedLookupQuery }).first()).toBeHidden();
+  await customerSearchInput.press('Enter');
+  await expect(modal).not.toBeVisible();
+  await page.unroute('**/api/customers-search**');
+
   // Ambiguous digits require an explicit action choice.
   await page.route('**/api/customers-search?q=123', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/customers-search?q=234', (route) => route.fulfill({ json: [] }));

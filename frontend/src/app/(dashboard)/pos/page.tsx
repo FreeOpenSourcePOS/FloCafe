@@ -52,7 +52,11 @@ import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
-import { captureClientOperationFailure, createOperationReference, operationHeaders } from '@/lib/api';
+import {
+  captureClientOperationFailure,
+  createOperationReference,
+  operationHeaders,
+} from '@/lib/api';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
@@ -120,7 +124,8 @@ type SupportOperationFailure = {
   facts?: { display_code?: string; failure_class?: string };
 };
 
-const OPERATION_REFERENCE_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OPERATION_REFERENCE_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STRUCTURED_HELP_CAPTURE_POINTS: Record<string, string> = {
   'order.create:validation:order.quantity_invalid': 'fc.backend.order.create.quantity_validation',
   'order.create:validation:order.stock_insufficient': 'fc.backend.order.create.stock_validation',
@@ -129,12 +134,15 @@ const STRUCTURED_HELP_CAPTURE_POINTS: Record<string, string> = {
   'order.create:persistence:server.internal_error': 'fc.backend.order.create.server_error',
   'order.create:completion:operation.completion_failed': 'fc.backend.order.create.completion',
   'order.create:retry_state:order.retry_state_failed': 'fc.client.order.create.retry_state_update',
-  'order.create:cleanup:order.held_state.cleanup_failed': 'fc.frontend.pos.order.create.held_cleanup',
+  'order.create:cleanup:order.held_state.cleanup_failed':
+    'fc.frontend.pos.order.create.held_cleanup',
   'order.append:validation:validation.rejected': 'fc.backend.order.append.validation',
   'order.append:persistence:persistence.failed': 'fc.backend.order.append.persistence',
   'order.append:completion:operation.completion_failed': 'fc.backend.order.append.completion',
-  'payment.create:retry_state:payment.retry_state_failed': 'fc.client.payment.create.retry_state_update',
-  'payment.create:cleanup:order.held_state.cleanup_failed': 'fc.frontend.pos.payment.create.held_cleanup',
+  'payment.create:retry_state:payment.retry_state_failed':
+    'fc.client.payment.create.retry_state_update',
+  'payment.create:cleanup:order.held_state.cleanup_failed':
+    'fc.frontend.pos.payment.create.held_cleanup',
   'order.discount:validation:discount.rejected': 'fc.backend.order.discount.validation',
   'order.discount:persistence:persistence.failed': 'fc.backend.order.discount.persistence',
   'order.discount:completion:operation.completion_failed': 'fc.backend.order.discount.completion',
@@ -169,26 +177,35 @@ const parsePrepaidPaymentRequest = (serialized: string): PrepaidPaymentRequest |
     const value: unknown = JSON.parse(serialized);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
-    if (Object.keys(record).sort().join(',') !== 'customer_id,payments'
-      || !Array.isArray(record.payments)
-      || record.payments.length === 0
-      || (record.customer_id !== null && typeof record.customer_id !== 'string' && typeof record.customer_id !== 'number')) return null;
+    if (
+      Object.keys(record).sort().join(',') !== 'customer_id,payments' ||
+      !Array.isArray(record.payments) ||
+      record.payments.length === 0 ||
+      (record.customer_id !== null &&
+        typeof record.customer_id !== 'string' &&
+        typeof record.customer_id !== 'number')
+    )
+      return null;
     const payments: PrepaidPaymentRequest['payments'] = [];
     for (const line of record.payments) {
       if (!line || typeof line !== 'object' || Array.isArray(line)) return null;
       const payment = line as Record<string, unknown>;
       const keys = Object.keys(payment).sort().join(',');
-      if ((keys !== 'amount,method' && keys !== 'amount,method,payment_method_id')
-        || typeof payment.method !== 'string'
-        || payment.method.length === 0
-        || typeof payment.amount !== 'number'
-        || !Number.isFinite(payment.amount)
-        || payment.amount <= 0
-        || (payment.payment_method_id !== undefined
-          && typeof payment.payment_method_id !== 'number')) return null;
+      if (
+        (keys !== 'amount,method' && keys !== 'amount,method,payment_method_id') ||
+        typeof payment.method !== 'string' ||
+        payment.method.length === 0 ||
+        typeof payment.amount !== 'number' ||
+        !Number.isFinite(payment.amount) ||
+        payment.amount <= 0 ||
+        (payment.payment_method_id !== undefined && typeof payment.payment_method_id !== 'number')
+      )
+        return null;
       payments.push({
         method: payment.method,
-        ...(payment.payment_method_id !== undefined ? { payment_method_id: payment.payment_method_id as number } : {}),
+        ...(payment.payment_method_id !== undefined
+          ? { payment_method_id: payment.payment_method_id as number }
+          : {}),
         amount: payment.amount,
       });
     }
@@ -492,9 +509,10 @@ export default function POSPage() {
     correlationId?: string | null;
     operationFailure?: SupportOperationFailure;
   }) => {
-    const correlationId = entry.correlationId && OPERATION_REFERENCE_V4.test(entry.correlationId)
-      ? entry.correlationId
-      : undefined;
+    const correlationId =
+      entry.correlationId && OPERATION_REFERENCE_V4.test(entry.correlationId)
+        ? entry.correlationId
+        : undefined;
     const ticketCorrelationId = correlationId || createOperationReference() || '';
     const clientTicketId = createOperationReference() || '';
     setSupportError({
@@ -509,7 +527,8 @@ export default function POSPage() {
       classification: entry.classification,
       reasonCode: entry.reasonCode || undefined,
       correlationId,
-      operationFailure: entry.operationFailure?.operation_id === correlationId ? entry.operationFailure : undefined,
+      operationFailure:
+        entry.operationFailure?.operation_id === correlationId ? entry.operationFailure : undefined,
       ticketCorrelationId,
       clientTicketId,
       payload: {
@@ -525,19 +544,29 @@ export default function POSPage() {
           correlation_id: correlationId,
           http_status: entry.status,
         },
-        ...(entry.operationFailure?.operation_id === correlationId ? { operation_failure: entry.operationFailure } : {}),
+        ...(entry.operationFailure?.operation_id === correlationId
+          ? { operation_failure: entry.operationFailure }
+          : {}),
       },
     });
     toast.error(entry.message);
   };
 
-  const reportOrderStorageFailure = (title: string, operation: 'order.create' | 'payment.create' | 'order.append' = 'order.create', correlationId: string | null = null) => {
-    if (correlationId) void captureClientOperationFailure({ operation, phase: 'retry_storage', correlationId });
+  const reportOrderStorageFailure = (
+    title: string,
+    operation: 'order.create' | 'payment.create' | 'order.append' = 'order.create',
+    correlationId: string | null = null,
+  ) => {
+    if (correlationId)
+      void captureClientOperationFailure({ operation, phase: 'retry_storage', correlationId });
     const message = t('orderStorageUnavailable');
     reportOrderFailure({
-      code: operation === 'payment.create' ? 'payment.retry_state.storage_unavailable'
-        : operation === 'order.append' ? 'order.append.retry_state.storage_unavailable'
-          : 'order.retry_state.storage_unavailable',
+      code:
+        operation === 'payment.create'
+          ? 'payment.retry_state.storage_unavailable'
+          : operation === 'order.append'
+            ? 'order.append.retry_state.storage_unavailable'
+            : 'order.retry_state.storage_unavailable',
       title,
       message,
       nextStep: t('orderStorageNextStep'),
@@ -547,13 +576,18 @@ export default function POSPage() {
       stage: 'local_storage',
       outcome: 'not_applied',
       correlationId,
-      operationFailure: correlationId ? {
-        capture_point: operation === 'payment.create' ? 'fc.frontend.pos.payment.create.retry_storage'
-          : operation === 'order.append' ? 'fc.frontend.pos.order.append.retry_storage'
-            : 'fc.frontend.pos.order.create.retry_storage',
-        operation_id: correlationId,
-        outcome: 'not_applied',
-      } : undefined,
+      operationFailure: correlationId
+        ? {
+            capture_point:
+              operation === 'payment.create'
+                ? 'fc.frontend.pos.payment.create.retry_storage'
+                : operation === 'order.append'
+                  ? 'fc.frontend.pos.order.append.retry_storage'
+                  : 'fc.frontend.pos.order.create.retry_storage',
+            operation_id: correlationId,
+            outcome: 'not_applied',
+          }
+        : undefined,
     });
   };
 
@@ -566,39 +600,61 @@ export default function POSPage() {
   ) => {
     const registeredOperation = isSupportedFailureOperation(operation) ? operation : 'order.create';
     const expectedReference = operation === registeredOperation ? correlationId || '' : '';
-    const failure = classifyOrderRequestFailure(error, { operation: registeredOperation, correlationId: expectedReference });
+    const failure = classifyOrderRequestFailure(error, {
+      operation: registeredOperation,
+      correlationId: expectedReference,
+    });
     const helpCapturePoint = failure.trusted
-      ? STRUCTURED_HELP_CAPTURE_POINTS[`${failure.operation}:${failure.stage}:${failure.reasonCode}`]
+      ? STRUCTURED_HELP_CAPTURE_POINTS[
+          `${failure.operation}:${failure.stage}:${failure.reasonCode}`
+        ]
       : undefined;
     const hasResponse = !!(error as { response?: unknown } | null)?.response;
-    const frontendTransportOperation = operation === 'order.create' || operation === 'payment.create' || operation === 'order.append';
+    const frontendTransportOperation =
+      operation === 'order.create' ||
+      operation === 'payment.create' ||
+      operation === 'order.append';
     const failureClass = (() => {
       const code = (error as { code?: unknown } | null)?.code;
-      return code === 'ECONNABORTED' || code === 'ETIMEDOUT' ? 'timeout'
-        : code === 'ENOTFOUND' || code === 'EAI_AGAIN' ? 'dns'
-          : code === 'ECONNREFUSED' ? 'connection_refused'
-            : typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'unreachable';
+      return code === 'ECONNABORTED' || code === 'ETIMEDOUT'
+        ? 'timeout'
+        : code === 'ENOTFOUND' || code === 'EAI_AGAIN'
+          ? 'dns'
+          : code === 'ECONNREFUSED'
+            ? 'connection_refused'
+            : typeof navigator !== 'undefined' && !navigator.onLine
+              ? 'offline'
+              : 'unreachable';
     })();
-    const clientFailurePhase = operation === 'order.append' && stage === 'recovery' ? 'recovery' : 'transport';
+    const clientFailurePhase =
+      operation === 'order.append' && stage === 'recovery' ? 'recovery' : 'transport';
     const clientCapturePoint = `fc.frontend.pos.${operation}.${clientFailurePhase}`;
     if (!hasResponse && correlationId && frontendTransportOperation) {
-      void captureClientOperationFailure({ operation: operation as 'order.create' | 'payment.create' | 'order.append', phase: clientFailurePhase, correlationId, failureClass });
+      void captureClientOperationFailure({
+        operation: operation as 'order.create' | 'payment.create' | 'order.append',
+        phase: clientFailurePhase,
+        correlationId,
+        failureClass,
+      });
     }
-    const helpOperationFailure = !hasResponse && correlationId && frontendTransportOperation
-      ? {
-          capture_point: clientCapturePoint,
-          operation_id: correlationId,
-          outcome: 'unknown',
-          ...(clientFailurePhase === 'transport' ? { facts: { failure_class: failureClass } } : {}),
-        }
-      : helpCapturePoint && failure.correlationId
+    const helpOperationFailure =
+      !hasResponse && correlationId && frontendTransportOperation
         ? {
-            capture_point: helpCapturePoint,
-            operation_id: failure.correlationId,
-            outcome: failure.outcome || 'unknown',
-            ...(failure.displayCode ? { facts: { display_code: failure.displayCode } } : {}),
+            capture_point: clientCapturePoint,
+            operation_id: correlationId,
+            outcome: 'unknown',
+            ...(clientFailurePhase === 'transport'
+              ? { facts: { failure_class: failureClass } }
+              : {}),
           }
-        : undefined;
+        : helpCapturePoint && failure.correlationId
+          ? {
+              capture_point: helpCapturePoint,
+              operation_id: failure.correlationId,
+              outcome: failure.outcome || 'unknown',
+              ...(failure.displayCode ? { facts: { display_code: failure.displayCode } } : {}),
+            }
+          : undefined;
     const reasonMessages: Record<string, string> = {
       'order.quantity_invalid': t('orderQuantityInvalid'),
       'order.stock_insufficient': t('orderStockInsufficient'),
@@ -638,43 +694,75 @@ export default function POSPage() {
       cash_session_required: tExpenses('cashSessionClosed'),
     };
     const confirmedNotApplied = failure.trusted && failure.outcome === 'not_applied';
-    const expectedRejection = confirmedNotApplied && failure.classification === 'expected_rejection';
-    const confirmedNotSaved = confirmedNotApplied && failure.classification === 'unexpected_failure';
+    const expectedRejection =
+      confirmedNotApplied && failure.classification === 'expected_rejection';
+    const confirmedNotSaved =
+      confirmedNotApplied && failure.classification === 'unexpected_failure';
     const paymentRejection = expectedRejection && failure.reasonCode === 'payment.invalid';
-    const appliedPayment = failure.trusted && failure.operation === 'payment.create' && failure.outcome === 'applied';
-    const paymentNeedsStatusCheck = paymentRejection
-      && ['bill_refunded', 'bill_already_paid', 'idempotency_conflict'].includes(failure.displayCode || '');
-    const unknownMessage = operation === 'order.discount' ? t('discountOutcomeUnknown')
-      : operation === 'bill.discount' ? t('discountOutcomeUnknown')
-        : operation === 'bill.generate' ? t('billOutcomeUnknown')
-        : operation === 'order.append' ? t('appendOutcomeUnknown')
+    const appliedPayment =
+      failure.trusted && failure.operation === 'payment.create' && failure.outcome === 'applied';
+    const paymentNeedsStatusCheck =
+      paymentRejection &&
+      ['bill_refunded', 'bill_already_paid', 'idempotency_conflict'].includes(
+        failure.displayCode || '',
+      );
+    const unknownMessage =
+      operation === 'order.discount'
+        ? t('discountOutcomeUnknown')
+        : operation === 'bill.discount'
+          ? t('discountOutcomeUnknown')
+          : operation === 'bill.generate'
+            ? t('billOutcomeUnknown')
+            : operation === 'order.append'
+              ? t('appendOutcomeUnknown')
+              : t('operationOutcomeUnknown');
+    const isAddonOrGeneralValidation =
+      failure.reasonCode === 'order.addon_selection_required' ||
+      failure.reasonCode === 'order.addon_unavailable' ||
+      failure.reasonCode === 'validation.rejected';
+    const rejectionMessage =
+      isAddonOrGeneralValidation && failure.serverError
+        ? failure.serverError
+        : failure.reasonCode
+          ? reasonMessages[failure.reasonCode] ||
+            failure.serverError ||
+            t('operationOutcomeUnknown')
           : t('operationOutcomeUnknown');
-    const isAddonOrGeneralValidation = failure.reasonCode === 'order.addon_selection_required'
-      || failure.reasonCode === 'order.addon_unavailable'
-      || failure.reasonCode === 'validation.rejected';
-    const rejectionMessage = isAddonOrGeneralValidation && failure.serverError
-      ? failure.serverError
-      : failure.reasonCode ? reasonMessages[failure.reasonCode] || failure.serverError || t('operationOutcomeUnknown') : t('operationOutcomeUnknown');
     reportOrderFailure({
       code: failure.code,
       title,
       message: paymentRejection
-        ? failure.displayCode ? paymentMessages[failure.displayCode] || t('paymentValidationRejected') : t('paymentValidationRejected')
+        ? failure.displayCode
+          ? paymentMessages[failure.displayCode] || t('paymentValidationRejected')
+          : t('paymentValidationRejected')
         : expectedRejection && failure.reasonCode
-          ? failure.displayCode ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown') : rejectionMessage
-        : confirmedNotSaved ? t('operationNotSaved')
-          : appliedPayment ? t('paymentCompletionApplied')
-          : failure.outcome === 'unknown' ? unknownMessage : t('operationMayHaveCompleted'),
-      nextStep: paymentNeedsStatusCheck ? t('operationCheckBeforeRetry')
-        : paymentRejection ? t('paymentCorrectAndRetry')
-          : expectedRejection ? t('operationCorrectAndRetry')
-        : confirmedNotSaved ? t('operationNotSavedNextStep') : t('operationCheckBeforeRetry'),
+          ? failure.displayCode
+            ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown')
+            : rejectionMessage
+          : confirmedNotSaved
+            ? t('operationNotSaved')
+            : appliedPayment
+              ? t('paymentCompletionApplied')
+              : failure.outcome === 'unknown'
+                ? unknownMessage
+                : t('operationMayHaveCompleted'),
+      nextStep: paymentNeedsStatusCheck
+        ? t('operationCheckBeforeRetry')
+        : paymentRejection
+          ? t('paymentCorrectAndRetry')
+          : expectedRejection
+            ? t('operationCorrectAndRetry')
+            : confirmedNotSaved
+              ? t('operationNotSavedNextStep')
+              : t('operationCheckBeforeRetry'),
       detail: failure.detail,
       status: failure.status,
       operation: registeredOperation,
-      stage: failure.trusted ? failure.stage || stage : hasResponse && (stage === 'submission' || stage === 'order_submission')
-        ? 'response_unconfirmed'
-        : stage,
+      stage: failure.trusted
+        ? failure.stage || stage
+        : hasResponse && (stage === 'submission' || stage === 'order_submission')
+          ? 'response_unconfirmed'
+          : stage,
       outcome: failure.outcome || 'unknown',
       classification: failure.classification || undefined,
       reasonCode: failure.reasonCode,
@@ -825,7 +913,15 @@ export default function POSPage() {
     try {
       pendingAttempt = readAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId });
     } catch {
-      window.setTimeout(() => reportOrderStorageFailure(t('addItemsFailed'), 'order.append', createOperationReference()), 0);
+      window.setTimeout(
+        () =>
+          reportOrderStorageFailure(
+            t('addItemsFailed'),
+            'order.append',
+            createOperationReference(),
+          ),
+        0,
+      );
       return;
     }
     if (!pendingAttempt) return;
@@ -834,56 +930,76 @@ export default function POSPage() {
     if (operationId && pendingAttempt.operationId !== operationId) {
       pendingAttempt = { ...pendingAttempt, operationId };
       try {
-        getAppendAttemptStorage().setItem(getAppendAttemptStorageKey(activeUserId), JSON.stringify(pendingAttempt));
+        getAppendAttemptStorage().setItem(
+          getAppendAttemptStorageKey(activeUserId),
+          JSON.stringify(pendingAttempt),
+        );
       } catch {
-        window.setTimeout(() => reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId), 0);
+        window.setTimeout(
+          () => reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId),
+          0,
+        );
         return;
       }
     }
     appendRecoveryStartedUsersRef.current.add(activeUserId);
     addItemsAttemptRef.current = pendingAttempt;
-    api.post(
-      `/orders/${pendingAttempt.orderId}/items`,
-      {
-        items: pendingAttempt.items,
-        special_instructions: pendingAttempt.specialInstructions,
-      },
-      { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey, ...operationHeaders(operationId) } },
-    ).then(() => {
-      const storage = getAppendAttemptStorage();
-      const cleared = clearAppendAttempt(storage, pendingAttempt!);
-      if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
-      addItemsAttemptRef.current = null;
-      // Do not clear cart or checkout state that may have been started while
-      // recovery was in flight. A reload starts empty; any current UI is newer.
-      toast.success(t('itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
-      if (!cleared) {
-        reportOrderFailure({
-          code: 'order.append.retry_state.cleanup_failed',
-          title: t('itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }),
-          message: t('appendCompleteCleanupFailed'),
-          nextStep: t('appendCompleteCheckOrders'),
-          detail: 'Items were added to the order but local retry state could not be cleared',
-          status: null,
-          operation: 'order.append',
-          stage: 'cleanup',
-          outcome: 'applied',
-          reasonCode: 'order.append.retry_state.cleanup_failed',
-          correlationId: pendingAttempt!.operationId,
-        });
-      }
-      refreshTables();
-    }).catch((error) => {
-      reportOrderRequestFailure(
-        error,
-        t('addItemsFailed'),
-        'order.append',
-        'recovery',
-        pendingAttempt!.operationId || null,
-      );
-    });
-  // Runs once per user session to recover persisted append state.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    api
+      .post(
+        `/orders/${pendingAttempt.orderId}/items`,
+        {
+          items: pendingAttempt.items,
+          special_instructions: pendingAttempt.specialInstructions,
+        },
+        {
+          headers: {
+            'Idempotency-Key': pendingAttempt.idempotencyKey,
+            ...operationHeaders(operationId),
+          },
+        },
+      )
+      .then(() => {
+        const storage = getAppendAttemptStorage();
+        const cleared = clearAppendAttempt(storage, pendingAttempt!);
+        if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
+        addItemsAttemptRef.current = null;
+        // Do not clear cart or checkout state that may have been started while
+        // recovery was in flight. A reload starts empty; any current UI is newer.
+        toast.success(
+          t('itemsAddedToOrder', {
+            number: pendingAttempt!.orderNumber || pendingAttempt!.orderId,
+          }),
+        );
+        if (!cleared) {
+          reportOrderFailure({
+            code: 'order.append.retry_state.cleanup_failed',
+            title: t('itemsAddedToOrder', {
+              number: pendingAttempt!.orderNumber || pendingAttempt!.orderId,
+            }),
+            message: t('appendCompleteCleanupFailed'),
+            nextStep: t('appendCompleteCheckOrders'),
+            detail: 'Items were added to the order but local retry state could not be cleared',
+            status: null,
+            operation: 'order.append',
+            stage: 'cleanup',
+            outcome: 'applied',
+            reasonCode: 'order.append.retry_state.cleanup_failed',
+            correlationId: pendingAttempt!.operationId,
+          });
+        }
+        refreshTables();
+      })
+      .catch((error) => {
+        reportOrderRequestFailure(
+          error,
+          t('addItemsFailed'),
+          'order.append',
+          'recovery',
+          pendingAttempt!.operationId || null,
+        );
+      });
+    // Runs once per user session to recover persisted append state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
 
   useEffect(() => {
@@ -1053,7 +1169,10 @@ export default function POSPage() {
           if (operationId) {
             itemAttempt = { ...itemAttempt, operationId };
             try {
-              storage.setItem(getAppendAttemptStorageKey(itemAttempt.userId), JSON.stringify(itemAttempt));
+              storage.setItem(
+                getAppendAttemptStorageKey(itemAttempt.userId),
+                JSON.stringify(itemAttempt),
+              );
             } catch {
               throw new OrderAttemptStorageError();
             }
@@ -1065,15 +1184,28 @@ export default function POSPage() {
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
           { items: newItems, special_instructions: specialInstructions },
-          { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey, ...operationHeaders(itemAttempt.operationId) } },
+          {
+            headers: {
+              'Idempotency-Key': itemAttempt.idempotencyKey,
+              ...operationHeaders(itemAttempt.operationId),
+            },
+          },
         );
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
         const updatedOrder = data.order as Order;
         const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
-        const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
-        orderForKot = appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
+        const appendedItems = (updatedOrder.items || []).filter(
+          (item) => !existingItemIds.has(Number(item.id)),
+        );
+        orderForKot =
+          appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) {
-          if (itemAttempt.operationId) void captureClientOperationFailure({ operation: 'order.append', phase: 'retry_cleanup', correlationId: itemAttempt.operationId });
+          if (itemAttempt.operationId)
+            void captureClientOperationFailure({
+              operation: 'order.append',
+              phase: 'retry_cleanup',
+              correlationId: itemAttempt.operationId,
+            });
           reportOrderFailure({
             code: 'order.append.retry_state.cleanup_failed',
             title: t('itemsAddedToOrder', { number: pendingOrder.order_number }),
@@ -1114,15 +1246,18 @@ export default function POSPage() {
         };
         const orderFingerprint = JSON.stringify(orderPayload);
         const priorOrderAttempt = readPostpaidAttempt();
-        if (priorOrderAttempt?.userId === activeUserId
-          && priorOrderAttempt.fingerprint === orderFingerprint
-          && priorOrderAttempt.order) {
+        if (
+          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt.fingerprint === orderFingerprint &&
+          priorOrderAttempt.order
+        ) {
           reportOrderFailure({
             code: 'order.retry_state.cleanup_failed',
             title: t('orderPlaced', { number: priorOrderAttempt.order.order_number }),
             message: t('saleCompleteCleanupFailed'),
             nextStep: t('saleCompleteCheckOrders'),
-            detail: 'This matching order attempt already has a confirmed order and cannot be reused for a new sale',
+            detail:
+              'This matching order attempt already has a confirmed order and cannot be reused for a new sale',
             status: null,
             operation: 'order.create',
             stage: 'cleanup',
@@ -1134,31 +1269,58 @@ export default function POSPage() {
         }
         failureOperation = 'order.create';
         failureStage = 'order_submission';
-        const orderAttempt: PostpaidAttempt = priorOrderAttempt?.userId === activeUserId && priorOrderAttempt.fingerprint === orderFingerprint
-          ? priorOrderAttempt
-          : { userId: activeUserId || '', fingerprint: orderFingerprint, idempotencyKey: newIdempotencyKey(), operationId: createOperationReference() || undefined };
+        const orderAttempt: PostpaidAttempt =
+          priorOrderAttempt?.userId === activeUserId &&
+          priorOrderAttempt.fingerprint === orderFingerprint
+            ? priorOrderAttempt
+            : {
+                userId: activeUserId || '',
+                fingerprint: orderFingerprint,
+                idempotencyKey: newIdempotencyKey(),
+                operationId: createOperationReference() || undefined,
+              };
         const operationId = orderAttempt.operationId || createOperationReference();
         failureCorrelationId = operationId;
-        const attemptWithOperationId = operationId ? { ...orderAttempt, operationId } : orderAttempt;
+        const attemptWithOperationId = operationId
+          ? { ...orderAttempt, operationId }
+          : orderAttempt;
         if (!savePostpaidAttempt(attemptWithOperationId)) {
-          if (operationId) void captureClientOperationFailure({ operation: 'order.create', phase: 'retry_storage', correlationId: operationId });
+          if (operationId)
+            void captureClientOperationFailure({
+              operation: 'order.create',
+              phase: 'retry_storage',
+              correlationId: operationId,
+            });
           throw new OrderAttemptStorageError();
         }
         const { data } = attemptWithOperationId.order
           ? { data: { order: attemptWithOperationId.order } }
           : await api.post('/orders', orderPayload, {
-            headers: { 'Idempotency-Key': attemptWithOperationId.idempotencyKey, ...operationHeaders(operationId) },
-          });
+              headers: {
+                'Idempotency-Key': attemptWithOperationId.idempotencyKey,
+                ...operationHeaders(operationId),
+              },
+            });
         const confirmedAttempt = { ...attemptWithOperationId, order: data.order as Order };
         if (!attemptWithOperationId.order && !savePostpaidAttempt(confirmedAttempt)) {
           console.error('The confirmed order could not be copied into retry storage');
           postpaidAttemptRef.current = confirmedAttempt;
-          if (operationId) void captureClientOperationFailure({ operation: 'order.create', phase: 'retry_state_update', correlationId: operationId });
+          if (operationId)
+            void captureClientOperationFailure({
+              operation: 'order.create',
+              phase: 'retry_state_update',
+              correlationId: operationId,
+            });
         }
         toast.success(t('orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
         if (!clearPostpaidAttempt()) {
-          if (operationId) void captureClientOperationFailure({ operation: 'order.create', phase: 'retry_cleanup', correlationId: operationId });
+          if (operationId)
+            void captureClientOperationFailure({
+              operation: 'order.create',
+              phase: 'retry_cleanup',
+              correlationId: operationId,
+            });
           reportOrderFailure({
             code: 'order.retry_state.cleanup_failed',
             title: t('orderPlaced', { number: data.order.order_number }),
@@ -1186,8 +1348,15 @@ export default function POSPage() {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
           console.error('Failed to clear held order after placing order', heldOrderError);
-          if (!(heldOrderError as { response?: unknown } | null)?.response && failureCorrelationId) {
-            void captureClientOperationFailure({ operation: 'order.create', phase: 'held_cleanup', correlationId: failureCorrelationId });
+          if (
+            !(heldOrderError as { response?: unknown } | null)?.response &&
+            failureCorrelationId
+          ) {
+            void captureClientOperationFailure({
+              operation: 'order.create',
+              phase: 'held_cleanup',
+              correlationId: failureCorrelationId,
+            });
           }
           reportOrderFailure({
             code: 'order.held_state.cleanup_failed',
@@ -1201,11 +1370,14 @@ export default function POSPage() {
             outcome: 'applied',
             reasonCode: 'order.held_state.cleanup_failed',
             correlationId: failureCorrelationId,
-            operationFailure: !(heldOrderError as { response?: unknown } | null)?.response && !!failureCorrelationId ? {
-              capture_point: 'fc.frontend.pos.order.create.held_cleanup',
-              operation_id: failureCorrelationId,
-              outcome: 'applied',
-            } : undefined,
+            operationFailure:
+              !(heldOrderError as { response?: unknown } | null)?.response && !!failureCorrelationId
+                ? {
+                    capture_point: 'fc.frontend.pos.order.create.held_cleanup',
+                    operation_id: failureCorrelationId,
+                    outcome: 'applied',
+                  }
+                : undefined,
           });
         }
       }
@@ -1215,8 +1387,20 @@ export default function POSPage() {
 
       await printKotIfEnabled(orderForKot);
     } catch (error) {
-      if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('placeOrderFailed'), failureOperation === 'order.append' ? 'order.append' : 'order.create', failureCorrelationId);
-      else reportOrderRequestFailure(error, t('placeOrderFailed'), failureOperation, failureStage, failureCorrelationId);
+      if (error instanceof OrderAttemptStorageError)
+        reportOrderStorageFailure(
+          t('placeOrderFailed'),
+          failureOperation === 'order.append' ? 'order.append' : 'order.create',
+          failureCorrelationId,
+        );
+      else
+        reportOrderRequestFailure(
+          error,
+          t('placeOrderFailed'),
+          failureOperation,
+          failureStage,
+          failureCorrelationId,
+        );
     } finally {
       setSubmitting(false);
     }
@@ -1241,7 +1425,10 @@ export default function POSPage() {
       }));
     if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
     const paymentCustomerId: string | number | null = cart.customerId ?? null;
-    let paymentFingerprint = JSON.stringify({ payments: paymentLines, customer_id: paymentCustomerId });
+    let paymentFingerprint = JSON.stringify({
+      payments: paymentLines,
+      customer_id: paymentCustomerId,
+    });
     const cartFingerprint = JSON.stringify({
       table_id: cart.tableId,
       customer_id: cart.customerId,
@@ -1271,20 +1458,26 @@ export default function POSPage() {
       setSubmitting(false);
       return;
     }
-    const existingAttempt = storedAttempt && storedAttempt.userId === activeUserId && storedAttempt.cartFingerprint === cartFingerprint
-      && storedAttempt.orderIdempotencyKey && storedAttempt.paymentIdempotencyKey
-      ? storedAttempt
-      : null;
-    const savedPaymentRequest = existingAttempt?.bill && existingAttempt.paymentFingerprint
-      ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
-      : null;
+    const existingAttempt =
+      storedAttempt &&
+      storedAttempt.userId === activeUserId &&
+      storedAttempt.cartFingerprint === cartFingerprint &&
+      storedAttempt.orderIdempotencyKey &&
+      storedAttempt.paymentIdempotencyKey
+        ? storedAttempt
+        : null;
+    const savedPaymentRequest =
+      existingAttempt?.bill && existingAttempt.paymentFingerprint
+        ? parsePrepaidPaymentRequest(existingAttempt.paymentFingerprint)
+        : null;
     if (existingAttempt?.bill && existingAttempt.paymentFingerprint && !savedPaymentRequest) {
       reportOrderFailure({
         code: 'request.outcome_unknown',
         title: t('processOrderFailed'),
         message: t('operationOutcomeUnknown'),
         nextStep: t('operationCheckBeforeRetry'),
-        detail: 'The saved payment request could not be validated, so no replacement payment was submitted',
+        detail:
+          'The saved payment request could not be validated, so no replacement payment was submitted',
         status: null,
         operation: 'payment.create',
         stage: 'recovery',
@@ -1302,13 +1495,19 @@ export default function POSPage() {
     if (existingAttempt?.bill) {
       const recoveryOperationId = existingAttempt.operationId || createOperationReference();
       try {
-        const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, { headers: operationHeaders(recoveryOperationId) });
+        const { data } = await api.get(`/bills/${existingAttempt.bill.id}`, {
+          headers: operationHeaders(recoveryOperationId),
+        });
         if (!data?.bill || !['paid', 'partial', 'unpaid'].includes(data.bill.payment_status)) {
           throw new Error('Bill status unavailable');
         }
       } catch (recoveryError) {
         if (!(recoveryError as { response?: unknown } | null)?.response && recoveryOperationId) {
-          void captureClientOperationFailure({ operation: 'payment.create', phase: 'recovery', correlationId: recoveryOperationId });
+          void captureClientOperationFailure({
+            operation: 'payment.create',
+            phase: 'recovery',
+            correlationId: recoveryOperationId,
+          });
         }
         reportOrderFailure({
           code: 'request.outcome_unknown',
@@ -1329,32 +1528,37 @@ export default function POSPage() {
     }
     const currentDiscount = savedPaymentRequest
       ? existingAttempt?.discount || null
-      : discount && discount.value > 0 ? discount : null;
-    const discountFingerprint = (value: PrepaidDiscount | null | undefined) => JSON.stringify(
-      value ? { type: value.type, value: value.value, reason: value.reason } : null,
-    );
-    const discountChanged = !!existingAttempt && !savedPaymentRequest
-      && discountFingerprint(existingAttempt.discount) !== discountFingerprint(currentDiscount);
+      : discount && discount.value > 0
+        ? discount
+        : null;
+    const discountFingerprint = (value: PrepaidDiscount | null | undefined) =>
+      JSON.stringify(value ? { type: value.type, value: value.value, reason: value.reason } : null);
+    const discountChanged =
+      !!existingAttempt &&
+      !savedPaymentRequest &&
+      discountFingerprint(existingAttempt.discount) !== discountFingerprint(currentDiscount);
     const retryDiscount = currentDiscount;
     let attempt: PrepaidAttempt = existingAttempt
       ? {
-        ...existingAttempt,
-        discount: retryDiscount,
-        bill: discountChanged ? undefined : existingAttempt.bill,
-        paymentFingerprint,
-        paymentIdempotencyKey: savedPaymentRequest || (existingAttempt.paymentFingerprint === paymentFingerprint && !discountChanged)
-          ? existingAttempt.paymentIdempotencyKey
-          : newIdempotencyKey(),
-      }
+          ...existingAttempt,
+          discount: retryDiscount,
+          bill: discountChanged ? undefined : existingAttempt.bill,
+          paymentFingerprint,
+          paymentIdempotencyKey:
+            savedPaymentRequest ||
+            (existingAttempt.paymentFingerprint === paymentFingerprint && !discountChanged)
+              ? existingAttempt.paymentIdempotencyKey
+              : newIdempotencyKey(),
+        }
       : {
-        userId: activeUserId || '',
-        cartFingerprint,
-        paymentFingerprint,
-        discount: discount && discount.value > 0 ? discount : null,
-        orderIdempotencyKey: newIdempotencyKey(),
-        paymentIdempotencyKey: newIdempotencyKey(),
-        operationId: createOperationReference() || undefined,
-      };
+          userId: activeUserId || '',
+          cartFingerprint,
+          paymentFingerprint,
+          discount: discount && discount.value > 0 ? discount : null,
+          orderIdempotencyKey: newIdempotencyKey(),
+          paymentIdempotencyKey: newIdempotencyKey(),
+          operationId: createOperationReference() || undefined,
+        };
     const operationId = attempt.operationId || createOperationReference();
     if (operationId && attempt.operationId !== operationId) attempt = { ...attempt, operationId };
     // Persist the keys before the first order mutation. The server replays the
@@ -1381,22 +1585,39 @@ export default function POSPage() {
       } else {
         failureOperation = 'order.create';
         failureStage = 'submission';
-        const { data } = await api.post('/orders', {
-          table_id: cart.tableId,
-          customer_id: cart.customerId,
-          type: cart.orderType,
-          guest_count: cart.guestCount,
-          special_instructions: cart.orderNotes || undefined,
-          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
-          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
-          delivery_address: cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
-          expected_payment_method: cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
-          expected_payment_method_id: cart.orderType === 'delivery' ? cart.expectedPaymentMethodId ?? undefined : undefined,
-          delivery_note: cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
-          waived_charge_ids: Array.from(cart.waivedChargeIds),
-          opted_in_charge_ids: Array.from(cart.optedInChargeIds),
-          items: orderItems,
-        }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey, ...operationHeaders(operationId) } });
+        const { data } = await api.post(
+          '/orders',
+          {
+            table_id: cart.tableId,
+            customer_id: cart.customerId,
+            type: cart.orderType,
+            guest_count: cart.guestCount,
+            special_instructions: cart.orderNotes || undefined,
+            online_platform:
+              cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+            external_order_id:
+              cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
+            delivery_address:
+              cart.orderType === 'delivery' ? cart.deliveryAddress || undefined : undefined,
+            expected_payment_method:
+              cart.orderType === 'delivery' ? cart.expectedPaymentMethod || undefined : undefined,
+            expected_payment_method_id:
+              cart.orderType === 'delivery'
+                ? (cart.expectedPaymentMethodId ?? undefined)
+                : undefined,
+            delivery_note:
+              cart.orderType === 'delivery' ? cart.deliveryNote || undefined : undefined,
+            waived_charge_ids: Array.from(cart.waivedChargeIds),
+            opted_in_charge_ids: Array.from(cart.optedInChargeIds),
+            items: orderItems,
+          },
+          {
+            headers: {
+              'Idempotency-Key': attempt.orderIdempotencyKey,
+              ...operationHeaders(operationId),
+            },
+          },
+        );
         orderData = data;
         committedOrder = data.order as Order;
         requirePrepaidAttemptSaved({ ...attempt, order: data.order });
@@ -1420,29 +1641,42 @@ export default function POSPage() {
         attempt.order
       ) {
         try {
-          const { data: currentOrderData } = await api.get(`/orders/${orderId}`, { headers: operationHeaders(operationId) });
-          const serverDiscount = currentOrderData.order?.discount_type && Number(currentOrderData.order.discount_value) > 0
-            ? {
-              type: currentOrderData.order.discount_type,
-              value: Number(currentOrderData.order.discount_value),
-              reason: currentOrderData.order.discount_reason || undefined,
-            }
-            : null;
-          discountAlreadyApplied = discountFingerprint(serverDiscount) === discountFingerprint(effectiveDiscount);
+          const { data: currentOrderData } = await api.get(`/orders/${orderId}`, {
+            headers: operationHeaders(operationId),
+          });
+          const serverDiscount =
+            currentOrderData.order?.discount_type &&
+            Number(currentOrderData.order.discount_value) > 0
+              ? {
+                  type: currentOrderData.order.discount_type,
+                  value: Number(currentOrderData.order.discount_value),
+                  reason: currentOrderData.order.discount_reason || undefined,
+                }
+              : null;
+          discountAlreadyApplied =
+            discountFingerprint(serverDiscount) === discountFingerprint(effectiveDiscount);
         } catch {
           // If the order cannot be read, retain the safe retry behavior below;
           // an approval PIN may be required to reapply an uncertain discount.
         }
       }
-      if (!attempt.bill && !discountAlreadyApplied && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0))) {
+      if (
+        !attempt.bill &&
+        !discountAlreadyApplied &&
+        (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0))
+      ) {
         failureOperation = 'order.discount';
         failureStage = 'discount';
-        await api.patch(`/orders/${orderId}/discount`, {
-          discount_type: discountForRequest?.type || 'percentage',
-          discount_value: discountForRequest?.value || 0,
-          discount_reason: discountForRequest?.reason,
-          override_pin: discountForRequest?.override_pin,
-        }, { headers: operationHeaders(operationId) });
+        await api.patch(
+          `/orders/${orderId}/discount`,
+          {
+            discount_type: discountForRequest?.type || 'percentage',
+            discount_value: discountForRequest?.value || 0,
+            discount_reason: discountForRequest?.reason,
+            override_pin: discountForRequest?.override_pin,
+          },
+          { headers: operationHeaders(operationId) },
+        );
       }
 
       if (attempt.bill) {
@@ -1450,7 +1684,11 @@ export default function POSPage() {
       } else {
         failureOperation = 'bill.generate';
         failureStage = 'bill_generation';
-        const { data: generatedBill } = await api.post('/bills/generate', { order_id: orderId }, { headers: operationHeaders(operationId) });
+        const { data: generatedBill } = await api.post(
+          '/bills/generate',
+          { order_id: orderId },
+          { headers: operationHeaders(operationId) },
+        );
         billData = generatedBill;
       }
       if (!billData) throw new Error('Bill result unavailable');
@@ -1473,15 +1711,17 @@ export default function POSPage() {
       // makes a lost response safe to retry without creating a second order.
       failureOperation = 'payment.create';
       failureStage = 'payment_submission';
-      const paymentResponse = await api.post(
-        `/bills/${bill.id}/payments`,
-        paymentRequest,
-        { headers: { 'Idempotency-Key': attempt.paymentIdempotencyKey, ...operationHeaders(operationId) } },
-      );
+      const paymentResponse = await api.post(`/bills/${bill.id}/payments`, paymentRequest, {
+        headers: {
+          'Idempotency-Key': attempt.paymentIdempotencyKey,
+          ...operationHeaders(operationId),
+        },
+      });
       const paidBill: Bill = paymentResponse.data?.bill || bill;
-      const pointsEarned = paymentResponse.data?.loyaltyPointsEarned > 0
-        ? paymentResponse.data.loyaltyPointsEarned
-        : 0;
+      const pointsEarned =
+        paymentResponse.data?.loyaltyPointsEarned > 0
+          ? paymentResponse.data.loyaltyPointsEarned
+          : 0;
 
       if (paidBill.payment_status !== 'paid') {
         const incompleteMessage = t('paymentIncomplete', {
@@ -1514,30 +1754,39 @@ export default function POSPage() {
         // Payment is confirmed. Keep that fact in memory and never turn a
         // local retry-state write failure into advice to charge again.
         prepaidAttemptRef.current = stripPrepaidDiscountPin(completedAttempt);
-        if (operationId) void captureClientOperationFailure({ operation: 'payment.create', phase: 'retry_state_update', correlationId: operationId });
+        if (operationId)
+          void captureClientOperationFailure({
+            operation: 'payment.create',
+            phase: 'retry_state_update',
+            correlationId: operationId,
+          });
         reportOrderFailure({
           code: 'payment.retry_state.persist_failed',
           title: t('orderPaid', { number: order.order_number }),
           message: t('saleCompleteCleanupFailed'),
           nextStep: t('saleCompleteCheckOrders'),
-          detail: 'Payment completed but local retry state could not be updated with the confirmed bill',
+          detail:
+            'Payment completed but local retry state could not be updated with the confirmed bill',
           status: null,
           operation: 'payment.create',
           stage: 'cleanup',
           outcome: 'applied',
           reasonCode: 'payment.retry_state.persist_failed',
           correlationId: operationId,
-          operationFailure: operationId ? {
-            capture_point: 'fc.client.payment.create.retry_state_update',
-            operation_id: operationId,
-            outcome: 'applied',
-          } : undefined,
+          operationFailure: operationId
+            ? {
+                capture_point: 'fc.client.payment.create.retry_state_update',
+                operation_id: operationId,
+                outcome: 'applied',
+              }
+            : undefined,
         });
       }
 
-      const successMsg = pointsEarned > 0
-        ? t('orderPaidWithPoints', { number: order.order_number, points: pointsEarned })
-        : t('orderPaid', { number: order.order_number });
+      const successMsg =
+        pointsEarned > 0
+          ? t('orderPaidWithPoints', { number: order.order_number, points: pointsEarned })
+          : t('orderPaid', { number: order.order_number });
       toast.success(successMsg);
       if (cart.tableId) {
         try {
@@ -1550,7 +1799,11 @@ export default function POSPage() {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);
           if (!(heldOrderError as { response?: unknown } | null)?.response && operationId) {
-            void captureClientOperationFailure({ operation: 'payment.create', phase: 'held_cleanup', correlationId: operationId });
+            void captureClientOperationFailure({
+              operation: 'payment.create',
+              phase: 'held_cleanup',
+              correlationId: operationId,
+            });
           }
           reportOrderFailure({
             code: 'order.held_state.cleanup_failed',
@@ -1564,17 +1817,25 @@ export default function POSPage() {
             outcome: 'applied',
             reasonCode: 'order.held_state.cleanup_failed',
             correlationId: operationId,
-            operationFailure: !(heldOrderError as { response?: unknown } | null)?.response && !!operationId ? {
-              capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
-              operation_id: operationId,
-              outcome: 'applied',
-            } : undefined,
+            operationFailure:
+              !(heldOrderError as { response?: unknown } | null)?.response && !!operationId
+                ? {
+                    capture_point: 'fc.frontend.pos.payment.create.held_cleanup',
+                    operation_id: operationId,
+                    outcome: 'applied',
+                  }
+                : undefined,
           });
         }
       }
       cart.clearCart();
       if (!clearPrepaidAttempt()) {
-        if (operationId) void captureClientOperationFailure({ operation: 'payment.create', phase: 'retry_cleanup', correlationId: operationId });
+        if (operationId)
+          void captureClientOperationFailure({
+            operation: 'payment.create',
+            phase: 'retry_cleanup',
+            correlationId: operationId,
+          });
         reportOrderFailure({
           code: 'payment.retry_state.cleanup_failed',
           title: t('orderPaid', { number: order.order_number }),
@@ -1597,14 +1858,34 @@ export default function POSPage() {
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (error) {
       if (error instanceof OrderAttemptStorageError && committedOrder) {
-        if (failureOperation === 'payment.create' && failureStage === 'retry_state' && failureCorrelationId) {
-          void captureClientOperationFailure({ operation: 'payment.create', phase: 'retry_storage', correlationId: failureCorrelationId });
+        if (
+          failureOperation === 'payment.create' &&
+          failureStage === 'retry_state' &&
+          failureCorrelationId
+        ) {
+          void captureClientOperationFailure({
+            operation: 'payment.create',
+            phase: 'retry_storage',
+            correlationId: failureCorrelationId,
+          });
         }
-        if (failureOperation === 'bill.generate' && failureStage === 'retry_state' && failureCorrelationId) {
-          void captureClientOperationFailure({ operation: 'bill.generate', phase: 'retry_state_update', correlationId: failureCorrelationId });
+        if (
+          failureOperation === 'bill.generate' &&
+          failureStage === 'retry_state' &&
+          failureCorrelationId
+        ) {
+          void captureClientOperationFailure({
+            operation: 'bill.generate',
+            phase: 'retry_state_update',
+            correlationId: failureCorrelationId,
+          });
         }
         if (failureOperation === 'order.create' && failureCorrelationId) {
-          void captureClientOperationFailure({ operation: 'order.create', phase: 'retry_state_update', correlationId: failureCorrelationId });
+          void captureClientOperationFailure({
+            operation: 'order.create',
+            phase: 'retry_state_update',
+            correlationId: failureCorrelationId,
+          });
         }
         cart.clearCart();
         setMobileCartOpen(false);
@@ -1615,23 +1896,42 @@ export default function POSPage() {
           title: t('orderPlaced', { number: committedOrder.order_number }),
           message: t('orderCreatedPaymentNotStarted'),
           nextStep: t('openOrdersToPay'),
-          detail: failureOperation === 'bill.generate'
-            ? 'The bill was generated, but local payment retry state could not be saved before payment'
-            : 'Order was created, but local checkout recovery state could not be saved before payment',
+          detail:
+            failureOperation === 'bill.generate'
+              ? 'The bill was generated, but local payment retry state could not be saved before payment'
+              : 'Order was created, but local checkout recovery state could not be saved before payment',
           status: null,
           operation: failureOperation === 'bill.generate' ? 'bill.generate' : 'order.create',
           stage: failureOperation === 'bill.generate' ? 'retry_state' : failureStage,
           outcome: 'applied',
-          reasonCode: failureOperation === 'bill.generate' ? 'bill.retry_state.persist_failed' : 'order.retry_state.persist_failed',
+          reasonCode:
+            failureOperation === 'bill.generate'
+              ? 'bill.retry_state.persist_failed'
+              : 'order.retry_state.persist_failed',
           correlationId: failureCorrelationId,
-          operationFailure: failureOperation === 'bill.generate' && failureCorrelationId ? {
-            capture_point: 'fc.client.bill.generate.retry_state_update',
-            operation_id: failureCorrelationId,
-            outcome: 'applied',
-          } : undefined,
+          operationFailure:
+            failureOperation === 'bill.generate' && failureCorrelationId
+              ? {
+                  capture_point: 'fc.client.bill.generate.retry_state_update',
+                  operation_id: failureCorrelationId,
+                  outcome: 'applied',
+                }
+              : undefined,
         });
-      } else if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('processOrderFailed'), failureOperation === 'payment.create' ? 'payment.create' : 'order.create', failureCorrelationId);
-      else reportOrderRequestFailure(error, t('processOrderFailed'), failureOperation, failureStage, failureCorrelationId);
+      } else if (error instanceof OrderAttemptStorageError)
+        reportOrderStorageFailure(
+          t('processOrderFailed'),
+          failureOperation === 'payment.create' ? 'payment.create' : 'order.create',
+          failureCorrelationId,
+        );
+      else
+        reportOrderRequestFailure(
+          error,
+          t('processOrderFailed'),
+          failureOperation,
+          failureStage,
+          failureCorrelationId,
+        );
     } finally {
       setSubmitting(false);
     }
@@ -1774,15 +2074,28 @@ export default function POSPage() {
         operationId: operationId || undefined,
       });
       addItemsAttemptRef.current = itemAttempt;
-      const { data } = await api.post(`/orders/${order.id}/items`, {
-        items,
-        special_instructions: specialInstructions,
-      }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey, ...operationHeaders(itemAttempt.operationId) } });
+      const { data } = await api.post(
+        `/orders/${order.id}/items`,
+        {
+          items,
+          special_instructions: specialInstructions,
+        },
+        {
+          headers: {
+            'Idempotency-Key': itemAttempt.idempotencyKey,
+            ...operationHeaders(itemAttempt.operationId),
+          },
+        },
+      );
       // A resolved response is the confirmation boundary. Keep the durable
       // attempt through all network errors so a lost response can replay it.
       const cleared = clearAppendAttempt(storage, itemAttempt);
       if (!cleared && itemAttempt.operationId) {
-        void captureClientOperationFailure({ operation: 'order.append', phase: 'retry_cleanup', correlationId: itemAttempt.operationId });
+        void captureClientOperationFailure({
+          operation: 'order.append',
+          phase: 'retry_cleanup',
+          correlationId: itemAttempt.operationId,
+        });
         reportOrderFailure({
           code: 'order.append.retry_state.cleanup_failed',
           title: t('itemsAddedToOrder', { number: order.order_number }),
@@ -1811,8 +2124,16 @@ export default function POSPage() {
       setCheckoutTable(null);
       refreshTables();
     } catch (error) {
-      if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId);
-      else reportOrderRequestFailure(error, t('addItemsFailed'), 'order.append', 'append_items', operationId);
+      if (error instanceof OrderAttemptStorageError)
+        reportOrderStorageFailure(t('addItemsFailed'), 'order.append', operationId);
+      else
+        reportOrderRequestFailure(
+          error,
+          t('addItemsFailed'),
+          'order.append',
+          'append_items',
+          operationId,
+        );
     } finally {
       setSubmitting(false);
     }
@@ -1891,17 +2212,27 @@ export default function POSPage() {
               <p className="mt-1 text-sm text-muted-foreground">{supportError.nextStep}</p>
               <details className="mt-2 text-xs text-muted-foreground">
                 <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
-                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2">{JSON.stringify({
-                  ...supportError.payload,
-                  subject: supportError.subject,
-                  correlation_id: supportError.ticketCorrelationId,
-                  client_ticket_id: supportError.clientTicketId,
-                }, null, 2)}</Ltr>
+                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2">
+                  {JSON.stringify(
+                    {
+                      ...supportError.payload,
+                      subject: supportError.subject,
+                      correlation_id: supportError.ticketCorrelationId,
+                      client_ticket_id: supportError.clientTicketId,
+                    },
+                    null,
+                    2,
+                  )}
+                </Ltr>
               </details>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className="rounded bg-brand px-3 py-2 text-sm font-medium text-white"
-                  disabled={supportSubmitting || !supportError.clientTicketId || !supportError.ticketCorrelationId}
+                  disabled={
+                    supportSubmitting ||
+                    !supportError.clientTicketId ||
+                    !supportError.ticketCorrelationId
+                  }
                   onClick={async () => {
                     if (supportSubmittingRef.current) return;
                     supportSubmittingRef.current = true;
@@ -1922,7 +2253,9 @@ export default function POSPage() {
                       setSupportSubmitting(false);
                     }
                   }}
-                >{supportSubmitting ? tSupport('submitting') : tSupport('getHelp')}</button>
+                >
+                  {supportSubmitting ? tSupport('submitting') : tSupport('getHelp')}
+                </button>
                 {AI_HELP_PROVIDERS.map((provider) => (
                   <button
                     key={provider.id}

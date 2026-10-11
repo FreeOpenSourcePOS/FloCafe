@@ -16,26 +16,36 @@ function refundIdempotencyKey(req: Request): string | null {
   const supplied = req.get('Idempotency-Key')?.trim();
   if (!supplied) return null;
   if (supplied.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
-    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400, diagnosticCode: 'idempotency_key_invalid' });
+    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), {
+      statusCode: 400,
+      diagnosticCode: 'idempotency_key_invalid',
+    });
   }
   return supplied;
 }
 
 function refundRequestHash(billId: string, body: any, approverId: string): string {
-  return createHash('sha256').update(JSON.stringify({
-    billId,
-    order_item_id: body.order_item_id ?? null,
-    amount: body.amount ?? null,
-    method: body.method ?? null,
-    reason: body.reason ?? null,
-    shift_id: body.shift_id ?? null,
-    approver_id: approverId,
-  })).digest('hex');
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        billId,
+        order_item_id: body.order_item_id ?? null,
+        amount: body.amount ?? null,
+        method: body.method ?? null,
+        reason: body.reason ?? null,
+        shift_id: body.shift_id ?? null,
+        approver_id: approverId,
+      }),
+    )
+    .digest('hex');
 }
 
 function refundAmountMinorUnits(value: unknown, currency: string): number {
   if (typeof value !== 'number' && typeof value !== 'string') {
-    throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), { statusCode: 400, diagnosticCode: 'amount_invalid' });
+    throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), {
+      statusCode: 400,
+      diagnosticCode: 'amount_invalid',
+    });
   }
   const decimals = getCurrencyFractionDigits(currency);
   const factor = getCurrencyMinorUnitFactor(currency);
@@ -43,12 +53,18 @@ function refundAmountMinorUnits(value: unknown, currency: string): number {
   const pattern = decimals === 0 ? /^\d+$/ : new RegExp(`^\\d+(?:\\.\\d{1,${decimals}})?$`);
   if (!pattern.test(text)) {
     const decDesc = decimals === 0 ? 'without decimals' : `with at most ${decimals} decimal places`;
-    throw Object.assign(new Error(`Refund amount must be a finite number greater than zero ${decDesc}`), { statusCode: 400, diagnosticCode: 'amount_invalid' });
+    throw Object.assign(
+      new Error(`Refund amount must be a finite number greater than zero ${decDesc}`),
+      { statusCode: 400, diagnosticCode: 'amount_invalid' },
+    );
   }
   const parsed = Number(text);
   const minorUnits = Math.round(parsed * factor);
   if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isSafeInteger(minorUnits)) {
-    throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), { statusCode: 400, diagnosticCode: 'amount_invalid' });
+    throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), {
+      statusCode: 400,
+      diagnosticCode: 'amount_invalid',
+    });
   }
   return minorUnits;
 }
@@ -70,7 +86,11 @@ function structuredRefundFailure(
   });
   if (!failure) return { error };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
-  try { cloudSync.captureOperationFailure(failure); } catch { /* Diagnostics must not affect refunds. */ }
+  try {
+    cloudSync.captureOperationFailure(failure);
+  } catch {
+    /* Diagnostics must not affect refunds. */
+  }
   return {
     error,
     reason_code: failure.reason_code,
@@ -90,11 +110,32 @@ router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Resp
     const body = req.body || {};
     const billId = body.bill_id;
     if (billId === undefined || billId === null || billId === '') {
-      return res.status(400).json(structuredRefundFailure(req, 'bill_id is required', 'fc.backend.payment.refund.validation', 'bill_id_required'));
+      return res
+        .status(400)
+        .json(
+          structuredRefundFailure(
+            req,
+            'bill_id is required',
+            'fc.backend.payment.refund.validation',
+            'bill_id_required',
+          ),
+        );
     }
-    const orderItemId = body.order_item_id !== undefined && body.order_item_id !== null ? Number(body.order_item_id) : null;
+    const orderItemId =
+      body.order_item_id !== undefined && body.order_item_id !== null
+        ? Number(body.order_item_id)
+        : null;
     if (orderItemId !== null && !Number.isSafeInteger(orderItemId)) {
-      return res.status(400).json(structuredRefundFailure(req, 'order_item_id must be an integer', 'fc.backend.payment.refund.validation', 'order_item_id_invalid'));
+      return res
+        .status(400)
+        .json(
+          structuredRefundFailure(
+            req,
+            'order_item_id must be an integer',
+            'fc.backend.payment.refund.validation',
+            'order_item_id_invalid',
+          ),
+        );
     }
     const db = getDatabase();
     const currency = getTenantCurrency(db);
@@ -102,33 +143,65 @@ router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Resp
     if (body.amount !== undefined && body.amount !== null) {
       amountCents = refundAmountMinorUnits(body.amount, currency);
     } else if (orderItemId === null) {
-      return res.status(400).json(structuredRefundFailure(req, 'amount is required unless order_item_id is given', 'fc.backend.payment.refund.validation', 'amount_required'));
+      return res
+        .status(400)
+        .json(
+          structuredRefundFailure(
+            req,
+            'amount is required unless order_item_id is given',
+            'fc.backend.payment.refund.validation',
+            'amount_required',
+          ),
+        );
     }
     if (typeof body.reason === 'string' && body.reason.length > MAX_REASON_LENGTH) {
-      return res.status(400).json(structuredRefundFailure(req, 'reason is too long', 'fc.backend.payment.refund.validation', 'reason_too_long'));
+      return res
+        .status(400)
+        .json(
+          structuredRefundFailure(
+            req,
+            'reason is too long',
+            'fc.backend.payment.refund.validation',
+            'reason_too_long',
+          ),
+        );
     }
 
-    const approverId = body.approver_id !== undefined && body.approver_id !== null
-      ? String(body.approver_id).trim()
-      : '';
-    const managerId = body.manager_id !== undefined && body.manager_id !== null
-      ? String(body.manager_id).trim()
-      : '';
+    const approverId =
+      body.approver_id !== undefined && body.approver_id !== null
+        ? String(body.approver_id).trim()
+        : '';
+    const managerId =
+      body.manager_id !== undefined && body.manager_id !== null
+        ? String(body.manager_id).trim()
+        : '';
     if (!approverId && !managerId) {
       return res.status(400).json({
-        ...structuredRefundFailure(req, 'approver_id is required', 'fc.backend.payment.refund.validation', 'approver_required'),
+        ...structuredRefundFailure(
+          req,
+          'approver_id is required',
+          'fc.backend.payment.refund.validation',
+          'approver_required',
+        ),
         code: 'APPROVER_REQUIRED',
       });
     }
     if (approverId && managerId && approverId !== managerId) {
       return res.status(400).json({
-        ...structuredRefundFailure(req, 'approver_id and manager_id must identify the same approver', 'fc.backend.payment.refund.validation', 'approver_conflict'),
+        ...structuredRefundFailure(
+          req,
+          'approver_id and manager_id must identify the same approver',
+          'fc.backend.payment.refund.validation',
+          'approver_conflict',
+        ),
         code: 'APPROVER_CONFLICT',
       });
     }
     const selectedApproverId = approverId || managerId;
     const idempotencyKey = refundIdempotencyKey(req);
-    const requestHash = idempotencyKey ? refundRequestHash(String(billId), body, selectedApproverId) : undefined;
+    const requestHash = idempotencyKey
+      ? refundRequestHash(String(billId), body, selectedApproverId)
+      : undefined;
 
     const userId = String((req as any).user.userId);
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
@@ -158,14 +231,27 @@ router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Resp
     res.status(201).json(result);
   } catch (error: any) {
     const status = error.statusCode || 500;
-    const outcome = operationCommitted ? 'applied' : transactionBodyCompleted ? 'unknown' : 'not_applied';
+    const outcome = operationCommitted
+      ? 'applied'
+      : transactionBodyCompleted
+        ? 'unknown'
+        : 'not_applied';
     const capturePoint = operationCommitted
       ? 'fc.backend.payment.refund.completion'
-      : status >= 500 ? 'fc.backend.payment.refund.persistence' : 'fc.backend.payment.refund.validation';
+      : status >= 500
+        ? 'fc.backend.payment.refund.persistence'
+        : 'fc.backend.payment.refund.validation';
     const displayCode = status < 500 ? error.diagnosticCode : undefined;
-    const payload = status >= 500 || displayCode
-      ? structuredRefundFailure(req, error.message || 'Unable to process refund', capturePoint, displayCode, outcome)
-      : { error: error.message || 'Unable to process refund' };
+    const payload =
+      status >= 500 || displayCode
+        ? structuredRefundFailure(
+            req,
+            error.message || 'Unable to process refund',
+            capturePoint,
+            displayCode,
+            outcome,
+          )
+        : { error: error.message || 'Unable to process refund' };
     res.status(status).json(payload);
   }
 });

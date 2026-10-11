@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LifeBuoy } from 'lucide-react';
 import { useTranslations } from 'use-intl';
-import { SupportTicketForm, type SupportOperationFailure } from '@/components/support/SupportTicketForm';
+import {
+  SupportTicketForm,
+  type SupportOperationFailure,
+} from '@/components/support/SupportTicketForm';
 import { DiagnosticsPanel, type LocalFailure } from '@/components/support/DiagnosticsPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -75,38 +78,85 @@ const HELP_CAPTURE_OUTCOMES: Record<string, readonly string[]> = {
   'fc.client.bill.generate.retry_state_update': ['applied'],
 };
 const HELP_DISPLAY_CODES = new Set([
-  'invalid_type', 'invalid_value', 'disabled', 'type_disabled', 'limit_exceeded',
-  'order_not_discountable', 'bill_not_discountable', 'split_check', 'refunded', 'paid',
-  'transaction_reference_used', 'transaction_reference_reused', 'bill_refunded', 'bill_already_paid',
-  'customer_mismatch', 'customer_unavailable', 'wallet_customer_required', 'amount_required',
-  'non_cash_exceeds_balance', 'cash_reference_zero_applied', 'wallet_insufficient', 'kitchen_undelivered',
-  'idempotency_conflict', 'payment_method_unavailable', 'payment_input_invalid',
-  'charge_required', 'bill_not_found', 'split_check', 'bill_paid', 'bill_refunded', 'order_not_found',
-  'order_cancelled', 'charge_unavailable', 'order_type_unsupported', 'change_required',
-  'invalid_change_type', 'charge_not_waivable', 'charge_always_applied',
+  'invalid_type',
+  'invalid_value',
+  'disabled',
+  'type_disabled',
+  'limit_exceeded',
+  'order_not_discountable',
+  'bill_not_discountable',
+  'split_check',
+  'refunded',
+  'paid',
+  'transaction_reference_used',
+  'transaction_reference_reused',
+  'bill_refunded',
+  'bill_already_paid',
+  'customer_mismatch',
+  'customer_unavailable',
+  'wallet_customer_required',
+  'amount_required',
+  'non_cash_exceeds_balance',
+  'cash_reference_zero_applied',
+  'wallet_insufficient',
+  'kitchen_undelivered',
+  'idempotency_conflict',
+  'payment_method_unavailable',
+  'payment_input_invalid',
+  'charge_required',
+  'bill_not_found',
+  'split_check',
+  'bill_paid',
+  'bill_refunded',
+  'order_not_found',
+  'order_cancelled',
+  'charge_unavailable',
+  'order_type_unsupported',
+  'change_required',
+  'invalid_change_type',
+  'charge_not_waivable',
+  'charge_always_applied',
 ]);
 const HELP_FAILURE_CLASSES = new Set([
-  'timeout', 'dns', 'connection_refused', 'offline', 'unreachable', 'invalid_response', 'unknown',
+  'timeout',
+  'dns',
+  'connection_refused',
+  'offline',
+  'unreachable',
+  'invalid_response',
+  'unknown',
 ]);
 
-function operationFailureForHelp(failure: LocalFailure): { correlationId?: string; operationFailure?: SupportOperationFailure } {
+function operationFailureForHelp(failure: LocalFailure): {
+  correlationId?: string;
+  operationFailure?: SupportOperationFailure;
+} {
   const metadata = failure.metadata;
   if (!metadata) return {};
-  const correlationId = typeof metadata.correlation_id === 'string' && FAILURE_UUID_V4.test(metadata.correlation_id)
-    ? metadata.correlation_id
-    : undefined;
+  const correlationId =
+    typeof metadata.correlation_id === 'string' && FAILURE_UUID_V4.test(metadata.correlation_id)
+      ? metadata.correlation_id
+      : undefined;
   const capturePoint = metadata.capture_point;
   const outcome = metadata.outcome;
-  if (!correlationId || typeof capturePoint !== 'string' || typeof outcome !== 'string'
-    || !Object.prototype.hasOwnProperty.call(HELP_CAPTURE_OUTCOMES, capturePoint)
-    || !HELP_CAPTURE_OUTCOMES[capturePoint].includes(outcome)) return { correlationId };
+  if (
+    !correlationId ||
+    typeof capturePoint !== 'string' ||
+    typeof outcome !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(HELP_CAPTURE_OUTCOMES, capturePoint) ||
+    !HELP_CAPTURE_OUTCOMES[capturePoint].includes(outcome)
+  )
+    return { correlationId };
 
   const facts: NonNullable<SupportOperationFailure['facts']> = {};
   if (typeof metadata.display_code === 'string' && HELP_DISPLAY_CODES.has(metadata.display_code)) {
     facts.display_code = metadata.display_code;
   }
-  if (capturePoint.endsWith('.transport') && typeof metadata.failure_class === 'string'
-    && HELP_FAILURE_CLASSES.has(metadata.failure_class)) {
+  if (
+    capturePoint.endsWith('.transport') &&
+    typeof metadata.failure_class === 'string' &&
+    HELP_FAILURE_CLASSES.has(metadata.failure_class)
+  ) {
     facts.failure_class = metadata.failure_class;
   }
   if (capturePoint.endsWith('.transport') && !facts.failure_class) return { correlationId };
@@ -162,39 +212,43 @@ export default function SupportPage() {
   );
 
   /** Turn a captured failure into a started report, so the evidence is not retyped. */
-  const handleCreateTicket = useCallback((failure: LocalFailure) => {
-    const metadata = failure.metadata ? `\nmetadata: ${JSON.stringify(failure.metadata)}` : '';
-    const operationContext = operationFailureForHelp(failure);
-    // The id changes so the form remounts onto this draft rather than keeping
-    // whatever was half typed before.
-    setDraft((current) => ({
-      id: current.id + 1,
-      category: 'bug',
-      // The backend keeps 255 characters; the full signature stays in the
-      // message, so bound the subject here instead of losing its tail on save.
-      subject: `[Failure] ${failure.event_code}: ${failure.signature}`.slice(0, 255),
-      eventCode: failure.event_code,
-      correlationId: operationContext.correlationId,
-      operationFailure: operationContext.operationFailure,
-      diagnostics: {
-        selected_failure: {
-          event_code: failure.event_code,
-          severity: failure.severity,
-          error_class: failure.error_class,
-          signature: failure.signature,
-          occurred_at: failure.occurred_at,
+  const handleCreateTicket = useCallback(
+    (failure: LocalFailure) => {
+      const metadata = failure.metadata ? `\nmetadata: ${JSON.stringify(failure.metadata)}` : '';
+      const operationContext = operationFailureForHelp(failure);
+      // The id changes so the form remounts onto this draft rather than keeping
+      // whatever was half typed before.
+      setDraft((current) => ({
+        id: current.id + 1,
+        category: 'bug',
+        // The backend keeps 255 characters; the full signature stays in the
+        // message, so bound the subject here instead of losing its tail on save.
+        subject: `[Failure] ${failure.event_code}: ${failure.signature}`.slice(0, 255),
+        eventCode: failure.event_code,
+        correlationId: operationContext.correlationId,
+        operationFailure: operationContext.operationFailure,
+        diagnostics: {
+          selected_failure: {
+            event_code: failure.event_code,
+            severity: failure.severity,
+            error_class: failure.error_class,
+            signature: failure.signature,
+            occurred_at: failure.occurred_at,
+          },
         },
-      },
-      message: `${t('diagnosticsFailureReport')}\n`
-        + `occurred_at: ${failure.occurred_at}\n`
-        + `summary: ${failure.summary}\n`
-        + `signature: ${failure.signature}\n`
-        + `event_code: ${failure.event_code}\n`
-        + `severity: ${failure.severity}`
-        + metadata,
-    }));
-    handleTabChange(TICKET_TAB);
-  }, [handleTabChange, t]);
+        message:
+          `${t('diagnosticsFailureReport')}\n` +
+          `occurred_at: ${failure.occurred_at}\n` +
+          `summary: ${failure.summary}\n` +
+          `signature: ${failure.signature}\n` +
+          `event_code: ${failure.event_code}\n` +
+          `severity: ${failure.severity}` +
+          metadata,
+      }));
+      handleTabChange(TICKET_TAB);
+    },
+    [handleTabChange, t],
+  );
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-6">

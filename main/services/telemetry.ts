@@ -4,7 +4,15 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
-import { ensureTelemetryAnonId, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
+import {
+  ensureTelemetryAnonId,
+  isDiagnosticsConsentEnabled,
+  isDiagnosticsTransmissionEnabled,
+  isTelemetryEnabled,
+  getSettingValue,
+  parseDbTimestamp,
+  upsertTelemetryLastPing,
+} from '../db';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
@@ -31,7 +39,8 @@ export type InstallSource =
   | 'dev';
 
 const REQUEST_TIMEOUT_MS = 8_000;
-const DIAGNOSTIC_REPORT_KEYS = 'app_build,app_version,capture_point,classification,count,examples,facts,first_occurred_at,last_occurred_at,operation,outcome,platform,reason_code,report_id,schema_version,stage,window_start';
+const DIAGNOSTIC_REPORT_KEYS =
+  'app_build,app_version,capture_point,classification,count,examples,facts,first_occurred_at,last_occurred_at,operation,outcome,platform,reason_code,report_id,schema_version,stage,window_start';
 const DAILY_PING_INTERVAL_MS = 60 * 60_000; // check hourly, send at most once/24h
 const DAILY_PING_MIN_GAP_MS = 24 * 60 * 60_000;
 
@@ -80,7 +89,11 @@ export function linuxPackageFromOsRelease(contents: string): 'deb' | 'rpm' | 'li
     if (match) fields.set(match[1].toLowerCase(), match[2].trim().replace(/^"(.*)"$/, '$1'));
   }
   const families = [fields.get('id'), ...String(fields.get('id_like') ?? '').split(/\s+/)]
-    .map((value) => String(value ?? '').trim().toLowerCase())
+    .map((value) =>
+      String(value ?? '')
+        .trim()
+        .toLowerCase(),
+    )
     .filter(Boolean);
   if (families.some((id) => DEBIAN_FAMILY.includes(id))) return 'deb';
   if (families.some((id) => RPM_FAMILY.includes(id))) return 'rpm';
@@ -122,7 +135,10 @@ function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
   return operation;
 }
 
-async function sendEventImpl(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
+async function sendEventImpl(
+  eventType: string,
+  payload?: Record<string, unknown>,
+): Promise<boolean> {
   if (matrixOffline() || !isTelemetryEnabled()) return false;
 
   try {
@@ -166,7 +182,13 @@ export function sendEvent(eventType: string, payload?: Record<string, unknown>):
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
-export type AnonymousDiagnosticDisposition = 'accepted' | 'duplicate' | 'rejected' | 'invalid_ack' | 'report_id_mismatch' | 'network_error';
+export type AnonymousDiagnosticDisposition =
+  | 'accepted'
+  | 'duplicate'
+  | 'rejected'
+  | 'invalid_ack'
+  | 'report_id_mismatch'
+  | 'network_error';
 export type AnonymousDiagnosticResult = {
   disposition: AnonymousDiagnosticDisposition;
   retry_after_ms?: number;
@@ -175,40 +197,77 @@ export type AnonymousDiagnosticResult = {
 function anonymousRetryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined;
   const seconds = Number(value.trim());
-  const delay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(value) - Date.now();
+  const delay =
+    Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(value) - Date.now();
   return Number.isFinite(delay) && delay >= 0 ? Math.min(60 * 60_000, delay) : undefined;
 }
 
-function safeAnonymousDiagnosticProjection(report: Record<string, unknown>): Record<string, unknown> | null {
-  if (Object.keys(report).sort().join(',') !== DIAGNOSTIC_REPORT_KEYS || report.schema_version !== 2
-    || !isOperationReference(report.report_id) || !Number.isSafeInteger(report.count)
-    || (report.count as number) < 1 || (report.count as number) > 100_000
-    || !Array.isArray(report.examples) || report.examples.length > 3
-    || report.examples.some((value) => !value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).join(',') !== 'correlation_id'
-      || !isOperationReference((value as Record<string, unknown>).correlation_id))) return null;
+function safeAnonymousDiagnosticProjection(
+  report: Record<string, unknown>,
+): Record<string, unknown> | null {
+  if (
+    Object.keys(report).sort().join(',') !== DIAGNOSTIC_REPORT_KEYS ||
+    report.schema_version !== 2 ||
+    !isOperationReference(report.report_id) ||
+    !Number.isSafeInteger(report.count) ||
+    (report.count as number) < 1 ||
+    (report.count as number) > 100_000 ||
+    !Array.isArray(report.examples) ||
+    report.examples.length > 3 ||
+    report.examples.some(
+      (value) =>
+        !value ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        Object.keys(value).join(',') !== 'correlation_id' ||
+        !isOperationReference((value as Record<string, unknown>).correlation_id),
+    )
+  )
+    return null;
   const failure = serializeOperationFailure({
     capture_point: report.capture_point,
     outcome: report.outcome,
     facts: report.facts,
   });
-  if (!failure || failure.reason_code !== report.reason_code || failure.classification !== report.classification
-    || failure.operation !== report.operation || failure.stage !== report.stage) return null;
-  const timestamp = (value: unknown): value is string => typeof value === 'string'
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value)
-    && Number.isFinite(Date.parse(value));
-  if (!timestamp(report.window_start) || !timestamp(report.first_occurred_at) || !timestamp(report.last_occurred_at)) return null;
+  if (
+    !failure ||
+    failure.reason_code !== report.reason_code ||
+    failure.classification !== report.classification ||
+    failure.operation !== report.operation ||
+    failure.stage !== report.stage
+  )
+    return null;
+  const timestamp = (value: unknown): value is string =>
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+  if (
+    !timestamp(report.window_start) ||
+    !timestamp(report.first_occurred_at) ||
+    !timestamp(report.last_occurred_at)
+  )
+    return null;
   const window = Date.parse(report.window_start as string);
   const first = Date.parse(report.first_occurred_at as string);
   const last = Date.parse(report.last_occurred_at as string);
-  if (new Date(window).toISOString().replace(/\.\d{3}Z$/, 'Z') !== report.window_start
-    || new Date(window).getUTCMinutes() !== 0 || new Date(window).getUTCSeconds() !== 0
-    || Math.floor(first / 3_600_000) !== Math.floor(window / 3_600_000)
-    || Math.floor(last / 3_600_000) !== Math.floor(window / 3_600_000) || first > last) return null;
+  if (
+    new Date(window).toISOString().replace(/\.\d{3}Z$/, 'Z') !== report.window_start ||
+    new Date(window).getUTCMinutes() !== 0 ||
+    new Date(window).getUTCSeconds() !== 0 ||
+    Math.floor(first / 3_600_000) !== Math.floor(window / 3_600_000) ||
+    Math.floor(last / 3_600_000) !== Math.floor(window / 3_600_000) ||
+    first > last
+  )
+    return null;
   for (const key of ['app_version', 'app_build'] as const) {
-    if (typeof report[key] !== 'string' || !/^[A-Za-z0-9._:+-]{1,64}$/.test(report[key] as string)) return null;
+    if (typeof report[key] !== 'string' || !/^[A-Za-z0-9._:+-]{1,64}$/.test(report[key] as string))
+      return null;
   }
-  if (typeof report.platform !== 'string' || !['win32', 'darwin', 'linux', 'unknown'].includes(report.platform)) return null;
+  if (
+    typeof report.platform !== 'string' ||
+    !['win32', 'darwin', 'linux', 'unknown'].includes(report.platform)
+  )
+    return null;
   return {
     schema_version: 2,
     report_id: report.report_id,
@@ -230,9 +289,17 @@ function safeAnonymousDiagnosticProjection(report: Record<string, unknown>): Rec
 }
 
 /** Sends a store-unlinked count report through the existing anonymous collector. */
-export async function sendAnonymousDiagnosticReport(report: Record<string, unknown>): Promise<AnonymousDiagnosticResult> {
-  if (matrixOffline() || telemetryStopping || !isTelemetryEnabled()
-    || !isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return { disposition: 'network_error' };
+export async function sendAnonymousDiagnosticReport(
+  report: Record<string, unknown>,
+): Promise<AnonymousDiagnosticResult> {
+  if (
+    matrixOffline() ||
+    telemetryStopping ||
+    !isTelemetryEnabled() ||
+    !isDiagnosticsConsentEnabled() ||
+    !isDiagnosticsTransmissionEnabled()
+  )
+    return { disposition: 'network_error' };
   const safeReport = safeAnonymousDiagnosticProjection(report);
   if (!safeReport) return { disposition: 'invalid_ack' };
 
@@ -255,17 +322,29 @@ export async function sendAnonymousDiagnosticReport(report: Record<string, unkno
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    const ack = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const ack = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     await response.body?.cancel().catch(() => {});
     if (response.status === 408 || response.status === 429 || response.status >= 500) {
-      return { disposition: 'network_error', retry_after_ms: anonymousRetryAfterMs(response.headers.get('retry-after')) };
+      return {
+        disposition: 'network_error',
+        retry_after_ms: anonymousRetryAfterMs(response.headers.get('retry-after')),
+      };
     }
     const reportId = safeReport.report_id;
-    if (ack && isOperationReference(ack.report_id) && ack.report_id !== reportId) return { disposition: 'report_id_mismatch' };
-    if (!ack || Object.keys(ack).sort().join(',') !== 'disposition,report_id,schema_version'
-      || ack.schema_version !== 2 || !isOperationReference(ack.report_id) || ack.report_id !== reportId) return { disposition: 'invalid_ack' };
-    if (response.ok && (ack.disposition === 'accepted' || ack.disposition === 'duplicate')) return { disposition: ack.disposition };
-    if (response.status === 422 && ack.disposition === 'rejected') return { disposition: 'rejected' };
+    if (ack && isOperationReference(ack.report_id) && ack.report_id !== reportId)
+      return { disposition: 'report_id_mismatch' };
+    if (
+      !ack ||
+      Object.keys(ack).sort().join(',') !== 'disposition,report_id,schema_version' ||
+      ack.schema_version !== 2 ||
+      !isOperationReference(ack.report_id) ||
+      ack.report_id !== reportId
+    )
+      return { disposition: 'invalid_ack' };
+    if (response.ok && (ack.disposition === 'accepted' || ack.disposition === 'duplicate'))
+      return { disposition: ack.disposition };
+    if (response.status === 422 && ack.disposition === 'rejected')
+      return { disposition: 'rejected' };
     return { disposition: 'invalid_ack' };
   } catch {
     return { disposition: 'network_error' };

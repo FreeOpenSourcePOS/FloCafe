@@ -2,7 +2,12 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import expressRateLimit from 'express-rate-limit';
 import { requirePermission } from '../services/authorization';
-import { cloudSync, DiagnosticEventInput, DIAGNOSTIC_LOG_MAX_ROWS, isAllowedDiagnosticEventCode } from '../services/cloud-sync';
+import {
+  cloudSync,
+  DiagnosticEventInput,
+  DIAGNOSTIC_LOG_MAX_ROWS,
+  isAllowedDiagnosticEventCode,
+} from '../services/cloud-sync';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { buildSystemDiagnostics, resolveCategory } from './support-ticket';
 
@@ -78,42 +83,56 @@ function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
 
 /** Validates and normalizes a client-submitted diagnostic event; null when the payload is unacceptable. */
 export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null {
-  const raw = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+  const raw =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
   const eventCode = typeof raw.event_code === 'string' ? raw.event_code.trim() : '';
   if (!EVENT_CODE_RE.test(eventCode) || !isAllowedDiagnosticEventCode(eventCode)) return null;
   const severity = typeof raw.severity === 'string' ? raw.severity : '';
   if (!ALLOWED_SEVERITIES.has(severity)) return null;
 
-  if (raw.metadata !== undefined && raw.metadata !== null && !isPlainObject(raw.metadata)) return null;
+  if (raw.metadata !== undefined && raw.metadata !== null && !isPlainObject(raw.metadata))
+    return null;
   const metadata = isPlainObject(raw.metadata)
-    ? sanitizeDiagnosticMetadata(raw.metadata, 0) as Record<string, unknown>
+    ? (sanitizeDiagnosticMetadata(raw.metadata, 0) as Record<string, unknown>)
     : undefined;
-  if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_BYTES) return null;
+  if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_BYTES)
+    return null;
 
   return {
     event_id: randomUUID(),
     event_code: eventCode,
     severity: severity as DiagnosticEventInput['severity'],
-    correlation_id: typeof raw.correlation_id === 'string' && raw.correlation_id.trim()
-      ? raw.correlation_id.trim().slice(0, MAX_CORRELATION_ID_CHARS)
-      : undefined,
-    message: typeof raw.message === 'string' && raw.message.trim()
-      ? raw.message.trim().slice(0, MAX_MESSAGE_CHARS)
-      : undefined,
+    correlation_id:
+      typeof raw.correlation_id === 'string' && raw.correlation_id.trim()
+        ? raw.correlation_id.trim().slice(0, MAX_CORRELATION_ID_CHARS)
+        : undefined,
+    message:
+      typeof raw.message === 'string' && raw.message.trim()
+        ? raw.message.trim().slice(0, MAX_MESSAGE_CHARS)
+        : undefined,
     metadata,
     occurred_at: new Date().toISOString(),
   };
 }
 
-router.post('/event', requirePermission('support.use'), diagnosticsWriteRateLimit, (req: Request, res: Response) => {
-  const event = buildDiagnosticEvent(req.body);
-  if (!event) return res.status(400).json({ error: 'Invalid diagnostic event' });
-  try {
-    // Consent-gated, fire-and-forget: a rejected enqueue must never fail the request.
-    cloudSync.reportDiagnostic(event);
-  } catch { /* diagnostics must never mask the original failure */ }
-  res.status(202).json({ queued: true });
-});
+router.post(
+  '/event',
+  requirePermission('support.use'),
+  diagnosticsWriteRateLimit,
+  (req: Request, res: Response) => {
+    const event = buildDiagnosticEvent(req.body);
+    if (!event) return res.status(400).json({ error: 'Invalid diagnostic event' });
+    try {
+      // Consent-gated, fire-and-forget: a rejected enqueue must never fail the request.
+      cloudSync.reportDiagnostic(event);
+    } catch {
+      /* diagnostics must never mask the original failure */
+    }
+    res.status(202).json({ queued: true });
+  },
+);
 
 // Cashier transport/recovery events are client-owned. Backend write failures are
 // captured at their authoritative boundary and must not be reported here again.
@@ -121,9 +140,16 @@ router.post('/capture', diagnosticsWriteRateLimit, (req: Request, res: Response)
   const raw = isPlainObject(req.body) ? req.body : {};
   const capturePoint = raw.capture_point;
   const hasFacts = raw.facts !== undefined;
-  if (Object.keys(raw).sort().join(',') !== (hasFacts ? 'capture_point,facts,operation_id,outcome' : 'capture_point,operation_id,outcome')
-    || typeof capturePoint !== 'string' || !FRONTEND_CAPTURE_POINTS.has(capturePoint)
-    || typeof raw.outcome !== 'string' || !isOperationReference(raw.operation_id)) {
+  if (
+    Object.keys(raw).sort().join(',') !==
+      (hasFacts
+        ? 'capture_point,facts,operation_id,outcome'
+        : 'capture_point,operation_id,outcome') ||
+    typeof capturePoint !== 'string' ||
+    !FRONTEND_CAPTURE_POINTS.has(capturePoint) ||
+    typeof raw.outcome !== 'string' ||
+    !isOperationReference(raw.operation_id)
+  ) {
     return res.status(400).json({ error: 'Invalid diagnostic capture' });
   }
   const failure = serializeOperationFailure({
@@ -157,7 +183,10 @@ router.get('/health', requirePermission('support.use'), (_req: Request, res: Res
 // Local read for the diagnostics screen; nothing here is transmitted.
 router.get('/recent', requirePermission('support.use'), (req: Request, res: Response) => {
   const limitRaw = Number(req.query.limit);
-  const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
+  const limit =
+    Number.isSafeInteger(limitRaw) && limitRaw > 0
+      ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS)
+      : 50;
   res.json({ failures: cloudSync.listLocalDiagnostics(limit) });
 });
 
@@ -171,7 +200,10 @@ router.delete('/recent', requirePermission('settings.manage'), (req: Request, re
 // detail, so the operator adds it on the screen after seeing what it is.
 router.get('/support-bundle', requirePermission('support.use'), (req: Request, res: Response) => {
   const limitRaw = Number(req.query.limit);
-  const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
+  const limit =
+    Number.isSafeInteger(limitRaw) && limitRaw > 0
+      ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS)
+      : 50;
   const failures = cloudSync.listLocalDiagnostics(limit);
   res.json({
     bundle: {

@@ -8,9 +8,16 @@ const root = path.join(__dirname, '..');
 
 function buildIdentity() {
   try {
-    const commit = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-    if (!/^[0-9a-f]{40}$/i.test(commit)) return { schema_version: 1, build_id: 'unknown', source_commit: null };
-    const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: root, encoding: 'utf8' });
+    const commit = execFileSync('git', ['rev-parse', '--verify', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+    if (!/^[0-9a-f]{40}$/i.test(commit))
+      return { schema_version: 1, build_id: 'unknown', source_commit: null };
+    const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=normal'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
     if (status.trim()) return { schema_version: 1, build_id: 'custom', source_commit: null };
     return { schema_version: 1, build_id: commit, source_commit: commit };
   } catch {

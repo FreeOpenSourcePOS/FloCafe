@@ -22,7 +22,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       upsertTelemetryLastPing: () => {},
     };
   }
-  if (request === './build-identity') return { getBuildIdentity: () => '0123456789abcdef0123456789abcdef01234567' };
+  if (request === './build-identity')
+    return { getBuildIdentity: () => '0123456789abcdef0123456789abcdef01234567' };
   return originalLoad.apply(this, arguments as any);
 };
 
@@ -30,11 +31,14 @@ const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
   sendCount += 1;
   responseBody = JSON.parse(String(init?.body || '{}'));
-  return new Response(JSON.stringify({
-    schema_version: 2,
-    report_id: 'a17b9c00-4a29-4b82-9e1a-729fb641e2bb',
-    disposition: responseStatus === 422 ? 'rejected' : 'accepted',
-  }), { status: responseStatus, headers: { 'Content-Type': 'application/json' } });
+  return new Response(
+    JSON.stringify({
+      schema_version: 2,
+      report_id: 'a17b9c00-4a29-4b82-9e1a-729fb641e2bb',
+      disposition: responseStatus === 422 ? 'rejected' : 'accepted',
+    }),
+    { status: responseStatus, headers: { 'Content-Type': 'application/json' } },
+  );
 }) as unknown as typeof fetch;
 
 const { sendAnonymousDiagnosticReport } = require('../main/services/telemetry');
@@ -69,28 +73,43 @@ async function main() {
     const payload = responseBody as any;
     assert.equal(payload.app, 'flocafe');
     assert.equal(payload.event_type, 'diagnostic_counts');
-    assert.equal(payload.app_version, '3.12.22', 'outer collector metadata identifies the current sender after an upgrade');
+    assert.equal(
+      payload.app_version,
+      '3.12.22',
+      'outer collector metadata identifies the current sender after an upgrade',
+    );
     assert.equal(payload.app_build, '0123456789abcdef0123456789abcdef01234567');
-    assert.equal(payload.payload.report.app_version, report.app_version, 'queued report keeps its immutable capture version');
-    assert.equal(payload.payload.report.app_build, report.app_build, 'queued report keeps its immutable capture build');
-    assert.deepEqual(payload.payload, { schema_version: 2, report: {
+    assert.equal(
+      payload.payload.report.app_version,
+      report.app_version,
+      'queued report keeps its immutable capture version',
+    );
+    assert.equal(
+      payload.payload.report.app_build,
+      report.app_build,
+      'queued report keeps its immutable capture build',
+    );
+    assert.deepEqual(payload.payload, {
       schema_version: 2,
-      report_id: report.report_id,
-      reason_code: report.reason_code,
-      classification: report.classification,
-      operation: report.operation,
-      stage: report.stage,
-      outcome: report.outcome,
-      capture_point: report.capture_point,
-      count: report.count,
-      window_start: report.window_start,
-      first_occurred_at: report.first_occurred_at,
-      last_occurred_at: report.last_occurred_at,
-      app_version: report.app_version,
-      app_build: report.app_build,
-      platform: report.platform,
-      facts: {},
-    } });
+      report: {
+        schema_version: 2,
+        report_id: report.report_id,
+        reason_code: report.reason_code,
+        classification: report.classification,
+        operation: report.operation,
+        stage: report.stage,
+        outcome: report.outcome,
+        capture_point: report.capture_point,
+        count: report.count,
+        window_start: report.window_start,
+        first_occurred_at: report.first_occurred_at,
+        last_occurred_at: report.last_occurred_at,
+        app_version: report.app_version,
+        app_build: report.app_build,
+        platform: report.platform,
+        facts: {},
+      },
+    });
     assert.equal('country' in payload, false);
     assert.equal('currency' in payload, false);
     assert.equal('store_id' in payload, false);
@@ -100,7 +119,15 @@ async function main() {
     assert.equal((await sendAnonymousDiagnosticReport(report)).disposition, 'rejected');
     responseStatus = 200;
     responseBody = null;
-    globalThis.fetch = (async () => new Response(JSON.stringify({ schema_version: 2, report_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', disposition: 'accepted' }), { status: 200 })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          schema_version: 2,
+          report_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          disposition: 'accepted',
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch;
     assert.equal((await sendAnonymousDiagnosticReport(report)).disposition, 'report_id_mismatch');
     for (const ack of [
       {},
@@ -110,25 +137,63 @@ async function main() {
       { schema_version: 2, report_id: {}, disposition: 'accepted' },
       { schema_version: 2, report_id: report.report_id, disposition: 'accepted', extra: true },
     ]) {
-      globalThis.fetch = (async () => new Response(JSON.stringify(ack), { status: 200 })) as unknown as typeof fetch;
-      assert.equal((await sendAnonymousDiagnosticReport(report)).disposition, 'invalid_ack', `malformed acknowledgment is rejected: ${JSON.stringify(ack)}`);
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify(ack), { status: 200 })) as unknown as typeof fetch;
+      assert.equal(
+        (await sendAnonymousDiagnosticReport(report)).disposition,
+        'invalid_ack',
+        `malformed acknowledgment is rejected: ${JSON.stringify(ack)}`,
+      );
     }
 
-    globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': '3600' } })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('{}', {
+        status: 429,
+        headers: { 'Retry-After': '3600' },
+      })) as unknown as typeof fetch;
     const throttled = await sendAnonymousDiagnosticReport(report);
     assert.equal(throttled.disposition, 'network_error');
-    assert.equal(throttled.retry_after_ms, 3_600_000, 'anonymous delivery honors the collector one-hour Retry-After hint');
-    globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': '999999999999' } })) as unknown as typeof fetch;
-    assert.equal((await sendAnonymousDiagnosticReport(report)).retry_after_ms, 3_600_000, 'extreme Retry-After values are bounded at one hour');
-    globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': 'not-a-date' } })) as unknown as typeof fetch;
-    assert.equal((await sendAnonymousDiagnosticReport(report)).retry_after_ms, undefined, 'malformed Retry-After values are ignored');
+    assert.equal(
+      throttled.retry_after_ms,
+      3_600_000,
+      'anonymous delivery honors the collector one-hour Retry-After hint',
+    );
+    globalThis.fetch = (async () =>
+      new Response('{}', {
+        status: 429,
+        headers: { 'Retry-After': '999999999999' },
+      })) as unknown as typeof fetch;
+    assert.equal(
+      (await sendAnonymousDiagnosticReport(report)).retry_after_ms,
+      3_600_000,
+      'extreme Retry-After values are bounded at one hour',
+    );
+    globalThis.fetch = (async () =>
+      new Response('{}', {
+        status: 429,
+        headers: { 'Retry-After': 'not-a-date' },
+      })) as unknown as typeof fetch;
+    assert.equal(
+      (await sendAnonymousDiagnosticReport(report)).retry_after_ms,
+      undefined,
+      'malformed Retry-After values are ignored',
+    );
     const dateHint = new Date(Date.now() + 5_000).toUTCString();
-    globalThis.fetch = (async () => new Response('{}', { status: 429, headers: { 'Retry-After': dateHint } })) as unknown as typeof fetch;
+    globalThis.fetch = (async () =>
+      new Response('{}', {
+        status: 429,
+        headers: { 'Retry-After': dateHint },
+      })) as unknown as typeof fetch;
     const dateRetry = (await sendAnonymousDiagnosticReport(report)).retry_after_ms;
     assert.equal(typeof dateRetry, 'number');
-    assert.ok((dateRetry as number) >= 0 && (dateRetry as number) <= 5_000, 'HTTP-date Retry-After stays within its one-hour bound');
+    assert.ok(
+      (dateRetry as number) >= 0 && (dateRetry as number) <= 5_000,
+      'HTTP-date Retry-After stays within its one-hour bound',
+    );
 
-    globalThis.fetch = (async () => { throw new Error('must not send'); }) as unknown as typeof fetch;
+    globalThis.fetch = (async () => {
+      throw new Error('must not send');
+    }) as unknown as typeof fetch;
     telemetryEnabled = false;
     assert.equal((await sendAnonymousDiagnosticReport(report)).disposition, 'network_error');
     telemetryEnabled = true;
@@ -138,8 +203,14 @@ async function main() {
     transmissionEnabled = false;
     assert.equal((await sendAnonymousDiagnosticReport(report)).disposition, 'network_error');
     transmissionEnabled = true;
-    assert.equal((await sendAnonymousDiagnosticReport({ ...report, platform: {} })).disposition, 'invalid_ack');
-    assert.equal((await sendAnonymousDiagnosticReport({ ...report, unexpected: 'private' })).disposition, 'invalid_ack');
+    assert.equal(
+      (await sendAnonymousDiagnosticReport({ ...report, platform: {} })).disposition,
+      'invalid_ack',
+    );
+    assert.equal(
+      (await sendAnonymousDiagnosticReport({ ...report, unexpected: 'private' })).disposition,
+      'invalid_ack',
+    );
   } finally {
     globalThis.fetch = originalFetch;
     Module._load = originalLoad;

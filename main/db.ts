@@ -1300,7 +1300,9 @@ export function isDiagnosticsConsentEnabled(): boolean {
 
 /** Automatic transmission is separate from capture and is disabled by either diagnostics consent gate. */
 export function isDiagnosticsTransmissionEnabled(): boolean {
-  return isDiagnosticsConsentEnabled() && getSettingValue('diagnostics_transmission_enabled') === 'true';
+  return (
+    isDiagnosticsConsentEnabled() && getSettingValue('diagnostics_transmission_enabled') === 'true'
+  );
 }
 
 /** Kitchen Display System on/off switch. Defaults to enabled. */
@@ -2880,7 +2882,9 @@ export function mergeRestoreOutboxState(
       row.facts_json || '{}',
       row.updated_at || now(),
     );
-  const gap = dbInstance.prepare(`INSERT INTO diagnostics_delivery_gaps (reason_code, count, first_occurred_at, last_occurred_at, updated_at) VALUES (?, ?, ?, ?, ?)`);
+  const gap = dbInstance.prepare(
+    `INSERT INTO diagnostics_delivery_gaps (reason_code, count, first_occurred_at, last_occurred_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+  );
   for (const row of state.diagnosticsGaps || [])
     gap.run(
       row.reason_code,
@@ -7030,7 +7034,12 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 110,
     name: 'enable_safe_diagnostics_transmission_once',
     up: () => {
-      const getSetting = (key: string) => (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+      const getSetting = (key: string) =>
+        (
+          db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+            | { value: string }
+            | undefined
+        )?.value;
       const consent = getSetting('diagnostics_consent');
       const explicit = getSetting('diagnostics_settings_explicit') === 'true';
       const transmission = getSetting('diagnostics_transmission_enabled');
@@ -7046,7 +7055,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         // merchant had explicitly refused diagnostics consent.
         upsertSetting('diagnostics_transmission_enabled', 'true');
       }
-      if (getSetting('diagnostics_consent_sync_pending') === 'true' && !getSetting('diagnostics_consent_change_id')) {
+      if (
+        getSetting('diagnostics_consent_sync_pending') === 'true' &&
+        !getSetting('diagnostics_consent_change_id')
+      ) {
         upsertSetting('diagnostics_consent_change_id', crypto.randomUUID());
       }
     },
@@ -7093,10 +7105,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     up: () => {
       const columns = getColumns(db, 'store_diagnostics_outbox');
       if (!columns.includes('transport')) {
-        db.exec("ALTER TABLE store_diagnostics_outbox ADD COLUMN transport TEXT NOT NULL DEFAULT 'signed'");
+        db.exec(
+          "ALTER TABLE store_diagnostics_outbox ADD COLUMN transport TEXT NOT NULL DEFAULT 'signed'",
+        );
       }
       if (!columns.includes('permanent_failure')) {
-        db.exec('ALTER TABLE store_diagnostics_outbox ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0 CHECK (permanent_failure IN (0, 1))');
+        db.exec(
+          'ALTER TABLE store_diagnostics_outbox ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0 CHECK (permanent_failure IN (0, 1))',
+        );
       }
     },
   },

@@ -6,14 +6,35 @@ import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../d
 import { getJWTSecret } from '../security/jwt-secret';
 import { seedSetupProfile } from '../setup/seed-data';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
-import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
-import { getCurrencySymbol, getCountryByCode, isValidTimeZone, resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
+import {
+  authRateLimit,
+  validatePassword,
+  revokeToken,
+  isTokenRevoked,
+  isTokenStale,
+  invalidateUserAuthCache,
+} from '../middleware/security';
+import {
+  getCurrencySymbol,
+  getCountryByCode,
+  isValidTimeZone,
+  resolveRegionalSnapshot,
+  type RegionalSnapshot,
+} from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
-import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
+import {
+  cloudSync,
+  DEFAULT_CLOUD_SERVER_URL,
+  normalizeCloudServerUrl,
+} from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
-import { effectivePermissionRevision, hasActiveAdministrator, resolveEffectivePermissions } from '../services/authorization';
+import {
+  effectivePermissionRevision,
+  hasActiveAdministrator,
+  resolveEffectivePermissions,
+} from '../services/authorization';
 import { serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
@@ -44,8 +65,11 @@ export { seedSetupProfile, ENGLISH_IDENTICAL_SEED_LANGUAGES } from '../setup/see
 
 /** Build synthetic tenant object from local settings for frontend routing. */
 function buildLocalTenant(db: ReturnType<typeof getDatabase>, userId: string, userRole: string) {
-  const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
-  const s: Record<string, string> = Object.fromEntries(rows.map(r => [r.key, r.value]));
+  const rows = db.prepare('SELECT key, value FROM settings').all() as {
+    key: string;
+    value: string;
+  }[];
+  const s: Record<string, string> = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
   // Login must never fail on a missing/unresolvable regional snapshot
   // (unreachable for an authenticated, post-setup store per
@@ -83,7 +107,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userId: string, us
     calendar: snapshot?.preferences.calendar || s.calendar || 'locale',
     plan: 'desktop',
     status: 'active',
-    role: userRole,  // user's role — AuthGuard uses this for routing
+    role: userRole, // user's role — AuthGuard uses this for routing
     permission_ids: [...(resolveEffectivePermissions(userId)?.permissionIds ?? [])],
     authorization_revision: effectivePermissionRevision(userId),
   };
@@ -97,10 +121,17 @@ type PendingCurrencyReset = { country: string; currency: string; timezone: strin
 
 function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCurrencyReset | null {
   try {
-    const row = db.prepare("SELECT value FROM _flo_meta WHERE key = 'currency_reset_pending'").get() as { value?: string } | undefined;
+    const row = db
+      .prepare("SELECT value FROM _flo_meta WHERE key = 'currency_reset_pending'")
+      .get() as { value?: string } | undefined;
     if (!row?.value) return null;
     const parsed = JSON.parse(row.value) as Partial<PendingCurrencyReset>;
-    if (typeof parsed.country !== 'string' || typeof parsed.currency !== 'string' || typeof parsed.timezone !== 'string') return null;
+    if (
+      typeof parsed.country !== 'string' ||
+      typeof parsed.currency !== 'string' ||
+      typeof parsed.timezone !== 'string'
+    )
+      return null;
     return { country: parsed.country, currency: parsed.currency, timezone: parsed.timezone };
   } catch {
     return null;
@@ -108,7 +139,9 @@ function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCur
 }
 
 function normalizeEmail(email: unknown): string {
-  return String(email || '').trim().toLowerCase();
+  return String(email || '')
+    .trim()
+    .toLowerCase();
 }
 
 export function parseCategoryIds(value: unknown): string[] {
@@ -128,7 +161,10 @@ export function isValidEmail(email: string): boolean {
   return email.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<string, unknown>): void {
+function upsertSettings(
+  db: ReturnType<typeof getDatabase>,
+  entries: Record<string, unknown>,
+): void {
   const stmt = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
@@ -219,72 +255,80 @@ function resetPasswordChangeRateLimit(userId: string): void {
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Response) => {
-  try {
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const rateLimit = checkRateLimit(ip);
-    if (!rateLimit.allowed) {
-      return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
-    }
-
-    const email = normalizeEmail(req.body?.email);
-    const { password, rememberMe } = req.body || {};
-
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
-
-    const db = getDatabase();
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
-    let passwordMatches = false;
-    if (user) {
-      try {
-        passwordMatches = await bcrypt.compare(password, user.password);
-      } catch {
-        passwordMatches = false;
+router.post(
+  '/login',
+  authRateLimit(),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const rateLimit = checkRateLimit(ip);
+      if (!rateLimit.allowed) {
+        return res.status(429).json({
+          error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
+        });
       }
-    }
 
-    if (!user || !passwordMatches) {
-      const attemptsRemaining = incrementFailedLogin(ip);
-      return res.status(401).json({
-        error: 'Invalid credentials',
-        attempts_remaining: attemptsRemaining,
-        lockout_minutes: attemptsRemaining === 0 ? LOCKOUT_MINUTES : undefined,
+      const email = normalizeEmail(req.body?.email);
+      const { password, rememberMe } = req.body || {};
+
+      if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password required' });
+      }
+
+      const db = getDatabase();
+      const user = db
+        .prepare('SELECT * FROM users WHERE email = ? AND is_active = 1')
+        .get(email) as any;
+      let passwordMatches = false;
+      if (user) {
+        try {
+          passwordMatches = await bcrypt.compare(password, user.password);
+        } catch {
+          passwordMatches = false;
+        }
+      }
+
+      if (!user || !passwordMatches) {
+        const attemptsRemaining = incrementFailedLogin(ip);
+        return res.status(401).json({
+          error: 'Invalid credentials',
+          attempts_remaining: attemptsRemaining,
+          lockout_minutes: attemptsRemaining === 0 ? LOCKOUT_MINUTES : undefined,
+        });
+      }
+
+      resetSuccessfulLogin(ip);
+
+      const remember = !!rememberMe;
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
+        getJWTSecret(),
+        { expiresIn: expiresInFor(remember) },
+      );
+
+      const tenant = buildLocalTenant(db, user.id, user.role);
+
+      res.json({
+        access_token: token,
+        token_type: 'bearer',
+        expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          category_ids: parseCategoryIds(user.category_ids),
+        },
+        // Single tenant — frontend auto-selects when tenants.length === 1
+        tenants: [tenant],
       });
+    } catch (error: any) {
+      console.error('[Auth] Login error:', error);
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-
-    resetSuccessfulLogin(ip);
-
-    const remember = !!rememberMe;
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
-      getJWTSecret(),
-      { expiresIn: expiresInFor(remember) }
-    );
-
-    const tenant = buildLocalTenant(db, user.id, user.role);
-
-    res.json({
-      access_token: token,
-      token_type: 'bearer',
-      expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        category_ids: parseCategoryIds(user.category_ids),
-      },
-      // Single tenant — frontend auto-selects when tenants.length === 1
-      tenants: [tenant],
-    });
-  } catch (error: any) {
-    console.error('[Auth] Login error:', error);
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-}));
+  }),
+);
 
 // ── POST /api/auth/tenants/select ─────────────────────────────────────────────
 // Frontend calls this after login (even when auto-selecting the single tenant).
@@ -303,7 +347,11 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db
+      .prepare(
+        'SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?',
+      )
+      .get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -314,9 +362,16 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: randomUUID() },
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        tenantId: 1,
+        remember,
+        jti: randomUUID(),
+      },
       getJWTSecret(),
-      { expiresIn: expiresInFor(remember) }
+      { expiresIn: expiresInFor(remember) },
     );
 
     res.json({
@@ -364,16 +419,25 @@ router.post('/refresh', (req: Request, res: Response) => {
     // Without this, a token minted before a password/PIN change (#173) could
     // keep refreshing itself into new tokens forever, bypassing revocation entirely.
     const db = getDatabase();
-    const user = db.prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db
+      .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+      .get(decoded.userId) as any;
     if (!user || user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: randomUUID() },
+      {
+        userId: decoded.userId,
+        email: decoded.email,
+        role: decoded.role,
+        tenantId: decoded.tenantId,
+        remember,
+        jti: randomUUID(),
+      },
       getJWTSecret(),
-      { expiresIn: expiresInFor(remember) }
+      { expiresIn: expiresInFor(remember) },
     );
 
     res.json({
@@ -402,7 +466,11 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db
+      .prepare(
+        'SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?',
+      )
+      .get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -466,19 +534,23 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
     }
     resetPasswordChangeRateLimit(user.id);
     if (!validatePassword(password)) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+      });
     }
 
     const hashedPassword = bcrypt.hashSync(password, 10);
     const changedAt = now();
-    db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?')
-      .run(hashedPassword, changedAt, changedAt, decoded.userId);
+    db.prepare(
+      'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?',
+    ).run(hashedPassword, changedAt, changedAt, decoded.userId);
     invalidateUserAuthCache(decoded.userId);
 
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -493,7 +565,9 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     // First-run setup is the only recovery path when there is no owner yet —
     // never let this endpoint substitute for /setup/initialize.
     if (getUserCount(db) === 0) {
-      return res.status(409).json({ error: 'Setup has not been completed yet. Use first-run setup to create the owner account.' });
+      return res.status(409).json({
+        error: 'Setup has not been completed yet. Use first-run setup to create the owner account.',
+      });
     }
 
     const email = normalizeEmail(req.body?.email);
@@ -503,7 +577,10 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(400).json({ error: 'A valid email is required' });
     }
     if (!new_password || !validatePassword(new_password)) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+      });
     }
 
     // Rate-limit key is IP-scoped to prevent resetting attempt counters with varying emails.
@@ -517,12 +594,16 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     // owners are all denied the configurable administrative capabilities strands.
     const stranded = !hasActiveAdministrator();
     const user = stranded
-      ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any
-      : db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1').get(email, INITIAL_ADMIN_ROLE) as any;
+      ? (db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any)
+      : (db
+          .prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1')
+          .get(email, INITIAL_ADMIN_ROLE) as any);
     if (!user) {
-      return res.status(404).json({ error: stranded
-        ? 'No active account found with that email on this install'
-        : 'No active owner account found with that email on this install' });
+      return res.status(404).json({
+        error: stranded
+          ? 'No active account found with that email on this install'
+          : 'No active owner account found with that email on this install',
+      });
     }
 
     const hashedPassword = bcrypt.hashSync(new_password, 10);
@@ -532,15 +613,20 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       // Re-checked in the transaction, so a concurrent write cannot turn a
       // plain reset into a promotion.
       if (hasActiveAdministrator()) {
-        return db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1')
+        return db
+          .prepare(
+            'UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1',
+          )
           .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
       }
 
       restoredOwnerAccess = true;
-      return db.prepare(`
+      return db
+        .prepare(`
         UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
         WHERE id = ? AND is_active = 1
-      `).run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
+      `)
+        .run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
     })();
     if (updated.changes === 0) {
       const failure = serializeOperationFailure({
@@ -560,20 +646,26 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     upsertSettings(db, {
       last_password_recovery_at: now(),
       last_password_recovery_user_id: String(user.id),
-      ...(restoredOwnerAccess ? {
-        last_owner_recovery_at: now(),
-        last_owner_recovery_user_id: String(user.id),
-      } : {}),
+      ...(restoredOwnerAccess
+        ? {
+            last_owner_recovery_at: now(),
+            last_owner_recovery_user_id: String(user.id),
+          }
+        : {}),
     });
-    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via Master PIN for user ${user.id}`);
+    console.warn(
+      `[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via Master PIN for user ${user.id}`,
+    );
 
-    res.json({ message: restoredOwnerAccess
-      ? 'Owner access restored. You can now log in with your new password.'
-      : 'Password reset successfully. You can now log in with your new password.' });
+    res.json({
+      message: restoredOwnerAccess
+        ? 'Owner access restored. You can now log in with your new password.'
+        : 'Password reset successfully. You can now log in with your new password.',
+    });
   } catch (error: any) {
     console.error('[Auth] Password recovery error:', error);
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -595,8 +687,8 @@ router.get('/setup/status', (_req: Request, res: Response) => {
       currencyReset,
     });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -653,14 +745,21 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     }
     const displayName = String(name || '').trim();
     const normalizedBusinessType = String(business_type || 'restaurant').trim();
-    const normalizedSetupProfile = String(setup_profile || 'express').trim().toLowerCase();
-    const normalizedServiceModel = String(service_model || 'qsr').trim().toLowerCase();
+    const normalizedSetupProfile = String(setup_profile || 'express')
+      .trim()
+      .toLowerCase();
+    const normalizedServiceModel = String(service_model || 'qsr')
+      .trim()
+      .toLowerCase();
     // Omitted currency derives from the country profile; an explicitly-invalid
     // one is rejected rather than silently replaced (resolveTenantCurrency's
     // read-time leniency is the wrong tool for validating a write).
-    const normalizedCurrency = currency === undefined
-      ? resolvedCountry.currency
-      : typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
+    const normalizedCurrency =
+      currency === undefined
+        ? resolvedCountry.currency
+        : typeof currency === 'string'
+          ? currency.trim().toUpperCase()
+          : currency;
     if (!isSupportedCurrencyCode(normalizedCurrency)) {
       return res.status(400).json({ error: 'Invalid currency' });
     }
@@ -684,7 +783,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
     if (!validatePassword(password)) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
+      return res.status(400).json({
+        error:
+          'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.',
+      });
     }
 
     if (!isValidEmail(email)) {
@@ -692,7 +794,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     }
 
     if (terms_accepted !== true) {
-      return res.status(400).json({ error: 'You must accept the Terms and Conditions, Privacy Policy, and No Warranty Disclaimer to continue.' });
+      return res.status(400).json({
+        error:
+          'You must accept the Terms and Conditions, Privacy Policy, and No Warranty Disclaimer to continue.',
+      });
     }
 
     const masterPinRequired = isMasterPinAvailable();
@@ -702,7 +807,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const ownerApprovalPin = String(owner_approval_pin || '');
     if (!/^\d{4,6}$/.test(ownerApprovalPin)) {
-      return res.status(400).json({ error: 'A 4-6 digit owner Approval PIN is required to complete setup' });
+      return res
+        .status(400)
+        .json({ error: 'A 4-6 digit owner Approval PIN is required to complete setup' });
     }
     if (ownerApprovalPin !== String(owner_approval_pin_confirmation || '')) {
       return res.status(400).json({ error: 'Owner Approval PINs do not match' });
@@ -725,7 +832,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     let normalizedCloudServerUrl: string | undefined;
     if (cloudSyncEnabled) {
       try {
-        normalizedCloudServerUrl = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+        normalizedCloudServerUrl = normalizeCloudServerUrl(
+          cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
+        );
       } catch {
         return res.status(400).json({ error: 'Cloud server URL must be a valid HTTPS URL' });
       }
@@ -755,21 +864,35 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       db.prepare(`
         INSERT INTO users (id, name, email, password, role, pin_hash, is_active, terms_accepted_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(userId, displayName, email, hashedPassword, INITIAL_ADMIN_ROLE, hashedApprovalPin, 1, now(), now(), now());
+      `).run(
+        userId,
+        displayName,
+        email,
+        hashedPassword,
+        INITIAL_ADMIN_ROLE,
+        hashedApprovalPin,
+        1,
+        now(),
+        now(),
+        now(),
+      );
 
       upsertSettings(db, {
         business_name: resolvedStoreName,
         business_type: normalizedBusinessType,
         country: resolvedCountry.code,
         currency: normalizedCurrency,
-        currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, resolvedCountry.locale),
+        currency_symbol:
+          currency_symbol || getCurrencySymbol(normalizedCurrency, resolvedCountry.locale),
         timezone: resolvedTimezone,
         language,
         business_address: outletAddress,
         business_phone: outletPhone,
         address: outletAddress,
         phone: outletPhone,
-        instagram_handle: String(instagram_handle || '').trim().slice(0, 100),
+        instagram_handle: String(instagram_handle || '')
+          .trim()
+          .slice(0, 100),
         email,
         tax_registration_number,
         state_code,
@@ -780,10 +903,15 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         setup_profile: pendingCurrencyReset ? 'empty' : normalizedSetupProfile,
         onboarding_completed: 'true',
         // Confirm country if user explicitly selected it or differed from default.
-        ...countryConfirmationPatch(resolvedCountry.code, getSettingValue('country'), req.body.country_selected),
+        ...countryConfirmationPatch(
+          resolvedCountry.code,
+          getSettingValue('country'),
+          req.body.country_selected,
+        ),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
-        telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
+        telemetry_scope:
+          'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
         split_checks_enabled: 'false',
         // '1'/'0', not 'true'/'false' — mirrors FloAdmin's own `stores` table and
         // matches how cloud-sync.ts reads this key everywhere else.
@@ -795,7 +923,13 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       });
 
       if (!pendingCurrencyReset) {
-        seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, resolvedCountry.code);
+        seedSetupProfile(
+          db,
+          normalizedSetupProfile,
+          normalizedServiceModel,
+          language,
+          resolvedCountry.code,
+        );
       }
       if (pendingCurrencyReset) {
         db.prepare("DELETE FROM _flo_meta WHERE key = 'currency_reset_pending'").run();
@@ -817,7 +951,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE, jti: randomUUID() },
       getJWTSecret(),
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: JWT_EXPIRES_IN },
     );
 
     const tenant = buildLocalTenant(db, userId, INITIAL_ADMIN_ROLE);
@@ -833,8 +967,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('[Auth] Setup error:', error);
     const message = error.message || 'Setup failed';
-    const status = message.includes('already complete') ? 403
-      : message.includes('already exists') ? 400
+    const status = message.includes('already complete')
+      ? 403
+      : message.includes('already exists')
+        ? 400
         : 500;
     res.status(status).json({ error: status === 500 ? 'Setup failed' : message });
   }
@@ -844,7 +980,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 // Legacy endpoint retained to direct callers to /api/auth/setup/initialize.
 
 router.post('/setup/seed', (req: Request, res: Response) => {
-  res.status(410).json({ error: 'Use /api/auth/setup/initialize with setup_profile and owner details.' });
+  res
+    .status(410)
+    .json({ error: 'Use /api/auth/setup/initialize with setup_profile and owner details.' });
 });
 
 export const authRoutes = router;

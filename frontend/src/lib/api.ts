@@ -2,9 +2,26 @@ import axios from 'axios';
 
 let authRedirectInProgress = false;
 
-export type ClientFailureOperation = 'order.create' | 'payment.create' | 'order.append' | 'bill.generate';
-export type ClientFailurePhase = 'transport' | 'recovery' | 'retry_storage' | 'retry_cleanup' | 'retry_state_update' | 'held_cleanup';
-export type NetworkFailureClass = 'timeout' | 'dns' | 'connection_refused' | 'offline' | 'unreachable' | 'invalid_response' | 'unknown';
+export type ClientFailureOperation =
+  | 'order.create'
+  | 'payment.create'
+  | 'order.append'
+  | 'bill.generate';
+export type ClientFailurePhase =
+  | 'transport'
+  | 'recovery'
+  | 'retry_storage'
+  | 'retry_cleanup'
+  | 'retry_state_update'
+  | 'held_cleanup';
+export type NetworkFailureClass =
+  | 'timeout'
+  | 'dns'
+  | 'connection_refused'
+  | 'offline'
+  | 'unreachable'
+  | 'invalid_response'
+  | 'unknown';
 
 export function createOperationReference(): string | null {
   const cryptoApi = globalThis.crypto;
@@ -30,25 +47,47 @@ export async function captureClientOperationFailure(input: {
   failureClass?: NetworkFailureClass;
 }): Promise<void> {
   if (!input.correlationId) return;
-  const frontendOperation = input.operation === 'order.create' || input.operation === 'payment.create' || input.operation === 'order.append';
+  const frontendOperation =
+    input.operation === 'order.create' ||
+    input.operation === 'payment.create' ||
+    input.operation === 'order.append';
   const transportPhase = input.phase === 'transport' || input.phase === 'recovery';
   if (transportPhase && !frontendOperation) return;
-  if (input.phase === 'retry_state_update' && !['order.create', 'payment.create', 'bill.generate'].includes(input.operation)) return;
-  if (input.phase === 'held_cleanup' && input.operation !== 'order.create' && input.operation !== 'payment.create') return;
-  if ((input.phase === 'retry_storage' || input.phase === 'retry_cleanup')
-    && !['order.create', 'payment.create', 'order.append'].includes(input.operation)) return;
-  const capturePoint = input.phase === 'retry_state_update'
-    ? `fc.client.${input.operation}.retry_state_update`
-    : `fc.frontend.pos.${input.operation}.${input.phase}`;
-  const outcome = input.phase === 'retry_storage' ? 'not_applied'
-    : ['retry_cleanup', 'retry_state_update', 'held_cleanup'].includes(input.phase) ? 'applied' : 'unknown';
+  if (
+    input.phase === 'retry_state_update' &&
+    !['order.create', 'payment.create', 'bill.generate'].includes(input.operation)
+  )
+    return;
+  if (
+    input.phase === 'held_cleanup' &&
+    input.operation !== 'order.create' &&
+    input.operation !== 'payment.create'
+  )
+    return;
+  if (
+    (input.phase === 'retry_storage' || input.phase === 'retry_cleanup') &&
+    !['order.create', 'payment.create', 'order.append'].includes(input.operation)
+  )
+    return;
+  const capturePoint =
+    input.phase === 'retry_state_update'
+      ? `fc.client.${input.operation}.retry_state_update`
+      : `fc.frontend.pos.${input.operation}.${input.phase}`;
+  const outcome =
+    input.phase === 'retry_storage'
+      ? 'not_applied'
+      : ['retry_cleanup', 'retry_state_update', 'held_cleanup'].includes(input.phase)
+        ? 'applied'
+        : 'unknown';
   const captureOutcome = outcome;
   try {
     await api.post('/diagnostics/capture', {
       capture_point: capturePoint,
       outcome: captureOutcome,
       operation_id: input.correlationId,
-      ...(input.phase === 'transport' ? { facts: { failure_class: input.failureClass || 'unknown' } } : {}),
+      ...(input.phase === 'transport'
+        ? { facts: { failure_class: input.failureClass || 'unknown' } }
+        : {}),
     });
   } catch {
     // Diagnostics must never interrupt or retry a financial request.

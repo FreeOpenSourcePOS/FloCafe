@@ -1713,15 +1713,9 @@ router.put(
       if (
         diagnosticsChoice &&
         valueToPersist === 'true' &&
-        [
-          'pending',
-          'processing',
-          'approved',
-          'completed',
-          'deleted',
-          'failed',
-          'unknown',
-        ].includes(getAllSettings(db).cloud_deletion_status || '')
+        ['pending', 'processing', 'approved', 'completed', 'deleted', 'failed', 'unknown'].includes(
+          getAllSettings(db).cloud_deletion_status || '',
+        )
       ) {
         return res.status(409).json({ error: 'cloud_deletion_pending' });
       }
@@ -1770,26 +1764,26 @@ router.put(
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
-    if (diagnosticsChoice) {
-      const changeId = randomUUID();
-      db.transaction(() => {
-        saveSetting.run(req.params.key, valueToPersist as string, now());
-        db.prepare(`
+      if (diagnosticsChoice) {
+        const changeId = randomUUID();
+        db.transaction(() => {
+          saveSetting.run(req.params.key, valueToPersist as string, now());
+          db.prepare(`
           INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_settings_explicit', 'true', ?)
           ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at
         `).run(now());
-        db.prepare(`
+          db.prepare(`
           INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_sync_pending', 'true', ?)
           ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at
         `).run(now());
-        db.prepare(`
+          db.prepare(`
           INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent_change_id', ?, ?)
           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
         `).run(changeId, now());
-      })();
-    } else {
-      saveSetting.run(req.params.key, valueToPersist as string, now());
-    }
+        })();
+      } else {
+        saveSetting.run(req.params.key, valueToPersist as string, now());
+      }
 
       // Sync legacy anonymous_data_consent mirror with canonical telemetry_enabled.
       if (req.params.key === 'telemetry_enabled') {
@@ -1802,7 +1796,9 @@ router.put(
       // Best-effort push of the effective diagnostics permission to FloAdmin.
       if (diagnosticsChoice) {
         const settings = getAllSettings(db);
-        const enabled = settings.diagnostics_consent !== 'false' && settings.diagnostics_transmission_enabled === 'true';
+        const enabled =
+          settings.diagnostics_consent !== 'false' &&
+          settings.diagnostics_transmission_enabled === 'true';
         void cloudSync.setDiagnosticsConsent(enabled);
       }
       if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {

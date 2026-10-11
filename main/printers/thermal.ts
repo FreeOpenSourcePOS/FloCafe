@@ -1354,8 +1354,11 @@ function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: P
   let connectionType = 'unknown';
   try {
     const configured = getPrinterConfig()?.connection_type;
-    if (configured === 'network' || configured === 'usb' || configured === 'webusb') connectionType = configured;
-  } catch { /* best-effort only */ }
+    if (configured === 'network' || configured === 'usb' || configured === 'webusb')
+      connectionType = configured;
+  } catch {
+    /* best-effort only */
+  }
 
   const failureClass = result.failureClass || classifyPrintFailure(result.detail);
   const pointStage = failureClass === 'timeout' ? 'timeout' : 'queue';

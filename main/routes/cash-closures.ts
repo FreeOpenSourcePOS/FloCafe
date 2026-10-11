@@ -34,13 +34,22 @@
 import { randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
-  dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
+  dayBoundsInTimezone,
+  getDatabase,
+  getSettingValue,
+  localDateInTimezone,
+  now,
+  withTxn,
   tenantBusinessDayStartTime,
 } from '../db';
 import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCash } from '../services/shift-session-gate';
+import {
+  getOpenSession,
+  NO_CASH_SESSION_ID,
+  requireOpenSessionForCash,
+} from '../services/shift-session-gate';
 import {
   MAX_MOVEMENT_REASON_LENGTH,
   closedDayExists,
@@ -52,11 +61,11 @@ import type { AuthedRequest } from './cash-sessions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
+import { DisplayTaxComponent, aggregateTaxComponents } from '../services/tax-components';
 import {
-  DisplayTaxComponent,
-  aggregateTaxComponents,
-} from '../services/tax-components';
-import { Z_REPORT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
+  Z_REPORT_LANGUAGE_POLICY_KEY,
+  parseStoredLanguagePolicy,
+} from '../lib/print-language-settings';
 import { resolveReceiptLanguages, type ReceiptLanguagePolicy } from '../../shared/print';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { cloudSync } from '../services/cloud-sync';
@@ -82,7 +91,11 @@ export function cashOperationFailurePayload(
   });
   if (!failure) return { error: errorMessage };
   (req as Request & { diagnosticsCaptured?: boolean }).diagnosticsCaptured = true;
-  try { cloudSync.captureOperationFailure(failure); } catch { /* Diagnostics must not affect cash handling. */ }
+  try {
+    cloudSync.captureOperationFailure(failure);
+  } catch {
+    /* Diagnostics must not affect cash handling. */
+  }
   return {
     error: errorMessage,
     reason_code: failure.reason_code,
@@ -111,7 +124,10 @@ interface CashDrawerMovementRow {
 }
 
 function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
-  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
+  return Object.assign(new Error(message), {
+    statusCode,
+    ...(diagnosticCode ? { diagnosticCode } : {}),
+  });
 }
 
 // Resolves through the country profile when the stored timezone is missing
@@ -189,8 +205,10 @@ function validateMovementReason(raw: unknown, required: boolean): string | null 
   }
   if (typeof raw !== 'string') throw httpError('reason must be a string', 400, 'reason_invalid');
   const reason = raw.trim();
-  if (required && reason.length === 0) throw httpError('reason is required', 400, 'reason_required');
-  if (reason.length > MAX_MOVEMENT_REASON_LENGTH) throw httpError('reason is too long', 400, 'reason_too_long');
+  if (required && reason.length === 0)
+    throw httpError('reason is required', 400, 'reason_required');
+  if (reason.length > MAX_MOVEMENT_REASON_LENGTH)
+    throw httpError('reason is too long', 400, 'reason_too_long');
   return reason || null;
 }
 
@@ -199,14 +217,16 @@ function listCashDrawerMovements(
   businessDate: string,
   includeVoided = true,
 ): CashDrawerMovementRow[] {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
     FROM cash_drawer_movements m
     LEFT JOIN users created_user ON created_user.id = m.created_by
     LEFT JOIN users voided_user ON voided_user.id = m.voided_by
     WHERE m.business_date = ? ${includeVoided ? '' : 'AND m.voided_at IS NULL'}
     ORDER BY m.created_at DESC, m.id DESC
-  `).all(businessDate) as CashDrawerMovementRow[];
+  `)
+    .all(businessDate) as CashDrawerMovementRow[];
 }
 
 // Session movements prefer their recorded owner; only pre-v91 NULL-owner
@@ -218,7 +238,8 @@ export function listCashDrawerMovementsForSession(
   end: string,
   includeVoided = true,
 ): CashDrawerMovementRow[] {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
     FROM cash_drawer_movements m
     LEFT JOIN users created_user ON created_user.id = m.created_by
@@ -226,16 +247,22 @@ export function listCashDrawerMovementsForSession(
     WHERE (m.cash_session_id = ? OR (m.cash_session_id IS NULL AND m.created_at >= ? AND m.created_at < ?))
       ${includeVoided ? '' : 'AND m.voided_at IS NULL'}
     ORDER BY m.created_at DESC, m.id DESC
-  `).all(sessionId, start, end) as CashDrawerMovementRow[];
+  `)
+    .all(sessionId, start, end) as CashDrawerMovementRow[];
 }
 
-function activeOpeningFloatCents(db: ReturnType<typeof getDatabase>, businessDate: string): number | null {
-  const row = db.prepare(`
+function activeOpeningFloatCents(
+  db: ReturnType<typeof getDatabase>,
+  businessDate: string,
+): number | null {
+  const row = db
+    .prepare(`
     SELECT amount_cents
     FROM cash_drawer_movements
     WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL
     LIMIT 1
-  `).get(businessDate) as { amount_cents: number } | undefined;
+  `)
+    .get(businessDate) as { amount_cents: number } | undefined;
   return row ? Number(row.amount_cents) : null;
 }
 
@@ -253,8 +280,14 @@ function activeOpeningFloatCents(db: ReturnType<typeof getDatabase>, businessDat
  *  - `__isReprint` is the synthetic flag the body builder uses to add
  *    the localized reprint marker; caller passes `true` for reprints.
  */
-function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isReprint: boolean): any {
-  const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
+function shapeZReportSnapshot(
+  db: ReturnType<typeof getDatabase>,
+  row: any,
+  isReprint: boolean,
+): any {
+  const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as
+    | { name: string }
+    | undefined;
   const safeJson = (raw: string | null | undefined, field: string): any[] => {
     if (typeof raw !== 'string') throw new Error(`Stored cash closure ${field} is missing`);
     try {
@@ -306,7 +339,13 @@ export interface DayAggregates {
   safeDropCents: number;
   cashMovements: CashDrawerMovementRow[];
   paymentMethods: { method: string; count: number; total_cents: number }[];
-  staffSales: { user_id: string; name: string; role: string; revenue_cents: number; orderCount: number }[];
+  staffSales: {
+    user_id: string;
+    name: string;
+    role: string;
+    revenue_cents: number;
+    orderCount: number;
+  }[];
   taxComponents: DisplayTaxComponent[];
 }
 
@@ -355,7 +394,8 @@ export function paymentMethodBreakdown(
     dayBoundsInTimezone(resolvedEndDate, tenantTimezone(), startTime)[1],
   ];
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-  return db.prepare(`
+  return db
+    .prepare(`
     WITH payment_lines AS (
       SELECT b.paid_at, b.created_at, je.value AS line
       FROM bills b
@@ -394,7 +434,17 @@ export function paymentMethodBreakdown(
     WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
     GROUP BY COALESCE(pm.name, normalized.method)
     ORDER BY total DESC
-  `).all(end, start, paidOnly ? 1 : 0, keyByPaidAt ? 1 : 0, minorFactor, attributeRefundsToBillDate ? 1 : 0, start, end) as PaymentMethodRow[];
+  `)
+    .all(
+      end,
+      start,
+      paidOnly ? 1 : 0,
+      keyByPaidAt ? 1 : 0,
+      minorFactor,
+      attributeRefundsToBillDate ? 1 : 0,
+      start,
+      end,
+    ) as PaymentMethodRow[];
 }
 
 /**
@@ -413,9 +463,18 @@ export function paymentMethodBreakdown(
  * duplicating the template or the tax-components hydration. Returns a
  * plain `DayAggregates` shape already converted to INTEGER minor units.
  */
-export function computeDayAggregates(db: ReturnType<typeof getDatabase>, businessDate: string): DayAggregates {
+export function computeDayAggregates(
+  db: ReturnType<typeof getDatabase>,
+  businessDate: string,
+): DayAggregates {
   const [start, end] = dayBoundsInTimezone(businessDate, tenantTimezone(), tenantStartTime(db));
-  return computePeriodAggregates(db, start, end, listCashDrawerMovements(db, businessDate, false), null);
+  return computePeriodAggregates(
+    db,
+    start,
+    end,
+    listCashDrawerMovements(db, businessDate, false),
+    null,
+  );
 }
 
 /**
@@ -423,15 +482,25 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
  * close, and the live session snapshot (#279): opening float plus active
  * movements plus cash sales minus cash refunds (drawer reality).
  */
-export function expectedCashFromAggregates(aggregates: Pick<DayAggregates,
-  'openingFloatCents' | 'cashSalesCents' | 'payInCents' | 'payOutCents' | 'safeDropCents' | 'cashRefundsByCreatedAtCents'
->): number {
-  return aggregates.openingFloatCents
-    + aggregates.cashSalesCents
-    + aggregates.payInCents
-    - aggregates.payOutCents
-    - aggregates.safeDropCents
-    - aggregates.cashRefundsByCreatedAtCents;
+export function expectedCashFromAggregates(
+  aggregates: Pick<
+    DayAggregates,
+    | 'openingFloatCents'
+    | 'cashSalesCents'
+    | 'payInCents'
+    | 'payOutCents'
+    | 'safeDropCents'
+    | 'cashRefundsByCreatedAtCents'
+  >,
+): number {
+  return (
+    aggregates.openingFloatCents +
+    aggregates.cashSalesCents +
+    aggregates.payInCents -
+    aggregates.payOutCents -
+    aggregates.safeDropCents -
+    aggregates.cashRefundsByCreatedAtCents
+  );
 }
 /**
  * Drawer-reality cash inputs for one raw timestamp window: cash sales by
@@ -445,7 +514,8 @@ export function cashDrawerSalesAndRefunds(
   end: string,
   minorFactor: number,
 ): { salesCents: number; refundsCents: number } {
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     WITH cash_sales AS (
       SELECT COALESCE(SUM(CAST(json_extract(je.value, '$.amount') AS REAL) * ?), 0) AS sales_cents
       FROM bills b
@@ -470,7 +540,8 @@ export function cashDrawerSalesAndRefunds(
     SELECT
       (SELECT sales_cents FROM cash_sales) AS sales_cents,
       (SELECT refunds_cents FROM cash_refunds) AS refunds_cents
-  `).get(minorFactor, start, end, start, end) as { sales_cents: number; refunds_cents: number };
+  `)
+    .get(minorFactor, start, end, start, end) as { sales_cents: number; refunds_cents: number };
   return {
     salesCents: Math.round(Number(row.sales_cents || 0)),
     refundsCents: Number(row.refunds_cents || 0),
@@ -493,15 +564,18 @@ export function sumCashMovements(
   movements: CashDrawerMovementRow[],
   excludeOpeningFloat: boolean,
 ): CashMovementTotals {
-  return movements.reduce((totals, movement) => {
-    if (movement.movement_type === 'opening_float') {
-      if (!excludeOpeningFloat) totals.openingFloatCents += movement.amount_cents;
-    }
-    if (movement.movement_type === 'pay_in') totals.payInCents += movement.amount_cents;
-    if (movement.movement_type === 'pay_out') totals.payOutCents += movement.amount_cents;
-    if (movement.movement_type === 'safe_drop') totals.safeDropCents += movement.amount_cents;
-    return totals;
-  }, { openingFloatCents: 0, payInCents: 0, payOutCents: 0, safeDropCents: 0 });
+  return movements.reduce(
+    (totals, movement) => {
+      if (movement.movement_type === 'opening_float') {
+        if (!excludeOpeningFloat) totals.openingFloatCents += movement.amount_cents;
+      }
+      if (movement.movement_type === 'pay_in') totals.payInCents += movement.amount_cents;
+      if (movement.movement_type === 'pay_out') totals.payOutCents += movement.amount_cents;
+      if (movement.movement_type === 'safe_drop') totals.safeDropCents += movement.amount_cents;
+      return totals;
+    },
+    { openingFloatCents: 0, payInCents: 0, payOutCents: 0, safeDropCents: 0 },
+  );
 }
 
 /**
@@ -526,9 +600,11 @@ export function sessionExpectedCash(
   const start = session.opened_at ?? end;
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
   const movementTotals = sumCashMovements(
-    movements ?? listCashDrawerMovementsForSession(db, session.id, start, end, false), true,
+    movements ?? listCashDrawerMovementsForSession(db, session.id, start, end, false),
+    true,
   );
-  const eventTotals = db.prepare(`
+  const eventTotals = db
+    .prepare(`
     WITH payment_lines AS (
       SELECT
         CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
@@ -574,13 +650,19 @@ export function sessionExpectedCash(
     SELECT
       (SELECT sales_cents FROM cash_sales) AS sales_cents,
       (SELECT refunds_cents FROM cash_refunds) AS refunds_cents
-  `).get(minorFactor, session.id, start, end, session.id, start, end) as { sales_cents: number; refunds_cents: number };
-  return Number(session.opening_float_cents || 0)
-    + Math.round(Number(eventTotals.sales_cents || 0))
-    + movementTotals.payInCents
-    - movementTotals.payOutCents
-    - movementTotals.safeDropCents
-    - Number(eventTotals.refunds_cents || 0);
+  `)
+    .get(minorFactor, session.id, start, end, session.id, start, end) as {
+    sales_cents: number;
+    refunds_cents: number;
+  };
+  return (
+    Number(session.opening_float_cents || 0) +
+    Math.round(Number(eventTotals.sales_cents || 0)) +
+    movementTotals.payInCents -
+    movementTotals.payOutCents -
+    movementTotals.safeDropCents -
+    Number(eventTotals.refunds_cents || 0)
+  );
 }
 
 /** Sales and refunds attributed to a session for its immutable Z snapshot. */
@@ -588,9 +670,18 @@ export function sessionFinancialTotals(
   db: ReturnType<typeof getDatabase>,
   session: { id: number; opened_at: string },
   end: string,
-): Pick<DayAggregates, 'billCount' | 'refundCount' | 'grossCollectedCents' | 'refundedCents' | 'netCollectedCents' | 'paymentMethods'> {
+): Pick<
+  DayAggregates,
+  | 'billCount'
+  | 'refundCount'
+  | 'grossCollectedCents'
+  | 'refundedCents'
+  | 'netCollectedCents'
+  | 'paymentMethods'
+> {
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     WITH payment_lines AS (
       SELECT b.id AS bill_id,
         CAST(ROUND(CAST(json_extract(je.value, '$.amount') AS REAL) * ?) AS INTEGER) AS amount_cents,
@@ -631,10 +722,13 @@ export function sessionFinancialTotals(
       (SELECT COALESCE(json_group_array(json_object(
         'method', method, 'count', count, 'total_cents', total_cents)), '[]')
         FROM method_totals) AS methods_json
-  `).get(minorFactor, session.id, session.opened_at, end,
-    session.id, session.opened_at, end) as {
-    bill_count: number; refund_count: number; gross_cents: number;
-    refund_cents: number; methods_json: string;
+  `)
+    .get(minorFactor, session.id, session.opened_at, end, session.id, session.opened_at, end) as {
+    bill_count: number;
+    refund_count: number;
+    gross_cents: number;
+    refund_cents: number;
+    methods_json: string;
   };
   const grossCollectedCents = Number(row.gross_cents || 0);
   const refundedCents = Number(row.refund_cents || 0);
@@ -661,31 +755,34 @@ export function computePeriodAggregates(
   movements: CashDrawerMovementRow[],
   openingFloatOverride: number | null,
 ): DayAggregates {
-
   // Display gross — `SUM(paid_amount)` over the paid_at day window (NOT
   // SUM(total) over created_at). This matches financial-summary so display
   // totals reconcile with the existing report endpoint for the same day.
-  const billRow = db.prepare(`
+  const billRow = db
+    .prepare(`
     SELECT
       COUNT(*) AS bill_count,
       COALESCE(SUM(b.paid_amount), 0) AS gross_collected
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
-  `).get(start, end) as { bill_count: number; gross_collected: number };
+  `)
+    .get(start, end) as { bill_count: number; gross_collected: number };
 
   // Display refunds — paid_at attribution, same as financial-summary.
   // Stored as INTEGER cents to match the `refunded_cents` column type and the
   // schema convention (`bills.paid_amount`, `refunds.amount_cents`). Display
   // / response-edge conversion happens only at the { zReport } boundary, never
   // in storage or in the storage-time net subtraction.
-  const refundRow = db.prepare(`
+  const refundRow = db
+    .prepare(`
     SELECT
       COUNT(*) AS refund_count,
       COALESCE(SUM(r.amount_cents), 0) AS refunded_cents
     FROM refunds r
     JOIN bills b ON b.id = r.bill_id
     WHERE b.paid_at >= ? AND b.paid_at < ?
-  `).get(start, end) as { refund_count: number; refunded_cents: number };
+  `)
+    .get(start, end) as { refund_count: number; refunded_cents: number };
 
   // cash sales (drawer-reality side of the split): raw pre-join `method='cash'`
   // filter, paid_at window, no `payment_methods` name join. Reads amount via
@@ -706,7 +803,12 @@ export function computePeriodAggregates(
   // Keyed by paid_at (not per-line timestamps) so installment payments
   // land on the settlement day alongside gross/staff/tax (see B1 above).
   // Window attribution via explicitWindow; no date fields needed.
-  const paymentMethodsRows = paymentMethodBreakdown(db, { paidOnly: true, attributeRefundsToBillDate: true, keyByPaidAt: true, explicitWindow: [start, end] });
+  const paymentMethodsRows = paymentMethodBreakdown(db, {
+    paidOnly: true,
+    attributeRefundsToBillDate: true,
+    keyByPaidAt: true,
+    explicitWindow: [start, end],
+  });
 
   // Per-staff sales — same window as the bill count, keyed by paid_at so a
   // cross-midnight bill (created day-1, paid day-2) rolls into day-2's Z
@@ -714,7 +816,8 @@ export function computePeriodAggregates(
   // creation-time key, which produced a non-reconciling Z with respect to
   // the rest of the snapshot). Unpaid orders drop out: uncollected money
   // is not staff revenue for the day it was created.
-  const staffSalesRows = db.prepare(`
+  const staffSalesRows = db
+    .prepare(`
     SELECT u.id AS user_id, u.name AS name, u.role AS role,
       COALESCE(SUM(b.paid_amount), 0) AS revenue,
       COUNT(b.id) AS orderCount
@@ -725,18 +828,21 @@ export function computePeriodAggregates(
     GROUP BY u.id
     ORDER BY revenue DESC
     LIMIT 20
-  `).all(start, end) as StaffSalesRow[];
+  `)
+    .all(start, end) as StaffSalesRow[];
 
   // Tax components — keyed by paid_at window to stay reconciled with the
   // rest of the Z. Bills are hydrated with their order items and then
   // aggregated via the existing `aggregateTaxComponents` pipeline, unchanged.
   // Unpaid bills drop out by the same logic as the staff query above.
-  const bills = db.prepare(`
+  const bills = db
+    .prepare(`
     SELECT b.*
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
-  `).all(start, end) as any[];
+  `)
+    .all(start, end) as any[];
   const orders = getOrdersWithItemsForBills(db, bills);
   const taxDocuments = bills.map((bill) => ({
     tax_amount: bill.tax_amount,
@@ -778,129 +884,202 @@ export function computePeriodAggregates(
   };
 }
 
-router.get('/movements', requirePermission('cash.movements.manage'), (req: Request, res: Response) => {
-  try {
-    const businessDate = validateBusinessDate(req.query.business_date);
-    res.json({ businessDate, movements: listCashDrawerMovements(getDatabase(), businessDate) });
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    if (status === 500) console.error('[CashClosures] Movement list error:', error);
-    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
-  }
-});
+router.get(
+  '/movements',
+  requirePermission('cash.movements.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const businessDate = validateBusinessDate(req.query.business_date);
+      res.json({ businessDate, movements: listCashDrawerMovements(getDatabase(), businessDate) });
+    } catch (error: any) {
+      const status = error.statusCode || 500;
+      if (status === 500) console.error('[CashClosures] Movement list error:', error);
+      res.status(status).json({
+        error: status === 500 ? 'Internal server error' : error.message || 'Internal server error',
+      });
+    }
+  },
+);
 
-router.post('/movements', requirePermission('cash.movements.manage'), (req: Request, res: Response) => {
-  let operationCommitted = false;
-  let transactionBodyCompleted = false;
-  try {
-    const body = req.body || {};
-    const businessDate = validateBusinessDate(body.business_date);
-    const movementType = validateMovementType(body.movement_type);
-    const amountCents = validateCents(body.amount_cents, 'amount_cents', movementType === 'opening_float');
-    const reason = validateMovementReason(body.reason, movementType !== 'opening_float');
-    const createdBy = String((req as any).user?.userId || '');
-    if (!createdBy) throw httpError('Authentication required', 401);
-    const db = getDatabase();
-    // Shift enforcement (#279): every movement touches the drawer.
-    requireOpenSessionForCash(db);
-    const id = withTxn(() => {
-      let movementId: number;
-      try {
-        movementId = insertCashDrawerMovement(db, {
-          businessDate,
-          movementType,
-          amountCents,
-          reason,
-          createdBy,
-          cashSessionId: getOpenSession(db)?.id ?? NO_CASH_SESSION_ID,
-        });
-      } catch (error: any) {
-        if (error.code === 'day_closed') {
-          throw httpError('This day is already closed', 409, 'day_already_closed');
+router.post(
+  '/movements',
+  requirePermission('cash.movements.manage'),
+  (req: Request, res: Response) => {
+    let operationCommitted = false;
+    let transactionBodyCompleted = false;
+    try {
+      const body = req.body || {};
+      const businessDate = validateBusinessDate(body.business_date);
+      const movementType = validateMovementType(body.movement_type);
+      const amountCents = validateCents(
+        body.amount_cents,
+        'amount_cents',
+        movementType === 'opening_float',
+      );
+      const reason = validateMovementReason(body.reason, movementType !== 'opening_float');
+      const createdBy = String((req as any).user?.userId || '');
+      if (!createdBy) throw httpError('Authentication required', 401);
+      const db = getDatabase();
+      // Shift enforcement (#279): every movement touches the drawer.
+      requireOpenSessionForCash(db);
+      const id = withTxn(() => {
+        let movementId: number;
+        try {
+          movementId = insertCashDrawerMovement(db, {
+            businessDate,
+            movementType,
+            amountCents,
+            reason,
+            createdBy,
+            cashSessionId: getOpenSession(db)?.id ?? NO_CASH_SESSION_ID,
+          });
+        } catch (error: any) {
+          if (error.code === 'day_closed') {
+            throw httpError('This day is already closed', 409, 'day_already_closed');
+          }
+          if (
+            String(error?.message || '').includes('cash_drawer_one_opening_float') ||
+            (movementType === 'opening_float' &&
+              String(error?.message || '').includes('cash_drawer_movements.business_date'))
+          ) {
+            throw httpError(
+              'An opening float is already recorded for this day',
+              409,
+              'opening_float_exists',
+            );
+          }
+          throw error;
         }
-        if (String(error?.message || '').includes('cash_drawer_one_opening_float')
-          || (movementType === 'opening_float' && String(error?.message || '').includes('cash_drawer_movements.business_date'))) {
-          throw httpError('An opening float is already recorded for this day', 409, 'opening_float_exists');
-        }
-        throw error;
-      }
-      transactionBodyCompleted = true;
-      return movementId;
-    });
-    operationCommitted = true;
-    const movement = db.prepare(`
+        transactionBodyCompleted = true;
+        return movementId;
+      });
+      operationCommitted = true;
+      const movement = db
+        .prepare(`
       SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
       FROM cash_drawer_movements m
       LEFT JOIN users created_user ON created_user.id = m.created_by
       LEFT JOIN users voided_user ON voided_user.id = m.voided_by
       WHERE m.id = ?
-    `).get(id);
-    res.status(201).json({ movement });
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    if (status === 500) console.error('[CashClosures] Movement create error:', error);
-    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
-    const payload = operationCommitted
-      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.completion', 'applied')
-      : status >= 500
-        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
-        : error.diagnosticCode
-          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.create.validation', 'not_applied', error.diagnosticCode)
-          : { error: safeMessage };
-    res.status(status).json(payload);
-  }
-});
+    `)
+        .get(id);
+      res.status(201).json({ movement });
+    } catch (error: any) {
+      const status = error.statusCode || 500;
+      if (status === 500) console.error('[CashClosures] Movement create error:', error);
+      const safeMessage =
+        status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+      const payload = operationCommitted
+        ? cashOperationFailurePayload(
+            req,
+            safeMessage,
+            'fc.backend.cash.movement.create.completion',
+            'applied',
+          )
+        : status >= 500
+          ? cashOperationFailurePayload(
+              req,
+              safeMessage,
+              'fc.backend.cash.movement.create.persistence',
+              transactionBodyCompleted ? 'unknown' : 'not_applied',
+            )
+          : error.diagnosticCode
+            ? cashOperationFailurePayload(
+                req,
+                safeMessage,
+                'fc.backend.cash.movement.create.validation',
+                'not_applied',
+                error.diagnosticCode,
+              )
+            : { error: safeMessage };
+      res.status(status).json(payload);
+    }
+  },
+);
 
-router.post('/movements/:id/void', requirePermission('cash.movements.void'), (req: Request, res: Response) => {
-  let operationCommitted = false;
-  let transactionBodyCompleted = false;
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) throw httpError('id must be a positive integer', 400, 'movement_id_invalid');
-    const reason = validateMovementReason(req.body?.reason, true);
-    const voidedBy = String((req as any).user?.userId || '');
-    if (!voidedBy) throw httpError('Authentication required', 401);
-    const db = getDatabase();
-    withTxn(() => {
-      const movement = db.prepare(`SELECT * FROM cash_drawer_movements WHERE id = ?`).get(id) as { business_date: string; voided_at: string | null } | undefined;
-      if (!movement) throw httpError('Cash movement not found', 404, 'movement_unavailable');
-      if (movement.voided_at) throw httpError('Cash movement is already voided', 409, 'movement_already_voided');
-      if (closedDayExists(db, movement.business_date)) throw httpError('This day is already closed', 409, 'day_already_closed');
-      // Money moved by an expense entry is corrected through the expense
-      // ledger: the reversal writes the offsetting row and keeps this link.
-      if (db.prepare('SELECT id FROM expense_payments WHERE cash_movement_id = ? LIMIT 1').get(id)) {
-        throw httpError('This movement belongs to an expense payment; reverse the payment from the expense ledger instead', 409);
-      }
-      db.prepare(`
+router.post(
+  '/movements/:id/void',
+  requirePermission('cash.movements.void'),
+  (req: Request, res: Response) => {
+    let operationCommitted = false;
+    let transactionBodyCompleted = false;
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0)
+        throw httpError('id must be a positive integer', 400, 'movement_id_invalid');
+      const reason = validateMovementReason(req.body?.reason, true);
+      const voidedBy = String((req as any).user?.userId || '');
+      if (!voidedBy) throw httpError('Authentication required', 401);
+      const db = getDatabase();
+      withTxn(() => {
+        const movement = db.prepare(`SELECT * FROM cash_drawer_movements WHERE id = ?`).get(id) as
+          | { business_date: string; voided_at: string | null }
+          | undefined;
+        if (!movement) throw httpError('Cash movement not found', 404, 'movement_unavailable');
+        if (movement.voided_at)
+          throw httpError('Cash movement is already voided', 409, 'movement_already_voided');
+        if (closedDayExists(db, movement.business_date))
+          throw httpError('This day is already closed', 409, 'day_already_closed');
+        // Money moved by an expense entry is corrected through the expense
+        // ledger: the reversal writes the offsetting row and keeps this link.
+        if (
+          db.prepare('SELECT id FROM expense_payments WHERE cash_movement_id = ? LIMIT 1').get(id)
+        ) {
+          throw httpError(
+            'This movement belongs to an expense payment; reverse the payment from the expense ledger instead',
+            409,
+          );
+        }
+        db.prepare(`
         UPDATE cash_drawer_movements
         SET voided_at = ?, voided_by = ?, void_reason = ?
         WHERE id = ? AND voided_at IS NULL
       `).run(now(), voidedBy, reason, id);
-      transactionBodyCompleted = true;
-    });
-    operationCommitted = true;
-    const movement = db.prepare(`
+        transactionBodyCompleted = true;
+      });
+      operationCommitted = true;
+      const movement = db
+        .prepare(`
       SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
       FROM cash_drawer_movements m
       LEFT JOIN users created_user ON created_user.id = m.created_by
       LEFT JOIN users voided_user ON voided_user.id = m.voided_by
       WHERE m.id = ?
-    `).get(id);
-    res.json({ movement });
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    if (status === 500) console.error('[CashClosures] Movement void error:', error);
-    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
-    const payload = operationCommitted
-      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.completion', 'applied')
-      : status >= 500
-        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
-        : error.diagnosticCode
-          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.movement.void.validation', 'not_applied', error.diagnosticCode)
-          : { error: safeMessage };
-    res.status(status).json(payload);
-  }
-});
+    `)
+        .get(id);
+      res.json({ movement });
+    } catch (error: any) {
+      const status = error.statusCode || 500;
+      if (status === 500) console.error('[CashClosures] Movement void error:', error);
+      const safeMessage =
+        status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+      const payload = operationCommitted
+        ? cashOperationFailurePayload(
+            req,
+            safeMessage,
+            'fc.backend.cash.movement.void.completion',
+            'applied',
+          )
+        : status >= 500
+          ? cashOperationFailurePayload(
+              req,
+              safeMessage,
+              'fc.backend.cash.movement.void.persistence',
+              transactionBodyCompleted ? 'unknown' : 'not_applied',
+            )
+          : error.diagnosticCode
+            ? cashOperationFailurePayload(
+                req,
+                safeMessage,
+                'fc.backend.cash.movement.void.validation',
+                'not_applied',
+                error.diagnosticCode,
+              )
+            : { error: safeMessage };
+      res.status(status).json(payload);
+    }
+  },
+);
 
 router.post('/', requirePermission('cash.day-close'), (req: Request, res: Response) => {
   let operationCommitted = false;
@@ -908,7 +1087,10 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
-    const requestedOpeningFloatCents = validateCents(body.opening_float_cents, 'opening_float_cents');
+    const requestedOpeningFloatCents = validateCents(
+      body.opening_float_cents,
+      'opening_float_cents',
+    );
     const countedCashCents = validateCents(body.counted_cash_cents, 'counted_cash_cents');
     if (typeof body.notes === 'string' && body.notes.length > MAX_NOTES_LENGTH) {
       throw httpError('notes is too long', 400, 'notes_too_long');
@@ -918,23 +1100,34 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
     if (!closedBy) throw httpError('Authentication required', 401);
 
     const db = getDatabase();
-    const [periodStart, periodEnd] = dayBoundsInTimezone(businessDate, tenantTimezone(), tenantStartTime(db));
+    const [periodStart, periodEnd] = dayBoundsInTimezone(
+      businessDate,
+      tenantTimezone(),
+      tenantStartTime(db),
+    );
 
     // SELECT-then-INSERT inside withTxn matches the customers.ts uniqueness
     // pattern; the partial index `cash_closures_one_day ... WHERE scope='day'`
     // is the concurrency safety net (a concurrent winner sees 409 here, a
     // race that slips past SELECT hits SQLITE_CONSTRAINT, mapped below).
     const result = withTxn(() => {
-      const existing = db.prepare(
-        `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`
-      ).get(businessDate);
+      const existing = db
+        .prepare(`SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`)
+        .get(businessDate);
       if (existing) {
         throw httpError('This day is already closed', 409, 'day_already_closed');
       }
 
       const recordedOpeningFloatCents = activeOpeningFloatCents(db, businessDate);
-      if (recordedOpeningFloatCents !== null && recordedOpeningFloatCents !== requestedOpeningFloatCents) {
-        throw httpError('The opening float already recorded for this day does not match', 409, 'opening_float_mismatch');
+      if (
+        recordedOpeningFloatCents !== null &&
+        recordedOpeningFloatCents !== requestedOpeningFloatCents
+      ) {
+        throw httpError(
+          'The opening float already recorded for this day does not match',
+          409,
+          'opening_float_mismatch',
+        );
       }
       if (recordedOpeningFloatCents === null) {
         db.prepare(`
@@ -979,16 +1172,29 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
             ?, ?, ?, ?
           )
         `).run(
-          businessDate, periodStart, periodEnd,
-          aggregates.openingFloatCents, expectedCashCents, countedCashCents, varianceCents,
-          aggregates.grossCollectedCents, aggregates.refundedCents, aggregates.netCollectedCents,
-          aggregates.billCount, aggregates.refundCount,
+          businessDate,
+          periodStart,
+          periodEnd,
+          aggregates.openingFloatCents,
+          expectedCashCents,
+          countedCashCents,
+          varianceCents,
+          aggregates.grossCollectedCents,
+          aggregates.refundedCents,
+          aggregates.netCollectedCents,
+          aggregates.billCount,
+          aggregates.refundCount,
           JSON.stringify(aggregates.paymentMethods),
           JSON.stringify(aggregates.staffSales),
           JSON.stringify(aggregates.taxComponents),
-          aggregates.payInCents, aggregates.payOutCents, aggregates.safeDropCents,
+          aggregates.payInCents,
+          aggregates.payOutCents,
+          aggregates.safeDropCents,
           JSON.stringify(aggregates.cashMovements),
-          zNumber, closedBy, notes, createdAt,
+          zNumber,
+          closedBy,
+          notes,
+          createdAt,
         );
       } catch (err: any) {
         // Race: another writer slipped through between the SELECT and this
@@ -1000,9 +1206,13 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
         throw err;
       }
 
-      const id = Number((db.prepare(
-        `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day'`
-      ).get(businessDate) as { id: number }).id);
+      const id = Number(
+        (
+          db
+            .prepare(`SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day'`)
+            .get(businessDate) as { id: number }
+        ).id,
+      );
 
       transactionBodyCompleted = true;
       return {
@@ -1039,13 +1249,30 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Internal error:', error);
-    const safeMessage = status === 500 ? 'Internal server error' : error.message || 'Internal server error';
+    const safeMessage =
+      status === 500 ? 'Internal server error' : error.message || 'Internal server error';
     const payload = operationCommitted
-      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.completion', 'applied')
+      ? cashOperationFailurePayload(
+          req,
+          safeMessage,
+          'fc.backend.cash.day.close.completion',
+          'applied',
+        )
       : status >= 500
-        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
+        ? cashOperationFailurePayload(
+            req,
+            safeMessage,
+            'fc.backend.cash.day.close.persistence',
+            transactionBodyCompleted ? 'unknown' : 'not_applied',
+          )
         : error.diagnosticCode
-          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.day.close.validation', 'not_applied', error.diagnosticCode)
+          ? cashOperationFailurePayload(
+              req,
+              safeMessage,
+              'fc.backend.cash.day.close.validation',
+              'not_applied',
+              error.diagnosticCode,
+            )
           : { error: safeMessage };
     res.status(status).json(payload);
   }
@@ -1059,54 +1286,74 @@ export { router as cashClosureRoutes };
 // (bypassing bill-bound `shouldPulseForPayment`, spec #649). WebUSB printers
 // return `{ bytes: number[] }` for the frontend to dispatch; network/usb
 // printers go through the backend socket. The Z row is never mutated.
-router.post('/:id/print', requirePermission('printing.execute'), async (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: 'id must be a positive integer' });
+router.post(
+  '/:id/print',
+  requirePermission('printing.execute'),
+  async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: 'id must be a positive integer' });
+      }
+      const row = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(id) as any;
+      if (!row) return res.status(404).json({ error: 'Cash closure not found' });
+      // Session Z rows print for the shift roles; day-close Z stays owner-only.
+      if (row.scope !== 'session' && (req as AuthedRequest).user?.role !== 'owner') {
+        return res.status(403).json({ error: 'Only owners can print day-close reports' });
+      }
+      const isReprint = req.body && req.body.isReprint === true;
+      // F6: resolve the operator's display name via users(id → name) so the
+      // printed Z shows the operator (not the raw user id). Falls back to the
+      // id string when the user row is missing (e.g. historical data after a
+      // staff deletion).
+      const snapshot = shapeZReportSnapshot(db, row, isReprint);
+      const languageRow = db.prepare(`SELECT value FROM settings WHERE key = 'language'`).get() as
+        | { value?: string }
+        | undefined;
+      const zPolicy = parseStoredLanguagePolicy(
+        Z_REPORT_LANGUAGE_POLICY_KEY,
+        (
+          db
+            .prepare('SELECT value FROM settings WHERE key = ?')
+            .get(Z_REPORT_LANGUAGE_POLICY_KEY) as { value?: string } | undefined
+        )?.value,
+      ) as ReceiptLanguagePolicy;
+      const zLanguages = resolveReceiptLanguages(zPolicy, languageRow?.value || 'en');
+      snapshot.__language = zLanguages[0];
+      if (zLanguages[1]) snapshot.__additionalLanguage = zLanguages[1];
+      // Resolve the default receipt printer server-side so the WebUSB branch
+      // is reachable end-to-end (mirrors `main/routes/printers.ts:304-339`,
+      // bytes branch `:329-331`). `getPrinterConfig()` inside the helper
+      // excludes webusb; selecting it here closes that gap.
+      const printer = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
+      if (!printer) return res.status(409).json({ error: 'No default printer configured' });
+      const { printZReport } = require('../printers/thermal');
+      // Thread request cancellation through the print job. The resolved Z
+      // language policy is carried only in this print snapshot.
+      const result = await printZReport(snapshot, getHttpRequestSignal(req), printer);
+      if (printer.connection_type === 'webusb' && result?.bytes) {
+        // Return the FULL bytes including the forced drawer pulse; the renderer
+        // dispatches them over WebUSB exactly as the test-page endpoint does.
+        return res.json({
+          success: true,
+          webusb: true,
+          isReprint,
+          bytes: Array.from(result.bytes),
+          warnings: result.warnings || [],
+        });
+      }
+      if (!result.ok) {
+        return res.status(502).json({
+          error: result.detail || 'Printer did not respond or print failed',
+          detail: result.detail,
+          warnings: result.warnings || [],
+        });
+      }
+      res.json({ success: true, isReprint, warnings: result.warnings || [] });
+    } catch (error: any) {
+      console.error('[CashClosures] Print error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    const row = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(id) as any;
-    if (!row) return res.status(404).json({ error: 'Cash closure not found' });
-    // Session Z rows print for the shift roles; day-close Z stays owner-only.
-    if (row.scope !== 'session' && (req as AuthedRequest).user?.role !== 'owner') {
-      return res.status(403).json({ error: 'Only owners can print day-close reports' });
-    }
-    const isReprint = req.body && req.body.isReprint === true;
-    // F6: resolve the operator's display name via users(id → name) so the
-    // printed Z shows the operator (not the raw user id). Falls back to the
-    // id string when the user row is missing (e.g. historical data after a
-    // staff deletion).
-    const snapshot = shapeZReportSnapshot(db, row, isReprint);
-    const languageRow = db.prepare(`SELECT value FROM settings WHERE key = 'language'`).get() as { value?: string } | undefined;
-    const zPolicy = parseStoredLanguagePolicy(
-      Z_REPORT_LANGUAGE_POLICY_KEY,
-      (db.prepare('SELECT value FROM settings WHERE key = ?').get(Z_REPORT_LANGUAGE_POLICY_KEY) as { value?: string } | undefined)?.value,
-    ) as ReceiptLanguagePolicy;
-    const zLanguages = resolveReceiptLanguages(zPolicy, languageRow?.value || 'en');
-    snapshot.__language = zLanguages[0];
-    if (zLanguages[1]) snapshot.__additionalLanguage = zLanguages[1];
-    // Resolve the default receipt printer server-side so the WebUSB branch
-    // is reachable end-to-end (mirrors `main/routes/printers.ts:304-339`,
-    // bytes branch `:329-331`). `getPrinterConfig()` inside the helper
-    // excludes webusb; selecting it here closes that gap.
-    const printer = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
-    if (!printer) return res.status(409).json({ error: 'No default printer configured' });
-    const { printZReport } = require('../printers/thermal');
-    // Thread request cancellation through the print job. The resolved Z
-    // language policy is carried only in this print snapshot.
-    const result = await printZReport(snapshot, getHttpRequestSignal(req), printer);
-    if (printer.connection_type === 'webusb' && result?.bytes) {
-      // Return the FULL bytes including the forced drawer pulse; the renderer
-      // dispatches them over WebUSB exactly as the test-page endpoint does.
-      return res.json({ success: true, webusb: true, isReprint, bytes: Array.from(result.bytes), warnings: result.warnings || [] });
-    }
-    if (!result.ok) {
-      return res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail, warnings: result.warnings || [] });
-    }
-    res.json({ success: true, isReprint, warnings: result.warnings || [] });
-  } catch (error: any) {
-    console.error('[CashClosures] Print error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  },
+);

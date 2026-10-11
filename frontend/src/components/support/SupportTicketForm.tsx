@@ -51,8 +51,14 @@ type SupportProfile = {
 };
 
 const EMPTY_PROFILE: SupportProfile = {
-  contact_name: '', contact_email: '', contact_phone: '', restaurant_name: '',
-  country: '', timezone: '', app_version: '', platform: '',
+  contact_name: '',
+  contact_email: '',
+  contact_phone: '',
+  restaurant_name: '',
+  country: '',
+  timezone: '',
+  app_version: '',
+  platform: '',
 };
 
 interface SupportTicketFormProps {
@@ -104,7 +110,8 @@ export function SupportTicketForm({
   const diagnosticsPreview = useSupportDiagnosticsPreview(showDiagnosticsPreview ? category : null);
 
   useEffect(() => {
-    api.get(endpoints.profile)
+    api
+      .get(endpoints.profile)
       .then(({ data }) => setProfile({ ...EMPTY_PROFILE, ...data }))
       .catch(() => toast.error(t('profileLoadFailed')))
       .finally(() => setLoading(false));
@@ -134,11 +141,16 @@ export function SupportTicketForm({
         initialDiagnostics,
       });
       if (submissionIdentityRef.current?.fingerprint !== fingerprint) {
-        const correlationId = initialCorrelationId && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(initialCorrelationId)
-          ? initialCorrelationId
-          : createOperationReference();
+        const correlationId =
+          initialCorrelationId &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            initialCorrelationId,
+          )
+            ? initialCorrelationId
+            : createOperationReference();
         const clientTicketId = createOperationReference();
-        if (!correlationId || !clientTicketId) throw new Error('Secure ticket reference unavailable');
+        if (!correlationId || !clientTicketId)
+          throw new Error('Secure ticket reference unavailable');
         let logTail: string | undefined;
         if (attachLog && typeof window !== 'undefined' && window.electronAPI?.getLogTail) {
           const result = await window.electronAPI.getLogTail().catch(() => null);
@@ -189,12 +201,16 @@ export function SupportTicketForm({
             <p className="font-medium">{t('requestQueued')}</p>
             {delivery.status === 'delivered' && delivery.supportCode ? (
               <>
-                <p className="mt-1 text-sm font-semibold">{t('supportCode')}: <span className="font-mono">{delivery.supportCode}</span></p>
+                <p className="mt-1 text-sm font-semibold">
+                  {t('supportCode')}: <span className="font-mono">{delivery.supportCode}</span>
+                </p>
                 <p className="mt-0.5 text-xs opacity-80">{t('supportCodeHint')}</p>
               </>
             ) : (
               <>
-                <p className="mt-1 text-xs opacity-80">{t('requestId')}: {submittedId}</p>
+                <p className="mt-1 text-xs opacity-80">
+                  {t('requestId')}: {submittedId}
+                </p>
                 <p className="mt-0.5 text-xs opacity-80">
                   {delivery.status === 'failed' ? t('stillQueuedLocally') : t('confirmingDelivery')}
                 </p>
@@ -207,14 +223,22 @@ export function SupportTicketForm({
       <form onSubmit={submit} className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><MessageSquareText className="size-5" />{t('describeIssue')}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquareText className="size-5" />
+              {t('describeIssue')}
+            </CardTitle>
             <CardDescription>{t('descriptionHint')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="support-category">{t('category')}</Label>
-                <select id="support-category" value={category} onChange={(e) => setCategory(e.target.value)} className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs">
+                <select
+                  id="support-category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
+                >
                   <option value="general">{t('categoryGeneral')}</option>
                   <option value="bug">{t('categoryBug')}</option>
                   <option value="printer">{t('categoryPrinter')}</option>
@@ -225,7 +249,12 @@ export function SupportTicketForm({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="support-severity">{t('urgency')}</Label>
-                <select id="support-severity" value={severity} onChange={(e) => setSeverity(e.target.value)} className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs">
+                <select
+                  id="support-severity"
+                  value={severity}
+                  onChange={(e) => setSeverity(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
+                >
                   <option value="low">{t('urgencyLow')}</option>
                   <option value="normal">{t('urgencyNormal')}</option>
                   <option value="high">{t('urgencyHigh')}</option>
@@ -235,12 +264,30 @@ export function SupportTicketForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="support-subject">{t('subject')}</Label>
-              <Input id="support-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={255} placeholder={t('subjectPlaceholder')} required />
+              <Input
+                id="support-subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                maxLength={255}
+                placeholder={t('subjectPlaceholder')}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="support-message">{t('description')}</Label>
-              <textarea id="support-message" value={message} onChange={(e) => setMessage(e.target.value)} maxLength={20000} rows={10} className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" placeholder={t('descriptionPlaceholder')} required />
-              <p className="text-end text-xs text-muted-foreground">{fmtNum(message.length)} / 20,000</p>
+              <textarea
+                id="support-message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                maxLength={20000}
+                rows={10}
+                className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                placeholder={t('descriptionPlaceholder')}
+                required
+              />
+              <p className="text-end text-xs text-muted-foreground">
+                {fmtNum(message.length)} / 20,000
+              </p>
             </div>
             <label className="flex items-start gap-2 text-sm text-muted-foreground select-none cursor-pointer">
               <input
@@ -254,37 +301,87 @@ export function SupportTicketForm({
                 <span className="block text-xs">{t('attachLogHint')}</span>
               </span>
             </label>
-            <Button type="submit" disabled={loading || submitting || !subject.trim() || !message.trim()} className="w-full sm:w-auto">
-              {submitting ? <Loader2 className="animate-spin" /> : <LifeBuoy />}{submitting ? t('submitting') : t('submit')}
+            <Button
+              type="submit"
+              disabled={loading || submitting || !subject.trim() || !message.trim()}
+              className="w-full sm:w-auto"
+            >
+              {submitting ? <Loader2 className="animate-spin" /> : <LifeBuoy />}
+              {submitting ? t('submitting') : t('submit')}
             </Button>
           </CardContent>
         </Card>
 
         <div className="space-y-6">
           <Card>
-            <CardHeader><CardTitle className="text-base">{t('contactDetails')}</CardTitle><CardDescription>{t('contactHint')}</CardDescription></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">{t('contactDetails')}</CardTitle>
+              <CardDescription>{t('contactHint')}</CardDescription>
+            </CardHeader>
             <CardContent className="space-y-4">
-              <div className="rounded-lg bg-muted/60 p-3 text-sm"><span className="text-muted-foreground">{t('restaurant')}</span><p className="font-medium">{profile.restaurant_name || '—'}</p></div>
-              <div className="space-y-2"><Label htmlFor="support-name">{t('contactName')}</Label><Input id="support-name" value={profile.contact_name} onChange={(e) => setProfile({ ...profile, contact_name: e.target.value })} maxLength={255} /></div>
-              <div className="space-y-2"><Label htmlFor="support-email">{t('email')}</Label><Input id="support-email" type="email" value={profile.contact_email} onChange={(e) => setProfile({ ...profile, contact_email: e.target.value })} maxLength={255} /></div>
-              <div className="space-y-2"><Label htmlFor="support-phone">{t('phone')}</Label><Input id="support-phone" type="tel" value={profile.contact_phone} onChange={(e) => setProfile({ ...profile, contact_phone: e.target.value })} maxLength={50} /></div>
+              <div className="rounded-lg bg-muted/60 p-3 text-sm">
+                <span className="text-muted-foreground">{t('restaurant')}</span>
+                <p className="font-medium">{profile.restaurant_name || '—'}</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="support-name">{t('contactName')}</Label>
+                <Input
+                  id="support-name"
+                  value={profile.contact_name}
+                  onChange={(e) => setProfile({ ...profile, contact_name: e.target.value })}
+                  maxLength={255}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="support-email">{t('email')}</Label>
+                <Input
+                  id="support-email"
+                  type="email"
+                  value={profile.contact_email}
+                  onChange={(e) => setProfile({ ...profile, contact_email: e.target.value })}
+                  maxLength={255}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="support-phone">{t('phone')}</Label>
+                <Input
+                  id="support-phone"
+                  type="tel"
+                  value={profile.contact_phone}
+                  onChange={(e) => setProfile({ ...profile, contact_phone: e.target.value })}
+                  maxLength={50}
+                />
+              </div>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Bug className="size-4" />{t('technicalDetails')}</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bug className="size-4" />
+                {t('technicalDetails')}
+              </CardTitle>
+            </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <p className="text-muted-foreground">{t('technicalHint')}</p>
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg bg-muted/60 p-3 text-xs">
-                <dt className="text-muted-foreground">{t('version')}</dt><dd>{profile.app_version || '—'}</dd>
-                <dt className="text-muted-foreground">{t('platform')}</dt><dd>{profile.platform || '—'}</dd>
-                <dt className="text-muted-foreground">{t('location')}</dt><dd>{[profile.country, profile.timezone].filter(Boolean).join(' · ') || '—'}</dd>
+                <dt className="text-muted-foreground">{t('version')}</dt>
+                <dd>{profile.app_version || '—'}</dd>
+                <dt className="text-muted-foreground">{t('platform')}</dt>
+                <dd>{profile.platform || '—'}</dd>
+                <dt className="text-muted-foreground">{t('location')}</dt>
+                <dd>{[profile.country, profile.timezone].filter(Boolean).join(' · ') || '—'}</dd>
               </dl>
-              <div className="flex gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-green-600" /><span>{t('privacyHint')}</span></div>
+              <div className="flex gap-2 text-xs text-muted-foreground">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-green-600" />
+                <span>{t('privacyHint')}</span>
+              </div>
               {showDiagnosticsPreview && diagnosticsPreview && (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">{t('showPayload')}</summary>
-                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-muted/60 p-2">{JSON.stringify(diagnosticsPreview, null, 2)}</pre>
+                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-muted/60 p-2">
+                    {JSON.stringify(diagnosticsPreview, null, 2)}
+                  </pre>
                 </details>
               )}
             </CardContent>

@@ -29,7 +29,10 @@ const router = Router();
 const MAX_OVERRIDES = PERMISSION_DEFINITIONS.length;
 
 function captureAuthorizationRejection(capturePoint: string): void {
-  const failure = serializeOperationFailure({ capture_point: capturePoint, outcome: 'not_applied' });
+  const failure = serializeOperationFailure({
+    capture_point: capturePoint,
+    outcome: 'not_applied',
+  });
   try {
     if (failure) cloudSync.captureOperationFailure(failure);
   } catch {
@@ -37,7 +40,9 @@ function captureAuthorizationRejection(capturePoint: string): void {
   }
 }
 
-function captureAuthorizationInputRejection(validationCode: 'invalid_role' | 'invalid_overrides' | 'missing_revision'): void {
+function captureAuthorizationInputRejection(
+  validationCode: 'invalid_role' | 'invalid_overrides' | 'missing_revision',
+): void {
   const failure = serializeOperationFailure({
     capture_point: 'fc.backend.authorization.input_validation',
     outcome: 'not_applied',
@@ -64,7 +69,11 @@ function actorId(req: Request): string {
  * proving who you are, so it is a 428 naming the factor. Both run before the
  * write, so a refusal stores nothing.
  */
-function preflightOverrides(req: Request, res: Response, candidate: PermissionOverrideCandidate): boolean {
+function preflightOverrides(
+  req: Request,
+  res: Response,
+  candidate: PermissionOverrideCandidate,
+): boolean {
   try {
     assertAdministrationReachable(getDatabase(), candidate);
   } catch (error) {
@@ -92,11 +101,16 @@ function preflightOverrides(req: Request, res: Response, candidate: PermissionOv
 
     // An account with no PIN can never satisfy the factor, so demanding one
     // would lock the owner out of the one action that lets them continue.
-    const pinHash = (getDatabase().prepare('SELECT pin_hash FROM users WHERE id = ?').get(actor) as { pin_hash: string | null } | undefined)?.pin_hash;
+    const pinHash = (
+      getDatabase().prepare('SELECT pin_hash FROM users WHERE id = ?').get(actor) as
+        | { pin_hash: string | null }
+        | undefined
+    )?.pin_hash;
     if (!pinHash) {
       captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
       res.status(409).json({
-        error: 'Set a PIN on your own account in Staff before removing your own administrative access.',
+        error:
+          'Set a PIN on your own account in Staff before removing your own administrative access.',
         code: 'self_privilege_change_factor_unavailable',
       });
       return true;
@@ -106,11 +120,17 @@ function preflightOverrides(req: Request, res: Response, candidate: PermissionOv
     if (verifyPin(pinHash, presented)) return false;
     if (presented) {
       captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
-      res.status(403).json({ error: 'Invalid owner PIN', code: 'self_privilege_change_factor_invalid' });
+      res
+        .status(403)
+        .json({ error: 'Invalid owner PIN', code: 'self_privilege_change_factor_invalid' });
       return true;
     }
     captureAuthorizationRejection('fc.backend.authorization.self_lockout_guard');
-    res.status(428).json({ error: error.message, code: 'self_privilege_change_requires_factor', requires: 'pin' });
+    res.status(428).json({
+      error: error.message,
+      code: 'self_privilege_change_requires_factor',
+      requires: 'pin',
+    });
     return true;
   }
 }
@@ -130,7 +150,10 @@ function parseOverrides(value: unknown): Map<PermissionId, PermissionEffect> | n
 
 function serializeOverrides(overrides: Map<PermissionId, PermissionEffect>) {
   return [...overrides.entries()]
-    .filter(([permissionId]) => PERMISSION_DEFINITIONS.find(({ id }) => id === permissionId)?.configurable)
+    .filter(
+      ([permissionId]) =>
+        PERMISSION_DEFINITIONS.find(({ id }) => id === permissionId)?.configurable,
+    )
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([permissionId, effect]) => ({ permission_id: permissionId, effect }));
 }
@@ -138,14 +161,19 @@ function serializeOverrides(overrides: Map<PermissionId, PermissionEffect>) {
 function rolePayload(role: Role) {
   const resolved = resolveRolePermissions(role);
   const db = getDatabase();
-  const rows = db.prepare(
-    'SELECT permission_id, effect FROM role_permission_overrides WHERE role = ? ORDER BY permission_id',
-  ).all(role) as Array<{ permission_id: string; effect: PermissionEffect }>;
+  const rows = db
+    .prepare(
+      'SELECT permission_id, effect FROM role_permission_overrides WHERE role = ? ORDER BY permission_id',
+    )
+    .all(role) as Array<{ permission_id: string; effect: PermissionEffect }>;
   return {
     role,
     revision: rolePermissionRevision(role),
-    overrides: rows.filter(({ permission_id }) => isPermissionId(permission_id)
-      && PERMISSION_DEFINITIONS.find(({ id }) => id === permission_id)?.configurable),
+    overrides: rows.filter(
+      ({ permission_id }) =>
+        isPermissionId(permission_id) &&
+        PERMISSION_DEFINITIONS.find(({ id }) => id === permission_id)?.configurable,
+    ),
     permissions: PERMISSION_DEFINITIONS.map((definition) => ({
       permission_id: definition.id,
       allowed: resolved.decisions[definition.id].allowed,
@@ -156,7 +184,9 @@ function rolePayload(role: Role) {
 
 function userPayload(userId: string) {
   const db = getDatabase();
-  const user = db.prepare('SELECT id, name, email, role, is_active FROM users WHERE id = ?').get(userId) as
+  const user = db
+    .prepare('SELECT id, name, email, role, is_active FROM users WHERE id = ?')
+    .get(userId) as
     | { id: string; name: string; email: string | null; role: string; is_active: number }
     | undefined;
   if (!user || !isRole(user.role)) return null;
@@ -183,12 +213,23 @@ function writeAudit(
   previousEffect: PermissionEffect | null,
   nextEffect: PermissionEffect | null,
 ): void {
-  getDatabase().prepare(`
+  getDatabase()
+    .prepare(`
     INSERT INTO authorization_audit_log (
       batch_id, actor_user_id, target_type, target_id, permission_id,
       previous_effect, next_effect, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(batchId, actorUserId, targetType, targetId, permissionId, previousEffect, nextEffect, now());
+  `)
+    .run(
+      batchId,
+      actorUserId,
+      targetType,
+      targetId,
+      permissionId,
+      previousEffect,
+      nextEffect,
+      now(),
+    );
 }
 
 router.use(requirePermission('authorization.manage'));
@@ -210,7 +251,9 @@ router.put('/roles/:role', (req: Request, res: Response) => {
   const overrides = parseOverrides(req.body?.overrides);
   if (!overrides) {
     captureAuthorizationInputRejection('invalid_overrides');
-    return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
+    return res
+      .status(400)
+      .json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
   }
   if (typeof req.body?.revision !== 'string') {
     captureAuthorizationInputRejection('missing_revision');
@@ -218,7 +261,11 @@ router.put('/roles/:role', (req: Request, res: Response) => {
   }
   if (req.body.revision !== rolePermissionRevision(role)) {
     captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
-    return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', role: rolePayload(role) });
+    return res.status(409).json({
+      error: 'Permissions changed in another session',
+      code: 'revision_conflict',
+      role: rolePayload(role),
+    });
   }
 
   const db = getDatabase();
@@ -227,14 +274,18 @@ router.put('/roles/:role', (req: Request, res: Response) => {
   if (preflightOverrides(req, res, { kind: 'role_overrides', role, overrides })) return;
   db.transaction(() => {
     const previous = new Map<PermissionId, PermissionEffect>();
-    const rows = db.prepare('SELECT permission_id, effect FROM role_permission_overrides WHERE role = ?').all(role) as Array<{ permission_id: string; effect: PermissionEffect }>;
-    for (const row of rows) if (isPermissionId(row.permission_id)) previous.set(row.permission_id, row.effect);
+    const rows = db
+      .prepare('SELECT permission_id, effect FROM role_permission_overrides WHERE role = ?')
+      .all(role) as Array<{ permission_id: string; effect: PermissionEffect }>;
+    for (const row of rows)
+      if (isPermissionId(row.permission_id)) previous.set(row.permission_id, row.effect);
     db.prepare('DELETE FROM role_permission_overrides WHERE role = ?').run(role);
     const insert = db.prepare(`
       INSERT INTO role_permission_overrides (role, permission_id, effect, updated_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
-    for (const [permissionId, effect] of overrides) insert.run(role, permissionId, effect, actor, now(), now());
+    for (const [permissionId, effect] of overrides)
+      insert.run(role, permissionId, effect, actor, now(), now());
     const changed = new Set<PermissionId>([...previous.keys(), ...overrides.keys()]);
     for (const permissionId of changed) {
       const before = previous.get(permissionId) ?? null;
@@ -246,26 +297,32 @@ router.put('/roles/:role', (req: Request, res: Response) => {
 });
 
 router.get('/users', (_req: Request, res: Response) => {
-  const users = getDatabase().prepare(`
+  const users = getDatabase()
+    .prepare(`
     SELECT id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at
     FROM users ORDER BY role, name
-  `).all();
+  `)
+    .all();
   res.json({ users });
 });
 
 router.get('/users/:userId', (req: Request, res: Response) => {
   const payload = userPayload(String(req.params.userId));
-  if (!payload) return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
+  if (!payload)
+    return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
   res.json(payload);
 });
 
 router.put('/users/:userId', (req: Request, res: Response) => {
   const userId = String(req.params.userId);
-  if (!userPayload(userId)) return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
+  if (!userPayload(userId))
+    return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
   const overrides = parseOverrides(req.body?.overrides);
   if (!overrides) {
     captureAuthorizationInputRejection('invalid_overrides');
-    return res.status(400).json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
+    return res
+      .status(400)
+      .json({ error: 'Invalid permission overrides', code: 'invalid_permission_overrides' });
   }
   if (typeof req.body?.revision !== 'string') {
     captureAuthorizationInputRejection('missing_revision');
@@ -273,7 +330,11 @@ router.put('/users/:userId', (req: Request, res: Response) => {
   }
   if (req.body.revision !== userPermissionRevision(userId)) {
     captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
-    return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', user: userPayload(userId) });
+    return res.status(409).json({
+      error: 'Permissions changed in another session',
+      code: 'revision_conflict',
+      user: userPayload(userId),
+    });
   }
 
   const db = getDatabase();
@@ -287,7 +348,8 @@ router.put('/users/:userId', (req: Request, res: Response) => {
       INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
     `);
-    for (const [permissionId, effect] of overrides) insert.run(userId, permissionId, effect, actor, now(), now());
+    for (const [permissionId, effect] of overrides)
+      insert.run(userId, permissionId, effect, actor, now(), now());
     const changed = new Set<PermissionId>([...previous.keys(), ...overrides.keys()]);
     for (const permissionId of changed) {
       const before = previous.get(permissionId) ?? null;
@@ -301,43 +363,58 @@ router.put('/users/:userId', (req: Request, res: Response) => {
 router.delete('/users/:userId/overrides', (req: Request, res: Response) => {
   const userId = String(req.params.userId);
   const payload = userPayload(userId);
-  if (!payload) return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
+  if (!payload)
+    return res.status(404).json({ error: 'Staff member not found', code: 'staff_not_found' });
   if (typeof req.body?.revision !== 'string') {
     captureAuthorizationInputRejection('missing_revision');
     return res.status(400).json({ error: 'revision is required', code: 'revision_required' });
   }
   if (req.body.revision !== payload.revision) {
     captureAuthorizationRejection('fc.backend.authorization.revision_conflict');
-    return res.status(409).json({ error: 'Permissions changed in another session', code: 'revision_conflict', user: payload });
+    return res.status(409).json({
+      error: 'Permissions changed in another session',
+      code: 'revision_conflict',
+      user: payload,
+    });
   }
   const actor = actorId(req);
   const db = getDatabase();
   const batchId = randomUUID();
-  if (preflightOverrides(req, res, { kind: 'user_overrides', userId, overrides: new Map() })) return;
+  if (preflightOverrides(req, res, { kind: 'user_overrides', userId, overrides: new Map() }))
+    return;
   db.transaction(() => {
     const previous = readUserPermissionOverrides(userId);
     db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run(userId);
-    for (const [permissionId, effect] of previous) writeAudit(actor, batchId, 'user', userId, permissionId, effect, null);
+    for (const [permissionId, effect] of previous)
+      writeAudit(actor, batchId, 'user', userId, permissionId, effect, null);
   })();
   res.json(userPayload(userId));
 });
 
 router.get('/audit', (req: Request, res: Response) => {
-  const limit = Math.min(200, Math.max(1, Number.parseInt(String(req.query.limit || '50'), 10) || 50));
+  const limit = Math.min(
+    200,
+    Math.max(1, Number.parseInt(String(req.query.limit || '50'), 10) || 50),
+  );
   const beforeId = Number.parseInt(String(req.query.before_id || ''), 10);
-  const rows = Number.isInteger(beforeId) && beforeId > 0
-    ? getDatabase().prepare(`
+  const rows =
+    Number.isInteger(beforeId) && beforeId > 0
+      ? getDatabase()
+          .prepare(`
         SELECT audit.*, users.name AS actor_name
         FROM authorization_audit_log audit
         LEFT JOIN users ON users.id = audit.actor_user_id
         WHERE audit.id < ? ORDER BY audit.id DESC LIMIT ?
-      `).all(beforeId, limit)
-    : getDatabase().prepare(`
+      `)
+          .all(beforeId, limit)
+      : getDatabase()
+          .prepare(`
         SELECT audit.*, users.name AS actor_name
         FROM authorization_audit_log audit
         LEFT JOIN users ON users.id = audit.actor_user_id
         ORDER BY audit.id DESC LIMIT ?
-      `).all(limit);
+      `)
+          .all(limit);
   res.json({ audit: rows });
 });
 

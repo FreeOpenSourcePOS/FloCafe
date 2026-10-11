@@ -82,22 +82,30 @@ async function blockAttemptWritesCarryingOrder(page: Page, prefix: string): Prom
 }
 
 async function blockAttemptWritesCarryingBill(page: Page, prefix: string): Promise<void> {
-  await page.addInitScript((config: { prefix: string; lockKey: string }) => {
-    const originalSetItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
-      const blocked = (() => {
-        try {
-          return window.localStorage.getItem(config.lockKey) !== 'unlocked';
-        } catch {
-          return true;
+  await page.addInitScript(
+    (config: { prefix: string; lockKey: string }) => {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
+        const blocked = (() => {
+          try {
+            return window.localStorage.getItem(config.lockKey) !== 'unlocked';
+          } catch {
+            return true;
+          }
+        })();
+        if (
+          blocked &&
+          typeof key === 'string' &&
+          key.startsWith(config.prefix) &&
+          String(value).includes('"bill":')
+        ) {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
         }
-      })();
-      if (blocked && typeof key === 'string' && key.startsWith(config.prefix) && String(value).includes('"bill":')) {
-        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-      }
-      return originalSetItem.call(this, key, value);
-    };
-  }, { prefix, lockKey: ATTEMPT_WRITE_LOCK });
+        return originalSetItem.call(this, key, value);
+      };
+    },
+    { prefix, lockKey: ATTEMPT_WRITE_LOCK },
+  );
 }
 
 /** Ignores deletes for the given prefix, like a browser that lets the renderer
@@ -115,8 +123,11 @@ async function blockStorageRemovals(page: Page, prefix: string): Promise<void> {
   );
 }
 
-function trackOrderRequests(page: Page): Array<{ idempotencyKey: string | undefined; operationId: string | undefined }> {
-  const requests: Array<{ idempotencyKey: string | undefined; operationId: string | undefined }> = [];
+function trackOrderRequests(
+  page: Page,
+): Array<{ idempotencyKey: string | undefined; operationId: string | undefined }> {
+  const requests: Array<{ idempotencyKey: string | undefined; operationId: string | undefined }> =
+    [];
   page.on('request', (request) => {
     if (request.method() !== 'POST') return;
     if (new URL(request.url()).pathname !== '/api/orders') return;
@@ -128,7 +139,9 @@ function trackOrderRequests(page: Page): Array<{ idempotencyKey: string | undefi
   return requests;
 }
 
-function trackPaymentRequests(page: Page): Array<{ billId: string | undefined; idempotencyKey: string | undefined }> {
+function trackPaymentRequests(
+  page: Page,
+): Array<{ billId: string | undefined; idempotencyKey: string | undefined }> {
   const requests: Array<{ billId: string | undefined; idempotencyKey: string | undefined }> = [];
   page.on('request', (request) => {
     if (request.method() !== 'POST') return;
@@ -275,7 +288,9 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
     await page.getByRole('button', { name: 'Place Order' }).click();
     // A legacy HTTP 500 does not prove the order was rejected, so the result
     // stays unknown and the durable attempt remains available for recovery.
-    await expect(page.getByRole('status')).toContainText('FloCafe could not confirm whether the order or payment was saved.');
+    await expect(page.getByRole('status')).toContainText(
+      'FloCafe could not confirm whether the order or payment was saved.',
+    );
     await page.getByText('Show exactly what will be sent').click();
     const helpPayload = page.getByRole('main').locator('details pre');
     await expect(helpPayload).toContainText('"outcome": "unknown"');
@@ -338,7 +353,9 @@ test('postpaid: a confirmed sale whose cleanup is blocked never reuses the compl
   }
 });
 
-test('prepaid: a confirmed payment whose cleanup is blocked never reuses the completed keys', async ({ page }) => {
+test('prepaid: a confirmed payment whose cleanup is blocked never reuses the completed keys', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'prepaid');
   try {
@@ -374,7 +391,9 @@ test('prepaid: a confirmed payment whose cleanup is blocked never reuses the com
   }
 });
 
-test('prepaid: losing the retry state after the order was created replays that order instead of duplicating it', async ({ page }) => {
+test('prepaid: losing the retry state after the order was created replays that order instead of duplicating it', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'prepaid');
   try {
@@ -385,14 +404,23 @@ test('prepaid: losing the retry state after the order was created replays that o
     const captures: Array<Record<string, unknown>> = [];
     await page.route('**/api/diagnostics/capture', async (route) => {
       captures.push(route.request().postDataJSON() as Record<string, unknown>);
-      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ captured: true }) });
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ captured: true }),
+      });
     });
     page.on('response', async (response) => {
-      if (response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/orders') {
+      if (
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/orders'
+      ) {
         try {
           const body = await response.json();
           if (body?.order?.id) responseOrderIds.push(body.order.id as string | number);
-        } catch { /* ignore empty error responses */ }
+        } catch {
+          /* ignore empty error responses */
+        }
       }
     });
 
@@ -407,9 +435,13 @@ test('prepaid: losing the retry state after the order was created replays that o
 
     // The order exists, but the updated retry snapshot could not be stored, so
     // payment is stopped until recovery can replay the same order safely.
-    await expect(page.getByRole('status')).toContainText('The order was created, but checkout stopped before payment started.');
+    await expect(page.getByRole('status')).toContainText(
+      'The order was created, but checkout stopped before payment started.',
+    );
     expect(orderRequests, 'the order request itself was sent').toHaveLength(1);
-    expect(paymentRequests, 'payment does not start without a durable retry snapshot').toHaveLength(0);
+    expect(paymentRequests, 'payment does not start without a durable retry snapshot').toHaveLength(
+      0,
+    );
     await expect.poll(() => captures.length).toBe(1);
     expect(captures[0]).toMatchObject({
       capture_point: 'fc.client.order.create.retry_state_update',
@@ -440,12 +472,18 @@ test('prepaid: losing the retry state after the order was created replays that o
     expect(responseOrderIds[1]).toBe(responseOrderIds[0]);
     expect(paymentRequests).toHaveLength(1);
     const billResponse = await page.request.get(`${BASE}/api/bills/${paymentRequests[0].billId}`, {
-      headers: { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` },
+      headers: {
+        Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+      },
     });
     expect(billResponse.ok()).toBeTruthy();
     const persistedBill = (await billResponse.json()).bill as Record<string, unknown>;
     const persistedPayments = persistedBill.payment_details as unknown;
-    expect(Array.isArray(persistedPayments) ? persistedPayments : JSON.parse(String(persistedPayments || '[]'))).toHaveLength(1);
+    expect(
+      Array.isArray(persistedPayments)
+        ? persistedPayments
+        : JSON.parse(String(persistedPayments || '[]')),
+    ).toHaveLength(1);
     expect(
       orderRequests[1].idempotencyKey,
       'a checkout that lost its retry state replays the original order instead of creating a second one',
@@ -455,7 +493,9 @@ test('prepaid: losing the retry state after the order was created replays that o
   }
 });
 
-test('prepaid: losing the bill retry snapshot stops payment and reuses the original order key', async ({ page }) => {
+test('prepaid: losing the bill retry snapshot stops payment and reuses the original order key', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const originalBusiness = await setBillingType(page, 'prepaid');
   try {
@@ -466,14 +506,24 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     const captures: Array<Record<string, unknown>> = [];
     await page.route('**/api/diagnostics/capture', async (route) => {
       captures.push(route.request().postDataJSON() as Record<string, unknown>);
-      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ captured: true }) });
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ captured: true }),
+      });
     });
     page.on('response', async (response) => {
-      if (response.request().method() !== 'POST' || new URL(response.url()).pathname !== '/api/bills/generate') return;
+      if (
+        response.request().method() !== 'POST' ||
+        new URL(response.url()).pathname !== '/api/bills/generate'
+      )
+        return;
       try {
         const body = await response.json();
         if (body?.bill?.id) billIds.push(body.bill.id as string | number);
-      } catch { /* ignore empty error responses */ }
+      } catch {
+        /* ignore empty error responses */
+      }
     });
 
     await loginAndOpenPos(page);
@@ -483,7 +533,9 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
     await page.getByRole('button', { name: /Confirm Payment/ }).click();
 
-    await expect(page.getByRole('status')).toContainText('The order was created, but checkout stopped before payment started.');
+    await expect(page.getByRole('status')).toContainText(
+      'The order was created, but checkout stopped before payment started.',
+    );
     expect(orderRequests).toHaveLength(1);
     expect(billIds).toHaveLength(1);
     expect(paymentRequests).toHaveLength(0);
@@ -494,7 +546,10 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
       operation_id: orderRequests[0].operationId,
     });
 
-    await page.evaluate((lockKey: string) => window.localStorage.setItem(lockKey, 'unlocked'), ATTEMPT_WRITE_LOCK);
+    await page.evaluate(
+      (lockKey: string) => window.localStorage.setItem(lockKey, 'unlocked'),
+      ATTEMPT_WRITE_LOCK,
+    );
     await page.reload();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await addProductToCart(page);
@@ -504,14 +559,21 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     await page.getByRole('button', { name: /Confirm Payment/ }).click();
     await expect(page.getByText(/Order #.+ paid!/)).toBeVisible({ timeout: 30000 });
 
-    expect(orderRequests, 'the saved order snapshot is reused without another order mutation').toHaveLength(1);
+    expect(
+      orderRequests,
+      'the saved order snapshot is reused without another order mutation',
+    ).toHaveLength(1);
     expect(paymentRequests).toHaveLength(1);
     const finalBill = await page.request.get(`${BASE}/api/bills/${billIds[0]}`, {
-      headers: { Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}` },
+      headers: {
+        Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+      },
     });
     expect(finalBill.ok()).toBeTruthy();
     const payments = (await finalBill.json()).bill.payment_details as unknown;
-    expect(Array.isArray(payments) ? payments : JSON.parse(String(payments || '[]'))).toHaveLength(1);
+    expect(Array.isArray(payments) ? payments : JSON.parse(String(payments || '[]'))).toHaveLength(
+      1,
+    );
   } finally {
     await restoreBusiness(page.request, originalBusiness);
   }

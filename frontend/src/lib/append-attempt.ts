@@ -56,27 +56,35 @@ function getFingerprintDigest(fingerprint: string): string {
   const view = new DataView(padded.buffer);
   view.setUint32(padded.length - 8, Math.floor(bitLength / 0x1_0000_0000));
   view.setUint32(padded.length - 4, bitLength >>> 0);
-  let hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  let hash = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
   const words = new Uint32Array(64);
   for (let offset = 0; offset < padded.length; offset += 64) {
     for (let index = 0; index < 16; index += 1) words[index] = view.getUint32(offset + index * 4);
     for (let index = 16; index < 64; index += 1) {
       const first = words[index - 15];
       const second = words[index - 2];
-      words[index] = (words[index - 16]
-        + (rotateRight(first, 7) ^ rotateRight(first, 18) ^ (first >>> 3))
-        + words[index - 7]
-        + (rotateRight(second, 17) ^ rotateRight(second, 19) ^ (second >>> 10))) >>> 0;
+      words[index] =
+        (words[index - 16] +
+          (rotateRight(first, 7) ^ rotateRight(first, 18) ^ (first >>> 3)) +
+          words[index - 7] +
+          (rotateRight(second, 17) ^ rotateRight(second, 19) ^ (second >>> 10))) >>>
+        0;
     }
     let [a, b, c, d, e, f, g, h] = hash;
     for (let index = 0; index < 64; index += 1) {
-      const first = (h
-        + (rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25))
-        + ((e & f) ^ (~e & g))
-        + SHA256_CONSTANTS[index]
-        + words[index]) >>> 0;
-      const second = ((rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22))
-        + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      const first =
+        (h +
+          (rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25)) +
+          ((e & f) ^ (~e & g)) +
+          SHA256_CONSTANTS[index] +
+          words[index]) >>>
+        0;
+      const second =
+        ((rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22)) +
+          ((a & b) ^ (a & c) ^ (b & c))) >>>
+        0;
       h = g;
       g = f;
       f = e;
@@ -110,7 +118,9 @@ function hasConfirmedAppendTombstone(
   maxAgeMs: number,
 ): boolean {
   pruneConfirmedAppendTombstones(now, maxAgeMs);
-  const tombstone = confirmedAppendTombstones.get(getConfirmedAppendTombstoneKey(userId, idempotencyKey));
+  const tombstone = confirmedAppendTombstones.get(
+    getConfirmedAppendTombstoneKey(userId, idempotencyKey),
+  );
   return tombstone?.fingerprint === fingerprint;
 }
 
@@ -167,7 +177,9 @@ export function createSafeAppendAttemptStorage(
   const memory = new Map<string, string | null>();
   const unverifiedReads = new Set<string>();
   const unverifiedRemovals = new Set<string>();
-  const stores = [storage, ...fallbackStorages].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index) as AppendAttemptStorage[];
+  const stores = [storage, ...fallbackStorages].filter(
+    (candidate, index, all) => candidate && all.indexOf(candidate) === index,
+  ) as AppendAttemptStorage[];
   const readPersisted = (key: string): string | null => {
     let value: string | undefined;
     let unavailable = false;
@@ -175,10 +187,12 @@ export function createSafeAppendAttemptStorage(
       try {
         const persisted = candidate.getItem(key);
         if (persisted === null || persisted === undefined) continue;
-        if (value !== undefined && value !== persisted) throw new Error('Conflicting append retry state');
+        if (value !== undefined && value !== persisted)
+          throw new Error('Conflicting append retry state');
         value = persisted;
       } catch (error) {
-        if (error instanceof Error && error.message === 'Conflicting append retry state') throw error;
+        if (error instanceof Error && error.message === 'Conflicting append retry state')
+          throw error;
         unavailable = true;
       }
     }
@@ -196,7 +210,8 @@ export function createSafeAppendAttemptStorage(
       for (const candidate of stores) {
         try {
           candidate.setItem(key, value);
-          if (candidate.getItem(key) !== value) throw new Error('Append retry state was not persisted');
+          if (candidate.getItem(key) !== value)
+            throw new Error('Append retry state was not persisted');
           persisted = true;
         } catch {
           continue;
@@ -276,10 +291,12 @@ function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
 
 function removeAndVerify(storage: AppendAttemptStorage, key: string): boolean {
   const removed = storage.removeItem(key);
-  return removed !== false
-    && storage.getItem(key) === null
-    && !storage.hasUnverifiedRead?.(key)
-    && !storage.hasUnverifiedRemoval?.(key);
+  return (
+    removed !== false &&
+    storage.getItem(key) === null &&
+    !storage.hasUnverifiedRead?.(key) &&
+    !storage.hasUnverifiedRemoval?.(key)
+  );
 }
 
 function persistCompletionRecord(
@@ -297,7 +314,9 @@ function persistCompletionRecord(
   const cookieStorage = createCookieCompletionStorage();
   if (!cookieStorage) return false;
   try {
-    const completion = JSON.parse(value) as Partial<AppendAttemptCompletion> & { completed?: boolean };
+    const completion = JSON.parse(value) as Partial<AppendAttemptCompletion> & {
+      completed?: boolean;
+    };
     const cookieValue = JSON.stringify({
       completed: completion.completed,
       userId: completion.userId,
@@ -320,13 +339,16 @@ function normalizeAppendFingerprint(fingerprint: string): string | null {
       special_instructions?: unknown;
     };
     if (
-      (typeof payload.order_id !== 'string' && typeof payload.order_id !== 'number')
-      || !Array.isArray(payload.items)
-    ) return null;
+      (typeof payload.order_id !== 'string' && typeof payload.order_id !== 'number') ||
+      !Array.isArray(payload.items)
+    )
+      return null;
     return buildAppendItemsFingerprint(
       String(payload.order_id),
       payload.items,
-      typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
+      typeof payload.special_instructions === 'string'
+        ? payload.special_instructions || undefined
+        : undefined,
     );
   } catch {
     return null;
@@ -348,16 +370,21 @@ export class LegacyAppendAttemptConflictError extends Error {
   }
 }
 
-function isCompletionRecord(value: Partial<AppendAttemptCompletion> & { completed?: unknown }): boolean {
-  return value.completed === true
-    && typeof value.userId === 'string'
-    && typeof value.idempotencyKey === 'string'
-    && (typeof value.fingerprint === 'string' || typeof value.fingerprintDigest === 'string')
-    && typeof value.completedAt === 'number';
+function isCompletionRecord(
+  value: Partial<AppendAttemptCompletion> & { completed?: unknown },
+): boolean {
+  return (
+    value.completed === true &&
+    typeof value.userId === 'string' &&
+    typeof value.idempotencyKey === 'string' &&
+    (typeof value.fingerprint === 'string' || typeof value.fingerprintDigest === 'string') &&
+    typeof value.completedAt === 'number'
+  );
 }
 
 function readCompletionRecord(storage: AppendAttemptStorage, key: string): string | null {
-  if (key.includes(APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX)) return createCookieCompletionStorage()?.getItem(key) ?? null;
+  if (key.includes(APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX))
+    return createCookieCompletionStorage()?.getItem(key) ?? null;
   return storage.getItem(key);
 }
 
@@ -384,16 +411,17 @@ function completedAttemptMatches(
   try {
     const current = JSON.parse(raw) as Partial<AppendAttempt>;
     if (
-      current.idempotencyKey !== completion.idempotencyKey
-      || (typeof completion.fingerprint === 'string'
+      current.idempotencyKey !== completion.idempotencyKey ||
+      (typeof completion.fingerprint === 'string'
         ? current.fingerprint !== completion.fingerprint
         : getFingerprintDigest(current.fingerprint || '') !== completion.fingerprintDigest)
-    ) return false;
+    )
+      return false;
     const removed = storage.removeItem(attemptKey);
     if (
-      removed !== false
-      && storage.getItem(attemptKey) === null
-      && !storage.hasUnverifiedRemoval?.(attemptKey)
+      removed !== false &&
+      storage.getItem(attemptKey) === null &&
+      !storage.hasUnverifiedRemoval?.(attemptKey)
     ) {
       removeCompletionRecord(storage, completionKey);
     }
@@ -421,17 +449,26 @@ function hasCompletedAttempt(
     try {
       const completion = JSON.parse(raw) as Partial<AppendAttemptCompletion>;
       if (
-        completion.userId !== userId
-        || typeof completion.idempotencyKey !== 'string'
-        || !isValidIdempotencyKey(completion.idempotencyKey)
-        || (typeof completion.fingerprint !== 'string' && typeof completion.fingerprintDigest !== 'string')
-        || typeof completion.completedAt !== 'number'
-        || isExpired(completion.completedAt, now, maxAgeMs)
+        completion.userId !== userId ||
+        typeof completion.idempotencyKey !== 'string' ||
+        !isValidIdempotencyKey(completion.idempotencyKey) ||
+        (typeof completion.fingerprint !== 'string' &&
+          typeof completion.fingerprintDigest !== 'string') ||
+        typeof completion.completedAt !== 'number' ||
+        isExpired(completion.completedAt, now, maxAgeMs)
       ) {
         removeCompletionRecord(storage, completionKey);
         continue;
       }
-      if (completedAttemptMatches(storage, attemptKey, completionKey, completion as AppendAttemptCompletion)) return true;
+      if (
+        completedAttemptMatches(
+          storage,
+          attemptKey,
+          completionKey,
+          completion as AppendAttemptCompletion,
+        )
+      )
+        return true;
     } catch {
       removeCompletionRecord(storage, completionKey);
     }
@@ -495,22 +532,30 @@ export function migrateLegacyAppendAttempt(
     fingerprint: normalizedFingerprint,
     idempotencyKey: parsed.idempotencyKey,
     items: payload.items,
-    specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
+    specialInstructions:
+      typeof payload.special_instructions === 'string'
+        ? payload.special_instructions || undefined
+        : undefined,
     createdAt,
   };
   if (existingRaw !== null) {
     let existing: Partial<AppendAttempt> | null = null;
-    try { existing = JSON.parse(existingRaw) as Partial<AppendAttempt>; } catch { existing = null; }
-    const equivalent = !!existing
-      && existing.userId === attempt.userId
-      && String(existing.orderId) === attempt.orderId
-      && existing.idempotencyKey === attempt.idempotencyKey
-      && typeof existing.fingerprint === 'string'
-      && normalizeAppendFingerprint(existing.fingerprint) === attempt.fingerprint
-      && Array.isArray(existing.items)
-      && JSON.stringify(existing.items) === JSON.stringify(attempt.items)
-      && (existing.specialInstructions || undefined) === (attempt.specialInstructions || undefined)
-      && typeof existing.createdAt === 'number';
+    try {
+      existing = JSON.parse(existingRaw) as Partial<AppendAttempt>;
+    } catch {
+      existing = null;
+    }
+    const equivalent =
+      !!existing &&
+      existing.userId === attempt.userId &&
+      String(existing.orderId) === attempt.orderId &&
+      existing.idempotencyKey === attempt.idempotencyKey &&
+      typeof existing.fingerprint === 'string' &&
+      normalizeAppendFingerprint(existing.fingerprint) === attempt.fingerprint &&
+      Array.isArray(existing.items) &&
+      JSON.stringify(existing.items) === JSON.stringify(attempt.items) &&
+      (existing.specialInstructions || undefined) === (attempt.specialInstructions || undefined) &&
+      typeof existing.createdAt === 'number';
     if (!equivalent) {
       if (options.userId === parsed.userId) throw new LegacyAppendAttemptConflictError();
       return attempt;
@@ -518,14 +563,17 @@ export function migrateLegacyAppendAttempt(
     const existingCreatedAt = existing?.createdAt as number;
     const selectedAttempt: AppendAttempt = {
       ...attempt,
-      createdAt: !isExpired(existingCreatedAt, now, maxAgeMs) && existingCreatedAt > attempt.createdAt
-        ? existingCreatedAt
-        : attempt.createdAt,
-      orderNumber: typeof existing?.orderNumber === 'string' ? existing.orderNumber : attempt.orderNumber,
+      createdAt:
+        !isExpired(existingCreatedAt, now, maxAgeMs) && existingCreatedAt > attempt.createdAt
+          ? existingCreatedAt
+          : attempt.createdAt,
+      orderNumber:
+        typeof existing?.orderNumber === 'string' ? existing.orderNumber : attempt.orderNumber,
     };
     const serializedSelectedAttempt = JSON.stringify(selectedAttempt);
     storage.setItem(scopedKey, serializedSelectedAttempt);
-    if (storage.getItem(scopedKey) !== serializedSelectedAttempt) throw new Error('Unable to complete legacy append retry migration');
+    if (storage.getItem(scopedKey) !== serializedSelectedAttempt)
+      throw new Error('Unable to complete legacy append retry migration');
     if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
       throw new Error('Unable to complete legacy append retry migration');
     }
@@ -533,33 +581,41 @@ export function migrateLegacyAppendAttempt(
   }
   const serializedAttempt = JSON.stringify(attempt);
   storage.setItem(scopedKey, serializedAttempt);
-  if (storage.getItem(scopedKey) !== serializedAttempt) throw new Error('Unable to complete legacy append retry migration');
+  if (storage.getItem(scopedKey) !== serializedAttempt)
+    throw new Error('Unable to complete legacy append retry migration');
   if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
     throw new Error('Unable to complete legacy append retry migration');
   }
   return attempt;
 }
 
-function parseStoredAttempt(storage: AppendAttemptStorage, key: string, now: number, maxAgeMs: number): AppendAttempt | null {
+function parseStoredAttempt(
+  storage: AppendAttemptStorage,
+  key: string,
+  now: number,
+  maxAgeMs: number,
+): AppendAttempt | null {
   const raw = storage.getItem(key);
   if (storage.hasUnverifiedRead?.(key)) throw new Error('Unable to verify append retry state');
   if (!raw) return null;
 
   try {
     const parsed = JSON.parse(raw) as Partial<AppendAttempt>;
-    if (isCompletionRecord(parsed as Partial<AppendAttemptCompletion> & { completed?: unknown })) return null;
+    if (isCompletionRecord(parsed as Partial<AppendAttemptCompletion> & { completed?: unknown }))
+      return null;
     if (
-      !parsed
-      || typeof parsed.userId !== 'string'
-      || typeof parsed.orderId !== 'string'
-      || typeof parsed.fingerprint !== 'string'
-      || typeof parsed.idempotencyKey !== 'string'
-      || !isValidIdempotencyKey(parsed.idempotencyKey)
-      || !Array.isArray(parsed.items)
-      || (parsed.specialInstructions !== undefined && typeof parsed.specialInstructions !== 'string')
-      || (parsed.orderNumber !== undefined && typeof parsed.orderNumber !== 'string')
-      || typeof parsed.createdAt !== 'number'
-      || isExpired(parsed.createdAt, now, maxAgeMs)
+      !parsed ||
+      typeof parsed.userId !== 'string' ||
+      typeof parsed.orderId !== 'string' ||
+      typeof parsed.fingerprint !== 'string' ||
+      typeof parsed.idempotencyKey !== 'string' ||
+      !isValidIdempotencyKey(parsed.idempotencyKey) ||
+      !Array.isArray(parsed.items) ||
+      (parsed.specialInstructions !== undefined &&
+        typeof parsed.specialInstructions !== 'string') ||
+      (parsed.orderNumber !== undefined && typeof parsed.orderNumber !== 'string') ||
+      typeof parsed.createdAt !== 'number' ||
+      isExpired(parsed.createdAt, now, maxAgeMs)
     ) {
       storage.removeItem(key);
       return null;
@@ -577,12 +633,14 @@ interface StoredAttempt {
 }
 
 function appendAttemptsMatch(first: AppendAttempt, second: AppendAttempt): boolean {
-  return first.userId === second.userId
-    && first.orderId === second.orderId
-    && first.fingerprint === second.fingerprint
-    && first.idempotencyKey === second.idempotencyKey
-    && JSON.stringify(first.items) === JSON.stringify(second.items)
-    && (first.specialInstructions || undefined) === (second.specialInstructions || undefined);
+  return (
+    first.userId === second.userId &&
+    first.orderId === second.orderId &&
+    first.fingerprint === second.fingerprint &&
+    first.idempotencyKey === second.idempotencyKey &&
+    JSON.stringify(first.items) === JSON.stringify(second.items) &&
+    (first.specialInstructions || undefined) === (second.specialInstructions || undefined)
+  );
 }
 
 function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string): void {
@@ -590,7 +648,13 @@ function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string):
   const retryKey = getAppendAttemptCompletionRetryStorageKey(userId);
   const cookieKey = getAppendAttemptCompletionCookieStorageKey(userId);
   const attemptKey = getAppendAttemptStorageKey(userId);
-  const probe = JSON.stringify({ completed: true, userId, idempotencyKey: 'append-storage-probe', fingerprint: '{}', completedAt: Date.now() });
+  const probe = JSON.stringify({
+    completed: true,
+    userId,
+    idempotencyKey: 'append-storage-probe',
+    fingerprint: '{}',
+    completedAt: Date.now(),
+  });
   const cookieStorage = createCookieCompletionStorage();
   if (cookieStorage) {
     try {
@@ -602,25 +666,30 @@ function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string):
         completedAt: Date.now(),
       });
       cookieStorage.setItem(cookieKey, cookieProbe);
-      if (cookieStorage.removeItem(cookieKey) === false || cookieStorage.getItem(cookieKey) !== null) {
+      if (
+        cookieStorage.removeItem(cookieKey) === false ||
+        cookieStorage.getItem(cookieKey) !== null
+      ) {
         throw new Error('Completion cookie cleanup was not persisted');
       }
-    } catch {
-    }
+    } catch {}
   }
   try {
     storage.setItem(markerKey, probe);
-    if (!removeAndVerify(storage, markerKey)) throw new Error('Completion marker cleanup was not persisted');
+    if (!removeAndVerify(storage, markerKey))
+      throw new Error('Completion marker cleanup was not persisted');
     return;
   } catch {
     try {
       storage.setItem(retryKey, probe);
-      if (!removeAndVerify(storage, retryKey)) throw new Error('Completion retry cleanup was not persisted');
+      if (!removeAndVerify(storage, retryKey))
+        throw new Error('Completion retry cleanup was not persisted');
       return;
     } catch {
       try {
         storage.setItem(attemptKey, probe);
-        if (!removeAndVerify(storage, attemptKey)) throw new Error('Completion fallback cleanup was not persisted');
+        if (!removeAndVerify(storage, attemptKey))
+          throw new Error('Completion fallback cleanup was not persisted');
       } catch {
         throw new Error('Unable to persist append retry state');
       }
@@ -655,10 +724,15 @@ function readUserAttempt(
   assertVerifiedCompletionReads(storage, userId);
   if (completed) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
-  if (scoped && hasConfirmedAppendTombstone(userId, scoped.idempotencyKey, scoped.fingerprint, now, maxAgeMs)) return null;
+  if (
+    scoped &&
+    hasConfirmedAppendTombstone(userId, scoped.idempotencyKey, scoped.fingerprint, now, maxAgeMs)
+  )
+    return null;
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
   if (legacy?.userId === userId) {
-    if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy)) return { attempt: scoped, key: scopedKey };
+    if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy))
+      return { attempt: scoped, key: scopedKey };
     if (!scoped) storage.setItem(scopedKey, JSON.stringify(legacy));
     if (!removeAndVerify(storage, APPEND_ATTEMPT_STORAGE_KEY)) {
       throw new Error('Unable to complete append retry migration');
@@ -693,9 +767,9 @@ export function getOrCreateAppendAttempt(
   const prior = readUserAttempt(storage, options.userId, now, maxAgeMs);
 
   if (
-    prior
-    && prior.attempt.orderId === orderId
-    && prior.attempt.fingerprint === options.fingerprint
+    prior &&
+    prior.attempt.orderId === orderId &&
+    prior.attempt.fingerprint === options.fingerprint
   ) {
     return prior.attempt;
   }
@@ -736,9 +810,10 @@ export function clearAppendAttempt(
     if (!raw) return true;
     const current = JSON.parse(raw) as Partial<AppendAttempt>;
     if (
-      current.idempotencyKey !== completedAttempt.idempotencyKey
-      || current.fingerprint !== completedAttempt.fingerprint
-    ) return true;
+      current.idempotencyKey !== completedAttempt.idempotencyKey ||
+      current.fingerprint !== completedAttempt.fingerprint
+    )
+      return true;
     const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
     const completionRecord = {
       completed: true,
@@ -752,7 +827,8 @@ export function clearAppendAttempt(
     const retryKey = getAppendAttemptCompletionRetryStorageKey(completedAttempt.userId);
     const cookieKey = getAppendAttemptCompletionCookieStorageKey(completedAttempt.userId);
     markerPersisted = persistCompletionRecord(storage, markerKey, serializedCompletion, cookieKey);
-    if (!markerPersisted) markerPersisted = persistCompletionRecord(storage, retryKey, serializedCompletion, cookieKey);
+    if (!markerPersisted)
+      markerPersisted = persistCompletionRecord(storage, retryKey, serializedCompletion, cookieKey);
     if (!markerPersisted) {
       markerPersisted = persistCompletionRecord(storage, key, serializedCompletion, cookieKey);
     }
@@ -765,10 +841,10 @@ export function clearAppendAttempt(
     }
     const removed = storage.removeItem(key);
     if (
-      removed !== false
-      && storage.getItem(key) === null
-      && markerPersisted
-      && !storage.hasUnverifiedRemoval?.(key)
+      removed !== false &&
+      storage.getItem(key) === null &&
+      markerPersisted &&
+      !storage.hasUnverifiedRemoval?.(key)
     ) {
       storage.removeItem(markerKey);
       storage.removeItem(retryKey);

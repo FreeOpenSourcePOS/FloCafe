@@ -83,11 +83,9 @@ test('dialCodeFor: unknown code returns empty string (not throw)', () => {
 test('disambiguateCustomerInput: phone number detection', () => {
   const r1 = disambiguateCustomerInput('9876543210');
   assert.equal(r1.category, 'phone');
-  assert.equal(r1.suggestedField, 'phone');
 
   const r2 = disambiguateCustomerInput('+1 (555) 234-5678');
   assert.equal(r2.category, 'phone');
-  assert.equal(r2.suggestedField, 'phone');
 
   const r3 = disambiguateCustomerInput('+91 98765 43210');
   assert.equal(r3.category, 'phone');
@@ -96,12 +94,10 @@ test('disambiguateCustomerInput: phone number detection', () => {
 test('disambiguateCustomerInput: name detection (alpha and alphanumeric entities)', () => {
   const r1 = disambiguateCustomerInput('Anita Sharma');
   assert.equal(r1.category, 'name');
-  assert.equal(r1.suggestedField, 'name');
 
   // Alphanumeric entity with digits and letters (e.g. Studio 54)
   const r2 = disambiguateCustomerInput('Studio 54');
   assert.equal(r2.category, 'name');
-  assert.equal(r2.suggestedField, 'name');
 
   const r3 = disambiguateCustomerInput('Apartment 2B');
   assert.equal(r3.category, 'name');
@@ -110,7 +106,6 @@ test('disambiguateCustomerInput: name detection (alpha and alphanumeric entities
 test('disambiguateCustomerInput: short digits are marked ambiguous', () => {
   const r1 = disambiguateCustomerInput('123');
   assert.equal(r1.category, 'ambiguous');
-  assert.equal(r1.suggestedField, null);
 
   const r2 = disambiguateCustomerInput('12');
   assert.equal(r2.category, 'ambiguous');

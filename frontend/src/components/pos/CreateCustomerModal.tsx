@@ -35,8 +35,7 @@ export default function CreateCustomerModal({
   const initialClassification = disambiguateCustomerInput(initialSearch);
   const targetField =
     initialField ??
-    initialClassification.suggestedField ??
-    (initialClassification.category === 'phone' ? 'phone' : 'name');
+    (initialClassification.category === 'name' ? 'name' : 'phone');
   const isPhoneInitial = targetField === 'phone';
 
   const [name, setName] = useState(isPhoneInitial ? '' : initialSearch.trim());

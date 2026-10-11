@@ -192,7 +192,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   }
 
   const actions: IntentAction[] = [];
-  if (trimmedQuery.length >= 2 && searchSucceeded && !loading) {
+  if (trimmedQuery.length >= 2 && searchSucceeded && !loading && !trimmedQuery.includes('@')) {
     if (disambiguation.category === 'phone') {
       actions.push({
         id: 'create-phone',

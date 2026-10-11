@@ -97,6 +97,21 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   await expect(modal).not.toBeVisible();
   await page.unroute('**/api/customers-search**');
 
+  const unmatchedEmailQuery = `unmatched-${attemptId}@example.com`;
+  await page.route('**/api/customers-search**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('q') === unmatchedEmailQuery) {
+      await route.fulfill({ json: [] });
+      return;
+    }
+    await route.continue();
+  });
+  await customerSearchInput.fill(unmatchedEmailQuery);
+  await expect(page.getByText('No matching results')).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button').filter({ hasText: unmatchedEmailQuery }).first()).toBeHidden();
+  await customerSearchInput.press('Enter');
+  await expect(modal).not.toBeVisible();
+  await page.unroute('**/api/customers-search**');
+
   // Ambiguous digits require an explicit action choice.
   await page.route('**/api/customers-search?q=123', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/customers-search?q=234', (route) => route.fulfill({ json: [] }));

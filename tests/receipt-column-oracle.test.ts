@@ -129,7 +129,10 @@ function buildFixture(): {
   // The Persian item is refused (not printed) by a printer with no shaping
   // support, which empties the whole backend receipt; drop it for both paths
   // exactly as the cross-renderer parity harness does.
-  const order = { ...fullOrder, items: fullOrder.items.filter((item: any) => item.product_name !== 'چای زعفرانی مخصوص') };
+  const order = {
+    ...fullOrder,
+    items: fullOrder.items.filter((item: any) => item.product_name !== 'چای زعفرانی مخصوص'),
+  };
   return {
     order,
     bill: { ...fullBill, order },
@@ -141,13 +144,19 @@ function buildFixture(): {
 const { order, bill, business, tenant } = buildFixture();
 
 function measureBackend(template: (typeof TEMPLATES)[number], columns: number): EscPosMeasurement {
-  return measureEscPos(formatReceipt(order, bill, business, template, columns, false, false, undefined, []));
+  return measureEscPos(
+    formatReceipt(order, bill, business, template, columns, false, false, undefined, []),
+  );
 }
 
-function measureFrontend(template: (typeof TEMPLATES)[number], paperWidth: (typeof PAPER_SIZES)[number]): EscPosMeasurement {
-  const bytes = template === 'classic'
-    ? fe.receiptEncoder.buildClassicReceiptBytes(bill, tenant, { paperWidth }, [])
-    : fe.receiptEncoder.buildCompactReceiptBytes(bill, tenant, { paperWidth }, []);
+function measureFrontend(
+  template: (typeof TEMPLATES)[number],
+  paperWidth: (typeof PAPER_SIZES)[number],
+): EscPosMeasurement {
+  const bytes =
+    template === 'classic'
+      ? fe.receiptEncoder.buildClassicReceiptBytes(bill, tenant, { paperWidth }, [])
+      : fe.receiptEncoder.buildCompactReceiptBytes(bill, tenant, { paperWidth }, []);
   return measureEscPos(bytes);
 }
 
@@ -160,19 +169,30 @@ function measureAll(): { title: string; measurement: EscPosMeasurement }[] {
   const measured: { title: string; measurement: EscPosMeasurement }[] = [];
   for (const template of TEMPLATES) {
     for (const columns of BACKEND_COLUMNS) {
-      measured.push({ title: `backend ${template} ${columns} columns`, measurement: measureBackend(template, columns) });
+      measured.push({
+        title: `backend ${template} ${columns} columns`,
+        measurement: measureBackend(template, columns),
+      });
     }
   }
   for (const template of TEMPLATES) {
     for (const paperWidth of PAPER_SIZES) {
-      measured.push({ title: `frontend ${template} ${paperWidth}mm`, measurement: measureFrontend(template, paperWidth) });
+      measured.push({
+        title: `frontend ${template} ${paperWidth}mm`,
+        measurement: measureFrontend(template, paperWidth),
+      });
     }
   }
   return measured;
 }
 
 function goldenText(): string {
-  return GOLDEN_HEADER + measureAll().map(({ title, measurement }) => formatGoldenBlock(title, measurement)).join('');
+  return (
+    GOLDEN_HEADER +
+    measureAll()
+      .map(({ title, measurement }) => formatGoldenBlock(title, measurement))
+      .join('')
+  );
 }
 
 if (process.env.RECEIPT_COLUMN_GOLDEN === 'write') {
@@ -180,7 +200,9 @@ if (process.env.RECEIPT_COLUMN_GOLDEN === 'write') {
   fs.writeFileSync(GOLDEN_PATH, goldenText());
 }
 
-const goldenBlocks = new Map(parseGoldenBlocks(fs.readFileSync(GOLDEN_PATH, 'utf8')).map((block) => [block.title, block]));
+const goldenBlocks = new Map(
+  parseGoldenBlocks(fs.readFileSync(GOLDEN_PATH, 'utf8')).map((block) => [block.title, block]),
+);
 const measured = measureAll();
 
 test('receipt column oracle: the byte walk consumes every command it claims to understand', () => {
@@ -189,7 +211,11 @@ test('receipt column oracle: the byte walk consumes every command it claims to u
   // anything. This catches a leaked byte only when that byte is a control
   // byte; the arity check below covers the printable case.
   for (const { title, measurement } of measured) {
-    assert.equal(measurement.unconsumedControlBytes, 0, `${title}: unconsumed ESC/POS command bytes in the stream`);
+    assert.equal(
+      measurement.unconsumedControlBytes,
+      0,
+      `${title}: unconsumed ESC/POS command bytes in the stream`,
+    );
   }
 });
 
@@ -217,21 +243,34 @@ test('receipt column oracle: the byte walk parameterises every command per the E
       const override = STREAM_ARITY_OVERRIDE.get(key);
       const spec = SPEC_PARAM_COUNT.get(key);
       if (override === undefined && spec === undefined) {
-        return [`${label}: the stream emits this command but neither the reference nor a pinned deviation covers it`];
+        return [
+          `${label}: the stream emits this command but neither the reference nor a pinned deviation covers it`,
+        ];
       }
       if (override !== undefined) {
         return override === params
           ? []
-          : [`${label}: pinned stream deviation says ${override} parameter(s), walk consumed ${params}`];
+          : [
+              `${label}: pinned stream deviation says ${override} parameter(s), walk consumed ${params}`,
+            ];
       }
-      return spec === params ? [] : [`${label}: ESC/POS reference says ${spec} parameter(s), walk consumed ${params}`];
+      return spec === params
+        ? []
+        : [`${label}: ESC/POS reference says ${spec} parameter(s), walk consumed ${params}`];
     });
-  assert.deepEqual(wrong, [], 'command arity disagrees with ESC/POS, so cell counts would be wrong');
+  assert.deepEqual(
+    wrong,
+    [],
+    'command arity disagrees with ESC/POS, so cell counts would be wrong',
+  );
 });
 
 test('receipt column oracle: every configuration renders exactly one column budget', () => {
   for (const { title, measurement } of measured) {
-    assert.ok(measurement.measuredRuleWidths.length > 0, `${title}: no full-width rule rendered, nothing to measure`);
+    assert.ok(
+      measurement.measuredRuleWidths.length > 0,
+      `${title}: no full-width rule rendered, nothing to measure`,
+    );
     assert.equal(
       measurement.measuredRuleWidths.length,
       1,
@@ -244,7 +283,11 @@ test('receipt column oracle: measured columns match the golden fixture', () => {
   for (const { title, measurement } of measured) {
     const block = goldenBlocks.get(title);
     assert.ok(block, `${title}: missing from ${path.basename(GOLDEN_PATH)}`);
-    assert.equal(measurement.measuredRuleWidths.join(','), block.rule.join(','), `${title}: measured rule width`);
+    assert.equal(
+      measurement.measuredRuleWidths.join(','),
+      block.rule.join(','),
+      `${title}: measured rule width`,
+    );
     assert.equal(measurement.maxFontACells, block.maxFontA, `${title}: widest font-A line`);
     assert.equal(measurement.maxCells, block.max, `${title}: widest line of any font or size`);
   }
@@ -255,7 +298,11 @@ test('receipt column oracle: rendered lines match the golden fixture', () => {
     const block = goldenBlocks.get(title);
     assert.ok(block, `${title}: missing from ${path.basename(GOLDEN_PATH)}`);
     const actual = formatGoldenBlock(title, measurement).split('\n').slice(2).join('\n');
-    assert.equal(actual, block.body, `${title}: rendered receipt changed; a width change reflows these lines`);
+    assert.equal(
+      actual,
+      block.body,
+      `${title}: rendered receipt changed; a width change reflows these lines`,
+    );
   }
 });
 
@@ -273,8 +320,15 @@ test('receipt column oracle: the backend renders at the column count it is drive
   for (const template of TEMPLATES) {
     for (const columns of BACKEND_COLUMNS) {
       const { measuredRuleWidths, maxFontACells } = measureBackend(template, columns);
-      assert.deepEqual(measuredRuleWidths, [columns], `backend ${template}: rule width at ${columns} columns`);
-      assert.ok(maxFontACells <= columns, `backend ${template}: widest line ${maxFontACells} exceeds ${columns}`);
+      assert.deepEqual(
+        measuredRuleWidths,
+        [columns],
+        `backend ${template}: rule width at ${columns} columns`,
+      );
+      assert.ok(
+        maxFontACells <= columns,
+        `backend ${template}: widest line ${maxFontACells} exceeds ${columns}`,
+      );
     }
   }
 });
@@ -291,7 +345,11 @@ test('receipt column oracle: every supported printer profile declares the column
   for (const [id, columns] of PROFILE_COLUMNS) {
     const profile = profiles.find((candidate) => candidate.id === id);
     assert.ok(profile, `printer profile ${id} is missing`);
-    assert.equal(profile.fontAColumns, columns, `profile ${id}: fontAColumns moved off its pinned column count`);
+    assert.equal(
+      profile.fontAColumns,
+      columns,
+      `profile ${id}: fontAColumns moved off its pinned column count`,
+    );
   }
 });
 
@@ -303,7 +361,11 @@ test('receipt column oracle: the backend renders at the column count every suppo
     const columns = PROFILE_COLUMNS.get(profile.id);
     assert.ok(columns, `profile ${profile.id}: no pinned column count`);
     const { measuredRuleWidths } = measureBackend('classic', columns);
-    assert.deepEqual(measuredRuleWidths, [columns], `profile ${profile.id}: measured rule width at the pinned ${columns} columns`);
+    assert.deepEqual(
+      measuredRuleWidths,
+      [columns],
+      `profile ${profile.id}: measured rule width at the pinned ${columns} columns`,
+    );
   }
 });
 
@@ -312,7 +374,10 @@ test('receipt column oracle: the backend renders at the column count every suppo
 // ---------------------------------------------------------------------------
 
 /** Generic ESC/POS profile for a paper size, the backend's column source. */
-function genericProfileFor(paperWidth: (typeof PAPER_SIZES)[number]): { id: string; fontAColumns: number } {
+function genericProfileFor(paperWidth: (typeof PAPER_SIZES)[number]): {
+  id: string;
+  fontAColumns: number;
+} {
   const id = `generic-escpos-${paperWidth}`;
   const profile = getSupportedPrinterProfiles().find((candidate) => candidate.id === id);
   assert.ok(profile, `printer profile ${id} is missing`);
@@ -341,17 +406,28 @@ test('receipt column oracle: the cross-path column table is measured end to end'
   // is deferred, so this prints the table and only checks the measurement is
   // coherent (both sides rendered exactly one width, and each is its own input).
   for (const row of crossPath) {
-    assert.ok(row.backend > 0 && row.frontend > 0, `${row.paperWidth}mm: a path rendered no measurable width`);
+    assert.ok(
+      row.backend > 0 && row.frontend > 0,
+      `${row.paperWidth}mm: a path rendered no measurable width`,
+    );
     console.log(
-      `  ${row.paperWidth}mm: backend ${row.profileId}=${row.backend} columns, `
-      + `frontend paperWidth=${row.paperWidth}=${row.frontend} columns, `
-      + `${row.backend === row.frontend ? 'agree' : `DIVERGE by ${row.frontend - row.backend}`}`,
+      `  ${row.paperWidth}mm: backend ${row.profileId}=${row.backend} columns, ` +
+        `frontend paperWidth=${row.paperWidth}=${row.frontend} columns, ` +
+        `${row.backend === row.frontend ? 'agree' : `DIVERGE by ${row.frontend - row.backend}`}`,
     );
   }
   const measured58 = crossPath.find((row) => row.paperWidth === 58);
   assert.ok(measured58, '58mm row missing from the cross-path table');
-  assert.equal(measured58.backend, measured58.profileColumns, '58mm: backend must render the column count its profile declares');
-  assert.equal(measured58.backend, measured58.frontend, '58mm: both render paths must render the same number of columns');
+  assert.equal(
+    measured58.backend,
+    measured58.profileColumns,
+    '58mm: backend must render the column count its profile declares',
+  );
+  assert.equal(
+    measured58.backend,
+    measured58.frontend,
+    '58mm: both render paths must render the same number of columns',
+  );
 });
 
 test('receipt column oracle: every paper size the frontend reaches is on the shared width ladder', () => {
@@ -361,15 +437,15 @@ test('receipt column oracle: every paper size the frontend reaches is on the sha
   for (const row of crossPath) {
     assert.ok(
       BACKEND_COLUMNS.includes(row.frontend as (typeof BACKEND_COLUMNS)[number]),
-      `${row.paperWidth}mm: the frontend renders ${row.frontend} columns, which is not one of the shared rungs `
-      + `(${BACKEND_COLUMNS.join(', ')}) so no same-width comparison exists`,
+      `${row.paperWidth}mm: the frontend renders ${row.frontend} columns, which is not one of the shared rungs ` +
+        `(${BACKEND_COLUMNS.join(', ')}) so no same-width comparison exists`,
     );
     console.log(
-      `  ladder: frontend ${row.paperWidth}mm=${row.frontend}, `
-      + `backend profile ${row.profileId}=${row.profileColumns}`
-      + (FRONTEND_REACHABLE_COLUMNS.has(row.profileColumns)
-        ? ' (same-width comparison exists)'
-        : ' (no same-width comparison: the frontend cannot be driven at these columns)'),
+      `  ladder: frontend ${row.paperWidth}mm=${row.frontend}, ` +
+        `backend profile ${row.profileId}=${row.profileColumns}` +
+        (FRONTEND_REACHABLE_COLUMNS.has(row.profileColumns)
+          ? ' (same-width comparison exists)'
+          : ' (no same-width comparison: the frontend cannot be driven at these columns)'),
     );
   }
 });

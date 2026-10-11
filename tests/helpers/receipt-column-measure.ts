@@ -30,20 +30,26 @@ function paramTable(zero: number[], two: number[], three: number[]): CommandTabl
 }
 
 const ESC_PARAMS = paramTable(
-  [0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f,
-    0x40, 0x41, 0x4a, 0x4c, 0x50, 0x51, 0x52, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5c, 0x5d, 0x5e],
+  [
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f, 0x40,
+    0x41, 0x4a, 0x4c, 0x50, 0x51, 0x52, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5c, 0x5d, 0x5e,
+  ],
   [0x23, 0x24, 0x26, 0x5f],
   [0x2a],
 );
 const GS_PARAMS = paramTable(
-  [0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f,
-    0x63, 0x72, 0x76, 0x7a],
+  [
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3c, 0x3d, 0x3e, 0x3f, 0x63,
+    0x72, 0x76, 0x7a,
+  ],
   [0x23, 0x24, 0x28, 0x29, 0x2c, 0x2f, 0x40, 0x57, 0x58, 0x65, 0x69, 0x6b, 0x6c],
   [0x2a, 0x2e, 0x3b, 0x70, 0x78],
 );
 const FS_PARAMS = paramTable(
-  [0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x2e, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
-    0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f],
+  [
+    0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x2e, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36,
+    0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f,
+  ],
   [],
   [],
 );
@@ -107,7 +113,8 @@ export function measureEscPos(data: Buffer | Uint8Array): EscPosMeasurement {
   const flush = (): void => {
     // Rules print as the CP437 box-drawing glyphs; show them as those instead
     // of the latin1 stand-ins so a golden diff shows the receipt, not mojibake.
-    const text = Buffer.from(lineBytes).toString('latin1')
+    const text = Buffer.from(lineBytes)
+      .toString('latin1')
       .replace(/\u00c4/g, '\u2500')
       .replace(/\u00cd/g, '\u2550')
       .replace(/\s+$/, '');
@@ -133,7 +140,7 @@ export function measureEscPos(data: Buffer | Uint8Array): EscPosMeasurement {
       if (byte === 0x1b) {
         // ESC ! n: bit 5 is double width, bit 0 selects font B.
         if (command === 0x21) {
-          sizeWidth = (bytes[i + 2] & 0x20) ? 2 : 1;
+          sizeWidth = bytes[i + 2] & 0x20 ? 2 : 1;
           fontB = (bytes[i + 2] & 0x01) === 1;
         }
         if (command === 0x4d) fontB = (bytes[i + 2] & 0x01) === 1;
@@ -164,11 +171,9 @@ export function measureEscPos(data: Buffer | Uint8Array): EscPosMeasurement {
   return {
     lines,
     observedCommands,
-    measuredRuleWidths: [...new Set(
-      lines
-        .filter((line) => isRuleLine(line))
-        .map((line) => line.cells),
-    )].sort((a, b) => a - b),
+    measuredRuleWidths: [
+      ...new Set(lines.filter((line) => isRuleLine(line)).map((line) => line.cells)),
+    ].sort((a, b) => a - b),
     maxFontACells: lines.reduce(
       (widest, line) => (line.fontASingleSize ? Math.max(widest, line.cells) : widest),
       0,
@@ -220,19 +225,23 @@ export interface GoldenBlock {
  * fixture is the canonical LF form, so CRLF is converted on the way in.
  */
 export function parseGoldenBlocks(text: string): GoldenBlock[] {
-  return text.replace(/\r\n/g, '\n').split(/^=== /m).slice(1).map((chunk) => {
-    const titleEnd = chunk.indexOf(' ===\n');
-    const rest = chunk.slice(titleEnd + ' ===\n'.length);
-    const header = rest.slice(0, rest.indexOf('\n'));
-    const rule = /rule=([\d,-]*)/.exec(header)?.[1] ?? '';
-    return {
-      title: chunk.slice(0, titleEnd),
-      rule: rule === '' || rule === '-' ? [] : rule.split(',').map(Number),
-      maxFontA: Number(/maxFontA=(\d+)/.exec(header)?.[1] ?? -1),
-      max: Number(/max=(\d+)/.exec(header)?.[1] ?? -1),
-      body: rest.slice(header.length + 1),
-    };
-  });
+  return text
+    .replace(/\r\n/g, '\n')
+    .split(/^=== /m)
+    .slice(1)
+    .map((chunk) => {
+      const titleEnd = chunk.indexOf(' ===\n');
+      const rest = chunk.slice(titleEnd + ' ===\n'.length);
+      const header = rest.slice(0, rest.indexOf('\n'));
+      const rule = /rule=([\d,-]*)/.exec(header)?.[1] ?? '';
+      return {
+        title: chunk.slice(0, titleEnd),
+        rule: rule === '' || rule === '-' ? [] : rule.split(',').map(Number),
+        maxFontA: Number(/maxFontA=(\d+)/.exec(header)?.[1] ?? -1),
+        max: Number(/max=(\d+)/.exec(header)?.[1] ?? -1),
+        body: rest.slice(header.length + 1),
+      };
+    });
 }
 
 /**
@@ -256,14 +265,23 @@ export function loadFrontendPrintModules(): {
     _resolveFilename: (...args: any[]) => string;
   };
   const originalResolveFilename = moduleApi._resolveFilename;
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') {
       resolvedRequest = nodePath.resolve(__dirname, '../../main/countries.ts');
     } else if (request.startsWith('@/')) {
       resolvedRequest = nodePath.resolve(__dirname, '../../frontend/src', request.slice(2));
     } else if (request.startsWith('@print/')) {
-      resolvedRequest = nodePath.resolve(__dirname, '../../shared/print', request.slice('@print/'.length));
+      resolvedRequest = nodePath.resolve(
+        __dirname,
+        '../../shared/print',
+        request.slice('@print/'.length),
+      );
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };

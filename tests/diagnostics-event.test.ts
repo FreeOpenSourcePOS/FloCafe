@@ -61,10 +61,7 @@ function countMetadataEntries(value: any): number {
     return value.reduce((count, item) => count + 1 + countMetadataEntries(item), 0);
   }
   if (value && typeof value === 'object') {
-    return Object.values(value).reduce(
-      (count, item) => count + 1 + countMetadataEntries(item),
-      0,
-    );
+    return Object.values(value).reduce((count, item) => count + 1 + countMetadataEntries(item), 0);
   }
   return 0;
 }
@@ -497,9 +494,7 @@ async function main() {
         capture_point: 'fc.frontend.pos.order.create.transport',
         operation_id: crypto.randomUUID(),
         outcome: 'unknown',
-        facts: Object.fromEntries(
-          Array.from({ length: 1000 }, (_, i) => [`fact_${i}`, 'offline']),
-        ),
+        facts: Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`fact_${i}`, 'offline'])),
       },
       {
         capture_point: 'fc.frontend.pos.order.create.transport',

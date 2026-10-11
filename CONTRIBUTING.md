@@ -222,7 +222,7 @@ FloCafe uses a generic calculation engine paired with data-only country tax pack
 
 - **Authoritative sources:** Tax rules must be backed by authoritative references (official tax authorities, enacted legislation, or official administrative guidelines). Blog posts or AI summaries are not sufficient primary sources.
 - **Jurisdictional scope:** Clearly identify the geographic and legal scope of the pack (country-wide VAT, state/province sales taxes, intra/inter-state rules).
-- **Process:** Open a proposal issue before authoring a pack, provide test vectors covering representative transactions, and verify against `main/tax-packs/types.ts`.
+- **Process:** Open a proposal issue before authoring a pack. Follow the [tax pack authoring procedure](docs/guides/adding-a-tax-pack.md) for executable calculation fixtures and verification against `main/tax-packs/types.ts`.
 - **Disclaimer:** FloCafe is software, not certified legal or tax advice. Tax packs do not by themselves guarantee compliance with local regulations.
 
 For the pack schema, trust model, and catalog mechanics, see the [tax pack reference](docs/reference/tax-packs.md). For the authoring procedure, see [Adding a tax pack](docs/guides/adding-a-tax-pack.md).

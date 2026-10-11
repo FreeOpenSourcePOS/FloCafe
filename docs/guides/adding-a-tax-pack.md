@@ -6,7 +6,8 @@ pack is in [taxation](../architecture/taxation.md). This page is the procedure o
 field tables.
 
 Adding a pack needs maintainer coordination. Open a proposal issue before authoring one, and
-describe the jurisdiction, the authoritative sources, and the test vectors you intend to provide.
+describe the jurisdiction, the authoritative sources, and the executable calculation fixtures you
+intend to provide.
 
 ## 1. Establish the authoritative source
 

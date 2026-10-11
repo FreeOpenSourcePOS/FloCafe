@@ -336,11 +336,9 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
         typeof business_day_start_time !== 'string' ||
         !/^(?:0\d|1[01]):[0-5]\d$/.test(business_day_start_time.trim())
       ) {
-        return res
-          .status(400)
-          .json({
-            error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)',
-          });
+        return res.status(400).json({
+          error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)',
+        });
       }
     }
 
@@ -744,34 +742,27 @@ router.put(
         invoice_number_reset_period !== undefined &&
         !INVOICE_RESET_PERIODS.has(invoice_number_reset_period)
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'invoice_number_reset_period must be one of never, daily, monthly, financial_year',
-          });
+        return res.status(400).json({
+          error: 'invoice_number_reset_period must be one of never, daily, monthly, financial_year',
+        });
       }
       if (
         invoice_financial_year_start_month !== undefined &&
         parseBoundedInt(invoice_financial_year_start_month, 1, 12, NaN) !==
           Number(invoice_financial_year_start_month)
       ) {
-        return res
-          .status(400)
-          .json({
-            error: 'invoice_financial_year_start_month must be a whole number between 1 and 12',
-          });
+        return res.status(400).json({
+          error: 'invoice_financial_year_start_month must be a whole number between 1 and 12',
+        });
       }
       if (
         invoice_financial_year_start_day !== undefined &&
         parseBoundedInt(invoice_financial_year_start_day, 1, 31, NaN) !==
           Number(invoice_financial_year_start_day)
       ) {
-        return res
-          .status(400)
-          .json({
-            error: 'invoice_financial_year_start_day must be a whole number between 1 and 31',
-          });
+        return res.status(400).json({
+          error: 'invoice_financial_year_start_day must be a whole number between 1 and 31',
+        });
       }
 
       const db = getDatabase();
@@ -883,12 +874,10 @@ router.put('/cloud', requirePermission('cloud.manage'), (req: Request, res: Resp
     }
     if (enablingCloud) updates.cloud_services_disabled_by_user = 'false';
     if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
-      return res
-        .status(409)
-        .json({
-          error:
-            'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
-        });
+      return res.status(409).json({
+        error:
+          'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
+      });
     }
 
     upsertSettings(db, updates);
@@ -911,12 +900,10 @@ router.post(
         signal: getHttpRequestSignal(req),
       });
       if (deletionRequest?.status === 'pending') {
-        return res
-          .status(409)
-          .json({
-            error:
-              'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.',
-          });
+        return res.status(409).json({
+          error:
+            'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.',
+        });
       }
       if (cloudSync.getStatus().cloud_services_disabled_by_user) {
         return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
@@ -929,12 +916,10 @@ router.post(
         });
       }
       if (cloudSync.getStatus().cloud_deletion_blocked) {
-        return res
-          .status(409)
-          .json({
-            error:
-              'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
-          });
+        return res.status(409).json({
+          error:
+            'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.',
+        });
       }
       // Registration sends contact metadata for FloAdmin support; it does not
       // create a cloud owner account or grant authentication access.
@@ -1286,15 +1271,13 @@ router.post(
       const body = req.body || {};
       if (body.confirmation !== DRIVE_RESTORE_CONFIRMATION)
         return res.status(400).json({ error: 'confirmation_required' });
-      return res
-        .status(202)
-        .json(
-          googleDrive.startRestoreJob({
-            fileId: body.file_id,
-            expectedSha256: body.expected_sha256,
-            confirmation: body.confirmation,
-          }),
-        );
+      return res.status(202).json(
+        googleDrive.startRestoreJob({
+          fileId: body.file_id,
+          expectedSha256: body.expected_sha256,
+          confirmation: body.confirmation,
+        }),
+      );
     } catch (error) {
       return googleDriveErrorResponse(res, error);
     }

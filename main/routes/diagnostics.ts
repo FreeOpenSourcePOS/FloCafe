@@ -134,10 +134,7 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
       : undefined;
   const message =
     typeof raw.message === 'string'
-      ? raw.message
-          .slice(0, MAX_MESSAGE_CHARS)
-          .trim()
-          .slice(0, MAX_MESSAGE_CHARS)
+      ? raw.message.slice(0, MAX_MESSAGE_CHARS).trim().slice(0, MAX_MESSAGE_CHARS)
       : undefined;
 
   return {

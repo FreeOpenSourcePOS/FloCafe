@@ -3,6 +3,7 @@
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import {
+  ArrowRightLeft,
   Bell,
   CheckCircle2,
   ChefHat,
@@ -12,7 +13,6 @@ import {
   Minus,
   Plus,
   RefreshCw,
-  Search,
   Send,
   ShoppingCart,
   Smartphone,
@@ -35,11 +35,20 @@ import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
 import { productNeedsCustomizer } from '@/lib/product-variants';
 import AddonModal from '@/components/pos/AddonModal';
-import type { Order as FullOrder, Product, Addon, CartItem, ProductVariant } from '@/lib/types';
+import ProductGrid from '@/components/pos/ProductGrid';
+import MoveTableModal from '@/components/tables/MoveTableModal';
+import type {
+  Order as FullOrder,
+  Product,
+  Addon,
+  CartItem,
+  ProductVariant,
+  Category,
+  Table as FullTable,
+} from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
 
 type User = { id: string; name: string; email: string; role: string };
-type Category = { id: string; name: string };
 type Table = {
   id: string;
   name?: string;
@@ -47,6 +56,8 @@ type Table = {
   status?: string;
   activeOrder?: Order | null;
   current_order?: Order | null;
+  is_active?: number | boolean;
+  floor?: string | null;
 };
 type OrderItem = {
   id: number;
@@ -179,7 +190,14 @@ export default function ServerStandalonePage() {
   const [addonModalProduct, setAddonModalProduct] = useState<Product | null>(null);
   const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [moveTableModalOpen, setMoveTableModalOpen] = useState(false);
+  const [orderNotes, setOrderNotes] = useState('');
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
+
+  function handleSelectTable(id: string) {
+    setSelectedTableId(id);
+    setOrderNotes('');
+  }
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerMatch, setCustomerMatch] = useState<{ id: string; name: string } | null>(null);
@@ -582,14 +600,15 @@ export default function ServerStandalonePage() {
   }
 
   async function sendDraft() {
-    if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
+    if (!api || draft.length === 0 || sendInFlightRef.current) return;
     // Nonce first via the LAN-safe helper: anything thrown after the
     // sending flag is set sticks the UI on Sending... forever.
-    const signature = sendAttemptSignature(selectedTableId, draft, customerName, customerPhone);
+    const targetKey = selectedTableId || 'counter';
+    const signature = sendAttemptSignature(targetKey, draft, customerName, customerPhone);
     if (sendAttemptRef.current?.signature !== signature) {
       sendAttemptRef.current = { signature, nonce: createPaymentIdempotencyKey() };
     }
-    const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
+    const idempotencyKey = `server-app-${targetKey}-${sendAttemptRef.current.nonce}`;
     sendInFlightRef.current = true;
     setSending(true);
     try {
@@ -598,10 +617,11 @@ export default function ServerStandalonePage() {
       let orderId: number;
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
+      const notes = orderNotes.trim() || undefined;
       if (currentOrder?.id) {
         const { data } = await api.post(
           `/api/orders/${currentOrder.id}/items`,
-          { items },
+          { items, special_instructions: notes },
           {
             headers: { 'Idempotency-Key': idempotencyKey },
           },
@@ -615,9 +635,10 @@ export default function ServerStandalonePage() {
         const { data } = await api.post(
           '/api/orders',
           {
-            table_id: selectedTableId,
+            table_id: selectedTableId || null,
             customer_id: customerId,
-            type: 'dine_in',
+            type: selectedTableId ? 'dine_in' : 'takeaway',
+            special_instructions: notes,
             items,
           },
           { headers: { 'Idempotency-Key': idempotencyKey } },
@@ -628,8 +649,9 @@ export default function ServerStandalonePage() {
       }
       sendAttemptRef.current = null;
       setDraft([]);
+      setOrderNotes('');
       setMobileCartOpen(false);
-      await Promise.all([loadAll(), loadOrder(selectedTableId)]);
+      await Promise.all([loadAll(), selectedTableId ? loadOrder(selectedTableId) : Promise.resolve()]);
       toast.success(t('orderSent'));
       // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
       const trimmedCustomerName = customerName.trim();
@@ -655,12 +677,6 @@ export default function ServerStandalonePage() {
   }
 
   const activeTable = tables.find((table) => table.id === selectedTableId) || null;
-  const filteredProducts = products.filter((product) => {
-    const matchesCategory =
-      selectedCategoryId === 'all' || product.category_id === selectedCategoryId;
-    const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
-    return matchesCategory && matchesQuery;
-  });
   const draftTotal = draft.reduce((sum, line) => {
     const addonTotal = line.addons.reduce(
       (addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1),
@@ -751,7 +767,18 @@ export default function ServerStandalonePage() {
 
   const ticketPanelBody = (
     <>
-      <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+        {currentOrder && activeTable && (
+          <button
+            onClick={() => setMoveTableModalOpen(true)}
+            className="flex items-center gap-1 text-xs font-medium text-brand hover:underline"
+          >
+            <ArrowRightLeft size={13} />
+            {tTables('moveTable')}
+          </button>
+        )}
+      </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input
           value={customerPhone}
@@ -874,6 +901,16 @@ export default function ServerStandalonePage() {
         )}
       </div>
 
+      <div className="mt-3">
+        <textarea
+          value={orderNotes}
+          onChange={(event) => setOrderNotes(event.target.value)}
+          placeholder={tPos('orderNotesPlaceholder')}
+          rows={2}
+          className="w-full resize-none rounded-lg border border-border bg-background p-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+        />
+      </div>
+
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         <span className="text-sm text-muted-foreground">{t('draftTotal')}</span>
         <span className="text-lg font-bold">
@@ -882,7 +919,7 @@ export default function ServerStandalonePage() {
       </div>
       <button
         onClick={sendDraft}
-        disabled={!selectedTableId || draft.length === 0 || sending}
+        disabled={draft.length === 0 || sending}
         className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50"
       >
         <Send size={17} />
@@ -903,7 +940,9 @@ export default function ServerStandalonePage() {
             <p className="truncate text-xs text-muted-foreground">
               {activeTable
                 ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) })
-                : t('selectTable')}
+                : tables.length === 0
+                  ? tOrders('takeaway')
+                  : t('selectTable')}
             </p>
           </div>
           <button
@@ -926,82 +965,48 @@ export default function ServerStandalonePage() {
           <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
             {t('tables')}
           </h2>
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
-            {tables.map((table) => {
-              const selected = table.id === selectedTableId;
-              const order = table.activeOrder || table.current_order;
-              return (
-                <button
-                  key={table.id}
-                  onClick={() => setSelectedTableId(table.id)}
-                  className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
-                >
-                  <span className="block truncate text-sm font-semibold">
-                    {table.name || table.number}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {order ? t('openOrder') : tTables('statusAvailable')}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {tables.length === 0 ? (
+            <p className="py-2 text-xs text-muted-foreground">{tOrders('takeaway')}</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+              {tables.map((table) => {
+                const selected = table.id === selectedTableId;
+                const order = table.activeOrder || table.current_order;
+                return (
+                  <button
+                    key={table.id}
+                    onClick={() => handleSelectTable(table.id)}
+                    className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
+                  >
+                    <span className="block truncate text-sm font-semibold">
+                      {table.name || table.number}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {order ? t('openOrder') : tTables('statusAvailable')}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </section>
 
-        <section className="rounded-lg border border-border bg-card p-3">
-          <div className="mb-3 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={16} className="absolute start-3 top-3 text-muted-foreground" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t('searchMenu')}
-                className="h-10 w-full rounded-lg border border-border bg-background ps-9 pe-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button
-              onClick={() => setSelectedCategoryId('all')}
-              className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
-            >
-              {tOrders('all')}
-            </button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategoryId(category.id)}
-                className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-muted text-foreground'}`}
-              >
-                {category.name}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {filteredProducts.map((product) => {
-              const inCartQty = draftQuantities.get(product.id) || 0;
-              return (
-                <button
-                  key={product.id}
-                  onClick={() => {
-                    if (productNeedsCustomizer(product)) setAddonModalProduct(product);
-                    else addDraftLine(product, 1, [], '');
-                  }}
-                  className="relative min-h-24 rounded-lg border border-border bg-card p-3 text-start hover:border-brand"
-                >
-                  {inCartQty > 0 && (
-                    <span className="absolute top-0 end-0 z-10 flex h-6 w-6 items-center justify-center rounded-es-lg bg-brand text-xs font-bold text-white">
-                      <Ltr>{inCartQty}</Ltr>
-                    </span>
-                  )}
-                  <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                  <span className="mt-2 block text-sm text-muted-foreground">
-                    <Ltr>{money(product.price, regional)}</Ltr>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        <section className="flex min-h-[500px] flex-col rounded-lg border border-border bg-card p-3">
+          <ProductGrid
+            categories={categories}
+            products={products}
+            selectedCategory={selectedCategoryId === 'all' ? null : selectedCategoryId}
+            setSelectedCategory={(id) => setSelectedCategoryId(id || 'all')}
+            search={query}
+            setSearch={setQuery}
+            currency={regional?.currency || 'USD'}
+            formatPrice={(price) => money(price, regional)}
+            cartQuantities={draftQuantities}
+            onProductClick={(product) => {
+              if (productNeedsCustomizer(product)) setAddonModalProduct(product);
+              else addDraftLine(product, 1, [], '');
+            }}
+          />
         </section>
 
         <section className="hidden rounded-lg border border-border bg-card p-3 md:block md:sticky md:top-16 md:self-start">
@@ -1054,6 +1059,19 @@ export default function ServerStandalonePage() {
             updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant)
           }
           onClose={() => setEditingDraftLine(null)}
+        />
+      )}
+
+      {moveTableModalOpen && activeTable && (
+        <MoveTableModal
+          sourceTable={activeTable as unknown as FullTable}
+          apiClient={api || undefined}
+          onClose={() => setMoveTableModalOpen(false)}
+          onSuccess={async (movedData) => {
+            setMoveTableModalOpen(false);
+            handleSelectTable(movedData.targetTable.id);
+            await loadAll();
+          }}
         />
       )}
     </div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { X, ArrowRightLeft, Loader2, Users, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
+import type { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -16,6 +17,7 @@ interface MoveTableModalProps {
   tables?: Table[];
   onClose: () => void;
   onSuccess: (movedData: { sourceTable: Table; targetTable: Table; order: Order }) => void;
+  apiClient?: AxiosInstance;
 }
 
 export default function MoveTableModal({
@@ -23,7 +25,9 @@ export default function MoveTableModal({
   tables: initialTables,
   onClose,
   onSuccess,
+  apiClient,
 }: MoveTableModalProps) {
+  const client = apiClient || api;
   const t = useTranslations('tables');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
@@ -35,12 +39,13 @@ export default function MoveTableModal({
   const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [selectedFloor, setSelectedFloor] = useState<string>('all');
+  const basePath = client.defaults.baseURL?.endsWith('/api') ? '' : '/api';
 
   useEffect(() => {
     if (initialTables && initialTables.length > 0) return;
     let mounted = true;
-    api
-      .get('/tables')
+    client
+      .get(`${basePath}/tables`)
       .then(({ data }) => {
         if (mounted) {
           setFetchedTables(data.tables || []);
@@ -56,7 +61,7 @@ export default function MoveTableModal({
     return () => {
       mounted = false;
     };
-  }, [initialTables, t]);
+  }, [basePath, client, initialTables, t]);
 
   const tablesList = initialTables && initialTables.length > 0 ? initialTables : fetchedTables;
   const loadingTables = (!initialTables || initialTables.length === 0) && loadingFetched;
@@ -91,7 +96,7 @@ export default function MoveTableModal({
       if (activeOrder?.id != null) {
         payload.order_id = String(activeOrder.id);
       }
-      const { data } = await api.post(`/tables/${sourceTable.id}/move-order`, payload);
+      const { data } = await client.post(`${basePath}/tables/${sourceTable.id}/move-order`, payload);
       const targetName = selectedTarget?.name || data.targetTable?.name || selectedTargetId;
       toast.success(t('tableMovedSuccess', { from: sourceName, to: targetName }));
       onSuccess(data);

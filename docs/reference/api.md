@@ -820,13 +820,15 @@ The Server App implements no business logic. It authenticates the caller, checks
 `http://127.0.0.1:<main port>/api/...`. [System overview](../architecture/overview.md#the-server-app-is-a-filtered-proxy-not-a-second-api)
 owns that boundary model; this section is the allowlist.
 
-Nineteen routes in total, eleven of which forward:
+Twenty-one routes in total, thirteen of which forward:
 
 | Method | Path | Forwards to |
 | --- | --- | --- |
 | `GET` | `/api/categories` | `GET /api/categories` |
 | `GET` | `/api/products` | `GET /api/products` |
+| `GET` | `/api/products/:id/image` | `GET /api/products/:id/image` |
 | `GET` | `/api/tables` | `GET /api/tables` |
+| `POST` | `/api/tables/:id/move-order` | `POST /api/tables/:id/move-order` |
 | `GET` | `/api/orders` | `GET /api/orders` |
 | `POST` | `/api/orders` | `POST /api/orders` |
 | `POST` | `/api/orders/:id/items` | `POST /api/orders/:id/items` |
@@ -854,7 +856,7 @@ The seven routes that are not forwards:
 When the frontend export is missing, the `GET /` redirect is replaced by a placeholder page instead,
 so `GET /` is two mutually exclusive registrations rather than two routes.
 
-`requireServerAppAuth` is applied to every route except `/api/health` and `/api/server-app/info`, and
+`requireServerAppAuth` is applied to every route except `/api/health`, `/api/server-app/info`, and `/api/products/:id/image`, and
 it runs the feature check **before** the token check. Behaviour by condition:
 
 - Feature disabled: `404` with `{ error: "Not found" }`, so the surface is not advertised.

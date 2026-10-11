@@ -268,7 +268,9 @@ export function startServerApp(): Promise<void> {
 
     app.get('/api/categories', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/categories'));
     app.get('/api/products', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/products'));
+    app.get('/api/products/:id/image', (req, res) => forwardToMainApi(req, res, `/products/${encodeURIComponent(String(req.params.id))}/image`));
     app.get('/api/tables', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/tables'));
+    app.post('/api/tables/:id/move-order', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/tables/${encodeURIComponent(String(req.params.id))}/move-order`));
     app.get('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/orders'));
     app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));

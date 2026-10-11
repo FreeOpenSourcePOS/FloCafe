@@ -180,6 +180,15 @@ async function main() {
     assert.equal(printBillBeforeLimit.status, 401, 'KOT and bill requests share the print limit before it is exceeded');
     const printLimit = await postJson(baseUrl, '/api/printers/print-kot', {});
     assert.equal(printLimit.status, 429, 'print requests over the shared limit are throttled on localhost');
+
+    const imageNoAuth = await fetch(`${baseUrl}/api/products/prod-1/image`);
+    assert.notEqual(imageNoAuth.status, 401, 'Product image forwarder is accessible without auth so browser img tags render');
+
+    const moveOrderNoAuth = await postJson(baseUrl, '/api/tables/tbl-1/move-order', {});
+    assert.equal(moveOrderNoAuth.status, 401, 'Table move forwarder requires authentication');
+
+    const moveOrderWithAuth = await postJson(baseUrl, '/api/tables/tbl-1/move-order', {}, liveServerLogin.body.access_token);
+    assert.notEqual(moveOrderWithAuth.status, 401, 'Table move forwarder reaches forwarder with server token');
   } finally {
     await stopServerApp();
     closeDatabase();

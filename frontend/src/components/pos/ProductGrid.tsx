@@ -157,6 +157,8 @@ interface Props {
   /** A scanned variant goes through the cart customizer, so required add-ons and sold-out gating still apply. */
   onScannedVariant?: (product: Product, variant: ProductVariant) => void;
   sidebarOpen?: boolean;
+  cartQuantities?: Map<Product['id'], number>;
+  formatPrice?: (price: number) => string;
 }
 
 export default function ProductGrid({
@@ -169,12 +171,15 @@ export default function ProductGrid({
   onProductClick,
   onScannedVariant,
   sidebarOpen = true,
+  cartQuantities: cartQuantitiesProp,
+  formatPrice,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
   const t = useTranslations('pos');
-  const fmt = useFormatCurrency();
+  const defaultFmt = useFormatCurrency();
+  const fmt = formatPrice || defaultFmt;
   useEffect(() => {
     const focusSearchInput = () => {
       searchInputRef.current?.focus();
@@ -183,12 +188,13 @@ export default function ProductGrid({
     return subscribeToQuickSearch(focusSearchInput);
   }, []);
   const cartQuantities = useMemo(() => {
+    if (cartQuantitiesProp) return cartQuantitiesProp;
     const quantities = new Map<Product['id'], number>();
     for (const item of cart.items) {
       quantities.set(item.product.id, (quantities.get(item.product.id) || 0) + item.quantity);
     }
     return quantities;
-  }, [cart.items]);
+  }, [cartQuantitiesProp, cart.items]);
 
   const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;

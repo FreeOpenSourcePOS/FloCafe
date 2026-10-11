@@ -13,7 +13,8 @@ export function resolveBuildIdentity(metadata: unknown, packaged: boolean): stri
   const value = metadata as Partial<BuildIdentity>;
   if (value.schema_version !== 1 || typeof value.build_id !== 'string') return 'unknown';
   if (value.build_id === 'custom' || value.build_id === 'unknown') return value.build_id;
-  if (!/^[0-9a-f]{40}$/i.test(value.build_id) || value.source_commit !== value.build_id) return 'unknown';
+  if (!/^[0-9a-f]{40}$/i.test(value.build_id) || value.source_commit !== value.build_id)
+    return 'unknown';
   return value.build_id;
 }
 

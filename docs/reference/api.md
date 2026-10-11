@@ -284,6 +284,12 @@ and settlement - is in [Order lifecycle](../architecture/order-lifecycle.md).
 | `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
 | `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `orders.item.restore` (shipped to `ROLE_ACCESS.ownerManager`) | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
+Order creation and item append accept an optional version-4 UUID `X-Operation-ID` correlation
+header. A validation rejection with a registered failure point includes `reason_code`, `operation`, `stage`,
+`classification`, `outcome`, and `correlation_id` alongside `error`; `display_code` may also be
+present. A valid supplied UUID is returned as the correlation id, otherwise the server generates
+one. Failures without a registered tuple may retain the `{ error }` response.
+
 Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
 (deferred, not immediate) transaction rather than from the JWT claim, and re-run every policy check
 there. Each opens the single transaction scope it runs in; the route does not wrap the handler

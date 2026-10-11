@@ -404,7 +404,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                     data-testid="telemetry-port"
                     className="mt-1 font-medium tabular-nums text-foreground"
                   >
-                    {status?.port || '3001'}
+                    {status?.port ?? '...'}
                   </div>
                 </div>
 

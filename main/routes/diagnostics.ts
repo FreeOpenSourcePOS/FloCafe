@@ -26,8 +26,7 @@ const MAX_MESSAGE_CHARS = 300;
 const MAX_CORRELATION_ID_CHARS = 64;
 const MAX_METADATA_JSON_BYTES = 4096;
 const MAX_METADATA_DEPTH = 3;
-const MAX_METADATA_KEYS = 40;
-const MAX_METADATA_ARRAY_ITEMS = 40;
+const MAX_METADATA_ENTRIES = 40;
 const MAX_METADATA_STRING_CHARS = 300;
 const FRONTEND_CAPTURE_POINTS = new Set([
   'fc.frontend.pos.order.create.transport',
@@ -54,29 +53,35 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Depth-clamps, key-limits, and string-trims client metadata without PII-shaped passthrough. */
-function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
+function sanitizeDiagnosticMetadata(
+  value: unknown,
+  depth: number,
+  budget: { remaining: number },
+): unknown {
   if (depth > MAX_METADATA_DEPTH) return undefined;
   if (typeof value === 'string') return value.slice(0, MAX_METADATA_STRING_CHARS);
   if (value === null || typeof value !== 'object') return value;
   if (Array.isArray(value)) {
     const out: unknown[] = [];
-    for (const item of value.slice(0, MAX_METADATA_ARRAY_ITEMS)) {
-      const child = sanitizeDiagnosticMetadata(item, depth + 1);
+    for (let index = 0; index < value.length && budget.remaining > 0; index += 1) {
+      budget.remaining -= 1;
+      const child = sanitizeDiagnosticMetadata(value[index], depth + 1, budget);
       if (child !== undefined) out.push(child);
     }
     return out;
   }
+  const objectValue = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  let keys = 0;
-  for (const [key, childValue] of Object.entries(value)) {
+  for (const key in objectValue) {
+    if (!Object.prototype.hasOwnProperty.call(objectValue, key)) continue;
+    if (budget.remaining <= 0) break;
+    budget.remaining -= 1;
     // Assignment would trigger the Object.prototype __proto__ setter and swap
     // the result's prototype instead of defining an own property.
     if (key === '__proto__') continue;
-    if (keys >= MAX_METADATA_KEYS) break;
-    const child = sanitizeDiagnosticMetadata(childValue, depth + 1);
+    const child = sanitizeDiagnosticMetadata(objectValue[key], depth + 1, budget);
     if (child !== undefined) {
       out[key.slice(0, 100)] = child;
-      keys += 1;
     }
   }
   return out;
@@ -96,7 +101,10 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
   if (raw.metadata !== undefined && raw.metadata !== null && !isPlainObject(raw.metadata))
     return null;
   const metadata = isPlainObject(raw.metadata)
-    ? (sanitizeDiagnosticMetadata(raw.metadata, 0) as Record<string, unknown>)
+    ? (sanitizeDiagnosticMetadata(raw.metadata, 0, { remaining: MAX_METADATA_ENTRIES }) as Record<
+        string,
+        unknown
+      >)
     : undefined;
   if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_BYTES)
     return null;

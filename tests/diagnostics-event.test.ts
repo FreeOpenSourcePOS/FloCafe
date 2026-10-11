@@ -56,6 +56,19 @@ function countLocalDiagnostics(db: any): number {
     .count;
 }
 
+function countMetadataEntries(value: any): number {
+  if (Array.isArray(value)) {
+    return value.reduce((count, item) => count + 1 + countMetadataEntries(item), 0);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).reduce(
+      (count, item) => count + 1 + countMetadataEntries(item),
+      0,
+    );
+  }
+  return 0;
+}
+
 function createPaymentBill(
   db: any,
   label: string,
@@ -216,9 +229,32 @@ async function main() {
       metadata: { items: Array.from({ length: 100_000 }, (_, index) => index) },
     });
     assertEqual(
-      boundedArrayEvent?.metadata?.items?.length,
+      countMetadataEntries(boundedArrayEvent?.metadata),
       40,
-      'metadata array traversal retains only its bounded prefix',
+      'metadata array contents share the cumulative entry budget',
+    );
+    const boundedNestedEvent = buildDiagnosticEvent({
+      event_code: 'server.internal_error',
+      severity: 'error',
+      metadata: Object.fromEntries(
+        Array.from({ length: 10 }, (_, group) => [
+          `group_${group}`,
+          Array.from({ length: 10 }, () =>
+            Object.fromEntries(
+              Array.from({ length: 10 }, (_, field) => [`field_${field}`, 'x'.repeat(40)]),
+            ),
+          ),
+        ]),
+      ),
+    });
+    assert(
+      boundedNestedEvent,
+      'nested fan-out metadata keeps a bounded event instead of rejecting after full traversal',
+    );
+    assertEqual(
+      countMetadataEntries(boundedNestedEvent?.metadata),
+      40,
+      'arrays and objects share one cumulative metadata entry budget',
     );
 
     const nestedMetadata = await api(baseUrl, '/api/diagnostics/event', {

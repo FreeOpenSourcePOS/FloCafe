@@ -45,6 +45,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   const tSettings = useTranslations('settings');
   const tDashboard = useTranslations('dashboard');
   const tStaff = useTranslations('staff');
+  const tSupport = useTranslations('support');
 
   const { user, currentTenant } = useAuthStore();
   const { status: printerConnStatus, hardwarePrinter } = usePrinterStore();
@@ -83,14 +84,16 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   // Fetch active shift session (async continuation to satisfy cascading-renders rule)
   useEffect(() => {
     let cancelled = false;
+    let latestRequest = 0;
     const queryShift = () => {
+      const request = ++latestRequest;
       api
         .get('/cash-sessions/current')
         .then((res) => {
-          if (!cancelled) setSession(res.data ?? null);
+          if (!cancelled && request === latestRequest) setSession(res.data ?? null);
         })
         .catch(() => {
-          if (!cancelled) setSession(undefined);
+          if (!cancelled && request === latestRequest) setSession(undefined);
         });
     };
 
@@ -213,7 +216,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       <div
         data-testid="telemetry-drawer"
         role="dialog"
-        aria-label="Terminal Telemetry & Diagnostics"
+        aria-label={tSettings('storeDiagnostics')}
         aria-hidden={!isDrawerOpen}
         inert={!isDrawerOpen}
         className={`fixed bottom-8 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
@@ -228,7 +231,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             <div className="flex items-center gap-2">
               <Server size={18} className="text-primary" />
               <h2 className="text-sm font-semibold text-foreground">
-                Terminal Telemetry &amp; Diagnostics
+                {tSettings('storeDiagnostics')}
               </h2>
             </div>
             <button
@@ -236,7 +239,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
               data-testid="btn-close-telemetry-drawer"
               onClick={closeDrawer}
               className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              aria-label="Close telemetry drawer"
+              aria-label={tCommon('close')}
             >
               <X size={16} />
             </button>
@@ -246,7 +249,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             {/* Quick Actions Card */}
             <div className="rounded-lg border border-border/70 bg-background/50 p-4">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Hardware Actions
+                {tSettings('hardwarePrinters')}
               </h3>
               <div className="flex flex-wrap items-center gap-3">
                 <button
@@ -261,7 +264,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                   ) : (
                     <Printer size={14} />
                   )}
-                  <span>Test Receipt Print</span>
+                  <span>{tSettings('testPrint')}</span>
                 </button>
 
                 <button
@@ -276,7 +279,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                   ) : (
                     <LockOpen size={14} />
                   )}
-                  <span>Kick Cash Drawer</span>
+                  <span>{tSettings('sendPulseToCashDrawer')}</span>
                 </button>
               </div>
             </div>
@@ -284,13 +287,13 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             {/* Diagnostic Metrics Card */}
             <div className="rounded-lg border border-border/70 bg-background/50 p-4">
               <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Diagnostic Telemetry
+                {tSupport('tabDiagnostics')}
               </h3>
               <div className="grid grid-cols-3 gap-3 text-xs">
                 <div className="rounded-md border border-border/50 bg-card p-2.5">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <Clock size={13} />
-                    <span>Uptime</span>
+                    <span>{tNav('uptimeLabel').trim()}</span>
                   </div>
                   <div
                     data-testid="telemetry-uptime"
@@ -303,7 +306,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                 <div className="rounded-md border border-border/50 bg-card p-2.5">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <Server size={13} />
-                    <span>Port</span>
+                    <span>{tNav('portLabel')}</span>
                   </div>
                   <div
                     data-testid="telemetry-port"
@@ -316,7 +319,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
                 <div className="rounded-md border border-border/50 bg-card p-2.5">
                   <div className="flex items-center gap-1.5 text-muted-foreground">
                     <HardDrive size={13} />
-                    <span>Memory</span>
+                    <span>{tNav('heapLabel').trim()}</span>
                   </div>
                   <div
                     data-testid="telemetry-memory"
@@ -439,10 +442,11 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             ref={drawerToggleRef}
             onClick={() => (isDrawerOpen ? closeDrawer() : setIsDrawerOpen(true))}
             className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted transition-colors"
-            title="Terminal Telemetry & Diagnostics"
+            title={tSupport('tabDiagnostics')}
+            aria-label={tSupport('tabDiagnostics')}
             aria-expanded={isDrawerOpen}
           >
-            <span>Telemetry</span>
+            <span>{tSupport('tabDiagnostics')}</span>
             {isDrawerOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
           </button>
 

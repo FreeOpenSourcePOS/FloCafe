@@ -6,13 +6,36 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
   test('frontline status bar displays cashier identity, printer, shift, and drawer actions', async ({
     page,
   }) => {
-    await page.route('**/cash-sessions/current', (route) =>
-      route.fulfill({
+    let holdShiftResponses = false;
+    let shiftRequestCount = 0;
+    let releaseStaleShiftResponse: (() => Promise<void>) | undefined;
+    await page.route('**/cash-sessions/current', async (route) => {
+      if (!holdShiftResponses) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+        return;
+      }
+
+      shiftRequestCount += 1;
+      if (shiftRequestCount === 1) {
+        await new Promise<void>((resolve) => {
+          releaseStaleShiftResponse = async () => {
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({ status: 'open' }),
+            });
+            resolve();
+          };
+        });
+        return;
+      }
+
+      await route.fulfill({
         status: 403,
         contentType: 'application/json',
         body: JSON.stringify({ error: 'Insufficient permissions' }),
-      }),
-    );
+      });
+    });
 
     // Inject Electron fixture so desktop capability and system telemetry are simulated
     await injectElectronFixture(page, { api: true, platform: 'darwin' });
@@ -61,6 +84,20 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
 
     const shiftPill = page.getByTestId('status-bar-shift');
     await expect(shiftPill).toBeVisible();
+    await expect(shiftPill).toContainText('Open shift');
+
+    holdShiftResponses = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('flo-shift-changed')));
+    await expect.poll(() => shiftRequestCount).toBeGreaterThanOrEqual(1);
+
+    const deniedShiftResponse = page.waitForResponse(
+      (response) => response.url().includes('/cash-sessions/current') && response.status() === 403,
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event('flo-shift-changed')));
+    await deniedShiftResponse;
+    await expect(shiftPill).toContainText('unknown');
+
+    await releaseStaleShiftResponse?.();
     await expect(shiftPill).toContainText('unknown');
 
     // 6. Capture screenshot of clean frontline bar

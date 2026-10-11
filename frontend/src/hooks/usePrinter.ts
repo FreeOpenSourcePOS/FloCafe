@@ -176,7 +176,9 @@ export const usePrinterStore = create<PrinterState>()(
       refreshHardwarePrinter: async () => {
         try {
           const res = await api.get('/printers');
-          const list: HardwarePrinter[] = res.data.printers || [];
+          const list: HardwarePrinter[] = (res.data.printers || []).map(
+            (printer: HardwarePrinter) => ({ ...printer, readiness_state: 'configured' }),
+          );
           const defaultPrinter =
             list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') ||
             list.find((p) => p.connection_type !== 'webusb') ||

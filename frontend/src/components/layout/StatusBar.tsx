@@ -21,6 +21,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import type { CashSession } from '@/hooks/useCashSession';
 import { printerService } from '@/lib/printer/PrinterService';
 import api from '@/lib/api';
 import UpdateBadge from './UpdateBadge';
@@ -31,13 +32,6 @@ interface StatusInfo {
   memory: { heapUsed: number; heapTotal: number; rss: number };
   uptime: number;
   port: number;
-}
-
-interface CashSession {
-  id: number;
-  status: string;
-  opened_by_name?: string;
-  opening_float_cents?: number;
 }
 
 interface PrinterActionResponse {

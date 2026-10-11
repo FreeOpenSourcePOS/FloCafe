@@ -397,6 +397,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           className="absolute start-3 text-muted-foreground pointer-events-none shrink-0"
         />
         <input
+          id="customer-phone-search"
           ref={inputRef}
           type="text"
           dir="ltr"

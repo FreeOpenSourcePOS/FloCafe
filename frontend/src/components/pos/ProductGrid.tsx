@@ -14,6 +14,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { subscribeToQuickSearch } from '@/lib/quick-search';
+import { parseQuantitySearch } from '@/lib/quantity-search';
 
 const CATEGORY_COLORS: Record<
   string,
@@ -212,9 +213,12 @@ export default function ProductGrid({
   }, [cart.items]);
   const cartQuantities = cartQuantitiesOverride ?? cartStoreQuantities;
 
+  const parsedSearch = useMemo(() => parseQuantitySearch(search), [search]);
+  const activeQuery = parsedSearch ? parsedSearch.query : search;
+
   const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !activeQuery || p.name.toLowerCase().includes(activeQuery.toLowerCase());
     return matchCat && matchSearch;
   });
 
@@ -236,25 +240,53 @@ export default function ProductGrid({
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
-              // Typed or pasted barcode, not just a scanner — a dedicated
-              // action into this field works regardless of typing speed.
+              // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
               const trimmed = search.trim();
               if (!trimmed) return;
-              const match = resolveScannedProduct(trimmed, products);
+              const parsedQty = parseQuantitySearch(trimmed);
+              const targetCode = parsedQty ? parsedQty.query : trimmed;
+              const quantityToAdd = parsedQty ? parsedQty.quantity : 1;
+
+              const match = resolveScannedProduct(targetCode, products);
               if (match) {
                 if (match.scaleBarcode) {
-                  if (onScaledProduct) onScaledProduct(match.product, match.quantity);
-                  else cart.addItem(match.product, match.quantity);
+                  if (onScaledProduct)
+                    onScaledProduct(match.product, match.quantity * quantityToAdd);
+                  else cart.addItem(match.product, match.quantity * quantityToAdd);
                 } else if (match.variant) {
                   if (onScannedVariant) onScannedVariant(match.product, match.variant);
-                  else cart.addItem(match.product, 1, [], '', match.variant);
-                } else onProductClick(match.product);
+                  else cart.addItem(match.product, quantityToAdd, [], '', match.variant);
+                } else if (productNeedsCustomizer(match.product)) {
+                  onProductClick(match.product);
+                } else {
+                  cart.addItem(match.product, quantityToAdd);
+                }
+                setSearch('');
+                return;
+              }
+
+              const matchedProduct =
+                products.find((p) => p.name.toLowerCase() === targetCode.toLowerCase()) ||
+                (filtered.length === 1 ? filtered[0] : null);
+
+              if (matchedProduct) {
+                if (productNeedsCustomizer(matchedProduct)) {
+                  onProductClick(matchedProduct);
+                } else {
+                  cart.addItem(matchedProduct, quantityToAdd);
+                }
                 setSearch('');
               }
             }}
-            placeholder={searchPlaceholder ?? t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            placeholder={searchPlaceholder ?? `${t('searchProducts')} [/]`}
+            data-testid="pos-product-search"
+            className="w-full ps-9 pe-8 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
+          {!search && (
+            <kbd className="hidden sm:inline-flex absolute end-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] font-mono text-muted-foreground pointer-events-none">
+              /
+            </kbd>
+          )}
         </div>
         <div data-testid="pos-category-row" className="flex flex-nowrap gap-2 pb-1 overflow-x-auto">
           <button

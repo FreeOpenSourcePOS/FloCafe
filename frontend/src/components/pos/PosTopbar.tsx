@@ -60,6 +60,9 @@ export default function PosTopbar({ tables, products, onTopItemSelect, onShowTab
             {cart.tableId
               ? t('tableLabel', { name: tables.find(t => t.id === cart.tableId)?.name || cart.tableId })
               : t('selectTable')}
+            <span className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-current text-[10px] font-mono opacity-80">
+              F2
+            </span>
           </button>
         )}
 

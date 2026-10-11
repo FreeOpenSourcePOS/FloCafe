@@ -523,7 +523,7 @@ Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 | `GET` | `/export/products` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `products-export.csv`. |
 | `GET` | `/export/addons` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `addons-export.csv`. |
 | `POST` | `/import/categories` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. Per-row validation errors are reported in the response. |
-| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
+| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
 | `POST` | `/import/addons` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
 
 ### Settings

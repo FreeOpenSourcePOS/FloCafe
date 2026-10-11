@@ -171,9 +171,11 @@ function printerShape(printer: any) {
 
 function printerReadinessShape(printer: any) {
   return {
+    id: printer.id,
     name: printer.name,
+    connection_type: printer.connection_type,
+    is_default: printer.is_default,
     readiness_state: 'configured',
-    print_method: printer.connection_type,
   };
 }
 
@@ -562,10 +564,11 @@ router.post(
       if (result.ok) {
         res.json({ success: true });
       } else {
-        res.status(502).json({
-          error: result.detail || 'Printer did not respond',
-          detail: result.detail,
-        });
+        console.error(
+          '[Printer] Cash drawer kick failed:',
+          result.detail || 'Printer did not respond',
+        );
+        res.status(502).json({ error: 'Cash drawer kick failed' });
       }
     } catch (error: any) {
       console.error('[API] Internal error:', error);
@@ -628,10 +631,11 @@ router.post(
       if (result.ok) {
         res.json({ success: true });
       } else {
-        res.status(502).json({
-          error: result.detail || 'Printer did not respond or print failed',
-          detail: result.detail,
-        });
+        console.error(
+          '[Printer] Active test print failed:',
+          result.detail || 'Printer did not respond or print failed',
+        );
+        res.status(502).json({ error: 'Test print failed' });
       }
     } catch (error: any) {
       console.error('[API] Internal error:', error);

@@ -108,21 +108,16 @@ type ReceiptTenant = Pick<
 >;
 
 export interface HardwarePrinter {
-  id?: number | string;
+  id: number | string;
   name: string;
   connection_type: 'network' | 'usb' | 'webusb';
   ip_address?: string | null;
   port?: number | null;
   paper_width?: string | null;
   is_default: number;
+  readiness_state?: 'configured';
   profile_id?: string;
   capabilities?: ThermalPrinterCapabilities;
-}
-
-interface PrinterReadiness {
-  name: string;
-  readiness_state: 'configured';
-  print_method: HardwarePrinter['connection_type'];
 }
 
 interface PrinterState {
@@ -181,17 +176,7 @@ export const usePrinterStore = create<PrinterState>()(
       refreshHardwarePrinter: async () => {
         try {
           const res = await api.get('/printers');
-          const list: HardwarePrinter[] = (
-            (res.data.printers as (HardwarePrinter | PrinterReadiness)[] | undefined) || []
-          ).map((printer) =>
-            'readiness_state' in printer
-              ? {
-                  name: printer.name,
-                  connection_type: printer.print_method,
-                  is_default: 1,
-                }
-              : printer,
-          );
+          const list: HardwarePrinter[] = res.data.printers || [];
           const defaultPrinter =
             list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') ||
             list.find((p) => p.connection_type !== 'webusb') ||

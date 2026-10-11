@@ -671,11 +671,13 @@ async function runTests() {
     assert(
       Array.isArray(serverPrintersRes.body.printers) &&
         serverPrintersRes.body.printers.length === 1 &&
+        serverPrintersRes.body.printers[0].id === webusbRes.body.printer.id &&
         serverPrintersRes.body.printers[0].name === 'Counter WebUSB Printer' &&
+        serverPrintersRes.body.printers[0].connection_type === 'webusb' &&
+        serverPrintersRes.body.printers[0].is_default === 1 &&
         serverPrintersRes.body.printers[0].readiness_state === 'configured' &&
-        serverPrintersRes.body.printers[0].print_method === 'webusb' &&
         Object.keys(serverPrintersRes.body.printers[0]).sort().join(',') ===
-          'name,print_method,readiness_state',
+          'connection_type,id,is_default,name,readiness_state',
       'printing.execute receives only default-printer readiness fields',
     );
 
@@ -716,6 +718,46 @@ async function runTests() {
     assert(
       Array.isArray(testActiveRes.body.bytes) && testActiveRes.body.bytes.length > 0,
       'test-active returns test page byte array',
+    );
+
+    const unavailableServer = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      unavailableServer.once('error', reject);
+      unavailableServer.listen(0, '127.0.0.1', resolve);
+    });
+    const unavailablePort = (unavailableServer.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve, reject) => {
+      unavailableServer.close((error) => (error ? reject(error) : resolve()));
+    });
+    const networkPrinterRes = await request(app).post('/api/printers').send({
+      name: 'Unavailable local printer',
+      connection_type: 'network',
+      ip_address: '127.0.0.1',
+      port: unavailablePort,
+      is_default: true,
+    });
+    assert(networkPrinterRes.status === 201, 'unavailable network printer fixture is configured');
+
+    const failedTestPrintRes = await request(app).post('/api/printers/test-active');
+    const failedTestPrintBody = JSON.stringify(failedTestPrintRes.body);
+    assert(
+      failedTestPrintRes.status === 502 &&
+        failedTestPrintRes.body.error === 'Test print failed' &&
+        !('detail' in failedTestPrintRes.body) &&
+        !failedTestPrintBody.includes('127.0.0.1') &&
+        !failedTestPrintBody.includes(String(unavailablePort)),
+      'test-active hides network details when printing fails',
+    );
+
+    const failedKickRes = await request(app).post('/api/printers/kick-drawer');
+    const failedKickBody = JSON.stringify(failedKickRes.body);
+    assert(
+      failedKickRes.status === 502 &&
+        failedKickRes.body.error === 'Cash drawer kick failed' &&
+        !('detail' in failedKickRes.body) &&
+        !failedKickBody.includes('127.0.0.1') &&
+        !failedKickBody.includes(String(unavailablePort)),
+      'kick-drawer hides network details when pulsing fails',
     );
 
     const deviceA = makeWebUsbTestDevice('Printer A', 1);

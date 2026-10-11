@@ -16,6 +16,7 @@ interface ShortcutEntry {
 export default function KeyboardShortcutsModal({ open, onClose }: Props) {
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tNav = useTranslations('nav');
 
   if (!open) return null;
 
@@ -25,7 +26,7 @@ export default function KeyboardShortcutsModal({ open, onClose }: Props) {
       items: [
         { keys: ['Space'], description: t('spaceTenderShortcut') },
         { keys: ['F4', 'Alt + 4'], description: t('checkout') },
-        { keys: ['F2', 'Alt + 2'], description: t('tables') },
+        { keys: ['F2', 'Alt + 2'], description: tNav('tables') },
         { keys: ['F8'], description: t('hold') },
       ],
     },

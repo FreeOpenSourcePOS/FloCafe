@@ -373,3 +373,27 @@ test('receipt column oracle: every paper size the frontend reaches is on the sha
     );
   }
 });
+
+test('receipt column oracle: GS ! character sizing decodes high nibble as width and ignores height', () => {
+  // GS ! n (0x1d, 0x21, n):
+  // Low nibble (bits 0..3) is height magnification - 1.
+  // High nibble (bits 4..7) is width magnification - 1.
+  // Height alone does not consume extra horizontal columns/cells.
+  const sample = (n: number, text: string) => Buffer.from([0x1d, 0x21, n, ...Buffer.from(text, 'ascii'), 0x0a]);
+
+  // 1x width, 1x height (0x00): "ABCDE" -> 5 cells
+  const normal = measureEscPos(sample(0x00, 'ABCDE'));
+  assert.equal(normal.lines[0].cells, 5, 'normal size (0x00) should measure 5 cells');
+
+  // 1x width, 2x height (0x01): "ABCDE" -> 5 cells (height does not widen)
+  const doubleHeight = measureEscPos(sample(0x01, 'ABCDE'));
+  assert.equal(doubleHeight.lines[0].cells, 5, 'double height (0x01) should measure 5 cells');
+
+  // 2x width, 1x height (0x10): "ABCDE" -> 10 cells (width doubles cells)
+  const doubleWidth = measureEscPos(sample(0x10, 'ABCDE'));
+  assert.equal(doubleWidth.lines[0].cells, 10, 'double width (0x10) should measure 10 cells');
+
+  // 2x width, 2x height (0x11): "ABCDE" -> 10 cells (both height and width)
+  const doubleBoth = measureEscPos(sample(0x11, 'ABCDE'));
+  assert.equal(doubleBoth.lines[0].cells, 10, 'double width & height (0x11) should measure 10 cells');
+});

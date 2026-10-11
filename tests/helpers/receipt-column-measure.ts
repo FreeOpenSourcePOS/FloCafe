@@ -139,8 +139,9 @@ export function measureEscPos(data: Buffer | Uint8Array): EscPosMeasurement {
         if (command === 0x4d) fontB = (bytes[i + 2] & 0x01) === 1;
       }
       if (byte === 0x1d && command === 0x21) {
-        // GS ! n: low nibble is width-1, high nibble is height-1.
-        sizeWidth = (bytes[i + 2] & 0x0f) + 1;
+        // GS ! n: low nibble is height-1, high nibble is width-1. Height alone
+        // doesn't consume extra horizontal cells, so only the high nibble counts.
+        sizeWidth = (((bytes[i + 2] ?? 0) >> 4) & 0x0f) + 1;
       }
       const params = byte === 0x1b ? ESC_PARAMS : byte === 0x1d ? GS_PARAMS : FS_PARAMS;
       const paramCount = params(command);

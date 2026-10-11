@@ -21,6 +21,7 @@ import {
   closeDatabase,
   waitForDatabaseRequests,
   beginDatabaseShutdown,
+  SchemaVersionMismatchError,
   now,
   withDatabaseRequest,
 } from './db';
@@ -609,8 +610,7 @@ async function showRuntimeStuckDialog(reason: string): Promise<void> {
   await dialog.showMessageBox({
     type: 'info',
     title: 'Flo',
-    message:
-      'Diagnostic captured. If sharing is enabled and this device is online, it will be sent automatically.',
+    message: 'Diagnostic captured. If sharing is enabled and this device is online, it will be sent automatically.',
     buttons: ['Quit'],
   });
 }

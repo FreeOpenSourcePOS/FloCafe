@@ -14,32 +14,22 @@
  */
 import { Router, Request, Response } from 'express';
 import {
-  getDatabase,
-  getSettingValue,
-  localDateInTimezone,
-  now,
-  withTxn,
-  tenantBusinessDayStartTime,
-  nextZNumber,
+  getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
+  tenantBusinessDayStartTime, nextZNumber,
 } from '../db';
 import { requirePermission } from '../services/authorization';
-import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
 import {
-  computePeriodAggregates,
-  sessionExpectedCash,
-  sessionFinancialTotals,
-  listCashDrawerMovementsForSession,
-  tenantTimezone,
-  cashOperationFailurePayload,
+  getOpenSession, type CashSessionRow,
+} from '../services/shift-session-gate';
+import {
+  computePeriodAggregates, sessionExpectedCash, sessionFinancialTotals,
+  listCashDrawerMovementsForSession, tenantTimezone, cashOperationFailurePayload,
 } from './cash-closures';
 
 const router = Router();
 
 function httpError(message: string, statusCode: number, diagnosticCode?: string): Error {
-  return Object.assign(new Error(message), {
-    statusCode,
-    ...(diagnosticCode ? { diagnosticCode } : {}),
-  });
+  return Object.assign(new Error(message), { statusCode, ...(diagnosticCode ? { diagnosticCode } : {}) });
 }
 
 function errorStatus(error: unknown): number {
@@ -49,13 +39,7 @@ function errorStatus(error: unknown): number {
 
 function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message || fallback;
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'message' in error &&
-    typeof error.message === 'string'
-  )
-    return error.message || fallback;
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message || fallback;
   return fallback;
 }
 
@@ -68,9 +52,7 @@ function validateCents(raw: unknown, field: string, diagnosticCode: string): num
 
 // req.user is attached by the auth middleware, which has no typed declaration.
 // Exported so cash-closures.ts can reuse it instead of adding another cast.
-export interface AuthedRequest extends Request {
-  user?: { userId: string; role: string };
-}
+export interface AuthedRequest extends Request { user?: { userId: string; role: string } }
 
 function actorId(req: AuthedRequest): string {
   const id = String(req.user?.userId || '');
@@ -83,10 +65,7 @@ function actorRole(req: AuthedRequest): string {
 }
 
 function daysAgoUtc(days: number): string {
-  return new Date(Date.now() - days * 86400_000)
-    .toISOString()
-    .replace('T', ' ')
-    .replace(/\..*$/, '');
+  return new Date(Date.now() - days * 86400_000).toISOString().replace('T', ' ').replace(/\..*$/, '');
 }
 
 /**
@@ -103,18 +82,12 @@ function closeSessionTxn(
   closerId: string,
   notes: string | null,
   skipUnpaidBlock = false,
-): {
-  closure_id: number;
-  variance_cents: number;
-  expected_cash_cents: number;
-  counted_cash_cents: number;
-} {
+): { closure_id: number; variance_cents: number; expected_cash_cents: number; counted_cash_cents: number } {
   const closedAt = now();
   if (!skipUnpaidBlock) {
     // 'partial' counts: a short tender leaves an outstanding balance
     // (bills.ts settles to 'paid' only at zero balance).
-    const unpaid = db
-      .prepare(`
+    const unpaid = db.prepare(`
       SELECT COUNT(*) AS c
       FROM bills b
       JOIN orders o ON o.id = b.order_id
@@ -122,31 +95,15 @@ function closeSessionTxn(
         AND o.status != 'cancelled'
         AND COALESCE(b.balance, b.total, 0) > 0
         AND b.created_at >= ? AND b.created_at < ?
-    `)
-      .get(session.opened_at, closedAt) as { c: number };
+    `).get(session.opened_at, closedAt) as { c: number };
     if (Number(unpaid.c) > 0) {
-      throw httpError(
-        `Cannot close: ${unpaid.c} unpaid bill(s) in this shift`,
-        409,
-        'unpaid_bills_remaining',
-      );
+      throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s) in this shift`, 409, 'unpaid_bills_remaining');
     }
   }
-  const sessionMovements = listCashDrawerMovementsForSession(
-    db,
-    session.id,
-    session.opened_at,
-    closedAt,
-    false,
-  );
+  const sessionMovements = listCashDrawerMovementsForSession(db, session.id, session.opened_at, closedAt, false);
   const aggregates = {
-    ...computePeriodAggregates(
-      db,
-      session.opened_at,
-      closedAt,
-      sessionMovements,
-      Number(session.opening_float_cents || 0),
-    ),
+    ...computePeriodAggregates(db, session.opened_at, closedAt,
+      sessionMovements, Number(session.opening_float_cents || 0)),
     // Drawer and tender totals follow ownership; staff/tax remain settlement-based.
     ...sessionFinancialTotals(db, session, closedAt),
   };
@@ -158,13 +115,8 @@ function closeSessionTxn(
   } catch (err: unknown) {
     throw httpError(`Could not allocate Z number: ${errorMessage(err, 'sequence failure')}`, 500);
   }
-  const businessDate = localDateInTimezone(
-    new Date(),
-    tenantTimezone(),
-    tenantBusinessDayStartTime(db),
-  );
-  const insert = db
-    .prepare(`
+  const businessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
+  const insert = db.prepare(`
     INSERT INTO cash_closures (
       scope, business_date, period_start, period_end,
       opening_float_cents, expected_cash_cents, counted_cash_cents, variance_cents,
@@ -182,73 +134,41 @@ function closeSessionTxn(
       ?, ?, ?, ?,
       ?, ?, ?, ?
     )
-  `)
-    .run(
-      businessDate,
-      session.opened_at,
-      closedAt,
-      Number(session.opening_float_cents || 0),
-      expectedCashCents,
-      countedCashCents,
-      varianceCents,
-      aggregates.grossCollectedCents,
-      aggregates.refundedCents,
-      aggregates.netCollectedCents,
-      aggregates.billCount,
-      aggregates.refundCount,
-      JSON.stringify(aggregates.paymentMethods),
-      JSON.stringify(aggregates.staffSales),
-      JSON.stringify(aggregates.taxComponents),
-      aggregates.payInCents,
-      aggregates.payOutCents,
-      aggregates.safeDropCents,
-      JSON.stringify(aggregates.cashMovements),
-      zNumber,
-      closerId,
-      notes,
-      closedAt,
-    );
+  `).run(
+    businessDate, session.opened_at, closedAt,
+    Number(session.opening_float_cents || 0), expectedCashCents, countedCashCents, varianceCents,
+    aggregates.grossCollectedCents, aggregates.refundedCents, aggregates.netCollectedCents,
+    aggregates.billCount, aggregates.refundCount,
+    JSON.stringify(aggregates.paymentMethods),
+    JSON.stringify(aggregates.staffSales),
+    JSON.stringify(aggregates.taxComponents),
+    aggregates.payInCents, aggregates.payOutCents, aggregates.safeDropCents,
+    JSON.stringify(aggregates.cashMovements),
+    zNumber, closerId, notes, closedAt,
+  );
   const closureId = Number(insert.lastInsertRowid);
-  db.prepare(
-    `UPDATE cash_sessions SET status = 'closed', closed_at = ?, closed_by = ?, closure_id = ? WHERE id = ?`,
-  ).run(closedAt, closerId, closureId, session.id);
-  return {
-    closure_id: closureId,
-    variance_cents: varianceCents,
-    expected_cash_cents: expectedCashCents,
-    counted_cash_cents: countedCashCents,
-  };
+  db.prepare(`UPDATE cash_sessions SET status = 'closed', closed_at = ?, closed_by = ?, closure_id = ? WHERE id = ?`)
+    .run(closedAt, closerId, closureId, session.id);
+  return { closure_id: closureId, variance_cents: varianceCents, expected_cash_cents: expectedCashCents, counted_cash_cents: countedCashCents };
 }
 
 router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: Response) => {
   let operationCommitted = false;
   let transactionBodyCompleted = false;
   try {
-    const openingFloatCents = validateCents(
-      (req.body || {}).opening_float_cents ?? 0,
-      'opening_float_cents',
-      'opening_float_invalid',
-    );
+    const openingFloatCents = validateCents((req.body || {}).opening_float_cents ?? 0, 'opening_float_cents', 'opening_float_invalid');
     const db = getDatabase();
     const openedBy = actorId(req);
-    const openedByRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(openedBy) as
-      | { name: string }
-      | undefined;
+    const openedByRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(openedBy) as { name: string } | undefined;
     const result = withTxn(() => {
       // Stale auto-close: an open session older than the threshold with no
       // store activity since is system-closed (zero count, flagged) so a new
       // shift can open. Matches Square's stale-drawer rule.
-      const thresholdDays = Math.max(
-        1,
-        parseInt(getSettingValue('stale_session_days') || '7', 10) || 7,
-      );
+      const thresholdDays = Math.max(1, parseInt(getSettingValue('stale_session_days') || '7', 10) || 7);
       const cutoff = daysAgoUtc(thresholdDays);
-      const stale = db
-        .prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_at < ?`)
-        .all(cutoff) as CashSessionRow[];
+      const stale = db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_at < ?`).all(cutoff) as CashSessionRow[];
       if (stale.length > 0) {
-        const activity = db
-          .prepare(`
+        const activity = db.prepare(`
           SELECT
             EXISTS(SELECT 1 FROM bills WHERE paid_at >= ?)
             OR EXISTS(
@@ -263,30 +183,19 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
             )
             OR EXISTS(SELECT 1 FROM cash_drawer_movements WHERE created_at >= ?)
             OR EXISTS(SELECT 1 FROM refunds WHERE created_at >= ?) AS active
-        `)
-          .get(cutoff, cutoff, cutoff, cutoff) as { active: number };
+        `).get(cutoff, cutoff, cutoff, cutoff) as { active: number };
         if (!activity.active) {
           for (const s of stale) {
-            closeSessionTxn(
-              db,
-              s,
-              0,
-              openedBy,
-              'System auto-close: stale session, flagged for manager review',
-              true,
-            );
+            closeSessionTxn(db, s, 0, openedBy, 'System auto-close: stale session, flagged for manager review', true);
           }
         }
       }
-      if (getOpenSession(db))
-        throw httpError('A shift is already open', 409, 'session_already_open');
+      if (getOpenSession(db)) throw httpError('A shift is already open', 409, 'session_already_open');
       const openedAt = now();
-      const insert = db
-        .prepare(`
+      const insert = db.prepare(`
         INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
         VALUES (?, ?, ?, ?, 'open')
-      `)
-        .run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
+      `).run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
       const sessionId = Number(insert.lastInsertRowid);
       // Keep day close reconciling the same physical drawer: mirror the
       // float as the day's opening_float movement. Session math ignores
@@ -294,16 +203,10 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
       // double-count there. One movement per day (schema constraint): a
       // second shift reuses the first float for day-close purposes.
       if (openingFloatCents > 0) {
-        const openBusinessDate = localDateInTimezone(
-          new Date(),
-          tenantTimezone(),
-          tenantBusinessDayStartTime(db),
-        );
-        const existingFloat = db
-          .prepare(
-            `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
-          )
-          .get(openBusinessDate);
+        const openBusinessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
+        const existingFloat = db.prepare(
+          `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
+        ).get(openBusinessDate);
         if (!existingFloat) {
           db.prepare(`
             INSERT INTO cash_drawer_movements (
@@ -320,34 +223,15 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
     res.json(result);
   } catch (error: unknown) {
     const status = errorStatus(error);
-    const safeMessage =
-      status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift');
-    const diagnosticCode =
-      typeof error === 'object' && error !== null && 'diagnosticCode' in error
-        ? String(error.diagnosticCode)
-        : undefined;
+    const safeMessage = status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift');
+    const diagnosticCode = typeof error === 'object' && error !== null && 'diagnosticCode' in error
+      ? String(error.diagnosticCode) : undefined;
     const payload = operationCommitted
-      ? cashOperationFailurePayload(
-          req,
-          safeMessage,
-          'fc.backend.cash.session.open.completion',
-          'applied',
-        )
+      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.open.completion', 'applied')
       : status >= 500
-        ? cashOperationFailurePayload(
-            req,
-            safeMessage,
-            'fc.backend.cash.session.open.persistence',
-            transactionBodyCompleted ? 'unknown' : 'not_applied',
-          )
+        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.open.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
         : diagnosticCode
-          ? cashOperationFailurePayload(
-              req,
-              safeMessage,
-              'fc.backend.cash.session.open.validation',
-              'not_applied',
-              diagnosticCode,
-            )
+          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.open.validation', 'not_applied', diagnosticCode)
           : { error: safeMessage };
     res.status(status).json(payload);
   }
@@ -369,12 +253,7 @@ router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res
     res.json({ ...session, expected_cash_cents: expectedCashCents });
   } catch (error: unknown) {
     const status = errorStatus(error);
-    res.status(status).json({
-      error:
-        status >= 500
-          ? 'Failed to read current shift'
-          : errorMessage(error, 'Failed to read current shift'),
-    });
+    res.status(status).json({ error: status >= 500 ? 'Failed to read current shift' : errorMessage(error, 'Failed to read current shift') });
   }
 });
 
@@ -383,25 +262,16 @@ router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request,
   let transactionBodyCompleted = false;
   try {
     const sessionId = Number(req.params.id);
-    if (!Number.isInteger(sessionId))
-      throw httpError('Invalid session id', 400, 'session_id_invalid');
-    const countedCashCents = validateCents(
-      (req.body || {}).counted_cash_cents,
-      'counted_cash_cents',
-      'counted_cash_invalid',
-    );
-    const notes =
-      typeof (req.body || {}).notes === 'string' ? (req.body.notes as string).slice(0, 500) : null;
+    if (!Number.isInteger(sessionId)) throw httpError('Invalid session id', 400, 'session_id_invalid');
+    const countedCashCents = validateCents((req.body || {}).counted_cash_cents, 'counted_cash_cents', 'counted_cash_invalid');
+    const notes = typeof (req.body || {}).notes === 'string' ? (req.body.notes as string).slice(0, 500) : null;
     const db = getDatabase();
     const closer = actorId(req);
     const role = actorRole(req);
     const result = withTxn(() => {
-      const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as
-        | CashSessionRow
-        | undefined;
+      const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as CashSessionRow | undefined;
       if (!session) throw httpError('Shift not found', 404, 'session_unavailable');
-      if (session.status !== 'open')
-        throw httpError('Shift is already closed', 409, 'session_already_closed');
+      if (session.status !== 'open') throw httpError('Shift is already closed', 409, 'session_already_closed');
       // Own-session rule: cashiers close only the shift they opened;
       // manager/owner may force-close anyone's (recorded via closed_by).
       if (role === 'cashier' && session.opened_by !== closer) {
@@ -415,34 +285,15 @@ router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request,
     res.json(result);
   } catch (error: unknown) {
     const status = errorStatus(error);
-    const safeMessage =
-      status >= 500 ? 'Failed to close shift' : errorMessage(error, 'Failed to close shift');
-    const diagnosticCode =
-      typeof error === 'object' && error !== null && 'diagnosticCode' in error
-        ? String(error.diagnosticCode)
-        : undefined;
+    const safeMessage = status >= 500 ? 'Failed to close shift' : errorMessage(error, 'Failed to close shift');
+    const diagnosticCode = typeof error === 'object' && error !== null && 'diagnosticCode' in error
+      ? String(error.diagnosticCode) : undefined;
     const payload = operationCommitted
-      ? cashOperationFailurePayload(
-          req,
-          safeMessage,
-          'fc.backend.cash.session.close.completion',
-          'applied',
-        )
+      ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.close.completion', 'applied')
       : status >= 500
-        ? cashOperationFailurePayload(
-            req,
-            safeMessage,
-            'fc.backend.cash.session.close.persistence',
-            transactionBodyCompleted ? 'unknown' : 'not_applied',
-          )
+        ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.close.persistence', transactionBodyCompleted ? 'unknown' : 'not_applied')
         : diagnosticCode
-          ? cashOperationFailurePayload(
-              req,
-              safeMessage,
-              'fc.backend.cash.session.close.validation',
-              'not_applied',
-              diagnosticCode,
-            )
+          ? cashOperationFailurePayload(req, safeMessage, 'fc.backend.cash.session.close.validation', 'not_applied', diagnosticCode)
           : { error: safeMessage };
     res.status(status).json(payload);
   }

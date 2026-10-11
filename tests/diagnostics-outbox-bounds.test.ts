@@ -426,14 +426,21 @@ async function main() {
     ).count < DIAGNOSTIC_LOG_MAX_ROWS,
     'permanent rejection rows no longer block all outbox capacity',
   );
+  const gapRow = db
+    .prepare(
+      "SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'permanent_rejection'",
+    )
+    .get() as { count: number } | undefined;
+  const sealedGapReport = db
+    .prepare(
+      "SELECT payload FROM store_diagnostics_outbox WHERE payload LIKE '%\"gap_reason\":\"permanent_rejection\"%'",
+    )
+    .get() as { payload: string } | undefined;
+  const totalPermanentRejectionGapCount =
+    (gapRow?.count ?? 0) +
+    (sealedGapReport ? (JSON.parse(sealedGapReport.payload).count as number) : 0);
   assertEqualOrThrow(
-    (
-      db
-        .prepare(
-          "SELECT count FROM diagnostics_delivery_gaps WHERE reason_code = 'permanent_rejection'",
-        )
-        .get() as { count: number }
-    ).count,
+    totalPermanentRejectionGapCount,
     DIAGNOSTIC_LOG_MAX_ROWS,
     'reclaiming already-accounted rejections does not count their occurrences twice',
   );

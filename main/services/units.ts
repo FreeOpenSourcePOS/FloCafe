@@ -42,11 +42,7 @@ export function isSupplyUnit(value: unknown): value is SupplyUnit {
 
 export function assertSupplyUnit(value: unknown, field = 'unit'): SupplyUnit {
   if (!isSupplyUnit(value)) {
-    throw new UnitConversionError(
-      400,
-      `${field} must be one of: ${SUPPLY_UNITS.join(', ')}`,
-      'unit_invalid',
-    );
+    throw new UnitConversionError(400, `${field} must be one of: ${SUPPLY_UNITS.join(', ')}`, 'unit_invalid');
   }
   return value;
 }
@@ -71,11 +67,7 @@ export function convertQuantity(quantity: number, fromUnit: string, toUnit: stri
     throw new UnitConversionError(400, 'quantity must be a finite number', 'quantity_invalid');
   }
   if (UNIT_DIMENSIONS[from] !== UNIT_DIMENSIONS[to]) {
-    throw new UnitConversionError(
-      400,
-      `Cannot convert between units of different dimensions (${from} → ${to})`,
-      'unit_invalid',
-    );
+    throw new UnitConversionError(400, `Cannot convert between units of different dimensions (${from} → ${to})`, 'unit_invalid');
   }
   if (from === to) return roundQuantity(quantity);
   const inBase = quantity * TO_BASE[from];

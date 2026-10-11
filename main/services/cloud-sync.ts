@@ -2622,9 +2622,25 @@ export class CloudSyncService {
     reason: DiagnosticsGapReason,
   ): void {
     db.transaction(() => {
-      const report = safeJsonParse(payload) as { capture_point?: unknown } | null;
+      const report = safeJsonParse(payload) as {
+        capture_point?: unknown;
+        facts?: { gap_reason?: unknown; gap_count?: unknown };
+      } | null;
       if (report?.capture_point !== 'fc.diagnostics.delivery.queue_gap') {
         addDiagnosticsDeliveryGap(db, reason, diagnosticPayloadCount(payload));
+      } else {
+        const originalReason = report?.facts?.gap_reason;
+        const originalCount =
+          typeof report?.facts?.gap_count === 'number'
+            ? report.facts.gap_count
+            : diagnosticPayloadCount(payload);
+        if (
+          typeof originalReason === 'string' &&
+          (DIAGNOSTICS_GAP_REASONS as readonly string[]).includes(originalReason) &&
+          originalCount > 0
+        ) {
+          addDiagnosticsDeliveryGap(db, originalReason as DiagnosticsGapReason, originalCount);
+        }
       }
       db.prepare(`UPDATE store_diagnostics_outbox
         SET status = 'failed', permanent_failure = 1, next_attempt_at = NULL, last_error = ?, updated_at = ?

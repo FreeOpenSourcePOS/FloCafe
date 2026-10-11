@@ -1,14 +1,13 @@
 import { randomBytes } from 'crypto';
 import { getDatabase, now, withTxn } from '../db';
-import { SupplyUnit, assertSupplyUnit, convertQuantity, roundQuantity } from './units';
+import {
+  SupplyUnit,
+  assertSupplyUnit,
+  convertQuantity,
+  roundQuantity,
+} from './units';
 
-export type SupplyMovementType =
-  | 'receive'
-  | 'count'
-  | 'adjustment'
-  | 'waste'
-  | 'recipe_depletion'
-  | 'recipe_restore';
+export type SupplyMovementType = 'receive' | 'count' | 'adjustment' | 'waste' | 'recipe_depletion' | 'recipe_restore';
 export type SupplyServiceDiagnosticCode =
   | 'recipe_linked'
   | 'name_required'
@@ -90,14 +89,9 @@ function newId(): string {
 }
 
 function assertReason(input: RecordMovementInput): string | null {
-  const reason =
-    input.reason === undefined || input.reason === null ? null : String(input.reason).trim();
+  const reason = input.reason === undefined || input.reason === null ? null : String(input.reason).trim();
   if ((input.movementType === 'adjustment' || input.movementType === 'waste') && !reason) {
-    throw new SupplyServiceError(
-      400,
-      'reason is required for adjustment and waste movements',
-      'movement_reason_required',
-    );
+    throw new SupplyServiceError(400, 'reason is required for adjustment and waste movements', 'movement_reason_required');
   }
   if (reason && reason.length > 500) {
     throw new SupplyServiceError(400, 'reason is too long', 'movement_reason_too_long');
@@ -108,10 +102,7 @@ function assertReason(input: RecordMovementInput): string | null {
 function normalizeQuantity(
   value: unknown,
   field = 'quantity',
-  diagnosticCode:
-    | 'quantity_invalid'
-    | 'threshold_invalid'
-    | 'movement_quantity_invalid' = 'quantity_invalid',
+  diagnosticCode: 'quantity_invalid' | 'threshold_invalid' | 'movement_quantity_invalid' = 'quantity_invalid',
 ): number {
   const quantity = typeof value === 'string' ? Number(value) : value;
   if (typeof quantity !== 'number' || !Number.isFinite(quantity)) {
@@ -121,9 +112,7 @@ function normalizeQuantity(
 }
 
 export function getSupply(db: ReturnType<typeof getDatabase>, id: string): SupplyRecord {
-  const row = db.prepare('SELECT * FROM supplies WHERE id = ? AND deleted_at IS NULL').get(id) as
-    | SupplyRecord
-    | undefined;
+  const row = db.prepare('SELECT * FROM supplies WHERE id = ? AND deleted_at IS NULL').get(id) as SupplyRecord | undefined;
   if (!row) throw new SupplyServiceError(404, 'Supply not found');
   return row;
 }
@@ -166,35 +155,19 @@ export function listSupplies(
   return db.prepare(sql).all(...params) as SupplyRecord[];
 }
 
-export function createSupply(
-  db: ReturnType<typeof getDatabase>,
-  input: CreateSupplyInput,
-): SupplyRecord {
+export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSupplyInput): SupplyRecord {
   const name = String(input.name || '').trim();
   if (!name) throw new SupplyServiceError(400, 'name is required', 'name_required');
   if (name.length > 200) throw new SupplyServiceError(400, 'name is too long', 'name_too_long');
   const baseUnit = assertSupplyUnit(input.baseUnit, 'base_unit');
-  const stockQuantity =
-    input.stockQuantity === undefined
-      ? 0
-      : roundQuantity(normalizeQuantity(input.stockQuantity, 'stock_quantity'));
+  const stockQuantity = input.stockQuantity === undefined ? 0 : roundQuantity(normalizeQuantity(input.stockQuantity, 'stock_quantity'));
   if (input.lowStockThreshold !== undefined && input.lowStockThreshold !== null) {
-    const threshold = normalizeQuantity(
-      input.lowStockThreshold,
-      'low_stock_threshold',
-      'threshold_invalid',
-    );
-    if (threshold < 0)
-      throw new SupplyServiceError(
-        400,
-        'low_stock_threshold must be non-negative',
-        'threshold_invalid',
-      );
+    const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold', 'threshold_invalid');
+    if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative', 'threshold_invalid');
   }
-  const lowStockThreshold =
-    input.lowStockThreshold === undefined || input.lowStockThreshold === null
-      ? null
-      : roundQuantity(normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold'));
+  const lowStockThreshold = input.lowStockThreshold === undefined || input.lowStockThreshold === null
+    ? null
+    : roundQuantity(normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold'));
   const id = input.id || newId();
   const timestamp = now();
   const isActive = input.isActive === false ? 0 : 1;
@@ -206,8 +179,7 @@ export function createSupply(
     `).run(id, name, baseUnit, lowStockThreshold, isActive, timestamp, timestamp);
 
     if (stockQuantity !== 0) {
-      if (!input.actorUserId)
-        throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
+      if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
       applySupplyStockChange(db, {
         supplyId: id,
         quantityDelta: stockQuantity,
@@ -239,21 +211,12 @@ export function updateSupply(
     if (input.lowStockThreshold === null) {
       lowStockThreshold = null;
     } else {
-      const threshold = normalizeQuantity(
-        input.lowStockThreshold,
-        'low_stock_threshold',
-        'threshold_invalid',
-      );
-      if (threshold < 0)
-        throw new SupplyServiceError(
-          400,
-          'low_stock_threshold must be non-negative',
-          'threshold_invalid',
-        );
+      const threshold = normalizeQuantity(input.lowStockThreshold, 'low_stock_threshold', 'threshold_invalid');
+      if (threshold < 0) throw new SupplyServiceError(400, 'low_stock_threshold must be non-negative', 'threshold_invalid');
       lowStockThreshold = roundQuantity(threshold);
     }
   }
-  const isActive = input.isActive === undefined ? supply.is_active : input.isActive ? 1 : 0;
+  const isActive = input.isActive === undefined ? supply.is_active : (input.isActive ? 1 : 0);
   db.prepare(`
     UPDATE supplies SET name = ?, low_stock_threshold = ?, is_active = ?, updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
@@ -264,12 +227,10 @@ export function updateSupply(
 export function softDeleteSupply(db: ReturnType<typeof getDatabase>, id: string): void {
   getSupply(db, id);
   const linkedRecipe = db.prepare('SELECT 1 FROM recipe_items WHERE supply_id = ? LIMIT 1').get(id);
-  if (linkedRecipe)
-    throw new SupplyServiceError(409, 'Cannot delete a supply used by a recipe', 'recipe_linked');
+  if (linkedRecipe) throw new SupplyServiceError(409, 'Cannot delete a supply used by a recipe', 'recipe_linked');
   const timestamp = now();
-  db.prepare(
-    'UPDATE supplies SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL',
-  ).run(timestamp, timestamp, id);
+  db.prepare('UPDATE supplies SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
+    .run(timestamp, timestamp, id);
 }
 
 export function applySupplyStockChange(
@@ -292,56 +253,41 @@ export function applySupplyStockChange(
   if (!supply) throw new SupplyServiceError(404, 'Supply not found');
   if (!options.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required');
 
-  const unit =
-    options.unit === undefined ? supply.base_unit : assertSupplyUnit(options.unit, 'unit');
+  const unit = options.unit === undefined ? supply.base_unit : assertSupplyUnit(options.unit, 'unit');
   const deltaInBase = convertQuantity(options.quantityDelta, unit, supply.base_unit);
   if (deltaInBase === 0 && options.movementType !== 'count') {
-    throw new SupplyServiceError(
-      400,
-      'quantity_delta is too small to change stock',
-      'movement_zero',
-    );
+    throw new SupplyServiceError(400, 'quantity_delta is too small to change stock', 'movement_zero');
   }
 
   const stockBefore = Number(supply.stock_quantity);
   const stockAfter = roundQuantity(stockBefore + deltaInBase);
   const timestamp = options.createdAt || now();
 
-  db.prepare('UPDATE supplies SET stock_quantity = ?, updated_at = ? WHERE id = ?').run(
-    stockAfter,
-    timestamp,
-    options.supplyId,
-  );
+  db.prepare('UPDATE supplies SET stock_quantity = ?, updated_at = ? WHERE id = ?')
+    .run(stockAfter, timestamp, options.supplyId);
 
-  const movement = db
-    .prepare(`
+  const movement = db.prepare(`
     INSERT INTO supply_movements (
       supply_id, quantity_delta, movement_type, unit, stock_after,
       reason, actor_user_id, reference_type, reference_id, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-    .run(
-      options.supplyId,
-      deltaInBase,
-      options.movementType,
-      supply.base_unit,
-      stockAfter,
-      options.reason ?? null,
-      options.actorUserId,
-      options.referenceType ?? null,
-      options.referenceId === null || options.referenceId === undefined
-        ? null
-        : String(options.referenceId),
-      timestamp,
-    );
+  `).run(
+    options.supplyId,
+    deltaInBase,
+    options.movementType,
+    supply.base_unit,
+    stockAfter,
+    options.reason ?? null,
+    options.actorUserId,
+    options.referenceType ?? null,
+    options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),
+    timestamp,
+  );
 
   return { stockBefore, stockAfter, movementId: Number(movement.lastInsertRowid) };
 }
 
-function recordSupplyMovementInTxn(
-  db: ReturnType<typeof getDatabase>,
-  input: RecordMovementInput,
-): SupplyMovement | null {
+function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
   const supply = getSupply(db, input.supplyId);
   if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required');
   const quantity = normalizeQuantity(input.quantity, 'quantity', 'movement_quantity_invalid');
@@ -352,44 +298,25 @@ function recordSupplyMovementInTxn(
   let delta: number;
   switch (input.movementType) {
     case 'receive':
-      if (quantity <= 0)
-        throw new SupplyServiceError(
-          400,
-          'receive quantity must be positive',
-          quantity === 0 ? 'movement_zero' : 'movement_negative',
-        );
+      if (quantity <= 0) throw new SupplyServiceError(400, 'receive quantity must be positive', quantity === 0 ? 'movement_zero' : 'movement_negative');
       delta = convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'waste':
-      if (quantity <= 0)
-        throw new SupplyServiceError(
-          400,
-          'waste quantity must be positive',
-          quantity === 0 ? 'movement_zero' : 'movement_negative',
-        );
+      if (quantity <= 0) throw new SupplyServiceError(400, 'waste quantity must be positive', quantity === 0 ? 'movement_zero' : 'movement_negative');
       delta = -convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'adjustment':
-      if (quantity === 0)
-        throw new SupplyServiceError(400, 'adjustment quantity must be non-zero', 'movement_zero');
+      if (quantity === 0) throw new SupplyServiceError(400, 'adjustment quantity must be non-zero', 'movement_zero');
       delta = convertQuantity(quantity, unit, supply.base_unit);
       break;
     case 'count': {
-      if (quantity < 0)
-        throw new SupplyServiceError(
-          400,
-          'count quantity must be non-negative',
-          'movement_negative',
-        );
+      if (quantity < 0) throw new SupplyServiceError(400, 'count quantity must be non-negative', 'movement_negative');
       const target = convertQuantity(quantity, unit, supply.base_unit);
       delta = roundQuantity(target - Number(supply.stock_quantity));
       break;
     }
     default:
-      throw new SupplyServiceError(
-        400,
-        `movement_type ${input.movementType} is not allowed via this path`,
-      );
+      throw new SupplyServiceError(400, `movement_type ${input.movementType} is not allowed via this path`);
   }
 
   const { movementId } = applySupplyStockChange(db, {
@@ -404,8 +331,7 @@ function recordSupplyMovementInTxn(
     createdAt: timestamp,
   });
 
-  const row = db
-    .prepare(`
+  const row = db.prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
       m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
@@ -414,15 +340,11 @@ function recordSupplyMovementInTxn(
     LEFT JOIN supplies s ON s.id = m.supply_id
     LEFT JOIN users u ON u.id = m.actor_user_id
     WHERE m.id = ?
-  `)
-    .get(movementId) as SupplyMovement | undefined;
+  `).get(movementId) as SupplyMovement | undefined;
   return row || null;
 }
 
-export function recordSupplyMovement(
-  db: ReturnType<typeof getDatabase>,
-  input: RecordMovementInput,
-): SupplyMovement | null {
+export function recordSupplyMovement(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
   return withTxn(() => recordSupplyMovementInTxn(db, input));
 }
 
@@ -447,16 +369,14 @@ export function listSupplyMovements(
     params.push(filters.movementType);
   }
   if (filters.search) {
-    conditions.push(
-      "(s.name LIKE ? ESCAPE '!' OR m.reason LIKE ? ESCAPE '!' OR u.name LIKE ? ESCAPE '!')",
-    );
+    conditions.push("(s.name LIKE ? ESCAPE '!' OR m.reason LIKE ? ESCAPE '!' OR u.name LIKE ? ESCAPE '!')");
     const searchTerm = `%${filters.search.replace(/[!%_]/g, '!$&')}%`;
     params.push(searchTerm, searchTerm, searchTerm);
   }
   if (filters.beforeId !== undefined) {
-    const cursor = db
-      .prepare('SELECT created_at FROM supply_movements WHERE id = ?')
-      .get(filters.beforeId) as { created_at: string } | undefined;
+    const cursor = db.prepare('SELECT created_at FROM supply_movements WHERE id = ?').get(filters.beforeId) as
+      | { created_at: string }
+      | undefined;
     if (cursor) {
       conditions.push('(m.created_at, m.id) < (?, ?)');
       params.push(cursor.created_at, filters.beforeId);
@@ -464,8 +384,7 @@ export function listSupplyMovements(
   }
   const perPage = filters.perPage ?? 50;
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = db
-    .prepare(`
+  const rows = db.prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
       m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
@@ -476,8 +395,7 @@ export function listSupplyMovements(
     ${whereSql}
     ORDER BY m.created_at DESC, m.id DESC
     LIMIT ?
-  `)
-    .all(...params, perPage + 1) as SupplyMovement[];
+  `).all(...params, perPage + 1) as SupplyMovement[];
 
   const hasMore = rows.length > perPage;
   const movements = hasMore ? rows.slice(0, perPage) : rows;

@@ -17,20 +17,9 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
 function captureProductValidation(
   capturePoint: 'fc.backend.product.create.validation' | 'fc.backend.product.update.validation',
-  validationCode:
-    | 'required_fields'
-    | 'numeric_fields'
-    | 'weighted_fields'
-    | 'cashback_invalid'
-    | 'tax_behavior_invalid'
-    | 'tax_category_invalid'
-    | 'image_url_invalid'
-    | 'inventory_link_invalid'
-    | 'category_invalid'
-    | 'dietary_tags_invalid'
-    | 'variants_invalid'
-    | 'barcode_conflict'
-    | 'addon_groups_invalid',
+  validationCode: 'required_fields' | 'numeric_fields' | 'weighted_fields' | 'cashback_invalid' | 'tax_behavior_invalid'
+    | 'tax_category_invalid' | 'image_url_invalid' | 'inventory_link_invalid' | 'category_invalid'
+    | 'dietary_tags_invalid' | 'variants_invalid' | 'barcode_conflict' | 'addon_groups_invalid',
 ): void {
   const failure = serializeOperationFailure({
     capture_point: capturePoint,
@@ -44,9 +33,7 @@ function captureProductValidation(
   }
 }
 
-function captureProductStockValidation(
-  validationCode: 'action_required' | 'action_invalid' | 'quantity_invalid',
-): void {
+function captureProductStockValidation(validationCode: 'action_required' | 'action_invalid' | 'quantity_invalid'): void {
   const failure = serializeOperationFailure({
     capture_point: 'fc.backend.product.stock.validation',
     outcome: 'not_applied',
@@ -152,49 +139,44 @@ function fetchPinnedHttps(
       else resolve(result!);
     };
 
-    const request = https.request(
-      {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || 443,
-        path: `${parsedUrl.pathname}${parsedUrl.search}`,
-        method: 'GET',
-        headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
-        servername: parsedUrl.hostname,
-        signal,
-        lookup: ((_hostname, options, callback) => {
-          const family = net.isIP(resolvedAddress);
-          // Restrict lookup strictly to the verified SSRF-safe address.
-          if (options.all) {
-            callback(null, [{ address: resolvedAddress, family }]);
-            return;
-          }
-          callback(null, resolvedAddress, family);
-        }) as net.LookupFunction,
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        let totalBytes = 0;
+    const request = https.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 443,
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      method: 'GET',
+      headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
+      servername: parsedUrl.hostname,
+      signal,
+      lookup: ((_hostname, options, callback) => {
+        const family = net.isIP(resolvedAddress);
+        // Restrict lookup strictly to the verified SSRF-safe address.
+        if (options.all) {
+          callback(null, [{ address: resolvedAddress, family }]);
+          return;
+        }
+        callback(null, resolvedAddress, family);
+      }) as net.LookupFunction,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
 
-        response.on('data', (chunk: Buffer) => {
-          totalBytes += chunk.length;
-          if (totalBytes > MAX_FETCH_BYTES) {
-            response.destroy();
-            request.destroy();
-            finish(new Error('Image too large'));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on('end', () =>
-          finish(undefined, {
-            status: response.statusCode || 502,
-            headers: new Headers(response.headers as Record<string, string>),
-            body: Buffer.concat(chunks),
-          }),
-        );
-        response.on('error', (error) => finish(error));
-      },
-    );
+      response.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_FETCH_BYTES) {
+          response.destroy();
+          request.destroy();
+          finish(new Error('Image too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => finish(undefined, {
+        status: response.statusCode || 502,
+        headers: new Headers(response.headers as Record<string, string>),
+        body: Buffer.concat(chunks),
+      }));
+      response.on('error', (error) => finish(error));
+    });
 
     request.on('error', (error) => finish(error));
     request.end();
@@ -237,9 +219,9 @@ export function loadProductRelationsBatch(
   const categoryMap = new Map<string, any>();
   if (categoryIds.length > 0) {
     const catPlaceholders = categoryIds.map(() => '?').join(',');
-    const categoryRows = db
-      .prepare(`SELECT * FROM categories WHERE id IN (${catPlaceholders})`)
-      .all(...categoryIds) as any[];
+    const categoryRows = db.prepare(
+      `SELECT * FROM categories WHERE id IN (${catPlaceholders})`
+    ).all(...categoryIds) as any[];
     for (const c of categoryRows) {
       categoryMap.set(c.id, c);
     }
@@ -247,21 +229,16 @@ export function loadProductRelationsBatch(
 
   // 2. Load all addon_group ↔ product mappings for these products
   const placeholders = productIds.map(() => '?').join(',');
-  const agpRows = db
-    .prepare(
-      `SELECT product_id, addon_group_id FROM addon_group_product WHERE product_id IN (${placeholders})`,
-    )
-    .all(...productIds) as any[];
+  const agpRows = db.prepare(
+    `SELECT product_id, addon_group_id FROM addon_group_product WHERE product_id IN (${placeholders})`
+  ).all(...productIds) as any[];
 
   // 3. Load all addon_group ↔ category mappings for these products' categories
-  const categoryAddonGroupRows =
-    categoryIds.length > 0
-      ? (db
-          .prepare(
-            `SELECT category_id, addon_group_id FROM category_addon_groups WHERE category_id IN (${categoryIds.map(() => '?').join(',')})`,
-          )
-          .all(...categoryIds) as { category_id: string; addon_group_id: string }[])
-      : [];
+  const categoryAddonGroupRows = categoryIds.length > 0
+    ? db.prepare(
+      `SELECT category_id, addon_group_id FROM category_addon_groups WHERE category_id IN (${categoryIds.map(() => '?').join(',')})`
+    ).all(...categoryIds) as { category_id: string; addon_group_id: string }[]
+    : [];
 
   const addonGroupIdsByCategory = new Map<string, string[]>();
   for (const row of categoryAddonGroupRows) {
@@ -279,20 +256,16 @@ export function loadProductRelationsBatch(
   }
 
   // 5. Load all referenced addon groups in one query
-  const allAddonGroupIds = [
-    ...new Set([
-      ...agpRows.map((row: any) => row.addon_group_id),
-      ...categoryAddonGroupRows.map((row) => row.addon_group_id),
-    ]),
-  ];
+  const allAddonGroupIds = [...new Set([
+    ...agpRows.map((row: any) => row.addon_group_id),
+    ...categoryAddonGroupRows.map((row) => row.addon_group_id),
+  ])];
   const addonGroupMap = new Map<string, any>();
   if (allAddonGroupIds.length > 0) {
     const agPlaceholders = allAddonGroupIds.map(() => '?').join(',');
-    const addonGroups = db
-      .prepare(
-        `SELECT * FROM addon_groups WHERE is_active = 1 AND id IN (${agPlaceholders}) ORDER BY sort_order, name`,
-      )
-      .all(...allAddonGroupIds) as any[];
+    const addonGroups = db.prepare(
+      `SELECT * FROM addon_groups WHERE is_active = 1 AND id IN (${agPlaceholders}) ORDER BY sort_order, name`
+    ).all(...allAddonGroupIds) as any[];
     for (const ag of addonGroups) {
       addonGroupMap.set(ag.id, ag);
     }
@@ -302,9 +275,9 @@ export function loadProductRelationsBatch(
   const addonMap = new Map<string, any[]>();
   if (allAddonGroupIds.length > 0) {
     const agPlaceholders = allAddonGroupIds.map(() => '?').join(',');
-    const addons = db
-      .prepare(`SELECT * FROM addons WHERE is_active = 1 AND addon_group_id IN (${agPlaceholders})`)
-      .all(...allAddonGroupIds) as any[];
+    const addons = db.prepare(
+      `SELECT * FROM addons WHERE is_active = 1 AND addon_group_id IN (${agPlaceholders})`
+    ).all(...allAddonGroupIds) as any[];
     for (const addon of addons) {
       const list = addonMap.get(addon.addon_group_id) || [];
       list.push(addon);
@@ -313,12 +286,10 @@ export function loadProductRelationsBatch(
   }
 
   // 7. Load variants for these products in one query
-  const variantRows = db
-    .prepare(
-      `SELECT * FROM product_variants WHERE product_id IN (${placeholders})${options.includeInactiveVariants ? '' : ' AND is_active = 1'}
-     ORDER BY product_id, sort_order, name`,
-    )
-    .all(...productIds);
+  const variantRows = db.prepare(
+    `SELECT * FROM product_variants WHERE product_id IN (${placeholders})${options.includeInactiveVariants ? '' : ' AND is_active = 1'}
+     ORDER BY product_id, sort_order, name`
+  ).all(...productIds);
   const variantsByProduct = new Map<string, Record<string, unknown>[]>();
   for (const variant of variantRows) {
     const list = variantsByProduct.get(variant.product_id) || [];
@@ -327,15 +298,7 @@ export function loadProductRelationsBatch(
   }
 
   // 8. Assemble results
-  const result = new Map<
-    string,
-    {
-      category: any;
-      addon_groups: any[];
-      addon_group_ids: string[];
-      variants: Record<string, unknown>[];
-    }
-  >();
+  const result = new Map<string, { category: any; addon_groups: any[]; addon_group_ids: string[]; variants: Record<string, unknown>[] }>();
   for (const p of products) {
     const category = p.category_id ? categoryMap.get(p.category_id) || null : null;
 
@@ -348,12 +311,7 @@ export function loadProductRelationsBatch(
       .filter((group) => effectiveGroupIds.has(group.id))
       .map((group) => ({ ...group, addons: addonMap.get(group.id) || [] }));
 
-    result.set(p.id, {
-      category,
-      addon_groups,
-      addon_group_ids,
-      variants: variantsByProduct.get(p.id) || [],
-    });
+    result.set(p.id, { category, addon_groups, addon_group_ids, variants: variantsByProduct.get(p.id) || [] });
   }
 
   return result;
@@ -373,13 +331,8 @@ function hasOwn(body: Record<string, unknown>, field: string): boolean {
  * reads stay active-only. Mirrors the add-on groups `include_inactive` gate.
  */
 function wantsInactiveVariants(req: Request): boolean {
-  return (
-    req.query.include_inactive_variants === 'true' &&
-    hasPermission(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-      'catalog.manage',
-    )
-  );
+  return req.query.include_inactive_variants === 'true'
+    && hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'catalog.manage');
 }
 
 function stockReason(value: unknown, fallback: string): string {
@@ -439,12 +392,8 @@ function serializeProduct(product: any): any {
     has_image: toBoolean(product.has_image),
     dietary_tags: parseTags(product.dietary_tags),
     category: serializeCategory(product.category),
-    addon_groups: Array.isArray(product.addon_groups)
-      ? product.addon_groups.map(serializeAddonGroup)
-      : product.addon_groups,
-    variants: Array.isArray(product.variants)
-      ? product.variants.map(serializeVariant)
-      : (product.variants ?? null),
+    addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
+    variants: Array.isArray(product.variants) ? product.variants.map(serializeVariant) : product.variants ?? null,
   };
 }
 
@@ -456,32 +405,22 @@ const PRODUCT_NUMERIC_FIELDS = [
   ['low_stock_threshold', 0, Number.POSITIVE_INFINITY],
 ] as const;
 
-function validateProductNumericFields(
-  values: Record<string, unknown>,
-  requirePrice: boolean,
-): string | null {
+function validateProductNumericFields(values: Record<string, unknown>, requirePrice: boolean): string | null {
   if (requirePrice && (typeof values.price !== 'number' || !Number.isFinite(values.price))) {
     return 'price must be a finite non-negative number';
   }
   for (const [field, minimum, maximum] of PRODUCT_NUMERIC_FIELDS) {
     const value = values[field];
     if (value === undefined || value === null) continue;
-    if (
-      typeof value !== 'number' ||
-      !Number.isFinite(value) ||
-      value < minimum ||
-      value > maximum
-    ) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
       return `${field} must be a finite number between ${minimum} and ${maximum === Number.POSITIVE_INFINITY ? 'the maximum supported value' : maximum}`;
     }
   }
   return null;
 }
 
-function normalizeSaleUnit(value: unknown): (typeof VALID_SALE_UNITS)[number] {
-  return VALID_SALE_UNITS.includes(value as any)
-    ? (value as (typeof VALID_SALE_UNITS)[number])
-    : 'each';
+function normalizeSaleUnit(value: unknown): typeof VALID_SALE_UNITS[number] {
+  return VALID_SALE_UNITS.includes(value as any) ? value as typeof VALID_SALE_UNITS[number] : 'each';
 }
 
 function validateWeightedProductFields(
@@ -491,27 +430,18 @@ function validateWeightedProductFields(
   if (values.sale_unit !== undefined && !VALID_SALE_UNITS.includes(values.sale_unit as any)) {
     return `sale_unit must be one of: ${VALID_SALE_UNITS.join(', ')}`;
   }
-  if (
-    values.allow_fractional_quantity !== undefined &&
-    typeof values.allow_fractional_quantity !== 'boolean'
-  ) {
+  if (values.allow_fractional_quantity !== undefined && typeof values.allow_fractional_quantity !== 'boolean') {
     return 'allow_fractional_quantity must be a boolean';
   }
   if (values.weight_precision !== undefined) {
-    if (
-      !Number.isSafeInteger(values.weight_precision) ||
-      (values.weight_precision as number) < 0 ||
-      (values.weight_precision as number) > 4
-    ) {
+    if (!Number.isSafeInteger(values.weight_precision) || (values.weight_precision as number) < 0 || (values.weight_precision as number) > 4) {
       return 'weight_precision must be an integer between 0 and 4';
     }
   }
-  const effectiveSaleUnit =
-    values.sale_unit !== undefined ? values.sale_unit : (current?.sale_unit ?? 'each');
-  const effectiveAllowFractional =
-    values.allow_fractional_quantity !== undefined
-      ? values.allow_fractional_quantity
-      : Number(current?.allow_fractional_quantity) === 1;
+  const effectiveSaleUnit = values.sale_unit !== undefined ? values.sale_unit : current?.sale_unit ?? 'each';
+  const effectiveAllowFractional = values.allow_fractional_quantity !== undefined
+    ? values.allow_fractional_quantity
+    : Number(current?.allow_fractional_quantity) === 1;
   if (effectiveSaleUnit === 'each' && effectiveAllowFractional === true) {
     return 'allow_fractional_quantity requires a weighted sale_unit';
   }
@@ -528,16 +458,18 @@ function validateInventoryLinkFields(
   if (!linkProvided && !quantityProvided) return null;
 
   const rawLink = values.inventory_product_id;
-  const link = rawLink === null || rawLink === undefined || rawLink === '' ? null : rawLink;
+  const link = rawLink === null || rawLink === undefined || rawLink === ''
+    ? null
+    : rawLink;
   if (link !== null && typeof link !== 'string') {
     return 'inventory_product_id must be a product id string or null';
   }
 
   let effectiveLink: string | null = link as string | null;
   if (!linkProvided && productId) {
-    const current = db
-      .prepare('SELECT inventory_product_id FROM products WHERE id = ?')
-      .get(productId) as { inventory_product_id?: string | null } | undefined;
+    const current = db.prepare(
+      'SELECT inventory_product_id FROM products WHERE id = ?',
+    ).get(productId) as { inventory_product_id?: string | null } | undefined;
     effectiveLink = current?.inventory_product_id ?? null;
   }
 
@@ -545,11 +477,9 @@ function validateInventoryLinkFields(
     if (values.inventory_deduction_quantity === null && !effectiveLink) {
       return null;
     }
-    if (
-      typeof values.inventory_deduction_quantity !== 'number' ||
-      !Number.isFinite(values.inventory_deduction_quantity) ||
-      values.inventory_deduction_quantity <= 0
-    ) {
+    if (typeof values.inventory_deduction_quantity !== 'number'
+      || !Number.isFinite(values.inventory_deduction_quantity)
+      || values.inventory_deduction_quantity <= 0) {
       return 'inventory_deduction_quantity must be a positive finite number';
     }
   } else if (!effectiveLink) {
@@ -561,9 +491,9 @@ function validateInventoryLinkFields(
     return 'inventory_product_id cannot reference the product itself';
   }
 
-  const target = db
-    .prepare('SELECT id, inventory_product_id FROM products WHERE id = ? AND deleted_at IS NULL')
-    .get(effectiveLink) as { id: string; inventory_product_id?: string | null } | undefined;
+  const target = db.prepare(
+    'SELECT id, inventory_product_id FROM products WHERE id = ? AND deleted_at IS NULL',
+  ).get(effectiveLink) as { id: string; inventory_product_id?: string | null } | undefined;
   if (!target) {
     return 'inventory_product_id must reference an existing product';
   }
@@ -571,30 +501,24 @@ function validateInventoryLinkFields(
     return 'inventory_product_id target cannot itself be linked to another product';
   }
   if (productId && linkProvided) {
-    const incomingLink = db
-      .prepare(
-        'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
-      )
-      .get(productId) as { id: string } | undefined;
+    const incomingLink = db.prepare(
+      'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
+    ).get(productId) as { id: string } | undefined;
     // A live recipe variant makes this product an inventory target too: linking
     // it onward would chain variant -> product -> product, which the resolver
     // never reconciles.
-    const incomingVariantLink = db
-      .prepare(
-        `SELECT v.id FROM product_variants v
+    const incomingVariantLink = db.prepare(
+      `SELECT v.id FROM product_variants v
        JOIN products p ON p.id = v.product_id
        WHERE v.inventory_product_id = ? AND v.is_active = 1 AND p.deleted_at IS NULL LIMIT 1`,
-      )
-      .get(productId) as { id: string } | undefined;
+    ).get(productId) as { id: string } | undefined;
     if (incomingLink || incomingVariantLink) {
       return 'A product that is already an inventory target cannot be linked to another product';
     }
   }
-  const otherLink = db
-    .prepare(
-      'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL AND id != ?',
-    )
-    .get(effectiveLink, productId || '') as { id: string } | undefined;
+  const otherLink = db.prepare(
+    'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL AND id != ?',
+  ).get(effectiveLink, productId || '') as { id: string } | undefined;
   if (otherLink) {
     return 'inventory_product_id target is already linked by another product';
   }
@@ -620,11 +544,7 @@ function validateTaxCategoryId(categoryId: unknown): string | null {
 function parseTags(raw: any): string[] {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string' && raw) {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(raw); } catch { return []; }
   }
   return [];
 }
@@ -663,9 +583,7 @@ function normalizeDietaryTags(raw: unknown): { tags?: string[] | null; error?: s
   if (raw === undefined) return {};
   if (raw === null) return { tags: null };
   if (!Array.isArray(raw) || raw.length > MAX_DIETARY_TAGS) {
-    return {
-      error: `dietary_tags must be an array of at most ${MAX_DIETARY_TAGS} strings or null`,
-    };
+    return { error: `dietary_tags must be an array of at most ${MAX_DIETARY_TAGS} strings or null` };
   }
   const tags: string[] = [];
   for (const entry of raw) {
@@ -698,10 +616,7 @@ type NormalizedVariant = {
   sort_order: number;
 };
 
-function normalizeOptionalAmount(
-  value: unknown,
-  field: string,
-): { value?: number | null; error?: string } {
+function normalizeOptionalAmount(value: unknown, field: string): { value?: number | null; error?: string } {
   if (value === undefined) return {};
   if (value === null) return { value: null };
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
@@ -737,11 +652,7 @@ function normalizeVariants(
     const name = normalizeRequiredName(candidate.name);
     if (!name) return { error: `variants[${index}].name is required` };
 
-    if (
-      typeof candidate.price !== 'number' ||
-      !Number.isFinite(candidate.price) ||
-      candidate.price < 0
-    ) {
+    if (typeof candidate.price !== 'number' || !Number.isFinite(candidate.price) || candidate.price < 0) {
       return { error: `variants[${index}].price must be a non-negative finite number` };
     }
 
@@ -754,9 +665,8 @@ function normalizeVariants(
       id = candidate.id.trim();
       if (seenIds.has(id)) return { error: `variants[${index}].id is duplicated in the request` };
       seenIds.add(id);
-      const owner = db
-        .prepare('SELECT product_id, recipe_multiplier FROM product_variants WHERE id = ?')
-        .get(id) as { product_id: string; recipe_multiplier: number } | undefined;
+      const owner = db.prepare('SELECT product_id, recipe_multiplier FROM product_variants WHERE id = ?').get(id) as
+        { product_id: string; recipe_multiplier: number } | undefined;
       if (!owner || owner.product_id !== productId) {
         return { error: `variants[${index}].id does not belong to this product` };
       }
@@ -776,71 +686,41 @@ function normalizeVariants(
       }
     }
 
-    const onlinePrice = normalizeOptionalAmount(
-      candidate.online_price,
-      `variants[${index}].online_price`,
-    );
+    const onlinePrice = normalizeOptionalAmount(candidate.online_price, `variants[${index}].online_price`);
     if (onlinePrice.error) return { error: onlinePrice.error };
-    const costPrice = normalizeOptionalAmount(
-      candidate.cost_price,
-      `variants[${index}].cost_price`,
-    );
+    const costPrice = normalizeOptionalAmount(candidate.cost_price, `variants[${index}].cost_price`);
     if (costPrice.error) return { error: costPrice.error };
-    const stockQuantity = normalizeOptionalAmount(
-      candidate.stock_quantity,
-      `variants[${index}].stock_quantity`,
-    );
+    const stockQuantity = normalizeOptionalAmount(candidate.stock_quantity, `variants[${index}].stock_quantity`);
     if (stockQuantity.error) return { error: stockQuantity.error };
-    const lowStockThreshold = normalizeOptionalAmount(
-      candidate.low_stock_threshold,
-      `variants[${index}].low_stock_threshold`,
-    );
+    const lowStockThreshold = normalizeOptionalAmount(candidate.low_stock_threshold, `variants[${index}].low_stock_threshold`);
     if (lowStockThreshold.error) return { error: lowStockThreshold.error };
 
     const rawRecipeLink = candidate.inventory_product_id;
     let inventoryProductId: string | null = null;
     if (rawRecipeLink !== undefined && rawRecipeLink !== null && rawRecipeLink !== '') {
       if (typeof rawRecipeLink !== 'string') {
-        return {
-          error: `variants[${index}].inventory_product_id must be a product id string or null`,
-        };
+        return { error: `variants[${index}].inventory_product_id must be a product id string or null` };
       }
-      const recipeTarget = db
-        .prepare(
-          'SELECT id, inventory_product_id FROM products WHERE id = ? AND deleted_at IS NULL',
-        )
+      const recipeTarget = db.prepare('SELECT id, inventory_product_id FROM products WHERE id = ? AND deleted_at IS NULL')
         .get(rawRecipeLink) as { id: string; inventory_product_id?: string | null } | undefined;
       if (!recipeTarget) {
-        return {
-          error: `variants[${index}].inventory_product_id must reference an existing product`,
-        };
+        return { error: `variants[${index}].inventory_product_id must reference an existing product` };
       }
       if (recipeTarget.inventory_product_id) {
-        return {
-          error: `variants[${index}].inventory_product_id target cannot itself be linked to another product`,
-        };
+        return { error: `variants[${index}].inventory_product_id target cannot itself be linked to another product` };
       }
       if (productId && rawRecipeLink === productId) {
-        return {
-          error: `variants[${index}].inventory_product_id cannot reference the product itself`,
-        };
+        return { error: `variants[${index}].inventory_product_id cannot reference the product itself` };
       }
       inventoryProductId = rawRecipeLink;
     }
 
     let inventoryDeductionQuantity: number | null = null;
-    if (
-      candidate.inventory_deduction_quantity !== undefined &&
-      candidate.inventory_deduction_quantity !== null
-    ) {
-      if (
-        typeof candidate.inventory_deduction_quantity !== 'number' ||
-        !Number.isFinite(candidate.inventory_deduction_quantity) ||
-        candidate.inventory_deduction_quantity <= 0
-      ) {
-        return {
-          error: `variants[${index}].inventory_deduction_quantity must be a positive finite number`,
-        };
+    if (candidate.inventory_deduction_quantity !== undefined && candidate.inventory_deduction_quantity !== null) {
+      if (typeof candidate.inventory_deduction_quantity !== 'number'
+        || !Number.isFinite(candidate.inventory_deduction_quantity)
+        || candidate.inventory_deduction_quantity <= 0) {
+        return { error: `variants[${index}].inventory_deduction_quantity must be a positive finite number` };
       }
       inventoryDeductionQuantity = candidate.inventory_deduction_quantity;
     }
@@ -852,19 +732,13 @@ function normalizeVariants(
     // positive finite number - no zero portion and no half of a stock factor.
     let recipeMultiplier = 1;
     if (candidate.recipe_multiplier !== undefined) {
-      if (
-        typeof candidate.recipe_multiplier !== 'number' ||
-        !Number.isFinite(candidate.recipe_multiplier) ||
-        candidate.recipe_multiplier <= 0
-      ) {
+      if (typeof candidate.recipe_multiplier !== 'number'
+        || !Number.isFinite(candidate.recipe_multiplier)
+        || candidate.recipe_multiplier <= 0) {
         return { error: `variants[${index}].recipe_multiplier must be a positive finite number` };
       }
       recipeMultiplier = candidate.recipe_multiplier;
-    } else if (
-      storedRecipeMultiplier !== null &&
-      Number.isFinite(storedRecipeMultiplier) &&
-      storedRecipeMultiplier > 0
-    ) {
+    } else if (storedRecipeMultiplier !== null && Number.isFinite(storedRecipeMultiplier) && storedRecipeMultiplier > 0) {
       recipeMultiplier = storedRecipeMultiplier;
     }
 
@@ -919,28 +793,17 @@ function validateCatalogBarcodes(
     barcode: string,
     excludedVariantIds: string[],
   ): 'product' | 'variant' | null => {
-    if (
-      db
-        .prepare(
-          `SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND (? IS NULL OR id != ?)`,
-        )
-        .get(barcode, productId, productId)
-    )
-      return 'product';
-    const exclusion =
-      excludedVariantIds.length > 0
-        ? `AND NOT (v.product_id = ? AND v.id IN (${excludedVariantIds.map(() => '?').join(',')}))`
-        : '';
-    if (
-      db
-        .prepare(
-          `SELECT v.id FROM product_variants v
+    if (db.prepare(
+      `SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND (? IS NULL OR id != ?)`,
+    ).get(barcode, productId, productId)) return 'product';
+    const exclusion = excludedVariantIds.length > 0
+      ? `AND NOT (v.product_id = ? AND v.id IN (${excludedVariantIds.map(() => '?').join(',')}))`
+      : '';
+    if (db.prepare(
+      `SELECT v.id FROM product_variants v
        JOIN products p ON p.id = v.product_id
        WHERE v.barcode = ? AND v.is_active = 1 AND p.deleted_at IS NULL ${exclusion}`,
-        )
-        .get(barcode, ...(excludedVariantIds.length > 0 ? [productId, ...excludedVariantIds] : []))
-    )
-      return 'variant';
+    ).get(barcode, ...(excludedVariantIds.length > 0 ? [productId, ...excludedVariantIds] : []))) return 'variant';
     return null;
   };
   const conflictMessage = (holder: 'product' | 'variant') =>
@@ -992,49 +855,23 @@ function writeProductVariants(
     const variantId = variant.id ?? generateShortId('product_variants');
     if (variant.id) {
       updateVariant.run(
-        variant.name,
-        variant.sku,
-        variant.barcode,
-        variant.price,
-        variant.online_price,
-        variant.cost_price,
-        variant.track_inventory,
-        variant.low_stock_threshold,
-        variant.inventory_product_id,
-        variant.inventory_deduction_quantity,
-        variant.recipe_multiplier,
-        variant.is_active,
-        variant.sort_order,
-        timestamp,
-        variantId,
-        productId,
+        variant.name, variant.sku, variant.barcode, variant.price, variant.online_price, variant.cost_price,
+        variant.track_inventory, variant.low_stock_threshold, variant.inventory_product_id,
+        variant.inventory_deduction_quantity, variant.recipe_multiplier, variant.is_active, variant.sort_order, timestamp,
+        variantId, productId,
       );
     } else {
       insertVariant.run(
-        variantId,
-        productId,
-        variant.name,
-        variant.sku,
-        variant.barcode,
-        variant.price,
-        variant.online_price,
-        variant.cost_price,
-        variant.track_inventory,
-        variant.low_stock_threshold,
-        variant.inventory_product_id,
-        variant.inventory_deduction_quantity,
-        variant.recipe_multiplier,
-        variant.is_active,
-        variant.sort_order,
-        timestamp,
-        timestamp,
+        variantId, productId, variant.name, variant.sku, variant.barcode, variant.price,
+        variant.online_price, variant.cost_price, variant.track_inventory, variant.low_stock_threshold,
+        variant.inventory_product_id, variant.inventory_deduction_quantity, variant.recipe_multiplier,
+        variant.is_active, variant.sort_order, timestamp, timestamp,
       );
     }
     retainedIds.push(variantId);
 
     if (variant.stock_quantity !== null) {
-      const current = db
-        .prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
+      const current = db.prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
         .get(variantId) as { stock_quantity?: number } | undefined;
       const quantityDelta = variant.stock_quantity - Number(current?.stock_quantity ?? 0);
       if (quantityDelta !== 0) {
@@ -1059,27 +896,20 @@ function writeProductVariants(
        WHERE product_id = ? AND is_active = 1 AND id NOT IN (${placeholders})`,
     ).run(timestamp, productId, ...retainedIds);
   } else {
-    db.prepare(
-      'UPDATE product_variants SET is_active = 0, updated_at = ? WHERE product_id = ? AND is_active = 1',
-    ).run(timestamp, productId);
+    db.prepare('UPDATE product_variants SET is_active = 0, updated_at = ? WHERE product_id = ? AND is_active = 1')
+      .run(timestamp, productId);
   }
 }
 
 function validateCategoryId(db: any, categoryId: unknown): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'category_id must be a string or null';
-  const category = db
-    .prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1')
-    .get(categoryId);
+  const category = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(categoryId);
   if (!category) return 'Category not found or inactive';
   return null;
 }
 
-function validateAddonGroupIds(
-  db: any,
-  rawIds: unknown,
-  productId?: string,
-): { ids?: string[]; error?: string } {
+function validateAddonGroupIds(db: any, rawIds: unknown, productId?: string): { ids?: string[]; error?: string } {
   if (rawIds === undefined) return {};
   if (!Array.isArray(rawIds)) {
     return { error: 'addon_group_ids must be an array' };
@@ -1099,16 +929,14 @@ function validateAddonGroupIds(
   }
 
   const placeholders = uniqueIds.map(() => '?').join(',');
-  const activeRows = db
-    .prepare(`SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`)
-    .all(...uniqueIds) as Array<{ id: string }>;
+  const activeRows = db.prepare(
+    `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`
+  ).all(...uniqueIds) as Array<{ id: string }>;
   const activeIds = new Set(activeRows.map((row) => row.id));
   const retainedRows = productId
-    ? (db
-        .prepare(
-          `SELECT addon_group_id FROM addon_group_product WHERE product_id = ? AND addon_group_id IN (${placeholders})`,
-        )
-        .all(productId, ...uniqueIds) as Array<{ addon_group_id: string }>)
+    ? db.prepare(
+      `SELECT addon_group_id FROM addon_group_product WHERE product_id = ? AND addon_group_id IN (${placeholders})`
+    ).all(productId, ...uniqueIds) as Array<{ addon_group_id: string }>
     : [];
   const retainedIds = new Set(retainedRows.map((row) => row.addon_group_id));
   const missingIds = uniqueIds.filter((id) => !activeIds.has(id) && !retainedIds.has(id));
@@ -1168,12 +996,7 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
     const relations = loadProductRelationsBatch(db, products as any[], { includeInactiveVariants });
 
     const productsWithRelations = (products as any[]).map((product: any) => {
-      const rel = relations.get(product.id) || {
-        category: null,
-        addon_groups: [],
-        addon_group_ids: [],
-        variants: [],
-      };
+      const rel = relations.get(product.id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
       return serializeProduct({
         ...product,
         tags: parseTags(product.tags),
@@ -1186,75 +1009,70 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
 
     res.json({ products: productsWithRelations });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // GET /:id/image — serves decoded image data URI.
-router.get(
-  '/:id/image',
-  asyncHandler(async (req: Request, res: Response) => {
-    try {
-      const db = getDatabase();
-      const row = db
-        .prepare('SELECT image_url FROM products WHERE id = ? AND deleted_at IS NULL')
-        .get(req.params.id) as any;
+router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const row = db.prepare(
+      'SELECT image_url FROM products WHERE id = ? AND deleted_at IS NULL'
+    ).get(req.params.id) as any;
 
-      if (!row || !row.image_url) {
-        return res.status(404).json({ error: 'No image' });
-      }
-
-      const imageUrl = row.image_url as string;
-
-      // Reject non-data URIs to prevent open redirects on public image route.
-      if (!imageUrl.startsWith('data:')) {
-        return res.status(404).json({ error: 'No image' });
-      }
-
-      // Parse data URI and restrict to permitted image mime types.
-      const match = imageUrl.match(/^data:(image\/(webp|png|jpeg|jpg));base64,(.+)$/);
-      if (!match) {
-        return res.status(404).json({ error: 'No image' });
-      }
-
-      const contentType = match[1]; // e.g., "image/webp"
-      const base64Data = match[3]; // group 2 is the extension, group 3 is the base64 data
-
-      const buffer = Buffer.from(base64Data, 'base64');
-      if (buffer.length === 0) {
-        return res.status(404).json({ error: 'No image' });
-      }
-
-      // ETag based on SHA-256 content hash (same perf as MD5 at this size,
-      // avoids future "why MD5?" questions in code review)
-      const etag = crypto.createHash('sha256').update(base64Data).digest('hex');
-
-      // If client already has this version, return 304
-      if (req.headers['if-none-match'] === `"${etag}"`) {
-        return res.status(304).end();
-      }
-
-      res.set({
-        'Content-Type': contentType,
-        'Content-Length': buffer.length,
-        ETag: `"${etag}"`,
-        'Cache-Control': 'no-cache', // Always revalidate — instant cross-terminal updates
-      });
-      res.send(buffer);
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    if (!row || !row.image_url) {
+      return res.status(404).json({ error: 'No image' });
     }
-  }),
-);
+
+    const imageUrl = row.image_url as string;
+
+    // Reject non-data URIs to prevent open redirects on public image route.
+    if (!imageUrl.startsWith('data:')) {
+      return res.status(404).json({ error: 'No image' });
+    }
+
+    // Parse data URI and restrict to permitted image mime types.
+    const match = imageUrl.match(/^data:(image\/(webp|png|jpeg|jpg));base64,(.+)$/);
+    if (!match) {
+      return res.status(404).json({ error: 'No image' });
+    }
+
+    const contentType = match[1]; // e.g., "image/webp"
+    const base64Data = match[3];  // group 2 is the extension, group 3 is the base64 data
+
+    const buffer = Buffer.from(base64Data, 'base64');
+    if (buffer.length === 0) {
+      return res.status(404).json({ error: 'No image' });
+    }
+
+    // ETag based on SHA-256 content hash (same perf as MD5 at this size,
+    // avoids future "why MD5?" questions in code review)
+    const etag = crypto.createHash('sha256').update(base64Data).digest('hex');
+
+    // If client already has this version, return 304
+    if (req.headers['if-none-match'] === `"${etag}"`) {
+      return res.status(304).end();
+    }
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': buffer.length,
+      'ETag': `"${etag}"`,
+      'Cache-Control': 'no-cache', // Always revalidate — instant cross-terminal updates
+    });
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}));
 
 router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const product = db
-      .prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL')
-      .get(req.params.id);
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -1263,190 +1081,159 @@ router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Respon
     const relations = loadProductRelationsBatch(db, [product as any], {
       includeInactiveVariants: wantsInactiveVariants(req),
     });
-    const rel = relations.get((product as any).id) || {
-      category: null,
-      addon_groups: [],
-      addon_group_ids: [],
-      variants: [],
-    };
+    const rel = relations.get((product as any).id) || { category: null, addon_groups: [], addon_group_ids: [], variants: [] };
 
-    res.json({
-      product: serializeProduct({
-        ...(product as any),
-        tags: parseTags((product as any).tags),
-        category: rel.category,
-        addon_groups: rel.addon_groups,
-        addon_group_ids: rel.addon_group_ids,
-        variants: rel.variants,
-      }),
-    });
+    res.json({ product: serializeProduct({
+      ...(product as any),
+      tags: parseTags((product as any).tags),
+      category: rel.category,
+      addon_groups: rel.addon_groups,
+      addon_group_ids: rel.addon_group_ids,
+      variants: rel.variants,
+    }) });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Fetches external https image URL and returns Base64 data URI.
-router.post(
-  '/fetch-url',
-  requirePermission('catalog.manage'),
-  asyncHandler(async (req: Request, res: Response) => {
+router.post('/fetch-url', requirePermission('catalog.manage'), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { url } = req.body;
+
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+
+    // HTTPS only — prevents MITM and mixed-content issues
+    if (!url.startsWith('https://')) {
+      return res.status(400).json({ error: 'Only HTTPS URLs are supported' });
+    }
+
+    // Follow redirects manually to re-validate host and IP on each hop.
+    const MAX_REDIRECTS = 5;
+    let currentUrl = url;
+    // Named to avoid colliding with Express's Response type imported above.
+    let response: { status: number; headers: Headers; body: Buffer } | undefined;
+    const controller = new AbortController();
+    const requestSignal = getHttpRequestSignal(req);
+    const abortForShutdown = () => controller.abort();
+    if (requestSignal?.aborted) controller.abort();
+    else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
+    const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
+
     try {
-      const { url } = req.body;
-
-      if (!url || typeof url !== 'string') {
-        return res.status(400).json({ error: 'URL is required' });
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(currentUrl);
+      } catch {
+        return res.status(400).json({ error: 'Invalid URL' });
       }
-
-      // HTTPS only — prevents MITM and mixed-content issues
-      if (!url.startsWith('https://')) {
+      if (parsedUrl.protocol !== 'https:') {
         return res.status(400).json({ error: 'Only HTTPS URLs are supported' });
       }
+      if (parsedUrl.username || parsedUrl.password) {
+        return res.status(400).json({ error: 'URLs with user credentials are not allowed' });
+      }
+      if (parsedUrl.port && parsedUrl.port !== '443') {
+        return res.status(400).json({ error: 'Non-standard ports are not allowed' });
+      }
 
-      // Follow redirects manually to re-validate host and IP on each hop.
-      const MAX_REDIRECTS = 5;
-      let currentUrl = url;
-      // Named to avoid colliding with Express's Response type imported above.
-      let response: { status: number; headers: Headers; body: Buffer } | undefined;
-      const controller = new AbortController();
-      const requestSignal = getHttpRequestSignal(req);
-      const abortForShutdown = () => controller.abort();
-      if (requestSignal?.aborted) controller.abort();
-      else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
-      const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
+      let resolvedAddress: string;
+      try {
+        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          return res.status(504).json({ error: 'Request timed out' });
+        }
+        if (error?.code === 'ENOTFOUND') {
+          return res.status(502).json({ error: 'Could not resolve hostname' });
+        }
+        return res.status(400).json({ error: 'URL is not allowed' });
+      }
+
+      let hopResponse: { status: number; headers: Headers; body: Buffer };
+      try {
+        hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
+      } catch (fetchError: any) {
+        if (fetchError.name === 'AbortError') {
+          return res.status(504).json({ error: 'Request timed out' });
+        }
+        if (fetchError.message === 'Image too large') {
+          return res.status(413).json({ error: 'Image too large (max 10 MB)' });
+        }
+        return res.status(502).json({ error: 'Could not fetch the image' });
+      }
+
+      // "manual" redirect mode surfaces 3xx as an opaqueredirect/redirect
+      // response instead of following it — inspect Location ourselves.
+      if (hopResponse.status >= 300 && hopResponse.status < 400) {
+        const location = hopResponse.headers.get('location');
+        if (!location) {
+          return res.status(502).json({ error: 'Could not fetch the image' });
+        }
+        if (hop === MAX_REDIRECTS) {
+          return res.status(502).json({ error: 'Too many redirects' });
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      response = hopResponse;
+      break;
+      }
+
+      if (!response) {
+        return res.status(502).json({ error: 'Could not fetch the image' });
+      }
 
       try {
-        for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-          let parsedUrl: URL;
-          try {
-            parsedUrl = new URL(currentUrl);
-          } catch {
-            return res.status(400).json({ error: 'Invalid URL' });
-          }
-          if (parsedUrl.protocol !== 'https:') {
-            return res.status(400).json({ error: 'Only HTTPS URLs are supported' });
-          }
-          if (parsedUrl.username || parsedUrl.password) {
-            return res.status(400).json({ error: 'URLs with user credentials are not allowed' });
-          }
-          if (parsedUrl.port && parsedUrl.port !== '443') {
-            return res.status(400).json({ error: 'Non-standard ports are not allowed' });
-          }
-
-          let resolvedAddress: string;
-          try {
-            resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
-          } catch (error: any) {
-            if (error?.name === 'AbortError') {
-              return res.status(504).json({ error: 'Request timed out' });
-            }
-            if (error?.code === 'ENOTFOUND') {
-              return res.status(502).json({ error: 'Could not resolve hostname' });
-            }
-            return res.status(400).json({ error: 'URL is not allowed' });
-          }
-
-          let hopResponse: { status: number; headers: Headers; body: Buffer };
-          try {
-            hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
-          } catch (fetchError: any) {
-            if (fetchError.name === 'AbortError') {
-              return res.status(504).json({ error: 'Request timed out' });
-            }
-            if (fetchError.message === 'Image too large') {
-              return res.status(413).json({ error: 'Image too large (max 10 MB)' });
-            }
-            return res.status(502).json({ error: 'Could not fetch the image' });
-          }
-
-          // "manual" redirect mode surfaces 3xx as an opaqueredirect/redirect
-          // response instead of following it — inspect Location ourselves.
-          if (hopResponse.status >= 300 && hopResponse.status < 400) {
-            const location = hopResponse.headers.get('location');
-            if (!location) {
-              return res.status(502).json({ error: 'Could not fetch the image' });
-            }
-            if (hop === MAX_REDIRECTS) {
-              return res.status(502).json({ error: 'Too many redirects' });
-            }
-            currentUrl = new URL(location, currentUrl).toString();
-            continue;
-          }
-
-          response = hopResponse;
-          break;
-        }
-
-        if (!response) {
+        if (response.status < 200 || response.status >= 300) {
           return res.status(502).json({ error: 'Could not fetch the image' });
         }
 
-        try {
-          if (response.status < 200 || response.status >= 300) {
-            return res.status(502).json({ error: 'Could not fetch the image' });
-          }
-
-          // Content-Type check — must be an image
-          const contentType = response.headers.get('content-type') || '';
-          if (!contentType.startsWith('image/')) {
-            return res.status(400).json({ error: 'URL does not point to an image' });
-          }
-
-          // Size limit (header) — fast rejection of obviously huge files
-          const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-          if (contentLength > MAX_FETCH_BYTES) {
-            return res.status(413).json({ error: 'Image too large (max 10 MB)' });
-          }
-
-          // Convert to Base64 data URI
-          const base64 = response.body.toString('base64');
-          const detectedType = contentType.split(';')[0].trim(); // e.g., "image/jpeg"
-          const dataUri = `data:${detectedType};base64,${base64}`;
-
-          res.json({ data: dataUri });
-        } catch {
-          return res.status(502).json({ error: 'Could not fetch the image' });
-        }
-      } finally {
-        clearTimeout(timeout);
-        requestSignal?.removeEventListener('abort', abortForShutdown);
+      // Content-Type check — must be an image
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.startsWith('image/')) {
+        return res.status(400).json({ error: 'URL does not point to an image' });
       }
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+
+      // Size limit (header) — fast rejection of obviously huge files
+      const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+      if (contentLength > MAX_FETCH_BYTES) {
+        return res.status(413).json({ error: 'Image too large (max 10 MB)' });
+      }
+
+      // Convert to Base64 data URI
+      const base64 = response.body.toString('base64');
+      const detectedType = contentType.split(';')[0].trim(); // e.g., "image/jpeg"
+      const dataUri = `data:${detectedType};base64,${base64}`;
+
+        res.json({ data: dataUri });
+      } catch {
+        return res.status(502).json({ error: 'Could not fetch the image' });
+      }
+    } finally {
+      clearTimeout(timeout);
+      requestSignal?.removeEventListener('abort', abortForShutdown);
     }
-  }),
-);
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}));
 
 router.post('/', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const {
-      category_id,
-      name,
-      sku,
-      barcode,
-      description,
-      price,
-      cost_price,
-      sale_unit,
-      allow_fractional_quantity,
-      weight_precision,
-      inventory_product_id,
-      inventory_deduction_quantity,
-      tax_category_id,
-      tax_behavior,
-      track_inventory,
-      stock_quantity,
-      low_stock_threshold,
-      is_active,
-      image_url,
-      sort_order,
-      cb_percent,
-      tags,
-      dietary_tags,
-      variants,
-      addon_group_ids,
-      reason,
+      category_id, name, sku, barcode, description, price, cost_price,
+      sale_unit, allow_fractional_quantity, weight_precision,
+      inventory_product_id, inventory_deduction_quantity,
+      tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, dietary_tags,
+      variants, addon_group_ids, reason
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
@@ -1467,26 +1254,15 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
     }
 
     if (cb_percent !== undefined && cb_percent !== null) {
-      if (
-        typeof cb_percent !== 'number' ||
-        !Number.isFinite(cb_percent) ||
-        cb_percent < 0 ||
-        cb_percent > 100
-      ) {
+      if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
         captureProductValidation('fc.backend.product.create.validation', 'cashback_invalid');
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
     }
 
-    if (
-      tax_behavior !== undefined &&
-      tax_behavior !== null &&
-      !VALID_TAX_BEHAVIORS.includes(tax_behavior)
-    ) {
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       captureProductValidation('fc.backend.product.create.validation', 'tax_behavior_invalid');
-      return res
-        .status(400)
-        .json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
     const taxCategoryError = validateTaxCategoryId(tax_category_id);
     if (taxCategoryError) {
@@ -1543,9 +1319,7 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
 
     const id = generateShortId('products');
     const initialStock = stock_quantity ?? 0;
-    const actorUserId = String(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-    );
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
       captureProductValidation('fc.backend.product.create.validation', 'addon_groups_invalid');
@@ -1564,46 +1338,24 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
           is_active, image_url, sort_order, cb_percent, tags, dietary_tags, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id,
-        normalizeNullableString(category_id),
-        productName,
-        normalizeNullableString(sku),
-        normalizedBarcode,
-        normalizeNullableString(description),
-        price,
-        cost_price || 0,
-        normalizeSaleUnit(sale_unit),
-        allow_fractional_quantity ? 1 : 0,
-        weight_precision ?? 3,
+        id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
+        normalizeSaleUnit(sale_unit), allow_fractional_quantity ? 1 : 0, weight_precision ?? 3,
         inventory_product_id || null,
         inventory_product_id
-          ? typeof inventory_deduction_quantity === 'number' &&
-            Number.isFinite(inventory_deduction_quantity) &&
-            inventory_deduction_quantity > 0
+          ? (typeof inventory_deduction_quantity === 'number' && Number.isFinite(inventory_deduction_quantity) && inventory_deduction_quantity > 0
             ? inventory_deduction_quantity
-            : 1
+            : 1)
           : null,
-        'none',
-        0,
-        normalizeNullableString(tax_category_id),
-        tax_behavior || 'country_default',
-        track_inventory ? 1 : 0,
-        0,
-        low_stock_threshold || 0,
-        is_active !== false ? 1 : 0,
-        normalizeNullableString(image_url),
-        sort_order || 0,
-        cb_percent !== undefined ? cb_percent : null,
-        JSON.stringify(tags || []),
+        'none', 0, normalizeNullableString(tax_category_id), tax_behavior || 'country_default',
+        track_inventory ? 1 : 0, 0, low_stock_threshold || 0,
+        is_active !== false ? 1 : 0, normalizeNullableString(image_url),
+        sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
         dietaryTagValidation.tags === undefined ? null : JSON.stringify(dietaryTagValidation.tags),
-        now(),
-        now(),
+        now(), now()
       );
 
       if (normalizedAddonGroupIds && normalizedAddonGroupIds.length > 0) {
-        const insertAgp = db.prepare(
-          'INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)',
-        );
+        const insertAgp = db.prepare('INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)');
         for (const agId of normalizedAddonGroupIds) {
           insertAgp.run(agId, id);
         }
@@ -1635,63 +1387,33 @@ router.post('/', requirePermission('catalog.manage'), (req: Request, res: Respon
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     const created = loadProductRelationsBatch(db, [product]).get(id);
-    res.status(201).json({
-      product: serializeProduct({
-        ...(product as Record<string, unknown>),
-        variants: created?.variants || [],
-      }),
-    });
+    res.status(201).json({ product: serializeProduct({ ...(product as Record<string, unknown>), variants: created?.variants || [] }) });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
+    console.error("[API] Internal error:", error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-    res
-      .status(statusCode)
-      .json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
   }
 });
 
 router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const product = db
-      .prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL')
-      .get(req.params.id) as
-      | {
-          sale_unit?: string;
-          allow_fractional_quantity?: number;
-          stock_quantity?: number;
-        }
-      | undefined;
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as {
+      sale_unit?: string;
+      allow_fractional_quantity?: number;
+      stock_quantity?: number;
+    } | undefined;
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
     const {
-      category_id,
-      name,
-      sku,
-      barcode,
-      description,
-      price,
-      cost_price,
-      sale_unit,
-      allow_fractional_quantity,
-      weight_precision,
-      inventory_product_id,
-      inventory_deduction_quantity,
-      tax_category_id,
-      tax_behavior,
-      track_inventory,
-      stock_quantity,
-      low_stock_threshold,
-      is_active,
-      image_url,
-      sort_order,
-      cb_percent,
-      tags,
-      dietary_tags,
-      variants,
-      addon_group_ids,
+      category_id, name, sku, barcode, description, price, cost_price,
+      sale_unit, allow_fractional_quantity, weight_precision,
+      inventory_product_id, inventory_deduction_quantity,
+      tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, dietary_tags, variants,
+      addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const hasName = hasOwn(req.body, 'name');
@@ -1717,24 +1439,13 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       return res.status(400).json({ error: inventoryLinkError });
     }
 
-    if (
-      tax_behavior !== undefined &&
-      tax_behavior !== null &&
-      !VALID_TAX_BEHAVIORS.includes(tax_behavior)
-    ) {
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       captureProductValidation('fc.backend.product.update.validation', 'tax_behavior_invalid');
-      return res
-        .status(400)
-        .json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
 
     if (cb_percent !== undefined && cb_percent !== null) {
-      if (
-        typeof cb_percent !== 'number' ||
-        !Number.isFinite(cb_percent) ||
-        cb_percent < 0 ||
-        cb_percent > 100
-      ) {
+      if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
         captureProductValidation('fc.backend.product.update.validation', 'cashback_invalid');
         return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
       }
@@ -1777,17 +1488,12 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     // product's stored barcode still counts when the client omits the key, so a
     // variant cannot claim the barcode of the product it belongs to.
     const payloadVariants = normalizedVariants.variants || [];
-    const payloadVariantIds = payloadVariants
-      .map((variant) => variant.id)
-      .filter((id): id is string => !!id);
+    const payloadVariantIds = payloadVariants.map((variant) => variant.id).filter((id): id is string => !!id);
     // Every active variant of this product is either rewritten or deactivated by
     // this write, so an omitted variant releases its barcode here as well.
     const ownActiveVariantIds = hasOwn(req.body, 'variants')
-      ? (
-          db
-            .prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1')
-            .all(String(req.params.id)) as { id: string }[]
-        ).map((row) => row.id)
+      ? (db.prepare('SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1')
+        .all(String(req.params.id)) as { id: string }[]).map((row) => row.id)
       : [];
     const payloadIdSet = new Set(payloadVariantIds);
     const barcodeError = validateCatalogBarcodes(db, {
@@ -1802,9 +1508,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         .map((variant) => variant.barcode),
       payloadVariantIds: [...new Set([...payloadVariantIds, ...ownActiveVariantIds])],
       deactivatedVariantIds: [
-        ...payloadVariants
-          .filter((variant) => variant.is_active === 0 && variant.id)
-          .map((variant) => variant.id as string),
+        ...payloadVariants.filter((variant) => variant.is_active === 0 && variant.id).map((variant) => variant.id as string),
         ...ownActiveVariantIds.filter((id) => !payloadIdSet.has(id)),
       ],
     });
@@ -1831,21 +1535,16 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
     const hasInventoryProductId = hasOwn(req.body, 'inventory_product_id');
     const hasInventoryDeductionQuantity = hasOwn(req.body, 'inventory_deduction_quantity');
-    const hasStockQuantity =
-      hasOwn(req.body, 'stock_quantity') && stock_quantity !== null && stock_quantity !== undefined;
+    const hasStockQuantity = hasOwn(req.body, 'stock_quantity') && stock_quantity !== null && stock_quantity !== undefined;
     const stockAdjustmentReason = stockReason(req.body.reason, 'Manual product stock update');
-    const actorUserId = String(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-    );
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     let normalizedInventoryDeductionQuantity: number | null = null;
     if (hasInventoryDeductionQuantity) {
       if (inventory_deduction_quantity === null) {
         normalizedInventoryDeductionQuantity = null;
-      } else if (
-        typeof inventory_deduction_quantity === 'number' &&
-        Number.isFinite(inventory_deduction_quantity) &&
-        inventory_deduction_quantity > 0
-      ) {
+      } else if (typeof inventory_deduction_quantity === 'number'
+        && Number.isFinite(inventory_deduction_quantity)
+        && inventory_deduction_quantity > 0) {
         normalizedInventoryDeductionQuantity = inventory_deduction_quantity;
       } else {
         normalizedInventoryDeductionQuantity = 1;
@@ -1905,7 +1604,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         has_weight_precision: hasWeightPrecision ? 1 : 0,
         weight_precision: weight_precision ?? null,
         has_inventory_product_id: hasInventoryProductId ? 1 : 0,
-        inventory_product_id: hasInventoryProductId ? inventory_product_id || null : null,
+        inventory_product_id: hasInventoryProductId ? (inventory_product_id || null) : null,
         has_inventory_deduction_quantity: hasInventoryDeductionQuantity ? 1 : 0,
         inventory_deduction_quantity: normalizedInventoryDeductionQuantity,
         has_description: hasDescription ? 1 : 0,
@@ -1916,11 +1615,7 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         tax_category_id: normalizeNullableString(tax_category_id),
         tax_behavior: tax_behavior ?? null,
         has_tax_category_id: hasTaxCategoryId ? 1 : 0,
-        track_inventory: track_inventory
-          ? 1
-          : track_inventory === 0 || track_inventory === false
-            ? 0
-            : null,
+        track_inventory: track_inventory ? 1 : track_inventory === 0 || track_inventory === false ? 0 : null,
         low_stock_threshold: low_stock_threshold ?? null,
         is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
         has_image_url: hasImageUrl ? 1 : 0,
@@ -1931,20 +1626,17 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
         has_tags: hasTags ? 1 : 0,
         tags: hasTags ? JSON.stringify(tags || []) : null,
         has_dietary_tags: hasDietaryTags ? 1 : 0,
-        dietary_tags:
-          hasDietaryTags && dietaryTagValidation.tags !== null
-            ? JSON.stringify(dietaryTagValidation.tags)
-            : null,
+        dietary_tags: hasDietaryTags && dietaryTagValidation.tags !== null
+          ? JSON.stringify(dietaryTagValidation.tags)
+          : null,
         updated_at: now(),
-        id: req.params.id,
+        id: req.params.id
       });
 
       if (normalizedAddonGroupIds !== undefined) {
         db.prepare('DELETE FROM addon_group_product WHERE product_id = ?').run(req.params.id);
         if (normalizedAddonGroupIds.length > 0) {
-          const insertAgp = db.prepare(
-            'INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)',
-          );
+          const insertAgp = db.prepare('INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)');
           for (const agId of normalizedAddonGroupIds) {
             insertAgp.run(agId, req.params.id);
           }
@@ -1952,11 +1644,8 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
       }
 
       if (hasStockQuantity) {
-        const currentProduct = db
-          .prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL')
-          .get(req.params.id) as { stock_quantity?: number } | undefined;
-        if (!currentProduct)
-          throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+        const currentProduct = db.prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { stock_quantity?: number } | undefined;
+        if (!currentProduct) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
         const stockDelta = Number(stock_quantity) - Number(currentProduct.stock_quantity ?? 0);
         if (stockDelta !== 0) {
           adjustProductStock(db, {
@@ -1984,43 +1673,30 @@ router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Resp
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
     const relations = loadProductRelationsBatch(db, [updated]).get(String(req.params.id));
-    res.json({
-      product: serializeProduct({
-        ...(updated as Record<string, unknown>),
-        variants: relations?.variants || [],
-      }),
-    });
+    res.json({ product: serializeProduct({ ...(updated as Record<string, unknown>), variants: relations?.variants || [] }) });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
+    console.error("[API] Internal error:", error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-    res
-      .status(statusCode)
-      .json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
   }
 });
 
 router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const product = db
-      .prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL')
-      .get(req.params.id);
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const linkedBy = db
-      .prepare(
-        'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
-      )
-      .get(req.params.id);
-    const linkedByVariant = db
-      .prepare(
-        `SELECT v.id FROM product_variants v
+    const linkedBy = db.prepare(
+      'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
+    ).get(req.params.id);
+    const linkedByVariant = db.prepare(
+      `SELECT v.id FROM product_variants v
        JOIN products p ON p.id = v.product_id
        WHERE v.inventory_product_id = ? AND v.is_active = 1 AND p.deleted_at IS NULL LIMIT 1`,
-      )
-      .get(req.params.id);
+    ).get(req.params.id);
     if (linkedBy || linkedByVariant) {
       const failure = serializeOperationFailure({
         capture_point: 'fc.backend.product.delete.inventory_target',
@@ -2031,17 +1707,14 @@ router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: R
       } catch {
         // Diagnostics cannot change the inventory-link protection.
       }
-      return res.status(409).json({
-        error:
-          'Cannot delete a product that is the inventory target for another product or product variant. Remove the inventory link first.',
-      });
+      return res.status(409).json({ error: 'Cannot delete a product that is the inventory target for another product or product variant. Remove the inventory link first.' });
     }
 
     db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Product deleted' });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2065,24 +1738,19 @@ router.post('/:id/stock', requirePermission('inventory.manage'), (req: Request, 
     const adjustmentReason = stockReason(req.body.reason, 'Manual stock adjustment');
 
     const db = getDatabase();
-    const product = db
-      .prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL')
-      .get(req.params.id);
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const actorUserId = String(
-      (req as Request & { user?: { userId?: string } }).user?.userId || '',
-    );
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const updated = db.transaction(() => {
-      const current = db
-        .prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL')
-        .get(req.params.id) as { stock_quantity?: number } | undefined;
+      const current = db.prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { stock_quantity?: number } | undefined;
       if (!current) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
       const currentStock = Number(current.stock_quantity ?? 0);
-      const quantityDelta =
-        action === 'set' ? quantity - currentStock : action === 'increase' ? quantity : -quantity;
+      const quantityDelta = action === 'set'
+        ? quantity - currentStock
+        : action === 'increase' ? quantity : -quantity;
       if (quantityDelta !== 0) {
         adjustProductStock(db, {
           productId: String(req.params.id),
@@ -2098,49 +1766,35 @@ router.post('/:id/stock', requirePermission('inventory.manage'), (req: Request, 
     })();
     res.json({ product: serializeProduct(updated) });
   } catch (error: any) {
-    console.error('[API] Internal error:', error);
+    console.error("[API] Internal error:", error);
     const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
-    res
-      .status(statusCode)
-      .json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
   }
 });
 
 // Exposes zero-rate products so the merchant can review and opt into global loyalty.
-router.get(
-  '/loyalty/global-rate-candidates',
-  requirePermission('catalog.manage'),
-  (_req: Request, res: Response) => {
-    try {
-      const row = getDatabase()
-        .prepare(
-          'SELECT COUNT(*) AS count FROM products WHERE cb_percent = 0 AND deleted_at IS NULL',
-        )
-        .get() as { count: number };
-      res.json({ count: row.count });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  },
-);
+router.get('/loyalty/global-rate-candidates', requirePermission('catalog.manage'), (_req: Request, res: Response) => {
+  try {
+    const row = getDatabase().prepare(
+      'SELECT COUNT(*) AS count FROM products WHERE cb_percent = 0 AND deleted_at IS NULL'
+    ).get() as { count: number };
+    res.json({ count: row.count });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-router.post(
-  '/loyalty/apply-global-rate',
-  requirePermission('catalog.manage'),
-  (_req: Request, res: Response) => {
-    try {
-      const result = getDatabase()
-        .prepare(
-          'UPDATE products SET cb_percent = NULL, updated_at = ? WHERE cb_percent = 0 AND deleted_at IS NULL',
-        )
-        .run(now());
-      res.json({ updated: result.changes });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  },
-);
+router.post('/loyalty/apply-global-rate', requirePermission('catalog.manage'), (_req: Request, res: Response) => {
+  try {
+    const result = getDatabase().prepare(
+      'UPDATE products SET cb_percent = NULL, updated_at = ? WHERE cb_percent = 0 AND deleted_at IS NULL'
+    ).run(now());
+    res.json({ updated: result.changes });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export const productRoutes = router;

@@ -493,18 +493,23 @@ export default function OrdersPage() {
         fetchOrders(undefined, { refreshLoadedPages: true });
       })
       .catch((error) => {
-        setAppendOutcomeUnknown(true);
         const failure = classifyOrderRequestFailure(error, {
           operation: 'order.append',
           correlationId: pendingAttempt!.operationId || '',
         });
-        toast.error(
-          failure.trusted && failure.outcome === 'not_applied'
-            ? `${tPos('operationNotSaved')} ${tPos('operationCorrectAndRetry')}`
-            : failure.trusted && failure.outcome === 'applied'
+        if (failure.trusted && failure.outcome === 'not_applied') {
+          const cleared = clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+          if (cleared) addItemsAttemptRef.current = null;
+          setAppendOutcomeUnknown(!cleared);
+          toast.error(`${tPos('operationNotSaved')} ${tPos('operationCorrectAndRetry')}`);
+        } else {
+          setAppendOutcomeUnknown(true);
+          toast.error(
+            failure.trusted && failure.outcome === 'applied'
               ? `${tPos('operationMayHaveCompleted')} ${tPos('appendCompleteCheckOrders')}`
               : `${tPos('appendOutcomeUnknown')} ${tPos('appendCompleteCheckOrders')}`,
-        );
+          );
+        }
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);

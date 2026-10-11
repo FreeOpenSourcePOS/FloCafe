@@ -1,35 +1,17 @@
 import { ipcMain, dialog, app, BrowserWindow, Menu, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import {
-  getDatabase,
-  createBackup,
-  restoreBackup,
-  now,
-  getCurrentSchemaVersion,
-  getSchemaVersionFromBackup,
-  resetDatabaseWithBackup,
-  withDatabaseMaintenanceLock,
-  withDatabaseRequest,
-  isManagedBackupFile,
-} from './db';
+import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest, isManagedBackupFile } from './db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
 import { clearJWTSecretCache } from './security/jwt-secret';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
-import {
-  clearRestoreFileSelection,
-  rememberRestoreFileSelection,
-} from './services/restore-file-selection';
+import { clearRestoreFileSelection, rememberRestoreFileSelection } from './services/restore-file-selection';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
-import {
-  isApplicationMenuSender,
-  listApplicationMenuEntries,
-  openApplicationMenuSubmenu,
-} from './application-menu';
+import { isApplicationMenuSender, listApplicationMenuEntries, openApplicationMenuSubmenu } from './application-menu';
 import {
   isCurrentRendererFrame,
   markWindowRendererReady,
@@ -57,7 +39,10 @@ const LOG_LINE_TIMESTAMP_RE = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/;
 // Settings keys the renderer may write without a permission check.
 // Everything else (currency, country, tax_scheme, business profile, ...) is
 // permission-gated on the HTTP API and must stay there.
-const ALLOWED_IPC_KEYS = new Set(['theme_mode', 'orders_layout']);
+const ALLOWED_IPC_KEYS = new Set([
+  'theme_mode',
+  'orders_layout',
+]);
 
 const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
@@ -81,12 +66,10 @@ const MIN_RASTER_COLUMNS = 32;
 const MAX_RASTER_COLUMNS = 48;
 
 function isValidRasterColumns(value: unknown): value is number {
-  return (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= MIN_RASTER_COLUMNS &&
-    value <= MAX_RASTER_COLUMNS
-  );
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= MIN_RASTER_COLUMNS
+    && value <= MAX_RASTER_COLUMNS;
 }
 
 /** Verifies that IPC sender origin is the localhost-served POS renderer. */
@@ -101,10 +84,8 @@ export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender
 }
 
 type MainWindowGetter = () => BrowserWindow | null;
-type IpcHandler<Args extends unknown[] = unknown[]> = (
-  event: Electron.IpcMainInvokeEvent,
-  ...args: Args
-) => unknown | Promise<unknown>;
+type IpcHandler<Args extends unknown[] = unknown[]> =
+  (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown | Promise<unknown>;
 
 /** Preload origin check before Chromium has committed localhost URL. */
 function isEarlyMainWindowSender(
@@ -117,9 +98,9 @@ function isEarlyMainWindowSender(
     if (url !== '' && url !== 'about:blank') return false;
     const expectedWindow = getMainWindow();
     return Boolean(
-      expectedWindow &&
-      !expectedWindow.isDestroyed() &&
-      BrowserWindow.fromWebContents(event.sender) === expectedWindow,
+      expectedWindow
+      && !expectedWindow.isDestroyed()
+      && BrowserWindow.fromWebContents(event.sender) === expectedWindow,
     );
   } catch {
     return false;
@@ -192,17 +173,14 @@ export function registerIpcHandlers(
         return { success: false, error: 'Cancelled' };
       }
 
-      const { path: backupPath, schemaVersion } = await createBackup(
-        result.filePath,
-        shutdownSignal,
-      );
+      const { path: backupPath, schemaVersion } = await createBackup(result.filePath, shutdownSignal);
 
       console.log('[IPC] backup-database: Complete:', backupPath);
       return {
         success: true,
         path: backupPath,
         schemaVersion,
-        message: `Backup saved (Schema v${schemaVersion})`,
+        message: `Backup saved (Schema v${schemaVersion})`
       };
     } catch (error: unknown) {
       console.error('[IPC] backup-database: Error:', error);
@@ -240,8 +218,7 @@ export function registerIpcHandlers(
       if (backupVersion === null) {
         return {
           success: false,
-          error:
-            'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.',
+          error: 'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.'
         };
       }
 
@@ -254,7 +231,7 @@ export function registerIpcHandlers(
           defaultId: 1,
           title: 'Schema Version Mismatch',
           message: `Backup was created with Schema v${backupVersion}`,
-          detail: `Current database uses Schema v${getCurrentSchemaVersion()}.\n\nRestoring will import data only (common fields) to preserve new database structure.\n\nDo you want to continue?`,
+          detail: `Current database uses Schema v${getCurrentSchemaVersion()}.\n\nRestoring will import data only (common fields) to preserve new database structure.\n\nDo you want to continue?`
         });
 
         if (confirmResult.response !== 0) {
@@ -264,41 +241,16 @@ export function registerIpcHandlers(
 
       await googleDrive.prepareForDatabaseRestore();
       try {
-        if (versionMismatch) {
-          const restoreResult = await withDatabaseMaintenanceLock(
-            (signal) => restoreBackup(backupPath, false, signal),
-            shutdownSignal,
-          );
-          const cleanup = restoreResult.success ? googleDrive.completeDatabaseRestore() : null;
-          clearUserAuthCache();
-          clearInMemoryRevokedTokens();
-          clearJWTSecretCache();
-          const cleanupPending =
-            restoreResult.cleanupPending === true || cleanup?.cleanupPending === true;
-          return {
-            success: restoreResult.success,
-            mode: restoreResult.mode,
-            backupVersion,
-            currentVersion: getCurrentSchemaVersion(),
-            tablesRestored: restoreResult.tablesRestored,
-            message: restoreResult.success
-              ? `Restored ${restoreResult.tablesRestored} tables (data-only mode due to version mismatch)`
-              : `Restore failed: ${restoreResult.error}`,
-            error: restoreResult.error,
-            cleanupPending,
-          };
-        }
-
+      if (versionMismatch) {
         const restoreResult = await withDatabaseMaintenanceLock(
-          (signal) => restoreBackup(backupPath, true, signal),
+          (signal) => restoreBackup(backupPath, false, signal),
           shutdownSignal,
         );
         const cleanup = restoreResult.success ? googleDrive.completeDatabaseRestore() : null;
         clearUserAuthCache();
         clearInMemoryRevokedTokens();
         clearJWTSecretCache();
-        const cleanupPending =
-          restoreResult.cleanupPending === true || cleanup?.cleanupPending === true;
+        const cleanupPending = restoreResult.cleanupPending === true || cleanup?.cleanupPending === true;
         return {
           success: restoreResult.success,
           mode: restoreResult.mode,
@@ -306,11 +258,32 @@ export function registerIpcHandlers(
           currentVersion: getCurrentSchemaVersion(),
           tablesRestored: restoreResult.tablesRestored,
           message: restoreResult.success
-            ? 'Database restored successfully'
+            ? `Restored ${restoreResult.tablesRestored} tables (data-only mode due to version mismatch)`
             : `Restore failed: ${restoreResult.error}`,
           error: restoreResult.error,
           cleanupPending,
         };
+      }
+
+      const restoreResult = await withDatabaseMaintenanceLock(
+        (signal) => restoreBackup(backupPath, true, signal),
+        shutdownSignal,
+      );
+      const cleanup = restoreResult.success ? googleDrive.completeDatabaseRestore() : null;
+      clearUserAuthCache();
+      clearInMemoryRevokedTokens();
+      clearJWTSecretCache();
+      const cleanupPending = restoreResult.cleanupPending === true || cleanup?.cleanupPending === true;
+      return {
+        success: restoreResult.success,
+        mode: restoreResult.mode,
+        backupVersion,
+        currentVersion: getCurrentSchemaVersion(),
+        tablesRestored: restoreResult.tablesRestored,
+        message: restoreResult.success ? 'Database restored successfully' : `Restore failed: ${restoreResult.error}`,
+        error: restoreResult.error,
+        cleanupPending,
+      };
       } finally {
         googleDrive.releaseDatabaseRestore();
       }
@@ -323,11 +296,11 @@ export function registerIpcHandlers(
   // DB health check / master PIN / initialize (menu + tray triggered)
   handle('db-health-check', async () => {
     return withDatabaseRequest(async () => {
-      try {
-        return runHealthCheck();
-      } catch (error: unknown) {
-        return { error: getErrorMessage(error) };
-      }
+    try {
+      return runHealthCheck();
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
+    }
     });
   });
 
@@ -335,11 +308,11 @@ export function registerIpcHandlers(
     const auth = authorizeMasterPin(pin, 'ipc:apply-safe-fixes');
     if (!auth.ok) return { success: false, error: auth.error };
     return withDatabaseRequest(async () => {
-      try {
-        return applySafeFixes(findingIds);
-      } catch (error: unknown) {
-        return { applied: [], skipped: [], errors: [{ id: 'all', error: getErrorMessage(error) }] };
-      }
+    try {
+      return applySafeFixes(findingIds);
+    } catch (error: unknown) {
+      return { applied: [], skipped: [], errors: [{ id: 'all', error: getErrorMessage(error) }] };
+    }
     });
   });
 
@@ -347,35 +320,32 @@ export function registerIpcHandlers(
     return { available: isMasterPinAvailable(), isSet: isMasterPinSet() };
   });
 
-  handle(
-    'db-initialize',
-    async (event, { pin, confirmationPhrase }: { pin?: string; confirmationPhrase?: string }) => {
-      const auth = authorizeMasterPin(pin, 'ipc:initialize');
-      if (!auth.ok) return { success: false, error: auth.error };
-      if (confirmationPhrase !== 'INITIALIZE') {
-        return { success: false, error: 'Confirmation phrase does not match' };
-      }
+  handle('db-initialize', async (event, { pin, confirmationPhrase }: { pin?: string; confirmationPhrase?: string }) => {
+    const auth = authorizeMasterPin(pin, 'ipc:initialize');
+    if (!auth.ok) return { success: false, error: auth.error };
+    if (confirmationPhrase !== 'INITIALIZE') {
+      return { success: false, error: 'Confirmation phrase does not match' };
+    }
 
-      let restorePrepared = false;
-      try {
-        // The owner's typed INITIALIZE may discard a Drive restore boundary that can
-        // never resolve on its own; the reset invalidates Drive state either way.
-        await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
-        restorePrepared = true;
-        const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
-        const cleanup = googleDrive.completeDatabaseRestore();
-        clearUserAuthCache();
-        clearInMemoryRevokedTokens();
-        clearJWTSecretCache();
-        return { success: true, backupPath, cleanupPending: cleanup.cleanupPending };
-      } catch (error: unknown) {
-        console.error('[IPC] db-initialize: Error:', error);
-        return { success: false, error: getErrorMessage(error) };
-      } finally {
-        if (restorePrepared) googleDrive.releaseDatabaseRestore();
-      }
-    },
-  );
+    let restorePrepared = false;
+    try {
+      // The owner's typed INITIALIZE may discard a Drive restore boundary that can
+      // never resolve on its own; the reset invalidates Drive state either way.
+      await googleDrive.prepareForDatabaseRestore({ discardUnresolvedBoundary: true });
+      restorePrepared = true;
+      const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
+      const cleanup = googleDrive.completeDatabaseRestore();
+      clearUserAuthCache();
+      clearInMemoryRevokedTokens();
+      clearJWTSecretCache();
+      return { success: true, backupPath, cleanupPending: cleanup.cleanupPending };
+    } catch (error: unknown) {
+      console.error('[IPC] db-initialize: Error:', error);
+      return { success: false, error: getErrorMessage(error) };
+    } finally {
+      if (restorePrepared) googleDrive.releaseDatabaseRestore();
+    }
+  });
 
   // Window-control surface for renderer title bar HTML fallback controls.
   handle('window-action', (event, action: unknown) => {
@@ -407,16 +377,20 @@ export function registerIpcHandlers(
       return { error: 'Unauthorized sender' };
     }
     const mainWindow = getMainWindow?.() ?? null;
-    if (
-      !isApplicationMenuSender(mainWindow, {
-        window: BrowserWindow.fromWebContents(event.sender),
-        currentFrame,
-        senderFrame: event.senderFrame,
-      })
-    ) {
+    if (!isApplicationMenuSender(mainWindow, {
+      window: BrowserWindow.fromWebContents(event.sender),
+      currentFrame,
+      senderFrame: event.senderFrame,
+    })) {
       return { error: 'Unauthorized sender' };
     }
-    return openApplicationMenuSubmenu(Menu.getApplicationMenu() ?? null, key, mainWindow, x, y);
+    return openApplicationMenuSubmenu(
+      Menu.getApplicationMenu() ?? null,
+      key,
+      mainWindow,
+      x,
+      y,
+    );
   });
 
   handle('get-window-state', (event) => {
@@ -452,61 +426,53 @@ export function registerIpcHandlers(
   // Settings
   handle('get-settings', async () => {
     return withDatabaseRequest(async () => {
-      try {
-        const db = getDatabase();
-        const rows = db.prepare('SELECT key, value FROM settings').all() as {
-          key: string;
-          value: string;
-        }[];
-        const settings: Record<string, string> = {};
-        rows.forEach((row) => {
-          settings[row.key] = maskSetting(row.key, row.value);
-        });
-        return settings;
-      } catch (error: unknown) {
-        return { error: getErrorMessage(error) };
-      }
+    try {
+      const db = getDatabase();
+      const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+      const settings: Record<string, string> = {};
+      rows.forEach((row) => {
+        settings[row.key] = maskSetting(row.key, row.value);
+      });
+      return settings;
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
+    }
     });
   });
 
   handle('set-setting', async (event, key: string, value: string) => {
     return withDatabaseRequest(async () => {
-      try {
-        if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
-          return { success: false, error: 'Invalid setting value' };
-        }
-        if (!ALLOWED_IPC_KEYS.has(key)) {
-          return { success: false, error: 'Setting not allowed via IPC' };
-        }
-        if (key === 'theme_mode' && !isThemeMode(value)) {
-          return { success: false, error: 'Invalid theme_mode value' };
-        }
-        if (key === 'orders_layout' && !isOrdersLayout(value)) {
-          return { success: false, error: 'orders_layout must be "split" or "cards"' };
-        }
-        const db = getDatabase();
-        db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
-          key,
-          value,
-          now(),
-        );
-        return { success: true };
-      } catch (error: unknown) {
-        return { success: false, error: getErrorMessage(error) };
+    try {
+      if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
+        return { success: false, error: 'Invalid setting value' };
       }
+      if (!ALLOWED_IPC_KEYS.has(key)) {
+        return { success: false, error: 'Setting not allowed via IPC' };
+      }
+      if (key === 'theme_mode' && !isThemeMode(value)) {
+        return { success: false, error: 'Invalid theme_mode value' };
+      }
+      if (key === 'orders_layout' && !isOrdersLayout(value)) {
+        return { success: false, error: 'orders_layout must be "split" or "cards"' };
+      }
+      const db = getDatabase();
+      db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+        .run(key, value, now());
+      return { success: true };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
+    }
     });
   });
 
   // WhatsApp status snapshot for renderer polling on app focus
-  handle('whatsapp-get-status', async () =>
-    withDatabaseRequest(async () => {
-      try {
-        return getWhatsAppStatus();
-      } catch (err: unknown) {
-        return { error: getErrorMessage(err) };
-      }
-    }),
-  );
+  handle('whatsapp-get-status', async () => withDatabaseRequest(async () => {
+    try {
+      return getWhatsAppStatus();
+    } catch (err: unknown) {
+      return { error: getErrorMessage(err) };
+    }
+  }));
 
   handle('whatsapp-open-share', async (_event, rawUrl: unknown) => {
     if (typeof rawUrl !== 'string' || !isSafeWhatsAppShareUrl(rawUrl)) {
@@ -632,21 +598,20 @@ export function registerIpcHandlers(
   // Printers
   handle('get-printers', async () => {
     return withDatabaseRequest(async () => {
-      try {
-        const db = getDatabase();
-        const printers = db.prepare('SELECT * FROM printers ORDER BY name').all();
-        return printers;
-      } catch (error: unknown) {
-        return { error: getErrorMessage(error) };
-      }
+    try {
+      const db = getDatabase();
+      const printers = db.prepare('SELECT * FROM printers ORDER BY name').all();
+      return printers;
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
+    }
     });
   });
 
   // Saves renderer-built print HTML (the menu, and future documents) as a PDF
   // through an offscreen window, so a merchant can share it without a printer.
   handle('save-html-as-pdf', async (_event, payload: unknown) => {
-    if (!payload || typeof payload !== 'object')
-      return { success: false, error: 'Invalid PDF request' };
+    if (!payload || typeof payload !== 'object') return { success: false, error: 'Invalid PDF request' };
     const { html, defaultFileName, pageSize } = payload as {
       html?: unknown;
       defaultFileName?: unknown;
@@ -662,22 +627,14 @@ export function registerIpcHandlers(
     const requestedName = typeof defaultFileName === 'string' ? defaultFileName.trim() : '';
     const baseName = requestedName.replace(/[^\w.\- ]+/g, '-').slice(0, 80) || 'document.pdf';
     const saveResult = await dialog.showSaveDialog({
-      defaultPath: path.join(
-        app.getPath('documents'),
-        baseName.endsWith('.pdf') ? baseName : `${baseName}.pdf`,
-      ),
+      defaultPath: path.join(app.getPath('documents'), baseName.endsWith('.pdf') ? baseName : `${baseName}.pdf`),
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     });
     if (saveResult.canceled || !saveResult.filePath) return { success: false, canceled: true };
 
     const pdfWindow = new BrowserWindow({
       show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        javascript: false,
-      },
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, javascript: false },
     });
     try {
       await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
@@ -695,36 +652,26 @@ export function registerIpcHandlers(
   });
 
   handle('rasterize-print-document', async (_event, payload: unknown) => {
-    if (!payload || typeof payload !== 'object')
-      return { ok: false, error: 'Invalid raster document request' };
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster document request' };
     const request = payload as {
       document?: unknown;
       template?: unknown;
       profileId?: unknown;
       options?: unknown;
     };
-    if (
-      !isPrintDocument(request.document) ||
-      (request.template !== 'classic' && request.template !== 'compact') ||
-      typeof request.profileId !== 'string' ||
-      request.profileId.length === 0 ||
-      !request.options ||
-      typeof request.options !== 'object'
-    ) {
+    if (!isPrintDocument(request.document)
+      || (request.template !== 'classic' && request.template !== 'compact')
+      || typeof request.profileId !== 'string' || request.profileId.length === 0
+      || !request.options || typeof request.options !== 'object') {
       return { ok: false, error: 'Invalid raster document request' };
     }
     const options = request.options as Record<string, unknown>;
-    if (
-      !isValidRasterColumns(options.columns) ||
-      typeof options.language !== 'string' ||
-      typeof options.locale !== 'string' ||
-      typeof options.currency !== 'string' ||
-      typeof options.currencySymbol !== 'string' ||
-      typeof options.trimDecimals !== 'boolean' ||
-      typeof options.useUnicode !== 'boolean' ||
-      typeof options.arabicShaping !== 'boolean' ||
-      (options.timezone !== undefined && typeof options.timezone !== 'string')
-    ) {
+    if (!isValidRasterColumns(options.columns)
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || typeof options.currency !== 'string' || typeof options.currencySymbol !== 'string'
+      || typeof options.trimDecimals !== 'boolean' || typeof options.useUnicode !== 'boolean'
+      || typeof options.arabicShaping !== 'boolean'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')) {
       return { ok: false, error: 'Invalid raster document options' };
     }
     try {
@@ -740,31 +687,22 @@ export function registerIpcHandlers(
   });
 
   handle('rasterize-kot-document', async (_event, payload: unknown) => {
-    if (!payload || typeof payload !== 'object')
-      return { ok: false, error: 'Invalid raster KOT request' };
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster KOT request' };
     const request = payload as {
       document?: unknown;
       profileId?: unknown;
       options?: unknown;
     };
-    if (
-      !isKotDocument(request.document) ||
-      typeof request.profileId !== 'string' ||
-      request.profileId.length === 0 ||
-      !request.options ||
-      typeof request.options !== 'object'
-    ) {
+    if (!isKotDocument(request.document)
+      || typeof request.profileId !== 'string'
+      || request.profileId.length === 0 || !request.options || typeof request.options !== 'object') {
       return { ok: false, error: 'Invalid raster KOT request' };
     }
     const options = request.options as Record<string, unknown>;
-    if (
-      !isValidRasterColumns(options.columns) ||
-      typeof options.language !== 'string' ||
-      typeof options.locale !== 'string' ||
-      (options.timezone !== undefined && typeof options.timezone !== 'string') ||
-      typeof options.useUnicode !== 'boolean' ||
-      typeof options.arabicShaping !== 'boolean'
-    ) {
+    if (!isValidRasterColumns(options.columns)
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')
+      || typeof options.useUnicode !== 'boolean' || typeof options.arabicShaping !== 'boolean') {
       return { ok: false, error: 'Invalid raster KOT options' };
     }
     try {

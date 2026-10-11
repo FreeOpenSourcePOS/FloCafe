@@ -592,16 +592,11 @@ router.post(
       if (!timezone) return res.status(409).json({ error: 'regional_not_configured' });
 
       const profile = resolvePrinterProfile(printer);
-      const capabilities = capabilitiesForPrinter(
-        profile,
-        printer.paper_width || profile.defaultPaperWidth,
-      );
       const testData = buildTestPage(
         printer.paper_width || profile.defaultPaperWidth,
         profile.cutMode,
         tenantLanguage(db),
         timezone,
-        req.body?.rasterProbe === true ? capabilities : undefined,
       );
       let result: { ok: boolean; detail?: string } = { ok: false };
 

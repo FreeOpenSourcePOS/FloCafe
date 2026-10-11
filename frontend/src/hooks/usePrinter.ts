@@ -108,7 +108,7 @@ type ReceiptTenant = Pick<
 >;
 
 export interface HardwarePrinter {
-  id: number | string;
+  id: string;
   name: string;
   connection_type: 'network' | 'usb' | 'webusb';
   ip_address?: string | null;

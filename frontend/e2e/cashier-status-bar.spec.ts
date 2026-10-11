@@ -71,6 +71,9 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
       await expect(titleBarIdentity).toBeVisible();
       // Must not contain UserCircle icon or role badge
       await expect(titleBarIdentity.locator('svg')).toHaveCount(0);
+      await expect(roleBadge).not.toBeEmpty();
+      await expect(titleBarIdentity).not.toContainText(await cashierName.innerText());
+      await expect(titleBarIdentity).not.toContainText(await roleBadge.innerText());
     }
 
     // 4. Verify developer 'Heap' and 'Port' numbers are absent from persistent frontline bar

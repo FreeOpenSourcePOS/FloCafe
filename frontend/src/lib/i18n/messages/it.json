@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Questa modifica dell’addebito non è valida.",
     "chargeNotWaivable": "Questo addebito non può essere annullato.",
     "chargeAlwaysApplied": "Questo addebito è sempre applicato e non può essere rimosso.",
-    "chargeCompletionApplied": "L’addebito è stato aggiornato, ma FloCafe non ha completato un passaggio successivo. Controlla il conto prima di modificarlo di nuovo."
+    "chargeCompletionApplied": "L’addebito è stato aggiornato, ma FloCafe non ha completato un passaggio successivo. Controlla il conto prima di modificarlo di nuovo.",
+    "swapNameAndPhone": "Inverti nome e telefono",
+    "createWithPhone": "Crea cliente con telefono: {phone}",
+    "createWithName": "Crea cliente con nome: {name}"
   },
   "printTest": {
     "amt": "Importo",

@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "This charge update is not valid.",
     "chargeNotWaivable": "This charge cannot be waived.",
     "chargeAlwaysApplied": "This charge is always applied and cannot be removed.",
-    "chargeCompletionApplied": "The charge was updated, but FloCafe could not finish a follow-up step. Review the current bill before changing it again."
+    "chargeCompletionApplied": "The charge was updated, but FloCafe could not finish a follow-up step. Review the current bill before changing it again.",
+    "swapNameAndPhone": "Swap Name & Phone",
+    "createWithPhone": "Create customer with phone: {phone}",
+    "createWithName": "Create customer named: {name}"
   },
   "printTest": {
     "amt": "Amt",

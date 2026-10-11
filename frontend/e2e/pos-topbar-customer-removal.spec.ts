@@ -56,37 +56,33 @@ test('POS table picker stays clickable after removing a customer at 1280px', asy
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Select Table', exact: true }).click();
+    await page.getByRole('button', { name: /Select Table/ }).click();
     const tablePicker = page.locator('div.fixed.inset-0').filter({
       has: page.getByRole('heading', { name: 'Select Table', exact: true }),
     }).last();
     await tablePicker.getByRole('button', { name: new RegExp(tableName) }).click();
 
-    const phoneInput = page.locator('input[type="tel"]').first();
+    const customerInput = page.getByTestId('pos-customer-search-input').first();
     const searchResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return response.request().method() === 'GET'
         && url.pathname === '/api/customers-search'
-        && url.searchParams.get('q') === customerPhone.replace(/\D/g, '');
+        && url.searchParams.get('q') === customerPhone;
     });
-    await phoneInput.fill(customerPhone);
+    await customerInput.fill(customerPhone);
     expect((await searchResponse).ok()).toBeTruthy();
-    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.getByRole('button').filter({ hasText: customerName }).first().click();
     await expect(page.getByText(customerName, { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
     const tableButton = page.getByRole('button', { name: `Table: ${tableName}`, exact: true });
     await expect(tableButton).toBeVisible();
 
-    const nameInput = page.getByPlaceholder('Name auto-fills');
-    const phoneBox = await phoneInput.boundingBox();
-    const nameBox = await nameInput.boundingBox();
+    const customerInputBox = await customerInput.boundingBox();
     const tableBox = await tableButton.boundingBox();
-    expect(phoneBox).not.toBeNull();
-    expect(nameBox).not.toBeNull();
+    expect(customerInputBox).not.toBeNull();
     expect(tableBox).not.toBeNull();
-    expect(overlaps(phoneBox!, tableBox!)).toBe(false);
-    expect(overlaps(nameBox!, tableBox!)).toBe(false);
+    expect(overlaps(customerInputBox!, tableBox!)).toBe(false);
 
     await tableButton.click();
     await expect(page.getByRole('heading', { name: 'Select Table', exact: true })).toBeVisible();

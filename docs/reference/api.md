@@ -797,7 +797,7 @@ Router: declared inline in `main/routes/index.ts`.
 | `GET` | `/api/mobile/pairing-code` | `ROLE_ACCESS.owner` | none | `{ pairing_code, expires_at, qr_data_url }`. Returns the cached code when one is live, otherwise generates one. `409` when the store is not yet claimed in FloAdmin; `502` for any other cloud failure. |
 | `POST` | `/api/mobile/rotate-code` | `ROLE_ACCESS.owner` | none | Same shape as the read, and every already paired RevFlo device is disconnected. |
 | `GET` | `/api/mobile/devices` | `ROLE_ACCESS.owner` | none | `{ devices: [ ... ] }`. `502` when FloAdmin is unreachable. |
-| `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. A query with no letters is treated as phone-like and matched against stored phone digits. |
+| `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. Results are ranked by match specificity (exact phone match, national suffix match, phone prefix, exact name, name prefix, and fuzzy substring matches). |
 | `GET` | `/api/crm/lookup` | `ROLE_ACCESS.sales` | query: `phone`, `country_code` | `{ found, customer }`. `400` when `phone` is missing. The number is normalized to E.164 against the tenant country before lookup. |
 
 ## KDS server (`:3002`)

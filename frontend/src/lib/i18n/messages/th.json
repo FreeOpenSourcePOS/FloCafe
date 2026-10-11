@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "การเปลี่ยนค่าธรรมเนียมนี้ไม่ถูกต้อง",
     "chargeNotWaivable": "ไม่สามารถยกเว้นค่าธรรมเนียมนี้ได้",
     "chargeAlwaysApplied": "ค่าธรรมเนียมนี้ใช้เสมอและนำออกไม่ได้",
-    "chargeCompletionApplied": "อัปเดตค่าธรรมเนียมแล้ว แต่ FloCafe ทำขั้นตอนต่อไปไม่สำเร็จ ตรวจสอบบิลปัจจุบันก่อนเปลี่ยนอีกครั้ง"
+    "chargeCompletionApplied": "อัปเดตค่าธรรมเนียมแล้ว แต่ FloCafe ทำขั้นตอนต่อไปไม่สำเร็จ ตรวจสอบบิลปัจจุบันก่อนเปลี่ยนอีกครั้ง",
+    "swapNameAndPhone": "สลับชื่อและโทรศัพท์",
+    "createWithPhone": "สร้างลูกค้าด้วยเบอร์โทร: {phone}",
+    "createWithName": "สร้างลูกค้าชื่อ: {name}"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

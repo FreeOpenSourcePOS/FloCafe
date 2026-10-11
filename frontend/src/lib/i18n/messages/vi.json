@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Thay đổi khoản phí này không hợp lệ.",
     "chargeNotWaivable": "Không thể miễn khoản phí này.",
     "chargeAlwaysApplied": "Khoản phí này luôn được áp dụng và không thể xóa.",
-    "chargeCompletionApplied": "Khoản phí đã được cập nhật nhưng FloCafe không hoàn tất bước tiếp theo. Hãy kiểm tra hóa đơn hiện tại trước khi thay đổi lại."
+    "chargeCompletionApplied": "Khoản phí đã được cập nhật nhưng FloCafe không hoàn tất bước tiếp theo. Hãy kiểm tra hóa đơn hiện tại trước khi thay đổi lại.",
+    "swapNameAndPhone": "Đổi tên và số điện thoại",
+    "createWithPhone": "Tạo khách hàng với số điện thoại: {phone}",
+    "createWithName": "Tạo khách hàng có tên: {name}"
   },
   "printTest": {
     "amt": "Số tiền",

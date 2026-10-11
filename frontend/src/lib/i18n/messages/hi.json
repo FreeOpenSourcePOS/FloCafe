@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "शुल्क में यह बदलाव मान्य नहीं है।",
     "chargeNotWaivable": "यह शुल्क माफ़ नहीं किया जा सकता।",
     "chargeAlwaysApplied": "यह शुल्क हमेशा लागू होता है और हटाया नहीं जा सकता।",
-    "chargeCompletionApplied": "शुल्क अपडेट हुआ, लेकिन FloCafe अगला चरण पूरा नहीं कर सका। इसे फिर बदलने से पहले मौजूदा बिल देखें।"
+    "chargeCompletionApplied": "शुल्क अपडेट हुआ, लेकिन FloCafe अगला चरण पूरा नहीं कर सका। इसे फिर बदलने से पहले मौजूदा बिल देखें।",
+    "swapNameAndPhone": "नाम और फ़ोन बदलें",
+    "createWithPhone": "फ़ोन के साथ ग्राहक बनाएं: {phone}",
+    "createWithName": "नाम का ग्राहक बनाएं: {name}"
   },
   "printTest": {
     "amt": "राशि",

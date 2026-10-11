@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "この料金の変更は無効です。",
     "chargeNotWaivable": "この料金は免除できません。",
     "chargeAlwaysApplied": "この料金は常に適用され、削除できません。",
-    "chargeCompletionApplied": "料金は更新されましたが、FloCafe は後続の処理を完了できませんでした。再度変更する前に現在の請求書を確認してください。"
+    "chargeCompletionApplied": "料金は更新されましたが、FloCafe は後続の処理を完了できませんでした。再度変更する前に現在の請求書を確認してください。",
+    "swapNameAndPhone": "名前と電話番号を入れ替え",
+    "createWithPhone": "電話番号で顧客を作成: {phone}",
+    "createWithName": "名前で顧客を作成: {name}"
   },
   "printTest": {
     "amt": "金額",

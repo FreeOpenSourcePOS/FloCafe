@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Ky ndryshim i tarifës nuk është i vlefshëm.",
     "chargeNotWaivable": "Kjo tarifë nuk mund të hiqet.",
     "chargeAlwaysApplied": "Kjo tarifë zbatohet gjithmonë dhe nuk mund të hiqet.",
-    "chargeCompletionApplied": "Tarifa u përditësua, por FloCafe nuk përfundoi një hap vijues. Kontrolloni faturën aktuale para se ta ndryshoni përsëri."
+    "chargeCompletionApplied": "Tarifa u përditësua, por FloCafe nuk përfundoi një hap vijues. Kontrolloni faturën aktuale para se ta ndryshoni përsëri.",
+    "swapNameAndPhone": "Ndërro emrin dhe telefonin",
+    "createWithPhone": "Krijo klient me telefon: {phone}",
+    "createWithName": "Krijo klient me emrin: {name}"
   },
   "printTest": {
     "amt": "Shuma",

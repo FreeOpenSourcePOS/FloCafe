@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Este cambio de cargo no es válido.",
     "chargeNotWaivable": "Este cargo no se puede eximir.",
     "chargeAlwaysApplied": "Este cargo siempre se aplica y no se puede quitar.",
-    "chargeCompletionApplied": "El cargo se actualizó, pero FloCafe no pudo completar un paso posterior. Revisa la cuenta antes de cambiarlo otra vez."
+    "chargeCompletionApplied": "El cargo se actualizó, pero FloCafe no pudo completar un paso posterior. Revisa la cuenta antes de cambiarlo otra vez.",
+    "swapNameAndPhone": "Intercambiar nombre y teléfono",
+    "createWithPhone": "Crear cliente con teléfono: {phone}",
+    "createWithName": "Crear cliente llamado: {name}"
   },
   "printTest": {
     "amt": "Total",

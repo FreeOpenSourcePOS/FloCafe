@@ -4,15 +4,12 @@ import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
-import { usePosSettingsStore } from '@/store/pos-settings';
-import { X, Pencil, Gift } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { countryName } from '@/lib/countries';
-import { parsePhone, dialCodeFor } from '@/lib/phone';
+import { X, Pencil, Gift, Search, Phone, User, Loader2 } from 'lucide-react';
 import type { Customer } from '@/lib/types';
 import EditCustomerModal from './EditCustomerModal';
+import CreateCustomerModal from './CreateCustomerModal';
 import { Ltr } from '@/components/layout/Ltr';
-
+import { disambiguateCustomerInput } from '@/lib/customer-disambiguation';
 import { useTranslations } from 'use-intl';
 
 interface Props {
@@ -29,18 +26,6 @@ const TAG_COLORS: Record<string, string> = {
 
 function tagColor(tag: string) {
   return TAG_COLORS[tag.toLowerCase()] ?? 'bg-muted text-muted-foreground';
-}
-
-function digitsOnly(value: string | null | undefined): string {
-  return String(value || '').replace(/\D/g, '');
-}
-
-function phoneMatchesInput(
-  customerPhoneDigits: string | null | undefined,
-  inputDigits: string,
-): boolean {
-  if (!customerPhoneDigits || !inputDigits) return false;
-  return customerPhoneDigits.includes(inputDigits);
 }
 
 function TagBadges({ counts }: { counts: Record<string, number> }) {
@@ -64,28 +49,32 @@ function TagBadges({ counts }: { counts: Record<string, number> }) {
 export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
-  const enforcePhoneLength = usePosSettingsStore((s) => s.enforcePhoneLength);
   const t = useTranslations('pos');
+  const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const country = currentTenant?.country ?? '';
-  const dialCode = dialCodeFor(country);
-  const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
-  const [matched, setMatched] = useState<Customer | null>(null);
-  const [searched, setSearched] = useState(false);
-  const [creating, setCreating] = useState(false);
+
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+
   const [editingCustomer, setEditingCustomer] = useState(false);
+  const [creatingModal, setCreatingModal] = useState<{
+    initialSearch: string;
+    initialField?: 'phone' | 'name';
+  } | null>(null);
+
   const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const requestAbortRef = useRef<AbortController | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-  const autoAdvancedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const customer = cart.customer;
-  const isNew = searched && !matched;
 
   // Reset stale points synchronously during render when customer changes
-  // to avoid flashing previous customer's loyalty balance.
   const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
   if ((customer?.id ?? null) !== syncedCustomerId) {
     setSyncedCustomerId(customer?.id ?? null);
@@ -104,7 +93,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         setLoyaltyPoints(null);
       });
     return () => controller.abort();
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id]);
 
   useEffect(() => {
@@ -116,7 +104,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         .catch(() => {});
       return () => controller.abort();
     }
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.customerId]);
 
   useEffect(() => {
@@ -126,116 +113,179 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     };
   }, []);
 
-  const searchByPhone = (p: string) => {
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const searchCustomers = (q: string) => {
     clearTimeout(debounceRef.current);
     requestAbortRef.current?.abort();
-    if (p.length < 3) {
-      setMatched(null);
-      setName('');
-      setSearched(false);
+
+    const trimmed = q.trim();
+    if (trimmed.length < 2) {
+      setResults([]);
+      setLoading(false);
       return;
     }
+
+    setLoading(true);
     debounceRef.current = setTimeout(async () => {
       const controller = new AbortController();
       requestAbortRef.current = controller;
       try {
-        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`, {
+        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(trimmed)}`, {
           signal: controller.signal,
         });
-        const results = Array.isArray(data) ? data : data.customers || [];
-        const exactMatch =
-          results.find((result: Customer) => phoneMatchesInput(result.phone_digits, p)) || null;
-        const found: Customer | null = exactMatch || results[0] || null;
-        setMatched(found);
-        setName(found ? found.name : '');
-        setSearched(true);
+        const list = Array.isArray(data) ? data : data.customers || [];
+        setResults(list);
+        setActiveIndex(0);
       } catch {
         if (controller.signal.aborted) return;
-        setMatched(null);
-        setName('');
-        setSearched(true);
+        setResults([]);
+      } finally {
+        setLoading(false);
       }
-    }, 300);
+    }, 250);
   };
 
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    setPhone(val);
-    if (matched !== null) setMatched(null);
-    if (name !== '') setName('');
-    if (searched) setSearched(false);
-    if (val.trim() === '') autoAdvancedRef.current = false;
-    searchByPhone(digitsOnly(val));
-
-    if (enforcePhoneLength && !autoAdvancedRef.current && parsePhone(val, country)) {
-      autoAdvancedRef.current = true;
-      requestAnimationFrame(() => nameRef.current?.focus());
-    }
+    setQuery(val);
+    setIsOpen(true);
+    searchCustomers(val);
   };
 
-  const handleSelectMatched = () => {
-    if (!matched) return;
-    cart.setCustomer(matched);
-    setPhone('');
-    setName('');
-    setMatched(null);
-    setSearched(false);
+  const handleSelectCustomer = (selected: Customer) => {
+    cart.setCustomer(selected);
+    setQuery('');
+    setResults([]);
+    setIsOpen(false);
     onSelected?.();
-  };
-
-  const handlePhoneKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && matched) {
-      handleSelectMatched();
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!name.trim() || !phone.trim()) return;
-    const parsed = parsePhone(phone, country);
-    if (!parsed) {
-      toast.error(t('invalidPhone', { country: countryName(country) }));
-      return;
-    }
-    setCreating(true);
-    try {
-      const { data } = await api.post('/customers', {
-        name: name.trim(),
-        phone: parsed.e164,
-        country_code: parsed.countryCode,
-      });
-      cart.setCustomer(data.customer);
-      setPhone('');
-      setName('');
-      setMatched(null);
-      setSearched(false);
-      toast.success(t('customerCreated'));
-      onSelected?.();
-    } catch {
-      toast.error(t('createCustomerFailed'));
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  // Auto-commit when focus leaves the phone/name widget entirely — the user
-  // shouldn't have to click Add/Select if they've already moved on.
-  const handleWidgetBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    if (creating) return;
-    if (matched) {
-      handleSelectMatched();
-      return;
-    }
-    if (isNew && name.trim() && phone.trim()) {
-      handleCreate();
-    }
   };
 
   const handleClear = () => cart.setCustomer(null);
 
-  // ── Shared input classes ───────────────────────────────────────────────────
-  const baseInput =
-    'min-h-11 px-3 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none text-sm';
+  // Compute intent actions when query is at least 1 character
+  const trimmedQuery = query.trim();
+  const disambiguation = disambiguateCustomerInput(trimmedQuery, country);
+
+  // Intent action items
+  interface IntentAction {
+    id: string;
+    label: string;
+    field: 'phone' | 'name';
+    isDefault: boolean;
+    icon: typeof Phone;
+  }
+
+  const actions: IntentAction[] = [];
+  if (trimmedQuery.length >= 2) {
+    if (disambiguation.category === 'phone' || disambiguation.canDefaultToPhone) {
+      actions.push({
+        id: 'create-phone',
+        label: t('createWithPhone', { phone: trimmedQuery }),
+        field: 'phone',
+        isDefault: true,
+        icon: Phone,
+      });
+      actions.push({
+        id: 'create-name',
+        label: t('createWithName', { name: trimmedQuery }),
+        field: 'name',
+        isDefault: false,
+        icon: User,
+      });
+    } else if (disambiguation.category === 'name' || disambiguation.canDefaultToName) {
+      actions.push({
+        id: 'create-name',
+        label: t('createWithName', { name: trimmedQuery }),
+        field: 'name',
+        isDefault: true,
+        icon: User,
+      });
+    } else {
+      // Ambiguous short digits (e.g. "123")
+      actions.push({
+        id: 'create-name',
+        label: t('createWithName', { name: trimmedQuery }),
+        field: 'name',
+        isDefault: false,
+        icon: User,
+      });
+      actions.push({
+        id: 'create-phone',
+        label: t('createWithPhone', { phone: trimmedQuery }),
+        field: 'phone',
+        isDefault: false,
+        icon: Phone,
+      });
+    }
+  }
+
+  const totalInteractiveItems = results.length + actions.length;
+
+  const handleTriggerAction = (field: 'phone' | 'name') => {
+    setIsOpen(false);
+    setCreatingModal({
+      initialSearch: trimmedQuery,
+      initialField: field,
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setIsOpen(true);
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      setIsOpen(false);
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (totalInteractiveItems > 0) {
+        setActiveIndex((prev) => (prev + 1) % totalInteractiveItems);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (totalInteractiveItems > 0) {
+        setActiveIndex((prev) => (prev - 1 + totalInteractiveItems) % totalInteractiveItems);
+      }
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (results.length > 0 && activeIndex < results.length) {
+        handleSelectCustomer(results[activeIndex]);
+        return;
+      }
+
+      const actionIndex = activeIndex - results.length;
+      if (actionIndex >= 0 && actionIndex < actions.length) {
+        handleTriggerAction(actions[actionIndex].field);
+        return;
+      }
+
+      // Default Enter fallback: if default action exists
+      const defaultAct = actions.find((a) => a.isDefault) || actions[0];
+      if (defaultAct) {
+        handleTriggerAction(defaultAct.field);
+      }
+    }
+  };
 
   // ── Customer already selected ──────────────────────────────────────────────
   if (customer) {
@@ -244,11 +294,11 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     if (variant === 'topbar') {
       return (
         <>
-          <div className="min-h-11 flex items-center gap-2 px-3 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg min-w-0 w-full">
+          <div className="min-h-10 flex items-center gap-2 px-3 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg min-w-0 w-full sm:w-auto">
             <button
               onClick={() => setEditingCustomer(true)}
               title={t('editCustomer')}
-              className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start"
+              className="touch-target flex-1 min-w-0 justify-start gap-x-2 flex-wrap text-start cursor-pointer"
             >
               <span className="font-semibold text-brand dark:text-indigo-300 text-sm truncate">
                 {customer.name}
@@ -267,7 +317,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             </button>
             <button
               onClick={handleClear}
-              className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 shrink-0 ms-auto"
+              className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 shrink-0 ms-auto cursor-pointer"
               aria-label={t('remove')}
             >
               <X size={16} />
@@ -289,7 +339,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg text-sm">
           <button
             onClick={() => setEditingCustomer(true)}
-            className="touch-target flex-1 min-w-0 justify-start gap-2 text-start"
+            className="touch-target flex-1 min-w-0 justify-start gap-2 text-start cursor-pointer"
           >
             <span className="font-medium text-brand dark:text-indigo-300 truncate">
               {customer.name}
@@ -303,7 +353,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           </button>
           <button
             onClick={handleClear}
-            className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 ms-2 shrink-0"
+            className="touch-target rounded-full text-brand dark:text-indigo-300 hover:text-brand-hover active:bg-card/60 ms-2 shrink-0 cursor-pointer"
             aria-label={t('remove')}
           >
             <X size={16} />
@@ -327,141 +377,174 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     );
   }
 
-  // ── Topbar variant ─────────────────────────────────────────────────────────
-  if (variant === 'topbar') {
-    return (
-      <div className="relative w-full min-w-0">
-        <div className="h-10 flex items-center gap-2 min-w-0" onBlur={handleWidgetBlur}>
-          <input
-            type="tel"
-            inputMode="tel"
-            value={phone}
-            onChange={handlePhoneChange}
-            onKeyDown={handlePhoneKeyDown}
-            placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className="h-10 w-48 min-w-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 dark:border-amber-600 dark:bg-amber-950/40 dark:placeholder:text-amber-400/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 dark:focus:ring-amber-800 dark:focus:border-amber-600 outline-none"
-            dir="ltr"
-          />
-          <input
-            ref={nameRef}
-            type="text"
-            value={name}
-            onChange={matched ? undefined : (e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== 'Enter') return;
-              if (matched) handleSelectMatched();
-              else handleCreate();
-            }}
-            readOnly={!!matched}
-            placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-            className={`h-10 w-48 min-w-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
-              matched
-                ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
-                : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 dark:border-indigo-600 dark:bg-indigo-950/40 dark:placeholder:text-indigo-400/60 focus:ring-indigo-200 focus:border-indigo-400 dark:focus:ring-indigo-800 dark:focus:border-indigo-600'
-            }`}
-            onClick={matched ? handleSelectMatched : undefined}
-          />
-          {matched && (
-            <button
-              onClick={handleSelectMatched}
-              className="touch-target shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover active:bg-brand-hover whitespace-nowrap"
-            >
-              {t('select')}
-            </button>
-          )}
-          {isNew && name.trim() && (
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="touch-target shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover active:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
-            >
-              {creating ? t('loadingEllipsis') : tCommon('add')}
-            </button>
-          )}
-        </div>
+  // ── Unified Search Input & Predictive Dropdown ──────────────────────────────
+  const isTopbar = variant === 'topbar';
+  const showDropdown = isOpen && trimmedQuery.length >= 2;
 
-        {searched && (
-          <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-border bg-card px-2 py-1 shadow-sm">
-            {matched ? (
-              <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-                {t('customerFound')}
-              </span>
-            ) : (
-              <span className="text-xs text-red-500 dark:text-red-400 font-medium">
-                {t('newCustomerEnterName')}
-              </span>
+  return (
+    <div ref={containerRef} className={`relative ${isTopbar ? 'w-full sm:w-52' : 'w-full'}`}>
+      <div className="relative flex items-center">
+        <Search
+          size={16}
+          className="absolute start-3 text-muted-foreground pointer-events-none shrink-0"
+        />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={handleQueryChange}
+          onFocus={() => {
+            if (trimmedQuery.length >= 2) setIsOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={tOrders('searchCustomer')}
+          className={`w-full ps-9 pe-8 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none transition-colors ${
+            isTopbar ? 'h-10' : 'min-h-11 py-2'
+          }`}
+          aria-label={tOrders('searchCustomer')}
+          data-testid="pos-customer-search-input"
+          autoComplete="off"
+        />
+        {loading ? (
+          <Loader2
+            size={14}
+            className="absolute end-3 animate-spin text-muted-foreground pointer-events-none"
+          />
+        ) : query ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              setResults([]);
+              setIsOpen(false);
+              inputRef.current?.focus();
+            }}
+            className="absolute end-2.5 p-1 rounded-full text-muted-foreground hover:text-foreground active:bg-muted"
+            aria-label={t('close')}
+          >
+            <X size={14} />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Autocomplete & Predictive Actions Dropdown */}
+      {showDropdown && (
+        <div className="absolute start-0 top-full mt-1.5 w-full sm:w-80 min-w-full z-30 rounded-xl border border-border bg-popover text-popover-foreground shadow-lg overflow-hidden animate-in fade-in-50 duration-100">
+          <div className="max-h-72 overflow-y-auto p-1.5 space-y-1">
+            {/* Matching existing customers */}
+            {results.length > 0 && (
+              <div className="space-y-0.5">
+                <div className="px-2.5 py-1 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t('customerFound')}
+                </div>
+                {results.map((cust, idx) => {
+                  const isSelected = activeIndex === idx;
+                  return (
+                    <button
+                      key={cust.id}
+                      type="button"
+                      onClick={() => handleSelectCustomer(cust)}
+                      onMouseEnter={() => setActiveIndex(idx)}
+                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-sm transition-colors text-start cursor-pointer ${
+                        isSelected
+                          ? 'bg-brand text-white dark:bg-brand dark:text-white'
+                          : 'hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1 me-2">
+                        <div className="font-medium truncate">{cust.name}</div>
+                        {cust.phone && (
+                          <div
+                            className={`text-xs ${
+                              isSelected ? 'text-white/80' : 'text-muted-foreground'
+                            }`}
+                          >
+                            <Ltr>{cust.phone}</Ltr>
+                          </div>
+                        )}
+                      </div>
+                      {cust.wallet_balance !== undefined && cust.wallet_balance > 0 && (
+                        <span
+                          className={`text-xs font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                            isSelected
+                              ? 'bg-white/20 text-white'
+                              : 'bg-brand-light dark:bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
+                          }`}
+                        >
+                          <Gift size={11} className="inline me-0.5" />
+                          {cust.wallet_balance}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Zero matching customers header */}
+            {results.length === 0 && !loading && (
+              <div className="px-2.5 py-2 text-xs text-muted-foreground text-center">
+                {tCommon('noResults')}
+              </div>
+            )}
+
+            {/* Predictive Creation Actions */}
+            {actions.length > 0 && (
+              <div className="border-t border-border pt-1 mt-1 space-y-0.5">
+                {actions.map((act, actIdx) => {
+                  const itemIndex = results.length + actIdx;
+                  const isSelected = activeIndex === itemIndex;
+                  const Icon = act.icon;
+                  return (
+                    <button
+                      key={act.id}
+                      type="button"
+                      onClick={() => handleTriggerAction(act.field)}
+                      onMouseEnter={() => setActiveIndex(itemIndex)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors text-start cursor-pointer ${
+                        isSelected
+                          ? 'bg-brand text-white dark:bg-brand dark:text-white'
+                          : act.isDefault
+                            ? 'bg-brand/10 text-brand dark:bg-brand/20 dark:text-indigo-300 hover:bg-brand/20'
+                            : 'hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      <Icon size={14} className="shrink-0" />
+                      <span className="flex-1 truncate">{act.label}</span>
+                      {act.isDefault && (
+                        <kbd
+                          className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                            isSelected
+                              ? 'bg-white/20 border-white/40 text-white'
+                              : 'bg-muted border-border text-muted-foreground'
+                          }`}
+                        >
+                          ↵ Enter
+                        </kbd>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── Default variant (stacked, used in modal) ───────────────────────────────
-  return (
-    <div className="space-y-2" onBlur={handleWidgetBlur}>
-      <div className="grid grid-cols-1 gap-2">
-        <div className="flex items-stretch gap-2">
-          <input
-            type="tel"
-            inputMode="numeric"
-            value={phone}
-            onChange={handlePhoneChange}
-            onKeyDown={handlePhoneKeyDown}
-            placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className={`${baseInput} flex-1 py-2`}
-            dir="ltr"
-          />
         </div>
-        <input
-          ref={nameRef}
-          type="text"
-          value={name}
-          onChange={matched ? undefined : (e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return;
-            if (matched) handleSelectMatched();
-            else handleCreate();
+      )}
+
+      {/* Creation Modal */}
+      {creatingModal && (
+        <CreateCustomerModal
+          initialSearch={creatingModal.initialSearch}
+          initialField={creatingModal.initialField}
+          onClose={() => setCreatingModal(null)}
+          onCreated={(created) => {
+            cart.setCustomer(created);
+            setCreatingModal(null);
+            setQuery('');
+            setResults([]);
+            onSelected?.();
           }}
-          readOnly={!!matched}
-          placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-          className={`${baseInput} w-full py-2 ${matched ? 'bg-muted cursor-pointer' : ''}`}
-          onClick={matched ? handleSelectMatched : undefined}
         />
-      </div>
-
-      {searched && (
-        <div className="space-y-1.5">
-          {matched ? (
-            <>
-              <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-                {t('customerFoundClick')}
-              </p>
-              {matched.tag_counts && <TagBadges counts={matched.tag_counts} />}
-              <button
-                onClick={handleSelectMatched}
-                className="touch-target w-full bg-brand text-white text-sm rounded-lg hover:bg-brand-hover active:bg-brand-hover"
-              >
-                {t('selectName', { name: matched.name })}
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-xs text-red-500 dark:text-red-400 font-medium">
-                {t('newCustomerEnterName')}
-              </p>
-              {name.trim() && (
-                <button
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className="touch-target w-full bg-brand text-white text-sm rounded-lg hover:bg-brand-hover active:bg-brand-hover disabled:opacity-50"
-                >
-                  {creating ? t('creating') : t('addName', { name: name.trim() })}
-                </button>
-              )}
-            </>
-          )}
-        </div>
       )}
     </div>
   );

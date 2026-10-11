@@ -287,16 +287,47 @@ export function registerRoutes(app: Express): void {
           ? `
         SELECT * FROM customers
         WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
-        ORDER BY name LIMIT 20
+        ORDER BY
+          CASE
+            WHEN phone_digits = ? THEN 1
+            WHEN phone_digits LIKE ? THEN 2
+            WHEN phone_digits LIKE ? THEN 3
+            WHEN LOWER(name) = LOWER(?) THEN 4
+            WHEN name LIKE ? THEN 5
+            ELSE 6
+          END ASC,
+          name COLLATE NOCASE ASC
+        LIMIT 20
       `
           : `
         SELECT * FROM customers
         WHERE is_active = 1 AND (name LIKE ? OR email LIKE ?)
-        ORDER BY name LIMIT 20
+        ORDER BY
+          CASE
+            WHEN LOWER(name) = LOWER(?) THEN 1
+            WHEN name LIKE ? THEN 2
+            ELSE 3
+          END ASC,
+          name COLLATE NOCASE ASC
+        LIMIT 20
       `;
         const params = isPhoneLikeSearch
-          ? [`%${digitsSearch}%`, searchTerm, searchTerm]
-          : [searchTerm, searchTerm];
+          ? [
+              `%${digitsSearch}%`,
+              searchTerm,
+              searchTerm,
+              digitsSearch,
+              `%${digitsSearch}`,
+              `${digitsSearch}%`,
+              rawSearch,
+              `${rawSearch}%`,
+            ]
+          : [
+              searchTerm,
+              searchTerm,
+              rawSearch,
+              `${rawSearch}%`,
+            ];
 
         const customers = db.prepare(query).all(...params) as any[];
 

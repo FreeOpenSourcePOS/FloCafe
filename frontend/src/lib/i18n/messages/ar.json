@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "تغيير الرسم هذا غير صالح.",
     "chargeNotWaivable": "لا يمكن إلغاء هذا الرسم.",
     "chargeAlwaysApplied": "هذا الرسم مطبق دائمًا ولا يمكن إزالته.",
-    "chargeCompletionApplied": "تم تحديث الرسم، لكن تعذر إكمال خطوة لاحقة. راجع الفاتورة الحالية قبل تغييره مرة أخرى."
+    "chargeCompletionApplied": "تم تحديث الرسم، لكن تعذر إكمال خطوة لاحقة. راجع الفاتورة الحالية قبل تغييره مرة أخرى.",
+    "swapNameAndPhone": "تبديل الاسم والهاتف",
+    "createWithPhone": "إنشاء عميل برقم الهاتف: {phone}",
+    "createWithName": "إنشاء عميل باسم: {name}"
   },
   "printTest": {
     "amt": "المبلغ",

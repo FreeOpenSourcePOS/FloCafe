@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "این تغییر هزینه معتبر نیست.",
     "chargeNotWaivable": "نمی‌توان از این هزینه صرف‌نظر کرد.",
     "chargeAlwaysApplied": "این هزینه همیشه اعمال می‌شود و قابل حذف نیست.",
-    "chargeCompletionApplied": "هزینه به‌روز شد، اما FloCafe نتوانست مرحله بعدی را کامل کند. پیش از تغییر دوباره، صورتحساب فعلی را بررسی کنید."
+    "chargeCompletionApplied": "هزینه به‌روز شد، اما FloCafe نتوانست مرحله بعدی را کامل کند. پیش از تغییر دوباره، صورتحساب فعلی را بررسی کنید.",
+    "swapNameAndPhone": "جایجایی نام و تلفن",
+    "createWithPhone": "ایجاد مشتری با شماره تلفن: {phone}",
+    "createWithName": "ایجاد مشتری با نام: {name}"
   },
   "printTest": {
     "amt": "مبلغ",

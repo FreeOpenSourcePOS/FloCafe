@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Bu ücret değişikliği geçerli değil.",
     "chargeNotWaivable": "Bu ücret kaldırılamaz.",
     "chargeAlwaysApplied": "Bu ücret her zaman uygulanır ve kaldırılamaz.",
-    "chargeCompletionApplied": "Ücret güncellendi ancak FloCafe sonraki adımı tamamlayamadı. Yeniden değiştirmeden önce mevcut faturayı kontrol edin."
+    "chargeCompletionApplied": "Ücret güncellendi ancak FloCafe sonraki adımı tamamlayamadı. Yeniden değiştirmeden önce mevcut faturayı kontrol edin.",
+    "swapNameAndPhone": "Ad ve telefonu değiştir",
+    "createWithPhone": "Telefon ile müşteri oluştur: {phone}",
+    "createWithName": "İsim ile müşteri oluştur: {name}"
   },
   "printTest": {
     "amt": "Tutar",

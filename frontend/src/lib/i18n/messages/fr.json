@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Cette modification des frais n’est pas valide.",
     "chargeNotWaivable": "Ces frais ne peuvent pas être exonérés.",
     "chargeAlwaysApplied": "Ces frais sont toujours appliqués et ne peuvent pas être supprimés.",
-    "chargeCompletionApplied": "Les frais ont été modifiés, mais FloCafe n’a pas terminé une étape de suivi. Vérifiez la facture avant de les modifier à nouveau."
+    "chargeCompletionApplied": "Les frais ont été modifiés, mais FloCafe n’a pas terminé une étape de suivi. Vérifiez la facture avant de les modifier à nouveau.",
+    "swapNameAndPhone": "Inverser nom et téléphone",
+    "createWithPhone": "Créer le client avec le téléphone : {phone}",
+    "createWithName": "Créer le client nommé : {name}"
   },
   "printTest": {
     "amt": "Montant",

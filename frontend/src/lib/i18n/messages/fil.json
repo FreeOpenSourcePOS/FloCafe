@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Hindi wasto ang pagbabagong ito sa charge.",
     "chargeNotWaivable": "Hindi maaaring alisin ang charge na ito.",
     "chargeAlwaysApplied": "Palaging inilalapat ang charge na ito at hindi ito maaalis.",
-    "chargeCompletionApplied": "Na-update ang charge, pero hindi nakumpleto ng FloCafe ang kasunod na hakbang. Suriin ang kasalukuyang bill bago ito baguhin muli."
+    "chargeCompletionApplied": "Na-update ang charge, pero hindi nakumpleto ng FloCafe ang kasunod na hakbang. Suriin ang kasalukuyang bill bago ito baguhin muli.",
+    "swapNameAndPhone": "Pagpalitin ang Pangalan at Telepono",
+    "createWithPhone": "Lumikha ng customer gamit ang telepono: {phone}",
+    "createWithName": "Lumikha ng customer na pinangalanang: {name}"
   },
   "printTest": {
     "amt": "Halaga",

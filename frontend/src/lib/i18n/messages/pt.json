@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "Esta alteração de cobrança é inválida.",
     "chargeNotWaivable": "Esta cobrança não pode ser dispensada.",
     "chargeAlwaysApplied": "Esta cobrança é sempre aplicada e não pode ser removida.",
-    "chargeCompletionApplied": "A cobrança foi atualizada, mas o FloCafe não concluiu uma etapa posterior. Confira a conta atual antes de alterá-la novamente."
+    "chargeCompletionApplied": "A cobrança foi atualizada, mas o FloCafe não concluiu uma etapa posterior. Confira a conta atual antes de alterá-la novamente.",
+    "swapNameAndPhone": "Trocar nome e telefone",
+    "createWithPhone": "Criar cliente com telefone: {phone}",
+    "createWithName": "Criar cliente com nome: {name}"
   },
   "printTest": {
     "amt": "Total",

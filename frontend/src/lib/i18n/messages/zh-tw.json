@@ -1034,7 +1034,10 @@
     "chargeInvalidChangeType": "此費用變更無效。",
     "chargeNotWaivable": "此費用不可免除。",
     "chargeAlwaysApplied": "此費用一律套用，無法移除。",
-    "chargeCompletionApplied": "費用已更新，但 FloCafe 無法完成後續步驟。再次變更前請先檢查目前帳單。"
+    "chargeCompletionApplied": "費用已更新，但 FloCafe 無法完成後續步驟。再次變更前請先檢查目前帳單。",
+    "swapNameAndPhone": "交換姓名和電話",
+    "createWithPhone": "使用電話建立客戶: {phone}",
+    "createWithName": "建立名為客戶: {name}"
   },
   "printTest": {
     "amt": "金額",

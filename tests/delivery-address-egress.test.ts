@@ -623,6 +623,7 @@ test('delivery exception: the override is a persisted setting beside the receipt
         bill_show_customer_phone: false,
         bill_show_table_number: true,
         bill_delivery_show_customer_phone_always: false,
+        bill_show_logo: false,
         bill_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },
         kot_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },
         z_report_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },

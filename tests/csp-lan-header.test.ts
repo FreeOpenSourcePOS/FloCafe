@@ -9,10 +9,12 @@ async function run() {
     }
   };
 
-  const makeReq = (host?: string) => ({ get: (name: string) => (name.toLowerCase() === 'host' ? host : undefined) } as any);
+  const makeReq = (host?: string) =>
+    ({ get: (name: string) => (name.toLowerCase() === 'host' ? host : undefined) }) as any;
 
   // The fixed directive block every policy shares.
-  const prefix = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; ";
+  const prefix =
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; ";
   const suffix = "; frame-ancestors 'none'";
   const expectedFor = (connectSrc: string) => `${prefix}connect-src ${connectSrc}${suffix}`;
 

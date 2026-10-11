@@ -22,6 +22,8 @@ const diagnosticsWriteRateLimit = expressRateLimit({
 
 const EVENT_CODE_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const ALLOWED_SEVERITIES = new Set(['debug', 'info', 'warn', 'error', 'critical']);
+const MAX_EVENT_CODE_CHARS = 64;
+const MAX_SEVERITY_CHARS = 8;
 const MAX_MESSAGE_CHARS = 300;
 const MAX_CORRELATION_ID_CHARS = 64;
 const MAX_METADATA_JSON_BYTES = 4096;
@@ -47,6 +49,14 @@ const FRONTEND_CAPTURE_POINTS = new Set([
   'fc.frontend.pos.order.append.retry_storage',
   'fc.frontend.pos.order.append.retry_cleanup',
 ]);
+const MAX_CAPTURE_POINT_CHARS = Math.max(
+  ...Array.from(FRONTEND_CAPTURE_POINTS, (point) => point.length),
+);
+const MAX_CAPTURE_FIELD_NAME_CHARS = 'capture_point'.length;
+const MAX_CAPTURE_OUTCOME_CHARS = 16;
+const MAX_CAPTURE_FACTS = 1;
+const MAX_CAPTURE_FACT_KEY_CHARS = 'failure_class'.length;
+const MAX_CAPTURE_FACT_VALUE_CHARS = 64;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -93,9 +103,15 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
     body && typeof body === 'object' && !Array.isArray(body)
       ? (body as Record<string, unknown>)
       : {};
-  const eventCode = typeof raw.event_code === 'string' ? raw.event_code.trim() : '';
+  const eventCode =
+    typeof raw.event_code === 'string' && raw.event_code.length <= MAX_EVENT_CODE_CHARS
+      ? raw.event_code.trim()
+      : '';
   if (!EVENT_CODE_RE.test(eventCode) || !isAllowedDiagnosticEventCode(eventCode)) return null;
-  const severity = typeof raw.severity === 'string' ? raw.severity : '';
+  const severity =
+    typeof raw.severity === 'string' && raw.severity.length <= MAX_SEVERITY_CHARS
+      ? raw.severity
+      : '';
   if (!ALLOWED_SEVERITIES.has(severity)) return null;
 
   if (raw.metadata !== undefined && raw.metadata !== null && !isPlainObject(raw.metadata))
@@ -109,18 +125,27 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
   if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_BYTES)
     return null;
 
+  const correlationId =
+    typeof raw.correlation_id === 'string'
+      ? raw.correlation_id
+          .slice(0, MAX_CORRELATION_ID_CHARS)
+          .trim()
+          .slice(0, MAX_CORRELATION_ID_CHARS)
+      : undefined;
+  const message =
+    typeof raw.message === 'string'
+      ? raw.message
+          .slice(0, MAX_MESSAGE_CHARS)
+          .trim()
+          .slice(0, MAX_MESSAGE_CHARS)
+      : undefined;
+
   return {
     event_id: randomUUID(),
     event_code: eventCode,
     severity: severity as DiagnosticEventInput['severity'],
-    correlation_id:
-      typeof raw.correlation_id === 'string' && raw.correlation_id.trim()
-        ? raw.correlation_id.trim().slice(0, MAX_CORRELATION_ID_CHARS)
-        : undefined,
-    message:
-      typeof raw.message === 'string' && raw.message.trim()
-        ? raw.message.trim().slice(0, MAX_MESSAGE_CHARS)
-        : undefined,
+    correlation_id: correlationId || undefined,
+    message: message || undefined,
     metadata,
     occurred_at: new Date().toISOString(),
   };
@@ -148,18 +173,45 @@ router.post(
 router.post('/capture', diagnosticsWriteRateLimit, (req: Request, res: Response) => {
   const raw = isPlainObject(req.body) ? req.body : {};
   const capturePoint = raw.capture_point;
-  const hasFacts = raw.facts !== undefined;
+  const hasFacts = Object.hasOwn(raw, 'facts');
+  let fieldCount = 0;
+  for (const key in raw) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+    if (
+      key.length > MAX_CAPTURE_FIELD_NAME_CHARS ||
+      (key !== 'capture_point' && key !== 'facts' && key !== 'operation_id' && key !== 'outcome')
+    ) {
+      return res.status(400).json({ error: 'Invalid diagnostic capture' });
+    }
+    fieldCount += 1;
+    if (fieldCount > 4) return res.status(400).json({ error: 'Invalid diagnostic capture' });
+  }
   if (
-    Object.keys(raw).sort().join(',') !==
-      (hasFacts
-        ? 'capture_point,facts,operation_id,outcome'
-        : 'capture_point,operation_id,outcome') ||
+    fieldCount !== (hasFacts ? 4 : 3) ||
     typeof capturePoint !== 'string' ||
+    capturePoint.length > MAX_CAPTURE_POINT_CHARS ||
     !FRONTEND_CAPTURE_POINTS.has(capturePoint) ||
     typeof raw.outcome !== 'string' ||
+    raw.outcome.length > MAX_CAPTURE_OUTCOME_CHARS ||
+    typeof raw.operation_id !== 'string' ||
+    raw.operation_id.length !== 36 ||
     !isOperationReference(raw.operation_id)
   ) {
     return res.status(400).json({ error: 'Invalid diagnostic capture' });
+  }
+  if (hasFacts) {
+    if (!isPlainObject(raw.facts))
+      return res.status(400).json({ error: 'Invalid diagnostic capture' });
+    let factCount = 0;
+    for (const key in raw.facts) {
+      if (!Object.prototype.hasOwnProperty.call(raw.facts, key)) continue;
+      factCount += 1;
+      if (factCount > MAX_CAPTURE_FACTS || key.length > MAX_CAPTURE_FACT_KEY_CHARS)
+        return res.status(400).json({ error: 'Invalid diagnostic capture' });
+      const value = raw.facts[key];
+      if (typeof value === 'string' && value.length > MAX_CAPTURE_FACT_VALUE_CHARS)
+        return res.status(400).json({ error: 'Invalid diagnostic capture' });
+    }
   }
   const failure = serializeOperationFailure({
     capture_point: capturePoint,

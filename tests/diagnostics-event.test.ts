@@ -197,8 +197,10 @@ async function main() {
       {},
       { event_code: 'order.place.failed' },
       { event_code: 'order.place.failed', severity: 'fatal' },
+      { event_code: 'order.place.failed'.padEnd(100_000, 'x'), severity: 'error' },
       { event_code: 'Order Place Failed!', severity: 'error' },
       { event_code: 'order.place.unapproved', severity: 'error' },
+      { event_code: 'order.place.failed', severity: 'error'.repeat(100_000) },
       { event_code: 'order.place.failed', severity: 'error', metadata: 'not-an-object' },
       { event_code: 'order.place.failed', severity: 'error', metadata: [1, 2, 3] },
     ];
@@ -210,6 +212,22 @@ async function main() {
       });
       assertEqual(invalidResponse.status, 400, 'malformed event contract is rejected');
     }
+    const boundedStringFields = buildDiagnosticEvent({
+      event_code: 'server.internal_error',
+      severity: 'error',
+      correlation_id: 'c'.repeat(100_000),
+      message: 'm'.repeat(100_000),
+    });
+    assertEqual(
+      boundedStringFields?.correlation_id?.length,
+      64,
+      'long correlation identifiers are capped before normalization',
+    );
+    assertEqual(
+      boundedStringFields?.message?.length,
+      300,
+      'long diagnostic messages are capped before normalization',
+    );
     const hugeMetadata: Record<string, string> = {};
     for (let i = 0; i < 40; i++) hugeMetadata[`key_${i}`] = 'X'.repeat(300);
     const oversized = await api(baseUrl, '/api/diagnostics/event', {
@@ -474,6 +492,47 @@ async function main() {
         operation_id: crypto.randomUUID(),
         outcome: 'unknown',
         facts: { failure_class: 'offline', customer_name: 'Synthetic Person' },
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown',
+        facts: Object.fromEntries(
+          Array.from({ length: 1000 }, (_, i) => [`fact_${i}`, 'offline']),
+        ),
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown',
+        facts: { failure_class: 'offline'.repeat(100_000) },
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown',
+        facts: { ['x'.repeat(100_000)]: 'offline' },
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport'.padEnd(100_000, 'x'),
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown',
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: 'x'.repeat(100_000),
+        outcome: 'unknown',
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown'.repeat(100_000),
+      },
+      {
+        capture_point: 'fc.frontend.pos.order.create.transport',
+        operation_id: crypto.randomUUID(),
+        outcome: 'unknown',
+        ['x'.repeat(100_000)]: 'rejected',
       },
       {
         capture_point: 'fc.frontend.pos.order.create.transport',

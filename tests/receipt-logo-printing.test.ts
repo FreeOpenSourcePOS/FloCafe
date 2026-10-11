@@ -155,16 +155,32 @@ async function run() {
   });
   const tallBands = getLogoRasterBands(tallLogo, 576);
   assertEqualOrThrow(tallBands.length, 2, 'Tall logos should be split into bounded bands');
-  assertEqualOrThrow(tallBands[0].heightDots, 200, 'First tall logo band should use the height limit');
-  assertEqualOrThrow(tallBands[1].heightDots, 88, 'Second tall logo band should retain remaining rows');
-  assertEqualOrThrow(tallBands[1].pixels.at(-1), 1, 'Last row should be preserved in the final band');
+  assertEqualOrThrow(
+    tallBands[0].heightDots,
+    200,
+    'First tall logo band should use the height limit',
+  );
+  assertEqualOrThrow(
+    tallBands[1].heightDots,
+    88,
+    'Second tall logo band should retain remaining rows',
+  );
+  assertEqualOrThrow(
+    tallBands[1].pixels.at(-1),
+    1,
+    'Last row should be preserved in the final band',
+  );
 
   const malformedLogo = JSON.stringify({
     version: 1,
     originalDataUrl: logoUrl,
     variants: { '576': { width: Number.MAX_SAFE_INTEGER, height: 2, dataBase64: 'AAAA' } },
   });
-  assertEqualOrThrow(getLogoRasterBands(malformedLogo, 576).length, 0, 'Invalid dimensions should be rejected');
+  assertEqualOrThrow(
+    getLogoRasterBands(malformedLogo, 576).length,
+    0,
+    'Invalid dimensions should be rejected',
+  );
 
   console.log('--- 2. Document model logo integration ---');
   const dummyBill = {

@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "Les frais ont été modifiés, mais FloCafe n’a pas terminé une étape de suivi. Vérifiez la facture avant de les modifier à nouveau.",
     "swapNameAndPhone": "Inverser nom et téléphone",
     "createWithPhone": "Créer le client avec le téléphone : {phone}",
-    "createWithName": "Créer le client nommé : {name}"
+    "createWithName": "Créer le client nommé : {name}",
+    "cashMovementShortcut": "Ouvrir les mouvements de caisse",
+    "clearCartShortcut": "Vider le panier actif (avec confirmation)",
+    "decrementQuantityShortcut": "Diminuer la quantité du dernier article",
+    "dismissModalOrBlurShortcut": "Quitter le champ actif ou fermer la fenêtre active",
+    "fullscreenShortcut": "Activer ou désactiver le plein écran du POS",
+    "incrementQuantityShortcut": "Augmenter la quantité du dernier article",
+    "keyboardShortcutsSubtitle": "Raccourcis POS pour accélérer le travail en caisse",
+    "keyboardShortcutsTitle": "Raccourcis clavier",
+    "multiplierSearchShortcut": "Préfixe de quantité dans la recherche de produits (ex. 3*latte)",
+    "shortcutCategoryCart": "Panier et ajustements",
+    "shortcutCategoryCashier": "Caisse rapide et encaissement",
+    "shortcutCategoryNavigation": "Navigation et commandes",
+    "shortcutCategorySearch": "Recherche et catalogue",
+    "showKeyboardShortcutsShortcut": "Afficher le guide des raccourcis clavier",
+    "spaceTenderShortcut": "Passer la commande ou encaisser en espèces au paiement"
   },
   "printTest": {
     "amt": "Montant",

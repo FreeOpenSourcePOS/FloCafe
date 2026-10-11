@@ -63,6 +63,7 @@ import {
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
 import { productNeedsCustomizer, scannedVariantNeedsCustomizer } from '@/lib/product-variants';
+import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -1120,19 +1121,24 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
-  const handlePlaceOrder = async () => {
+  const validateOrderPreflight = () => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
-      return;
+      return false;
     }
     if (customerMandatory && !cart.customerId) {
       setShowCustomerPrompt(true);
-      return;
+      return false;
     }
     if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
       setShowTablePicker(true);
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!validateOrderPreflight()) return;
 
     // Prepaid stores collect payment before finishing the order.
     if (shouldTakePaymentNow) {
@@ -2189,13 +2195,12 @@ export default function POSPage() {
         }
       },
       onOpenCheckout: () => {
-        if (cart.items.length === 0) {
-          toast.error(t('cartEmpty'));
+        if (shouldTakePaymentNow || !isRestaurant) {
+          void handlePlaceOrder();
           return;
         }
-        if (shouldTakePaymentNow) {
-          setShowPrepaidCheckout(true);
-        } else if (cart.tableId) {
+        if (!validateOrderPreflight()) return;
+        if (cart.tableId) {
           const tbl = tables.find((t) => t.id === cart.tableId);
           if (tbl) setCheckoutTable(tbl);
           else setShowTablePicker(true);
@@ -2299,15 +2304,21 @@ export default function POSPage() {
         const items = useCartStore.getState().items;
         if (items.length === 0) return;
         const last = items[items.length - 1];
-        useCartStore.getState().updateQuantity(last.id, last.quantity + 1);
+        const step = fractionalQuantityStep(last.product);
+        useCartStore.getState().updateQuantity(
+          last.id,
+          step == null ? last.quantity + 1 : roundToQuantityPrecision(last.quantity + step, step),
+        );
       },
       onDecrementLastItem: () => {
         const items = useCartStore.getState().items;
         if (items.length === 0) return;
         const last = items[items.length - 1];
-        if (last.quantity > 1) {
-          useCartStore.getState().updateQuantity(last.id, last.quantity - 1);
-        }
+        const step = fractionalQuantityStep(last.product);
+        useCartStore.getState().updateQuantity(
+          last.id,
+          step == null ? last.quantity - 1 : roundToQuantityPrecision(last.quantity - step, step),
+        );
       },
       onClearCart: async () => {
         if (cart.items.length === 0) return;

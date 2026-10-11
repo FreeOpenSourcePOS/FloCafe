@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "De toeslag is bijgewerkt, maar FloCafe kon een vervolgstap niet afronden. Controleer de huidige rekening voordat je deze opnieuw wijzigt.",
     "swapNameAndPhone": "Naam en telefoon wisselen",
     "createWithPhone": "Klant aanmaken met telefoon: {phone}",
-    "createWithName": "Klant aanmaken met naam: {name}"
+    "createWithName": "Klant aanmaken met naam: {name}",
+    "cashMovementShortcut": "Kasbewegingen openen",
+    "clearCartShortcut": "Actieve winkelwagen wissen (met bevestiging)",
+    "decrementQuantityShortcut": "Hoeveelheid van laatste artikel verlagen",
+    "dismissModalOrBlurShortcut": "Actief invoerveld verlaten of actief venster sluiten",
+    "fullscreenShortcut": "Volledig scherm van POS omschakelen",
+    "incrementQuantityShortcut": "Hoeveelheid van laatste artikel verhogen",
+    "keyboardShortcutsSubtitle": "POS-sneltoetsen voor sneller kassawerk",
+    "keyboardShortcutsTitle": "Sneltoetsen",
+    "multiplierSearchShortcut": "Hoeveelheidsprefix in product zoeken (bijv. 3*latte)",
+    "shortcutCategoryCart": "Winkelwagen en aanpassingen",
+    "shortcutCategoryCashier": "Snel afrekenen en betalen",
+    "shortcutCategoryNavigation": "Navigatie en bediening",
+    "shortcutCategorySearch": "Zoeken en catalogus",
+    "showKeyboardShortcutsShortcut": "Sneltoetsengids tonen",
+    "spaceTenderShortcut": "Bestelling plaatsen of contant afrekenen"
   },
   "printTest": {
     "amt": "Bedrag",

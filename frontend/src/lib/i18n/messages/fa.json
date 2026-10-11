@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "هزینه به‌روز شد، اما FloCafe نتوانست مرحله بعدی را کامل کند. پیش از تغییر دوباره، صورتحساب فعلی را بررسی کنید.",
     "swapNameAndPhone": "جابه‌جایی نام و تلفن",
     "createWithPhone": "ایجاد مشتری با شماره تلفن: {phone}",
-    "createWithName": "ایجاد مشتری با نام: {name}"
+    "createWithName": "ایجاد مشتری با نام: {name}",
+    "cashMovementShortcut": "باز کردن گردش‌های صندوق",
+    "clearCartShortcut": "پاک کردن سبد فعال (با تأیید)",
+    "decrementQuantityShortcut": "کاهش تعداد آخرین کالا",
+    "dismissModalOrBlurShortcut": "برداشتن تمرکز از ورودی فعال یا بستن پنجره فعال",
+    "fullscreenShortcut": "تغییر حالت تمام‌صفحه POS",
+    "incrementQuantityShortcut": "افزایش تعداد آخرین کالا",
+    "keyboardShortcutsSubtitle": "میان‌برهای POS برای کار سریع‌تر صندوق",
+    "keyboardShortcutsTitle": "میان‌برهای صفحه‌کلید",
+    "multiplierSearchShortcut": "پیشوند تعداد در جستجوی محصولات (مثلاً 3*لاته)",
+    "shortcutCategoryCart": "سبد خرید و تغییرات",
+    "shortcutCategoryCashier": "صندوق سریع و دریافت وجه",
+    "shortcutCategoryNavigation": "پیمایش و کنترل‌ها",
+    "shortcutCategorySearch": "جستجو و فهرست محصولات",
+    "showKeyboardShortcutsShortcut": "نمایش راهنمای میان‌برهای صفحه‌کلید",
+    "spaceTenderShortcut": "ثبت سفارش یا دریافت وجه نقد هنگام تسویه"
   },
   "printTest": {
     "amt": "مبلغ",

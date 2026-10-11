@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "چارج اپ ڈیٹ ہو گیا، لیکن FloCafe اگلا مرحلہ مکمل نہیں کر سکا۔ دوبارہ تبدیلی سے پہلے موجودہ بل دیکھیں۔",
     "swapNameAndPhone": "نام اور فون تبدیل کریں",
     "createWithPhone": "فون کے ساتھ گاہک بنائیں: {phone}",
-    "createWithName": "نام کا گاہک بنائیں: {name}"
+    "createWithName": "نام کا گاہک بنائیں: {name}",
+    "cashMovementShortcut": "نقدی کی نقل و حرکت کھولیں",
+    "clearCartShortcut": "فعال ٹوکری خالی کریں (تصدیق کے ساتھ)",
+    "decrementQuantityShortcut": "آخری آئٹم کی مقدار گھٹائیں",
+    "dismissModalOrBlurShortcut": "فعال ان پٹ سے فوکس ہٹائیں یا فعال ڈائیلاگ بند کریں",
+    "fullscreenShortcut": "POS فل سکرین ٹوگل کریں",
+    "incrementQuantityShortcut": "آخری آئٹم کی مقدار بڑھائیں",
+    "keyboardShortcutsSubtitle": "کیشئر کے تیز کام کے لیے POS شارٹ کٹس",
+    "keyboardShortcutsTitle": "کی بورڈ شارٹ کٹس",
+    "multiplierSearchShortcut": "پروڈکٹ تلاش میں مقدار کا سابقہ (مثلاً 3*لیٹے)",
+    "shortcutCategoryCart": "ٹوکری اور تبدیلیاں",
+    "shortcutCategoryCashier": "فوری فروخت اور ادائیگی",
+    "shortcutCategoryNavigation": "نیویگیشن اور کنٹرولز",
+    "shortcutCategorySearch": "تلاش اور کیٹلاگ",
+    "showKeyboardShortcutsShortcut": "کی بورڈ شارٹ کٹس کی رہنمائی دکھائیں",
+    "spaceTenderShortcut": "آرڈر دیں یا چیک آؤٹ پر نقد ادائیگی وصول کریں"
   },
   "printTest": {
     "amt": "رقم",

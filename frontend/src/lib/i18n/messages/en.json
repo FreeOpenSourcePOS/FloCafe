@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "The charge was updated, but FloCafe could not finish a follow-up step. Review the current bill before changing it again.",
     "swapNameAndPhone": "Swap Name & Phone",
     "createWithPhone": "Create customer with phone: {phone}",
-    "createWithName": "Create customer named: {name}"
+    "createWithName": "Create customer named: {name}",
+    "cashMovementShortcut": "Open cash movements",
+    "clearCartShortcut": "Clear active cart (with confirmation)",
+    "decrementQuantityShortcut": "Decrease quantity of last item",
+    "dismissModalOrBlurShortcut": "Blur the active input or dismiss the active modal",
+    "fullscreenShortcut": "Toggle POS fullscreen",
+    "incrementQuantityShortcut": "Increase quantity of last item",
+    "keyboardShortcutsSubtitle": "High-speed POS hotkeys for rapid cashier operation",
+    "keyboardShortcutsTitle": "Keyboard Shortcuts",
+    "multiplierSearchShortcut": "Quantity prefix in product search (e.g. 3*latte)",
+    "shortcutCategoryCart": "Cart & Adjustments",
+    "shortcutCategoryCashier": "Speed Cashier & Tendering",
+    "shortcutCategoryNavigation": "Navigation & Controls",
+    "shortcutCategorySearch": "Search & Catalog",
+    "showKeyboardShortcutsShortcut": "Show keyboard shortcuts guide",
+    "spaceTenderShortcut": "Place order or tender cash at checkout"
   },
   "printTest": {
     "amt": "Amt",

@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "Сбор изменён, но FloCafe не удалось завершить следующий шаг. Проверьте текущий счёт перед повторным изменением.",
     "swapNameAndPhone": "Поменять имя и телефон",
     "createWithPhone": "Создать клиента с телефоном: {phone}",
-    "createWithName": "Создать клиента с именем: {name}"
+    "createWithName": "Создать клиента с именем: {name}",
+    "cashMovementShortcut": "Открыть кассовые операции",
+    "clearCartShortcut": "Очистить активную корзину (с подтверждением)",
+    "decrementQuantityShortcut": "Уменьшить количество последнего товара",
+    "dismissModalOrBlurShortcut": "Снять фокус с активного поля или закрыть активное окно",
+    "fullscreenShortcut": "Переключить полноэкранный режим POS",
+    "incrementQuantityShortcut": "Увеличить количество последнего товара",
+    "keyboardShortcutsSubtitle": "Сочетания клавиш POS для быстрой работы кассира",
+    "keyboardShortcutsTitle": "Сочетания клавиш",
+    "multiplierSearchShortcut": "Префикс количества в поиске товаров (например, 3*латте)",
+    "shortcutCategoryCart": "Корзина и корректировки",
+    "shortcutCategoryCashier": "Быстрая касса и оплата",
+    "shortcutCategoryNavigation": "Навигация и управление",
+    "shortcutCategorySearch": "Поиск и каталог",
+    "showKeyboardShortcutsShortcut": "Показать справочник сочетаний клавиш",
+    "spaceTenderShortcut": "Оформить заказ или принять оплату наличными при расчёте"
   },
   "printTest": {
     "amt": "Сумма",

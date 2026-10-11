@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "費用已更新，但 FloCafe 無法完成後續步驟。再次變更前請先檢查目前帳單。",
     "swapNameAndPhone": "交換姓名和電話",
     "createWithPhone": "使用電話建立客戶: {phone}",
-    "createWithName": "建立名為 {name} 的客戶"
+    "createWithName": "建立名為 {name} 的客戶",
+    "cashMovementShortcut": "開啟現金收支",
+    "clearCartShortcut": "清空目前購物車（需確認）",
+    "decrementQuantityShortcut": "減少最後一個商品的數量",
+    "dismissModalOrBlurShortcut": "取消目前輸入欄位的焦點或關閉目前對話框",
+    "fullscreenShortcut": "切換 POS 全螢幕",
+    "incrementQuantityShortcut": "增加最後一個商品的數量",
+    "keyboardShortcutsSubtitle": "協助收銀員快速操作的 POS 快速鍵",
+    "keyboardShortcutsTitle": "鍵盤快速鍵",
+    "multiplierSearchShortcut": "商品搜尋中的數量前綴（例如：3*拿鐵）",
+    "shortcutCategoryCart": "購物車與調整",
+    "shortcutCategoryCashier": "快速收銀與結帳",
+    "shortcutCategoryNavigation": "導覽與控制",
+    "shortcutCategorySearch": "搜尋與商品目錄",
+    "showKeyboardShortcutsShortcut": "顯示鍵盤快速鍵指南",
+    "spaceTenderShortcut": "下單或在結帳時收取現金"
   },
   "printTest": {
     "amt": "金額",

@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "A cobrança foi atualizada, mas o FloCafe não concluiu uma etapa posterior. Confira a conta atual antes de alterá-la novamente.",
     "swapNameAndPhone": "Trocar nome e telefone",
     "createWithPhone": "Criar cliente com telefone: {phone}",
-    "createWithName": "Criar cliente com nome: {name}"
+    "createWithName": "Criar cliente com nome: {name}",
+    "cashMovementShortcut": "Abrir movimentações do caixa",
+    "clearCartShortcut": "Esvaziar o carrinho ativo (com confirmação)",
+    "decrementQuantityShortcut": "Diminuir a quantidade do último item",
+    "dismissModalOrBlurShortcut": "Tirar o foco do campo ativo ou fechar a janela ativa",
+    "fullscreenShortcut": "Alternar tela cheia do POS",
+    "incrementQuantityShortcut": "Aumentar a quantidade do último item",
+    "keyboardShortcutsSubtitle": "Atalhos do PDV para agilizar a operação do caixa",
+    "keyboardShortcutsTitle": "Atalhos de teclado",
+    "multiplierSearchShortcut": "Prefixo de quantidade na busca de produtos (ex.: 3*latte)",
+    "shortcutCategoryCart": "Carrinho e ajustes",
+    "shortcutCategoryCashier": "Caixa rápida e pagamentos",
+    "shortcutCategoryNavigation": "Navegação e controles",
+    "shortcutCategorySearch": "Busca e catálogo",
+    "showKeyboardShortcutsShortcut": "Exibir o guia de atalhos de teclado",
+    "spaceTenderShortcut": "Enviar o pedido ou receber em dinheiro no checkout"
   },
   "printTest": {
     "amt": "Total",

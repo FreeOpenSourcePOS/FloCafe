@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "Die Gebühr wurde geändert, aber ein Folgeschritt schlug fehl. Prüfe die Rechnung, bevor du sie erneut änderst.",
     "swapNameAndPhone": "Name und Telefon tauschen",
     "createWithPhone": "Kunde mit Telefonnummer erstellen: {phone}",
-    "createWithName": "Kunde mit Namen erstellen: {name}"
+    "createWithName": "Kunde mit Namen erstellen: {name}",
+    "cashMovementShortcut": "Kassenbewegungen öffnen",
+    "clearCartShortcut": "Aktiven Warenkorb leeren (mit Bestätigung)",
+    "decrementQuantityShortcut": "Menge des letzten Artikels verringern",
+    "dismissModalOrBlurShortcut": "Aktives Eingabefeld verlassen oder aktives Dialogfenster schließen",
+    "fullscreenShortcut": "POS-Vollbild umschalten",
+    "incrementQuantityShortcut": "Menge des letzten Artikels erhöhen",
+    "keyboardShortcutsSubtitle": "POS-Tastenkürzel für einen schnellen Kassenbetrieb",
+    "keyboardShortcutsTitle": "Tastenkombinationen",
+    "multiplierSearchShortcut": "Mengenpräfix in der Produktsuche (z. B. 3*Latte)",
+    "shortcutCategoryCart": "Warenkorb und Anpassungen",
+    "shortcutCategoryCashier": "Schnelle Kasse und Zahlung",
+    "shortcutCategoryNavigation": "Navigation und Steuerung",
+    "shortcutCategorySearch": "Suche und Katalog",
+    "showKeyboardShortcutsShortcut": "Tastenkombinationshilfe anzeigen",
+    "spaceTenderShortcut": "Bestellung aufgeben oder beim Bezahlen Bargeld kassieren"
   },
   "printTest": {
     "amt": "Betrag",

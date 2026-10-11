@@ -14,44 +14,45 @@ interface ShortcutEntry {
 }
 
 export default function KeyboardShortcutsModal({ open, onClose }: Props) {
+  const t = useTranslations('pos');
   const tCommon = useTranslations('common');
 
   if (!open) return null;
 
   const shortcuts: { category: string; items: ShortcutEntry[] }[] = [
     {
-      category: 'Speed Cashier & Tendering',
+      category: t('shortcutCategoryCashier'),
       items: [
-        { keys: ['Space'], description: 'Place Order / Tender Cash in checkout' },
-        { keys: ['F4', 'Alt + 4'], description: 'Open Checkout modal' },
-        { keys: ['F2', 'Alt + 2'], description: 'Toggle Tables / Floorplan' },
-        { keys: ['F8'], description: 'Hold / park active dine-in order' },
+        { keys: ['Space'], description: t('spaceTenderShortcut') },
+        { keys: ['F4', 'Alt + 4'], description: t('checkout') },
+        { keys: ['F2', 'Alt + 2'], description: t('tables') },
+        { keys: ['F8'], description: t('hold') },
       ],
     },
     {
-      category: 'Search & Catalog',
+      category: t('shortcutCategorySearch'),
       items: [
-        { keys: ['/'], description: 'Quick-focus product search' },
-        { keys: ['Ctrl / ⌘', 'K'], description: 'Universal quick search' },
-        { keys: ['3 *', '3 x'], description: 'Multiplier prefix in search (e.g. 3*latte)' },
-        { keys: ['F6'], description: 'Focus customer search' },
+        { keys: ['/'], description: t('searchProducts') },
+        { keys: ['Ctrl / ⌘', 'K'], description: t('searchProducts') },
+        { keys: ['3 *', '3 x'], description: t('multiplierSearchShortcut') },
+        { keys: ['F6'], description: t('customer') },
       ],
     },
     {
-      category: 'Cart & Adjustments',
+      category: t('shortcutCategoryCart'),
       items: [
-        { keys: ['+'], description: 'Increment quantity of last item' },
-        { keys: ['-'], description: 'Decrement quantity of last item' },
-        { keys: ['Alt', '⌫'], description: 'Clear active cart (with confirmation)' },
+        { keys: ['+'], description: t('incrementQuantityShortcut') },
+        { keys: ['-'], description: t('decrementQuantityShortcut') },
+        { keys: ['Alt', '⌫'], description: t('clearCartShortcut') },
       ],
     },
     {
-      category: 'Navigation & Controls',
+      category: t('shortcutCategoryNavigation'),
       items: [
-        { keys: ['Esc'], description: 'Clear search / dismiss active modal' },
-        { keys: ['F11'], description: 'Toggle POS fullscreen' },
-        { keys: ['F3'], description: 'Open cash movement / till drawer' },
-        { keys: ['?', 'F1'], description: 'Show keyboard shortcuts guide' },
+        { keys: ['Esc'], description: t('dismissModalOrBlurShortcut') },
+        { keys: ['F11'], description: t('fullscreenShortcut') },
+        { keys: ['F3'], description: t('cashMovementShortcut') },
+        { keys: ['?', 'F1'], description: t('showKeyboardShortcutsShortcut') },
       ],
     },
   ];
@@ -68,9 +69,11 @@ export default function KeyboardShortcutsModal({ open, onClose }: Props) {
               <Keyboard size={18} />
             </div>
             <div>
-              <h2 className="text-base font-bold text-foreground">Keyboard Shortcuts</h2>
+              <h2 className="text-base font-bold text-foreground">
+                {t('keyboardShortcutsTitle')}
+              </h2>
               <p className="text-xs text-muted-foreground">
-                High-speed POS hotkeys for rapid cashier operation
+                {t('keyboardShortcutsSubtitle')}
               </p>
             </div>
           </div>

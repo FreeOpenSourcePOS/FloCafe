@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "อัปเดตค่าธรรมเนียมแล้ว แต่ FloCafe ทำขั้นตอนต่อไปไม่สำเร็จ ตรวจสอบบิลปัจจุบันก่อนเปลี่ยนอีกครั้ง",
     "swapNameAndPhone": "สลับชื่อและโทรศัพท์",
     "createWithPhone": "สร้างลูกค้าด้วยเบอร์โทร: {phone}",
-    "createWithName": "สร้างลูกค้าชื่อ: {name}"
+    "createWithName": "สร้างลูกค้าชื่อ: {name}",
+    "cashMovementShortcut": "เปิดรายการเคลื่อนไหวเงินสด",
+    "clearCartShortcut": "ล้างตะกร้าปัจจุบัน (ต้องยืนยัน)",
+    "decrementQuantityShortcut": "ลดจำนวนสินค้ารายการล่าสุด",
+    "dismissModalOrBlurShortcut": "ยกเลิกโฟกัสช่องกรอกข้อมูลที่ใช้งานอยู่หรือปิดหน้าต่างที่เปิดอยู่",
+    "fullscreenShortcut": "สลับเต็มหน้าจอ POS",
+    "incrementQuantityShortcut": "เพิ่มจำนวนสินค้ารายการล่าสุด",
+    "keyboardShortcutsSubtitle": "แป้นพิมพ์ลัด POS เพื่อให้แคชเชียร์ทำงานได้รวดเร็ว",
+    "keyboardShortcutsTitle": "แป้นพิมพ์ลัด",
+    "multiplierSearchShortcut": "คำนำหน้าจำนวนในการค้นหาสินค้า (เช่น 3*ลาเต้)",
+    "shortcutCategoryCart": "ตะกร้าและการปรับจำนวน",
+    "shortcutCategoryCashier": "รับออร์เดอร์และชำระเงินด่วน",
+    "shortcutCategoryNavigation": "การนำทางและการควบคุม",
+    "shortcutCategorySearch": "ค้นหาและแค็ตตาล็อก",
+    "showKeyboardShortcutsShortcut": "แสดงคู่มือแป้นพิมพ์ลัด",
+    "spaceTenderShortcut": "สร้างคำสั่งซื้อหรือรับเงินสดที่หน้าชำระเงิน"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

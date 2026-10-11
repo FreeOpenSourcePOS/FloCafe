@@ -1037,7 +1037,22 @@
     "chargeCompletionApplied": "Ücret güncellendi ancak FloCafe sonraki adımı tamamlayamadı. Yeniden değiştirmeden önce mevcut faturayı kontrol edin.",
     "swapNameAndPhone": "Ad ve telefonu değiştir",
     "createWithPhone": "Telefon ile müşteri oluştur: {phone}",
-    "createWithName": "İsim ile müşteri oluştur: {name}"
+    "createWithName": "İsim ile müşteri oluştur: {name}",
+    "cashMovementShortcut": "Kasa hareketlerini açın",
+    "clearCartShortcut": "Etkin sepeti temizleyin (onay gerekir)",
+    "decrementQuantityShortcut": "Son ürünün miktarını azaltın",
+    "dismissModalOrBlurShortcut": "Etkin giriş alanının odağını kaldırın veya etkin pencereyi kapatın",
+    "fullscreenShortcut": "POS tam ekranını açıp kapatın",
+    "incrementQuantityShortcut": "Son ürünün miktarını artırın",
+    "keyboardShortcutsSubtitle": "Kasiyer işlemlerini hızlandıran POS kısayolları",
+    "keyboardShortcutsTitle": "Klavye kısayolları",
+    "multiplierSearchShortcut": "Ürün aramasında miktar öneki (ör. 3*latte)",
+    "shortcutCategoryCart": "Sepet ve düzenlemeler",
+    "shortcutCategoryCashier": "Hızlı sipariş ve ödeme",
+    "shortcutCategoryNavigation": "Gezinme ve kontroller",
+    "shortcutCategorySearch": "Arama ve katalog",
+    "showKeyboardShortcutsShortcut": "Klavye kısayolları kılavuzunu gösterin",
+    "spaceTenderShortcut": "Sipariş verin veya ödeme ekranında nakit tahsil edin"
   },
   "printTest": {
     "amt": "Tutar",

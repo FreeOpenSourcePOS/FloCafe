@@ -1460,6 +1460,8 @@
     "loginHint": "Đặt hàng tại bàn cho tài khoản phục vụ, quản lý và chủ cửa hàng",
     "loginSubtitle": "Đặt hàng tại bàn dành cho nhân viên phục vụ",
     "newItems": "Món mới",
+    "noTablesHint": "Gọi món tại bàn dành cho phục vụ ăn tại chỗ. Hãy nhờ chủ hoặc quản lý thêm bàn, hoặc tắt Gọi món tại bàn trong Cài đặt.",
+    "noTablesTitle": "Chưa thiết lập bàn",
     "openOrder": "Đơn hàng đang mở",
     "orderSent": "Đã gửi đơn hàng",
     "orderSlipDeliveryCharge": "Phí giao hàng",
@@ -1482,8 +1484,8 @@
     "statusServed": "Đã phục vụ",
     "statusWaiting": "Đang chờ",
     "tableLabel": "Bàn {name}",
-    "title": "Server App",
-    "tables": "Bàn"
+    "tables": "Bàn",
+    "title": "Server App"
   },
   "settings": {
     "aboutDescription": "FloPOS là hệ thống POS nhà hàng mã nguồn mở, miễn phí vĩnh viễn dành cho quán cà phê, nhà hàng, tiệm bánh, xe bán lưu động, bếp đám mây và quán bar. Ứng dụng gồm đặt món, quản lý bàn, thực đơn, màn hình bếp, in biên nhận, phân quyền nhân viên và lưu dữ liệu cục bộ. Hãy tải xuống, sử dụng, giữ dữ liệu và làm chủ hệ thống POS của bạn.",

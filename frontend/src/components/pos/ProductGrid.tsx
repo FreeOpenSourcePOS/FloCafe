@@ -17,7 +17,13 @@ import { subscribeToQuickSearch } from '@/lib/quick-search';
 
 const CATEGORY_COLORS: Record<
   string,
-  { bg: string; text: string; border: string; activeBg: string; activeText: string }
+  {
+    bg: string;
+    text: string;
+    border: string;
+    activeBg: string;
+    activeText: string;
+  }
 > = {
   red: {
     bg: 'bg-red-50 dark:bg-red-950/40',
@@ -157,6 +163,13 @@ interface Props {
   /** A scanned variant goes through the cart customizer, so required add-ons and sold-out gating still apply. */
   onScannedVariant?: (product: Product, variant: ProductVariant) => void;
   sidebarOpen?: boolean;
+  /** Overrides for hosts that keep their own cart, such as the Server App's tableside draft. */
+  cartQuantities?: ReadonlyMap<Product['id'], number>;
+  onScaledProduct?: (product: Product, quantity: number) => void;
+  formatPrice?: (amount: number) => string;
+  showImages?: boolean;
+  gridClassName?: string;
+  searchPlaceholder?: string;
 }
 
 export default function ProductGrid({
@@ -169,12 +182,20 @@ export default function ProductGrid({
   onProductClick,
   onScannedVariant,
   sidebarOpen = true,
+  cartQuantities: cartQuantitiesOverride,
+  onScaledProduct,
+  formatPrice,
+  showImages,
+  gridClassName,
+  searchPlaceholder,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
-  const { showProductImages } = usePosSettingsStore();
+  const { showProductImages: showProductImagesSetting } = usePosSettingsStore();
+  const showProductImages = showImages ?? showProductImagesSetting;
   const t = useTranslations('pos');
-  const fmt = useFormatCurrency();
+  const tenantFmt = useFormatCurrency();
+  const fmt = formatPrice ?? tenantFmt;
   useEffect(() => {
     const focusSearchInput = () => {
       searchInputRef.current?.focus();
@@ -182,13 +203,14 @@ export default function ProductGrid({
     };
     return subscribeToQuickSearch(focusSearchInput);
   }, []);
-  const cartQuantities = useMemo(() => {
+  const cartStoreQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();
     for (const item of cart.items) {
       quantities.set(item.product.id, (quantities.get(item.product.id) || 0) + item.quantity);
     }
     return quantities;
   }, [cart.items]);
+  const cartQuantities = cartQuantitiesOverride ?? cartStoreQuantities;
 
   const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
@@ -220,15 +242,17 @@ export default function ProductGrid({
               if (!trimmed) return;
               const match = resolveScannedProduct(trimmed, products);
               if (match) {
-                if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
-                else if (match.variant) {
+                if (match.scaleBarcode) {
+                  if (onScaledProduct) onScaledProduct(match.product, match.quantity);
+                  else cart.addItem(match.product, match.quantity);
+                } else if (match.variant) {
                   if (onScannedVariant) onScannedVariant(match.product, match.variant);
                   else cart.addItem(match.product, 1, [], '', match.variant);
                 } else onProductClick(match.product);
                 setSearch('');
               }
             }}
-            placeholder={t('searchProducts')}
+            placeholder={searchPlaceholder ?? t('searchProducts')}
             className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
@@ -275,7 +299,9 @@ export default function ProductGrid({
         data-testid="pos-catalog-scroll"
         className="flex-1 min-h-0 overflow-y-auto pb-20 md:pb-0"
       >
-        <div className={`grid gap-3 ${sidebarOpen ? 'grid-cols-4' : 'grid-cols-5'}`}>
+        <div
+          className={`grid gap-3 ${gridClassName ?? (sidebarOpen ? 'grid-cols-4' : 'grid-cols-5')}`}
+        >
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
 

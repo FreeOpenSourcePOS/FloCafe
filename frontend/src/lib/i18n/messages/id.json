@@ -1460,6 +1460,8 @@
     "loginHint": "Pemesanan di meja untuk akun pelayan, manajer, dan pemilik",
     "loginSubtitle": "Pemesanan di meja untuk staf layanan",
     "newItems": "Item baru",
+    "noTablesHint": "Pemesanan di meja ditujukan untuk layanan makan di tempat. Minta pemilik atau manajer menambahkan meja, atau menonaktifkan Pemesanan di Meja di Pengaturan.",
+    "noTablesTitle": "Belum ada meja",
     "openOrder": "Buka pesanan",
     "orderSent": "Pesanan terkirim",
     "orderSlipDeliveryCharge": "Biaya Pengantaran",
@@ -1482,8 +1484,8 @@
     "statusServed": "Disajikan",
     "statusWaiting": "Menunggu",
     "tableLabel": "Meja {name}",
-    "title": "Aplikasi Server",
-    "tables": "Meja"
+    "tables": "Meja",
+    "title": "Aplikasi Server"
   },
   "settings": {
     "aboutDescription": "FloPOS adalah POS restoran sumber terbuka gratis selamanya untuk kafe, restoran, toko roti, food truck, cloud kitchen, dan bar. Termasuk pemesanan, meja, menu, tampilan dapur, cetak struk, akses staf, dan penyimpanan data lokal. Unduh, jalankan layanan, simpan data Anda, dan miliki POS Anda sendiri.",

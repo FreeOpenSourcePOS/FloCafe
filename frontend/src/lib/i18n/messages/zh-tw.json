@@ -1460,6 +1460,8 @@
     "loginHint": "供服務員、經理和店主帳戶使用的桌邊點餐",
     "loginSubtitle": "服務員桌邊點餐",
     "newItems": "新商品",
+    "noTablesHint": "桌邊點餐適用於內用服務。請店主或經理新增餐桌，或在設定中關閉桌邊點餐。",
+    "noTablesTitle": "尚未設定餐桌",
     "openOrder": "開啟訂單",
     "orderSent": "訂單已傳送",
     "orderSlipDeliveryCharge": "外送費",

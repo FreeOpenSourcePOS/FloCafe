@@ -12,6 +12,7 @@ export interface ProcessedReceiptLogo {
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_PERSISTED_LOGO_LENGTH = 250_000;
 const TARGET_WIDTHS = [384, 576] as const;
 
 function uint8ToBase64(bytes: Uint8Array): string {
@@ -140,15 +141,23 @@ export async function processReceiptLogoFile(file: File): Promise<ProcessedRecei
     webCtx.drawImage(img, 0, 0, webWidth, webHeight);
 
     const originalDataUrl = webCanvas.toDataURL('image/png');
+    if (originalDataUrl.length > MAX_PERSISTED_LOGO_LENGTH) {
+      throw new Error('Processed logo exceeds maximum size (250 KB)');
+    }
+
     const logoData: ReceiptLogoData = {
       version: 1,
       originalDataUrl,
       variants,
     };
+    const rasterJson = JSON.stringify(logoData);
+    if (rasterJson.length > MAX_PERSISTED_LOGO_LENGTH) {
+      throw new Error('Processed logo exceeds maximum size (250 KB)');
+    }
 
     return {
       originalDataUrl,
-      rasterJson: JSON.stringify(logoData),
+      rasterJson,
       previewDataUrl,
     };
   } finally {

@@ -51,8 +51,8 @@ import {
 } from '@print/document';
 import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
-import { getLogoRasterBand } from '@print/image-raster';
-import { encodeGsV0Band } from '@print/raster';
+import { getLogoRasterBands } from '@print/image-raster';
+import { concatBytes, encodeGsV0Band } from '@print/raster';
 import { formatItemHeading } from './item-heading';
 
 export interface ReceiptOptions {
@@ -579,9 +579,9 @@ export function buildClassicReceiptBytes(
   if (header?.logoRaster) {
     const widthDots = opts.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
-    const band = getLogoRasterBand(header.logoRaster, widthDots, maxBandHeight);
-    if (band) {
-      const rawBytes = encodeGsV0Band(band, maxBandHeight);
+    const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
+    if (bands.length > 0) {
+      const rawBytes = concatBytes(bands.map((band) => encodeGsV0Band(band, maxBandHeight)));
       enc.align('center').raw(rawBytes).newline();
     }
   }
@@ -1092,9 +1092,9 @@ export function buildCompactReceiptBytes(
   if (header?.logoRaster) {
     const widthDots = opts.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
     const maxBandHeight = opts.capabilities?.raster?.maxBandHeight ?? 200;
-    const band = getLogoRasterBand(header.logoRaster, widthDots, maxBandHeight);
-    if (band) {
-      const rawBytes = encodeGsV0Band(band, maxBandHeight);
+    const bands = getLogoRasterBands(header.logoRaster, widthDots, maxBandHeight);
+    if (bands.length > 0) {
+      const rawBytes = concatBytes(bands.map((band) => encodeGsV0Band(band, maxBandHeight)));
       enc.align('center').raw(rawBytes).newline();
     }
   }

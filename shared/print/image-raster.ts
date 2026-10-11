@@ -7,6 +7,10 @@
 
 import { type RasterBand, DEFAULT_RASTER_MAX_BAND_HEIGHT } from './raster';
 
+const MAX_LOGO_RASTER_JSON_LENGTH = 250_000;
+const MAX_LOGO_WIDTH_DOTS = 576;
+const MAX_LOGO_HEIGHT_DOTS = 0xFFFF;
+
 export interface PackedLogoVariant {
   readonly width: number;
   readonly height: number;
@@ -19,6 +23,82 @@ export interface ReceiptLogoData {
   readonly variants: {
     readonly [widthDots: string]: PackedLogoVariant;
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+function parseReceiptLogoData(value: ReceiptLogoData | string): ReceiptLogoData | null {
+  let parsed: unknown = value;
+  if (typeof value === 'string') {
+    if (value.length > MAX_LOGO_RASTER_JSON_LENGTH || !value.startsWith('{')) return null;
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  if (
+    !isRecord(parsed) ||
+    !hasExactKeys(parsed, ['version', 'originalDataUrl', 'variants']) ||
+    parsed.version !== 1 ||
+    typeof parsed.originalDataUrl !== 'string' ||
+    parsed.originalDataUrl.length > MAX_LOGO_RASTER_JSON_LENGTH ||
+    !isRecord(parsed.variants)
+  ) {
+    return null;
+  }
+
+  const variants = parsed.variants;
+  const variantWidths = Object.keys(variants);
+  if (variantWidths.length === 0 || variantWidths.some((width) => width !== '384' && width !== '576')) {
+    return null;
+  }
+
+  for (const widthKey of variantWidths) {
+    const variant = variants[widthKey];
+    if (
+      !isRecord(variant) ||
+      !hasExactKeys(variant, ['width', 'height', 'dataBase64']) ||
+      typeof variant.dataBase64 !== 'string' ||
+      variant.dataBase64.length > MAX_LOGO_RASTER_JSON_LENGTH ||
+      !Number.isSafeInteger(variant.width) ||
+      (variant.width as number) <= 0 ||
+      (variant.width as number) > Number(widthKey) ||
+      !Number.isSafeInteger(variant.height) ||
+      (variant.height as number) <= 0 ||
+      (variant.height as number) > MAX_LOGO_HEIGHT_DOTS
+    ) {
+      return null;
+    }
+
+    const packedLength = Math.ceil((variant.width as number) / 8) * (variant.height as number);
+    const base64Length = 4 * Math.ceil(packedLength / 3);
+    if (
+      !Number.isSafeInteger(packedLength) ||
+      variant.dataBase64.length !== base64Length ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+        variant.dataBase64,
+      )
+    ) {
+      return null;
+    }
+  }
+
+  try {
+    if (JSON.stringify(parsed).length > MAX_LOGO_RASTER_JSON_LENGTH) return null;
+  } catch {
+    return null;
+  }
+
+  return parsed as unknown as ReceiptLogoData;
 }
 
 /**
@@ -131,34 +211,33 @@ export function centerPixels(
 }
 
 /**
- * Parse and resolve a RasterBand for the target printer width from stored logo data.
+ * Parse and resolve raster bands for the target printer width from stored logo data.
  */
-export function getLogoRasterBand(
+export function getLogoRasterBands(
   storedLogoData: ReceiptLogoData | string | null | undefined,
   targetWidthDots: number,
   maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT,
-): RasterBand | null {
-  if (!storedLogoData) return null;
-
-  let parsed: ReceiptLogoData | null = null;
-  if (typeof storedLogoData === 'string') {
-    if (!storedLogoData.startsWith('{')) return null;
-    try {
-      parsed = JSON.parse(storedLogoData) as ReceiptLogoData;
-    } catch {
-      return null;
-    }
-  } else if (typeof storedLogoData === 'object' && storedLogoData.version === 1) {
-    parsed = storedLogoData;
+): RasterBand[] {
+  if (
+    !storedLogoData ||
+    !Number.isSafeInteger(targetWidthDots) ||
+    targetWidthDots <= 0 ||
+    targetWidthDots > MAX_LOGO_WIDTH_DOTS ||
+    !Number.isSafeInteger(maxBandHeight) ||
+    maxBandHeight <= 0 ||
+    maxBandHeight > MAX_LOGO_HEIGHT_DOTS
+  ) {
+    return [];
   }
 
-  if (!parsed || !parsed.variants) return null;
+  const parsed = parseReceiptLogoData(storedLogoData);
+  if (!parsed) return [];
 
   // Pick exact match or closest matching width variant
   const widths = Object.keys(parsed.variants)
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0);
-  if (widths.length === 0) return null;
+  if (widths.length === 0) return [];
 
   let selectedWidth = widths[0];
   if (parsed.variants[String(targetWidthDots)]) {
@@ -170,7 +249,7 @@ export function getLogoRasterBand(
   }
 
   const variant = parsed.variants[String(selectedWidth)];
-  if (!variant || !variant.dataBase64 || variant.width <= 0 || variant.height <= 0) return null;
+  if (!variant) return [];
 
   try {
     const binaryStr =
@@ -181,16 +260,21 @@ export function getLogoRasterBand(
     for (let i = 0; i < binaryStr.length; i += 1) {
       packed[i] = binaryStr.charCodeAt(i);
     }
+    if (packed.length !== Math.ceil(variant.width / 8) * variant.height) return [];
 
     const unpacked = unpack1BitPixels(packed, variant.width, variant.height);
     const centered = centerPixels(unpacked, variant.width, variant.height, targetWidthDots);
-
-    return {
-      widthDots: targetWidthDots,
-      heightDots: Math.min(variant.height, maxBandHeight),
-      pixels: centered.slice(0, targetWidthDots * Math.min(variant.height, maxBandHeight)),
-    };
+    const bands: RasterBand[] = [];
+    for (let row = 0; row < variant.height; row += maxBandHeight) {
+      const heightDots = Math.min(maxBandHeight, variant.height - row);
+      bands.push({
+        widthDots: targetWidthDots,
+        heightDots,
+        pixels: centered.slice(row * targetWidthDots, (row + heightDots) * targetWidthDots),
+      });
+    }
+    return bands;
   } catch {
-    return null;
+    return [];
   }
 }

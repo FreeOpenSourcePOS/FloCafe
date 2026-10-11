@@ -16,11 +16,12 @@ import {
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 import {
+  concatBytes,
   encodeGsV0Band,
   type RasterSemanticLineGroup,
   type RasterTextLayout,
 } from '../../shared/print/raster';
-import { getLogoRasterBand } from '../../shared/print/image-raster';
+import { getLogoRasterBands } from '../../shared/print/image-raster';
 import {
   displayCellWidth,
   padToDisplayCells,
@@ -524,9 +525,9 @@ export function renderBillDocumentToClassicLines(
         if (block.logoRaster) {
           const widthDots = options.capabilities?.raster?.widthDots ?? (cols <= 32 ? 384 : 576);
           const maxBandHeight = options.capabilities?.raster?.maxBandHeight ?? 200;
-          const band = getLogoRasterBand(block.logoRaster, widthDots, maxBandHeight);
-          if (band) {
-            const rawBytes = encodeGsV0Band(band, maxBandHeight);
+          const bands = getLogoRasterBands(block.logoRaster, widthDots, maxBandHeight);
+          if (bands.length > 0) {
+            const rawBytes = concatBytes(bands.map((band) => encodeGsV0Band(band, maxBandHeight)));
             segment.main.push(`{RAW_BYTES:${Buffer.from(rawBytes).toString('base64')}}`);
             segment.sourceLines.main.push('[Logo]');
             segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');

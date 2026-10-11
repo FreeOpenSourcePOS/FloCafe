@@ -35,7 +35,7 @@ import {
   unpack1BitPixels,
   ditherGrayscalePixels,
   centerPixels,
-  getLogoRasterBand,
+  getLogoRasterBands,
   type ReceiptLogoData,
 } from '../shared/print/image-raster';
 import { buildBillDocument, getBlock, type BusinessHeaderBlock } from '../shared/print/document';
@@ -135,15 +135,36 @@ async function run() {
   assertEqualOrThrow(centered[4], 0, 'Right padding pixel 4 should be 0');
   assertEqualOrThrow(centered[5], 0, 'Right padding pixel 5 should be 0');
 
-  // getLogoRasterBand variant resolution
+  // getLogoRasterBands variant resolution
   const { logoUrl, rasterJson } = createSampleLogoData();
-  const band58 = getLogoRasterBand(rasterJson, 384);
-  assertOrThrow(band58 !== null, 'Should resolve band for 384 dots');
-  assertEqualOrThrow(band58?.widthDots, 384, 'Resolved band width should be 384 dots');
+  const bands58 = getLogoRasterBands(rasterJson, 384);
+  assertOrThrow(bands58.length > 0, 'Should resolve bands for 384 dots');
+  assertEqualOrThrow(bands58[0].widthDots, 384, 'Resolved band width should be 384 dots');
 
-  const band80 = getLogoRasterBand(rasterJson, 576);
-  assertOrThrow(band80 !== null, 'Should resolve band for 576 dots');
-  assertEqualOrThrow(band80?.widthDots, 576, 'Resolved band width should be 576 dots');
+  const bands80 = getLogoRasterBands(rasterJson, 576);
+  assertOrThrow(bands80.length > 0, 'Should resolve bands for 576 dots');
+  assertEqualOrThrow(bands80[0].widthDots, 576, 'Resolved band width should be 576 dots');
+
+  const tallPixels = new Uint8Array(576 * 288);
+  tallPixels[tallPixels.length - 1] = 1;
+  const tallPacked = pack1BitPixels(tallPixels, 576, 288);
+  const tallLogo = JSON.stringify({
+    version: 1,
+    originalDataUrl: logoUrl,
+    variants: { '576': { width: 576, height: 288, dataBase64: uint8ToBase64(tallPacked) } },
+  });
+  const tallBands = getLogoRasterBands(tallLogo, 576);
+  assertEqualOrThrow(tallBands.length, 2, 'Tall logos should be split into bounded bands');
+  assertEqualOrThrow(tallBands[0].heightDots, 200, 'First tall logo band should use the height limit');
+  assertEqualOrThrow(tallBands[1].heightDots, 88, 'Second tall logo band should retain remaining rows');
+  assertEqualOrThrow(tallBands[1].pixels.at(-1), 1, 'Last row should be preserved in the final band');
+
+  const malformedLogo = JSON.stringify({
+    version: 1,
+    originalDataUrl: logoUrl,
+    variants: { '576': { width: Number.MAX_SAFE_INTEGER, height: 2, dataBase64: 'AAAA' } },
+  });
+  assertEqualOrThrow(getLogoRasterBands(malformedLogo, 576).length, 0, 'Invalid dimensions should be rejected');
 
   console.log('--- 2. Document model logo integration ---');
   const dummyBill = {

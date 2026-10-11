@@ -8,7 +8,8 @@ import ApplicationMenuRow from './ApplicationMenuRow';
 import UpdateBadge from './UpdateBadge';
 
 const subscribeToElectronCapability = () => () => {};
-const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
+const getElectronCapability = () =>
+  typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
 const getServerElectronCapability = () => false;
 
 export default function TitleBar() {
@@ -40,7 +41,8 @@ export default function TitleBar() {
     const handleBlur = () => {
       document.documentElement.dataset.floWindowFocused = 'false';
     };
-    document.documentElement.dataset.floWindowFocused = typeof document !== 'undefined' && document.hasFocus() ? 'true' : 'false';
+    document.documentElement.dataset.floWindowFocused =
+      typeof document !== 'undefined' && document.hasFocus() ? 'true' : 'false';
     window.addEventListener('focus', handleFocus);
     window.addEventListener('blur', handleBlur);
     return () => {
@@ -81,7 +83,10 @@ export default function TitleBar() {
 
       {/* Centered business name */}
       <div className="flo-title-bar__identity pointer-events-none">
-        <span className="truncate text-xs font-semibold leading-tight text-foreground max-w-full" title={businessName}>
+        <span
+          className="truncate text-xs font-semibold leading-tight text-foreground max-w-full"
+          title={businessName}
+        >
           {businessName}
         </span>
       </div>

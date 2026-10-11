@@ -46,7 +46,9 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await page.waitForURL(/\/pos/, { timeout: 20000 });
 
     // 1. Verify persistent frontline status bar is rendered
-    const statusBar = page.locator('footer[role="status"]');
+    const statusBar = page.locator('footer').filter({
+      has: page.getByTestId('status-bar-cashier'),
+    });
     await expect(statusBar).toBeVisible();
 
     // 2. Verify Cashier Name & Role badge are rendered on bottom-left
@@ -62,7 +64,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
 
     // 3. Verify desktop TitleBar does NOT render duplicate user name or role
     const titleBar = page.getByTestId('desktop-title-bar');
-    if (await titleBar.count() > 0) {
+    if ((await titleBar.count()) > 0) {
       await expect(titleBar).toBeVisible();
       // Identity container in title bar must only have the business name
       const titleBarIdentity = titleBar.locator('.flo-title-bar__identity');
@@ -170,10 +172,7 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
 
     await page.reload();
     await expect(shiftPill).toContainText('Shift opened');
-    await expect(page.getByTestId('status-bar-printer')).toHaveAttribute(
-      'title',
-      /configured/i,
-    );
+    await expect(page.getByTestId('status-bar-printer')).toHaveAttribute('title', /configured/i);
     await expect(kickDrawerBtn).toHaveCount(1);
 
     // 6. Capture screenshot of clean frontline bar

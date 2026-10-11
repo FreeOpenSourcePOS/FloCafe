@@ -74,7 +74,9 @@ export function useCashSession() {
     } catch (err: unknown) {
       return {
         data: null,
-        error: axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Failed to load shift',
+        error: axios.isAxiosError(err)
+          ? err.response?.data?.error || err.message
+          : 'Failed to load shift',
       };
     }
   };
@@ -133,7 +135,9 @@ export function useCashSession() {
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
-      setSubmitError(axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Open failed');
+      setSubmitError(
+        axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Open failed',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -151,14 +155,18 @@ export function useCashSession() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await api.post(`/cash-sessions/${session.id}/close`, { counted_cash_cents: countedCents });
+      const res = await api.post(`/cash-sessions/${session.id}/close`, {
+        counted_cash_cents: countedCents,
+      });
       setClosedResult(res.data);
       setCountedInput('');
       toast.success(t('shiftClosed'));
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
-      setSubmitError(axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed');
+      setSubmitError(
+        axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -185,7 +193,9 @@ export function useCashSession() {
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? err.response?.data?.error || err.response?.data?.detail || err.message
-        : (err instanceof Error ? err.message : 'Print failed');
+        : err instanceof Error
+          ? err.message
+          : 'Print failed';
       toast.error(msg);
       return false;
     } finally {
@@ -195,17 +205,40 @@ export function useCashSession() {
 
   const countedCentsOrNull = displayToCents(countedInput);
   const shiftLoadFailedMessage = t('shiftLoadFailed');
-  const variancePreviewCents = session && countedCentsOrNull !== null
-    ? countedCentsOrNull - session.expected_cash_cents
-    : null;
+  const variancePreviewCents =
+    session && countedCentsOrNull !== null
+      ? countedCentsOrNull - session.expected_cash_cents
+      : null;
 
   return {
-    session, loading, error, refresh,
-    openModalOpen, setOpenModalOpen, closeModalOpen, setCloseModalOpen,
-    floatInput, setFloatInput, countedInput, setCountedInput,
-    submitting, submitError, setSubmitError, closedResult, setClosedResult,
-    printing, variancePreviewCents, minorFactor, fmt, unitAdapter,
-    t, tCommon, openShift, closeShift, printClosure, shiftLoadFailedMessage,
+    session,
+    loading,
+    error,
+    refresh,
+    openModalOpen,
+    setOpenModalOpen,
+    closeModalOpen,
+    setCloseModalOpen,
+    floatInput,
+    setFloatInput,
+    countedInput,
+    setCountedInput,
+    submitting,
+    submitError,
+    setSubmitError,
+    closedResult,
+    setClosedResult,
+    printing,
+    variancePreviewCents,
+    minorFactor,
+    fmt,
+    unitAdapter,
+    t,
+    tCommon,
+    openShift,
+    closeShift,
+    printClosure,
+    shiftLoadFailedMessage,
   };
 }
 

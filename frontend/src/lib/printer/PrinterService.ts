@@ -1,10 +1,6 @@
 /** WebUSB ESC/POS thermal printer driver with browser print fallback. */
 
-export type PrinterStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'connected'
-  | 'error';
+export type PrinterStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export type PrintMode = 'escpos' | 'browser';
 
@@ -110,7 +106,7 @@ class PrinterService {
           this.claimedInterface = iface.interfaceNumber;
           // Discover the bulk-OUT endpoint number from the descriptor
           const outEndpoint = alt.endpoints.find(
-            (ep) => ep.type === 'bulk' && ep.direction === 'out'
+            (ep) => ep.type === 'bulk' && ep.direction === 'out',
           );
           if (outEndpoint) this.endpointOut = outEndpoint.endpointNumber;
           break;
@@ -133,10 +129,12 @@ class PrinterService {
   }
 
   private isSameDevice(left: USBDevice, right: USBDevice): boolean {
-    return left.vendorId === right.vendorId
-      && left.productId === right.productId
-      && left.serialNumber === right.serialNumber
-      && left.productName === right.productName;
+    return (
+      left.vendorId === right.vendorId &&
+      left.productId === right.productId &&
+      left.serialNumber === right.serialNumber &&
+      left.productName === right.productName
+    );
   }
 
   private async findUniqueConfiguredDevice(productName: string): Promise<USBDevice | null> {
@@ -163,9 +161,7 @@ class PrinterService {
     }
 
     if (!navigator.usb) {
-      throw new Error(
-        'WebUSB API is not supported in this browser. Use Chrome or Edge 89+.'
-      );
+      throw new Error('WebUSB API is not supported in this browser. Use Chrome or Edge 89+.');
     }
 
     this.setStatus('connecting');
@@ -315,8 +311,13 @@ class PrinterService {
     return typeof window === 'undefined' ? null : window.open('', '_blank');
   }
 
-  async printViaBrowser(htmlContent: string, paperWidth: 58 | 80, reservedWindow?: Window | null): Promise<void> {
-    const printWindow = reservedWindow === undefined ? this.reserveBrowserPrintWindow() : reservedWindow;
+  async printViaBrowser(
+    htmlContent: string,
+    paperWidth: 58 | 80,
+    reservedWindow?: Window | null,
+  ): Promise<void> {
+    const printWindow =
+      reservedWindow === undefined ? this.reserveBrowserPrintWindow() : reservedWindow;
     if (!printWindow) {
       throw new Error('Please allow popups to print');
     }
@@ -346,7 +347,9 @@ class PrinterService {
 
     // Parse receipt markup and strip executable/script nodes before printing.
     const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
-    parsed.querySelectorAll('script, link, meta, base, iframe, object, embed, form').forEach((node) => node.remove());
+    parsed
+      .querySelectorAll('script, link, meta, base, iframe, object, embed, form')
+      .forEach((node) => node.remove());
     parsed.querySelectorAll('*').forEach((element) => {
       for (const attribute of Array.from(element.attributes)) {
         const name = attribute.name.toLowerCase();
@@ -361,7 +364,9 @@ class PrinterService {
       }
     });
     printWindow.document.body.replaceChildren(
-      ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
+      ...Array.from(parsed.body.childNodes).map((node) =>
+        printWindow.document.importNode(node, true),
+      ),
     );
     printWindow.document.close();
     printWindow.print();

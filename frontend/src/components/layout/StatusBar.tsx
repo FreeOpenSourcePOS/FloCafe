@@ -453,9 +453,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       </div>
 
       {/* Persistent Frontline Status Bar */}
-      <footer
-        className="flex h-8 shrink-0 items-center justify-between border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85"
-      >
+      <footer className="flex h-8 shrink-0 items-center justify-between border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
         {/* Left: Active Cashier & Role Badge */}
         <div className="flex items-center gap-2 min-w-0" data-testid="status-bar-cashier">
           <div className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground shrink-0">

@@ -186,7 +186,11 @@ export const usePrinterStore = create<PrinterState>()(
           const webusbPrinters = list.filter((p) => p.connection_type === 'webusb');
           const webusbPrinter = webusbPrinters.length === 1 ? webusbPrinters[0] : null;
           const configuredDefault = list.find((p) => p.is_default === 1) || null;
-          set({ hardwarePrinter: defaultPrinter, webusbPrinter, defaultPrinter: configuredDefault });
+          set({
+            hardwarePrinter: defaultPrinter,
+            webusbPrinter,
+            defaultPrinter: configuredDefault,
+          });
         } catch {
           set({ hardwarePrinter: null, webusbPrinter: null, defaultPrinter: null });
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
 import { X, ArrowUpDown } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -32,7 +32,7 @@ export default function CreateCustomerModal({
   const country = currentTenant?.country ?? '';
   const dialCode = dialCodeFor(country);
 
-  const initialClassification = disambiguateCustomerInput(initialSearch, country);
+  const initialClassification = disambiguateCustomerInput(initialSearch);
   const targetField =
     initialField ??
     initialClassification.suggestedField ??
@@ -47,21 +47,10 @@ export default function CreateCustomerModal({
   const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const handleSwapFields = useCallback(() => {
+  const handleSwapFields = () => {
     setName(phone);
     setPhone(name);
-  }, [name, phone]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        handleSwapFields();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSwapFields]);
+  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -125,7 +114,6 @@ export default function CreateCustomerModal({
                 type="button"
                 onClick={handleSwapFields}
                 className="text-xs text-brand hover:text-brand-hover flex items-center gap-1 font-medium transition-colors cursor-pointer"
-                title={`${t('swapNameAndPhone')} (Alt+S)`}
               >
                 <ArrowUpDown size={12} />
                 <span>{t('swapNameAndPhone')}</span>

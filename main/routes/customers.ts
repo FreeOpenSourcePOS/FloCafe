@@ -341,48 +341,20 @@ router.get(
         query += ` AND (${invalidPhonePredicate('c')})`;
       }
 
-      const hasExplicitSort = req.query.sort !== undefined;
-      if (!hasExplicitSort && req.query.search) {
-        const rawSearch = String(req.query.search || '').trim();
-        const digitsSearch = stripPhoneDigits(rawSearch);
-        const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
+      const sortField = (req.query.sort as string) || 'name';
+      const sortOrder = (req.query.order as string) === 'desc' ? 'DESC' : 'ASC';
 
-        if (isPhoneLikeSearch) {
-          query += ` ORDER BY
-            CASE
-              WHEN ${phoneDigitsSearch} = ? THEN 1
-              WHEN ${phoneDigitsSearch} LIKE ? THEN 2
-              WHEN ${phoneDigitsSearch} LIKE ? THEN 3
-              WHEN LOWER(c.name) = LOWER(?) THEN 4
-              WHEN c.name LIKE ? THEN 5
-              ELSE 6
-            END ASC, c.name COLLATE NOCASE ASC`;
-          params.push(digitsSearch, `%${digitsSearch}`, `${digitsSearch}%`, rawSearch, `${rawSearch}%`);
-        } else {
-          query += ` ORDER BY
-            CASE
-              WHEN LOWER(c.name) = LOWER(?) THEN 1
-              WHEN c.name LIKE ? THEN 2
-              ELSE 3
-            END ASC, c.name COLLATE NOCASE ASC`;
-          params.push(rawSearch, `${rawSearch}%`);
-        }
-      } else {
-        const sortField = (req.query.sort as string) || 'name';
-        const sortOrder = (req.query.order as string) === 'desc' ? 'DESC' : 'ASC';
+      const allowedSortFields: Record<string, string> = {
+        name: 'c.name COLLATE NOCASE',
+        phone: 'c.phone_digits',
+        visits: 'visits_count',
+        spent: 'total_spent',
+        loyalty: 'wallet_balance',
+        last_visit: 'last_visit_at',
+      };
 
-        const allowedSortFields: Record<string, string> = {
-          name: 'c.name COLLATE NOCASE',
-          phone: 'c.phone_digits',
-          visits: 'visits_count',
-          spent: 'total_spent',
-          loyalty: 'wallet_balance',
-          last_visit: 'last_visit_at',
-        };
-
-        const orderBy = allowedSortFields[sortField] || 'c.name COLLATE NOCASE';
-        query += ` ORDER BY ${orderBy} ${sortOrder}`;
-      }
+      const orderBy = allowedSortFields[sortField] || 'c.name COLLATE NOCASE';
+      query += ` ORDER BY ${orderBy} ${sortOrder}`;
 
       if (req.query.per_page !== undefined) {
         const rawPerPage = String(req.query.per_page).trim();

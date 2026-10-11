@@ -1,6 +1,4 @@
 import { test, expect } from '@playwright/test';
-import fs from 'node:fs';
-import path from 'node:path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 
@@ -35,6 +33,9 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
 
   const customerSearchInput = page.getByTestId('pos-customer-search-input').first();
   await expect(customerSearchInput).toBeVisible();
+  const modal = page.locator('div.fixed.inset-0').filter({
+    has: page.getByRole('heading', { name: 'Add Customer' }),
+  });
 
   // 1. Search by Name
   await customerSearchInput.fill(existingName.slice(0, 10));
@@ -50,6 +51,31 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   // Remove customer from cart
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(customerSearchInput).toBeVisible();
+
+  // Ambiguous digits require an explicit action choice.
+  await page.route('**/api/customers-search?q=123', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/customers-search?q=234', (route) => route.fulfill({ json: [] }));
+  await customerSearchInput.fill('123');
+  await expect(page.getByText('No matching results')).toBeVisible({ timeout: 5_000 });
+  await customerSearchInput.press('Enter');
+  await expect(modal).not.toBeVisible();
+  await customerSearchInput.press('ArrowDown');
+  await customerSearchInput.press('Enter');
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole('textbox').first()).toHaveValue('123');
+  await modal.getByRole('button', { name: 'Close' }).click();
+  await expect(modal).not.toBeVisible();
+
+  await customerSearchInput.fill('234');
+  await expect(page.getByText('No matching results')).toBeVisible({ timeout: 5_000 });
+  await customerSearchInput.press('Enter');
+  await expect(modal).not.toBeVisible();
+  await customerSearchInput.press('ArrowUp');
+  await customerSearchInput.press('Enter');
+  await expect(modal).toBeVisible();
+  await expect(modal.locator('input[type="tel"]')).toHaveValue('234');
+  await modal.getByRole('button', { name: 'Close' }).click();
+  await expect(modal).not.toBeVisible();
 
   // 2. Search by Phone digits
   const phoneDigits = existingPhone.replace(/\D/g, '').slice(-7);
@@ -72,9 +98,6 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   await createAction.click();
 
   // 4. Modal opens with pre-filled phone number
-  const modal = page.locator('div.fixed.inset-0').filter({
-    has: page.getByRole('heading', { name: 'Add Customer' }),
-  });
   await expect(modal).toBeVisible();
 
   const phoneField = modal.locator('input[type="tel"]');
@@ -99,22 +122,10 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   // Fill real name and save
   await nameField.fill(newCustomerName);
 
-  const screenshotDir = path.resolve(__dirname, '../../data/flocafe-dual-customer-search-r1/screenshots');
-  fs.mkdirSync(screenshotDir, { recursive: true });
-  await page.screenshot({
-    path: path.join(screenshotDir, 'pos-unified-customer-search-modal.png'),
-    fullPage: true,
-  });
-
   const saveButton = modal.getByRole('button', { name: 'Save', exact: true });
   await saveButton.click();
   await expect(modal).not.toBeVisible();
 
   // Verify created customer is selected in cart
   await expect(page.getByText(newCustomerName, { exact: true })).toBeVisible({ timeout: 10_000 });
-
-  await page.screenshot({
-    path: path.join(screenshotDir, 'pos-unified-customer-selected.png'),
-    fullPage: true,
-  });
 });

@@ -81,57 +81,37 @@ test('dialCodeFor: unknown code returns empty string (not throw)', () => {
 });
 
 test('disambiguateCustomerInput: phone number detection', () => {
-  const r1 = disambiguateCustomerInput('9876543210', 'IN');
+  const r1 = disambiguateCustomerInput('9876543210');
   assert.equal(r1.category, 'phone');
   assert.equal(r1.suggestedField, 'phone');
-  assert.equal(r1.canDefaultToPhone, true);
-  assert.equal(r1.canDefaultToName, false);
 
-  const r2 = disambiguateCustomerInput('+1 (555) 234-5678', 'US');
+  const r2 = disambiguateCustomerInput('+1 (555) 234-5678');
   assert.equal(r2.category, 'phone');
   assert.equal(r2.suggestedField, 'phone');
-  assert.equal(r2.canDefaultToPhone, true);
 
-  const r3 = disambiguateCustomerInput('+91 98765 43210', 'IN');
+  const r3 = disambiguateCustomerInput('+91 98765 43210');
   assert.equal(r3.category, 'phone');
-  assert.equal(r3.canDefaultToPhone, true);
 });
 
 test('disambiguateCustomerInput: name detection (alpha and alphanumeric entities)', () => {
-  const r1 = disambiguateCustomerInput('Anita Sharma', 'IN');
+  const r1 = disambiguateCustomerInput('Anita Sharma');
   assert.equal(r1.category, 'name');
   assert.equal(r1.suggestedField, 'name');
-  assert.equal(r1.canDefaultToName, true);
-  assert.equal(r1.canDefaultToPhone, false);
 
   // Alphanumeric entity with digits and letters (e.g. Studio 54)
-  const r2 = disambiguateCustomerInput('Studio 54', 'US');
+  const r2 = disambiguateCustomerInput('Studio 54');
   assert.equal(r2.category, 'name');
   assert.equal(r2.suggestedField, 'name');
-  assert.equal(r2.canDefaultToName, true);
 
-  const r3 = disambiguateCustomerInput('Apartment 2B', 'US');
+  const r3 = disambiguateCustomerInput('Apartment 2B');
   assert.equal(r3.category, 'name');
-  assert.equal(r3.canDefaultToName, true);
 });
 
-test('disambiguateCustomerInput: short digits are marked ambiguous without forcing invalid phone save', () => {
-  const r1 = disambiguateCustomerInput('123', 'IN');
+test('disambiguateCustomerInput: short digits are marked ambiguous', () => {
+  const r1 = disambiguateCustomerInput('123');
   assert.equal(r1.category, 'ambiguous');
   assert.equal(r1.suggestedField, null);
-  assert.equal(r1.canDefaultToPhone, false);
-  assert.equal(r1.canDefaultToName, false);
-  assert.equal(r1.isPartialPhone, true);
 
-  const r2 = disambiguateCustomerInput('12', 'IN');
+  const r2 = disambiguateCustomerInput('12');
   assert.equal(r2.category, 'ambiguous');
-  assert.equal(r2.isPartialPhone, true);
-});
-
-test('disambiguateCustomerInput: email format detection', () => {
-  const r = disambiguateCustomerInput('user@example.com', 'US');
-  assert.equal(r.category, 'email');
-  assert.equal(r.suggestedField, 'email');
-  assert.equal(r.canDefaultToPhone, false);
-  assert.equal(r.canDefaultToName, false);
 });

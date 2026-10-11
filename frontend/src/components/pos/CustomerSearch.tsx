@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
-import { useAuthStore } from '@/store/auth';
 import { X, Pencil, Gift, Search, Phone, User, Loader2 } from 'lucide-react';
 import type { Customer } from '@/lib/types';
 import EditCustomerModal from './EditCustomerModal';
@@ -48,17 +47,14 @@ function TagBadges({ counts }: { counts: Record<string, number> }) {
 
 export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
   const cart = useCartStore();
-  const { currentTenant } = useAuthStore();
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
-  const country = currentTenant?.country ?? '';
-
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [creatingModal, setCreatingModal] = useState<{
@@ -131,9 +127,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     clearTimeout(debounceRef.current);
     requestAbortRef.current?.abort();
     setResults([]);
-    setActiveIndex(0);
 
     const trimmed = q.trim();
+    setActiveIndex(disambiguateCustomerInput(trimmed).category === 'ambiguous' ? -1 : 0);
     if (trimmed.length < 2) {
       setLoading(false);
       return;
@@ -150,7 +146,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         if (requestId !== searchRequestIdRef.current) return;
         const list = Array.isArray(data) ? data : data.customers || [];
         setResults(list);
-        setActiveIndex(0);
       } catch {
         if (controller.signal.aborted || requestId !== searchRequestIdRef.current) return;
         setResults([]);
@@ -179,7 +174,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   // Compute intent actions when query is at least 1 character
   const trimmedQuery = query.trim();
-  const disambiguation = disambiguateCustomerInput(trimmedQuery, country);
+  const disambiguation = disambiguateCustomerInput(trimmedQuery);
 
   // Intent action items
   interface IntentAction {
@@ -192,7 +187,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   const actions: IntentAction[] = [];
   if (trimmedQuery.length >= 2) {
-    if (disambiguation.category === 'phone' || disambiguation.canDefaultToPhone) {
+    if (disambiguation.category === 'phone') {
       actions.push({
         id: 'create-phone',
         label: t('createWithPhone', { phone: trimmedQuery }),
@@ -207,7 +202,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         isDefault: false,
         icon: User,
       });
-    } else if (disambiguation.category === 'name' || disambiguation.canDefaultToName) {
+    } else if (disambiguation.category === 'name') {
       actions.push({
         id: 'create-name',
         label: t('createWithName', { name: trimmedQuery }),
@@ -266,14 +261,18 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (totalInteractiveItems > 0) {
-        setActiveIndex((prev) => (prev - 1 + totalInteractiveItems) % totalInteractiveItems);
+        setActiveIndex((prev) =>
+          prev < 0
+            ? totalInteractiveItems - 1
+            : (prev - 1 + totalInteractiveItems) % totalInteractiveItems,
+        );
       }
       return;
     }
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (results.length > 0 && activeIndex < results.length) {
+      if (activeIndex >= 0 && results.length > 0 && activeIndex < results.length) {
         handleSelectCustomer(results[activeIndex]);
         return;
       }
@@ -281,13 +280,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       const actionIndex = activeIndex - results.length;
       if (actionIndex >= 0 && actionIndex < actions.length) {
         handleTriggerAction(actions[actionIndex].field);
-        return;
-      }
-
-      // Default Enter fallback: if default action exists
-      const defaultAct = actions.find((a) => a.isDefault) || actions[0];
-      if (defaultAct) {
-        handleTriggerAction(defaultAct.field);
       }
     }
   };

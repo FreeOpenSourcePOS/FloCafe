@@ -117,15 +117,6 @@ async function main() {
     rankIds = (rankRes.data || []).map((c: any) => c.id);
     assertEqual(rankIds[0], 'ci-formatted', 'slash-normalized exact phone match ranks before longer match');
 
-    // Verify ranked relevance ordering in /customers?search=
-    let adminRank = await api(apiBase, '/customers?search=7777777777&per_page=10', { headers: authHeader });
-    let adminRankIds = (adminRank.data?.data || []).map((c: any) => c.id);
-    assertEqual(adminRankIds[0], 'ci-exact-phone', 'admin list filter ranks exact phone match first');
-
-    adminRank = await api(apiBase, '/customers?search=919876543212&per_page=10', { headers: authHeader });
-    adminRankIds = (adminRank.data?.data || []).map((c: any) => c.id);
-    assertEqual(adminRankIds[0], 'ci-formatted', 'admin list ranks slash-normalized exact phone match first');
-
     // ── /api/customers?search= (admin list filter) ──────────────────────────
     res = await api(apiBase, '/customers?search=9876543210&per_page=10', { headers: authHeader });
     let list = (res.data?.data || []);

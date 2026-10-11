@@ -75,14 +75,49 @@ async function run(): Promise<void> {
     String(documentNonce),
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
   );
-  assert.deepEqual(Object.keys(exposedApi!).sort(), [
-    'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
-    'dbInitialize', 'getAppInfo', 'getApplicationMenu', 'getBetaChannel', 'getKdsInfo',
-    'getLogTail', 'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
-    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openApplicationMenu', 'openKdsWindow', 'openWhatsAppShare', 'pickRestoreFile', 'platform', 'reportRendererError', 'restartAndInstall',
-    'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'saveHtmlAsPdf', 'setBetaChannel', 'setSetting', 'setThemeEffective',
-    'windowAction', 'windowReady',
-  ].sort());
+  assert.deepEqual(
+    Object.keys(exposedApi!).sort(),
+    [
+      'backupDatabase',
+      'checkForUpdates',
+      'dbApplySafeFixes',
+      'dbHealthCheck',
+      'dbInitialize',
+      'downloadUpdate',
+      'getAppInfo',
+      'getApplicationMenu',
+      'getAutoUpdateCheck',
+      'getBetaChannel',
+      'getKdsInfo',
+      'getLogTail',
+      'getMasterPinStatus',
+      'getPrinters',
+      'getSettings',
+      'getStatus',
+      'getUpdateStatus',
+      'getWindowState',
+      'onMenuAction',
+      'onUpdateStatus',
+      'onWindowStateChanged',
+      'openApplicationMenu',
+      'openKdsWindow',
+      'openWhatsAppShare',
+      'pickRestoreFile',
+      'platform',
+      'reportRendererError',
+      'restartAndInstall',
+      'rasterizeKotDocument',
+      'rasterizePrintDocument',
+      'restoreBackup',
+      'saveHtmlAsPdf',
+      'setAutoUpdateCheck',
+      'setBetaChannel',
+      'setSetting',
+      'setThemeEffective',
+      'windowAction',
+      'windowReady',
+    ].sort(),
+  );
 
   // The printer and daily-summary bridges are removed, not merely unwired:
   // both are reachable only through permission-gated HTTP routes now, and an
@@ -104,23 +139,40 @@ async function run(): Promise<void> {
   await call('getKdsInfo');
   await call('openKdsWindow');
   await call('getPrinters');
-  await call('rasterizePrintDocument', { document: {}, template: 'classic', profileId: 'profile', options: {} });
+  await call('rasterizePrintDocument', {
+    document: {},
+    template: 'classic',
+    profileId: 'profile',
+    options: {},
+  });
   await call('rasterizeKotDocument', { document: kotDocument, profileId: 'profile', options: {} });
-  await call('saveHtmlAsPdf', { html: '<html></html>', defaultFileName: 'menu.pdf', pageSize: 'A4' });
+  await call('saveHtmlAsPdf', {
+    html: '<html></html>',
+    defaultFileName: 'menu.pdf',
+    pageSize: 'A4',
+  });
   await call('getBetaChannel');
   await call('setBetaChannel', true);
+  await call('downloadUpdate');
+  await call('getAutoUpdateCheck');
+  await call('setAutoUpdateCheck', false);
   await call('windowReady', { epoch: 1 });
   await call('windowAction', 'minimize');
   await call('getWindowState');
   await call('openWhatsAppShare', 'https://wa.me/15555550100?text=test');
-  await call('reportRendererError', { message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' });
+  await call('reportRendererError', {
+    message: 'boom',
+    stack: 'stack',
+    digest: 'd1',
+    route: '/dashboard',
+  });
   await call('getApplicationMenu');
   await call('openApplicationMenu', '0', 12, 0);
 
   const receivedStatuses: unknown[] = [];
-  const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
-    (status) => receivedStatuses.push(status),
-  );
+  const unsubscribe = (
+    exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void
+  )((status) => receivedStatuses.push(status));
   const structuredReleaseNotes = {
     status: 'available',
     releaseNotes: [{ version: '3.4.0', note: 'Improved update delivery' }],
@@ -131,9 +183,9 @@ async function run(): Promise<void> {
   assert.equal(eventHandlers.has('update-status'), false);
 
   const receivedWindowStates: unknown[] = [];
-  const unsubscribeWindowState = (exposedApi!['onWindowStateChanged'] as (callback: (state: unknown) => void) => () => void)(
-    (state) => receivedWindowStates.push(state),
-  );
+  const unsubscribeWindowState = (
+    exposedApi!['onWindowStateChanged'] as (callback: (state: unknown) => void) => () => void
+  )((state) => receivedWindowStates.push(state));
   const windowStatePayload = { isMaximized: true, isFullScreen: false };
   eventHandlers.get('window-state-changed')?.({}, windowStatePayload);
   assert.deepEqual(receivedWindowStates, [windowStatePayload]);
@@ -146,16 +198,31 @@ async function run(): Promise<void> {
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-printers', args: [] },
-    { channel: 'rasterize-print-document', args: [{ document: {}, template: 'classic', profileId: 'profile', options: {} }] },
-    { channel: 'rasterize-kot-document', args: [{ document: kotDocument, profileId: 'profile', options: {} }] },
-    { channel: 'save-html-as-pdf', args: [{ html: '<html></html>', defaultFileName: 'menu.pdf', pageSize: 'A4' }] },
+    {
+      channel: 'rasterize-print-document',
+      args: [{ document: {}, template: 'classic', profileId: 'profile', options: {} }],
+    },
+    {
+      channel: 'rasterize-kot-document',
+      args: [{ document: kotDocument, profileId: 'profile', options: {} }],
+    },
+    {
+      channel: 'save-html-as-pdf',
+      args: [{ html: '<html></html>', defaultFileName: 'menu.pdf', pageSize: 'A4' }],
+    },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
+    { channel: 'download-update', args: [] },
+    { channel: 'updates:get-auto-check', args: [] },
+    { channel: 'updates:set-auto-check', args: [false] },
     { channel: 'window-ready', args: [{ epoch: 1, documentNonce }] },
     { channel: 'window-action', args: ['minimize'] },
     { channel: 'get-window-state', args: [] },
     { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
-    { channel: 'report-renderer-error', args: [{ message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' }] },
+    {
+      channel: 'report-renderer-error',
+      args: [{ message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' }],
+    },
     { channel: 'get-application-menu', args: [] },
     { channel: 'open-application-menu', args: ['0', 12, 0] },
   ]);

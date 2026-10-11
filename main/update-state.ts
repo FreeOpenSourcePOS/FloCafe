@@ -71,7 +71,8 @@ const NETWORK_ERROR_CODE_PATTERN = /^(?:ERR_NETWORK_|ERR_INTERNET_|ERR_CONNECTIO
 
 /** electron-updater-specific code for a missing/unreachable latest.yml channel manifest. */
 const CHANNEL_FILE_NOT_FOUND = 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND';
-const MISSING_UPDATE_CONFIG_PATTERN = /(?:\bENOENT\b|no such file|file not found|cannot find).*app-update\.yml|app-update\.yml.*(?:\bENOENT\b|no such file|file not found)/i;
+const MISSING_UPDATE_CONFIG_PATTERN =
+  /(?:\bENOENT\b|no such file|file not found|cannot find).*app-update\.yml|app-update\.yml.*(?:\bENOENT\b|no such file|file not found)/i;
 
 function errorCode(err: unknown): string | undefined {
   if (typeof err === 'object' && err !== null && 'code' in err) {
@@ -95,14 +96,20 @@ export function isMissingUpdateConfigError(err: unknown): boolean {
 }
 
 /** Classify an electron-updater error into an honest user-facing state. */
-export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'check'): ClassifiedUpdateError {
+export function classifyUpdateError(
+  err: unknown,
+  phase: UpdateErrorPhase = 'check',
+): ClassifiedUpdateError {
   const detail = errorMessage(err);
   const code = errorCode(err);
 
   // Network class: DNS/routing/timeouts mean offline, not a broken build.
   if (
-    (code !== undefined && (NETWORK_ERROR_CODES.has(code) || NETWORK_ERROR_CODE_PATTERN.test(code))) ||
-    /ENOTFOUND|ERR_NETWORK_[A-Z_]+|ERR_INTERNET_[A-Z_]+|ERR_CONNECTION_[A-Z_]+|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_ADDRESS_UNREACHABLE|ERR_PROXY_CONNECTION_FAILED|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(detail)
+    (code !== undefined &&
+      (NETWORK_ERROR_CODES.has(code) || NETWORK_ERROR_CODE_PATTERN.test(code))) ||
+    /ENOTFOUND|ERR_NETWORK_[A-Z_]+|ERR_INTERNET_[A-Z_]+|ERR_CONNECTION_[A-Z_]+|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_ADDRESS_UNREACHABLE|ERR_PROXY_CONNECTION_FAILED|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(
+      detail,
+    )
   ) {
     return { state: 'offline', reason: 'unknown', detail };
   }
@@ -143,7 +150,10 @@ export function oneShotUpdateState(state: OneShotUpdateState): StoredUpdateStatu
   return { status: state };
 }
 
-export function missingUpdateConfigState(isDevelopmentArtifact: boolean, detail: string): StoredUpdateStatus {
+export function missingUpdateConfigState(
+  isDevelopmentArtifact: boolean,
+  detail: string,
+): StoredUpdateStatus {
   return isDevelopmentArtifact
     ? oneShotUpdateState('dev-mode')
     : { status: 'check-failed', reason: 'manifest-missing', error: detail };
@@ -153,8 +163,27 @@ export function isInstallReady(stored: StoredUpdateStatus, stagedUpdateReady: bo
   return stagedUpdateReady || stored.status === 'ready-to-install';
 }
 
-export function isUpdateCheckInFlight(stored: StoredUpdateStatus, phase: UpdateErrorPhase): boolean {
+export function isUpdateCheckInFlight(
+  stored: StoredUpdateStatus,
+  phase: UpdateErrorPhase,
+): boolean {
   return stored.status === 'checking' || phase === 'download';
+}
+
+/** Downloads start only after the user accepts an available update. */
+export function canStartUpdateDownload(
+  stored: StoredUpdateStatus,
+  phase: UpdateErrorPhase,
+  stagedUpdateReady: boolean,
+): boolean {
+  return stored.status === 'available' && phase !== 'download' && !stagedUpdateReady;
+}
+
+/** Setting key for the automatic startup update check; manual checks always work. */
+export const AUTO_UPDATE_CHECK_SETTING_KEY = 'updates.auto_check_enabled';
+
+export function parseStoredAutoUpdateCheckEnabled(value: string | null | undefined): boolean {
+  return value !== 'false';
 }
 
 /** Payload shape returned by the `get-update-status` IPC handler. */
@@ -168,7 +197,10 @@ export interface IpcUpdateStatusPayload {
 }
 
 /** Derives the IPC response payload from the stored update state. */
-export function toIpcUpdateStatus(stored: StoredUpdateStatus, currentVersion: string): IpcUpdateStatusPayload {
+export function toIpcUpdateStatus(
+  stored: StoredUpdateStatus,
+  currentVersion: string,
+): IpcUpdateStatusPayload {
   return {
     status: stored.status,
     ...(stored.version !== undefined ? { version: stored.version } : {}),

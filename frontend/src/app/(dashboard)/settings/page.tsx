@@ -58,6 +58,7 @@ import toast from 'react-hot-toast';
 import { normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
+import AutoUpdateCheckToggle from '@/components/settings/AutoUpdateCheckToggle';
 import BetaChannelToggle from '@/components/settings/BetaChannelToggle';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
@@ -356,6 +357,7 @@ export default function SettingsPage() {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const tRestore = useTranslations('restore');
+  const tUpdate = useTranslations('update');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
@@ -1017,6 +1019,7 @@ export default function SettingsPage() {
     appVersion,
     isElectron,
     checkForUpdates: handleCheckUpdates,
+    downloadUpdate: handleDownloadUpdate,
   } = useUpdateStatus();
 
   // ── Printers ─────────────────────────────────────────────────────────────
@@ -6104,12 +6107,22 @@ export default function SettingsPage() {
                         />
                         {updateStatus?.status === 'checking' ? t('checking') : t('checkForUpdates')}
                       </button>
+                      {updateStatus?.status === 'available' && (
+                        <button
+                          onClick={() => void handleDownloadUpdate()}
+                          data-testid="settings-download-update"
+                          className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 border border-brand text-brand hover:bg-brand/10"
+                        >
+                          {tUpdate('downloadNow')}
+                        </button>
+                      )}
                     </div>
                   )}
               </div>
 
               {/* #463: beta/pre-release channel opt-in; feature-detects the
               beta-release-channel IPC contract and degrades visibly when absent. */}
+              {isElectron && <AutoUpdateCheckToggle />}
               {isElectron && <BetaChannelToggle />}
             </SettingsTabShell>
           </TabsContent>

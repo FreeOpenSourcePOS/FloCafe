@@ -2067,7 +2067,7 @@
     "showTaxBreakdown": "ٹیکس کی تفصیل",
     "showTaxId": "ٹیکس ID نمبر",
     "softwareUpdates": "سافٹ ویئر اپ ڈیٹس",
-    "softwareUpdatesHintDefault": "Flo Cafe اپ ڈیٹس خودکار طور پر چیک کرتا ہے۔ آپ نیچے دستی طور پر بھی چیک کر سکتے ہیں۔",
+    "softwareUpdatesHintDefault": "Flo Cafe اسٹارٹ اپ پر اپ ڈیٹس چیک کرتا ہے جب تک آپ نیچے اسے بند نہ کریں، اور ڈاؤن لوڈ سے پہلے ہمیشہ پوچھتا ہے۔ آپ دستی طور پر بھی چیک کر سکتے ہیں۔",
     "softwareUpdatesHintBrowser": "اپ ڈیٹس FloCafe ڈیسک ٹاپ ایپ سنبھالتی ہے۔",
     "softwareUpdatesHintLinuxManaged": "یہ انسٹال آپ کے Linux پیکیج مینیجر (deb/rpm) یا Snap Store کے تحت ہے، Flo کے ایپ میں اپ ڈیٹر کے تحت نہیں۔ AppImage بلڈ خودکار اپ ڈیٹ ہوتے ہیں۔",
     "softwareUpdatesHintStore": "یہ ورژن App Store کے ذریعے تقسیم ہوتا ہے۔ اپ ڈیٹس اسٹور سنبھالتا ہے۔",
@@ -2877,7 +2877,16 @@
     "betaOn": "آن",
     "betaOff": "آف",
     "betaToggleFailed": "بیٹا چینل کی ترتیب تبدیل نہیں ہو سکی۔",
-    "betaGraduationNote": "اگلی مستحکم ریلیز شائع ہونے تک بیٹا چینل چھوڑنے سے آپ کا موجودہ ورژن برقرار رہتا ہے، جو ڈیٹابیس کو ڈاؤن گریڈ سے بچاتا ہے۔"
+    "betaGraduationNote": "اگلی مستحکم ریلیز شائع ہونے تک بیٹا چینل چھوڑنے سے آپ کا موجودہ ورژن برقرار رہتا ہے، جو ڈیٹابیس کو ڈاؤن گریڈ سے بچاتا ہے۔",
+    "availableTitle": "اپ ڈیٹ دستیاب ہے",
+    "availableDescription": "Flo Cafe کا ورژن {version} دستیاب ہے۔ کیا ابھی ڈاؤن لوڈ کریں؟ ڈاؤن لوڈ کے دوران آپ کام جاری رکھ سکتے ہیں اور ری اسٹارٹ کا وقت آپ خود چنتے ہیں۔",
+    "versionAvailable": "ورژن {version} دستیاب ہے",
+    "downloadNow": "ڈاؤن لوڈ",
+    "later": "بعد میں",
+    "downloadFailedToStart": "ڈاؤن لوڈ شروع نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+    "autoCheckTitle": "اپ ڈیٹس خودکار طور پر چیک کریں",
+    "autoCheckDescription": "آن ہونے پر Flo Cafe اسٹارٹ اپ پر نئے ورژن چیک کرتا ہے اور ڈاؤن لوڈ سے پہلے پوچھتا ہے۔ آف ہونے پر اپ ڈیٹس چیک کریں سے دستی طور پر دیکھیں۔",
+    "autoCheckToggleFailed": "خودکار اپ ڈیٹ کی ترتیب تبدیل نہیں ہو سکی۔"
   },
   "whatsapp": {
     "active": {

@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Desglose de impuestos",
     "showTaxId": "Número de ID Fiscal",
     "softwareUpdates": "Actualizaciones de software",
-    "softwareUpdatesHintDefault": "Flo Cafe busca actualizaciones automáticamente. También podés buscar manualmente abajo.",
+    "softwareUpdatesHintDefault": "Flo Cafe busca actualizaciones al iniciar, salvo que lo desactives abajo, y siempre pregunta antes de descargar. También puedes buscarlas manualmente.",
     "softwareUpdatesHintBrowser": "Las actualizaciones se gestionan en la aplicación de escritorio de FloCafe.",
     "softwareUpdatesHintLinuxManaged": "Esta instalación la gestiona tu gestor de paquetes de Linux (deb/rpm) o la Snap Store, no el actualizador integrado de Flo. Las compilaciones AppImage se actualizan automáticamente.",
     "softwareUpdatesHintStore": "Esta versión se distribuye por la App Store. Las actualizaciones las maneja la tienda.",
@@ -2877,7 +2877,16 @@
     "betaOn": "Activado",
     "betaOff": "Desactivado",
     "betaToggleFailed": "No se pudo cambiar la configuración del canal beta.",
-    "betaGraduationNote": "Salir del canal beta mantiene tu versión actual hasta que se publique la siguiente versión estable, protegiendo tu base de datos contra desactualizaciones."
+    "betaGraduationNote": "Salir del canal beta mantiene tu versión actual hasta que se publique la siguiente versión estable, protegiendo tu base de datos contra desactualizaciones.",
+    "availableTitle": "Actualización disponible",
+    "availableDescription": "La versión {version} de Flo Cafe está disponible. ¿Descargarla ahora? Puedes seguir trabajando mientras se descarga y tú eliges cuándo reiniciar.",
+    "versionAvailable": "La versión {version} está disponible",
+    "downloadNow": "Descargar",
+    "later": "Más tarde",
+    "downloadFailedToStart": "No se pudo iniciar la descarga. Inténtalo de nuevo.",
+    "autoCheckTitle": "Buscar actualizaciones automáticamente",
+    "autoCheckDescription": "Si está activado, Flo Cafe busca nuevas versiones al iniciar y pregunta antes de descargar. Si está desactivado, usa Buscar actualizaciones para comprobarlo manualmente.",
+    "autoCheckToggleFailed": "No se pudo cambiar la configuración de actualizaciones automáticas."
   },
   "whatsapp": {
     "active": {

@@ -508,13 +508,13 @@ frontend/src/
 │   ├── support/                The support hub: SupportTicketForm, DiagnosticsPanel
 │   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives
-│   └── updates/                Update install guard dialog
+│   └── updates/                Update download prompt and install guard dialog
 ├── hooks/                      Printer, KDS, theme, update, cash, and formatting hooks
 ├── lib/
 │   ├── i18n/                   Language registry, loader, and the 24 message files
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,
 │   │                           and the delivery-slip encoder and browser renderer
-│   ├── updates/                Beta channel and restart-and-install helpers
+│   ├── updates/                Beta channel, auto-check, and restart-and-install helpers
 │   ├── api.ts                  The shared axios client for the authenticated pages
 │   ├── api-error.ts            Localized text for a backend error
 │   └── permissions.ts          tenantCan

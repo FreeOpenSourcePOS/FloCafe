@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/s
 import StatusBar from '@/components/layout/StatusBar';
 import GlobalNotifications from '@/components/layout/GlobalNotifications';
 import TitleBar from '@/components/layout/TitleBar';
+import UpdateAvailableDialog from '@/components/updates/UpdateAvailableDialog';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -21,7 +22,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <SidebarProvider defaultOpen className="flex h-screen min-h-0 flex-col w-full" style={{ minHeight: 0 }}>
+      <SidebarProvider
+        defaultOpen
+        className="flex h-screen min-h-0 flex-col w-full"
+        style={{ minHeight: 0 }}
+      >
         <TitleBar />
         <div className="flex min-h-0 flex-1 w-full overflow-hidden">
           <AppSidebar />
@@ -32,17 +37,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <SidebarTrigger className="size-8" aria-label="Open navigation" />
             </div>
             {!isPos && <GlobalNotifications />}
-            <div className={isPos
-              ? 'flex-1 min-h-0 flex flex-col overflow-hidden p-4'
-              : isSettings
-              ? 'flex-1 min-h-0 p-4 overflow-auto md:overflow-hidden min-w-0'
-              : 'flex-1 p-4 overflow-auto min-w-0'
-            }>
+            <div
+              className={
+                isPos
+                  ? 'flex-1 min-h-0 flex flex-col overflow-hidden p-4'
+                  : isSettings
+                    ? 'flex-1 min-h-0 p-4 overflow-auto md:overflow-hidden min-w-0'
+                    : 'flex-1 p-4 overflow-auto min-w-0'
+              }
+            >
               {children}
             </div>
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
         </div>
+        <UpdateAvailableDialog />
       </SidebarProvider>
     </AuthGuard>
   );

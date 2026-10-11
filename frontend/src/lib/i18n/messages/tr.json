@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "KDV / Vergi Dağılımını Göster",
     "showTaxId": "Vergi Kimlik Numarasını Göster",
     "softwareUpdates": "Yazılım Güncellemeleri",
-    "softwareUpdatesHintDefault": "Otomatik güncellemeler güvenlik ve kararlılık sağlar",
+    "softwareUpdatesHintDefault": "Flo Cafe, aşağıdan kapatmadığınız sürece başlangıçta güncellemeleri denetler ve indirmeden önce her zaman sorar. Elle de denetleyebilirsiniz.",
     "softwareUpdatesHintBrowser": "Tarayıcı sürümünde güncellemeler otomatik yüklenir",
     "softwareUpdatesHintLinuxManaged": "Linux paket yöneticiniz tarafından güncellenir",
     "softwareUpdatesHintStore": "Uygulama mağazası tarafından otomatik güncellenir",
@@ -2877,7 +2877,16 @@
     "betaOn": "Açık",
     "betaOff": "Kapalı",
     "betaToggleFailed": "Beta kanalı ayarı değiştirilemedi.",
-    "betaGraduationNote": "Beta kanalından ayrılmak, bir sonraki kararlı sürüm yayınlanana kadar mevcut sürümünüzü korur ve veritabanınızı sürüm düşürme risklerine karşı korur."
+    "betaGraduationNote": "Beta kanalından ayrılmak, bir sonraki kararlı sürüm yayınlanana kadar mevcut sürümünüzü korur ve veritabanınızı sürüm düşürme risklerine karşı korur.",
+    "availableTitle": "Güncelleme mevcut",
+    "availableDescription": "Flo Cafe'nin {version} sürümü mevcut. Şimdi indirilsin mi? İndirme sırasında çalışmaya devam edebilir, ne zaman yeniden başlatacağınızı siz seçersiniz.",
+    "versionAvailable": "{version} sürümü mevcut",
+    "downloadNow": "İndir",
+    "later": "Daha sonra",
+    "downloadFailedToStart": "İndirme başlatılamadı. Tekrar deneyin.",
+    "autoCheckTitle": "Güncellemeleri otomatik denetle",
+    "autoCheckDescription": "Açıkken Flo Cafe başlangıçta yeni sürümleri denetler ve indirmeden önce sorar. Kapalıyken Güncellemeleri denetle ile elle kontrol edin.",
+    "autoCheckToggleFailed": "Otomatik güncelleme ayarı değiştirilemedi."
   },
   "whatsapp": {
     "active": {

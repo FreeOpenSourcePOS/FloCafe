@@ -26,6 +26,11 @@ import {
   readBetaChannelState,
   writeBetaChannelState,
 } from '../frontend/src/lib/updates/beta-channel';
+import {
+  autoUpdateCheckApiSupported,
+  readAutoUpdateCheckState,
+  writeAutoUpdateCheckState,
+} from '../frontend/src/lib/updates/auto-update-check';
 
 // ── Restart-to-install result normalization ─────────────────────────────────
 
@@ -81,10 +86,13 @@ test('betaChannelApiSupported is false when the sibling preload API is absent', 
 });
 
 test('betaChannelApiSupported is true only when both contract methods exist', () => {
-  assert.equal(betaChannelApiSupported({
-    getBetaChannel: () => Promise.resolve(false),
-    setBetaChannel: () => Promise.resolve(),
-  }), true);
+  assert.equal(
+    betaChannelApiSupported({
+      getBetaChannel: () => Promise.resolve(false),
+      setBetaChannel: () => Promise.resolve(),
+    }),
+    true,
+  );
 });
 
 // ── Beta channel value normalization ────────────────────────────────────────
@@ -112,9 +120,18 @@ test('normalizeBetaChannelValue treats error envelopes as unknown state', () => 
 // ── Beta channel write results (optimistic update decisions) ────────────────
 
 test('normalizeBetaChannelWriteResult: confirmed success adopts reported state', () => {
-  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true, enabled: true }, false), { ok: true, enabled: true });
-  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true }, true), { ok: true, enabled: true });
-  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true }, false), { ok: true, enabled: false });
+  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true, enabled: true }, false), {
+    ok: true,
+    enabled: true,
+  });
+  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true }, true), {
+    ok: true,
+    enabled: true,
+  });
+  assert.deepEqual(normalizeBetaChannelWriteResult({ success: true }, false), {
+    ok: true,
+    enabled: false,
+  });
 });
 
 test('normalizeBetaChannelWriteResult: legacy void assumes the requested value landed', () => {
@@ -137,7 +154,10 @@ test('readBetaChannelState reports unsupported when the contract is missing', as
 });
 
 test('readBetaChannelState round-trips the persisted boolean when present', async () => {
-  const api = { getBetaChannel: () => Promise.resolve(true), setBetaChannel: () => Promise.resolve() };
+  const api = {
+    getBetaChannel: () => Promise.resolve(true),
+    setBetaChannel: () => Promise.resolve(),
+  };
   assert.deepEqual(await readBetaChannelState(api), { supported: true, enabled: true });
 });
 
@@ -151,7 +171,12 @@ test('readBetaChannelState degrades to unsupported on a rejected get', async () 
 
 test('writeBetaChannelState refuses to call a missing setBetaChannel', async () => {
   let called = false;
-  const api = { getBetaChannel: () => { called = true; return Promise.resolve(false); } };
+  const api = {
+    getBetaChannel: () => {
+      called = true;
+      return Promise.resolve(false);
+    },
+  };
   const result = await writeBetaChannelState(api as never, true);
   assert.equal(result.ok, false);
   assert.equal(called, false);
@@ -161,7 +186,10 @@ test('writeBetaChannelState returns the new state after a successful set', async
   let stored = false;
   const api = {
     getBetaChannel: () => Promise.resolve(stored),
-    setBetaChannel: (enabled: boolean) => { stored = enabled; return Promise.resolve({ success: true, enabled }); },
+    setBetaChannel: (enabled: boolean) => {
+      stored = enabled;
+      return Promise.resolve({ success: true, enabled });
+    },
   };
   const before = await readBetaChannelState(api);
   assert.deepEqual(before, { supported: true, enabled: false });
@@ -169,4 +197,39 @@ test('writeBetaChannelState returns the new state after a successful set', async
   assert.equal(result.ok, true);
   assert.equal(result.enabled, true);
   assert.deepEqual(await readBetaChannelState(api), { supported: true, enabled: true });
+});
+
+// ── Automatic update check preference ──────────────────────────────────────
+
+test('auto update check helpers report unsupported when the IPC pair is missing', async () => {
+  assert.equal(autoUpdateCheckApiSupported(undefined), false);
+  assert.equal(
+    autoUpdateCheckApiSupported({ getAutoUpdateCheck: () => Promise.resolve(true) }),
+    false,
+  );
+  assert.deepEqual(await readAutoUpdateCheckState({}), { supported: false, enabled: null });
+  assert.equal((await writeAutoUpdateCheckState({}, false)).ok, false);
+});
+
+test('writeAutoUpdateCheckState persists the choice and refusals leave it unchanged', async () => {
+  let stored = true;
+  const api = {
+    getAutoUpdateCheck: () => Promise.resolve(stored),
+    setAutoUpdateCheck: (enabled: boolean) => {
+      stored = enabled;
+      return Promise.resolve({ success: true });
+    },
+  };
+  assert.deepEqual(await readAutoUpdateCheckState(api), { supported: true, enabled: true });
+  const result = await writeAutoUpdateCheckState(api, false);
+  assert.deepEqual(result, { ok: true, enabled: false });
+  assert.deepEqual(await readAutoUpdateCheckState(api), { supported: true, enabled: false });
+
+  const refusing = {
+    ...api,
+    setAutoUpdateCheck: () => Promise.resolve({ success: false, error: 'db locked' }),
+  };
+  const refused = await writeAutoUpdateCheckState(refusing, true);
+  assert.equal(refused.ok, false);
+  assert.equal(stored, false);
 });

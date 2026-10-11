@@ -12,25 +12,56 @@ import type {
 } from './electron';
 
 type Equal<Actual, Expected> =
-  (<T>() => T extends Actual ? 1 : 2) extends
-  (<T>() => T extends Expected ? 1 : 2) ? true : false;
+  (<T>() => T extends Actual ? 1 : 2) extends <T>() => T extends Expected ? 1 : 2 ? true : false;
 type Expect<T extends true> = T;
 
 // Type-level regression assertions matching renderer ElectronAPI
 // against preload-facing IPC contracts without runtime output.
 export type ElectronApiContractChecks = [
-  Expect<Equal<ElectronAPI['dbApplySafeFixes'], (pin: string, findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>>>,
-  Expect<Equal<ElectronAPI['getMasterPinStatus'], () => Promise<ElectronMasterPinStatus | ElectronIpcError>>>,
-  Expect<Equal<ElectronAPI['getSettings'], () => Promise<Record<string, string | null> | ElectronIpcError>>>,
-  Expect<Equal<ElectronAPI['setSetting'], (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>>>,
-  Expect<Equal<ElectronAPI['setThemeEffective'], (isDark: boolean) => Promise<ElectronActionResult | ElectronIpcError>>>,
+  Expect<
+    Equal<
+      ElectronAPI['dbApplySafeFixes'],
+      (pin: string, findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>
+    >
+  >,
+  Expect<
+    Equal<
+      ElectronAPI['getMasterPinStatus'],
+      () => Promise<ElectronMasterPinStatus | ElectronIpcError>
+    >
+  >,
+  Expect<
+    Equal<
+      ElectronAPI['getSettings'],
+      () => Promise<Record<string, string | null> | ElectronIpcError>
+    >
+  >,
+  Expect<
+    Equal<
+      ElectronAPI['setSetting'],
+      (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>
+    >
+  >,
+  Expect<
+    Equal<
+      ElectronAPI['setThemeEffective'],
+      (isDark: boolean) => Promise<ElectronActionResult | ElectronIpcError>
+    >
+  >,
   Expect<Equal<ElectronAPI['getKdsInfo'], () => Promise<KdsInfo | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['openKdsWindow'], () => Promise<void | ElectronIpcError>>>,
-  Expect<Equal<ElectronAPI['openWhatsAppShare'], (url: string) => Promise<ElectronActionResult | ElectronIpcError>>>,
+  Expect<
+    Equal<
+      ElectronAPI['openWhatsAppShare'],
+      (url: string) => Promise<ElectronActionResult | ElectronIpcError>
+    >
+  >,
   Expect<Equal<ElectronAPI['getAppInfo'], () => Promise<ElectronAppInfo | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getPrinters'], () => Promise<ElectronPrinter[] | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getStatus'], () => Promise<ElectronStatus>>>,
-  Expect<Equal<ElectronAPI['onUpdateStatus'], (callback: (status: UpdateStatus) => void) => (() => void)>>,
+  Expect<
+    Equal<ElectronAPI['onUpdateStatus'], (callback: (status: UpdateStatus) => void) => () => void>
+  >,
 ];
 
 // savePrinter and getDailySummary are deliberately absent: both are removed
@@ -58,6 +89,9 @@ export type ElectronApiMethodPresence = Pick<
   | 'onUpdateStatus'
   | 'getUpdateStatus'
   | 'checkForUpdates'
+  | 'downloadUpdate'
+  | 'getAutoUpdateCheck'
+  | 'setAutoUpdateCheck'
   | 'restartAndInstall'
   | 'platform'
 >;

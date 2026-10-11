@@ -2068,7 +2068,7 @@
     "showTaxBreakdown": "Steueraufschlüsselung",
     "showTaxId": "Steuer-ID-Nummer",
     "softwareUpdates": "Software-Updates",
-    "softwareUpdatesHintDefault": "FloCafe sucht automatisch nach Updates. Sie können auch manuell suchen.",
+    "softwareUpdatesHintDefault": "Flo Cafe sucht beim Start nach Updates, sofern Sie dies unten nicht deaktivieren, und fragt immer vor dem Download. Sie können auch manuell suchen.",
     "softwareUpdatesHintBrowser": "Verwaltet über die FloCafe-Desktop-App.",
     "softwareUpdatesHintLinuxManaged": "Diese Installation wird von Ihrem Linux-Paketmanager (deb/rpm) oder dem Snap Store verwaltet, nicht vom integrierten Flo-Updater. AppImage-Builds werden automatisch aktualisiert.",
     "softwareUpdatesHintStore": "Verwaltet über den App Store.",
@@ -2877,7 +2877,16 @@
     "betaOn": "Ein",
     "betaOff": "Aus",
     "betaToggleFailed": "Die Einstellung des Beta-Kanals konnte nicht geändert werden.",
-    "betaGraduationNote": "Das Verlassen des Beta-Kanals behält Ihre Version bei, bis die nächste stabile Version veröffentlicht wird."
+    "betaGraduationNote": "Das Verlassen des Beta-Kanals behält Ihre Version bei, bis die nächste stabile Version veröffentlicht wird.",
+    "availableTitle": "Update verfügbar",
+    "availableDescription": "Version {version} von Flo Cafe ist verfügbar. Jetzt herunterladen? Sie können während des Downloads weiterarbeiten und selbst entscheiden, wann neu gestartet wird.",
+    "versionAvailable": "Version {version} ist verfügbar",
+    "downloadNow": "Herunterladen",
+    "later": "Später",
+    "downloadFailedToStart": "Der Download konnte nicht gestartet werden. Bitte erneut versuchen.",
+    "autoCheckTitle": "Automatisch nach Updates suchen",
+    "autoCheckDescription": "Wenn aktiviert, sucht Flo Cafe beim Start nach neuen Versionen und fragt vor dem Download. Wenn deaktiviert, nutzen Sie „Nach Updates suchen“ manuell.",
+    "autoCheckToggleFailed": "Die Einstellung für automatische Updates konnte nicht geändert werden."
   },
   "whatsapp": {
     "active": {

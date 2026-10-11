@@ -337,7 +337,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     return [];
   })();
 
-  const handleConfirm = () => {
+  const handleConfirm = (paymentRows = payments) => {
     if (hasInvalidFixedDiscount) {
       toast.error(unitAdapter.maxDecimals === 0 ? t('fixedDiscountMinimum') : t('discountInvalid'));
       return;
@@ -346,7 +346,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
-    if (payments.some((p) => (
+    if (paymentRows.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
     ) || !amountIsValid(p.amount))) {
@@ -357,14 +357,18 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       toast.error(t('paymentFailed'));
       return;
     }
-    const nonCashTotalMinor = payments
+    const paymentTotalMinor = paymentRows.reduce(
+      (sum, payment) => sum + toMinorUnits(toStoredUnit(Number(payment.amount) || 0)),
+      0,
+    ) + toMinorUnits(walletAmt);
+    const nonCashTotalMinor = paymentRows
       .filter((p) => p.method !== 'cash')
       .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
     if (nonCashTotalMinor > remainingMinor) {
       toast.error(t('paymentAboveBalance'));
       return;
     }
-    if (totalPaymentMinor < remainingMinor) {
+    if (paymentTotalMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
       return;
     }
@@ -390,7 +394,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     }
 
     setProcessing(true);
-    const splitLines: PrepaidPayment[] = payments
+    const splitLines: PrepaidPayment[] = paymentRows
       .map((p) => ({
         method: p.payment_method_id === undefined ? p.method : 'custom',
         ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
@@ -451,28 +455,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               i === cashIdx ? { ...p, amount: String(dueDisplay) } : p,
             );
             setPayments(updated);
-
-            const splitLines: PrepaidPayment[] = updated
-              .map((p) => ({
-                method: p.payment_method_id === undefined ? p.method : 'custom',
-                ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
-                amount: toStoredUnit(parseFloat(p.amount) || 0),
-              }))
-              .filter((p) => p.amount > 0 && !isNaN(p.amount));
-
-            const finalDiscount: PrepaidDiscount | null =
-              preview.discountAmount > 0
-                ? {
-                    type: discountType,
-                    value: previewDiscount?.value ?? 0,
-                    reason: discountReason || undefined,
-                    override_pin:
-                      discountRequiresApproval && discountPin ? discountPin : undefined,
-                  }
-                : null;
-
-            setProcessing(true);
-            onConfirm(splitLines, walletAmt, finalDiscount);
+            handleConfirmRef.current(updated);
             return;
           }
         }
@@ -496,12 +479,6 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     remaining,
     toDisplayUnit,
     toStoredUnit,
-    discountType,
-    previewDiscount,
-    discountReason,
-    discountRequiresApproval,
-    discountPin,
-    onConfirm,
   ]);
 
   return (

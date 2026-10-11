@@ -71,7 +71,7 @@ export function usePosKeyboardShortcuts(
         return;
       }
 
-      if (e.key === 'F1' || (e.key === '?' && !isInput)) {
+      if (!anyModalOpen && (e.key === 'F1' || (e.key === '?' && !isInput))) {
         e.preventDefault();
         handlersRef.current.onShowHelp?.();
         return;

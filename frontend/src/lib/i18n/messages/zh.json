@@ -1034,7 +1034,22 @@
     "chargeInvalidChangeType": "此费用更改无效。",
     "chargeNotWaivable": "此费用不可免除。",
     "chargeAlwaysApplied": "此费用始终适用，无法移除。",
-    "chargeCompletionApplied": "费用已更新，但 FloCafe 未能完成后续步骤。再次更改前请检查当前账单。"
+    "chargeCompletionApplied": "费用已更新，但 FloCafe 未能完成后续步骤。再次更改前请检查当前账单。",
+    "cashMovementShortcut": "打开现金收支",
+    "clearCartShortcut": "清空当前购物车（需确认）",
+    "decrementQuantityShortcut": "减少最后一个商品的数量",
+    "dismissModalOrBlurShortcut": "取消活动输入框的焦点或关闭当前对话框",
+    "fullscreenShortcut": "切换 POS 全屏",
+    "incrementQuantityShortcut": "增加最后一个商品的数量",
+    "keyboardShortcutsSubtitle": "帮助收银员快速操作的 POS 快捷键",
+    "keyboardShortcutsTitle": "键盘快捷键",
+    "multiplierSearchShortcut": "商品搜索中的数量前缀（例如：3*拿铁）",
+    "shortcutCategoryCart": "购物车与调整",
+    "shortcutCategoryCashier": "快速收银与结账",
+    "shortcutCategoryNavigation": "导航与控制",
+    "shortcutCategorySearch": "搜索与商品目录",
+    "showKeyboardShortcutsShortcut": "显示键盘快捷键指南",
+    "spaceTenderShortcut": "下单或在结账时收取现金"
   },
   "printTest": {
     "amt": "金额",

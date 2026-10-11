@@ -1034,7 +1034,22 @@
     "chargeInvalidChangeType": "この料金の変更は無効です。",
     "chargeNotWaivable": "この料金は免除できません。",
     "chargeAlwaysApplied": "この料金は常に適用され、削除できません。",
-    "chargeCompletionApplied": "料金は更新されましたが、FloCafe は後続の処理を完了できませんでした。再度変更する前に現在の請求書を確認してください。"
+    "chargeCompletionApplied": "料金は更新されましたが、FloCafe は後続の処理を完了できませんでした。再度変更する前に現在の請求書を確認してください。",
+    "cashMovementShortcut": "入出金を開く",
+    "clearCartShortcut": "現在のカートを空にする（確認あり）",
+    "decrementQuantityShortcut": "最後の商品の数量を減らす",
+    "dismissModalOrBlurShortcut": "入力欄のフォーカスを外す、または開いているモーダルを閉じる",
+    "fullscreenShortcut": "POSの全画面表示を切り替える",
+    "incrementQuantityShortcut": "最後の商品の数量を増やす",
+    "keyboardShortcutsSubtitle": "レジ業務を速くするPOSショートカット",
+    "keyboardShortcutsTitle": "キーボードショートカット",
+    "multiplierSearchShortcut": "商品検索の数量プレフィックス（例：3*ラテ）",
+    "shortcutCategoryCart": "カートと数量調整",
+    "shortcutCategoryCashier": "会計と支払い",
+    "shortcutCategoryNavigation": "移動と操作",
+    "shortcutCategorySearch": "検索と商品一覧",
+    "showKeyboardShortcutsShortcut": "ショートカットガイドを表示",
+    "spaceTenderShortcut": "注文を確定、または会計で現金を受け取る"
   },
   "printTest": {
     "amt": "金額",

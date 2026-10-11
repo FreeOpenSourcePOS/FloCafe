@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken, setLanguage } from './helpers/test-auth';
 
-test('POS unified customer search: name/phone lookup, predictive create, and field swap', async ({ page }) => {
+test('POS unified customer search: name/phone lookup, predictive create, and field swap', async ({
+  page,
+}) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
 
@@ -92,7 +94,9 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   await expect(page.getByText('Something went wrong', { exact: true })).toBeVisible({
     timeout: 5_000,
   });
-  await expect(page.getByRole('button').filter({ hasText: failedLookupQuery }).first()).toBeHidden();
+  await expect(
+    page.getByRole('button').filter({ hasText: failedLookupQuery }).first(),
+  ).toBeHidden();
   await customerSearchInput.press('Enter');
   await expect(modal).not.toBeVisible();
   await page.unroute('**/api/customers-search**');
@@ -107,7 +111,9 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
   });
   await customerSearchInput.fill(unmatchedEmailQuery);
   await expect(page.getByText('No matching results')).toBeVisible({ timeout: 5_000 });
-  await expect(page.getByRole('button').filter({ hasText: unmatchedEmailQuery }).first()).toBeHidden();
+  await expect(
+    page.getByRole('button').filter({ hasText: unmatchedEmailQuery }).first(),
+  ).toBeHidden();
   await customerSearchInput.press('Enter');
   await expect(modal).not.toBeVisible();
   await page.unroute('**/api/customers-search**');

@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePhone, dialCodeFor, normalizeOptionalPhone, formatPhoneDisplay } from '../frontend/src/lib/phone';
+import {
+  parsePhone,
+  dialCodeFor,
+  normalizeOptionalPhone,
+  formatPhoneDisplay,
+} from '../frontend/src/lib/phone';
 import { disambiguateCustomerInput } from '../frontend/src/lib/customer-disambiguation';
 
 test('parsePhone: Indian local number parses with +91', () => {

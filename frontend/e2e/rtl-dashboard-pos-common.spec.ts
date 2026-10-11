@@ -70,9 +70,10 @@ async function assertNoHorizontalOverflow(page: Page, label: string): Promise<vo
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
   }));
-  expect(overflow.scrollWidth, `${label} must not overflow horizontally in RTL`).toBeLessThanOrEqual(
-    overflow.clientWidth + 1
-  );
+  expect(
+    overflow.scrollWidth,
+    `${label} must not overflow horizontally in RTL`,
+  ).toBeLessThanOrEqual(overflow.clientWidth + 1);
 }
 
 /**
@@ -89,11 +90,15 @@ async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promis
   if (expected === 'left') {
     expect(box!.x, 'sidebar must be pinned to the left edge in LTR').toBeLessThan(5);
   } else {
-    expect(box!.x + box!.width, 'sidebar must be pinned to the right edge in RTL').toBeGreaterThan(vw - 5);
+    expect(box!.x + box!.width, 'sidebar must be pinned to the right edge in RTL').toBeGreaterThan(
+      vw - 5,
+    );
   }
 }
 
-test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
+test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with an LTR customer search, mirrored arrows, and no overflow', async ({
+  page,
+}) => {
   // This single test walks ~15 screens plus the DirectionalToaster crash
   // regression below (which needs a real ~4.5s wait for react-hot-toast's
   // removal timer), well past Playwright's 30s default.
@@ -149,9 +154,9 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await expect(page.getByText('E2E Coffee')).toBeVisible();
     await assertSidebarSide(page, 'right');
 
-    // The customer-search phone input is naturally LTR and must stay dir="ltr" inside RTL.
-    const phoneInput = page.locator('input[type="tel"]').first();
-    await expect(phoneInput).toHaveAttribute('dir', 'ltr');
+    // The customer-search input must stay LTR inside the RTL interface.
+    const customerSearchInput = page.getByTestId('pos-customer-search-input').first();
+    await expect(customerSearchInput).toHaveAttribute('dir', 'ltr');
 
     await assertNoHorizontalOverflow(page, 'POS screen');
     await captureScreenshot(page, 'pos-rtl-fa.png');
@@ -202,13 +207,18 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'staff screen');
-    const addStaffBtn = page.locator('button', { has: page.locator('svg') }).filter({ hasText: /افزودن|Add/i }).first();
+    const addStaffBtn = page
+      .locator('button', { has: page.locator('svg') })
+      .filter({ hasText: /افزودن|Add/i })
+      .first();
     if (await addStaffBtn.isVisible()) {
       await addStaffBtn.click();
       const modal = page.getByRole('dialog');
       const roleSelect = modal.locator('select').first();
       await roleSelect.selectOption('manager');
-      const pinInput = modal.locator('input[placeholder*="PIN"], input[placeholder*="پین"], input[inputmode="numeric"]').first();
+      const pinInput = modal
+        .locator('input[placeholder*="PIN"], input[placeholder*="پین"], input[inputmode="numeric"]')
+        .first();
       await expect(pinInput).toBeVisible();
       const togglePinBtn = modal.locator('button[aria-label="Toggle PIN visibility"]').first();
       await expect(togglePinBtn).toBeVisible();
@@ -312,8 +322,8 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     // as react-hot-toast's internal reposition), so asserting "no crash"
     // alone would pass even against the unfixed code. Asserting the DOM
     // identity change instead pins down the actual mechanism, deterministically.
-    const preFlipToastHandle = await page.evaluateHandle(
-      () => document.querySelector('.flo-toast-card')
+    const preFlipToastHandle = await page.evaluateHandle(() =>
+      document.querySelector('.flo-toast-card'),
     );
 
     // Flip direction live, with the toast still on screen and its removal
@@ -330,11 +340,11 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     // node for the same logical toast appears immediately after, since
     // react-hot-toast's toast queue lives in a store outside the component).
     const preFlipNodeDetached = await preFlipToastHandle.evaluate(
-      (el) => !!el && !document.contains(el)
+      (el) => !!el && !document.contains(el),
     );
     expect(
       preFlipNodeDetached,
-      'DirectionalToaster must fully remount (not update position in place) on a live direction flip, or a showing toast can crash with a DOM insertBefore/NotFoundError — see frontend/src/components/layout/DirectionalToaster.tsx'
+      'DirectionalToaster must fully remount (not update position in place) on a live direction flip, or a showing toast can crash with a DOM insertBefore/NotFoundError — see frontend/src/components/layout/DirectionalToaster.tsx',
     ).toBe(true);
 
     // Let react-hot-toast's timers (up to its 4s default duration) run past
@@ -344,7 +354,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     expect(
       crashErrors,
-      `DirectionalToaster must not crash with a DOM insertBefore/NotFoundError when a toast survives a live direction flip, got: ${JSON.stringify(crashErrors)}`
+      `DirectionalToaster must not crash with a DOM insertBefore/NotFoundError when a toast survives a live direction flip, got: ${JSON.stringify(crashErrors)}`,
     ).toEqual([]);
   } finally {
     // Restore English so the shared server does not leak Persian into other specs.

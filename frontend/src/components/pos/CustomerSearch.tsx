@@ -387,7 +387,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const showDropdown = isOpen && trimmedQuery.length >= 2;
 
   return (
-    <div ref={containerRef} className={`relative ${isTopbar ? 'w-full sm:w-52' : 'w-full'}`}>
+    <div
+      ref={containerRef}
+      className={`relative ${isTopbar ? 'w-full min-w-0 sm:max-w-52' : 'w-full'}`}
+    >
       <div className="relative flex items-center">
         <Search
           size={16}
@@ -396,6 +399,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <input
           ref={inputRef}
           type="text"
+          dir="ltr"
           value={query}
           onChange={handleQueryChange}
           onFocus={() => {

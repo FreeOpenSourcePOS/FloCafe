@@ -6,10 +6,12 @@ function overlaps(
   first: { x: number; y: number; width: number; height: number },
   second: { x: number; y: number; width: number; height: number },
 ): boolean {
-  return first.x < second.x + second.width
-    && first.x + first.width > second.x
-    && first.y < second.y + second.height
-    && first.y + first.height > second.y;
+  return (
+    first.x < second.x + second.width &&
+    first.x + first.width > second.x &&
+    first.y < second.y + second.height &&
+    first.y + first.height > second.y
+  );
 }
 
 test('POS table picker stays clickable after removing a customer at 1280px', async ({ page }) => {
@@ -18,7 +20,9 @@ test('POS table picker stays clickable after removing a customer at 1280px', asy
 
   const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const authHeaders = { Authorization: `Bearer ${token}` };
-  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
+  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
+    headers: authHeaders,
+  });
   expect(businessResponse.ok()).toBeTruthy();
   const originalBusiness = await businessResponse.json();
   const attemptId = Date.now();
@@ -57,17 +61,22 @@ test('POS table picker stays clickable after removing a customer at 1280px', asy
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
     await page.getByRole('button', { name: /Select Table/ }).click();
-    const tablePicker = page.locator('div.fixed.inset-0').filter({
-      has: page.getByRole('heading', { name: 'Select Table', exact: true }),
-    }).last();
+    const tablePicker = page
+      .locator('div.fixed.inset-0')
+      .filter({
+        has: page.getByRole('heading', { name: 'Select Table', exact: true }),
+      })
+      .last();
     await tablePicker.getByRole('button', { name: new RegExp(tableName) }).click();
 
     const customerInput = page.getByTestId('pos-customer-search-input').first();
     const searchResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/api/customers-search'
-        && url.searchParams.get('q') === customerPhone;
+      return (
+        response.request().method() === 'GET' &&
+        url.pathname === '/api/customers-search' &&
+        url.searchParams.get('q') === customerPhone
+      );
     });
     await customerInput.fill(customerPhone);
     expect((await searchResponse).ok()).toBeTruthy();

@@ -170,7 +170,17 @@ function printerShape(printer: any) {
   };
 }
 
-function printerReadinessShape(printer: any) {
+interface DefaultPrinter {
+  id: string;
+  name: string;
+  connection_type: (typeof CONNECTION_TYPES)[number];
+  ip_address: string | null;
+  port: number | null;
+  is_default: number;
+  paper_width: string | null;
+}
+
+function printerReadinessShape(printer: DefaultPrinter) {
   return {
     id: printer.id,
     name: printer.name,
@@ -180,8 +190,10 @@ function printerReadinessShape(printer: any) {
   };
 }
 
-function getDefaultPrinter(db: ReturnType<typeof getDatabase>): any {
-  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any;
+function getDefaultPrinter(db: ReturnType<typeof getDatabase>): DefaultPrinter | undefined {
+  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as
+    | DefaultPrinter
+    | undefined;
 }
 
 // Hydrates order items with add-ons from normalized order_item_addons.
@@ -201,7 +213,7 @@ router.get(
   (req: Request, res: Response) => {
     try {
       const db = getDatabase();
-      const userId = String((req as any).user?.userId || '');
+      const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
       const canManagePrinters = hasPermission(userId, 'printers.manage');
       const printers = canManagePrinters
         ? db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all()
@@ -574,7 +586,7 @@ router.post(
         );
         res.status(502).json({ error: 'Cash drawer kick failed' });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -636,7 +648,7 @@ router.post(
         );
         res.status(502).json({ error: 'Test print failed' });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

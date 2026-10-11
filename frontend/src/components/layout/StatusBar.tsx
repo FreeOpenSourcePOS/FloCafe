@@ -128,7 +128,6 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
   useEffect(() => {
     let cancelled = false;
     let latestRequest = 0;
-    setIsConfiguredWebUsbReady(false);
     if (
       defaultPrinter?.connection_type !== 'webusb' ||
       printMethod !== 'escpos' ||
@@ -307,7 +306,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
             firstFocusable.focus();
           }
         }}
-        className={`fixed bottom-8 left-0 right-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
+        className={`fixed bottom-8 start-0 end-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
           isDrawerOpen
             ? 'translate-y-0 opacity-100'
             : 'pointer-events-none translate-y-full opacity-0'
@@ -455,8 +454,6 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
 
       {/* Persistent Frontline Status Bar */}
       <footer
-        role="status"
-        aria-live="polite"
         className="flex h-8 shrink-0 items-center justify-between border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85"
       >
         {/* Left: Active Cashier & Role Badge */}

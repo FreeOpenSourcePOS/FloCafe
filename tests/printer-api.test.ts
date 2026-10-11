@@ -663,7 +663,10 @@ async function runTests() {
       connection_type: 'webusb',
       is_default: true,
     });
-    assert(webusbRes.status === 201, `creating WebUSB printer returns 201 (got ${webusbRes.status})`);
+    assert(
+      webusbRes.status === 201,
+      `creating WebUSB printer returns 201 (got ${webusbRes.status})`,
+    );
 
     currentUserId = 'server-1';
     const serverPrintersRes = await request(app).get('/api/printers');
@@ -690,7 +693,10 @@ async function runTests() {
 
     currentUserId = 'owner-1';
     const ownerPrintersRes = await request(app).get('/api/printers');
-    assert(ownerPrintersRes.body.printers.length > 1, 'printers.manage can still read the full printer list');
+    assert(
+      ownerPrintersRes.body.printers.length > 1,
+      'printers.manage can still read the full printer list',
+    );
 
     const noShiftKickRes = await request(app).post('/api/printers/kick-drawer');
     assert(
@@ -703,7 +709,10 @@ async function runTests() {
     `).run(now());
 
     const kickRes = await request(app).post('/api/printers/kick-drawer');
-    assert(kickRes.status === 200, `kick-drawer returns 200 for WebUSB printer (got ${kickRes.status})`);
+    assert(
+      kickRes.status === 200,
+      `kick-drawer returns 200 for WebUSB printer (got ${kickRes.status})`,
+    );
     assert(kickRes.body.webusb === true, 'kick-drawer reports webusb: true');
     assert(
       kickRes.body.printerName === 'Counter WebUSB Printer',
@@ -790,8 +799,14 @@ async function runTests() {
         Uint8Array.from(testActiveRes.body.bytes),
         testActiveRes.body.printerName,
       );
-      assert(deviceA.sent.length === 0, 'WebUSB test action does not write to the first granted device');
-      assert(deviceB.sent.length === 1, 'WebUSB test action writes to the configured default device');
+      assert(
+        deviceA.sent.length === 0,
+        'WebUSB test action does not write to the first granted device',
+      );
+      assert(
+        deviceB.sent.length === 1,
+        'WebUSB test action writes to the configured default device',
+      );
 
       devices.push(makeWebUsbTestDevice('Counter WebUSB Printer', 3).device);
       let rejectedAmbiguousDevice = false;

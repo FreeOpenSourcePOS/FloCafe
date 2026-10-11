@@ -604,6 +604,28 @@ async function runTests() {
     );
   }
 
+  // ── Test 10: hardware actions (kick-drawer and test-active) ─────────────
+  console.log('\nTest 10: hardware actions (kick-drawer and test-active)');
+  {
+    const webusbRes = await request(app).post('/api/printers').send({
+      name: 'Counter WebUSB Printer',
+      connection_type: 'webusb',
+      is_default: true,
+    });
+    assert(webusbRes.status === 201, `creating WebUSB printer returns 201 (got ${webusbRes.status})`);
+
+    const kickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(kickRes.status === 200, `kick-drawer returns 200 for WebUSB printer (got ${kickRes.status})`);
+    assert(kickRes.body.webusb === true, 'kick-drawer reports webusb: true');
+    assert(Array.isArray(kickRes.body.bytes), 'kick-drawer returns pulse byte array');
+    assert(kickRes.body.bytes[0] === 0x1b && kickRes.body.bytes[1] === 0x70, 'kick-drawer returns standard ESC p bytes');
+
+    const testActiveRes = await request(app).post('/api/printers/test-active');
+    assert(testActiveRes.status === 200, `test-active returns 200 for WebUSB printer (got ${testActiveRes.status})`);
+    assert(testActiveRes.body.webusb === true, 'test-active reports webusb: true');
+    assert(Array.isArray(testActiveRes.body.bytes) && testActiveRes.body.bytes.length > 0, 'test-active returns test page byte array');
+  }
+
   console.log('\n' + '='.repeat(50));
   console.log(`${passed}/${passed + failed} passed, ${failed} failed`);
 

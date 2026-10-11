@@ -1,11 +1,9 @@
 'use client';
 
-import { UserCircle } from 'lucide-react';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { Ltr } from './Ltr';
 import ApplicationMenuRow from './ApplicationMenuRow';
 import UpdateBadge from './UpdateBadge';
 
@@ -14,10 +12,9 @@ const getElectronCapability = () => typeof window !== 'undefined' && Boolean(win
 const getServerElectronCapability = () => false;
 
 export default function TitleBar() {
-  const { currentTenant, user } = useAuthStore();
+  const { currentTenant } = useAuthStore();
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
-  const tStaff = useTranslations('staff');
   const isElectron = useSyncExternalStore(
     subscribeToElectronCapability,
     getElectronCapability,
@@ -56,23 +53,6 @@ export default function TitleBar() {
   if (!isElectron) return null;
 
   const businessName = currentTenant?.business_name || tCommon('brandName');
-  const staffName = user?.name || user?.email || tNav('user');
-  const staffIsEmail = !user?.name && Boolean(user?.email);
-
-  const roleKey = currentTenant?.role;
-  const roleLabel = roleKey
-    ? (roleKey === 'owner'
-      ? tStaff('roleOwner')
-      : roleKey === 'manager'
-      ? tStaff('roleManager')
-      : roleKey === 'cashier'
-      ? tStaff('roleCashier')
-      : roleKey === 'server'
-      ? tStaff('roleServer')
-      : roleKey === 'chef'
-      ? tStaff('roleChef')
-      : roleKey.charAt(0).toUpperCase() + roleKey.slice(1))
-    : null;
 
   return (
     <header
@@ -99,20 +79,10 @@ export default function TitleBar() {
         </div>
       </div>
 
-      {/* Centered business name and user identity */}
+      {/* Centered business name */}
       <div className="flo-title-bar__identity pointer-events-none">
         <span className="truncate text-xs font-semibold leading-tight text-foreground max-w-full" title={businessName}>
           {businessName}
-        </span>
-        <span
-          className="flex items-center justify-center gap-1 text-[11px] leading-tight text-muted-foreground max-w-full"
-          title={`${staffName}${roleLabel ? ` (${roleLabel})` : ''}`}
-        >
-          <UserCircle aria-hidden="true" className="size-3 shrink-0" />
-          <span className="truncate">
-            {staffIsEmail ? <Ltr>{staffName}</Ltr> : staffName}
-            {roleLabel ? ` (${roleLabel})` : ''}
-          </span>
         </span>
       </div>
     </header>

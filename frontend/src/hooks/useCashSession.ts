@@ -130,6 +130,7 @@ export function useCashSession() {
       setFloatInput('');
       setOpenModalOpen(false);
       toast.success(t('shiftOpened'));
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
       setSubmitError(axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Open failed');
@@ -154,6 +155,7 @@ export function useCashSession() {
       setClosedResult(res.data);
       setCountedInput('');
       toast.success(t('shiftClosed'));
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('flo-shift-changed'));
       await refresh();
     } catch (err: unknown) {
       setSubmitError(axios.isAxiosError(err) ? err.response?.data?.error || err.message : 'Close failed');

@@ -47,7 +47,7 @@ import {
   resolvePrinterProfile,
   capabilitiesForPrinter,
 } from '../printers/profiles';
-import { requirePermission } from '../services/authorization';
+import { requirePermission, requireAnyPermission } from '../services/authorization';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -486,6 +486,123 @@ router.post(
         res.json({ success: true });
       } else {
         // Surface the specific printer failure reason rather than a generic message.
+        res.status(502).json({
+          error: result.detail || 'Printer did not respond or print failed',
+          detail: result.detail,
+        });
+      }
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+// POST /api/printers/kick-drawer — send a cash drawer pulse to the default/active printer
+router.post(
+  '/kick-drawer',
+  requireAnyPermission('cash.movements.manage', 'printing.execute'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const printer =
+        (db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any) ||
+        (db.prepare('SELECT * FROM printers ORDER BY created_at ASC LIMIT 1').get() as any);
+
+      const drawerPulseBytes = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+
+      if (!printer) {
+        return res.status(404).json({ error: 'No printer configured for cash drawer kick' });
+      }
+
+      let result: { ok: boolean; detail?: string } = { ok: false };
+
+      switch (printer.connection_type) {
+        case 'network':
+          if (!printer.ip_address)
+            return res.status(400).json({ error: 'No IP address configured' });
+          result = await printViaNetwork(
+            printer.ip_address,
+            printer.port || 9100,
+            drawerPulseBytes,
+            getHttpRequestSignal(req),
+          );
+          break;
+        case 'usb':
+          result = await printViaUSB(drawerPulseBytes, printer.name, getHttpRequestSignal(req));
+          break;
+        case 'webusb':
+          return res.json({ success: true, webusb: true, bytes: Array.from(drawerPulseBytes) });
+        default:
+          return res.status(400).json({ error: 'Unsupported printer connection type' });
+      }
+
+      if (result.ok) {
+        res.json({ success: true });
+      } else {
+        res.status(502).json({
+          error: result.detail || 'Printer did not respond',
+          detail: result.detail,
+        });
+      }
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+// POST /api/printers/test-active — send a test print job to the default/active printer
+router.post(
+  '/test-active',
+  requirePermission('printing.execute'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const printer =
+        (db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any) ||
+        (db.prepare('SELECT * FROM printers ORDER BY created_at ASC LIMIT 1').get() as any);
+
+      if (!printer) return res.status(404).json({ error: 'No default printer configured' });
+
+      const timezone = tenantSettingValue(db, 'timezone');
+      if (!timezone) return res.status(409).json({ error: 'regional_not_configured' });
+
+      const profile = resolvePrinterProfile(printer);
+      const capabilities = capabilitiesForPrinter(
+        profile,
+        printer.paper_width || profile.defaultPaperWidth,
+      );
+      const testData = buildTestPage(
+        printer.paper_width || profile.defaultPaperWidth,
+        profile.cutMode,
+        tenantLanguage(db),
+        timezone,
+        req.body?.rasterProbe === true ? capabilities : undefined,
+      );
+      let result: { ok: boolean; detail?: string } = { ok: false };
+
+      switch (printer.connection_type) {
+        case 'network':
+          if (!printer.ip_address)
+            return res.status(400).json({ error: 'No IP address configured' });
+          result = await printViaNetwork(
+            printer.ip_address,
+            printer.port || 9100,
+            testData,
+            getHttpRequestSignal(req),
+          );
+          break;
+        case 'usb':
+          result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
+          break;
+        case 'webusb':
+          return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
+      }
+
+      if (result.ok) {
+        res.json({ success: true });
+      } else {
         res.status(502).json({
           error: result.detail || 'Printer did not respond or print failed',
           detail: result.detail,

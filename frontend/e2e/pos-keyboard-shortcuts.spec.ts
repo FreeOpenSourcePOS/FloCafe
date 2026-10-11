@@ -166,6 +166,11 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(tableModal).not.toBeVisible();
   });
 
+  test('F6 focuses customer search input', async ({ page }) => {
+    await page.keyboard.press('F6');
+    await expect(page.getByTestId('pos-customer-search-input')).toBeFocused();
+  });
+
   test('F4 opens checkout modal, and Space tenders cash to complete order', async ({ page }) => {
     // Select Takeaway mode so checkout does not require table selection
     await page.getByRole('button', { name: 'Takeaway' }).click();
@@ -189,7 +194,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Wait for tax preview calculation to settle
     await expect(checkoutModal.getByText(/Total Due/i)).toBeVisible({ timeout: 5_000 });
 
-    // Press Space inside checkout modal to tender cash and complete
+    // Keep focus off payment inputs so Space reaches the quick-tender shortcut.
     await checkoutModal.getByRole('button', { name: /close/i }).focus();
     await page.keyboard.press('Space');
 

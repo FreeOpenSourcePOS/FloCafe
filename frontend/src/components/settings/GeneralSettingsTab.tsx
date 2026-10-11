@@ -170,6 +170,8 @@ export function GeneralSettingsTab({
     }
   })();
 
+  const [sampleOrderDate] = useState(() => new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+
   return (
     <SettingsTabShell>
       {/* Store Details - editable for admin, readonly otherwise */}

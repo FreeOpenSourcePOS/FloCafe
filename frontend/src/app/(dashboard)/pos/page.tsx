@@ -647,13 +647,19 @@ export default function POSPage() {
         : operation === 'bill.generate' ? t('billOutcomeUnknown')
         : operation === 'order.append' ? t('appendOutcomeUnknown')
           : t('operationOutcomeUnknown');
+    const isAddonOrGeneralValidation = failure.reasonCode === 'order.addon_selection_required'
+      || failure.reasonCode === 'order.addon_unavailable'
+      || failure.reasonCode === 'validation.rejected';
+    const rejectionMessage = isAddonOrGeneralValidation && failure.serverError
+      ? failure.serverError
+      : failure.reasonCode ? reasonMessages[failure.reasonCode] || failure.serverError || t('operationOutcomeUnknown') : t('operationOutcomeUnknown');
     reportOrderFailure({
       code: failure.code,
       title,
       message: paymentRejection
         ? failure.displayCode ? paymentMessages[failure.displayCode] || t('paymentValidationRejected') : t('paymentValidationRejected')
         : expectedRejection && failure.reasonCode
-          ? failure.displayCode ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown') : failure.serverError || reasonMessages[failure.reasonCode] || t('operationOutcomeUnknown')
+          ? failure.displayCode ? discountMessages[failure.displayCode] || t('operationOutcomeUnknown') : rejectionMessage
         : confirmedNotSaved ? t('operationNotSaved')
           : appliedPayment ? t('paymentCompletionApplied')
           : failure.outcome === 'unknown' ? unknownMessage : t('operationMayHaveCompleted'),

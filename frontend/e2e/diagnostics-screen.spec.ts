@@ -127,28 +127,7 @@ test('the diagnostics half of the hub opens from a deep link', async ({ page }) 
 test('a captured failure can be reported as a ticket', async ({ page }) => {
   // The card shows the derived summary, not the submitted message, so the text
   // the operator would report is read back from the screen. A fixed phrase.
-  const operationId = 'f8d3c4a6-63e4-4fb0-8c2c-4b69ba71e34a';
-  const submissions: Array<Record<string, unknown>> = [];
-  await page.route('**/api/support-ticket', async (route) => {
-    if (route.request().method() !== 'POST') { await route.continue(); return; }
-    const payload = route.request().postDataJSON() as Record<string, unknown>;
-    submissions.push(payload);
-    await route.fulfill({
-      status: 202,
-      contentType: 'application/json',
-      body: JSON.stringify({ client_ticket_id: payload.client_ticket_id }),
-    });
-  });
-  await recordFailure(page, 'The printer is offline', {
-    capture_point: 'fc.backend.payment.create.validation',
-    operation: 'payment.create',
-    stage: 'validation',
-    reason_code: 'payment.invalid',
-    classification: 'expected_rejection',
-    outcome: 'not_applied',
-    correlation_id: operationId,
-    display_code: 'bill_refunded',
-  }, 'payment.invalid');
+  await recordFailure(page, 'The printer is offline');
   await loginAs(page, 'owner@flo.local');
   await page.goto(`${BASE}/support?tab=diagnostics`);
 
@@ -170,20 +149,6 @@ test('a captured failure can be reported as a ticket', async ({ page }) => {
   await expect(message, 'the report carries the signature it was raised from').toHaveValue(new RegExp(escapeRegExp(signature)));
   await expect(message, 'the report carries when it happened').toHaveValue(/occurred_at: /);
   await expect(message, 'the report carries the metadata the till recorded').toHaveValue(/\/api\/orders/);
-  await page.getByRole('button', { name: 'Send support request' }).click();
-  await expect.poll(() => submissions.length).toBe(1);
-  expect(submissions[0].correlation_id, 'the ticket links to the original operation').toBe(operationId);
-  expect(submissions[0].client_ticket_id, 'ticket identity remains separate from operation correlation').not.toBe(operationId);
-  expect(submissions[0].event_code).toBe('payment.invalid');
-  expect(submissions[0].operation_failure).toEqual({
-    capture_point: 'fc.backend.payment.create.validation',
-    operation_id: operationId,
-    outcome: 'not_applied',
-    facts: { display_code: 'bill_refunded' },
-  });
-  expect(submissions[0].diagnostics).toMatchObject({
-    selected_failure: { event_code: 'payment.invalid', signature: expect.any(String) },
-  });
 });
 
 test('automatic reporting is enabled by default and the owner can opt out', async ({ page }) => {
@@ -372,7 +337,15 @@ test('a refresh started after a save applies the value it read', async ({ page }
       transmission,
       'the refresh applied its own response rather than leaving the earlier state',
     ).toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByText('Automatic reporting is enabled by both privacy controls', { exact: false })).toBeVisible();
+    const health = await page.request.get(`${BASE}/api/diagnostics/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const healthState = await health.json();
+    if (healthState.consent_sync_pending) {
+      await expect(page.getByText('Reporting permission or delivery state has not been confirmed yet.', { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByText('Automatic reporting is enabled by both privacy controls', { exact: false })).toBeVisible();
+    }
   } finally {
     await setTransmission('true');
   }

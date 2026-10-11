@@ -164,6 +164,45 @@ async function runTests() {
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
 
+  console.log('\nTest 1a: database JSON transfer excludes device-local diagnostics');
+  {
+    const exported = await request(app).get('/api/db/export').set('Authorization', `Bearer ${ownerToken}`);
+    assert(exported.status === 200, `database export succeeds (got ${exported.status})`);
+    assert(!('diagnostics_hourly_aggregates' in exported.body.data), 'hourly diagnostic aggregates are excluded from export');
+    assert(!('diagnostics_delivery_gaps' in exported.body.data), 'diagnostic delivery gaps are excluded from export');
+    assert(exported.body.redacted_fields.includes('table:diagnostics_hourly_aggregates'), 'excluded hourly aggregates are listed in redacted_fields');
+    assert(exported.body.redacted_fields.includes('table:diagnostics_delivery_gaps'), 'excluded delivery gaps are listed in redacted_fields');
+
+    const timestamp = now();
+    const aggregateKey = `database-transfer-probe-${timestamp}`;
+    const deliveryGapCount = (db.prepare('SELECT COUNT(*) AS count FROM diagnostics_delivery_gaps').get() as { count: number }).count;
+    const imported = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: false,
+      data: {
+        schema_version: String(getCurrentSchemaVersion()),
+        data: {
+          settings: [],
+          categories: [],
+          products: [],
+          users: [],
+          diagnostics_hourly_aggregates: [{
+            aggregate_key: aggregateKey, capture_point: 'fc.test', reason_code: 'test.reason',
+            classification: 'unexpected_failure', operation: 'test.operation', stage: 'test', outcome: 'unknown',
+            window_start: timestamp, count: 1, first_occurred_at: timestamp, last_occurred_at: timestamp,
+            app_version: 'test', app_build: 'test', platform: 'unknown', examples_json: '[]', facts_json: '{}', updated_at: timestamp,
+          }],
+          diagnostics_delivery_gaps: [{
+            reason_code: 'queue_eviction', count: 1, first_occurred_at: timestamp,
+            last_occurred_at: timestamp, updated_at: timestamp,
+          }],
+        },
+      },
+    });
+    assert(imported.status === 200, `database import succeeds (got ${imported.status})`);
+    assert(!db.prepare('SELECT 1 FROM diagnostics_hourly_aggregates WHERE aggregate_key = ?').get(aggregateKey), 'hourly diagnostic aggregates are ignored on import');
+    assert((db.prepare('SELECT COUNT(*) AS count FROM diagnostics_delivery_gaps').get() as { count: number }).count === deliveryGapCount, 'diagnostic delivery gaps are ignored on import');
+  }
+
   console.log('\nTest 1b: POST /db-tools/master-pin/reset requires the existing PIN but allows first-time setup');
   {
     const withoutCurrentPin = await request(app).post('/api/db-tools/master-pin/reset')

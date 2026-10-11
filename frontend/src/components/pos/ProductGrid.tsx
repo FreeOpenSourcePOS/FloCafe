@@ -203,10 +203,9 @@ export default function ProductGrid({
   const { showProductImages: showProductImagesSetting } = usePosSettingsStore();
   const showProductImages = showImages ?? showProductImagesSetting;
   const t = useTranslations('pos');
-  const tOrders = useTranslations('orders');
   const validateSelectionQuantity = (product: Product, quantity: number) => {
     if (isValidProductQuantity(product, quantity)) return true;
-    toast.error(tOrders('orderQuantityInvalid'));
+    toast.error(t('orderQuantityInvalid'));
     return false;
   };
   const tenantFmt = useFormatCurrency();

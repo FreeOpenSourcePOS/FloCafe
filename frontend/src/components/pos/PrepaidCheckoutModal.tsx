@@ -806,7 +806,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         {/* Pay Button */}
         <div className="shrink-0 border-t border-border px-5 pb-6 pt-3">
           <Button
-            onClick={handleConfirm}
+            onClick={() => handleConfirm()}
             disabled={processing || taxLoading || !preview || hasInvalidFixedDiscount || totalPaymentMinor < remainingMinor}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"

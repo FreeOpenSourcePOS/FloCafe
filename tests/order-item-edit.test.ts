@@ -136,6 +136,17 @@ async function main() {
       assertEqualOrThrow(both.status, 400, 'quantity and replacement together are rejected');
     }
 
+    console.log('\n─── Superseded lines ───');
+    {
+      const order = seedOrder(db, 'SUPERSEDED', 'pending', 2);
+      await edit(order.orderId, order.itemId, { quantity: 1 }, ownerAuth);
+      const fetched = await api(baseUrl, `/api/orders/${order.orderId}`, { headers: ownerAuth });
+      const lines = fetched.data.order.items as any[];
+      const old = lines.find((line) => line.id === order.itemId);
+      assertEqualOrThrow(old?.superseded, true, 'the replaced line is flagged superseded');
+      assertOrThrow(!lines.find((line) => line.id !== order.itemId)?.superseded, 'the new line is not flagged');
+    }
+
     console.log('\n─── Replacement ───');
     {
       const order = seedOrder(db, 'REPLACE', 'preparing', 2, 2);

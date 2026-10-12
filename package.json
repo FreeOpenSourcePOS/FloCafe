@@ -28,6 +28,7 @@
     "docs:demo": "node scripts/docs/demo-server.cjs",
     "docs:screenshots": "node scripts/docs/capture-screenshots.cjs",
     "build:frontend": "node scripts/build-frontend.cjs",
+    "showcase:record": "node scripts/demo/record-showcase.cjs",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron && node scripts/prepare-snap-build.cjs",
     "prepare": "node .husky/install.mjs",

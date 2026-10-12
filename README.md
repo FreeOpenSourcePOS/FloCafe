@@ -86,16 +86,126 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
 
 </details>
 
-## Highlights
+## Key features
 
-- **Order workflows:** Counter, dine-in, takeaway, and delivery orders with table management and held orders.
-- **Checkout:** Collect equal shares toward a bill; optional item-based split checks are available for dine-in orders.
-- **Modifiers & pricing:** Item modifiers, add-on groups, discounts, and customer loyalty points.
-- **Receipt printing:** ESC/POS thermal printing over USB, local network (TCP), and OS-managed print queues, with WebUSB supported in compatible browsers (58 mm and 80 mm paper support).
-- **Kitchen operations:** Standalone Kitchen Display System (KDS) server and category-based kitchen station routing.
-- **Catalog management:** Product images, barcode scanning, and CSV menu import/export.
-- **Administration:** Role-based staff accounts (Owner, Manager, Cashier, Server, Chef), sales analytics, and audit logs.
-- **Data protection:** Local SQLite database with automated pre-migration backups, manual restore tools, and optional Google Drive backup.
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/pos-checkout.gif" type="image/gif">
+        <img src="docs/assets/showcase/pos-checkout.poster.jpg" alt="FloCafe counter POS checkout flow with cart item selection and cash payment confirmation" width="100%">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <h3>High-Speed Counter POS</h3>
+      <p>Touch-optimized order entry built for fast-paced café counters. Instant category filtering, real-time cart tallies, quick quantity adjustments, and fast cash/card tenders.</p>
+      <p><a href="docs/architecture/order-lifecycle.md">Order lifecycle guide &rarr;</a></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Custom Modifiers &amp; Add-ons</h3>
+      <p>Flexible item customization with configurable modifier groups: required milk choices, optional extra espresso shots, custom syrups, and kitchen preparation notes.</p>
+      <p><a href="docs/architecture/order-lifecycle.md">Modifiers &amp; order lifecycle &rarr;</a></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/addon-modifiers.gif" type="image/gif">
+        <img src="docs/assets/showcase/addon-modifiers.poster.jpg" alt="FloCafe modal modifier selector choosing oat milk and espresso shots" width="100%">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/kds-kanban.gif" type="image/gif">
+        <img src="docs/assets/showcase/kds-kanban.poster.jpg" alt="FloCafe standalone Kitchen Display System Kanban board tracking tickets across prep stages" width="100%">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Real-Time Kitchen Display System (KDS)</h3>
+      <p>Dedicated standalone KDS server running on port <code>3002</code> over WebSockets. Multi-column Kanban board, live ticket stage progression, item-level prep tracking, and station routing.</p>
+      <p><a href="docs/architecture/overview.md">KDS architecture &rarr;</a></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Visual Tables &amp; Dine-in Floor Plan</h3>
+      <p>Interactive graphical dining room map with multi-floor navigation, live table occupancy tracking, seated duration turnover timers, and quick check inspection.</p>
+      <p><a href="docs/architecture/overview.md">Table management &rarr;</a></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/floorplan-tables.gif" type="image/gif">
+        <img src="docs/assets/showcase/floorplan-tables.poster.jpg" alt="FloCafe interactive floor plan and table turnover monitoring" width="100%">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/server-app.gif" type="image/gif">
+        <img src="docs/assets/showcase/server-app.poster.jpg" alt="FloCafe handheld mobile waiter app taking orders table-side" width="100%">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Handheld Waiter App</h3>
+      <p>Lightweight mobile web app served locally over LAN on port <code>3003</code>. Waiters take table-side orders on any mobile phone or tablet, customize items, and fire tickets directly to the kitchen.</p>
+      <p><a href="docs/reference/roles-and-permissions.md">Server app details &rarr;</a></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Equal Shares &amp; Multi-Tender Checkout</h3>
+      <p>Split payments across diners with integer-safe remainder distribution. Accept multiple tenders on a single check, including split cash, card, and customer loyalty balances.</p>
+      <p><a href="docs/architecture/order-lifecycle.md">Settlement &amp; tender rules &rarr;</a></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/split-payments.gif" type="image/gif">
+        <img src="docs/assets/showcase/split-payments.poster.jpg" alt="FloCafe equal share split payment calculator dividing check across diners" width="100%">
+      </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/recipe-inventory.gif" type="image/gif">
+        <img src="docs/assets/showcase/recipe-inventory.poster.jpg" alt="FloCafe inventory management with supplies, recipe portions, and stock movement logs" width="100%">
+      </picture>
+    </td>
+    <td width="50%" valign="top">
+      <h3>Live Recipe &amp; Stock Depletion</h3>
+      <p>Comprehensive supply tracking and recipe management. Deduct ingredient stock automatically as orders are fulfilled, track portion yields, and maintain movement audit trails.</p>
+      <p><a href="docs/reference/product-invariants.md">Inventory invariants &rarr;</a></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>Thermal Receipt &amp; KOT Printing</h3>
+      <p>Production ESC/POS thermal printing across USB, network (TCP), and OS printer queues. Configurable for 58mm and 80mm rolls, kitchen order tickets (KOT), delivery slips, and tax invoices.</p>
+      <p><a href="docs/printers.md">Printer configuration guide &rarr;</a></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source srcset="docs/assets/showcase/thermal-printing.gif" type="image/gif">
+        <img src="docs/assets/showcase/thermal-printing.poster.jpg" alt="FloCafe thermal printer test interface for 58mm and 80mm receipts and KOT tickets" width="100%">
+      </picture>
+    </td>
+  </tr>
+</table>
+
+### Also in the box
+
+- **Offline-first architecture:** Local SQLite storage with auto-migrating schema and fail-closed safety.
+- **Granular roles & permissions:** Owner, Manager, Cashier, Server, and Chef roles with context-aware access policies.
+- **Multi-language support:** 25 localized languages with full bidirectional RTL rendering (Arabic, Persian, Urdu).
+- **131 Country profiles:** 109 world currencies with localized phone parsing, number formatting, and timezone handling.
+- **Country tax packs:** Signed regional tax pack integration and manual rule engine.
+- **Automated database backups:** Pre-migration automatic snapshots, manual exports, and optional Google Drive sync.
+- **Customer loyalty & CRM:** Customer directory, purchase histories, and point redemption.
+- **Cash drawer management:** Cash pulse on checkout and end-of-shift cash drawer reconciliations.
+- **Daily sales & accounting export:** Audit-ready CSV/Excel reporting with financial reconciliation identities.
 
 ## Project status
 

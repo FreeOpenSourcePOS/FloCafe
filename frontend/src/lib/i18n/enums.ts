@@ -75,6 +75,7 @@ export const PERMISSION_LABEL_KEYS = {
   'orders.item.cancel': 'orderItemCancel',
   'orders.item.void': 'orderItemVoid',
   'orders.item.restore': 'orderItemRestore',
+  'orders.item.edit': 'orderItemEdit',
   'held-orders.manage': 'heldOrders',
 
   'tables.view': 'tablesView',

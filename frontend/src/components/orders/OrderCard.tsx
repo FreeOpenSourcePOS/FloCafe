@@ -35,6 +35,7 @@ import {
   XCircle,
   Download,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
 import { receiptChargeLines } from '@/lib/charges';
@@ -122,6 +123,8 @@ interface OrderCardProps {
   onCreateCustomer?: (orderId: number, search: string) => void;
   onCreateNewOrderForCustomer: (order: Order) => void;
   onDownloadPrintPreview?: (billId: number) => void;
+  canEditItems?: boolean;
+  onEditItem?: (order: Order, item: OrderItem) => void;
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
@@ -161,6 +164,8 @@ export function OrderCard({
   onCreateCustomer,
   onCreateNewOrderForCustomer,
   onDownloadPrintPreview,
+  canEditItems = false,
+  onEditItem,
   onDeleteItem,
   onVoidItem,
   onRestoreItem,
@@ -584,6 +589,16 @@ export function OrderCard({
                       {fmt(Number(item.total))}
                     </span>
 
+                    {canEditItems && onEditItem && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
+                      <button
+                        type="button"
+                        onClick={() => onEditItem(order, item)}
+                        className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                        title={tOrders('editItem')}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
                     {/* Touchscreen-accessible item actions for Manager */}
                     {canCancelItems && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
                       <div className="flex items-center gap-1 ms-1 shrink-0">

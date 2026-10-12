@@ -13,6 +13,7 @@ import {
   Utensils, ShoppingBag, Truck, Globe, Clock, Printer, MoreHorizontal, User, Plus,
   ChevronDown, ChevronRight, ChevronLeft, CreditCard, RotateCcw, Send, AlertCircle,
   MapPin, Info, FileText, Ban, Trash2, Lock, XCircle, Download, Loader2, ClipboardList, Bike,
+  Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
@@ -36,6 +37,8 @@ export interface OrderDetailPanelProps {
   order: Order | null;
   now: number;
   canCancelItems: boolean;
+  canEditItems?: boolean;
+  onEditItem?: (order: Order, item: OrderItem) => void;
   canRestoreItems: boolean;
   canRefund: boolean;
   isWhatsAppReady: boolean;
@@ -77,6 +80,8 @@ function OrderDetailContent({
   order,
   now,
   canCancelItems,
+  canEditItems = false,
+  onEditItem,
   canRestoreItems,
   canRefund,
   isWhatsAppReady,
@@ -448,6 +453,16 @@ function OrderDetailContent({
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <span className="text-muted-foreground font-medium">{fmt(Number(item.total))}</span>
+                    {canEditItems && onEditItem && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
+                      <button
+                        type="button"
+                        onClick={() => onEditItem(order, item)}
+                        className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                        title={tOrders('editItem')}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
                     {canCancelItems && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
                       <div className="flex items-center gap-1 ms-1">
                         {item.status === 'pending' && onDeleteItem && (

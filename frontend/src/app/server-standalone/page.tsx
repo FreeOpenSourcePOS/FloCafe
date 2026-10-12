@@ -977,12 +977,12 @@ export default function ServerStandalonePage() {
           <p className="max-w-sm text-sm text-muted-foreground">{t('noTablesHint')}</p>
         </div>
       ) : (
-        <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
-          <section className="rounded-lg border border-border bg-card p-3">
+        <main className="mx-auto grid max-w-6xl min-w-0 gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
+          <section className="min-w-0 rounded-lg border border-border bg-card p-3">
             <h2 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
               {t('tables')}
             </h2>
-            <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
               {tables.map((table) => {
                 const selected = table.id === selectedTableId;
                 const order = table.activeOrder || table.current_order;
@@ -1004,7 +1004,7 @@ export default function ServerStandalonePage() {
             </div>
           </section>
 
-          <section className="flex h-[calc(100dvh-5rem)] min-h-96 flex-col rounded-lg border border-border bg-card p-3">
+          <section className="flex h-[calc(100dvh-5rem)] min-h-96 min-w-0 flex-col rounded-lg border border-border bg-card p-3">
             <ProductGrid
               categories={categories}
               products={products}
@@ -1030,13 +1030,13 @@ export default function ServerStandalonePage() {
               onScaledProduct={(product, quantity) => addDraftLine(product, quantity, [], '')}
               cartQuantities={draftQuantities}
               formatPrice={(amount) => money(amount, regional)}
-              showImages={false}
+              showImages={true}
               gridClassName="grid-cols-2 sm:grid-cols-3 xl:grid-cols-4"
               searchPlaceholder={t('searchMenu')}
             />
           </section>
 
-          <section className="hidden rounded-lg border border-border bg-card p-3 md:block md:sticky md:top-16 md:self-start">
+          <section className="hidden min-w-0 rounded-lg border border-border bg-card p-3 md:block md:sticky md:top-16 md:self-start">
             {ticketPanelBody}
           </section>
         </main>

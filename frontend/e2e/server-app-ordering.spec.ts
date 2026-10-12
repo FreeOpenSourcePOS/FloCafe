@@ -79,4 +79,20 @@ test.describe('Server App tableside ordering', () => {
     await expect(page.getByRole('heading', { name: 'No tables set up' })).toBeVisible();
     await expect(page.getByTestId('pos-product-grid')).toHaveCount(0);
   });
+
+  test('fits mobile viewports without horizontal overflow', async ({ page }) => {
+    const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+    const viewports = [320, 375, 390, 430, 768];
+
+    for (const width of viewports) {
+      await page.setViewportSize({ width, height: 800 });
+      await openServerApp(page, serverToken);
+      await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+      const hasOverflow = await page.evaluate(() => {
+        return document.documentElement.scrollWidth > window.innerWidth;
+      });
+      expect(hasOverflow).toBeFalsy();
+    }
+  });
 });

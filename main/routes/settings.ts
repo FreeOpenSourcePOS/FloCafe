@@ -673,8 +673,10 @@ router.get(
   requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
   (_req: Request, res: Response) => {
     try {
-      res.json(readStoredCustomerDisplayConfig(getAllSettings(getDatabase())[CUSTOMER_DISPLAY_KEY]));
-    } catch (error: any) {
+      res.json(
+        readStoredCustomerDisplayConfig(getAllSettings(getDatabase())[CUSTOMER_DISPLAY_KEY]),
+      );
+    } catch (error) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -693,7 +695,7 @@ router.put(
       }
       upsertSettings(getDatabase(), { [CUSTOMER_DISPLAY_KEY]: JSON.stringify(config) });
       res.json(config);
-    } catch (error: any) {
+    } catch (error) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

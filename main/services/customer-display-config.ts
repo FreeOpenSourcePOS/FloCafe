@@ -24,7 +24,12 @@ export function parseCustomerDisplayConfig(value: unknown): CustomerDisplayConfi
   ) {
     return null;
   }
-  if (typeof refresh_seconds !== 'number' || !Number.isInteger(refresh_seconds) || refresh_seconds < 2 || refresh_seconds > 60) {
+  if (
+    typeof refresh_seconds !== 'number' ||
+    !Number.isInteger(refresh_seconds) ||
+    refresh_seconds < 2 ||
+    refresh_seconds > 60
+  ) {
     return null;
   }
   if (typeof show_updated !== 'boolean') return null;

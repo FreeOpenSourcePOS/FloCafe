@@ -23,7 +23,12 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-customer-display-rout
 Module._load = function (request: string, parent: any, isMain: boolean) {
   if (request === 'electron') {
     return {
-      app: { isPackaged: true, getPath: () => testDir, getName: () => 'FloCafe', getVersion: () => '0.0.0-test' },
+      app: {
+        isPackaged: true,
+        getPath: () => testDir,
+        getName: () => 'FloCafe',
+        getVersion: () => '0.0.0-test',
+      },
       ipcMain: { on: () => {}, handle: () => {} },
       dialog: {},
       BrowserWindow: class {},
@@ -35,12 +40,22 @@ Module._load = function (request: string, parent: any, isMain: boolean) {
 const ROUTE = '/api/settings/customer-display';
 const VALID = { statuses: ['pending', 'ready'], refresh_seconds: 5, show_updated: false };
 
-function request(baseUrl: string, urlPath: string, options: any = {}): Promise<{ status: number; data: any }> {
+function request(
+  baseUrl: string,
+  urlPath: string,
+  options: any = {},
+): Promise<{ status: number; data: any }> {
   const url = new URL(urlPath, baseUrl);
   const headers: any = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   return new Promise((resolve) => {
     const req = http.request(
-      { hostname: url.hostname, port: url.port, path: url.pathname, method: options.method || 'GET', headers },
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: options.method || 'GET',
+        headers,
+      },
       (res: any) => {
         let body = '';
         res.on('data', (chunk: any) => (body += chunk));
@@ -77,33 +92,46 @@ async function main() {
 
   const db = getDatabase();
   const seedUser = (id: string, role: string) =>
-    db.prepare(`
+    db
+      .prepare(`
       INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)
       ON CONFLICT(id) DO NOTHING
-    `).run(id, id, `${id}@test.local`, role, now(), now());
+    `)
+      .run(id, id, `${id}@test.local`, role, now(), now());
   const deny = (userId: string, permission: string) =>
-    db.prepare(`
+    db
+      .prepare(`
       INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
       VALUES (?, ?, 'deny', 'cd-owner', ?, ?)
-    `).run(userId, permission, now(), now());
+    `)
+      .run(userId, permission, now(), now());
 
   seedUser('cd-owner', 'owner');
   seedUser('cd-server', 'server');
   deny('cd-server', 'settings.view');
   seedUser('cd-locked', 'server');
-  for (const permission of ['settings.view', 'orders.read', 'orders.create']) deny('cd-locked', permission);
+  for (const permission of ['settings.view', 'orders.read', 'orders.create'])
+    deny('cd-locked', permission);
 
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: any, next: any) => {
-    req.user = { userId: String(req.headers['x-test-user'] || 'cd-owner'), role: 'owner', name: 'Test' };
+    req.user = {
+      userId: String(req.headers['x-test-user'] || 'cd-owner'),
+      role: 'owner',
+      name: 'Test',
+    };
     next();
   });
   app.use('/api/settings', settingsRoutes);
 
   const readStored = () =>
-    (db.prepare("SELECT value FROM settings WHERE key = 'customer_display'").get() as { value: string } | undefined)?.value;
+    (
+      db.prepare("SELECT value FROM settings WHERE key = 'customer_display'").get() as
+        | { value: string }
+        | undefined
+    )?.value;
 
   let server: any;
   try {
@@ -115,7 +143,11 @@ async function main() {
     {
       const res = await request(baseUrl, ROUTE);
       assert.equal(res.status, 200);
-      assert.deepEqual(res.data, { statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true });
+      assert.deepEqual(res.data, {
+        statuses: ['pending', 'preparing', 'ready'],
+        refresh_seconds: 3,
+        show_updated: true,
+      });
     }
 
     console.log('2. PUT rejects malformed bodies and persists nothing');

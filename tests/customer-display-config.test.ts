@@ -7,11 +7,15 @@ import {
 
 const valid = { statuses: ['ready', 'pending'], refresh_seconds: 5, show_updated: false };
 
-assert.deepEqual(parseCustomerDisplayConfig(valid), {
-  statuses: ['pending', 'ready'],
-  refresh_seconds: 5,
-  show_updated: false,
-}, 'valid config is accepted and statuses are normalized to canonical order');
+assert.deepEqual(
+  parseCustomerDisplayConfig(valid),
+  {
+    statuses: ['pending', 'ready'],
+    refresh_seconds: 5,
+    show_updated: false,
+  },
+  'valid config is accepted and statuses are normalized to canonical order',
+);
 
 const invalid: Array<[string, unknown]> = [
   ['null', null],
@@ -30,9 +34,24 @@ for (const [name, value] of invalid) {
   assert.equal(parseCustomerDisplayConfig(value), null, `rejects ${name}`);
 }
 
-assert.deepEqual(readStoredCustomerDisplayConfig(undefined), CUSTOMER_DISPLAY_DEFAULTS, 'absent row yields defaults');
-assert.deepEqual(readStoredCustomerDisplayConfig('not json'), CUSTOMER_DISPLAY_DEFAULTS, 'corrupt row yields defaults');
-assert.deepEqual(readStoredCustomerDisplayConfig('{"statuses":[]}'), CUSTOMER_DISPLAY_DEFAULTS, 'invalid row yields defaults');
-assert.deepEqual(readStoredCustomerDisplayConfig(JSON.stringify(valid)).statuses, ['pending', 'ready']);
+assert.deepEqual(
+  readStoredCustomerDisplayConfig(undefined),
+  CUSTOMER_DISPLAY_DEFAULTS,
+  'absent row yields defaults',
+);
+assert.deepEqual(
+  readStoredCustomerDisplayConfig('not json'),
+  CUSTOMER_DISPLAY_DEFAULTS,
+  'corrupt row yields defaults',
+);
+assert.deepEqual(
+  readStoredCustomerDisplayConfig('{"statuses":[]}'),
+  CUSTOMER_DISPLAY_DEFAULTS,
+  'invalid row yields defaults',
+);
+assert.deepEqual(readStoredCustomerDisplayConfig(JSON.stringify(valid)).statuses, [
+  'pending',
+  'ready',
+]);
 
 console.log('customer-display-config: all assertions passed');

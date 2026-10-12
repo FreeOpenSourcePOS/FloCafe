@@ -25,7 +25,15 @@ function installTaxPack(db, pack) {
       active_version_id = excluded.active_version_id,
       status = 'active',
       updated_at = excluded.updated_at
-  `).run(pack.id, pack.publisher, pack.country, pack.jurisdiction, versionId, installedAt, installedAt);
+  `).run(
+    pack.id,
+    pack.publisher,
+    pack.country,
+    pack.jurisdiction,
+    versionId,
+    installedAt,
+    installedAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO country_pack_versions (
@@ -33,14 +41,25 @@ function installTaxPack(db, pack) {
       effective_from, effective_to, min_flo_version, published_at, status, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
   `).run(
-    versionId, pack.id, pack.version, pack.schemaVersion,
+    versionId,
+    pack.id,
+    pack.version,
+    pack.schemaVersion,
     JSON.stringify({
-      id: pack.id, publisher: pack.publisher, country: pack.country,
-      jurisdiction: pack.jurisdiction, version: pack.version, publishedAt: pack.publishedAt,
+      id: pack.id,
+      publisher: pack.publisher,
+      country: pack.country,
+      jurisdiction: pack.jurisdiction,
+      version: pack.version,
+      publishedAt: pack.publishedAt,
     }),
-    packJson, crypto.createHash('sha256').update(packJson).digest('hex'),
-    pack.effectiveFrom, pack.effectiveTo || null, pack.minFloVersion,
-    pack.publishedAt, installedAt
+    packJson,
+    crypto.createHash('sha256').update(packJson).digest('hex'),
+    pack.effectiveFrom,
+    pack.effectiveTo || null,
+    pack.minFloVersion,
+    pack.publishedAt,
+    installedAt,
   );
 
   const insertCategory = db.prepare(`
@@ -50,8 +69,13 @@ function installTaxPack(db, pack) {
   `);
   for (const category of pack.categories) {
     insertCategory.run(
-      `${versionId}:category:${category.id}`, versionId, category.id, category.label,
-      category.defaultBehavior || null, JSON.stringify(category), installedAt
+      `${versionId}:category:${category.id}`,
+      versionId,
+      category.id,
+      category.label,
+      category.defaultBehavior || null,
+      JSON.stringify(category),
+      installedAt,
     );
   }
 
@@ -63,9 +87,17 @@ function installTaxPack(db, pack) {
   `);
   for (const rule of pack.rules) {
     insertRule.run(
-      `${versionId}:rule:${rule.id}`, versionId, rule.id, rule.label, rule.type,
-      rule.rate || null, rule.amount || null, rule.appliesPer || null,
-      JSON.stringify(rule.baseRuleIds || []), JSON.stringify(rule), installedAt
+      `${versionId}:rule:${rule.id}`,
+      versionId,
+      rule.id,
+      rule.label,
+      rule.type,
+      rule.rate || null,
+      rule.amount || null,
+      rule.appliesPer || null,
+      JSON.stringify(rule.baseRuleIds || []),
+      JSON.stringify(rule),
+      installedAt,
     );
   }
 }
@@ -92,8 +124,11 @@ function seedHarborBean(db) {
     ['orders_layout', 'split'],
   ];
   for (const [k, v] of settings) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
-      .run(k, v, createdAt);
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      k,
+      v,
+      createdAt,
+    );
   }
 
   // 2. Install US Tax Pack
@@ -153,11 +188,11 @@ function seedHarborBean(db) {
   }
 
   const addons = [
-    ['add-whole', 'ag-milk', 'Whole Milk', 0.00, 1],
+    ['add-whole', 'ag-milk', 'Whole Milk', 0.0, 1],
     ['add-oat', 'ag-milk', 'Oat Milk', 0.75, 2],
     ['add-almond', 'ag-milk', 'Almond Milk', 0.75, 3],
     ['add-shot-1', 'ag-shots', 'Single Extra Shot', 0.85, 1],
-    ['add-decaf', 'ag-shots', 'Decaf Option', 0.00, 2],
+    ['add-decaf', 'ag-shots', 'Decaf Option', 0.0, 2],
   ];
   for (const [id, groupId, name, price, order] of addons) {
     db.prepare(`
@@ -171,10 +206,10 @@ function seedHarborBean(db) {
   const products = [
     ['prod-latte', 'cat-coffee', 'Vanilla Bean Latte', 4.75, 1],
     ['prod-flat-white', 'cat-coffee', 'Flat White', 4.25, 2],
-    ['prod-cold-brew', 'cat-coffee', 'Nitro Cold Brew', 5.00, 3],
+    ['prod-cold-brew', 'cat-coffee', 'Nitro Cold Brew', 5.0, 3],
     ['prod-croissant', 'cat-bakery', 'Almond Croissant', 4.25, 4],
     ['prod-scone', 'cat-bakery', 'Blueberry Scone', 3.75, 5],
-    ['prod-toast', 'cat-brunch', 'Avocado Sourdough Toast', 9.50, 6],
+    ['prod-toast', 'cat-brunch', 'Avocado Sourdough Toast', 9.5, 6],
   ];
   for (const [id, catId, name, price, order] of products) {
     db.prepare(`
@@ -188,16 +223,17 @@ function seedHarborBean(db) {
   // Link addon groups to coffee products
   for (const pId of ['prod-latte', 'prod-flat-white']) {
     for (const gId of ['ag-milk', 'ag-shots']) {
-      db.prepare('INSERT OR IGNORE INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)')
-        .run(pId, gId);
+      db.prepare(
+        'INSERT OR IGNORE INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)',
+      ).run(pId, gId);
     }
   }
 
   // 7. Supplies & Recipes
   const supplies = [
-    ['sup-beans', 'Espresso Beans', 'kg', 5.00, 1.00],
-    ['sup-whole-milk', 'Whole Milk', 'l', 20.00, 5.00],
-    ['sup-oat-milk', 'Oat Milk', 'l', 12.00, 3.00],
+    ['sup-beans', 'Espresso Beans', 'kg', 5.0, 1.0],
+    ['sup-whole-milk', 'Whole Milk', 'l', 20.0, 5.0],
+    ['sup-oat-milk', 'Oat Milk', 'l', 12.0, 3.0],
   ];
   for (const [id, name, unit, qty, low] of supplies) {
     db.prepare(`
@@ -221,7 +257,7 @@ function seedHarborBean(db) {
   db.prepare(`
     INSERT OR REPLACE INTO recipe_items (id, recipe_id, supply_id, quantity, unit, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run('ri-milk', 'rec-flat-white', 'sup-whole-milk', 0.250, 'l', createdAt);
+  `).run('ri-milk', 'rec-flat-white', 'sup-whole-milk', 0.25, 'l', createdAt);
 
   // 8. Tables & Floor Plan
   const tables = [

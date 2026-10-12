@@ -13,7 +13,13 @@ function runFfmpeg(args) {
 /**
  * Transcodes a raw video file to GIF, MP4, and a poster JPEG.
  */
-function transcodeMedia(inputVideoPath, outputBaseName, docsDir, websiteDir, posterTimestamp = '00:00:01.800') {
+function transcodeMedia(
+  inputVideoPath,
+  outputBaseName,
+  docsDir,
+  websiteDir,
+  posterTimestamp = '00:00:01.800',
+) {
   if (!fs.existsSync(inputVideoPath)) {
     throw new Error(`Input video not found: ${inputVideoPath}`);
   }
@@ -31,19 +37,27 @@ function transcodeMedia(inputVideoPath, outputBaseName, docsDir, websiteDir, pos
   try {
     runFfmpeg([
       '-y',
-      '-ss', posterTimestamp,
-      '-i', inputVideoPath,
-      '-vframes', '1',
-      '-q:v', '3',
+      '-ss',
+      posterTimestamp,
+      '-i',
+      inputVideoPath,
+      '-vframes',
+      '1',
+      '-q:v',
+      '3',
       posterPathDocs,
     ]);
   } catch {
     runFfmpeg([
       '-y',
-      '-ss', '00:00:00.500',
-      '-i', inputVideoPath,
-      '-vframes', '1',
-      '-q:v', '3',
+      '-ss',
+      '00:00:00.500',
+      '-i',
+      inputVideoPath,
+      '-vframes',
+      '1',
+      '-q:v',
+      '3',
       posterPathDocs,
     ]);
   }
@@ -51,13 +65,18 @@ function transcodeMedia(inputVideoPath, outputBaseName, docsDir, websiteDir, pos
   // 2. Generate Optimized GIF (<1.5MB target ~600KB-1.2MB, Lanczos, 9 fps, palettegen with diff_mode=rectangle)
   const isMobile = outputBaseName === 'server-app';
   const scaleFilter = isMobile ? 'scale=-2:640:flags=lanczos' : 'scale=960:540:flags=lanczos';
-  const mp4ScaleFilter = isMobile ? 'scale=trunc(iw*640/ih/2)*2:640:flags=lanczos' : 'scale=960:540:flags=lanczos';
+  const mp4ScaleFilter = isMobile
+    ? 'scale=trunc(iw*640/ih/2)*2:640:flags=lanczos'
+    : 'scale=960:540:flags=lanczos';
 
   runFfmpeg([
     '-y',
-    '-i', inputVideoPath,
-    '-vf', `fps=9,${scaleFilter},split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
-    '-loop', '0',
+    '-i',
+    inputVideoPath,
+    '-vf',
+    `fps=9,${scaleFilter},split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+    '-loop',
+    '0',
     gifPathDocs,
   ]);
 
@@ -65,12 +84,18 @@ function transcodeMedia(inputVideoPath, outputBaseName, docsDir, websiteDir, pos
   const tempMp4 = path.join(docsDir, `${outputBaseName}.mp4`);
   runFfmpeg([
     '-y',
-    '-i', inputVideoPath,
-    '-vf', mp4ScaleFilter,
-    '-c:v', 'libx264',
-    '-pix_fmt', 'yuv420p',
-    '-crf', '23',
-    '-movflags', '+faststart',
+    '-i',
+    inputVideoPath,
+    '-vf',
+    mp4ScaleFilter,
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-crf',
+    '23',
+    '-movflags',
+    '+faststart',
     '-an',
     tempMp4,
   ]);

@@ -111,9 +111,12 @@ async function smoothMoveTo(page, targetX, targetY, durationMs = 500) {
     const eased = cubicEaseInOut(t);
     const curX = Math.round(startX + (targetX - startX) * eased);
     const curY = Math.round(startY + (targetY - startY) * eased);
-    await page.evaluate(({ x, y }) => {
-      if (window.__showcaseSetPosition) window.__showcaseSetPosition(x, y);
-    }, { x: curX, y: curY });
+    await page.evaluate(
+      ({ x, y }) => {
+        if (window.__showcaseSetPosition) window.__showcaseSetPosition(x, y);
+      },
+      { x: curX, y: curY },
+    );
     await page.waitForTimeout(durationMs / steps);
   }
 }
@@ -132,9 +135,12 @@ async function smoothClick(page, locator, options = {}) {
   if (box) {
     const x = Math.round(box.x + box.width / 2);
     const y = Math.round(box.y + box.height / 2);
-    await page.evaluate(({ x, y }) => {
-      if (window.__showcaseClickEffect) window.__showcaseClickEffect(x, y);
-    }, { x, y });
+    await page.evaluate(
+      ({ x, y }) => {
+        if (window.__showcaseClickEffect) window.__showcaseClickEffect(x, y);
+      },
+      { x, y },
+    );
   }
   await page.waitForTimeout(options.preClickWait || 80);
   await locator.click();

@@ -18,20 +18,24 @@ fs.mkdirSync(WEBSITE_SHOWCASE_DIR, { recursive: true });
 fs.mkdirSync(RAW_VIDEO_DIR, { recursive: true });
 
 function getAuthToken(role = 'manager', userId = 'user-manager') {
-  return jwt.sign(
-    { userId, email: `${role}@harborbean.local`, role },
-    JWT_SECRET,
-    { expiresIn: '4h' }
-  );
+  return jwt.sign({ userId, email: `${role}@harborbean.local`, role }, JWT_SECRET, {
+    expiresIn: '4h',
+  });
 }
 
 async function setupPageAuth(page, token, url) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(({ tok }) => {
-    localStorage.setItem('token', tok);
-    localStorage.setItem('flocafe:server-app-token', tok);
-    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'en', orders_layout: 'split' } }));
-  }, { tok: token });
+  await page.evaluate(
+    ({ tok }) => {
+      localStorage.setItem('token', tok);
+      localStorage.setItem('flocafe:server-app-token', tok);
+      localStorage.setItem(
+        'pos-settings',
+        JSON.stringify({ state: { language: 'en', orders_layout: 'split' } }),
+      );
+    },
+    { tok: token },
+  );
   await page.goto(url, { waitUntil: 'networkidle' });
   await injectCursor(page);
   await page.waitForTimeout(600);
@@ -80,7 +84,13 @@ async function recordPosCheckout(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'pos-checkout', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:01.400');
+  return transcodeMedia(
+    rawVideo,
+    'pos-checkout',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:01.400',
+  );
 }
 
 // ── SCENE 2: Custom Modifiers & Add-ons (addon-modifiers) ────────────────────
@@ -106,11 +116,17 @@ async function recordAddonModifiers(browser) {
   await smoothClick(page, latte, { moveDuration: 600, postClickWait: 800 });
 
   // Addon modal is open. Select Oat Milk
-  const oatMilkBtn = page.locator('span:text-is("Oat Milk")').locator('xpath=ancestor::div[1]/following-sibling::div//button').first();
+  const oatMilkBtn = page
+    .locator('span:text-is("Oat Milk")')
+    .locator('xpath=ancestor::div[1]/following-sibling::div//button')
+    .first();
   await smoothClick(page, oatMilkBtn, { moveDuration: 500, postClickWait: 500 });
 
   // Select Single Extra Shot
-  const extraShotBtn = page.locator('span:text-is("Single Extra Shot")').locator('xpath=ancestor::div[1]/following-sibling::div//button').first();
+  const extraShotBtn = page
+    .locator('span:text-is("Single Extra Shot")')
+    .locator('xpath=ancestor::div[1]/following-sibling::div//button')
+    .first();
   if (await extraShotBtn.isVisible()) {
     await smoothClick(page, extraShotBtn, { moveDuration: 500, postClickWait: 500 });
   }
@@ -124,7 +140,13 @@ async function recordAddonModifiers(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'addon-modifiers', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:02.000');
+  return transcodeMedia(
+    rawVideo,
+    'addon-modifiers',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:02.000',
+  );
 }
 
 // ── SCENE 3: Real-Time Kitchen Display System (kds-kanban) ───────────────────
@@ -152,7 +174,11 @@ async function recordKdsKanban(browser) {
   }
 
   // Click on the kitchen order item
-  const itemBtn = page.locator('button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")').first();
+  const itemBtn = page
+    .locator(
+      'button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")',
+    )
+    .first();
   if (await itemBtn.isVisible()) {
     await smoothClick(page, itemBtn, { moveDuration: 600, postClickWait: 700 });
 
@@ -164,7 +190,11 @@ async function recordKdsKanban(browser) {
 
     // Click item again to mark Ready
     await page.waitForTimeout(600);
-    const itemPrepBtn = page.locator('button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")').first();
+    const itemPrepBtn = page
+      .locator(
+        'button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")',
+      )
+      .first();
     if (await itemPrepBtn.isVisible()) {
       await smoothClick(page, itemPrepBtn, { moveDuration: 600, postClickWait: 700 });
       const readyBtn = page.getByRole('button', { name: /Mark as Ready/i });
@@ -179,7 +209,13 @@ async function recordKdsKanban(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'kds-kanban', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:02.000');
+  return transcodeMedia(
+    rawVideo,
+    'kds-kanban',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:02.000',
+  );
 }
 
 // ── SCENE 4: Visual Tables & Dine-in Floor Plan (floorplan-tables) ───────────
@@ -229,7 +265,13 @@ async function recordFloorplanTables(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'floorplan-tables', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:01.800');
+  return transcodeMedia(
+    rawVideo,
+    'floorplan-tables',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:01.800',
+  );
 }
 
 // ── SCENE 5: Handheld Waiter App (server-app) ────────────────────────────────
@@ -270,7 +312,9 @@ async function recordServerApp(browser) {
   }
 
   // Open cart drawer on mobile
-  const cartTrigger = page.locator('button[aria-label="Current ticket"], button:has(svg.lucide-shopping-cart)').first();
+  const cartTrigger = page
+    .locator('button[aria-label="Current ticket"], button:has(svg.lucide-shopping-cart)')
+    .first();
   if (await cartTrigger.isVisible()) {
     await smoothClick(page, cartTrigger, { moveDuration: 500, postClickWait: 600 });
   }
@@ -291,7 +335,13 @@ async function recordServerApp(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'server-app', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:01.800');
+  return transcodeMedia(
+    rawVideo,
+    'server-app',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:01.800',
+  );
 }
 
 // ── SCENE 6: Equal Shares Multi-Tender Checkout (split-payments) ─────────────
@@ -348,7 +398,13 @@ async function recordSplitPayments(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'split-payments', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:02.500');
+  return transcodeMedia(
+    rawVideo,
+    'split-payments',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:02.500',
+  );
 }
 
 // ── SCENE 7: Live Recipe & Stock Depletion (recipe-inventory) ────────────────
@@ -391,7 +447,13 @@ async function recordRecipeInventory(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'recipe-inventory', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:01.200');
+  return transcodeMedia(
+    rawVideo,
+    'recipe-inventory',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:01.200',
+  );
 }
 
 // ── SCENE 8: Thermal Receipt & KOT Printing (thermal-printing) ───────────────
@@ -440,13 +502,19 @@ async function recordThermalPrinting(browser) {
 
   const rawVideo = await page.video().path();
   await context.close();
-  return transcodeMedia(rawVideo, 'thermal-printing', DOCS_SHOWCASE_DIR, WEBSITE_SHOWCASE_DIR, '00:00:01.800');
+  return transcodeMedia(
+    rawVideo,
+    'thermal-printing',
+    DOCS_SHOWCASE_DIR,
+    WEBSITE_SHOWCASE_DIR,
+    '00:00:01.800',
+  );
 }
 
 // ── MASTER RUNNER ────────────────────────────────────────────────────────────
 async function main() {
   console.log('Starting FloCafe Autonomous Media Recording Pipeline...');
-  
+
   console.log('[Runner] Starting sandbox server...');
   const server = cp.spawn('node', [path.join(__dirname, 'showcase-server.cjs')], {
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -506,7 +574,7 @@ async function main() {
         'GIF Size (KB)': (stats.gifSize / 1024).toFixed(1),
         'MP4 Size (KB)': (stats.mp4Size / 1024).toFixed(1),
         'Poster Size (KB)': (stats.posterSize / 1024).toFixed(1),
-      }))
+      })),
     );
   } finally {
     console.log('[Runner] Cleaning up browser and server...');
@@ -516,10 +584,14 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error('Fatal recording error:', err);
-    process.exit(1);
-  });
+  main()
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('Fatal recording error:', err);
+      process.exit(1);
+    });
 }
 
 module.exports = {

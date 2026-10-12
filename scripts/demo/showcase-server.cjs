@@ -30,7 +30,13 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
-const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('../../dist/main/db');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  beginDatabaseShutdown,
+  waitForDatabaseRequests,
+} = require('../../dist/main/db');
 const { startServer, stopServer, getServerPort } = require('../../dist/main/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('../../dist/main/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('../../dist/main/server-app');
@@ -42,7 +48,7 @@ async function seedActiveOrders() {
   const token = jwt.sign(
     { userId: 'user-manager', email: 'manager@harborbean.local', role: 'manager' },
     process.env.JWT_SECRET,
-    { expiresIn: '2h' }
+    { expiresIn: '2h' },
   );
 
   const http = require('http');
@@ -64,8 +70,10 @@ async function seedActiveOrders() {
         (res) => {
           let resBody = '';
           res.on('data', (c) => (resBody += c));
-          res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(resBody || '{}') }));
-        }
+          res.on('end', () =>
+            resolve({ status: res.statusCode, data: JSON.parse(resBody || '{}') }),
+          );
+        },
       );
       req.on('error', reject);
       req.write(data);
@@ -130,11 +138,22 @@ async function stop() {
   if (shutdownRequested) return;
   shutdownRequested = true;
   console.log('[Showcase Server] Shutting down...');
-  try { await stopServerApp(); } catch (e) {}
-  try { await stopServer(); } catch (e) {}
-  try { await stopKdsServer(); } catch (e) {}
-  try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (e) {}
-  try { closeDatabase(); } catch (e) {}
+  try {
+    await stopServerApp();
+  } catch (e) {}
+  try {
+    await stopServer();
+  } catch (e) {}
+  try {
+    await stopKdsServer();
+  } catch (e) {}
+  try {
+    beginDatabaseShutdown();
+    await waitForDatabaseRequests();
+  } catch (e) {}
+  try {
+    closeDatabase();
+  } catch (e) {}
   process.exit(0);
 }
 

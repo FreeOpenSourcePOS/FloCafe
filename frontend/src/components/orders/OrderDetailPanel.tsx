@@ -132,7 +132,9 @@ function OrderDetailContent({
   const activeItems = (order.items || []).filter(
     (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),
   );
-  const inactiveItems = (order.items || []).filter((i) => ['cancelled', 'voided'].includes(i.status));
+  const inactiveItems = (order.items || []).filter(
+    (i) => ['cancelled', 'voided'].includes(i.status) && !i.superseded,
+  );
 
   const bill = order.bill;
   const isPaid = bill?.payment_status === 'paid';

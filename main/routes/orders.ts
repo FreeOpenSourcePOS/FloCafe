@@ -893,8 +893,20 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     .map(parseItemJson);
   // Attach resolved addons and regroup by order_id.
   const itemsWithAddons = attachEffectiveAddons(db, itemsRows as any[]);
+  const supersededItemIds = new Set(
+    (
+      db
+        .prepare(
+          `SELECT order_item_id FROM order_audit_log WHERE action = 'item_edited' AND order_id IN ${orderIdsCsv}`,
+        )
+        .all(...ids) as { order_item_id: number | null }[]
+    ).map((row) => Number(row.order_item_id)),
+  );
   const itemsByOrder = new Map<number, any[]>();
   for (const it of itemsWithAddons) {
+    if (supersededItemIds.has(it.id) && ['cancelled', 'voided'].includes(it.status)) {
+      it.superseded = true;
+    }
     const list = itemsByOrder.get(it.order_id) || [];
     list.push(it);
     itemsByOrder.set(it.order_id, list);

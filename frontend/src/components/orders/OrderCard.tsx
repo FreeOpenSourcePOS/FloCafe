@@ -187,7 +187,7 @@ export function OrderCard({
     (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status)
   );
   const inactiveItems = (order.items || []).filter(
-    (i) => ['cancelled', 'voided'].includes(i.status)
+    (i) => ['cancelled', 'voided'].includes(i.status) && !i.superseded
   );
 
   const bill = order.bill;

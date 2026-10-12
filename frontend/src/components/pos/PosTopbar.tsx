@@ -26,7 +26,21 @@ interface Props {
   onToggleFullscreen: () => void;
 }
 
-export default function PosTopbar({ tables, products, onTopItemSelect, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, onShowPrintMenu, fullscreen, onToggleFullscreen }: Props) {
+export default function PosTopbar({
+  tables,
+  products,
+  onTopItemSelect,
+  onShowTablePicker,
+  onShowCashMovement,
+  onShowShift,
+  shiftHasOpenSession,
+  shiftLoading,
+  shiftError,
+  canUseShift,
+  onShowPrintMenu,
+  fullscreen,
+  onToggleFullscreen,
+}: Props) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
@@ -58,8 +72,16 @@ export default function PosTopbar({ tables, products, onTopItemSelect, onShowTab
           >
             <LayoutGrid size={14} />
             {cart.tableId
-              ? t('tableLabel', { name: tables.find(t => t.id === cart.tableId)?.name || cart.tableId })
+              ? t('tableLabel', {
+                  name: tables.find((t) => t.id === cart.tableId)?.name || cart.tableId,
+                })
               : t('selectTable')}
+            <span
+              aria-hidden="true"
+              className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-current text-[10px] font-mono opacity-80"
+            >
+              F2
+            </span>
           </button>
         )}
 
@@ -80,11 +102,18 @@ export default function PosTopbar({ tables, products, onTopItemSelect, onShowTab
             onClick={onShowShift}
             disabled={shiftLoading}
             className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap disabled:opacity-50"
-            title={shiftError ?? (shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift'))}
-            aria-label={shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+            title={
+              shiftError ??
+              (shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift'))
+            }
+            aria-label={
+              shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')
+            }
           >
             {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
-            <span className="hidden sm:inline">{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
+            <span className="hidden sm:inline">
+              {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+            </span>
           </button>
         )}
 

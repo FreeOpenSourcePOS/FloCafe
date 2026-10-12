@@ -74,10 +74,7 @@ export function useConfirm() {
           <Button variant="outline" onClick={handleCancel}>
             {t('cancel')}
           </Button>
-          <Button
-            variant={state.destructive ? 'destructive' : 'default'}
-            onClick={handleConfirm}
-          >
+          <Button variant={state.destructive ? 'destructive' : 'default'} onClick={handleConfirm}>
             {state.confirmLabel || t('confirm')}
           </Button>
         </DialogFooter>
@@ -85,5 +82,5 @@ export function useConfirm() {
     </Dialog>
   ) : null;
 
-  return { confirm, ConfirmDialog };
+  return { confirm, ConfirmDialog, isConfirmOpen: state !== null };
 }

@@ -362,8 +362,10 @@ Two consequences follow, and they are separate decisions:
 1. **The delivery slip prints the customer's full phone number and delivery address whenever
    either of the two number settings allows it.** A courier who cannot call the customer, or
    cannot find the house, is the failure this document exists to prevent.
-2. **The receipt keeps masking the customer number**, shortening it to its last four digits. This
-   is privacy hygiene for a page the customer carries away, not an access control.
+2. **Receipt phone masking depends on the renderer.** The backend thermal and browser-HTML paths
+   print the full number. The frontend receipt encoder masks it by default, shortening it to the
+   last four digits. This is privacy hygiene for a page the customer carries away, not an access
+   control.
 
 A delivery document shows the number when **either** setting allows it. `bill_delivery_show
 _customer_phone_always` ships **on**, so out of the box a delivery order and its courier slip show
@@ -377,9 +379,8 @@ The Printers settings panel, under Bill Content, states this beside the toggle i
 and the warning is always present rather than appearing only once the merchant has turned the
 number off.
 
-**Reason:** the masking is inconsistent by construction and never was a boundary. The
-backend-native receipt path and the browser-HTML path both print the full number today, and
-`GET /api/customers` returns every customer's `phone` **and** `address` to any role holding
+**Reason:** masking is inconsistent by construction and never was a boundary. `GET /api/customers`
+returns every customer's `phone` **and** `address` to any role holding
 `customers.view`, whose shipped defaults include `cashier` and `server`. An ordinary cashier can
 therefore already read every customer phone number and address in the shop on one screen, and
 `printing.execute` ships to the same roles. Adding a permission to the slip would close one door
@@ -404,7 +405,7 @@ gated on the same `printing.execute` permission as every other print.
 **How to verify:**
 
 ```sh
-npm run test:delivery-slip   # both settings allow it, receipt still masks, no shared default
+npm run test:delivery-slip   # slip settings and frontend receipt masking stay separate
 ```
 
 A legacy customer address written before the length boundary existed can be any length. The slip

@@ -44,7 +44,9 @@ test.describe('Server App tableside ordering', () => {
 
     const grid = page.getByTestId('pos-product-grid');
     await expect(grid.getByPlaceholder('Search menu')).toBeVisible();
-    await grid.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
+    const search = grid.getByPlaceholder('Search menu');
+    await search.fill('2*E2E Coffee');
+    await search.press('Enter');
 
     const note = 'Window seat, birthday';
     await page.getByPlaceholder('Order notes (optional)').first().fill(note);
@@ -58,6 +60,12 @@ test.describe('Server App tableside ordering', () => {
     expect(ordersRes.ok()).toBeTruthy();
     const { orders } = await ordersRes.json();
     expect(orders[0]?.special_instructions).toBe(note);
+    expect(
+      orders[0]?.items?.some(
+        (item: { product_name: string; quantity: number }) =>
+          item.product_name === 'E2E Coffee' && item.quantity === 2,
+      ),
+    ).toBeTruthy();
   });
 
   test('explains that tables are required when none are set up', async ({ page }) => {

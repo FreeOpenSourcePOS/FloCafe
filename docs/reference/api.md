@@ -523,7 +523,7 @@ Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 | `GET` | `/export/products` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `products-export.csv`. |
 | `GET` | `/export/addons` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `addons-export.csv`. |
 | `POST` | `/import/categories` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. Per-row validation errors are reported in the response. |
-| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
+| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
 | `POST` | `/import/addons` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
 
 ### Settings
@@ -797,7 +797,7 @@ Router: declared inline in `main/routes/index.ts`.
 | `GET` | `/api/mobile/pairing-code` | `ROLE_ACCESS.owner` | none | `{ pairing_code, expires_at, qr_data_url }`. Returns the cached code when one is live, otherwise generates one. `409` when the store is not yet claimed in FloAdmin; `502` for any other cloud failure. |
 | `POST` | `/api/mobile/rotate-code` | `ROLE_ACCESS.owner` | none | Same shape as the read, and every already paired RevFlo device is disconnected. |
 | `GET` | `/api/mobile/devices` | `ROLE_ACCESS.owner` | none | `{ devices: [ ... ] }`. `502` when FloAdmin is unreachable. |
-| `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. A query with no letters is treated as phone-like and matched against stored phone digits. |
+| `GET` | `/api/customers-search` | `customers.view` (`ROLE_ACCESS.sales` by default; grants are configurable) | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. |
 | `GET` | `/api/crm/lookup` | `ROLE_ACCESS.sales` | query: `phone`, `country_code` | `{ found, customer }`. `400` when `phone` is missing. The number is normalized to E.164 against the tenant country before lookup. |
 
 ## KDS server (`:3002`)

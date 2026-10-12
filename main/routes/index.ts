@@ -287,12 +287,12 @@ export function registerRoutes(app: Express): void {
           ? `
         SELECT * FROM customers
         WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
-        ORDER BY name LIMIT 20
+        LIMIT 20
       `
           : `
         SELECT * FROM customers
         WHERE is_active = 1 AND (name LIKE ? OR email LIKE ?)
-        ORDER BY name LIMIT 20
+        LIMIT 20
       `;
         const params = isPhoneLikeSearch
           ? [`%${digitsSearch}%`, searchTerm, searchTerm]

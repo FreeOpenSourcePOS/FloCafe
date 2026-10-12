@@ -544,6 +544,8 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `PUT` | `/discount` | `ROLE_ACCESS.ownerManager` | body: `discount_max_percentage`, `discount_max_amount`, `discount_mode`, `discount_requires_approval` | - |
 | `GET` | `/kds` | any authenticated role | none | KDS settings for the pre-login and display surfaces. Readable by any authenticated role. |
 | `PUT` | `/kds` | `ROLE_ACCESS.ownerManager` | body: `kds_default_view` | - |
+| `GET` | `/customer-display` | `settings.view`, `orders.read`, or `orders.create` + settings read limiter | none | `{ statuses, refresh_seconds, show_updated }` for the order-status board; defaults when unset. |
+| `PUT` | `/customer-display` | `settings.manage` + settings write limiter | body: `statuses` (non-empty subset of `pending`, `preparing`, `ready`), `refresh_seconds` (integer 2-60), `show_updated` (boolean) | The stored config; `400` for any other shape. |
 | `GET` | `/order-numbering` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/order-numbering` | `ROLE_ACCESS.ownerManager` | body: `order_number_prefix`, `order_number_include_date`, `order_number_reset_daily`, `invoice_number_prefix`, `invoice_number_include_period`, `invoice_number_reset_period`, `invoice_financial_year_start_month`, `invoice_financial_year_start_day` | - |
 | `GET` | `/cloud` | `ROLE_ACCESS.ownerManager` | none | - |

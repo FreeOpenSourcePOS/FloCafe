@@ -13,6 +13,11 @@ import {
   googleDrive,
 } from '../services/google-drive';
 import { requireAnyPermission, requirePermission } from '../services/authorization';
+import {
+  CUSTOMER_DISPLAY_KEY,
+  parseCustomerDisplayConfig,
+  readStoredCustomerDisplayConfig,
+} from '../services/customer-display-config';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
@@ -658,6 +663,42 @@ router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Res
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ─── Customer display settings (must come BEFORE /:key wildcard) ────────────
+
+// The board runs under any role that can see orders, so reads are not limited to settings.view.
+router.get(
+  '/customer-display',
+  settingsReadRateLimit,
+  requireAnyPermission('settings.view', 'orders.read', 'orders.create'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json(readStoredCustomerDisplayConfig(getAllSettings(getDatabase())[CUSTOMER_DISPLAY_KEY]));
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.put(
+  '/customer-display',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const config = parseCustomerDisplayConfig(req.body);
+      if (!config) {
+        return res.status(400).json({ error: 'Invalid customer display settings' });
+      }
+      upsertSettings(getDatabase(), { [CUSTOMER_DISPLAY_KEY]: JSON.stringify(config) });
+      res.json(config);
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ─── Order numbering settings (must come BEFORE /:key wildcard) ─────────────
 

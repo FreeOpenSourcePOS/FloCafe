@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
+import { CustomerDisplayCard } from '@/components/settings/CustomerDisplayCard';
 import type {
   KotLanguagePolicy,
   PrimaryLanguageSelection,
@@ -4641,6 +4642,7 @@ export default function SettingsPage() {
               )}
 
               <KdsDefaultViewCard />
+              <CustomerDisplayCard />
             </SettingsTabShell>
           </TabsContent>
 

@@ -457,6 +457,15 @@ Adding a locale is a scripted procedure with its own verification commands, docu
 [Adding a language](../guides/adding-a-language.md). `npm run i18n:check` is the gate: leaf parity
 against `en.json`, the derived print-label table, and a `tsc` pass over the frontend.
 
+## Customer display
+
+`/customer-display` is a signed-in order-status board. It polls `GET /orders` and shows active
+orders in a Preparing column (`pending`, `preparing`) and a Ready column (`ready`). It re-reads
+`GET /settings/customer-display` on every poll, so changes made in Settings > Kitchen Display apply
+without reloading the board. The tenant-wide config sets which statuses show, the refresh interval,
+and whether the last-updated time is shown. The same settings card shows the display URL with copy
+and open actions. Strings come from the `customerDisplay` message namespace.
+
 ## Tech stack
 
 | Layer | Technology |
@@ -490,7 +499,7 @@ frontend/src/
 │   │   ├── order-history-demo/  orders/  pos/  print-test/  products/
 │   │   ├── settings/  staff/  support/  tables/  whatsapp/
 │   ├── auth/                   login, register, recover
-│   ├── customer-display/       Customer-facing second display
+│   ├── customer-display/       Customer-facing order-status board
 │   ├── kds-standalone/         Standalone KDS, served by the :3002 base port
 │   ├── server-standalone/      Standalone Server App, on the :3003 base port
 │   └── setup/                  First-run setup wizard

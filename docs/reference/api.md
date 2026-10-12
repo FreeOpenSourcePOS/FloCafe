@@ -548,6 +548,9 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `PUT` | `/kds` | `ROLE_ACCESS.ownerManager` | body: `kds_default_view` | - |
 | `GET` | `/customer-display` | `settings.view`, `orders.read`, or `orders.create` + settings read limiter | none | `{ statuses, refresh_seconds, show_updated }` for the order-status board; defaults when unset. |
 | `PUT` | `/customer-display` | `settings.manage` + settings write limiter | body: `statuses` (non-empty subset of `pending`, `preparing`, `ready`), `refresh_seconds` (integer 2-60), `show_updated` (boolean) | The stored config; `400` for any other shape. |
+| `GET` | `/customer-display/tokens` | `settings.manage` + settings read limiter | none | `{ tokens }`: `{ id, label, created_at, last_seen_at }` for each active paired display. Never includes the token or its hash. |
+| `POST` | `/customer-display/tokens` | `settings.manage` + settings write limiter | body: `label` (1-60 characters) | `201` with `{ id, label, created_at, last_seen_at, token }`. The plaintext `token` appears only in this response. `400` for a bad label, `409 customer_display_token_limit` at 20 active tokens. |
+| `DELETE` | `/customer-display/tokens/:id` | `settings.manage` + settings write limiter | path: `id` | `{ success: true }`; `404` when the token is unknown or already revoked. Takes effect on the next feed request. |
 | `GET` | `/order-numbering` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/order-numbering` | `ROLE_ACCESS.ownerManager` | body: `order_number_prefix`, `order_number_include_date`, `order_number_reset_daily`, `invoice_number_prefix`, `invoice_number_include_period`, `invoice_number_reset_period`, `invoice_financial_year_start_month`, `invoice_financial_year_start_day` | - |
 | `GET` | `/cloud` | `ROLE_ACCESS.ownerManager` | none | - |
@@ -633,6 +636,16 @@ Router: `main/routes/kds-info.ts`. Full path: `/api/kds-info`.
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | any authenticated role | none | `{ mdns_url, ip_url, qr_url, qr_data_url, ips_data }`. URLs point at the KDS port with **no path suffix**. `ips_data` is one `{ ip, url, qr_data }` per local address. |
+
+### Customer display feed
+
+Router: `main/routes/customer-display-feed.ts`. Full path: `/api/customer-display`.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/feed` | a customer display token (`Authorization: Bearer cdt_...`); exempt from the JWT middleware by exact path and method | none | `{ business_name, config, orders }` where `orders` is `{ id, number, status }` for up to 100 active orders, oldest first, filtered by the configured statuses. Carries no customer, staff, or item data. `401` for a missing, unknown, or revoked token. Rate limited to 120 requests per minute. |
+
+A display token is not a JWT, so it cannot authorize any other endpoint. Only its SHA-256 hash is stored in `customer_display_tokens`; the table is excluded from database export and cleared on restore.
 
 ### POS info
 
@@ -1058,17 +1071,17 @@ documents only the two routes.
 
 ## Coverage
 
-This page lists 304 HTTP route registrations across 303 distinct rows, and one WebSocket contract:
+This page lists 308 HTTP route registrations across 307 distinct rows, and one WebSocket contract:
 
-- `277` on the main API: 269 router registrations, 7 inline registrations in `main/routes/index.ts`,
+- `281` on the main API: 273 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
 - `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19
   are mutually exclusive `GET /` handlers under one path, which is why 19 registrations render as 18
   rows.
 
-Every one of the 303 rows is listed with its method, path, authorization gate, and the parameters
-its handler reads. The **Response** column carries a note for 167 of them: 141 main-API endpoints,
+Every one of the 307 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 171 of them: 145 main-API endpoints,
 all 8 KDS-server routes, and the 18 Server App routes. The remaining 146 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in

@@ -71,6 +71,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     next();
     return;
   }
+  // Paired display devices authenticate with their own scoped token in the handler.
+  // Exact path and method, so no lookalike path can skip auth.
+  if (req.method === 'GET' && reqPath === '/api/customer-display/feed') {
+    next();
+    return;
+  }
   // Login-screen support-ticket paths, rate-limited in support-ticket.ts.
   // Matched exactly (not by prefix) so a lookalike path can't skip auth.
   if (req.method === 'POST' && reqPath === '/api/support-ticket/pre-login') {

@@ -74,6 +74,7 @@ const EXPORT_EXCLUDE_TABLES = new Set([
   'diagnostics_delivery_gaps',
   'local_diagnostics',
   'kds_pairing_tokens',
+  'customer_display_tokens',
 ]);
 
 // Parse schema version; invalid or missing versions collapse to -1 or 0 to trigger mismatch handling.
@@ -565,6 +566,7 @@ router.post(
               mergeKdsEnabledSetting(db, preservedKdsEnabled);
               mergeRestoreProtectedSettings(db, preservedProtectedSettings);
               db.prepare('DELETE FROM kds_pairing_tokens').run();
+              db.prepare('DELETE FROM customer_display_tokens').run();
               const mergeRevocation = db.prepare(`
         INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
         VALUES (?, ?, ?)

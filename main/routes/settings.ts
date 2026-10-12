@@ -18,6 +18,13 @@ import {
   parseCustomerDisplayConfig,
   readStoredCustomerDisplayConfig,
 } from '../services/customer-display-config';
+import {
+  createDisplayToken,
+  hasReachedTokenLimit,
+  listDisplayTokens,
+  normalizeTokenLabel,
+  revokeDisplayToken,
+} from '../services/customer-display-tokens';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
@@ -695,6 +702,60 @@ router.put(
       }
       upsertSettings(getDatabase(), { [CUSTOMER_DISPLAY_KEY]: JSON.stringify(config) });
       res.json(config);
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.get(
+  '/customer-display/tokens',
+  settingsReadRateLimit,
+  requirePermission('settings.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json({ tokens: listDisplayTokens() });
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// The plaintext token is returned once, on creation; only its hash is stored.
+router.post(
+  '/customer-display/tokens',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const label = normalizeTokenLabel(req.body?.label);
+      if (!label) {
+        return res.status(400).json({ error: 'A label of 1-60 characters is required' });
+      }
+      if (hasReachedTokenLimit()) {
+        return res.status(409).json({ error: 'customer_display_token_limit' });
+      }
+      const actor = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
+      res.status(201).json(createDisplayToken(label, actor));
+    } catch (error) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+router.delete(
+  '/customer-display/tokens/:id',
+  settingsWriteRateLimit,
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      if (!revokeDisplayToken(String(req.params.id))) {
+        return res.status(404).json({ error: 'Display token not found' });
+      }
+      res.json({ success: true });
     } catch (error) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });

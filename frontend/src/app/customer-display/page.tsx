@@ -9,12 +9,24 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import type { Order } from '@/lib/types';
 import {
   CUSTOMER_DISPLAY_DEFAULTS,
+  CUSTOMER_DISPLAY_FEED_PATH,
   isCustomerDisplayConfig,
+  isCustomerDisplayFeed,
+  type BoardOrder,
   type CustomerDisplayConfig,
 } from '@/lib/customer-display';
+import {
+  clearStoredDisplayToken,
+  consumeDisplayTokenFromUrl,
+  readStoredDisplayToken,
+} from '@/lib/customer-display-token';
 
-function getCustomerOrderNumber(order: Order): string {
-  return order.bill?.bill_number || order.order_number;
+function toBoardOrder(order: Order): BoardOrder {
+  return {
+    id: order.id,
+    number: order.bill?.bill_number || order.order_number,
+    status: order.status,
+  };
 }
 
 export default function CustomerDisplayPage() {
@@ -23,21 +35,55 @@ export default function CustomerDisplayPage() {
   const tc = useTranslations('common');
   const { formatTime } = useFormatDate();
   const { user, currentTenant, loading: authLoading, loadFromStorage } = useAuthStore();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<BoardOrder[]>([]);
+  const [pairedToken, setPairedToken] = useState<string | null | undefined>(undefined);
+  const [unpaired, setUnpaired] = useState(false);
+  const [businessName, setBusinessName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
 
   useEffect(() => {
-    loadFromStorage();
+    // The token lives in the URL fragment or localStorage, which only exist in the browser.
+    const resolve = setTimeout(() => {
+      const token = consumeDisplayTokenFromUrl() ?? readStoredDisplayToken();
+      setPairedToken(token);
+      if (!token) loadFromStorage();
+    }, 0);
+    return () => clearTimeout(resolve);
   }, [loadFromStorage]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (pairedToken === null && !authLoading && !user) {
       router.replace('/auth/login?redirect=/customer-display');
     }
-  }, [authLoading, user, router]);
+  }, [pairedToken, authLoading, user, router]);
+
+  const fetchPairedFeed = async (token: string) => {
+    try {
+      const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (response.status === 401) {
+        clearStoredDisplayToken();
+        setUnpaired(true);
+        return;
+      }
+      const feed: unknown = await response.json();
+      if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
+      setConfig(feed.config);
+      setBusinessName(feed.business_name);
+      setOrders(feed.orders);
+      setError(false);
+      setLastUpdated(new Date());
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchOrders = async () => {
     try {
@@ -50,7 +96,8 @@ export default function CustomerDisplayPage() {
       const { data } = await api.get('/orders', { params: { per_page: 50 } });
       const nextOrders = (data.orders || [])
         .filter((order: Order) => (activeConfig.statuses as string[]).includes(order.status))
-        .sort((a: Order, b: Order) => a.created_at.localeCompare(b.created_at));
+        .sort((a: Order, b: Order) => a.created_at.localeCompare(b.created_at))
+        .map(toBoardOrder);
       setOrders(nextOrders);
       setError(false);
       setLastUpdated(new Date());
@@ -62,14 +109,16 @@ export default function CustomerDisplayPage() {
   };
 
   useEffect(() => {
-    if (!user || !currentTenant) return;
-    const initial = setTimeout(fetchOrders, 0);
-    const interval = setInterval(fetchOrders, config.refresh_seconds * 1000);
+    if (pairedToken === undefined || unpaired) return;
+    if (pairedToken === null && (!user || !currentTenant)) return;
+    const refresh = () => (pairedToken ? fetchPairedFeed(pairedToken) : fetchOrders());
+    const initial = setTimeout(refresh, 0);
+    const interval = setInterval(refresh, config.refresh_seconds * 1000);
     return () => {
       clearTimeout(initial);
       clearInterval(interval);
     };
-  }, [user, currentTenant, config.refresh_seconds]);
+  }, [pairedToken, unpaired, user, currentTenant, config.refresh_seconds]);
 
   const preparing = useMemo(
     () => orders.filter((order) => order.status === 'pending' || order.status === 'preparing'),
@@ -79,7 +128,19 @@ export default function CustomerDisplayPage() {
   const showPreparing = config.statuses.some((status) => status !== 'ready');
   const showReady = config.statuses.includes('ready');
 
-  if (authLoading || !user || !currentTenant) {
+  if (unpaired) {
+    return (
+      <main className="flex h-screen min-h-0 flex-col items-center justify-center gap-2 bg-slate-950 p-6 text-center text-white">
+        <h1 className="text-2xl font-bold">{t('unpairedTitle')}</h1>
+        <p className="text-slate-400">{t('unpairedHint')}</p>
+      </main>
+    );
+  }
+
+  if (
+    pairedToken === undefined ||
+    (pairedToken === null && (authLoading || !user || !currentTenant))
+  ) {
     return (
       <main className="flex h-screen min-h-0 flex-col items-center justify-center bg-slate-950 text-white">
         <div className="text-slate-400">{tc('loading')}</div>
@@ -92,7 +153,7 @@ export default function CustomerDisplayPage() {
       <header className="max-w-7xl mx-auto flex shrink-0 items-end justify-between gap-4 mb-8">
         <div>
           <div className="text-2xl md:text-3xl font-bold tracking-tight">
-            {currentTenant.business_name}
+            {pairedToken ? businessName : currentTenant?.business_name}
           </div>
           <div className="text-slate-400 mt-1 text-sm md:text-base">{t('orderStatus')}</div>
         </div>
@@ -140,9 +201,7 @@ export default function CustomerDisplayPage() {
                       <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
                         {t('orderLabel')}
                       </div>
-                      <div className="text-3xl md:text-4xl font-black">
-                        {getCustomerOrderNumber(order)}
-                      </div>
+                      <div className="text-3xl md:text-4xl font-black">{order.number}</div>
                     </div>
                   ))
                 )}
@@ -175,9 +234,7 @@ export default function CustomerDisplayPage() {
                       <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
                         {t('orderLabel')}
                       </div>
-                      <div className="text-3xl md:text-4xl font-black">
-                        {getCustomerOrderNumber(order)}
-                      </div>
+                      <div className="text-3xl md:text-4xl font-black">{order.number}</div>
                     </div>
                   ))
                 )}

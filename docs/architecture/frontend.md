@@ -466,6 +466,13 @@ without reloading the board. The tenant-wide config sets which statuses show, th
 and whether the last-updated time is shown. The same settings card shows the display URL with copy
 and open actions. Strings come from the `customerDisplay` message namespace.
 
+An owner or manager can also pair a standalone device (a TV or tablet browser) from the same card.
+Pairing creates a token and shows a `/customer-display/#token=...` link once. The board moves the
+token from the URL fragment into `localStorage` and polls `GET /api/customer-display/feed` with it
+instead of using a staff session, so it needs no login and can read nothing but order numbers and
+statuses. When the feed answers `401` (the token was revoked), the board clears the stored token and
+shows an unpaired screen.
+
 ## Tech stack
 
 | Layer | Technology |

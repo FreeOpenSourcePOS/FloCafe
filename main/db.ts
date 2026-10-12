@@ -3460,6 +3460,7 @@ export function restoreBackup(
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
+      freshDb.prepare('DELETE FROM customer_display_tokens').run();
       mergeRestoreOutboxState(freshDb, preservedOutboxes);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as {
@@ -3889,6 +3890,7 @@ function dataOnlyRestore(
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     clearGoogleDriveRestoreBinding(currentDb);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
+    currentDb.prepare('DELETE FROM customer_display_tokens').run();
     mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
     const inventoryValidationError = validateInventoryLedgerDatabase(currentDb);
@@ -7114,6 +7116,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           'ALTER TABLE store_diagnostics_outbox ADD COLUMN permanent_failure INTEGER NOT NULL DEFAULT 0 CHECK (permanent_failure IN (0, 1))',
         );
       }
+    },
+  },
+  {
+    version: 113,
+    name: 'customer_display_tokens',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS customer_display_tokens (
+          id TEXT PRIMARY KEY,
+          token_hash TEXT NOT NULL UNIQUE,
+          label TEXT NOT NULL,
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          last_seen_at TEXT,
+          revoked_at TEXT
+        );
+      `);
     },
   },
 ];

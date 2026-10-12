@@ -27,3 +27,34 @@ export function isCustomerDisplayConfig(value: unknown): value is CustomerDispla
     typeof show_updated === 'boolean'
   );
 }
+
+export const CUSTOMER_DISPLAY_FEED_PATH = '/customer-display/feed';
+
+export interface BoardOrder {
+  id: number | string;
+  number: string;
+  status: string;
+}
+
+export interface CustomerDisplayFeed {
+  business_name: string;
+  config: CustomerDisplayConfig;
+  orders: BoardOrder[];
+}
+
+export function isCustomerDisplayFeed(value: unknown): value is CustomerDisplayFeed {
+  if (!value || typeof value !== 'object') return false;
+  const { business_name, config, orders } = value as Record<string, unknown>;
+  return (
+    typeof business_name === 'string' &&
+    isCustomerDisplayConfig(config) &&
+    Array.isArray(orders) &&
+    orders.every(
+      (order) =>
+        !!order &&
+        typeof order === 'object' &&
+        typeof (order as BoardOrder).number === 'string' &&
+        typeof (order as BoardOrder).status === 'string',
+    )
+  );
+}

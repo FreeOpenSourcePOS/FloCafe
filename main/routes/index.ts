@@ -24,6 +24,7 @@ import { settingsRoutes } from './settings';
 import { paymentMethodRoutes } from './payment-methods';
 import { reportRoutes } from './reports';
 import { kdsRoutes } from './kds';
+import { customerDisplayFeedRoutes } from './customer-display-feed';
 import { kdsInfoRoutes } from './kds-info';
 import { posInfoRoutes } from './pos-info';
 import { serverAppInfoRoutes } from './server-app-info';
@@ -129,6 +130,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/payment-methods', paymentMethodRoutes);
   app.use('/api/reports', reportRoutes);
   app.use('/api/kds', kdsRoutes);
+  app.use('/api/customer-display', customerDisplayFeedRoutes);
   app.use('/api/kds-info', kdsInfoRoutes);
   app.use('/api/pos-info', posInfoRoutes);
   app.use('/api/server-app-info', serverAppInfoRoutes);

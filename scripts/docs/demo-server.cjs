@@ -78,11 +78,21 @@ async function run() {
 
   const shutdown = async () => {
     console.log('\nShutting down demo server...');
-    try { await stopServerApp(); } catch {}
-    try { await stopKdsServer(); } catch {}
-    try { await stopServer(); } catch {}
-    try { closeDatabase(); } catch {}
-    try { fs.rmSync(demoDir, { recursive: true, force: true }); } catch {}
+    try {
+      await stopServerApp();
+    } catch {}
+    try {
+      await stopKdsServer();
+    } catch {}
+    try {
+      await stopServer();
+    } catch {}
+    try {
+      closeDatabase();
+    } catch {}
+    try {
+      fs.rmSync(demoDir, { recursive: true, force: true });
+    } catch {}
     console.log('Demo server stopped cleanly.');
     process.exit(0);
   };

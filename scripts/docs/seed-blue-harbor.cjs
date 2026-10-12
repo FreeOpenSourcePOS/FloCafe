@@ -25,7 +25,15 @@ function installTaxPack(db, pack) {
       active_version_id = excluded.active_version_id,
       status = 'active',
       updated_at = excluded.updated_at
-  `).run(pack.id, pack.publisher, pack.country, pack.jurisdiction, versionId, installedAt, installedAt);
+  `).run(
+    pack.id,
+    pack.publisher,
+    pack.country,
+    pack.jurisdiction,
+    versionId,
+    installedAt,
+    installedAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO country_pack_versions (
@@ -33,13 +41,25 @@ function installTaxPack(db, pack) {
       effective_from, effective_to, min_flo_version, published_at, status, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
   `).run(
-    versionId, pack.id, pack.version, pack.schemaVersion,
+    versionId,
+    pack.id,
+    pack.version,
+    pack.schemaVersion,
     JSON.stringify({
-      id: pack.id, publisher: pack.publisher, country: pack.country,
-      jurisdiction: pack.jurisdiction, version: pack.version, publishedAt: pack.publishedAt,
+      id: pack.id,
+      publisher: pack.publisher,
+      country: pack.country,
+      jurisdiction: pack.jurisdiction,
+      version: pack.version,
+      publishedAt: pack.publishedAt,
     }),
-    packJson, digest, pack.effectiveFrom, pack.effectiveTo || null, pack.minFloVersion,
-    pack.publishedAt, installedAt,
+    packJson,
+    digest,
+    pack.effectiveFrom,
+    pack.effectiveTo || null,
+    pack.minFloVersion,
+    pack.publishedAt,
+    installedAt,
   );
 
   const insertCategory = db.prepare(`
@@ -49,8 +69,13 @@ function installTaxPack(db, pack) {
   `);
   for (const category of pack.categories) {
     insertCategory.run(
-      `${versionId}:category:${category.id}`, versionId, category.id, category.label,
-      category.defaultBehavior || null, JSON.stringify(category), installedAt,
+      `${versionId}:category:${category.id}`,
+      versionId,
+      category.id,
+      category.label,
+      category.defaultBehavior || null,
+      JSON.stringify(category),
+      installedAt,
     );
   }
 
@@ -62,9 +87,17 @@ function installTaxPack(db, pack) {
   `);
   for (const rule of pack.rules) {
     insertRule.run(
-      `${versionId}:rule:${rule.id}`, versionId, rule.id, rule.label, rule.type,
-      rule.rate || null, rule.amount || null, rule.appliesPer || null,
-      JSON.stringify(rule.baseRuleIds || []), JSON.stringify(rule), installedAt,
+      `${versionId}:rule:${rule.id}`,
+      versionId,
+      rule.id,
+      rule.label,
+      rule.type,
+      rule.rate || null,
+      rule.amount || null,
+      rule.appliesPer || null,
+      JSON.stringify(rule.baseRuleIds || []),
+      JSON.stringify(rule),
+      installedAt,
     );
   }
 }
@@ -93,15 +126,21 @@ function seedBlueHarborCafe() {
     ['store_address', '142 Harborview Street, Toronto, ON M5V 2H1'],
     ['store_phone', '+14165550198'],
     ['store_email', 'contact@blueharborcafe.ca'],
-    ['receipt_header', 'Blue Harbor Café\nArtisan Coffee & Fresh Bakery\n142 Harborview Street, Toronto'],
+    [
+      'receipt_header',
+      'Blue Harbor Café\nArtisan Coffee & Fresh Bakery\n142 Harborview Street, Toronto',
+    ],
     ['receipt_footer', 'Thank you for supporting local!\nVisit us online at blueharborcafe.ca'],
     ['first_run_completed', 'true'],
     ['kds_enabled', 'true'],
   ];
 
   for (const [key, value] of settings) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
-      .run(key, value, createdAt);
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      key,
+      value,
+      createdAt,
+    );
   }
 
   console.log('[Seed] Seeding Canadian HST tax pack (13%)...');
@@ -140,7 +179,14 @@ function seedBlueHarborCafe() {
         id: 'hst',
         label: 'HST (13%)',
         type: 'percent',
-        categoryIds: ['standard', 'packaging', 'delivery', 'service_charge', 'addon', 'unclassified'],
+        categoryIds: [
+          'standard',
+          'packaging',
+          'delivery',
+          'service_charge',
+          'addon',
+          'unclassified',
+        ],
         rate: '13',
       },
     ],
@@ -159,11 +205,41 @@ function seedBlueHarborCafe() {
 
   console.log('[Seed] Seeding users with roles & PINs...');
   const users = [
-    { id: 'usr-owner', name: 'Elena Rostova (Owner)', email: 'owner@blueharbor.local', role: 'owner', pin: '1234' },
-    { id: 'usr-manager', name: 'Marcus Vance (Manager)', email: 'manager@blueharbor.local', role: 'manager', pin: '2345' },
-    { id: 'usr-cashier', name: 'Chloe Martin (Cashier)', email: 'cashier@blueharbor.local', role: 'cashier', pin: '3456' },
-    { id: 'usr-server', name: 'Sam Rivera (Server)', email: 'server@blueharbor.local', role: 'server', pin: '4567' },
-    { id: 'usr-chef', name: 'Chef Kenji Sato (Kitchen)', email: 'chef@blueharbor.local', role: 'chef', pin: '5678' },
+    {
+      id: 'usr-owner',
+      name: 'Elena Rostova (Owner)',
+      email: 'owner@blueharbor.local',
+      role: 'owner',
+      pin: '1234',
+    },
+    {
+      id: 'usr-manager',
+      name: 'Marcus Vance (Manager)',
+      email: 'manager@blueharbor.local',
+      role: 'manager',
+      pin: '2345',
+    },
+    {
+      id: 'usr-cashier',
+      name: 'Chloe Martin (Cashier)',
+      email: 'cashier@blueharbor.local',
+      role: 'cashier',
+      pin: '3456',
+    },
+    {
+      id: 'usr-server',
+      name: 'Sam Rivera (Server)',
+      email: 'server@blueharbor.local',
+      role: 'server',
+      pin: '4567',
+    },
+    {
+      id: 'usr-chef',
+      name: 'Chef Kenji Sato (Kitchen)',
+      email: 'chef@blueharbor.local',
+      role: 'chef',
+      pin: '5678',
+    },
   ];
 
   const insertUser = db.prepare(`
@@ -173,29 +249,77 @@ function seedBlueHarborCafe() {
 
   for (const u of users) {
     const pinHash = bcrypt.hashSync(u.pin, 10);
-    insertUser.run(u.id, u.name, u.email, passwordHash, u.role, u.pin, pinHash, createdAt, createdAt);
+    insertUser.run(
+      u.id,
+      u.name,
+      u.email,
+      passwordHash,
+      u.role,
+      u.pin,
+      pinHash,
+      createdAt,
+      createdAt,
+    );
   }
 
   console.log('[Seed] Seeding printers and kitchen stations...');
   db.prepare(`
     INSERT OR REPLACE INTO printers (id, name, connection_type, ip_address, port, is_default, cash_drawer_pulse_enabled, paper_width, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('prn-counter', 'Counter Receipt Printer', 'usb', null, 9100, 1, 1, '80mm', createdAt, createdAt);
+  `).run(
+    'prn-counter',
+    'Counter Receipt Printer',
+    'usb',
+    null,
+    9100,
+    1,
+    1,
+    '80mm',
+    createdAt,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO printers (id, name, connection_type, ip_address, port, is_default, cash_drawer_pulse_enabled, paper_width, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('prn-barista', 'Barista Ticket Printer', 'network', '192.168.1.150', 9100, 0, 0, '80mm', createdAt, createdAt);
+  `).run(
+    'prn-barista',
+    'Barista Ticket Printer',
+    'network',
+    '192.168.1.150',
+    9100,
+    0,
+    0,
+    '80mm',
+    createdAt,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO kitchen_stations (id, name, description, printer_id, is_active, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-  `).run('stn-barista', 'Barista Station', 'Coffee & Cold Drink Prep', 'prn-barista', 1, createdAt, createdAt);
+  `).run(
+    'stn-barista',
+    'Barista Station',
+    'Coffee & Cold Drink Prep',
+    'prn-barista',
+    1,
+    createdAt,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO kitchen_stations (id, name, description, printer_id, is_active, sort_order, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-  `).run('stn-kitchen', 'Kitchen & Bakery', 'Hot Sandwiches & Baked Goods', null, 2, createdAt, createdAt);
+  `).run(
+    'stn-kitchen',
+    'Kitchen & Bakery',
+    'Hot Sandwiches & Baked Goods',
+    null,
+    2,
+    createdAt,
+    createdAt,
+  );
 
   console.log('[Seed] Seeding menu categories...');
   const categories = [
@@ -205,8 +329,9 @@ function seedBlueHarborCafe() {
     { id: 'cat-food', name: 'Artisan Food', sort: 4 },
   ];
   for (const c of categories) {
-    db.prepare('INSERT OR REPLACE INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)')
-      .run(c.id, c.name, c.sort, createdAt, createdAt);
+    db.prepare(
+      'INSERT OR REPLACE INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
+    ).run(c.id, c.name, c.sort, createdAt, createdAt);
   }
 
   console.log('[Seed] Seeding add-on groups and modifiers...');
@@ -223,13 +348,13 @@ function seedBlueHarborCafe() {
   }
 
   const addons = [
-    { id: 'ad-whole', group: 'ag-milk', name: 'Whole Milk', price: 0.00, sort: 1 },
-    { id: 'ad-oat', group: 'ag-milk', name: 'Oat Milk', price: 0.80, sort: 2 },
-    { id: 'ad-almond', group: 'ag-milk', name: 'Almond Milk', price: 0.80, sort: 3 },
-    { id: 'ad-vanilla', group: 'ag-syrup', name: 'Madagascar Vanilla', price: 0.50, sort: 1 },
-    { id: 'ad-caramel', group: 'ag-syrup', name: 'Salted Caramel', price: 0.50, sort: 2 },
-    { id: 'ad-hazelnut', group: 'ag-syrup', name: 'Roasted Hazelnut', price: 0.50, sort: 3 },
-    { id: 'ad-shot', group: 'ag-shot', name: 'Extra Espresso Shot', price: 1.00, sort: 1 },
+    { id: 'ad-whole', group: 'ag-milk', name: 'Whole Milk', price: 0.0, sort: 1 },
+    { id: 'ad-oat', group: 'ag-milk', name: 'Oat Milk', price: 0.8, sort: 2 },
+    { id: 'ad-almond', group: 'ag-milk', name: 'Almond Milk', price: 0.8, sort: 3 },
+    { id: 'ad-vanilla', group: 'ag-syrup', name: 'Madagascar Vanilla', price: 0.5, sort: 1 },
+    { id: 'ad-caramel', group: 'ag-syrup', name: 'Salted Caramel', price: 0.5, sort: 2 },
+    { id: 'ad-hazelnut', group: 'ag-syrup', name: 'Roasted Hazelnut', price: 0.5, sort: 3 },
+    { id: 'ad-shot', group: 'ag-shot', name: 'Extra Espresso Shot', price: 1.0, sort: 1 },
   ];
   for (const ad of addons) {
     db.prepare(`
@@ -240,38 +365,138 @@ function seedBlueHarborCafe() {
 
   // Link categories to add-on groups
   for (const agId of ['ag-milk', 'ag-syrup', 'ag-shot']) {
-    db.prepare('INSERT OR REPLACE INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)')
-      .run('cat-coffee', agId);
+    db.prepare(
+      'INSERT OR REPLACE INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)',
+    ).run('cat-coffee', agId);
   }
   for (const agId of ['ag-milk', 'ag-syrup']) {
-    db.prepare('INSERT OR REPLACE INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)')
-      .run('cat-tea', agId);
+    db.prepare(
+      'INSERT OR REPLACE INTO category_addon_groups (category_id, addon_group_id) VALUES (?, ?)',
+    ).run('cat-tea', agId);
   }
 
   console.log('[Seed] Seeding menu products...');
   const products = [
     // Coffee
     { id: 'prod-latte', cat: 'cat-coffee', name: 'Caffè Latte', price: 5.25, sort: 1, stock: 100 },
-    { id: 'prod-cappuccino', cat: 'cat-coffee', name: 'Cappuccino', price: 4.75, sort: 2, stock: 100 },
-    { id: 'prod-espresso', cat: 'cat-coffee', name: 'Espresso', price: 3.50, sort: 3, stock: 100 },
-    { id: 'prod-americano', cat: 'cat-coffee', name: 'Americano', price: 4.00, sort: 4, stock: 100 },
-    { id: 'prod-flat-white', cat: 'cat-coffee', name: 'Flat White', price: 5.00, sort: 5, stock: 100 },
+    {
+      id: 'prod-cappuccino',
+      cat: 'cat-coffee',
+      name: 'Cappuccino',
+      price: 4.75,
+      sort: 2,
+      stock: 100,
+    },
+    { id: 'prod-espresso', cat: 'cat-coffee', name: 'Espresso', price: 3.5, sort: 3, stock: 100 },
+    { id: 'prod-americano', cat: 'cat-coffee', name: 'Americano', price: 4.0, sort: 4, stock: 100 },
+    {
+      id: 'prod-flat-white',
+      cat: 'cat-coffee',
+      name: 'Flat White',
+      price: 5.0,
+      sort: 5,
+      stock: 100,
+    },
     { id: 'prod-mocha', cat: 'cat-coffee', name: 'Mocha', price: 5.75, sort: 6, stock: 100 },
     // Tea & Cold Drinks
-    { id: 'prod-chai-latte', cat: 'cat-tea', name: 'Spiced Chai Latte', price: 5.00, sort: 1, stock: 80 },
-    { id: 'prod-iced-coffee', cat: 'cat-tea', name: 'Cold Brew Coffee', price: 4.50, sort: 2, stock: 90 },
-    { id: 'prod-matcha-latte', cat: 'cat-tea', name: 'Iced Matcha Latte', price: 5.50, sort: 3, stock: 75 },
-    { id: 'prod-lemonade', cat: 'cat-tea', name: 'Sparkling Lemonade', price: 4.00, sort: 4, stock: 60 },
+    {
+      id: 'prod-chai-latte',
+      cat: 'cat-tea',
+      name: 'Spiced Chai Latte',
+      price: 5.0,
+      sort: 1,
+      stock: 80,
+    },
+    {
+      id: 'prod-iced-coffee',
+      cat: 'cat-tea',
+      name: 'Cold Brew Coffee',
+      price: 4.5,
+      sort: 2,
+      stock: 90,
+    },
+    {
+      id: 'prod-matcha-latte',
+      cat: 'cat-tea',
+      name: 'Iced Matcha Latte',
+      price: 5.5,
+      sort: 3,
+      stock: 75,
+    },
+    {
+      id: 'prod-lemonade',
+      cat: 'cat-tea',
+      name: 'Sparkling Lemonade',
+      price: 4.0,
+      sort: 4,
+      stock: 60,
+    },
     // Bakery
-    { id: 'prod-croissant', cat: 'cat-bakery', name: 'Butter Croissant', price: 3.75, sort: 1, stock: 24 },
-    { id: 'prod-muffin', cat: 'cat-bakery', name: 'Blueberry Streusel Muffin', price: 3.50, sort: 2, stock: 18 },
-    { id: 'prod-cookie', cat: 'cat-bakery', name: 'Chocolate Chunk Cookie', price: 2.75, sort: 3, stock: 30 },
-    { id: 'prod-banana-bread', cat: 'cat-bakery', name: 'Banana Walnut Bread', price: 4.25, sort: 4, stock: 12 },
+    {
+      id: 'prod-croissant',
+      cat: 'cat-bakery',
+      name: 'Butter Croissant',
+      price: 3.75,
+      sort: 1,
+      stock: 24,
+    },
+    {
+      id: 'prod-muffin',
+      cat: 'cat-bakery',
+      name: 'Blueberry Streusel Muffin',
+      price: 3.5,
+      sort: 2,
+      stock: 18,
+    },
+    {
+      id: 'prod-cookie',
+      cat: 'cat-bakery',
+      name: 'Chocolate Chunk Cookie',
+      price: 2.75,
+      sort: 3,
+      stock: 30,
+    },
+    {
+      id: 'prod-banana-bread',
+      cat: 'cat-bakery',
+      name: 'Banana Walnut Bread',
+      price: 4.25,
+      sort: 4,
+      stock: 12,
+    },
     // Food
-    { id: 'prod-avocado-toast', cat: 'cat-food', name: 'Sourdough Avocado Toast', price: 9.50, sort: 1, stock: 45 },
-    { id: 'prod-grilled-cheese', cat: 'cat-food', name: 'Aged Cheddar Grilled Cheese', price: 8.50, sort: 2, stock: 35 },
-    { id: 'prod-veggie-wrap', cat: 'cat-food', name: 'Mediterranean Veggie Wrap', price: 8.00, sort: 3, stock: 25 },
-    { id: 'prod-breakfast-bagel', cat: 'cat-food', name: 'Classic Breakfast Bagel', price: 7.50, sort: 4, stock: 30 },
+    {
+      id: 'prod-avocado-toast',
+      cat: 'cat-food',
+      name: 'Sourdough Avocado Toast',
+      price: 9.5,
+      sort: 1,
+      stock: 45,
+    },
+    {
+      id: 'prod-grilled-cheese',
+      cat: 'cat-food',
+      name: 'Aged Cheddar Grilled Cheese',
+      price: 8.5,
+      sort: 2,
+      stock: 35,
+    },
+    {
+      id: 'prod-veggie-wrap',
+      cat: 'cat-food',
+      name: 'Mediterranean Veggie Wrap',
+      price: 8.0,
+      sort: 3,
+      stock: 25,
+    },
+    {
+      id: 'prod-breakfast-bagel',
+      cat: 'cat-food',
+      name: 'Classic Breakfast Bagel',
+      price: 7.5,
+      sort: 4,
+      stock: 30,
+    },
   ];
 
   const insertProduct = db.prepare(`
@@ -300,12 +525,52 @@ function seedBlueHarborCafe() {
 
   console.log('[Seed] Seeding tables and floor plan...');
   const tables = [
-    { id: 'tbl-1', number: 'T1', cap: 2, floor: 'Main Dining', x: 120, y: 100, status: 'available' },
+    {
+      id: 'tbl-1',
+      number: 'T1',
+      cap: 2,
+      floor: 'Main Dining',
+      x: 120,
+      y: 100,
+      status: 'available',
+    },
     { id: 'tbl-2', number: 'T2', cap: 4, floor: 'Main Dining', x: 280, y: 100, status: 'occupied' },
-    { id: 'tbl-3', number: 'T3', cap: 4, floor: 'Main Dining', x: 120, y: 260, status: 'available' },
-    { id: 'tbl-4', number: 'T4', cap: 6, floor: 'Main Dining', x: 280, y: 260, status: 'available' },
-    { id: 'tbl-p1', number: 'P1', cap: 2, floor: 'Patio Terrace', x: 140, y: 120, status: 'available' },
-    { id: 'tbl-p2', number: 'P2', cap: 4, floor: 'Patio Terrace', x: 300, y: 120, status: 'available' },
+    {
+      id: 'tbl-3',
+      number: 'T3',
+      cap: 4,
+      floor: 'Main Dining',
+      x: 120,
+      y: 260,
+      status: 'available',
+    },
+    {
+      id: 'tbl-4',
+      number: 'T4',
+      cap: 6,
+      floor: 'Main Dining',
+      x: 280,
+      y: 260,
+      status: 'available',
+    },
+    {
+      id: 'tbl-p1',
+      number: 'P1',
+      cap: 2,
+      floor: 'Patio Terrace',
+      x: 140,
+      y: 120,
+      status: 'available',
+    },
+    {
+      id: 'tbl-p2',
+      number: 'P2',
+      cap: 4,
+      floor: 'Patio Terrace',
+      x: 300,
+      y: 120,
+      status: 'available',
+    },
   ];
   for (const t of tables) {
     db.prepare(`
@@ -316,9 +581,27 @@ function seedBlueHarborCafe() {
 
   console.log('[Seed] Seeding customers & loyalty points...');
   const customers = [
-    { id: 'cust-1', name: 'Sarah Jenkins', email: 'sarah.j@example.com', phone: '+14165551234', notes: 'Prefers oat milk latte' },
-    { id: 'cust-2', name: 'Liam Patel', email: 'liam.p@example.com', phone: '+14165555678', notes: 'Daily morning espresso' },
-    { id: 'cust-3', name: 'Emma Chen', email: 'emma.c@example.com', phone: '+14165559012', notes: 'Loyal patron' },
+    {
+      id: 'cust-1',
+      name: 'Sarah Jenkins',
+      email: 'sarah.j@example.com',
+      phone: '+14165551234',
+      notes: 'Prefers oat milk latte',
+    },
+    {
+      id: 'cust-2',
+      name: 'Liam Patel',
+      email: 'liam.p@example.com',
+      phone: '+14165555678',
+      notes: 'Daily morning espresso',
+    },
+    {
+      id: 'cust-3',
+      name: 'Emma Chen',
+      email: 'emma.c@example.com',
+      phone: '+14165559012',
+      notes: 'Loyal patron',
+    },
   ];
   for (const c of customers) {
     db.prepare(`
@@ -342,12 +625,48 @@ function seedBlueHarborCafe() {
 
   console.log('[Seed] Seeding inventory supplies & units...');
   try {
-    const beans = createSupply(db, { name: 'Espresso Roast Beans', baseUnit: 'kg', stockQuantity: 14.5, lowStockThreshold: 5.0, actorUserId: 'usr-owner' });
-    const milk = createSupply(db, { name: 'Organic Whole Milk', baseUnit: 'l', stockQuantity: 22.0, lowStockThreshold: 8.0, actorUserId: 'usr-owner' });
-    createSupply(db, { name: 'Barista Oat Milk', baseUnit: 'l', stockQuantity: 11.5, lowStockThreshold: 4.0, actorUserId: 'usr-owner' });
-    const cups = createSupply(db, { name: '12oz Paper Cups', baseUnit: 'each', stockQuantity: 280, lowStockThreshold: 50, actorUserId: 'usr-owner' });
-    const sourdough = createSupply(db, { name: 'Artisan Sourdough Loaf', baseUnit: 'each', stockQuantity: 8, lowStockThreshold: 3, actorUserId: 'usr-owner' });
-    const cheddar = createSupply(db, { name: 'White Aged Cheddar', baseUnit: 'kg', stockQuantity: 5.2, lowStockThreshold: 2.0, actorUserId: 'usr-owner' });
+    const beans = createSupply(db, {
+      name: 'Espresso Roast Beans',
+      baseUnit: 'kg',
+      stockQuantity: 14.5,
+      lowStockThreshold: 5.0,
+      actorUserId: 'usr-owner',
+    });
+    const milk = createSupply(db, {
+      name: 'Organic Whole Milk',
+      baseUnit: 'l',
+      stockQuantity: 22.0,
+      lowStockThreshold: 8.0,
+      actorUserId: 'usr-owner',
+    });
+    createSupply(db, {
+      name: 'Barista Oat Milk',
+      baseUnit: 'l',
+      stockQuantity: 11.5,
+      lowStockThreshold: 4.0,
+      actorUserId: 'usr-owner',
+    });
+    const cups = createSupply(db, {
+      name: '12oz Paper Cups',
+      baseUnit: 'each',
+      stockQuantity: 280,
+      lowStockThreshold: 50,
+      actorUserId: 'usr-owner',
+    });
+    const sourdough = createSupply(db, {
+      name: 'Artisan Sourdough Loaf',
+      baseUnit: 'each',
+      stockQuantity: 8,
+      lowStockThreshold: 3,
+      actorUserId: 'usr-owner',
+    });
+    const cheddar = createSupply(db, {
+      name: 'White Aged Cheddar',
+      baseUnit: 'kg',
+      stockQuantity: 5.2,
+      lowStockThreshold: 2.0,
+      actorUserId: 'usr-owner',
+    });
 
     // Link recipes
     saveRecipe(db, {
@@ -385,12 +704,27 @@ function seedBlueHarborCafe() {
   db.prepare(`
     INSERT OR REPLACE INTO expense_categories (id, name, name_key, is_active, created_by, updated_by, created_at, updated_at)
     VALUES (?, ?, ?, 1, 'usr-owner', 'usr-owner', ?, ?)
-  `).run('exp-cat-roastery', 'Coffee Roastery Supplies', 'coffee_roastery_supplies', createdAt, createdAt);
+  `).run(
+    'exp-cat-roastery',
+    'Coffee Roastery Supplies',
+    'coffee_roastery_supplies',
+    createdAt,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO expenses (id, category_id, category_name, description, payee, amount_minor, currency_code, incurred_on, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, 'CAD', ?, 'usr-owner', ?)
-  `).run('exp-1', 'exp-cat-dairy', 'Dairy & Fresh Goods', 'Ontario Organic Dairy - Weekly Milk Delivery', 'Ontario Organic Dairy', 8450, todayDate, createdAt);
+  `).run(
+    'exp-1',
+    'exp-cat-dairy',
+    'Dairy & Fresh Goods',
+    'Ontario Organic Dairy - Weekly Milk Delivery',
+    'Ontario Organic Dairy',
+    8450,
+    todayDate,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO expense_payments (id, expense_id, amount_minor, method, business_date, created_by, created_at)
@@ -400,7 +734,16 @@ function seedBlueHarborCafe() {
   db.prepare(`
     INSERT OR REPLACE INTO expenses (id, category_id, category_name, description, payee, amount_minor, currency_code, incurred_on, created_by, created_at)
     VALUES (?, ?, ?, ?, ?, ?, 'CAD', ?, 'usr-owner', ?)
-  `).run('exp-2', 'exp-cat-roastery', 'Coffee Roastery Supplies', 'Harbor Roast Coffee Beans (15kg)', 'Harbor Coffee Roasters', 22000, todayDate, createdAt);
+  `).run(
+    'exp-2',
+    'exp-cat-roastery',
+    'Coffee Roastery Supplies',
+    'Harbor Roast Coffee Beans (15kg)',
+    'Harbor Coffee Roasters',
+    22000,
+    todayDate,
+    createdAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO expense_payments (id, expense_id, amount_minor, method, business_date, created_by, created_at)
@@ -409,12 +752,14 @@ function seedBlueHarborCafe() {
 
   console.log('[Seed] Seeding sample orders for POS, dine-in, and KDS...');
   // Order 1: Dine-in order at Table T2 (confirmed, preparing in kitchen)
-  const order1 = db.prepare(`
+  const order1 = db
+    .prepare(`
     INSERT INTO orders (
       order_number, table_id, customer_id, user_id, type, guest_count,
       status, subtotal, tax_amount, total, created_at, updated_at
     ) VALUES (?, ?, ?, ?, 'dine_in', 2, 'confirmed', 20.00, 2.60, 22.60, ?, ?)
-  `).run('ORD-1001', 'tbl-2', 'cust-2', 'usr-server', createdAt, createdAt);
+  `)
+    .run('ORD-1001', 'tbl-2', 'cust-2', 'usr-server', createdAt, createdAt);
 
   const order1Id = order1.lastInsertRowid;
   db.prepare(`
@@ -428,12 +773,14 @@ function seedBlueHarborCafe() {
   `).run(order1Id, createdAt, createdAt);
 
   // Order 2: Completed takeaway order with bill and payment
-  const order2 = db.prepare(`
+  const order2 = db
+    .prepare(`
     INSERT INTO orders (
       order_number, customer_id, user_id, type,
       status, subtotal, tax_amount, total, created_at, updated_at
     ) VALUES (?, ?, ?, 'takeaway', 'completed', 8.25, 1.07, 9.32, ?, ?)
-  `).run('ORD-1002', 'cust-1', 'usr-cashier', createdAt, createdAt);
+  `)
+    .run('ORD-1002', 'cust-1', 'usr-cashier', createdAt, createdAt);
 
   const order2Id = order2.lastInsertRowid;
   db.prepare(`
@@ -453,12 +800,14 @@ function seedBlueHarborCafe() {
   `).run(order2Id, paymentDetails, createdAt, createdAt, createdAt);
 
   // Order 3: Ready KDS order
-  const order3 = db.prepare(`
+  const order3 = db
+    .prepare(`
     INSERT INTO orders (
       order_number, user_id, type,
       status, subtotal, tax_amount, total, created_at, updated_at
     ) VALUES (?, ?, 'takeaway', 'confirmed', 5.50, 0.72, 6.22, ?, ?)
-  `).run('ORD-1003', 'usr-cashier', createdAt, createdAt);
+  `)
+    .run('ORD-1003', 'usr-cashier', createdAt, createdAt);
 
   db.prepare(`
     INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)

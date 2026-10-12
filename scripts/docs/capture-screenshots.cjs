@@ -5,6 +5,9 @@
  * Connects to the running demo server (port 3101, 3102, 3103),
  * drives Chromium via Playwright, and captures crisp documentation screenshots
  * into flopos.com's assets/docs/ directory.
+ *
+ * Enforces strict verification: missing UI elements produce actionable errors,
+ * all captured files are verified on disk, and failures exit non-zero.
  */
 const fs = require('fs');
 const path = require('path');
@@ -41,10 +44,40 @@ const OUTPUT_DIR =
 
 fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+const REQUIRED_SCREENSHOTS = [
+  'auth-login-screen.webp',
+  'pos-main-screen.webp',
+  'pos-cart-customizer.webp',
+  'pos-checkout-modal.webp',
+  'orders-dashboard.webp',
+  'tables-floorplan.webp',
+  'products-management.webp',
+  'product-create-modal.webp',
+  'product-edit-form.webp',
+  'products-addon-groups.webp',
+  'addon-group-create-modal.webp',
+  'inventory-supplies-ledger.webp',
+  'staff-roles-permissions.webp',
+  'customers-loyalty-screen.webp',
+  'reports-sales-dashboard.webp',
+  'expenses-ledger.webp',
+  'settings-printers.webp',
+  'settings-printer-add-modal.webp',
+  'settings-receipt-customization.webp',
+  'settings-whatsapp.webp',
+  'settings-taxes-locale.webp',
+  'backups-restore-screen.webp',
+  'support-diagnostics-screen.webp',
+  'customer-display-board.webp',
+  'kds-station-view.webp',
+  'server-app-mobile.webp',
+];
+
 async function capture() {
   console.log('='.repeat(60));
   console.log('Capturing FloCafe Help Center Screenshots');
   console.log(`Output Directory: ${OUTPUT_DIR}`);
+  console.log(`Expected Files: ${REQUIRED_SCREENSHOTS.length}`);
   console.log('='.repeat(60));
 
   const browser = await chromium.launch({ headless: true });
@@ -56,15 +89,39 @@ async function capture() {
   });
   const page = await desktopContext.newPage();
 
+  // Helper to save screenshot and log
+  async function takeScreenshot(filename, locatorOrPage = page) {
+    const targetPath = path.join(OUTPUT_DIR, filename);
+    await locatorOrPage.screenshot({
+      path: targetPath,
+      type: 'webp',
+      quality: 90,
+    });
+    console.log(`  ✓ Saved: ${filename}`);
+  }
+
+  // Helper to safely click a cancel button or fall back to navigation
+  async function closeDialog(fallbackUrl) {
+    try {
+      const cancelBtn = page.getByRole('button', { name: /Cancel|Close/i }).first();
+      if (await cancelBtn.isVisible()) {
+        await cancelBtn.click();
+        await page.waitForTimeout(300);
+        return;
+      }
+    } catch {}
+    if (fallbackUrl) {
+      await page.goto(fallbackUrl);
+      await page.waitForLoadState('networkidle');
+    }
+  }
+
   // 1. Capture Login Screen
-  console.log('Capturing 1/22: auth-login-screen.webp');
-  await page.goto(`${BASE_URL}/auth/login`);
+  console.log('\n[1/26] Capturing auth-login-screen.webp...');
+  await page.goto(`${BASE_URL}/auth/login/`);
   await page.waitForLoadState('networkidle');
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'auth-login-screen.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.locator('#email').waitFor({ state: 'visible', timeout: 10000 });
+  await takeScreenshot('auth-login-screen.webp');
 
   // Authenticate as Owner
   console.log('Authenticating as owner@blueharbor.local...');
@@ -74,277 +131,215 @@ async function capture() {
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });
 
   // 2. Capture POS Main Screen
-  console.log('Capturing 2/22: pos-main-screen.webp');
-  await page.goto(`${BASE_URL}/pos`);
+  console.log('\n[2/26] Capturing pos-main-screen.webp...');
+  await page.goto(`${BASE_URL}/pos/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(1000);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'pos-main-screen.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.locator('text=Caffè Latte').first().waitFor({ state: 'visible', timeout: 10000 });
+  await takeScreenshot('pos-main-screen.webp');
 
   // 3. Capture Item Customizer Modal
-  console.log('Capturing 3/22: pos-cart-customizer.webp');
+  console.log('\n[3/26] Capturing pos-cart-customizer.webp...');
   const latteCard = page.locator('text=Caffè Latte').first();
-  if (await latteCard.isVisible()) {
-    await latteCard.click();
-    await page.waitForTimeout(600);
-    await page.screenshot({
-      path: path.join(OUTPUT_DIR, 'pos-cart-customizer.webp'),
-      type: 'webp',
-      quality: 90,
-    });
-
-    // Cleanly navigate back to /pos to clear modal overlay
-    await page.goto(`${BASE_URL}/pos`);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(500);
-  }
+  await latteCard.click();
+  await page.waitForTimeout(600);
+  await takeScreenshot('pos-cart-customizer.webp');
+  // Cleanly navigate back to /pos to clear modal overlay
+  await page.goto(`${BASE_URL}/pos/`);
+  await page.waitForLoadState('networkidle');
 
   // 4. Capture POS Checkout Modal
-  console.log('Capturing 4/22: pos-checkout-modal.webp');
+  console.log('\n[4/26] Capturing pos-checkout-modal.webp...');
   const croissantCard = page.locator('text=Butter Croissant').first();
-  if (await croissantCard.isVisible()) {
-    await croissantCard.click();
-    await page.waitForTimeout(500);
-  }
+  await croissantCard.waitFor({ state: 'visible', timeout: 5000 });
+  await croissantCard.click();
+  await page.waitForTimeout(500);
   const placeOrderBtn = page.getByRole('button', { name: /Place Order/i }).first();
-  if (await placeOrderBtn.isVisible()) {
-    await placeOrderBtn.click();
-    await page.waitForTimeout(800);
-    await page.screenshot({
-      path: path.join(OUTPUT_DIR, 'pos-checkout-modal.webp'),
-      type: 'webp',
-      quality: 90,
-    });
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
-  }
+  await placeOrderBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await placeOrderBtn.click();
+  await page.waitForTimeout(800);
+  await takeScreenshot('pos-checkout-modal.webp');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
 
   // 5. Capture Orders Dashboard
-  console.log('Capturing 5/22: orders-dashboard.webp');
-  await page.goto(`${BASE_URL}/orders`);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'orders-dashboard.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 6. Capture Tables & Floor Plan
-  console.log('Capturing 6/22: tables-floorplan.webp');
-  await page.goto(`${BASE_URL}/tables`);
+  console.log('\n[5/26] Capturing orders-dashboard.webp...');
+  await page.goto(`${BASE_URL}/orders/`);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(600);
+  await takeScreenshot('orders-dashboard.webp');
+
+  // 6. Capture Tables & Floor Plan
+  console.log('\n[6/26] Capturing tables-floorplan.webp...');
+  await page.goto(`${BASE_URL}/tables/`);
+  await page.waitForLoadState('networkidle');
   const floorPlanBtn = page.getByRole('button', { name: /Floor plan/i });
   if (await floorPlanBtn.isVisible()) {
     await floorPlanBtn.click();
     await page.waitForTimeout(500);
   }
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'tables-floorplan.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await takeScreenshot('tables-floorplan.webp');
 
   // 7. Capture Products Management
-  console.log('Capturing 7/22: products-management.webp');
-  await page.goto(`${BASE_URL}/products`);
+  console.log('\n[7/26] Capturing products-management.webp...');
+  await page.goto(`${BASE_URL}/products/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'products-management.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 10000 });
+  await takeScreenshot('products-management.webp');
 
-  // 8. Capture Product Edit Form
-  console.log('Capturing 8/22: product-edit-form.webp');
-  const editBtn = page.locator('button[aria-label*="Edit"], button:has-text("Edit")').first();
-  if (await editBtn.isVisible()) {
-    await editBtn.click();
-    await page.waitForTimeout(600);
-    await page.screenshot({
-      path: path.join(OUTPUT_DIR, 'product-edit-form.webp'),
-      type: 'webp',
-      quality: 90,
-    });
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
-  }
+  // 8. Capture Product Create Modal (tutorial step)
+  console.log('\n[8/26] Capturing product-create-modal.webp...');
+  const addProdBtn = page.getByRole('button', { name: /Add Product/i });
+  await addProdBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await addProdBtn.click();
+  await page.locator('form#product-form').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(400);
+  await takeScreenshot('product-create-modal.webp');
+  await closeDialog(`${BASE_URL}/products/`);
 
-  // 9. Capture Add-on Groups Manager
-  console.log('Capturing 9/22: addon-groups-manager.webp');
-  await page.goto(`${BASE_URL}/addon-groups`);
+  // 9. Capture Product Edit Form
+  console.log('\n[9/26] Capturing product-edit-form.webp...');
+  await page.goto(`${BASE_URL}/products/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'addon-groups-manager.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  const editBtn = page.locator('table tbody tr button:has(svg.lucide-pencil)').first();
+  await editBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await editBtn.click();
+  await page.locator('form#product-form').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(400);
+  await takeScreenshot('product-edit-form.webp');
+  await closeDialog(`${BASE_URL}/products/`);
 
-  // 10. Capture Inventory & Supplies Ledger
-  console.log('Capturing 10/22: inventory-supplies-ledger.webp');
-  await page.goto(`${BASE_URL}/inventory`);
+  // 10. Capture Add-on Groups Tab (Integrated into Products -> Add-on Groups)
+  console.log('\n[10/26] Capturing products-addon-groups.webp...');
+  await page.goto(`${BASE_URL}/products/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'inventory-supplies-ledger.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  const addonsTab = page.getByRole('tab', { name: /Addon Groups/i }).first();
+  await addonsTab.waitFor({ state: 'visible', timeout: 5000 });
+  await addonsTab.click();
+  await page.locator('table tbody tr').first().waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(600);
+  await takeScreenshot('products-addon-groups.webp');
 
-  // 11. Capture Staff & Permissions
-  console.log('Capturing 11/22: staff-roles-permissions.webp');
-  await page.goto(`${BASE_URL}/staff`);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'staff-roles-permissions.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  // 11. Capture Add-on Group Create Modal (tutorial step)
+  console.log('\n[11/26] Capturing addon-group-create-modal.webp...');
+  const addGroupBtn = page.getByRole('button', { name: /Add Addon Group/i }).first();
+  await addGroupBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await addGroupBtn.click();
+  await page
+    .locator('h2:has-text("Add Addon Group"), h3:has-text("Add Addon Group"), input')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(500);
+  await takeScreenshot('addon-group-create-modal.webp');
+  await closeDialog(`${BASE_URL}/products/`);
 
-  // 12. Capture Customers & Loyalty
-  console.log('Capturing 12/22: customers-loyalty-screen.webp');
-  await page.goto(`${BASE_URL}/customers`);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'customers-loyalty-screen.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 13. Capture Sales Dashboard & Reports
-  console.log('Capturing 13/22: reports-sales-dashboard.webp');
-  await page.goto(`${BASE_URL}/dashboard`);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'reports-sales-dashboard.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 14. Capture Expenses Ledger
-  console.log('Capturing 14/22: expenses-ledger.webp');
-  await page.goto(`${BASE_URL}/expenses`);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'expenses-ledger.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 15. Capture Settings - Printers
-  console.log('Capturing 15/22: settings-printers.webp');
-  await page.goto(`${BASE_URL}/settings`);
+  // 12. Capture Inventory & Supplies Ledger
+  console.log('\n[12/26] Capturing inventory-supplies-ledger.webp...');
+  await page.goto(`${BASE_URL}/inventory/`);
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(600);
-  const printersTab = page
-    .locator('button:has-text("Printers"), [role="tab"]:has-text("Printers")')
-    .first();
-  if (await printersTab.isVisible()) {
-    await printersTab.click();
-    await page.waitForTimeout(600);
-  }
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'settings-printers.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await takeScreenshot('inventory-supplies-ledger.webp');
 
-  // 16. Capture Settings - Taxes & Localization
-  console.log('Capturing 16/22: settings-taxes-locale.webp');
-  const taxTab = page
-    .locator(
-      'button:has-text("Tax"), [role="tab"]:has-text("Tax"), button:has-text("Store"), [role="tab"]:has-text("Store")',
-    )
-    .first();
-  if (await taxTab.isVisible()) {
-    await taxTab.click();
-    await page.waitForTimeout(600);
-  }
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'settings-taxes-locale.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 17. Capture Settings - Backups & Database
-  console.log('Capturing 17/22: backups-restore-screen.webp');
-  const backupTab = page
-    .locator(
-      'button:has-text("Backup"), [role="tab"]:has-text("Backup"), button:has-text("Database"), [role="tab"]:has-text("Database")',
-    )
-    .first();
-  if (await backupTab.isVisible()) {
-    await backupTab.click();
-    await page.waitForTimeout(600);
-  }
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'backups-restore-screen.webp'),
-    type: 'webp',
-    quality: 90,
-  });
-
-  // 18. Capture Support & Diagnostics
-  console.log('Capturing 18/22: support-diagnostics-screen.webp');
-  await page.goto(`${BASE_URL}/support`);
+  // 13. Capture Staff & Permissions
+  console.log('\n[13/26] Capturing staff-roles-permissions.webp...');
+  await page.goto(`${BASE_URL}/staff/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'support-diagnostics-screen.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.waitForTimeout(600);
+  await takeScreenshot('staff-roles-permissions.webp');
 
-  // 19. Capture Print Test Page
-  console.log('Capturing 19/22: print-test-page.webp');
-  await page.goto(`${BASE_URL}/print-test`);
+  // 14. Capture Customers & Loyalty
+  console.log('\n[14/26] Capturing customers-loyalty-screen.webp...');
+  await page.goto(`${BASE_URL}/customers/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'print-test-page.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.waitForTimeout(600);
+  await takeScreenshot('customers-loyalty-screen.webp');
 
-  // 20. Capture Customer Display Board
-  console.log('Capturing 20/22: customer-display-board.webp');
-  await page.goto(`${BASE_URL}/customer-display`);
+  // 15. Capture Sales Dashboard & Reports
+  console.log('\n[15/26] Capturing reports-sales-dashboard.webp...');
+  await page.goto(`${BASE_URL}/dashboard/`);
   await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(800);
-  await page.screenshot({
-    path: path.join(OUTPUT_DIR, 'customer-display-board.webp'),
-    type: 'webp',
-    quality: 90,
-  });
+  await page.waitForTimeout(600);
+  await takeScreenshot('reports-sales-dashboard.webp');
 
-  // 21. Capture Standalone KDS View (Port 3102)
-  console.log('Capturing 21/22: kds-station-view.webp');
+  // 16. Capture Expenses Ledger
+  console.log('\n[16/26] Capturing expenses-ledger.webp...');
+  await page.goto(`${BASE_URL}/expenses/`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('expenses-ledger.webp');
+
+  // 17. Capture Settings - Printers (Real printer settings UI with Test print button)
+  console.log('\n[17/26] Capturing settings-printers.webp...');
+  await page.goto(`${BASE_URL}/settings/?tab=printers`);
+  await page.waitForLoadState('networkidle');
+  await page
+    .locator('button:has-text("Add Manually")')
+    .waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(600);
+  await takeScreenshot('settings-printers.webp');
+
+  // 18. Capture Settings - Printer Add Modal (tutorial step)
+  console.log('\n[18/26] Capturing settings-printer-add-modal.webp...');
+  const addPrinterBtn = page.getByRole('button', { name: /Add Manually/i }).first();
+  await addPrinterBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await addPrinterBtn.click();
+  await page.locator('input, select').first().waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(500);
+  await takeScreenshot('settings-printer-add-modal.webp');
+  await closeDialog(`${BASE_URL}/settings/?tab=printers`);
+
+  // 19. Capture Settings - Receipt Customization
+  console.log('\n[19/26] Capturing settings-receipt-customization.webp...');
+  await page.goto(`${BASE_URL}/settings/?tab=store`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('settings-receipt-customization.webp');
+
+  // 20. Capture Settings - WhatsApp
+  console.log('\n[20/26] Capturing settings-whatsapp.webp...');
+  await page.goto(`${BASE_URL}/settings/?tab=whatsapp`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('settings-whatsapp.webp');
+
+  // 21. Capture Settings - Taxes & Localization
+  console.log('\n[21/26] Capturing settings-taxes-locale.webp...');
+  await page.goto(`${BASE_URL}/settings/?tab=tax`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('settings-taxes-locale.webp');
+
+  // 22. Capture Settings - Backups & Database
+  console.log('\n[22/26] Capturing backups-restore-screen.webp...');
+  await page.goto(`${BASE_URL}/settings/?tab=data`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('backups-restore-screen.webp');
+
+  // 23. Capture Support & Diagnostics
+  console.log('\n[23/26] Capturing support-diagnostics-screen.webp...');
+  await page.goto(`${BASE_URL}/support/`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('support-diagnostics-screen.webp');
+
+  // 24. Capture Customer Display Board
+  console.log('\n[24/26] Capturing customer-display-board.webp...');
+  await page.goto(`${BASE_URL}/customer-display/`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(600);
+  await takeScreenshot('customer-display-board.webp');
+
+  // 25. Capture Standalone KDS View (Port 3102)
+  console.log('\n[25/26] Capturing kds-station-view.webp...');
   const kdsPage = await desktopContext.newPage();
-  try {
-    await kdsPage.goto(`${KDS_URL}/kds-standalone/`, { timeout: 10000 });
-    await kdsPage.waitForLoadState('networkidle');
-    await kdsPage.waitForTimeout(1000);
-    await kdsPage.screenshot({
-      path: path.join(OUTPUT_DIR, 'kds-station-view.webp'),
-      type: 'webp',
-      quality: 90,
-    });
-  } catch (err) {
-    console.warn('KDS screenshot note:', err.message);
-  }
+  await kdsPage.goto(`${KDS_URL}/kds-standalone/`, { timeout: 15000 });
+  await kdsPage.waitForLoadState('networkidle');
+  await kdsPage.waitForTimeout(1000);
+  await takeScreenshot('kds-station-view.webp', kdsPage);
   await kdsPage.close();
 
-  // 22. Capture Mobile Server App (Port 3103 in iPhone viewport)
-  console.log('Capturing 22/22: server-app-mobile.webp');
+  // 26. Capture Mobile Server App (Port 3103 in iPhone viewport)
+  console.log('\n[26/26] Capturing server-app-mobile.webp...');
   const mobileContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
@@ -352,28 +347,62 @@ async function capture() {
     deviceScaleFactor: 2,
   });
   const mobilePage = await mobileContext.newPage();
-  try {
-    await mobilePage.goto(`${SERVER_APP_URL}/server-standalone/`, { timeout: 10000 });
-    await mobilePage.waitForLoadState('networkidle');
-    await mobilePage.waitForTimeout(1000);
-    await mobilePage.screenshot({
-      path: path.join(OUTPUT_DIR, 'server-app-mobile.webp'),
-      type: 'webp',
-      quality: 90,
-    });
-  } catch (err) {
-    console.warn('Server App screenshot note:', err.message);
-  }
+  await mobilePage.goto(`${SERVER_APP_URL}/server-standalone/`, { timeout: 15000 });
+  await mobilePage.waitForLoadState('networkidle');
+  await mobilePage.waitForTimeout(1000);
+  await takeScreenshot('server-app-mobile.webp', mobilePage);
   await mobileContext.close();
 
   await browser.close();
+
+  // Clean up obsolete developer/synthetic test screenshots from public assets
+  const obsoleteFiles = ['print-test-page.webp', 'addon-groups-manager.webp'];
+  for (const obs of obsoleteFiles) {
+    const obsPath = path.join(OUTPUT_DIR, obs);
+    if (fs.existsSync(obsPath)) {
+      fs.unlinkSync(obsPath);
+      console.log(`  ✓ Removed obsolete screenshot: ${obs}`);
+    }
+  }
+
+  // Strict output verification
+  console.log('\n' + '='.repeat(60));
+  console.log('Verifying Generated Screenshot Assets...');
   console.log('='.repeat(60));
-  console.log('All 22 documentation screenshots captured successfully!');
-  console.log(`Files located in: ${OUTPUT_DIR}`);
+
+  const missingFiles = [];
+  const emptyFiles = [];
+
+  for (const filename of REQUIRED_SCREENSHOTS) {
+    const filePath = path.join(OUTPUT_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      missingFiles.push(filename);
+    } else {
+      const stats = fs.statSync(filePath);
+      if (stats.size < 1000) {
+        emptyFiles.push(`${filename} (${stats.size} bytes)`);
+      } else {
+        console.log(`  ✓ Verified: ${filename} (${Math.round(stats.size / 1024)} KB)`);
+      }
+    }
+  }
+
+  if (missingFiles.length > 0 || emptyFiles.length > 0) {
+    console.error('\n❌ Screenshot capture verification FAILED:');
+    if (missingFiles.length > 0) console.error('  Missing files:', missingFiles);
+    if (emptyFiles.length > 0) console.error('  Empty/Corrupt files:', emptyFiles);
+    process.exit(1);
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log(
+    `SUCCESS: All ${REQUIRED_SCREENSHOTS.length} documentation screenshots captured & verified!`,
+  );
+  console.log(`Assets directory: ${OUTPUT_DIR}`);
   console.log('='.repeat(60));
 }
 
 capture().catch((err) => {
-  console.error('Screenshot capture failed:', err);
+  console.error('\n❌ Screenshot capture failed with fatal error:', err);
   process.exit(1);
 });

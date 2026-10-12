@@ -25,6 +25,8 @@
     "docs:check": "npm run docs:check:structure && npm run docs:check:policy",
     "docs:check:structure": "markdownlint-cli2 && node scripts/docs/check-docs.cjs --links --index",
     "docs:check:policy": "node scripts/docs/check-docs.cjs --policy",
+    "docs:demo": "node scripts/docs/demo-server.cjs",
+    "docs:screenshots": "node scripts/docs/capture-screenshots.cjs",
     "build:frontend": "node scripts/build-frontend.cjs",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron && node scripts/prepare-snap-build.cjs",

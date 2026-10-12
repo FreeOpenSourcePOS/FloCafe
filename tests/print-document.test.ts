@@ -1142,4 +1142,34 @@ console.log('\n▶ Kernel purity (static import audit)');
   ok('shared/print/document.ts imports only kernel-relative modules');
 }
 
+// ---------------------------------------------------------------------------
+// Terminal-status items never print on a bill
+// ---------------------------------------------------------------------------
+
+{
+  const { order, bill, business } = buildParityFixtures();
+  const live = order.items.length;
+  assert(live > 0, 'fixture has items');
+  const statuses = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
+  const withTerminal = {
+    ...order,
+    items: [
+      ...order.items,
+      ...statuses.map((status, index) => ({
+        ...order.items[0],
+        id: 9000 + index,
+        product_name: `Removed ${status}`,
+        status,
+      })),
+    ],
+  };
+  const printData = buildBillPrintData(withTerminal, bill, business, false);
+  assert.equal(printData.order.items.length, live, 'terminal-status items are excluded');
+  assert(
+    printData.order.items.every((item) => !item.productName.startsWith('Removed')),
+    'removed item names never reach the bill',
+  );
+  ok('cancelled, voided, void_adjustment and refunded items are excluded from the bill');
+}
+
 console.log(`\nPrintDocument unit tests: ${passed} checks passed.`);

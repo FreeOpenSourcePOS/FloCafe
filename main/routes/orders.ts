@@ -57,6 +57,7 @@ import {
 } from './orders-validation';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
 import expressRateLimit from 'express-rate-limit';
@@ -708,6 +709,202 @@ function summarizeWhatsAppReceiptStatuses(statuses: (string | null)[]): WhatsApp
   if (statuses.some((status) => status === 'queued' || status === 'typing')) return 'pending';
   if (statuses.some((status) => status === 'failed')) return 'failed';
   return null;
+}
+
+function insertOrderItems(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+  items: any[],
+  context: {
+    tenantInfo: Parameters<typeof calculateItemTax>[0];
+    customer: any;
+    isOnlineOrder: boolean;
+    actorUserId: string;
+    initialStatus?: string;
+    preserveUnitPrice?: boolean;
+  },
+): (number | bigint)[] {
+  const { tenantInfo, customer, isOnlineOrder, actorUserId } = context;
+  const initialStatus = context.initialStatus ?? 'pending';
+  const insertItem = db.prepare(`
+  INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
+    subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
+    modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+  const insertedItemIds: (number | bigint)[] = [];
+  for (const item of items) {
+    const product = db
+      .prepare('SELECT * FROM products WHERE id = ?')
+      .get(item.product_id) as any;
+    if (!product) {
+      throw Object.assign(new Error(`Product ${item.product_id} not found`), {
+        statusCode: 404,
+      });
+    }
+    const quantity = item.quantity;
+    // Item discounts are applied via dedicated discount routes, not creation.
+    const itemDiscount = 0;
+
+    // Validate quantity and price
+    validateProductQuantity(product, quantity);
+    const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
+    const unitPrice = context.preserveUnitPrice
+      ? Number(item.unit_price)
+      : variant
+        ? variantUnitPrice(variant, isOnlineOrder)
+        : parseFloat(product.price);
+    const deduction = resolveInventoryDeduction(product, quantity, variant);
+    if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
+      throw Object.assign(
+        new Error(`Invalid price for ${product.name}: must be a non-negative number`),
+        { statusCode: 400 },
+      );
+    }
+
+    let itemSubtotal = unitPrice * quantity;
+    if (item.addons && Array.isArray(item.addons)) {
+      for (const addon of item.addons) {
+        if (!addon) continue;
+        if (addon.quantity !== undefined) {
+          if (
+            typeof addon.quantity !== 'number' ||
+            !Number.isInteger(addon.quantity) ||
+            addon.quantity <= 0
+          ) {
+            throw Object.assign(
+              new Error(
+                `Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`,
+              ),
+              { statusCode: 400 },
+            );
+          }
+        }
+        const addonQty = addon.quantity || 1;
+        itemSubtotal += (addon.price || 0) * addonQty * quantity;
+      }
+    }
+    itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
+
+    const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
+    const itemTotal =
+      itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
+    const itemTaxSnapshotJson = taxResult.tax_snapshot
+      ? JSON.stringify(taxResult.tax_snapshot)
+      : null;
+
+    const itemCreatedAt = now();
+    const recipeSnapshot = buildRecipeSnapshot(
+      db,
+      product.id,
+      quantity,
+      variant?.recipe_multiplier ?? 1,
+    );
+    const insertItemResult = insertItem.run(
+      orderId,
+      product.id,
+      variant ? variant.id : null,
+      product.name,
+      product.sku,
+      unitPrice,
+      quantity,
+      deduction ? deduction.deductedQuantity : 0,
+      deduction ? deduction.productId : null,
+      deduction?.variantId ?? null,
+      itemSubtotal,
+      taxResult.tax_amount,
+      JSON.stringify(taxResult.tax_breakdown),
+      itemTaxSnapshotJson,
+      taxResult.tax_type,
+      itemDiscount,
+      itemTotal,
+      variant
+        ? variantSelectionSnapshot(variant)
+        : JSON.stringify(item.variant_selection || null),
+      JSON.stringify(item.modifier_selection || null),
+      item.special_instructions || null,
+      recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
+      initialStatus,
+      itemCreatedAt,
+      itemCreatedAt,
+    );
+    insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
+    insertedItemIds.push(insertItemResult.lastInsertRowid);
+
+    if (deduction) {
+      adjustProductStock(db, {
+        productId: deduction.productId,
+        variantId: deduction.variantId ?? null,
+        quantityDelta: -deduction.deductedQuantity,
+        movementType: 'sale',
+        referenceType: 'order_item',
+        referenceId: String(insertItemResult.lastInsertRowid),
+        actorUserId: actorUserId,
+        createdAt: itemCreatedAt,
+      });
+    }
+    moveOrderItemAddonStock(db, item.addons, {
+      direction: 'deplete',
+      actorUserId: actorUserId,
+      referenceId: String(insertItemResult.lastInsertRowid),
+      createdAt: itemCreatedAt,
+    });
+
+    if (recipeSnapshot) {
+      applyRecipeSnapshot(db, recipeSnapshot, {
+        direction: 'deplete',
+        actorUserId: actorUserId,
+        referenceId: String(insertItemResult.lastInsertRowid),
+        createdAt: itemCreatedAt,
+      });
+    }
+  }
+  return insertedItemIds;
+}
+
+function cancelOrderItemAndRestoreStock(
+  db: ReturnType<typeof getDatabase>,
+  currentItem: any,
+  actorId: string,
+  reason: string | undefined,
+): void {
+  // Cancel the item and restore the inventory quantity recorded when it was added.
+  db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?").run(
+    now(),
+    currentItem.id,
+  );
+
+  const inventoryTarget =
+    currentItem.inventory_deducted_quantity > 0
+      ? orderItemInventoryTarget(db, currentItem)
+      : null;
+  if (inventoryTarget) {
+    adjustProductStock(db, {
+      productId: inventoryTarget.productId,
+      variantId: inventoryTarget.variantId,
+      quantityDelta: currentItem.inventory_deducted_quantity,
+      movementType: 'cancel_restore',
+      referenceType: 'order_item',
+      referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+      reason: reason || 'Item cancelled',
+      actorUserId: actorId,
+    });
+  }
+  moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
+    direction: 'restore',
+    actorUserId: actorId,
+    referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+    reason: reason || 'Item cancelled',
+  });
+  const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
+  if (recipeSnapshot) {
+    applyRecipeSnapshot(db, recipeSnapshot, {
+      direction: 'restore',
+      actorUserId: actorId,
+      referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+    });
+  }
 }
 
 function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
@@ -1740,137 +1937,12 @@ router.post(
           : null;
         const isOnlineOrder = !!currentOrder.online_platform;
 
-        const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, variant_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id, inventory_variant_id,
-          subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `);
-
-        const insertedItemIds: (number | bigint)[] = [];
-        for (const item of items) {
-          const product = db
-            .prepare('SELECT * FROM products WHERE id = ?')
-            .get(item.product_id) as any;
-          if (!product) {
-            throw Object.assign(new Error(`Product ${item.product_id} not found`), {
-              statusCode: 404,
-            });
-          }
-          const quantity = item.quantity;
-          // Item discounts are applied via dedicated discount routes, not creation.
-          const itemDiscount = 0;
-
-          // Validate quantity and price
-          validateProductQuantity(product, quantity);
-          const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
-          const unitPrice = variant
-            ? variantUnitPrice(variant, isOnlineOrder)
-            : parseFloat(product.price);
-          const deduction = resolveInventoryDeduction(product, quantity, variant);
-          if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-            throw Object.assign(
-              new Error(`Invalid price for ${product.name}: must be a non-negative number`),
-              { statusCode: 400 },
-            );
-          }
-
-          let itemSubtotal = unitPrice * quantity;
-          if (item.addons && Array.isArray(item.addons)) {
-            for (const addon of item.addons) {
-              if (!addon) continue;
-              if (addon.quantity !== undefined) {
-                if (
-                  typeof addon.quantity !== 'number' ||
-                  !Number.isInteger(addon.quantity) ||
-                  addon.quantity <= 0
-                ) {
-                  throw Object.assign(
-                    new Error(
-                      `Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`,
-                    ),
-                    { statusCode: 400 },
-                  );
-                }
-              }
-              const addonQty = addon.quantity || 1;
-              itemSubtotal += (addon.price || 0) * addonQty * quantity;
-            }
-          }
-          itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
-
-          const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
-          const itemTotal =
-            itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
-          const itemTaxSnapshotJson = taxResult.tax_snapshot
-            ? JSON.stringify(taxResult.tax_snapshot)
-            : null;
-
-          const itemCreatedAt = now();
-          const recipeSnapshot = buildRecipeSnapshot(
-            db,
-            product.id,
-            quantity,
-            variant?.recipe_multiplier ?? 1,
-          );
-          const insertItemResult = insertItem.run(
-            req.params.id,
-            product.id,
-            variant ? variant.id : null,
-            product.name,
-            product.sku,
-            unitPrice,
-            quantity,
-            deduction ? deduction.deductedQuantity : 0,
-            deduction ? deduction.productId : null,
-            deduction?.variantId ?? null,
-            itemSubtotal,
-            taxResult.tax_amount,
-            JSON.stringify(taxResult.tax_breakdown),
-            itemTaxSnapshotJson,
-            taxResult.tax_type,
-            itemDiscount,
-            itemTotal,
-            variant
-              ? variantSelectionSnapshot(variant)
-              : JSON.stringify(item.variant_selection || null),
-            JSON.stringify(item.modifier_selection || null),
-            item.special_instructions || null,
-            recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
-            itemCreatedAt,
-            itemCreatedAt,
-          );
-          insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
-          insertedItemIds.push(insertItemResult.lastInsertRowid);
-
-          if (deduction) {
-            adjustProductStock(db, {
-              productId: deduction.productId,
-              variantId: deduction.variantId ?? null,
-              quantityDelta: -deduction.deductedQuantity,
-              movementType: 'sale',
-              referenceType: 'order_item',
-              referenceId: String(insertItemResult.lastInsertRowid),
-              actorUserId: idempotencyUserId,
-              createdAt: itemCreatedAt,
-            });
-          }
-          moveOrderItemAddonStock(db, item.addons, {
-            direction: 'deplete',
-            actorUserId: idempotencyUserId,
-            referenceId: String(insertItemResult.lastInsertRowid),
-            createdAt: itemCreatedAt,
-          });
-
-          if (recipeSnapshot) {
-            applyRecipeSnapshot(db, recipeSnapshot, {
-              direction: 'deplete',
-              actorUserId: idempotencyUserId,
-              referenceId: String(insertItemResult.lastInsertRowid),
-              createdAt: itemCreatedAt,
-            });
-          }
-        }
+        const insertedItemIds = insertOrderItems(db, req.params.id as string, items, {
+          tenantInfo,
+          customer,
+          isOnlineOrder,
+          actorUserId: idempotencyUserId,
+        });
 
         // BUG #3 FIX: Filter out terminal items from total recalculation.
         const totals = calculateOrderTotals(db, req.params.id as string);
@@ -3596,41 +3668,7 @@ router.patch(
             "UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?",
           ).run(now(), now(), itemId);
         } else {
-          // Cancel the item and restore the inventory quantity recorded when it was added.
-          db.prepare(
-            "UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?",
-          ).run(now(), itemId);
-
-          const inventoryTarget =
-            currentItem.inventory_deducted_quantity > 0
-              ? orderItemInventoryTarget(db, currentItem)
-              : null;
-          if (inventoryTarget) {
-            adjustProductStock(db, {
-              productId: inventoryTarget.productId,
-              variantId: inventoryTarget.variantId,
-              quantityDelta: currentItem.inventory_deducted_quantity,
-              movementType: 'cancel_restore',
-              referenceType: 'order_item',
-              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-              reason: reason || 'Item cancelled',
-              actorUserId: actorId,
-            });
-          }
-          moveOrderItemAddonStock(db, orderItemAddonStockLines(db, currentItem.id), {
-            direction: 'restore',
-            actorUserId: actorId,
-            referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-            reason: reason || 'Item cancelled',
-          });
-          const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
-          if (recipeSnapshot) {
-            applyRecipeSnapshot(db, recipeSnapshot, {
-              direction: 'restore',
-              actorUserId: actorId,
-              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
-            });
-          }
+          cancelOrderItemAndRestoreStock(db, currentItem, actorId, reason);
         }
 
         // Recalculate order totals excluding terminal items.
@@ -3801,6 +3839,268 @@ router.patch(
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
       console.error('[API] Internal error:', error);
+      res
+        .status(error.statusCode || 500)
+        .json({ error: error.statusCode ? error.message : 'Internal server error' });
+    }
+  },
+);
+
+// Owner-only edit of a live order line: change its quantity or swap it for another product.
+router.patch(
+  '/:orderId/items/:itemId/edit',
+  orderWriteRateLimit,
+  requirePermission('orders.item.edit'),
+  (req: Request, res: Response) => {
+    try {
+      const orderId = String(req.params.orderId);
+      const itemId = String(req.params.itemId);
+      const actorId = String((req as any).user?.userId || '');
+      if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+
+      const { quantity, replacement, reason } = req.body || {};
+      const hasQuantity = quantity !== undefined;
+      if (hasQuantity === (replacement !== undefined)) {
+        return res.status(400).json({ error: 'Provide either quantity or replacement' });
+      }
+      if (reason !== undefined && (typeof reason !== 'string' || reason.length > 200)) {
+        return res.status(400).json({ error: 'reason must be a string of at most 200 characters' });
+      }
+
+      const db = getDatabase();
+      const result = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        if (!currentOrder) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+        const oldItem = db
+          .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+          .get(itemId, orderId) as any;
+        if (!oldItem) {
+          throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+        }
+        if (isTerminalItemStatus(oldItem.status)) {
+          throw Object.assign(new Error('This item can no longer be edited'), { statusCode: 400 });
+        }
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(new Error('Cannot edit items on completed or cancelled orders'), {
+            statusCode: 400,
+          });
+        }
+        const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as any[];
+        if (bills.some((bill) => bill.split_group_id)) {
+          throw Object.assign(new Error('Items cannot be changed after a check has been split'), {
+            statusCode: 409,
+          });
+        }
+        if (
+          bills.some((bill) =>
+            ['paid', 'refunded', 'partially_refunded'].includes(bill.payment_status),
+          )
+        ) {
+          throw Object.assign(new Error('Cannot edit items on a paid or refunded order'), {
+            statusCode: 409,
+          });
+        }
+
+        const tenantInfo = {
+          country: getSettingValue('country') || '',
+          business_type: getSettingValue('business_type') || 'restaurant',
+          state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+        };
+        const customer = currentOrder.customer_id
+          ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any)
+          : null;
+        const oldAddons = db
+          .prepare('SELECT * FROM order_item_addons WHERE order_item_id = ? ORDER BY id')
+          .all(oldItem.id) as any[];
+
+        let newItem: any;
+        let keepOldLine = false;
+        let initialStatus = 'pending';
+        let preserveUnitPrice = false;
+        if (hasQuantity) {
+          const newQuantity = Number(quantity);
+          if (!Number.isFinite(newQuantity) || newQuantity <= 0) {
+            throw Object.assign(new Error('quantity must be a positive number'), {
+              statusCode: 400,
+            });
+          }
+          const oldQuantity = Number(oldItem.quantity);
+          if (newQuantity === oldQuantity) {
+            throw Object.assign(new Error('Quantity is unchanged'), { statusCode: 400 });
+          }
+          // Extra quantity on a line the kitchen already started is a new kitchen line; the
+          // original line stays as it is.
+          const addsToStartedLine = newQuantity > oldQuantity && oldItem.status !== 'pending';
+          keepOldLine = addsToStartedLine;
+          initialStatus = newQuantity < oldQuantity ? oldItem.status : 'pending';
+          const lineQuantity = addsToStartedLine ? newQuantity - oldQuantity : newQuantity;
+          const parsedOld = parseItemJson(oldItem);
+          newItem = {
+            product_id: oldItem.product_id,
+            variant_id: oldItem.variant_id,
+            quantity: lineQuantity,
+            unit_price: oldItem.unit_price,
+            variant_selection: parsedOld.variant_selection,
+            modifier_selection: parsedOld.modifier_selection,
+            special_instructions: oldItem.special_instructions,
+            addons: oldAddons.map((addon) => ({
+              id: addon.addon_id,
+              name: addon.addon_name,
+              price: addon.price,
+              quantity: addon.quantity,
+            })),
+          };
+          preserveUnitPrice = true;
+        } else {
+          if (!replacement || typeof replacement !== 'object' || Array.isArray(replacement)) {
+            throw Object.assign(new Error('replacement must be an item object'), {
+              statusCode: 400,
+            });
+          }
+          newItem = { ...replacement };
+        }
+
+        try {
+          validateItemNotes(db, newItem.special_instructions);
+          const resolved = resolveItemAddons(db, newItem.product_id, newItem.addons, newItem.quantity);
+          if (preserveUnitPrice && Array.isArray(resolved)) {
+            const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
+            for (const addon of resolved as any[]) {
+              if (originalPrice.has(addon.id)) addon.price = originalPrice.get(addon.id);
+            }
+          }
+          newItem.addons = resolved;
+        } catch (err: unknown) {
+          throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid item'), {
+            statusCode: 400,
+          });
+        }
+
+        if (!keepOldLine) cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason);
+        const [newItemId] = insertOrderItems(db, orderId, [newItem], {
+          tenantInfo,
+          customer,
+          isOnlineOrder: !!currentOrder.online_platform,
+          actorUserId: actorId,
+          initialStatus,
+          preserveUnitPrice,
+        });
+
+        const orderTotals = calculateOrderTotals(db, orderId);
+        const { subtotal } = orderTotals;
+        const decimals = getCurrencyFractionDigits(tenantInfo.currency);
+        let newDiscountAmount = currentOrder.discount_amount || 0;
+        if (
+          newDiscountAmount > 0 &&
+          currentOrder.subtotal > 0 &&
+          currentOrder.discount_type === 'percentage'
+        ) {
+          newDiscountAmount = Number(
+            ((subtotal * (currentOrder.discount_value || 0)) / 100).toFixed(decimals),
+          );
+        }
+        const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);
+        const { taxRollup, total, roundOff } = recomputeOrderTotals({
+          tenantInfo,
+          chargeContext: currentOrder,
+          customer,
+          totals: orderTotals,
+          discountAmount: newDiscountAmount,
+          taxScaling: 'when-discounted',
+          appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+          chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+        });
+
+        const { total: payableTotal } = applyPayableRounding(
+          total,
+          getActiveCountryPack(tenantInfo.country),
+          tenantInfo.currency,
+        );
+        const collected = bills.reduce((sum, bill) => sum + Number(bill.paid_amount || 0), 0);
+        if (payableTotal < collected) {
+          throw Object.assign(
+            new Error('The new total is below the amount already collected; refund the difference first'),
+            { statusCode: 409 },
+          );
+        }
+
+        const serviceCharge = engineCharges
+          ? engineCharges.columns.service_charge
+          : currentOrder.service_charge || 0;
+        const packagingCharge = engineCharges
+          ? engineCharges.columns.packaging_charge
+          : currentOrder.packaging_charge || 0;
+        const chargesJson = engineCharges
+          ? engineCharges.chargesJson
+          : (currentOrder.charges_breakdown ?? null);
+        db.prepare(`
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+        `).run(
+          subtotal,
+          taxRollup.taxAmount,
+          JSON.stringify(taxRollup.breakdowns),
+          taxRollup.snapshotJson,
+          newDiscountAmount,
+          total,
+          serviceCharge,
+          packagingCharge,
+          chargesJson,
+          roundOff,
+          now(),
+          orderId,
+        );
+        syncUnpaidBillsForOrder(
+          db,
+          orderId,
+          {
+            subtotal,
+            taxAmount: taxRollup.taxAmount,
+            taxBreakdown: JSON.stringify(taxRollup.breakdowns),
+            taxSnapshot: taxRollup.snapshotJson,
+            discountAmount: newDiscountAmount,
+            deliveryCharge: currentOrder.delivery_charge || 0,
+            packagingCharge,
+            serviceCharge,
+            chargesBreakdown: chargesJson,
+            total,
+          },
+          tenantInfo.country,
+        );
+
+        recordOrderAudit(db, {
+          orderId,
+          orderItemId: itemId,
+          actorUserId: actorId,
+          action: 'item_edited',
+          details: {
+            kind: hasQuantity ? 'quantity' : 'replacement',
+            from_quantity: oldItem.quantity,
+            from_product_id: oldItem.product_id,
+            new_item_id: Number(newItemId),
+            ...(hasQuantity ? { to_quantity: Number(quantity) } : {}),
+            ...(reason ? { reason } : {}),
+          },
+        });
+
+        const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const items = attachEffectiveAddons(
+          db,
+          db
+            .prepare('SELECT * FROM order_items WHERE order_id = ?')
+            .all(orderId)
+            .map(parseItemJson) as any[],
+        );
+        return { updatedOrder, items };
+      });
+
+      cloudSync.recordOrderChanged(orderId, 'order.item_edited');
+      notifyKdsUpdate();
+      res.json({ order: { ...result.updatedOrder, items: result.items } });
+    } catch (error: any) {
+      console.error('[Orders] Edit item error:', error);
       res
         .status(error.statusCode || 500)
         .json({ error: error.statusCode ? error.message : 'Internal server error' });

@@ -34,6 +34,7 @@ import { cartVariantUnitPrice } from '@/lib/cart-price';
 import { calculateAppliedCharges } from '@/lib/charges';
 import { chargesForOrderType, useChargesStore } from '@/store/charges';
 import { getCurrencyFractionDigits } from '@countries';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 interface Props {
   tables: Table[];
@@ -446,14 +447,14 @@ export default function CartPanel({
         {/* Previously ordered items (add-items mode) */}
         {existingOrder &&
           existingOrder.items &&
-          existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
+          existingOrder.items.filter((i: OrderItem) => !isTerminalItemStatus(i.status)).length > 0 && (
             <div className="mb-3 pb-3 border-b border-dashed border-border">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 {t('alreadyOrdered')}
               </p>
               <div className="space-y-1.5">
                 {existingOrder.items
-                  .filter((i: OrderItem) => i.status !== 'cancelled')
+                  .filter((i: OrderItem) => !isTerminalItemStatus(i.status))
                   .map((item: OrderItem) => (
                     <div key={item.id} className="flex justify-between items-center">
                       <span className="text-xs text-muted-foreground">

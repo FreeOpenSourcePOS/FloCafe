@@ -12,6 +12,7 @@ import { RECEIPT_BRANDING_NAME } from './branding';
 import { printLabelResolver } from './print-document';
 import { formatItemHeading } from './item-heading';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 32 cols) or 80 mm (3.5", 42 cols). Default: 58 */
@@ -260,7 +261,7 @@ export function buildTaxBillBytes(
   safePrinterText(enc, padRow(labelFor('receipt.item'), `${labelFor('receipt.qty')} ${labelFor('receipt.rate')} ${labelFor('receipt.amount')}`, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
   enc.rule({ style: 'single' });
 
-  const items = order?.items ?? [];
+  const items = (order?.items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
   for (const item of items) {
     const line = formatItemHeading(item.product_name, item.variant_selection);
     const amount = formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos);

@@ -47,7 +47,8 @@ import {
   resolvePrinterProfile,
   capabilitiesForPrinter,
 } from '../printers/profiles';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission, requireAnyPermission } from '../services/authorization';
+import { getOpenSession } from '../services/shift-session-gate';
 import {
   formatCurrencyForTenant,
   formatDateForTenant,
@@ -169,6 +170,32 @@ function printerShape(printer: any) {
   };
 }
 
+interface DefaultPrinter {
+  id: string;
+  name: string;
+  connection_type: (typeof CONNECTION_TYPES)[number];
+  ip_address: string | null;
+  port: number | null;
+  is_default: number;
+  paper_width: string | null;
+}
+
+function printerReadinessShape(printer: DefaultPrinter) {
+  return {
+    id: printer.id,
+    name: printer.name,
+    connection_type: printer.connection_type,
+    is_default: printer.is_default,
+    readiness_state: 'configured',
+  };
+}
+
+function getDefaultPrinter(db: ReturnType<typeof getDatabase>): DefaultPrinter | undefined {
+  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as
+    | DefaultPrinter
+    | undefined;
+}
+
 // Hydrates order items with add-ons from normalized order_item_addons.
 export function getEffectiveOrderItems(db: any, orderId: string): any[] {
   return attachEffectiveAddons(
@@ -179,20 +206,29 @@ export function getEffectiveOrderItems(db: any, orderId: string): any[] {
   );
 }
 
-// GET /api/printers — list all
-router.get('/', requirePermission('printers.manage'), (_req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const printers = db
-      .prepare('SELECT * FROM printers ORDER BY is_default DESC, name')
-      .all()
-      .map(printerShape);
-    res.json({ printers });
-  } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// GET /api/printers
+router.get(
+  '/',
+  requireAnyPermission('printers.manage', 'printing.execute'),
+  (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+      const canManagePrinters = hasPermission(userId, 'printers.manage');
+      if (canManagePrinters) {
+        const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all();
+        res.json({ printers: printers.map(printerShape) });
+        return;
+      }
+
+      const defaultPrinter = getDefaultPrinter(db);
+      res.json({ printers: defaultPrinter ? [printerReadinessShape(defaultPrinter)] : [] });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // GET /api/printers/detect — detect connected USB/network printers
 router.get(
@@ -492,6 +528,131 @@ router.post(
         });
       }
     } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+// POST /api/printers/kick-drawer — send a cash drawer pulse to the default/active printer
+router.post(
+  '/kick-drawer',
+  requirePermission('cash.movements.manage'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      if (!getOpenSession(db)) {
+        return res.status(409).json({ error: 'open_cash_shift_required' });
+      }
+      const printer = getDefaultPrinter(db);
+
+      const drawerPulseBytes = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+
+      if (!printer) {
+        return res.status(404).json({ error: 'No printer configured for cash drawer kick' });
+      }
+
+      let result: { ok: boolean; detail?: string } = { ok: false };
+
+      switch (printer.connection_type) {
+        case 'network':
+          if (!printer.ip_address)
+            return res.status(400).json({ error: 'No IP address configured' });
+          result = await printViaNetwork(
+            printer.ip_address,
+            printer.port || 9100,
+            drawerPulseBytes,
+            getHttpRequestSignal(req),
+          );
+          break;
+        case 'usb':
+          result = await printViaUSB(drawerPulseBytes, printer.name, getHttpRequestSignal(req));
+          break;
+        case 'webusb':
+          return res.json({
+            success: true,
+            webusb: true,
+            bytes: Array.from(drawerPulseBytes),
+            printerName: printer.name,
+          });
+        default:
+          return res.status(400).json({ error: 'Unsupported printer connection type' });
+      }
+
+      if (result.ok) {
+        res.json({ success: true });
+      } else {
+        console.error(
+          '[Printer] Cash drawer kick failed:',
+          result.detail || 'Printer did not respond',
+        );
+        res.status(502).json({ error: 'Cash drawer kick failed' });
+      }
+    } catch (error: unknown) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }),
+);
+
+// POST /api/printers/test-active — send a test print job to the default/active printer
+router.post(
+  '/test-active',
+  requirePermission('printing.execute'),
+  asyncHandler(async (req: Request, res: Response) => {
+    try {
+      const db = getDatabase();
+      const printer = getDefaultPrinter(db);
+
+      if (!printer) return res.status(404).json({ error: 'No default printer configured' });
+
+      const timezone = tenantSettingValue(db, 'timezone');
+      if (!timezone) return res.status(409).json({ error: 'regional_not_configured' });
+
+      const profile = resolvePrinterProfile(printer);
+      const testData = buildTestPage(
+        printer.paper_width || profile.defaultPaperWidth,
+        profile.cutMode,
+        tenantLanguage(db),
+        timezone,
+      );
+      let result: { ok: boolean; detail?: string } = { ok: false };
+
+      switch (printer.connection_type) {
+        case 'network':
+          if (!printer.ip_address)
+            return res.status(400).json({ error: 'No IP address configured' });
+          result = await printViaNetwork(
+            printer.ip_address,
+            printer.port || 9100,
+            testData,
+            getHttpRequestSignal(req),
+          );
+          break;
+        case 'usb':
+          result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
+          break;
+        case 'webusb':
+          return res.json({
+            success: true,
+            webusb: true,
+            bytes: Array.from(testData),
+            printerName: printer.name,
+          });
+        default:
+          return res.status(400).json({ error: 'Unsupported printer connection type' });
+      }
+
+      if (result.ok) {
+        res.json({ success: true });
+      } else {
+        console.error(
+          '[Printer] Active test print failed:',
+          result.detail || 'Printer did not respond or print failed',
+        );
+        res.status(502).json({ error: 'Test print failed' });
+      }
+    } catch (error: unknown) {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }

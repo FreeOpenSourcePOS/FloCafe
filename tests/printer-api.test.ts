@@ -35,6 +35,7 @@ const { printerRoutes } = require('../main/routes/printers');
 const { kitchenStationRoutes } = require('../main/routes/kitchen-stations');
 const { printReceipt, printReceiptDetailed } = require('../main/printers/thermal');
 const { cloudSync } = require('../main/services/cloud-sync');
+const { printerService } = require('../frontend/src/lib/printer/PrinterService');
 
 let passed = 0;
 let failed = 0;
@@ -75,10 +76,22 @@ getDatabase()
   )
   .run(now(), now());
 
+getDatabase()
+  .prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+   VALUES ('server-1', 'Server', 'server@flo.local', 'unused', 'server', 1, ?, ?)`,
+  )
+  .run(now(), now());
+
 const app = express();
 app.use(express.json());
+let currentUserId = 'owner-1';
 app.use((req: any, _res: any, next: any) => {
-  req.user = { userId: 'owner-1', email: 'owner@flo.local', role: 'owner' };
+  req.user = {
+    userId: currentUserId,
+    email: currentUserId === 'server-1' ? 'server@flo.local' : 'owner@flo.local',
+    role: currentUserId === 'server-1' ? 'server' : 'owner',
+  };
   next();
 });
 app.use('/api/printers', printerRoutes);
@@ -108,6 +121,44 @@ function defaultId(): string | undefined {
     | { id: string }
     | undefined;
   return row?.id;
+}
+
+function makeWebUsbTestDevice(productName: string, vendorId: number) {
+  const sent: number[][] = [];
+  const configuration = {
+    interfaces: [
+      {
+        interfaceNumber: 0,
+        alternates: [
+          {
+            interfaceClass: 0x07,
+            endpoints: [{ type: 'bulk', direction: 'out', endpointNumber: 1 }],
+          },
+        ],
+      },
+    ],
+  };
+  const device: any = {
+    vendorId,
+    productId: 1,
+    productName,
+    manufacturerName: 'Test',
+    serialNumber: String(vendorId),
+    configuration: null,
+    configurations: [configuration],
+    open: async () => {},
+    close: async () => {},
+    selectConfiguration: async () => {
+      device.configuration = configuration;
+    },
+    claimInterface: async () => {},
+    releaseInterface: async () => {},
+    transferOut: async (_endpoint: number, data: ArrayBuffer) => {
+      sent.push(Array.from(new Uint8Array(data)));
+      return { status: 'ok' };
+    },
+  };
+  return { device, sent };
 }
 
 async function runTests() {
@@ -602,6 +653,198 @@ async function runTests() {
     await new Promise<void>((resolve, reject) =>
       transportServer.close((error) => (error ? reject(error) : resolve())),
     );
+  }
+
+  // ── Test 10: hardware actions (kick-drawer and test-active) ─────────────
+  console.log('\nTest 10: hardware actions (kick-drawer and test-active)');
+  {
+    const webusbRes = await request(app).post('/api/printers').send({
+      name: 'Counter WebUSB Printer',
+      connection_type: 'webusb',
+      is_default: true,
+    });
+    assert(
+      webusbRes.status === 201,
+      `creating WebUSB printer returns 201 (got ${webusbRes.status})`,
+    );
+
+    currentUserId = 'server-1';
+    const serverPrintersRes = await request(app).get('/api/printers');
+    assert(serverPrintersRes.status === 200, 'printing.execute can read default printer readiness');
+    assert(
+      Array.isArray(serverPrintersRes.body.printers) &&
+        serverPrintersRes.body.printers.length === 1 &&
+        serverPrintersRes.body.printers[0].id === webusbRes.body.printer.id &&
+        serverPrintersRes.body.printers[0].name === 'Counter WebUSB Printer' &&
+        serverPrintersRes.body.printers[0].connection_type === 'webusb' &&
+        serverPrintersRes.body.printers[0].is_default === 1 &&
+        serverPrintersRes.body.printers[0].readiness_state === 'configured' &&
+        Object.keys(serverPrintersRes.body.printers[0]).sort().join(',') ===
+          'connection_type,id,is_default,name,readiness_state',
+      'printing.execute receives only default-printer readiness fields',
+    );
+
+    const deniedKickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(deniedKickRes.status === 403, 'printing.execute alone cannot kick the cash drawer');
+
+    const serverTestActiveRes = await request(app).post('/api/printers/test-active');
+    assert(serverTestActiveRes.status === 200, 'printing.execute can test the active printer');
+    assert(serverTestActiveRes.body.webusb === true, 'server test print selects WebUSB default');
+
+    currentUserId = 'owner-1';
+    const ownerPrintersRes = await request(app).get('/api/printers');
+    assert(
+      ownerPrintersRes.body.printers.length > 1,
+      'printers.manage can still read the full printer list',
+    );
+
+    const noShiftKickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(
+      noShiftKickRes.status === 409 && noShiftKickRes.body.error === 'open_cash_shift_required',
+      'kick-drawer requires an open cash shift',
+    );
+    db.prepare(`
+      INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+      VALUES ('owner-1', 'Owner', ?, 0, 'open')
+    `).run(now());
+
+    const kickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(
+      kickRes.status === 200,
+      `kick-drawer returns 200 for WebUSB printer (got ${kickRes.status})`,
+    );
+    assert(kickRes.body.webusb === true, 'kick-drawer reports webusb: true');
+    assert(
+      kickRes.body.printerName === 'Counter WebUSB Printer',
+      'kick-drawer identifies its selected printer',
+    );
+    assert(Array.isArray(kickRes.body.bytes), 'kick-drawer returns pulse byte array');
+    assert(
+      kickRes.body.bytes[0] === 0x1b && kickRes.body.bytes[1] === 0x70,
+      'kick-drawer returns standard ESC p bytes',
+    );
+
+    const testActiveRes = await request(app).post('/api/printers/test-active');
+    assert(
+      testActiveRes.status === 200,
+      `test-active returns 200 for WebUSB printer (got ${testActiveRes.status})`,
+    );
+    assert(testActiveRes.body.webusb === true, 'test-active reports webusb: true');
+    assert(
+      testActiveRes.body.printerName === 'Counter WebUSB Printer',
+      'test-active identifies its selected printer',
+    );
+    assert(
+      Array.isArray(testActiveRes.body.bytes) && testActiveRes.body.bytes.length > 0,
+      'test-active returns test page byte array',
+    );
+
+    const unavailableServer = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      unavailableServer.once('error', reject);
+      unavailableServer.listen(0, '127.0.0.1', resolve);
+    });
+    const unavailablePort = (unavailableServer.address() as net.AddressInfo).port;
+    await new Promise<void>((resolve, reject) => {
+      unavailableServer.close((error) => (error ? reject(error) : resolve()));
+    });
+    const networkPrinterRes = await request(app).post('/api/printers').send({
+      name: 'Unavailable local printer',
+      connection_type: 'network',
+      ip_address: '127.0.0.1',
+      port: unavailablePort,
+      is_default: true,
+    });
+    assert(networkPrinterRes.status === 201, 'unavailable network printer fixture is configured');
+
+    const failedTestPrintRes = await request(app).post('/api/printers/test-active');
+    const failedTestPrintBody = JSON.stringify(failedTestPrintRes.body);
+    assert(
+      failedTestPrintRes.status === 502 &&
+        failedTestPrintRes.body.error === 'Test print failed' &&
+        !('detail' in failedTestPrintRes.body) &&
+        !failedTestPrintBody.includes('127.0.0.1') &&
+        !failedTestPrintBody.includes(String(unavailablePort)),
+      'test-active hides network details when printing fails',
+    );
+
+    const failedKickRes = await request(app).post('/api/printers/kick-drawer');
+    const failedKickBody = JSON.stringify(failedKickRes.body);
+    assert(
+      failedKickRes.status === 502 &&
+        failedKickRes.body.error === 'Cash drawer kick failed' &&
+        !('detail' in failedKickRes.body) &&
+        !failedKickBody.includes('127.0.0.1') &&
+        !failedKickBody.includes(String(unavailablePort)),
+      'kick-drawer hides network details when pulsing fails',
+    );
+
+    db.prepare('PRAGMA ignore_check_constraints = ON').run();
+    db.prepare("UPDATE printers SET connection_type = 'serial' WHERE is_default = 1").run();
+    const unsupportedKickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(
+      unsupportedKickRes.status === 400 &&
+        unsupportedKickRes.body.error === 'Unsupported printer connection type',
+      'kick-drawer returns 400 for unsupported printer connection type',
+    );
+    const unsupportedActiveRes = await request(app).post('/api/printers/test-active');
+    assert(
+      unsupportedActiveRes.status === 400 &&
+        unsupportedActiveRes.body.error === 'Unsupported printer connection type',
+      'test-active returns 400 for unsupported printer connection type',
+    );
+    db.prepare("UPDATE printers SET connection_type = 'network' WHERE is_default = 1").run();
+    db.prepare('PRAGMA ignore_check_constraints = OFF').run();
+
+    const deviceA = makeWebUsbTestDevice('Printer A', 1);
+    const deviceB = makeWebUsbTestDevice('Counter WebUSB Printer', 2);
+    const devices = [deviceA.device, deviceB.device];
+    const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {
+        usb: {
+          getDevices: async () => devices,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        },
+      },
+    });
+
+    try {
+      await printerService.printToConfiguredDevice(
+        Uint8Array.from(testActiveRes.body.bytes),
+        testActiveRes.body.printerName,
+      );
+      assert(
+        deviceA.sent.length === 0,
+        'WebUSB test action does not write to the first granted device',
+      );
+      assert(
+        deviceB.sent.length === 1,
+        'WebUSB test action writes to the configured default device',
+      );
+
+      devices.push(makeWebUsbTestDevice('Counter WebUSB Printer', 3).device);
+      let rejectedAmbiguousDevice = false;
+      try {
+        await printerService.printToConfiguredDevice(
+          Uint8Array.from(kickRes.body.bytes),
+          kickRes.body.printerName,
+        );
+      } catch {
+        rejectedAmbiguousDevice = true;
+      }
+      assert(rejectedAmbiguousDevice, 'WebUSB action refuses an ambiguous device match');
+      assert(deviceB.sent.length === 1, 'ambiguous WebUSB match sends no drawer pulse');
+    } finally {
+      await printerService.disconnect();
+      if (originalNavigator) {
+        Object.defineProperty(globalThis, 'navigator', originalNavigator);
+      } else {
+        delete (globalThis as any).navigator;
+      }
+    }
   }
 
   console.log('\n' + '='.repeat(50));

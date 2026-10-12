@@ -1,9 +1,31 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { Server, HardDrive, Clock, AlertCircle, CheckCircle } from 'lucide-react';
+import { useCallback, useEffect, useState, useRef } from 'react';
+import {
+  User,
+  PrinterCheck,
+  PrinterX,
+  Lock,
+  LockOpen,
+  Clock,
+  Server,
+  HardDrive,
+  X,
+  ChevronUp,
+  ChevronDown,
+  Loader2,
+  Printer,
+} from 'lucide-react';
 import { useTranslations } from 'use-intl';
+import toast from 'react-hot-toast';
+import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
+import { usePrinterStore } from '@/hooks/usePrinter';
+import type { CashSession } from '@/hooks/useCashSession';
+import { printerService } from '@/lib/printer/PrinterService';
+import api from '@/lib/api';
 import UpdateBadge from './UpdateBadge';
+import { Ltr } from './Ltr';
 
 interface StatusInfo {
   server: string;
@@ -12,14 +34,47 @@ interface StatusInfo {
   port: number;
 }
 
+interface PrinterActionResponse {
+  webusb?: boolean;
+  bytes?: number[];
+  printerName?: string;
+}
+
+async function printWebUsbAction(response: PrinterActionResponse): Promise<void> {
+  if (!response.webusb) return;
+  if (!Array.isArray(response.bytes) || !response.printerName) {
+    throw new Error('WebUSB printer action is missing its configured printer.');
+  }
+  await printerService.printToConfiguredDevice(
+    Uint8Array.from(response.bytes),
+    response.printerName,
+  );
+}
+
 export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?: boolean }) {
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
-  const [status, setStatus] = useState<StatusInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const inFlightRef = useRef(false);
+  const tPos = useTranslations('pos');
+  const tSettings = useTranslations('settings');
+  const tDashboard = useTranslations('dashboard');
+  const tStaff = useTranslations('staff');
+  const tSupport = useTranslations('support');
 
+  const { user, currentTenant } = useAuthStore();
+  const { status: printerConnStatus, deviceInfo, defaultPrinter, printMethod } = usePrinterStore();
+
+  const [status, setStatus] = useState<StatusInfo | null>(null);
+  const [session, setSession] = useState<CashSession | null | undefined>(undefined);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isTestingPrint, setIsTestingPrint] = useState(false);
+  const [isKickingDrawer, setIsKickingDrawer] = useState(false);
+  const [isConfiguredWebUsbReady, setIsConfiguredWebUsbReady] = useState(false);
+
+  const inFlightRef = useRef(false);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  // Fetch Electron system status (uptime, memory, port)
   useEffect(() => {
     async function fetchStatus() {
       if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return;
@@ -29,22 +84,112 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
       try {
         const data = await window.electronAPI.getStatus();
         setStatus(data);
-        setError(null);
       } catch {
-        setError(tNav('statusError'));
+        // Electron status fetch error gracefully ignored
       } finally {
         inFlightRef.current = false;
       }
     }
 
     fetchStatus();
-    intervalRef.current = setInterval(fetchStatus, 10000);
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch active shift session (async continuation to satisfy cascading-renders rule)
+  useEffect(() => {
+    let cancelled = false;
+    let latestRequest = 0;
+    const queryShift = () => {
+      const request = ++latestRequest;
+      api
+        .get('/cash-sessions/current')
+        .then((res) => {
+          if (!cancelled && request === latestRequest) setSession(res.data ?? null);
+        })
+        .catch(() => {
+          if (!cancelled && request === latestRequest) setSession(undefined);
+        });
+    };
+
+    queryShift();
+    const interval = setInterval(queryShift, 15000);
+    const handleShiftChange = () => {
+      queryShift();
+    };
+    window.addEventListener('flo-shift-changed', handleShiftChange);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('flo-shift-changed', handleShiftChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let latestRequest = 0;
+    if (
+      defaultPrinter?.connection_type !== 'webusb' ||
+      printMethod !== 'escpos' ||
+      printerConnStatus !== 'connected'
+    ) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refreshReadiness = () => {
+      const request = ++latestRequest;
+      setIsConfiguredWebUsbReady(false);
+      printerService
+        .isConfiguredDeviceReady(defaultPrinter.name)
+        .then((ready) => {
+          if (!cancelled && request === latestRequest) setIsConfiguredWebUsbReady(ready);
+        })
+        .catch(() => {
+          if (!cancelled && request === latestRequest) setIsConfiguredWebUsbReady(false);
+        });
+    };
+
+    refreshReadiness();
+    navigator.usb?.addEventListener('connect', refreshReadiness);
+    navigator.usb?.addEventListener('disconnect', refreshReadiness);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      cancelled = true;
+      navigator.usb?.removeEventListener('connect', refreshReadiness);
+      navigator.usb?.removeEventListener('disconnect', refreshReadiness);
     };
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    defaultPrinter?.connection_type,
+    defaultPrinter?.name,
+    deviceInfo?.productId,
+    deviceInfo?.productName,
+    deviceInfo?.serialNumber,
+    printMethod,
+    printerConnStatus,
+  ]);
+
+  const closeDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+    drawerToggleRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    drawerRef.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
+  }, [isDrawerOpen]);
+
+  // Handle drawer Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDrawerOpen) {
+        closeDrawer();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [closeDrawer, isDrawerOpen]);
 
   function formatUptime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
@@ -53,75 +198,389 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
     return tCommon('timeMinutes', { m: minutes });
   }
 
-  if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return null;
+  // Cashier info
+  const staffName = user?.name || user?.email || tNav('user');
+  const roleKey = currentTenant?.role;
+  const roleLabel = roleKey
+    ? roleKey === 'owner'
+      ? tStaff('roleOwner')
+      : roleKey === 'manager'
+        ? tStaff('roleManager')
+        : roleKey === 'cashier'
+          ? tStaff('roleCashier')
+          : roleKey === 'server'
+            ? tStaff('roleServer')
+            : roleKey === 'chef'
+              ? tStaff('roleChef')
+              : roleKey.charAt(0).toUpperCase() + roleKey.slice(1)
+    : null;
 
-  const isRunning = status?.server === 'running';
-  const isPending = !status && !error;
+  // Printer readiness & status labeling
+  const isWebUsb = defaultPrinter?.connection_type === 'webusb';
+  const isNetwork = defaultPrinter?.connection_type === 'network';
+  const isUsb = defaultPrinter?.connection_type === 'usb';
+  const isServerPrinter = isNetwork || isUsb;
 
-  const serverStatusDisplay = status?.server
-    ? status.server === 'running'
-      ? tNav('serverStatusRunning')
-      : status.server === 'stopped'
-        ? tNav('serverStatusStopped')
-        : status.server === 'starting'
-          ? tNav('serverStatusStarting')
-          : status.server
-    : tNav('serverUnknown');
+  const isWebUsbReady =
+    isWebUsb &&
+    printMethod === 'escpos' &&
+    printerConnStatus === 'connected' &&
+    deviceInfo?.productName === defaultPrinter.name &&
+    isConfiguredWebUsbReady;
+  const isPrinterConnecting = isWebUsb && printerConnStatus === 'connecting';
+  const isPrinterReady = isServerPrinter || isWebUsbReady;
+  const isPrinterConfigured = defaultPrinter !== null;
+  const canTestPrint = tenantCan(currentTenant, 'printing.execute');
+
+  const printerTitle = !isPrinterConfigured
+    ? tSettings('printerOffline')
+    : isServerPrinter
+      ? `${defaultPrinter.name} (${isNetwork ? tSettings('connectionNetwork') : tSettings('connectionUsb')})`
+      : isWebUsbReady
+        ? `${defaultPrinter.name} (${tSettings('connectionWebusb')})`
+        : isPrinterConnecting
+          ? tPos('printerConnecting')
+          : `${defaultPrinter.name} (${tSettings('connectionWebusb')}) — ${tSettings('printerConfigured')}`;
+
+  // Shift state
+  const isShiftKnown = session !== undefined;
+  const isShiftOpen = session?.status === 'open';
+  const canKickDrawer = tenantCan(currentTenant, 'cash.movements.manage') && isShiftOpen;
+
+  // Hardware Quick Actions
+  const handleTestPrint = async () => {
+    setIsTestingPrint(true);
+    try {
+      const res = await api.post<PrinterActionResponse>('/printers/test-active');
+      await printWebUsbAction(res.data);
+      toast.success(tSettings('testPrintSent') || 'Test print sent!');
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        tSettings('testPrintFailed') ||
+        'Test print failed';
+      toast.error(msg);
+    } finally {
+      setIsTestingPrint(false);
+    }
+  };
+
+  const handleKickDrawer = async () => {
+    setIsKickingDrawer(true);
+    try {
+      const res = await api.post<PrinterActionResponse>('/printers/kick-drawer');
+      await printWebUsbAction(res.data);
+      toast.success(tSettings('cashDrawerPulseSent'));
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        tSettings('cashDrawerPulseFailed');
+      toast.error(msg);
+    } finally {
+      setIsKickingDrawer(false);
+    }
+  };
 
   return (
-    <footer
-      role="status"
-      aria-live="polite"
-      className="flex h-8 shrink-0 items-center gap-3 border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85"
-    >
+    <>
+      {/* Slide-Up Telemetry & Hardware Drawer Backdrop */}
+      {isDrawerOpen && (
+        <div
+          data-testid="telemetry-drawer-backdrop"
+          onClick={closeDrawer}
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] transition-opacity"
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Slide-Up Telemetry & Hardware Drawer */}
       <div
-        className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 font-medium ring-1 ring-inset ${
-          isRunning
-            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800'
-            : isPending
-              ? 'bg-muted text-muted-foreground ring-border/70'
-              : 'bg-red-50 text-red-700 ring-red-200/80 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800'
+        data-testid="telemetry-drawer"
+        ref={drawerRef}
+        role="dialog"
+        aria-label={tSettings('storeDiagnostics')}
+        aria-modal={isDrawerOpen}
+        aria-hidden={!isDrawerOpen}
+        inert={!isDrawerOpen}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab') return;
+          const focusableElements = drawerRef.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          );
+          if (!focusableElements?.length) {
+            event.preventDefault();
+            return;
+          }
+          const firstFocusable = focusableElements[0];
+          const lastFocusable = focusableElements[focusableElements.length - 1];
+          if (event.shiftKey && document.activeElement === firstFocusable) {
+            event.preventDefault();
+            lastFocusable.focus();
+          } else if (!event.shiftKey && document.activeElement === lastFocusable) {
+            event.preventDefault();
+            firstFocusable.focus();
+          }
+        }}
+        className={`fixed bottom-8 start-0 end-0 z-50 max-h-[80vh] overflow-y-auto border-t border-border bg-card p-4 shadow-2xl transition-all duration-300 ease-in-out md:p-6 ${
+          isDrawerOpen
+            ? 'translate-y-0 opacity-100'
+            : 'pointer-events-none translate-y-full opacity-0'
         }`}
       >
-        {isRunning ? <CheckCircle size={13} /> : <AlertCircle size={13} />}
-        <span>
-          {tNav('serverLabel')}
-          {serverStatusDisplay}
-        </span>
+        <div className="mx-auto max-w-5xl space-y-5">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border/80 pb-3">
+            <div className="flex items-center gap-2">
+              <Server size={18} className="text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">
+                {tSettings('storeDiagnostics')}
+              </h2>
+            </div>
+            <button
+              type="button"
+              data-testid="btn-close-telemetry-drawer"
+              onClick={closeDrawer}
+              className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label={tCommon('close')}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {/* Quick Actions Card */}
+            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {tSettings('hardwarePrinters')}
+              </h3>
+              <div className="flex flex-wrap items-center gap-3">
+                {canTestPrint && (
+                  <button
+                    type="button"
+                    data-testid="btn-test-receipt-print"
+                    onClick={handleTestPrint}
+                    disabled={isTestingPrint}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
+                  >
+                    {isTestingPrint ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Printer size={14} />
+                    )}
+                    <span>{tSettings('testPrint')}</span>
+                  </button>
+                )}
+
+                {canKickDrawer && (
+                  <button
+                    type="button"
+                    data-testid="btn-kick-cash-drawer"
+                    onClick={handleKickDrawer}
+                    disabled={isKickingDrawer}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
+                  >
+                    {isKickingDrawer ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <LockOpen size={14} />
+                    )}
+                    <span>{tSettings('sendPulseToCashDrawer')}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Diagnostic Metrics Card */}
+            <div className="rounded-lg border border-border/70 bg-background/50 p-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {tSupport('tabDiagnostics')}
+              </h3>
+              <div className="grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+                <div className="rounded-md border border-border/50 bg-card p-2.5">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Server size={13} />
+                    <span>{tNav('serverLabel').trim()}</span>
+                  </div>
+                  <div
+                    data-testid="telemetry-server-status"
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      status?.server === 'running'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                        : status?.server === 'stopped'
+                          ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300'
+                          : 'bg-muted text-muted-foreground'
+                    }`}
+                  >
+                    {status?.server === 'running'
+                      ? tNav('serverStatusRunning')
+                      : status?.server === 'starting'
+                        ? tNav('serverStatusStarting')
+                        : status?.server === 'stopped'
+                          ? tNav('serverStatusStopped')
+                          : status?.server || tNav('serverUnknown')}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/50 bg-card p-2.5">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Clock size={13} />
+                    <span>{tNav('uptimeLabel').trim()}</span>
+                  </div>
+                  <div
+                    data-testid="telemetry-uptime"
+                    className="mt-1 font-medium tabular-nums text-foreground"
+                  >
+                    {status ? formatUptime(status.uptime) : '...'}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/50 bg-card p-2.5">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <Server size={13} />
+                    <span>{tNav('portLabel')}</span>
+                  </div>
+                  <div
+                    data-testid="telemetry-port"
+                    className="mt-1 font-medium tabular-nums text-foreground"
+                  >
+                    {status?.port ?? '...'}
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border/50 bg-card p-2.5">
+                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                    <HardDrive size={13} />
+                    <span>{tNav('heapLabel').trim()}</span>
+                  </div>
+                  <div
+                    data-testid="telemetry-memory"
+                    className="mt-1 font-medium tabular-nums text-foreground truncate"
+                  >
+                    {status?.memory
+                      ? `${status.memory.heapUsed} / ${status.memory.heapTotal} MB`
+                      : '...'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {error && <span className="hidden text-red-600 sm:inline">{error}</span>}
-
-      <div className="ms-auto flex h-full items-center divide-x divide-border/70">
-        <div className="flex items-center gap-1.5 px-3" title={tNav('portLabel')}>
-          <Server size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground lg:inline">{tNav('portLabel')}</span>
-          <span className="font-medium tabular-nums text-foreground/70">
-            {status?.port || '...'}
+      {/* Persistent Frontline Status Bar */}
+      <footer className="flex h-8 shrink-0 items-center justify-between border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        {/* Left: Active Cashier & Role Badge */}
+        <div className="flex items-center gap-2 min-w-0" data-testid="status-bar-cashier">
+          <div className="flex size-5 items-center justify-center rounded-full bg-muted text-muted-foreground shrink-0">
+            <User size={12} />
+          </div>
+          <span
+            data-testid="status-bar-cashier-name"
+            className="truncate font-medium text-foreground max-w-[160px] sm:max-w-[220px]"
+            title={staffName}
+          >
+            {!user?.name && user?.email ? <Ltr>{staffName}</Ltr> : staffName}
           </span>
+          {roleLabel && (
+            <span
+              data-testid="status-bar-role-badge"
+              className="inline-flex items-center rounded-full bg-secondary/80 px-2 py-0.5 text-[10px] font-medium text-secondary-foreground shrink-0"
+            >
+              {roleLabel}
+            </span>
+          )}
         </div>
 
-        <div className="hidden items-center gap-1.5 px-3 md:flex" title={tNav('heapLabel').trim()}>
-          <HardDrive size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground xl:inline">{tNav('heapLabel')}</span>
-          <span className="font-medium tabular-nums text-foreground/70">
-            {status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
-          </span>
-        </div>
+        {/* Right: Thermal Printer, Shift State, and Telemetry Trigger */}
+        <div className="ms-auto flex h-full items-center gap-2 sm:gap-3">
+          {/* Thermal Printer Status Indicator */}
+          <div
+            data-testid="status-bar-printer"
+            className="flex items-center gap-1.5 px-1.5 py-0.5"
+            title={printerTitle}
+          >
+            {isPrinterReady ? (
+              <>
+                <PrinterCheck size={13} className="text-emerald-600 dark:text-emerald-400" />
+                <span className="hidden sm:inline font-medium text-emerald-700 dark:text-emerald-300">
+                  {defaultPrinter?.name || tPos('printerReady')}
+                </span>
+              </>
+            ) : isPrinterConnecting ? (
+              <>
+                <Loader2 size={13} className="animate-spin text-amber-500" />
+                <span className="hidden sm:inline text-amber-600 dark:text-amber-400">
+                  {tPos('printerConnecting')}
+                </span>
+              </>
+            ) : isPrinterConfigured ? (
+              <>
+                <Printer size={13} className="text-muted-foreground/80" />
+                <span className="hidden sm:inline text-muted-foreground">
+                  {tSettings('printerConfigured')}
+                </span>
+              </>
+            ) : (
+              <>
+                <PrinterX size={13} className="text-muted-foreground/80" />
+                <span className="hidden sm:inline text-muted-foreground">
+                  {tSettings('printerOffline')}
+                </span>
+              </>
+            )}
+          </div>
 
-        <div
-          className="hidden items-center gap-1.5 px-3 sm:flex"
-          title={tNav('uptimeLabel').trim()}
-        >
-          <Clock size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground xl:inline">{tNav('uptimeLabel')}</span>
-          <span className="font-medium tabular-nums text-foreground/70">
-            {status ? formatUptime(status.uptime) : '...'}
-          </span>
-        </div>
+          <div className="h-3 w-px bg-border/70" aria-hidden="true" />
 
-        {showUpdateBadge && <UpdateBadge />}
-      </div>
-    </footer>
+          {/* Active Shift State Badge */}
+          <div
+            data-testid="status-bar-shift"
+            className="flex items-center gap-1.5 px-1.5 py-0.5"
+            title={
+              !isShiftKnown
+                ? tNav('serverUnknown')
+                : isShiftOpen
+                  ? tDashboard('shiftOpened')
+                  : tDashboard('openShift')
+            }
+          >
+            {!isShiftKnown ? (
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-inset ring-border/70">
+                {tNav('serverUnknown')}
+              </span>
+            ) : isShiftOpen ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800">
+                <Lock size={10} />
+                <span>{tDashboard('shiftOpened')}</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-inset ring-border/70">
+                <LockOpen size={10} />
+                <span>{tDashboard('openShift')}</span>
+              </span>
+            )}
+          </div>
+
+          <div className="h-3 w-px bg-border/70" aria-hidden="true" />
+
+          {/* Slide-Up Telemetry Drawer Trigger Button */}
+          <button
+            type="button"
+            data-testid="btn-toggle-telemetry-drawer"
+            ref={drawerToggleRef}
+            onClick={() => (isDrawerOpen ? closeDrawer() : setIsDrawerOpen(true))}
+            className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted transition-colors"
+            title={tSupport('tabDiagnostics')}
+            aria-label={tSupport('tabDiagnostics')}
+            aria-expanded={isDrawerOpen}
+          >
+            <span>{tSupport('tabDiagnostics')}</span>
+            {isDrawerOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+          </button>
+
+          {showUpdateBadge && <UpdateBadge />}
+        </div>
+      </footer>
+    </>
   );
 }

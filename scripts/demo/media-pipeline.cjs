@@ -62,19 +62,19 @@ function transcodeMedia(
     ]);
   }
 
-  // 2. Generate Optimized GIF (<1.5MB target ~600KB-1.2MB, Lanczos, 9 fps, palettegen with diff_mode=rectangle)
+  // 2. Generate Optimized GIF (<1.5MB target, Lanczos, 8 fps, palettegen with diff_mode=rectangle)
   const isMobile = outputBaseName === 'server-app';
-  const scaleFilter = isMobile ? 'scale=-2:640:flags=lanczos' : 'scale=960:540:flags=lanczos';
+  const scaleFilter = isMobile ? 'scale=-2:580:flags=lanczos' : 'scale=800:450:flags=lanczos';
   const mp4ScaleFilter = isMobile
-    ? 'scale=trunc(iw*640/ih/2)*2:640:flags=lanczos'
-    : 'scale=960:540:flags=lanczos';
+    ? 'scale=trunc(iw*580/ih/2)*2:580:flags=lanczos'
+    : 'scale=800:450:flags=lanczos';
 
   runFfmpeg([
     '-y',
     '-i',
     inputVideoPath,
     '-vf',
-    `fps=9,${scaleFilter},split[s0][s1];[s0]palettegen=max_colors=64:stats_mode=diff:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
+    `fps=8,${scaleFilter},split[s0][s1];[s0]palettegen=max_colors=48:stats_mode=diff:reserve_transparent=0[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`,
     '-loop',
     '0',
     gifPathDocs,

@@ -202,7 +202,17 @@ function seedHarborBean(db) {
     `).run(id, groupId, name, price, order, createdAt, createdAt);
   }
 
-  // 6. Products
+  // 6. Products with realistic WebP photography
+  const assetsDir = path.resolve(__dirname, 'assets');
+  const assetMap = {
+    'prod-latte': 'prod-latte.webp',
+    'prod-flat-white': 'prod-flat-white.webp',
+    'prod-cold-brew': 'prod-cold-brew.webp',
+    'prod-croissant': 'prod-croissant.webp',
+    'prod-scone': 'prod-scone.webp',
+    'prod-toast': 'prod-toast.webp',
+  };
+
   const products = [
     ['prod-latte', 'cat-coffee', 'Vanilla Bean Latte', 4.75, 1],
     ['prod-flat-white', 'cat-coffee', 'Flat White', 4.25, 2],
@@ -212,12 +222,22 @@ function seedHarborBean(db) {
     ['prod-toast', 'cat-brunch', 'Avocado Sourdough Toast', 9.5, 6],
   ];
   for (const [id, catId, name, price, order] of products) {
+    let imageUrl = null;
+    const assetFile = assetMap[id];
+    if (assetFile) {
+      const assetPath = path.join(assetsDir, assetFile);
+      if (fs.existsSync(assetPath)) {
+        const b64 = fs.readFileSync(assetPath).toString('base64');
+        imageUrl = `data:image/webp;base64,${b64}`;
+      }
+    }
+
     db.prepare(`
       INSERT OR REPLACE INTO products (
         id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
-        cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'none', 'standard', 'exclusive', 0, 0, 999, 1, ?, ?, ?)
-    `).run(id, catId, name, price, order, createdAt, createdAt);
+        cb_percent, track_inventory, stock_quantity, image_url, is_active, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'none', 'standard', 'exclusive', 0, 0, 999, ?, 1, ?, ?, ?)
+    `).run(id, catId, name, price, imageUrl, order, createdAt, createdAt);
   }
 
   // Link addon groups to coffee products
@@ -229,7 +249,14 @@ function seedHarborBean(db) {
     }
   }
 
-  // 7. Supplies & Recipes
+  // 7. Printers (Configure virtual receipt printer on 127.0.0.1:9123 so prints succeed without toasts)
+  db.prepare(`
+    INSERT OR REPLACE INTO printers (
+      id, name, connection_type, ip_address, port, is_default, cash_drawer_pulse_enabled, paper_width, created_at, updated_at
+    ) VALUES (?, ?, 'network', '127.0.0.1', 9123, 1, 0, '80mm', ?, ?)
+  `).run('printer-counter', 'Receipt Printer (Epson TM-T88)', createdAt, createdAt);
+
+  // 8. Supplies & Recipes
   const supplies = [
     ['sup-beans', 'Espresso Beans', 'kg', 5.0, 1.0],
     ['sup-whole-milk', 'Whole Milk', 'l', 20.0, 5.0],
@@ -243,7 +270,21 @@ function seedHarborBean(db) {
     `).run(id, name, unit, qty, low, createdAt, createdAt);
   }
 
-  // Recipe for Flat White
+  // Seed baseline stock movement history
+  const initialMovements = [
+    ['sup-beans', 10.0, 'receive', 'kg', 10.0, 'Opening inventory delivery', 'user-manager'],
+    ['sup-whole-milk', 30.0, 'receive', 'l', 30.0, 'Fresh dairy delivery', 'user-manager'],
+    ['sup-oat-milk', 15.0, 'receive', 'l', 15.0, 'Oat milk stock delivery', 'user-manager'],
+  ];
+  for (const [sId, qty, type, unit, after, reason, user] of initialMovements) {
+    db.prepare(`
+      INSERT INTO supply_movements (
+        supply_id, quantity_delta, movement_type, unit, stock_after, reason, actor_user_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', '-2 hours'))
+    `).run(sId, qty, type, unit, after, reason, user);
+  }
+
+  // Recipe for Flat White (0.018 kg beans, 0.25 L milk)
   db.prepare(`
     INSERT OR REPLACE INTO recipes (id, product_id, yield_quantity, is_active, created_at, updated_at)
     VALUES (?, ?, 1, 1, ?, ?)

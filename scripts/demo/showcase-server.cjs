@@ -93,14 +93,22 @@ async function seedActiveOrders() {
       ],
     });
 
-    // 2. Order for KDS display in Waiting state
+    // Mark Table T2 items as served so guests have already received their order and can settle the bill
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE order_items
+      SET status = 'served'
+      WHERE order_id IN (SELECT id FROM orders WHERE table_id = 'tab-2')
+    `).run();
+
+    // 2. Order for KDS display in Waiting state (with Flat White to demonstrate recipe depletion!)
     await postOrder({
       type: 'dine_in',
       table_id: 'tab-1',
       guest_count: 2,
-      special_instructions: 'No ice in Cold Brew',
+      special_instructions: 'Extra hot Flat White',
       items: [
-        { product_id: 'prod-cold-brew', quantity: 1 },
+        { product_id: 'prod-flat-white', quantity: 2 },
         { product_id: 'prod-croissant', quantity: 2 },
       ],
     });
@@ -112,8 +120,24 @@ async function seedActiveOrders() {
 }
 
 let shutdownRequested = false;
+let virtualPrinterServer = null;
+
+function startVirtualPrinter() {
+  return new Promise((resolve) => {
+    virtualPrinterServer = createServer((socket) => {
+      socket.on('data', () => {});
+      socket.on('error', () => {});
+    });
+    virtualPrinterServer.listen(9123, '127.0.0.1', () => {
+      console.log('[Showcase Server] Virtual thermal printer listening on 127.0.0.1:9123');
+      resolve();
+    });
+  });
+}
 
 async function start() {
+  await startVirtualPrinter();
+
   await startStandaloneServers({
     initializeDatabase: () => {
       initDatabase();
@@ -138,6 +162,11 @@ async function stop() {
   if (shutdownRequested) return;
   shutdownRequested = true;
   console.log('[Showcase Server] Shutting down...');
+  if (virtualPrinterServer) {
+    try {
+      virtualPrinterServer.close();
+    } catch (e) {}
+  }
   try {
     await stopServerApp();
   } catch (e) {}

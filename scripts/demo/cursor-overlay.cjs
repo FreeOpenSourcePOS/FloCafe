@@ -147,10 +147,78 @@ async function smoothClick(page, locator, options = {}) {
   await page.waitForTimeout(options.postClickWait || 250);
 }
 
+async function smoothDrag(page, sourceLocator, targetLocator, options = {}) {
+  const durationMs = options.durationMs || 700;
+  const startBox = await sourceLocator.boundingBox();
+  const targetBox = await targetLocator.boundingBox();
+  if (!startBox || !targetBox) {
+    throw new Error('smoothDrag: source or target locator bounding box not found');
+  }
+
+  const startX = Math.round(startBox.x + startBox.width / 2);
+  const startY = Math.round(startBox.y + startBox.height / 2);
+  const targetX = Math.round(targetBox.x + targetBox.width / 2);
+  const targetY = Math.round(targetBox.y + targetBox.height / 2);
+
+  // 1. Smoothly move visual cursor to start
+  await smoothMoveTo(page, startX, startY, options.preMoveDuration || 350);
+  await page.waitForTimeout(options.preDragWait || 100);
+
+  // 2. Playwright mouse down
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+
+  // 3. Initiate dnd-kit sensor constraint (>6px movement)
+  const dirX = targetX > startX ? 1 : -1;
+  const dirY = targetY > startY ? 1 : -1;
+  const initX = startX + dirX * 10;
+  const initY = startY + dirY * 10;
+  await page.mouse.move(initX, initY);
+  await page.evaluate(
+    ({ x, y }) => {
+      if (window.__showcaseSetPosition) window.__showcaseSetPosition(x, y);
+    },
+    { x: initX, y: initY },
+  );
+  await page.waitForTimeout(50);
+
+  // 4. Smoothly drag to target
+  const steps = Math.max(15, Math.floor(durationMs / 16));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const eased = cubicEaseInOut(t);
+    const curX = Math.round(initX + (targetX - initX) * eased);
+    const curY = Math.round(initY + (targetY - initY) * eased);
+    await page.mouse.move(curX, curY);
+    await page.evaluate(
+      ({ x, y }) => {
+        if (window.__showcaseSetPosition) window.__showcaseSetPosition(x, y);
+      },
+      { x: curX, y: curY },
+    );
+    await page.waitForTimeout(durationMs / steps);
+  }
+
+  // 5. Ensure exact target position and brief hold so drop target detects it
+  await page.mouse.move(targetX, targetY);
+  await page.evaluate(
+    ({ x, y }) => {
+      if (window.__showcaseSetPosition) window.__showcaseSetPosition(x, y);
+    },
+    { x: targetX, y: targetY },
+  );
+  await page.waitForTimeout(options.holdAtTargetWait || 150);
+
+  // 6. Release mouse
+  await page.mouse.up();
+  await page.waitForTimeout(options.postDragWait || 300);
+}
+
 module.exports = {
   CURSOR_INIT_SCRIPT,
   injectCursor,
   smoothMoveTo,
   smoothMove,
   smoothClick,
+  smoothDrag,
 };

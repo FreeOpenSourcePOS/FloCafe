@@ -5,7 +5,13 @@ const path = require('path');
 const cp = require('child_process');
 const jwt = require('jsonwebtoken');
 const { chromium } = require('../../frontend/node_modules/@playwright/test');
-const { injectCursor, smoothClick, smoothMove, smoothMoveTo } = require('./cursor-overlay.cjs');
+const {
+  injectCursor,
+  smoothClick,
+  smoothMove,
+  smoothMoveTo,
+  smoothDrag,
+} = require('./cursor-overlay.cjs');
 const { transcodeMedia } = require('./media-pipeline.cjs');
 
 const JWT_SECRET = 'showcase-secret-key-123';
@@ -57,27 +63,35 @@ async function recordPosCheckout(browser) {
   const token = getAuthToken('cashier', 'user-cashier');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/pos');
 
-  await page.waitForTimeout(800);
-
-  // Click Almond Croissant button
+  // Wait for product catalog to render
   const croissant = page.getByRole('button', { name: /Almond Croissant/i });
-  await smoothClick(page, croissant, { moveDuration: 600, postClickWait: 500 });
+  await croissant.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(600);
 
-  // Click Nitro Cold Brew button
+  // Click Almond Croissant
+  await smoothClick(page, croissant, { moveDuration: 550, postClickWait: 500 });
+
+  // Click Nitro Cold Brew
   const coldBrew = page.getByRole('button', { name: /Nitro Cold Brew/i });
-  await smoothClick(page, coldBrew, { moveDuration: 600, postClickWait: 600 });
+  await smoothClick(page, coldBrew, { moveDuration: 550, postClickWait: 600 });
 
   // Click Place Order button in cart
   const placeOrderBtn = page.getByRole('button', { name: 'Place Order' });
-  await smoothClick(page, placeOrderBtn, { moveDuration: 700, postClickWait: 800 });
+  await placeOrderBtn.waitFor({ state: 'visible' });
+  await smoothClick(page, placeOrderBtn, { moveDuration: 650, postClickWait: 800 });
 
   // In modal, click Cash tender
   const cashBtn = page.getByRole('button', { name: 'Cash', exact: true });
+  await cashBtn.waitFor({ state: 'visible' });
   await smoothClick(page, cashBtn, { moveDuration: 500, postClickWait: 500 });
 
   // Click Confirm Payment button
   const confirmBtn = page.getByRole('button', { name: /Confirm Payment/i });
-  await smoothClick(page, confirmBtn, { moveDuration: 600, postClickWait: 1200 });
+  await confirmBtn.waitFor({ state: 'visible' });
+  await smoothClick(page, confirmBtn, { moveDuration: 600, postClickWait: 1000 });
+
+  // Assert payment success toast appears
+  await page.waitForSelector('text=/Order #.* paid/i', { timeout: 8000 });
 
   // Hold on success state
   await page.waitForTimeout(1600);
@@ -109,31 +123,33 @@ async function recordAddonModifiers(browser) {
   const token = getAuthToken('cashier', 'user-cashier');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/pos');
 
-  await page.waitForTimeout(800);
-
-  // Click Vanilla Bean Latte (has addon groups)
+  // Wait for product catalog to render
   const latte = page.getByRole('button', { name: /Vanilla Bean Latte/i });
+  await latte.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(600);
+
+  // Click Vanilla Bean Latte (opens addon modal)
   await smoothClick(page, latte, { moveDuration: 600, postClickWait: 800 });
 
-  // Addon modal is open. Select Oat Milk
-  const oatMilkBtn = page
-    .locator('span:text-is("Oat Milk")')
-    .locator('xpath=ancestor::div[1]/following-sibling::div//button')
-    .first();
+  // Select Oat Milk
+  const oatMilkRow = page.locator('div:has(> div > span:text-is("Oat Milk"))').last();
+  await oatMilkRow.waitFor({ state: 'visible', timeout: 5000 });
+  const oatMilkBtn = oatMilkRow.locator('button').last();
   await smoothClick(page, oatMilkBtn, { moveDuration: 500, postClickWait: 500 });
 
   // Select Single Extra Shot
-  const extraShotBtn = page
-    .locator('span:text-is("Single Extra Shot")')
-    .locator('xpath=ancestor::div[1]/following-sibling::div//button')
-    .first();
-  if (await extraShotBtn.isVisible()) {
-    await smoothClick(page, extraShotBtn, { moveDuration: 500, postClickWait: 500 });
-  }
+  const extraShotRow = page.locator('div:has(> div > span:text-is("Single Extra Shot"))').last();
+  await extraShotRow.waitFor({ state: 'visible', timeout: 5000 });
+  const extraShotBtn = extraShotRow.locator('button').last();
+  await smoothClick(page, extraShotBtn, { moveDuration: 500, postClickWait: 600 });
 
-  // Click Add to Cart
+  // Click Add to Cart / Add to Order
   const addOrderBtn = page.getByRole('button', { name: /Add to (Cart|Order)/i });
-  await smoothClick(page, addOrderBtn, { moveDuration: 600, postClickWait: 1000 });
+  await addOrderBtn.waitFor({ state: 'visible' });
+  await smoothClick(page, addOrderBtn, { moveDuration: 600, postClickWait: 800 });
+
+  // Assert cart has Vanilla Bean Latte with Oat Milk
+  await page.waitForSelector('text=Oat Milk', { timeout: 5000 });
 
   // Pause on cart showing configured latte with badges
   await page.waitForTimeout(1800);
@@ -165,44 +181,37 @@ async function recordKdsKanban(browser) {
   const token = getAuthToken('chef', 'user-chef');
   await setupPageAuth(page, token, 'http://127.0.0.1:3002/kds-standalone');
 
-  await page.waitForTimeout(1000);
-
-  // Switch to Kanban if not already
+  // Switch to Kanban view if button is visible
   const kanbanBtn = page.getByRole('button', { name: 'Kanban', exact: true });
   if (await kanbanBtn.isVisible()) {
     await smoothClick(page, kanbanBtn, { moveDuration: 400, postClickWait: 500 });
   }
 
-  // Click on the kitchen order item
-  const itemBtn = page
-    .locator(
-      'button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")',
-    )
-    .first();
-  if (await itemBtn.isVisible()) {
-    await smoothClick(page, itemBtn, { moveDuration: 600, postClickWait: 700 });
+  // Wait for board columns to be ready
+  const pendingCol = page.locator('div:has(> div > span:text-is("Waiting"))').last();
+  const prepCol = page.locator('div:has(> div > span:text-is("Preparing"))').last();
+  const readyCol = page.locator('div:has(> div > span:text-is("Ready"))').last();
+  await pendingCol.waitFor({ state: 'visible', timeout: 10000 });
 
-    // Click "Mark as Preparing"
-    const prepBtn = page.getByRole('button', { name: /Mark as Preparing/i });
-    if (await prepBtn.isVisible()) {
-      await smoothClick(page, prepBtn, { moveDuration: 500, postClickWait: 800 });
-    }
+  // Locate the draggable order card in Waiting (drag from header area)
+  const orderCardHeader = pendingCol.locator('.cursor-grab .font-bold').first();
+  await orderCardHeader.waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(600);
 
-    // Click item again to mark Ready
-    await page.waitForTimeout(600);
-    const itemPrepBtn = page
-      .locator(
-        'button:has-text("Flat White"), button:has-text("Croissant"), button:has-text("Toast"), button:has-text("Cold Brew")',
-      )
-      .first();
-    if (await itemPrepBtn.isVisible()) {
-      await smoothClick(page, itemPrepBtn, { moveDuration: 600, postClickWait: 700 });
-      const readyBtn = page.getByRole('button', { name: /Mark as Ready/i });
-      if (await readyBtn.isVisible()) {
-        await smoothClick(page, readyBtn, { moveDuration: 500, postClickWait: 1000 });
-      }
-    }
-  }
+  // Drag from Waiting to Preparing column
+  const prepTarget = prepCol.locator('> div:nth-child(2)');
+  await smoothDrag(page, orderCardHeader, prepTarget, { durationMs: 750 });
+  await page.waitForTimeout(800);
+
+  // Card is now in Preparing column. Drag to Ready column
+  const prepCardHeader = prepCol.locator('.cursor-grab .font-bold').first();
+  await prepCardHeader.waitFor({ state: 'visible', timeout: 5000 });
+  const readyTarget = readyCol.locator('> div:nth-child(2)');
+  await smoothDrag(page, prepCardHeader, readyTarget, { durationMs: 750 });
+  await page.waitForTimeout(800);
+
+  // Assert card is now in Ready column
+  await readyCol.locator('.cursor-grab').first().waitFor({ state: 'visible', timeout: 5000 });
 
   // Hold on updated board
   await page.waitForTimeout(1800);
@@ -234,34 +243,30 @@ async function recordFloorplanTables(browser) {
   const token = getAuthToken('manager', 'user-manager');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/tables');
 
-  await page.waitForTimeout(800);
-
-  // Switch to Floor plan view
+  // Ensure Floor plan view
   const floorTab = page.getByRole('button', { name: 'Floor plan' });
-  if (await floorTab.isVisible()) {
-    await smoothClick(page, floorTab, { moveDuration: 500, postClickWait: 800 });
-  }
+  await floorTab.waitFor({ state: 'visible', timeout: 10000 });
+  await smoothClick(page, floorTab, { moveDuration: 500, postClickWait: 800 });
 
-  // Move cursor around floor plan tables to show the visual floor plan
-  const t2Table = page.locator('text=T2').first();
-  if (await t2Table.isVisible()) {
-    await smoothMove(page, t2Table, 600);
-    await page.waitForTimeout(500);
-  }
+  // Wait for canvas
+  const canvas = page.getByTestId('floorplan-canvas');
+  await canvas.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(600);
 
-  const t1Table = page.locator('text=T1').first();
-  if (await t1Table.isVisible()) {
-    await smoothMove(page, t1Table, 500);
-    await page.waitForTimeout(500);
-  }
+  // Click occupied Table T2
+  const t2Table = canvas.locator('text=T2').first();
+  await t2Table.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, t2Table, { moveDuration: 600, postClickWait: 800 });
 
-  // Switch back to List view to show table turnover status
-  const listTab = page.getByRole('button', { name: 'List' });
-  if (await listTab.isVisible()) {
-    await smoothClick(page, listTab, { moveDuration: 600, postClickWait: 800 });
-  }
+  // Bottom action sheet pops up showing seated details and actions
+  const actionSheet = page.locator('[role="dialog"][aria-label="T2"]');
+  await actionSheet.waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(1200);
 
-  await page.waitForTimeout(1600);
+  // Click backdrop outside dialog to return cleanly to floor plan
+  await page.mouse.click(200, 150);
+  await actionSheet.waitFor({ state: 'detached', timeout: 5000 });
+  await page.waitForTimeout(1400);
 
   const rawVideo = await page.video().path();
   await context.close();
@@ -291,45 +296,47 @@ async function recordServerApp(browser) {
   const token = getAuthToken('server', 'user-server');
   await setupPageAuth(page, token, 'http://127.0.0.1:3003/server-standalone');
 
-  await page.waitForTimeout(800);
-
   // Select Table T1
   const t1Btn = page.getByRole('button', { name: /T1/i }).first();
-  if (await t1Btn.isVisible()) {
-    await smoothClick(page, t1Btn, { moveDuration: 500, postClickWait: 600 });
-  }
+  await t1Btn.waitFor({ state: 'visible', timeout: 10000 });
+  await smoothClick(page, t1Btn, { moveDuration: 500, postClickWait: 600 });
 
   // Tap Cold Brew
   const coldBrew = page.getByText('Nitro Cold Brew').first();
-  if (await coldBrew.isVisible()) {
-    await smoothClick(page, coldBrew, { moveDuration: 500, postClickWait: 500 });
-  }
+  await coldBrew.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, coldBrew, { moveDuration: 500, postClickWait: 500 });
 
   // Tap Scone
   const scone = page.getByText('Blueberry Scone').first();
-  if (await scone.isVisible()) {
-    await smoothClick(page, scone, { moveDuration: 500, postClickWait: 500 });
-  }
+  await scone.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, scone, { moveDuration: 500, postClickWait: 500 });
 
   // Open cart drawer on mobile
   const cartTrigger = page
     .locator('button[aria-label="Current ticket"], button:has(svg.lucide-shopping-cart)')
     .first();
-  if (await cartTrigger.isVisible()) {
-    await smoothClick(page, cartTrigger, { moveDuration: 500, postClickWait: 600 });
-  }
+  await cartTrigger.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, cartTrigger, { moveDuration: 500, postClickWait: 600 });
 
-  // Add notes and send
-  const noteInput = page.getByPlaceholder('Order notes (optional)').first();
-  if (await noteInput.isVisible()) {
-    await smoothClick(page, noteInput, { moveDuration: 400 });
-    await noteInput.fill('Table 1 - extra cold');
-  }
+  // Add notes and send (filter visible element in mobile drawer)
+  const noteInput = page
+    .getByPlaceholder('Order notes (optional)')
+    .filter({ visible: true })
+    .first();
+  await noteInput.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, noteInput, { moveDuration: 400 });
+  await noteInput.fill('Table 1 - extra cold');
+  await page.waitForTimeout(300);
 
-  const sendBtn = page.getByRole('button', { name: /Send to kitchen|Place Order/i }).first();
-  if (await sendBtn.isVisible()) {
-    await smoothClick(page, sendBtn, { moveDuration: 500, postClickWait: 1200 });
-  }
+  const sendBtn = page
+    .getByRole('button', { name: /Send to kitchen|Place Order/i })
+    .filter({ visible: true })
+    .first();
+  await sendBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, sendBtn, { moveDuration: 500, postClickWait: 1200 });
+
+  // Assert order sent toast appears
+  await page.waitForSelector('text=Order sent', { timeout: 8000 });
 
   await page.waitForTimeout(1600);
 
@@ -357,44 +364,79 @@ async function recordSplitPayments(browser) {
   });
 
   const page = await context.newPage();
+  page.on('console', (msg) => console.log('PAGE LOG:', msg.text()));
+  page.on('pageerror', (err) => console.log('PAGE ERROR:', err.message));
+  page.on('request', (req) => {
+    if (req.url().includes('/api/')) console.log('REQ:', req.method(), req.url());
+  });
+  page.on('response', async (res) => {
+    if (res.url().includes('/api/')) {
+      console.log('RES:', res.status(), res.url());
+      if (res.status() >= 400) {
+        try {
+          console.log('RES BODY:', await res.text());
+        } catch (e) {}
+      }
+    }
+  });
   const token = getAuthToken('manager', 'user-manager');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/orders');
 
-  await page.waitForTimeout(800);
-
-  // Click on the active Table T2 order
+  // Click on active Table T2 order
   const orderRow = page.locator('text=T2').first();
-  if (await orderRow.isVisible()) {
-    await smoothClick(page, orderRow, { moveDuration: 500, postClickWait: 600 });
-  }
+  await orderRow.waitFor({ state: 'visible', timeout: 10000 });
+  await smoothClick(page, orderRow, { moveDuration: 500, postClickWait: 600 });
 
-  // Click "Checkout" or "Take Payment"
+  // Click "Checkout" / "Take Payment"
   const checkoutBtn = page.getByRole('button', { name: /Checkout|Take Payment/i }).first();
-  if (await checkoutBtn.isVisible()) {
-    await smoothClick(page, checkoutBtn, { moveDuration: 600, postClickWait: 800 });
+  await checkoutBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, checkoutBtn, { moveDuration: 600, postClickWait: 800 });
 
-    // Payment modal opens! Toggle "Split payment equally"
-    const splitToggle = page.getByRole('button', { name: 'Split payment equally' });
-    if (await splitToggle.isVisible()) {
-      await smoothClick(page, splitToggle, { moveDuration: 600, postClickWait: 600 });
+  // In payment modal, click "Split payment equally"
+  const splitToggle = page.getByRole('button', { name: 'Split payment equally' });
+  await splitToggle.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, splitToggle, { moveDuration: 600, postClickWait: 600 });
 
-      // Change remaining payers to 2
-      const payerInput = page.getByLabel('Remaining payers');
-      if (await payerInput.isVisible()) {
-        await smoothClick(page, payerInput, { moveDuration: 400 });
-        await payerInput.fill('2');
-        await page.waitForTimeout(400);
-      }
+  // Change payers to 2
+  const payerInput = page.getByLabel('Remaining payers');
+  await payerInput.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, payerInput, { moveDuration: 400 });
+  await payerInput.fill('2');
+  await page.waitForTimeout(400);
 
-      // Click "Apply to Cash"
-      const applyCash = page.getByRole('button', { name: 'Apply to Cash' });
-      if (await applyCash.isVisible()) {
-        await smoothClick(page, applyCash, { moveDuration: 500, postClickWait: 600 });
-      }
-    }
-  }
+  // Click "Apply to Cash"
+  const applyCash = page.getByRole('button', { name: 'Apply to Cash' });
+  await applyCash.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, applyCash, { moveDuration: 500, postClickWait: 600 });
 
-  await page.waitForTimeout(2000);
+  // Click Pay button for share 1
+  const payBtn = page.getByRole('button', { name: /^Pay \$/i });
+  await payBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, payBtn, { moveDuration: 500, postClickWait: 800 });
+
+  // Partial payment confirmation dialog opens: click "Pay" to confirm
+  const confirmPayBtn = page.locator('div[role="dialog"] button:has-text("Pay")').last();
+  await confirmPayBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, confirmPayBtn, { moveDuration: 500, postClickWait: 800 });
+
+  // Assert partial payment recorded toast appears
+  await page.waitForSelector('text=Payment recorded', { timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // For the final share, allocate remaining balance to Cash tender
+  const cashTenderBtn = page.locator('button[title="Cash"]').first();
+  await cashTenderBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, cashTenderBtn, { moveDuration: 500, postClickWait: 600 });
+
+  // Click Pay for the final share
+  await smoothClick(page, payBtn, { moveDuration: 500, postClickWait: 800 });
+
+  // Now bill is fully paid! Click Done button
+  const doneBtn = page.getByRole('button', { name: 'Done' });
+  await doneBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, doneBtn, { moveDuration: 500, postClickWait: 800 });
+
+  await page.waitForTimeout(1600);
 
   const rawVideo = await page.video().path();
   await context.close();
@@ -423,27 +465,44 @@ async function recordRecipeInventory(browser) {
   const token = getAuthToken('manager', 'user-manager');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/inventory');
 
-  await page.waitForTimeout(1000);
+  // Ensure Supplies tab is open
+  const suppliesTab = page.getByRole('tab', { name: /Supplies/i });
+  await suppliesTab.waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForTimeout(600);
 
-  // Switch to Recipes tab
-  const recipesTab = page.getByRole('tab', { name: /Recipes/i });
-  if (await recipesTab.isVisible()) {
-    await smoothClick(page, recipesTab, { moveDuration: 600, postClickWait: 1000 });
-  }
+  // Click Record Movement on Espresso Beans row
+  const recordMovementBtn = page
+    .locator('tr:has-text("Espresso Beans")')
+    .getByTitle(/Record Movement/i)
+    .first();
+  await recordMovementBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, recordMovementBtn, { moveDuration: 500, postClickWait: 600 });
+
+  // In modal, enter quantity 2.5 and reason
+  const qtyInput = page.locator('form input[type="number"]');
+  await qtyInput.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, qtyInput, { moveDuration: 400 });
+  await qtyInput.fill('2.5');
+
+  const reasonInput = page.locator('form input[type="text"]');
+  await smoothClick(page, reasonInput, { moveDuration: 400 });
+  await reasonInput.fill('Weekly delivery - Artisan Roasters');
+  await page.waitForTimeout(300);
+
+  // Click Save
+  const saveBtn = page.locator('form button[type="submit"]');
+  await smoothClick(page, saveBtn, { moveDuration: 500, postClickWait: 800 });
 
   // Switch to Stock Movements tab
   const movementsTab = page.getByRole('tab', { name: /Stock Movements|Movements/i });
-  if (await movementsTab.isVisible()) {
-    await smoothClick(page, movementsTab, { moveDuration: 600, postClickWait: 1000 });
-  }
+  await movementsTab.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, movementsTab, { moveDuration: 600, postClickWait: 1000 });
 
-  // Return to Supplies tab
-  const suppliesTab = page.getByRole('tab', { name: /Supplies/i });
-  if (await suppliesTab.isVisible()) {
-    await smoothClick(page, suppliesTab, { moveDuration: 600, postClickWait: 1000 });
-  }
+  // Assert newly added movement is visible at top of movements table
+  await page.waitForSelector('text=Weekly delivery - Artisan Roasters', { timeout: 5000 });
 
-  await page.waitForTimeout(1800);
+  // Hold on movements list showing both receipt and recipe depletion
+  await page.waitForTimeout(2000);
 
   const rawVideo = await page.video().path();
   await context.close();
@@ -472,33 +531,37 @@ async function recordThermalPrinting(browser) {
   const token = getAuthToken('owner', 'user-owner');
   await setupPageAuth(page, token, 'http://127.0.0.1:3001/print-test');
 
-  await page.waitForTimeout(800);
-
   // Select 80mm paper width
   const paper80 = page.getByRole('button', { name: /80mm/i }).first();
-  if (await paper80.isVisible()) {
-    await smoothClick(page, paper80, { moveDuration: 500, postClickWait: 500 });
-  }
+  await paper80.waitFor({ state: 'visible', timeout: 10000 });
+  await smoothClick(page, paper80, { moveDuration: 500, postClickWait: 500 });
 
   // Select KOT Kitchen Ticket mode
   const kotMode = page.getByRole('button', { name: /KOT/i }).first();
-  if (await kotMode.isVisible()) {
-    await smoothClick(page, kotMode, { moveDuration: 500, postClickWait: 600 });
-  }
+  await kotMode.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, kotMode, { moveDuration: 500, postClickWait: 600 });
 
   // Switch to Detailed Tax Bill
   const taxBill = page.getByRole('button', { name: /Detailed Tax Bill/i }).first();
-  if (await taxBill.isVisible()) {
-    await smoothClick(page, taxBill, { moveDuration: 500, postClickWait: 600 });
-  }
+  await taxBill.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, taxBill, { moveDuration: 500, postClickWait: 600 });
+
+  // Click Run Test Print
+  const runTestBtn = page.getByRole('button', { name: /Run Test/i });
+  await runTestBtn.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, runTestBtn, { moveDuration: 500, postClickWait: 800 });
+
+  // Assert print success toast appears
+  await page
+    .getByText(/printed/i)
+    .first()
+    .waitFor({ state: 'visible', timeout: 8000 });
 
   // Scroll data preview into view
   const preview = page.getByText('Data Preview').first();
-  if (await preview.isVisible()) {
-    await smoothMove(page, preview, 500);
-  }
+  await smoothMove(page, preview, 500);
 
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(1800);
 
   const rawVideo = await page.video().path();
   await context.close();

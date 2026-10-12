@@ -77,7 +77,8 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
       onSaved(data.order as Order);
       onClose();
     } catch (error) {
-      const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      const message = (error as { response?: { data?: { error?: string } } })?.response?.data
+        ?.error;
       toast.error(message || tOrders('editItemFailed'));
     } finally {
       setSaving(false);

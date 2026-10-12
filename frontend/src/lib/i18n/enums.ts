@@ -41,7 +41,8 @@ export const ITEM_STATUS_LABEL_KEYS = {
   void_adjustment: 'itemStatusVoidAdjustment',
 } as const satisfies Record<OrderItem['status'] | 'waiting', OrdersKey>;
 
-type PermissionMatrixCapabilityKey = keyof AppConfig['Messages']['permissionMatrix']['capabilities'];
+type PermissionMatrixCapabilityKey =
+  keyof AppConfig['Messages']['permissionMatrix']['capabilities'];
 type PermissionMatrixAreaKey = keyof AppConfig['Messages']['permissionMatrix']['areas'];
 
 /**

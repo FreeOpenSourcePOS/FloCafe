@@ -447,7 +447,8 @@ export default function CartPanel({
         {/* Previously ordered items (add-items mode) */}
         {existingOrder &&
           existingOrder.items &&
-          existingOrder.items.filter((i: OrderItem) => !isTerminalItemStatus(i.status)).length > 0 && (
+          existingOrder.items.filter((i: OrderItem) => !isTerminalItemStatus(i.status)).length >
+            0 && (
             <div className="mb-3 pb-3 border-b border-dashed border-border">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 {t('alreadyOrdered')}

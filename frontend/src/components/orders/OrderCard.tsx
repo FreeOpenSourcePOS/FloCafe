@@ -49,26 +49,83 @@ import { formatItemHeading } from '@/lib/printer/item-heading';
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
 
-export const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
-  pending: { bg: 'bg-yellow-100 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', labelKey: 'pending' },
-  preparing: { bg: 'bg-blue-100 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', labelKey: 'preparing' },
-  ready: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'ready' },
-  served: { bg: 'bg-purple-100 dark:bg-purple-950/40', text: 'text-purple-700 dark:text-purple-300', labelKey: 'served' },
+export const orderStatusBadge: Record<
+  Order['status'],
+  { bg: string; text: string; labelKey: OrdersKey }
+> = {
+  pending: {
+    bg: 'bg-yellow-100 dark:bg-yellow-950/40',
+    text: 'text-yellow-700 dark:text-yellow-300',
+    labelKey: 'pending',
+  },
+  preparing: {
+    bg: 'bg-blue-100 dark:bg-blue-950/40',
+    text: 'text-blue-700 dark:text-blue-300',
+    labelKey: 'preparing',
+  },
+  ready: {
+    bg: 'bg-green-100 dark:bg-green-950/40',
+    text: 'text-green-700 dark:text-green-300',
+    labelKey: 'ready',
+  },
+  served: {
+    bg: 'bg-purple-100 dark:bg-purple-950/40',
+    text: 'text-purple-700 dark:text-purple-300',
+    labelKey: 'served',
+  },
   completed: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'completed' },
-  cancelled: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'cancelled' },
+  cancelled: {
+    bg: 'bg-red-100 dark:bg-red-950/40',
+    text: 'text-red-700 dark:text-red-300',
+    labelKey: 'cancelled',
+  },
 };
 
-export const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
-  paid: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'paid' },
-  partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partiallyPaid' },
-  unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
+export const paymentStatusBadge: Record<
+  'paid' | 'partial' | 'unpaid',
+  { bg: string; text: string; labelKey: OrdersKey }
+> = {
+  paid: {
+    bg: 'bg-green-100 dark:bg-green-950/40',
+    text: 'text-green-700 dark:text-green-300',
+    labelKey: 'paid',
+  },
+  partial: {
+    bg: 'bg-amber-100 dark:bg-amber-950/40',
+    text: 'text-amber-700 dark:text-amber-300',
+    labelKey: 'partiallyPaid',
+  },
+  unpaid: {
+    bg: 'bg-red-100 dark:bg-red-950/40',
+    text: 'text-red-700 dark:text-red-300',
+    labelKey: 'unpaidBadge',
+  },
 };
 
-export const whatsappReceiptStatusBadge: Record<'sent' | 'partial' | 'pending' | 'failed' | 'notSent', { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
-  sent: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'sent' },
-  partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partial' },
-  pending: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'pending' },
-  failed: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'failed' },
+export const whatsappReceiptStatusBadge: Record<
+  'sent' | 'partial' | 'pending' | 'failed' | 'notSent',
+  { bg: string; text: string; labelKey: WhatsAppStatusKey }
+> = {
+  sent: {
+    bg: 'bg-green-100 dark:bg-green-950/40',
+    text: 'text-green-700 dark:text-green-300',
+    labelKey: 'sent',
+  },
+  partial: {
+    bg: 'bg-amber-100 dark:bg-amber-950/40',
+    text: 'text-amber-700 dark:text-amber-300',
+    labelKey: 'partial',
+  },
+  pending: {
+    bg: 'bg-amber-100 dark:bg-amber-950/40',
+    text: 'text-amber-700 dark:text-amber-300',
+    labelKey: 'pending',
+  },
+  failed: {
+    bg: 'bg-red-100 dark:bg-red-950/40',
+    text: 'text-red-700 dark:text-red-300',
+    labelKey: 'failed',
+  },
   notSent: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'notSent' },
 };
 
@@ -96,7 +153,10 @@ interface OrderCardProps {
   canRestoreItems: boolean;
   canRefund: boolean;
   isWhatsAppReady: boolean;
-  printHistory: Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>;
+  printHistory: Record<
+    number,
+    { id: number; print_type: string; user_name: string; printed_at: string }[]
+  >;
   generatingBillId: number | null;
   printingBillId: number | null;
   sendingWaOrderId: number | null;
@@ -184,10 +244,10 @@ export function OrderCard({
   const [showPrintActivity, setShowPrintActivity] = useState(false);
 
   const activeItems = (order.items || []).filter(
-    (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status)
+    (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),
   );
   const inactiveItems = (order.items || []).filter(
-    (i) => ['cancelled', 'voided'].includes(i.status) && !i.superseded
+    (i) => ['cancelled', 'voided'].includes(i.status) && !i.superseded,
   );
 
   const bill = order.bill;
@@ -201,7 +261,8 @@ export function OrderCard({
 
   const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
 
-  const hasPaidBill = order.bills?.some((candidate) => candidate.payment_status === 'paid') ?? isPaid;
+  const hasPaidBill =
+    order.bills?.some((candidate) => candidate.payment_status === 'paid') ?? isPaid;
   const receiptStatusBadge =
     isWhatsAppReady && hasPaidBill && order.whatsapp_receipt_status
       ? whatsappReceiptStatusBadge[order.whatsapp_receipt_status] || null
@@ -218,18 +279,25 @@ export function OrderCard({
   const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
   const tax = bill ? Number(bill.tax_amount) : Number(order.tax_amount);
   const total = bill ? Number(bill.total) : Number(order.total);
-  const deliveryCharge = bill ? Number(bill.delivery_charge || 0) : Number(order.delivery_charge || 0);
+  const deliveryCharge = bill
+    ? Number(bill.delivery_charge || 0)
+    : Number(order.delivery_charge || 0);
   const serviceCharge = bill ? Number(bill.service_charge || 0) : Number(order.service_charge || 0);
-  const packagingCharge = bill ? Number(bill.packaging_charge || 0) : Number(order.packaging_charge || 0);
-  const customCharges = receiptChargeLines(bill ? bill.charges_breakdown : order.charges_breakdown)
-    .filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
+  const packagingCharge = bill
+    ? Number(bill.packaging_charge || 0)
+    : Number(order.packaging_charge || 0);
+  const customCharges = receiptChargeLines(
+    bill ? bill.charges_breakdown : order.charges_breakdown,
+  ).filter((charge) => charge.id !== 'service_charge' && charge.id !== 'packaging_charge');
 
   const orderBills = (() => {
     if (order.bills && order.bills.length > 0) return order.bills;
     if (order.bill) return [order.bill];
     return [];
   })();
-  const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
+  const paidBills = orderBills.filter(
+    (b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded',
+  );
   const hasEligibleRefund = paidBills.length > 0;
 
   const checkoutButtonLabel = (() => {
@@ -270,7 +338,9 @@ export function OrderCard({
   return (
     <div
       className={`bg-card rounded-xl border flex flex-col overflow-hidden transition-shadow hover:shadow-sm ${
-        order.status === 'cancelled' ? 'border-red-200 dark:border-red-900/40 opacity-80' : 'border-border'
+        order.status === 'cancelled'
+          ? 'border-red-200 dark:border-red-900/40 opacity-80'
+          : 'border-border'
       }`}
     >
       {/* ── TOP HEADER ────────────────────────────────────────────────────────── */}
@@ -282,19 +352,24 @@ export function OrderCard({
               #<Ltr>{order.order_number}</Ltr>
             </span>
             {statusBadgeInfo && (
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeInfo.bg} ${statusBadgeInfo.text}`}>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadgeInfo.bg} ${statusBadgeInfo.text}`}
+              >
                 {tOrders(statusBadgeInfo.labelKey)}
               </span>
             )}
             {payBadge && (
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}>
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}
+              >
                 {tOrders(payBadge.labelKey)}
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {(bill || (onPrintOrder && order.type === 'dine_in' && order.status !== 'cancelled')) && (
+            {(bill ||
+              (onPrintOrder && order.type === 'dine_in' && order.status !== 'cancelled')) && (
               <Button
                 variant="outline"
                 size="icon"
@@ -331,7 +406,9 @@ export function OrderCard({
                     disabled={convertingOrderId === order.id}
                   >
                     <ShoppingBag size={14} className="me-2" />
-                    {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
+                    {convertingOrderId === order.id
+                      ? tOrders('converting')
+                      : tOrders('convertToTakeaway')}
                   </DropdownMenuItem>
                 )}
 
@@ -454,10 +531,14 @@ export function OrderCard({
                   <div>
                     <span className="font-medium text-foreground">{customer.name}</span>
                     {customer.phone && (
-                      <span className="text-muted-foreground ms-2"><Ltr>{customer.phone}</Ltr></span>
+                      <span className="text-muted-foreground ms-2">
+                        <Ltr>{customer.phone}</Ltr>
+                      </span>
                     )}
                   </div>
-                  {linkingCustomer && <span className="text-muted-foreground text-[10px]">{tOrders('linking')}</span>}
+                  {linkingCustomer && (
+                    <span className="text-muted-foreground text-[10px]">{tOrders('linking')}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -554,7 +635,10 @@ export function OrderCard({
             />
           </button>
           {showOrderNotes && (
-            <div id={`order-notes-${order.id}`} className="px-4 py-2 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200 border-t border-amber-100/60 dark:border-amber-900/30 break-words">
+            <div
+              id={`order-notes-${order.id}`}
+              className="px-4 py-2 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200 border-t border-amber-100/60 dark:border-amber-900/30 break-words"
+            >
               {order.special_instructions}
             </div>
           )}
@@ -576,9 +660,7 @@ export function OrderCard({
                       className={`w-2 h-2 rounded-full shrink-0 ${dotConfig.dot}`}
                       title={tOrders(dotConfig.labelKey)}
                     />
-                    <span className="font-semibold text-foreground shrink-0">
-                      {item.quantity}x
-                    </span>
+                    <span className="font-semibold text-foreground shrink-0">{item.quantity}x</span>
                     <span className="text-foreground truncate" title={heading}>
                       {heading}
                     </span>
@@ -589,48 +671,56 @@ export function OrderCard({
                       {fmt(Number(item.total))}
                     </span>
 
-                    {canEditItems && onEditItem && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
-                      <button
-                        type="button"
-                        onClick={() => onEditItem(order, item)}
-                        className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
-                        title={tOrders('editItem')}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                    )}
+                    {canEditItems &&
+                      onEditItem &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) && (
+                        <button
+                          type="button"
+                          onClick={() => onEditItem(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                          title={tOrders('editItem')}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                     {/* Touchscreen-accessible item actions for Manager */}
-                    {canCancelItems && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
-                      <div className="flex items-center gap-1 ms-1 shrink-0">
-                        {item.status === 'pending' && onDeleteItem && (
-                          <button
-                            type="button"
-                            onClick={() => onDeleteItem(order.id, item.id)}
-                            className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 active:scale-95 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors touch-manipulation"
-                            title={tCommon('removeItem')}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                        {(item.status === 'preparing' || item.status === 'ready') && onVoidItem && (
-                          <button
-                            type="button"
-                            onClick={() => onVoidItem(order.id, item.id, heading)}
-                            className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 active:scale-95 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors touch-manipulation"
-                            title={tOrders('voidItem')}
-                          >
-                            <Ban size={14} />
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    {canCancelItems &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) && (
+                        <div className="flex items-center gap-1 ms-1 shrink-0">
+                          {item.status === 'pending' && onDeleteItem && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteItem(order.id, item.id)}
+                              className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 active:scale-95 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors touch-manipulation"
+                              title={tCommon('removeItem')}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                          {(item.status === 'preparing' || item.status === 'ready') &&
+                            onVoidItem && (
+                              <button
+                                type="button"
+                                onClick={() => onVoidItem(order.id, item.id, heading)}
+                                className="size-8 flex items-center justify-center text-red-400 hover:text-red-600 active:scale-95 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors touch-manipulation"
+                                title={tOrders('voidItem')}
+                              >
+                                <Ban size={14} />
+                              </button>
+                            )}
+                        </div>
+                      )}
                   </div>
                 </div>
 
                 {/* Add-ons subline */}
                 {item.addons && item.addons.length > 0 && (
                   <div className="ps-4 mt-0.5 text-[11px] text-muted-foreground truncate">
-                    {item.addons.map((a) => `+ ${a.name}${(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}`).join(' · ')}
+                    {item.addons
+                      .map((a) => `+ ${a.name}${(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}`)
+                      .join(' · ')}
                   </div>
                 )}
 
@@ -654,8 +744,15 @@ export function OrderCard({
                 aria-controls={`order-items-${order.id}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-full text-xs font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors touch-manipulation active:scale-95"
               >
-                <ChevronDown size={13} className={`transition-transform ${showAllItems ? 'rotate-180' : ''}`} />
-                <span>{showAllItems ? tCommon('back') : tOrders('moreItems', { count: hiddenItemCount })}</span>
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform ${showAllItems ? 'rotate-180' : ''}`}
+                />
+                <span>
+                  {showAllItems
+                    ? tCommon('back')
+                    : tOrders('moreItems', { count: hiddenItemCount })}
+                </span>
               </button>
             )}
 
@@ -669,29 +766,42 @@ export function OrderCard({
               >
                 <Ban size={13} />
                 <span>{tOrders('voidedItemsCount', { count: inactiveItems.length })}</span>
-                <ChevronDown size={13} className={`transition-transform ${showVoidedItems ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform ${showVoidedItems ? 'rotate-180' : ''}`}
+                />
               </button>
             )}
           </div>
 
           {/* Expanded voided items list */}
           {showVoidedItems && inactiveItems.length > 0 && canRestoreItems && (
-            <div id={`order-voided-${order.id}`} className="mt-2 ps-2.5 border-s-2 border-red-200 dark:border-red-900/40 space-y-1.5 py-1">
+            <div
+              id={`order-voided-${order.id}`}
+              className="mt-2 ps-2.5 border-s-2 border-red-200 dark:border-red-900/40 space-y-1.5 py-1"
+            >
               {inactiveItems.map((cItem: OrderItem) => (
-                <div key={cItem.id} className="flex items-center justify-between text-xs opacity-70">
+                <div
+                  key={cItem.id}
+                  className="flex items-center justify-between text-xs opacity-70"
+                >
                   <span className="line-through text-muted-foreground truncate">
-                    {cItem.quantity}x {formatItemHeading(cItem.product_name, cItem.variant_selection)}
+                    {cItem.quantity}x{' '}
+                    {formatItemHeading(cItem.product_name, cItem.variant_selection)}
                   </span>
-                  {cItem.status === 'cancelled' && !isPaid && !['completed', 'cancelled'].includes(order.status) && onRestoreItem && (
-                    <button
-                      type="button"
-                      onClick={() => onRestoreItem(order.id, cItem.id)}
-                      className="size-8 flex items-center justify-center hover:text-green-600 text-green-500 rounded active:scale-95 touch-manipulation"
-                      title={tCommon('restore')}
-                    >
-                      <RotateCcw size={13} />
-                    </button>
-                  )}
+                  {cItem.status === 'cancelled' &&
+                    !isPaid &&
+                    !['completed', 'cancelled'].includes(order.status) &&
+                    onRestoreItem && (
+                      <button
+                        type="button"
+                        onClick={() => onRestoreItem(order.id, cItem.id)}
+                        className="size-8 flex items-center justify-center hover:text-green-600 text-green-500 rounded active:scale-95 touch-manipulation"
+                        title={tCommon('restore')}
+                      >
+                        <RotateCcw size={13} />
+                      </button>
+                    )}
                 </div>
               ))}
             </div>
@@ -789,10 +899,14 @@ export function OrderCard({
 
         {/* Expanded Print Activity Log */}
         {showPrintActivity && orderPrints.length > 0 && (
-          <div id={`order-print-${order.id}`} className="mt-1.5 ps-3 border-s border-border text-[10px] text-muted-foreground space-y-0.5">
+          <div
+            id={`order-print-${order.id}`}
+            className="mt-1.5 ps-3 border-s border-border text-[10px] text-muted-foreground space-y-0.5"
+          >
             {orderPrints.map((p, idx) => (
               <div key={p.id || idx}>
-                {idx + 1}. {tOrders('printHistoryEntry', {
+                {idx + 1}.{' '}
+                {tOrders('printHistoryEntry', {
                   printedType: p.print_type === 'reprint' ? tOrders('reprint') : tOrders('printed'),
                   user: p.user_name,
                   time: formatDateTime(p.printed_at),

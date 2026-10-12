@@ -9,7 +9,11 @@ const root = path.resolve(__dirname, '..');
 function filesUnder(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = path.join(directory, entry.name);
-    return entry.isDirectory() ? filesUnder(fullPath) : entry.name.endsWith('.ts') ? [fullPath] : [];
+    return entry.isDirectory()
+      ? filesUnder(fullPath)
+      : entry.name.endsWith('.ts')
+        ? [fullPath]
+        : [];
   });
 }
 
@@ -46,21 +50,35 @@ function run(): void {
 
   for (const file of runtimeFiles) {
     const source = fs.readFileSync(file, 'utf8');
-    assert.doesNotMatch(source, /\brequireRole\s*\(/, `${toPosixPath(path.relative(root, file))} must authorize with permissions`);
+    assert.doesNotMatch(
+      source,
+      /\brequireRole\s*\(/,
+      `${toPosixPath(path.relative(root, file))} must authorize with permissions`,
+    );
   }
 
   for (const file of runtimeFiles) {
     const relative = path.relative(root, file);
     if (isReviewedRolePolicyFile(relative)) continue;
     const source = fs.readFileSync(file, 'utf8');
-    assert.doesNotMatch(source, /\bhasRole\s*\(/, `${toPosixPath(relative)} contains an unreviewed direct role check`);
+    assert.doesNotMatch(
+      source,
+      /\bhasRole\s*\(/,
+      `${toPosixPath(relative)} contains an unreviewed direct role check`,
+    );
   }
 
   // The order card used to take one `isOwnerOrManager` prop and gate the refund
   // button, the voided-items list, and item restoration with it, which let one
   // permission quietly govern three others in both directions.
-  const ordersPage = fs.readFileSync(path.join(root, 'frontend/src/app/(dashboard)/orders/page.tsx'), 'utf8');
-  const orderCard = fs.readFileSync(path.join(root, 'frontend/src/components/orders/OrderCard.tsx'), 'utf8');
+  const ordersPage = fs.readFileSync(
+    path.join(root, 'frontend/src/app/(dashboard)/orders/page.tsx'),
+    'utf8',
+  );
+  const orderCard = fs.readFileSync(
+    path.join(root, 'frontend/src/components/orders/OrderCard.tsx'),
+    'utf8',
+  );
 
   for (const permissionId of ['orders.item.cancel', 'orders.item.restore', 'refunds.initiate']) {
     assert.ok(
@@ -69,14 +87,40 @@ function run(): void {
     );
   }
   for (const capability of ['canCancelItems', 'canRestoreItems', 'canRefund']) {
-    assert.ok(orderCard.includes(`${capability}: boolean;`), `OrderCard takes ${capability} as its own capability`);
-    assert.ok(ordersPage.includes(`${capability}={${capability}}`), `the orders page passes ${capability} through unchanged`);
+    assert.ok(
+      orderCard.includes(`${capability}: boolean;`),
+      `OrderCard takes ${capability} as its own capability`,
+    );
+    assert.ok(
+      ordersPage.includes(`${capability}={${capability}}`),
+      `the orders page passes ${capability} through unchanged`,
+    );
   }
-  assert.doesNotMatch(orderCard, /isOwnerOrManager/, 'the order card no longer collapses three permissions into one flag');
-  assert.match(orderCard, /\{canCancelItems && !isPaid/, 'item cancellation is gated on orders.item.cancel');
-  assert.match(orderCard, /\{inactiveItems\.length > 0 && canRestoreItems && \(/, 'viewing voided items is gated on orders.item.restore');
-  assert.match(orderCard, /\{showVoidedItems && inactiveItems\.length > 0 && canRestoreItems && \(/, 'restoring voided items is gated on orders.item.restore');
-  assert.match(orderCard, /\{canRefund && hasEligibleRefund && \(/, 'the refund button is gated on refunds.initiate');
+  assert.doesNotMatch(
+    orderCard,
+    /isOwnerOrManager/,
+    'the order card no longer collapses three permissions into one flag',
+  );
+  assert.match(
+    orderCard,
+    /\{\s*canCancelItems\s*&&\s*!isPaid/,
+    'item cancellation is gated on orders.item.cancel',
+  );
+  assert.match(
+    orderCard,
+    /\{\s*inactiveItems\.length\s*>\s*0\s*&&\s*canRestoreItems\s*&&\s*\(/,
+    'viewing voided items is gated on orders.item.restore',
+  );
+  assert.match(
+    orderCard,
+    /\{\s*showVoidedItems\s*&&\s*inactiveItems\.length\s*>\s*0\s*&&\s*canRestoreItems\s*&&\s*\(/,
+    'restoring voided items is gated on orders.item.restore',
+  );
+  assert.match(
+    orderCard,
+    /\{\s*canRefund\s*&&\s*hasEligibleRefund\s*&&\s*\(/,
+    'the refund button is gated on refunds.initiate',
+  );
 
   console.log('Authorization static enforcement audit passed');
 }

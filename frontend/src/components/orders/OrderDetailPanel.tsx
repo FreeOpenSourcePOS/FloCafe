@@ -567,16 +567,19 @@ function OrderDetailContent({
                     <span className="text-muted-foreground font-medium">
                       {fmt(Number(item.total))}
                     </span>
-                    {canEditItems && onEditItem && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
-                      <button
-                        type="button"
-                        onClick={() => onEditItem(order, item)}
-                        className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
-                        title={tOrders('editItem')}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                    )}
+                    {canEditItems &&
+                      onEditItem &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) && (
+                        <button
+                          type="button"
+                          onClick={() => onEditItem(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                          title={tOrders('editItem')}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                     {canCancelItems &&
                       !isPaid &&
                       !['completed', 'cancelled'].includes(order.status) && (

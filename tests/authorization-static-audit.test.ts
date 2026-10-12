@@ -103,22 +103,22 @@ function run(): void {
   );
   assert.match(
     orderCard,
-    /\{canCancelItems &&\s+!isPaid/,
+    /\{\s*canCancelItems\s*&&\s*!isPaid/,
     'item cancellation is gated on orders.item.cancel',
   );
   assert.match(
     orderCard,
-    /\{inactiveItems\.length > 0 && canRestoreItems && \(/,
+    /\{\s*inactiveItems\.length\s*>\s*0\s*&&\s*canRestoreItems\s*&&\s*\(/,
     'viewing voided items is gated on orders.item.restore',
   );
   assert.match(
     orderCard,
-    /\{showVoidedItems && inactiveItems\.length > 0 && canRestoreItems && \(/,
+    /\{\s*showVoidedItems\s*&&\s*inactiveItems\.length\s*>\s*0\s*&&\s*canRestoreItems\s*&&\s*\(/,
     'restoring voided items is gated on orders.item.restore',
   );
   assert.match(
     orderCard,
-    /\{canRefund && hasEligibleRefund && \(/,
+    /\{\s*canRefund\s*&&\s*hasEligibleRefund\s*&&\s*\(/,
     'the refund button is gated on refunds.initiate',
   );
 

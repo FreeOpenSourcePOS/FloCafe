@@ -691,16 +691,19 @@ export function OrderCard({
                       {fmt(Number(item.total))}
                     </span>
 
-                    {canEditItems && onEditItem && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
-                      <button
-                        type="button"
-                        onClick={() => onEditItem(order, item)}
-                        className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
-                        title={tOrders('editItem')}
-                      >
-                        <Pencil size={14} />
-                      </button>
-                    )}
+                    {canEditItems &&
+                      onEditItem &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) && (
+                        <button
+                          type="button"
+                          onClick={() => onEditItem(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                          title={tOrders('editItem')}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                     {/* Touchscreen-accessible item actions for Manager */}
                     {canCancelItems &&
                       !isPaid &&

@@ -9,6 +9,7 @@ import {
   CUSTOMER_DISPLAY_DEFAULTS,
   CUSTOMER_DISPLAY_PATH,
   CUSTOMER_DISPLAY_STATUSES,
+  isCustomerDisplayConfig,
   type CustomerDisplayConfig,
   type CustomerDisplayStatus,
 } from '@/lib/customer-display';
@@ -25,14 +26,17 @@ export function CustomerDisplayCard() {
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
   const [saved, setSaved] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
   const [saving, setSaving] = useState(false);
-  const displayUrl = typeof window === 'undefined' ? CUSTOMER_DISPLAY_PATH : `${window.location.origin}${CUSTOMER_DISPLAY_PATH}`;
+  const displayUrl =
+    typeof window === 'undefined'
+      ? CUSTOMER_DISPLAY_PATH
+      : `${window.location.origin}${CUSTOMER_DISPLAY_PATH}`;
 
   useEffect(() => {
     const controller = new AbortController();
     api
       .get('/settings/customer-display', { signal: controller.signal })
       .then((res) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || !isCustomerDisplayConfig(res.data)) return;
         setConfig(res.data);
         setSaved(res.data);
       })
@@ -59,6 +63,7 @@ export function CustomerDisplayCard() {
     setSaving(true);
     try {
       const { data } = await api.put('/settings/customer-display', config);
+      if (!isCustomerDisplayConfig(data)) throw new Error('invalid response');
       setConfig(data);
       setSaved(data);
       toast.success(t('saved'));
@@ -87,12 +92,26 @@ export function CustomerDisplayCard() {
       <div className="mb-5">
         <label className="block text-sm font-medium text-foreground mb-1">{t('urlLabel')}</label>
         <div className="flex flex-wrap items-center gap-2">
-          <code dir="ltr" className="flex-1 min-w-0 truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm">{displayUrl}</code>
-          <button type="button" onClick={copyUrl} className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted">
+          <code
+            dir="ltr"
+            className="flex-1 min-w-0 truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm"
+          >
+            {displayUrl}
+          </code>
+          <button
+            type="button"
+            onClick={copyUrl}
+            className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted"
+          >
             <Copy size={16} />
             {t('copyUrl')}
           </button>
-          <a href={CUSTOMER_DISPLAY_PATH} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted">
+          <a
+            href={CUSTOMER_DISPLAY_PATH}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted"
+          >
             <ExternalLink size={16} />
             {t('openDisplay')}
           </a>
@@ -104,7 +123,12 @@ export function CustomerDisplayCard() {
         <div className="flex flex-wrap gap-4">
           {CUSTOMER_DISPLAY_STATUSES.map((status) => (
             <label key={status} className="inline-flex items-center gap-2 text-sm text-foreground">
-              <input type="checkbox" checked={config.statuses.includes(status)} onChange={() => toggleStatus(status)} className="text-brand" />
+              <input
+                type="checkbox"
+                checked={config.statuses.includes(status)}
+                onChange={() => toggleStatus(status)}
+                className="text-brand"
+              />
               {t(STATUS_LABEL_KEYS[status])}
             </label>
           ))}
@@ -112,7 +136,12 @@ export function CustomerDisplayCard() {
       </fieldset>
 
       <div className="mb-5">
-        <label htmlFor="customer-display-refresh" className="block text-sm font-medium text-foreground mb-1">{t('refreshLabel')}</label>
+        <label
+          htmlFor="customer-display-refresh"
+          className="block text-sm font-medium text-foreground mb-1"
+        >
+          {t('refreshLabel')}
+        </label>
         <input
           id="customer-display-refresh"
           type="number"
@@ -120,13 +149,23 @@ export function CustomerDisplayCard() {
           max={60}
           step={1}
           value={config.refresh_seconds}
-          onChange={(e) => setConfig((prev) => ({ ...prev, refresh_seconds: Math.min(60, Math.max(2, Math.round(Number(e.target.value)) || 2)) }))}
+          onChange={(e) =>
+            setConfig((prev) => ({
+              ...prev,
+              refresh_seconds: Math.min(60, Math.max(2, Math.round(Number(e.target.value)) || 2)),
+            }))
+          }
           className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm"
         />
       </div>
 
       <label className="inline-flex items-center gap-2 text-sm text-foreground">
-        <input type="checkbox" checked={config.show_updated} onChange={(e) => setConfig((prev) => ({ ...prev, show_updated: e.target.checked }))} className="text-brand" />
+        <input
+          type="checkbox"
+          checked={config.show_updated}
+          onChange={(e) => setConfig((prev) => ({ ...prev, show_updated: e.target.checked }))}
+          className="text-brand"
+        />
         {t('showUpdatedLabel')}
       </label>
 

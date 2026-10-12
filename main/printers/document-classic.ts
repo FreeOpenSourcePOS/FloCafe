@@ -123,7 +123,7 @@ export function buildBillPrintData(
   isReprint: boolean,
 ): PrintData {
   const items = (Array.isArray(order?.items) ? order.items : []).filter(
-    (item: any) => !isTerminalItemStatus(item?.status),
+    (item: { status?: string | null }) => !isTerminalItemStatus(item?.status),
   );
   return {
     isReprint,

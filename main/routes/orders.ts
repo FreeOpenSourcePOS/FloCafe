@@ -711,13 +711,41 @@ function summarizeWhatsAppReceiptStatuses(statuses: (string | null)[]): WhatsApp
   return null;
 }
 
+type TaxProductRow = Parameters<typeof calculateItemTax>[1];
+type TaxCustomerRow = Parameters<typeof calculateItemTax>[3];
+type ProductRow = TaxProductRow & {
+  id: string;
+  name: string;
+  sku: string | null;
+  price: string | number;
+};
+
+interface OrderItemInput {
+  product_id: string;
+  quantity: number;
+  unit_price?: number;
+  variant_id?: string | null;
+  variant_selection?: unknown;
+  modifier_selection?: unknown;
+  special_instructions?: string | null;
+  addons?:
+    | {
+        id?: string;
+        name?: string;
+        price?: number;
+        quantity?: number;
+        inventory_deducted_quantity?: number;
+      }[]
+    | null;
+}
+
 function insertOrderItems(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number,
-  items: any[],
+  items: OrderItemInput[],
   context: {
     tenantInfo: Parameters<typeof calculateItemTax>[0];
-    customer: any;
+    customer: TaxCustomerRow;
     isOnlineOrder: boolean;
     actorUserId: string;
     initialStatus?: string;
@@ -735,9 +763,9 @@ function insertOrderItems(
 
   const insertedItemIds: (number | bigint)[] = [];
   for (const item of items) {
-    const product = db
-      .prepare('SELECT * FROM products WHERE id = ?')
-      .get(item.product_id) as any;
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as
+      | ProductRow
+      | undefined;
     if (!product) {
       throw Object.assign(new Error(`Product ${item.product_id} not found`), {
         statusCode: 404,
@@ -754,7 +782,7 @@ function insertOrderItems(
       ? Number(item.unit_price)
       : variant
         ? variantUnitPrice(variant, isOnlineOrder)
-        : parseFloat(product.price);
+        : parseFloat(String(product.price));
     const deduction = resolveInventoryDeduction(product, quantity, variant);
     if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
       throw Object.assign(
@@ -819,9 +847,7 @@ function insertOrderItems(
       taxResult.tax_type,
       itemDiscount,
       itemTotal,
-      variant
-        ? variantSelectionSnapshot(variant)
-        : JSON.stringify(item.variant_selection || null),
+      variant ? variantSelectionSnapshot(variant) : JSON.stringify(item.variant_selection || null),
       JSON.stringify(item.modifier_selection || null),
       item.special_instructions || null,
       recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
@@ -844,7 +870,7 @@ function insertOrderItems(
         createdAt: itemCreatedAt,
       });
     }
-    moveOrderItemAddonStock(db, item.addons, {
+    moveOrderItemAddonStock(db, (item.addons ?? []) as AddonStockLine[], {
       direction: 'deplete',
       actorUserId: actorUserId,
       referenceId: String(insertItemResult.lastInsertRowid),
@@ -863,9 +889,35 @@ function insertOrderItems(
   return insertedItemIds;
 }
 
+interface EditableOrderRow extends EngineChargeOrderRow {
+  status: string;
+  customer_id: string | null;
+  online_platform: string | null;
+  subtotal: number;
+  discount_amount: number | null;
+  discount_type: string | null;
+  discount_value: number | null;
+  delivery_charge: number | null;
+}
+
+interface OrderItemRow {
+  id: number;
+  status: string;
+  product_id: string;
+  variant_id: string | null;
+  quantity: number;
+  unit_price: number;
+  special_instructions: string | null;
+  inventory_deducted_quantity: number;
+  inventory_product_id: string | null;
+  inventory_variant_id: string | null;
+  recipe_snapshot: string | null;
+  updated_at: string;
+}
+
 function cancelOrderItemAndRestoreStock(
   db: ReturnType<typeof getDatabase>,
-  currentItem: any,
+  currentItem: OrderItemRow,
   actorId: string,
   reason: string | undefined,
 ): void {
@@ -876,9 +928,7 @@ function cancelOrderItemAndRestoreStock(
   );
 
   const inventoryTarget =
-    currentItem.inventory_deducted_quantity > 0
-      ? orderItemInventoryTarget(db, currentItem)
-      : null;
+    currentItem.inventory_deducted_quantity > 0 ? orderItemInventoryTarget(db, currentItem) : null;
   if (inventoryTarget) {
     adjustProductStock(db, {
       productId: inventoryTarget.productId,
@@ -3867,7 +3917,7 @@ router.patch(
     try {
       const orderId = String(req.params.orderId);
       const itemId = String(req.params.itemId);
-      const actorId = String((req as any).user?.userId || '');
+      const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
       if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const { quantity, replacement, reason } = req.body || {};
@@ -3881,11 +3931,13 @@ router.patch(
 
       const db = getDatabase();
       const result = withTxn(() => {
-        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as
+          | EditableOrderRow
+          | undefined;
         if (!currentOrder) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         const oldItem = db
           .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
-          .get(itemId, orderId) as any;
+          .get(itemId, orderId) as OrderItemRow | undefined;
         if (!oldItem) {
           throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
         }
@@ -3897,7 +3949,11 @@ router.patch(
             statusCode: 400,
           });
         }
-        const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as any[];
+        const bills = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(orderId) as {
+          split_group_id: string | null;
+          payment_status: string;
+          paid_amount: number | null;
+        }[];
         if (bills.some((bill) => bill.split_group_id)) {
           throw Object.assign(new Error('Items cannot be changed after a check has been split'), {
             statusCode: 409,
@@ -3921,13 +3977,20 @@ router.patch(
           taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
         const customer = currentOrder.customer_id
-          ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any)
+          ? (db
+              .prepare('SELECT * FROM customers WHERE id = ?')
+              .get(currentOrder.customer_id) as TaxCustomerRow)
           : null;
         const oldAddons = db
           .prepare('SELECT * FROM order_item_addons WHERE order_item_id = ? ORDER BY id')
-          .all(oldItem.id) as any[];
+          .all(oldItem.id) as {
+          addon_id: string | null;
+          addon_name: string;
+          price: number;
+          quantity: number;
+        }[];
 
-        let newItem: any;
+        let newItem: OrderItemInput;
         let keepOldLine = false;
         let initialStatus = 'pending';
         let preserveUnitPrice = false;
@@ -3958,7 +4021,7 @@ router.patch(
             modifier_selection: parsedOld.modifier_selection,
             special_instructions: oldItem.special_instructions,
             addons: oldAddons.map((addon) => ({
-              id: addon.addon_id,
+              id: addon.addon_id ?? undefined,
               name: addon.addon_name,
               price: addon.price,
               quantity: addon.quantity,
@@ -3976,11 +4039,17 @@ router.patch(
 
         try {
           validateItemNotes(db, newItem.special_instructions);
-          const resolved = resolveItemAddons(db, newItem.product_id, newItem.addons, newItem.quantity);
+          const resolved = resolveItemAddons(
+            db,
+            newItem.product_id,
+            newItem.addons,
+            newItem.quantity,
+          );
           if (preserveUnitPrice && Array.isArray(resolved)) {
             const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
-            for (const addon of resolved as any[]) {
-              if (originalPrice.has(addon.id)) addon.price = originalPrice.get(addon.id);
+            for (const addon of resolved) {
+              const original = originalPrice.get(addon.id);
+              if (original !== undefined) addon.price = original;
             }
           }
           newItem.addons = resolved;
@@ -4033,7 +4102,9 @@ router.patch(
         const collected = bills.reduce((sum, bill) => sum + Number(bill.paid_amount || 0), 0);
         if (payableTotal < collected) {
           throw Object.assign(
-            new Error('The new total is below the amount already collected; refund the difference first'),
+            new Error(
+              'The new total is below the amount already collected; refund the difference first',
+            ),
             { statusCode: 409 },
           );
         }
@@ -4097,13 +4168,16 @@ router.patch(
           },
         });
 
-        const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as Record<
+          string,
+          unknown
+        >;
         const items = attachEffectiveAddons(
           db,
           db
             .prepare('SELECT * FROM order_items WHERE order_id = ?')
             .all(orderId)
-            .map(parseItemJson) as any[],
+            .map(parseItemJson) as { id: number }[],
         );
         return { updatedOrder, items };
       });
@@ -4111,7 +4185,8 @@ router.patch(
       cloudSync.recordOrderChanged(orderId, 'order.item_edited');
       notifyKdsUpdate();
       res.json({ order: { ...result.updatedOrder, items: result.items } });
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as { statusCode?: number; message?: string };
       console.error('[Orders] Edit item error:', error);
       res
         .status(error.statusCode || 500)

@@ -779,6 +779,23 @@ async function runTests() {
       'kick-drawer hides network details when pulsing fails',
     );
 
+    db.prepare('PRAGMA ignore_check_constraints = ON').run();
+    db.prepare("UPDATE printers SET connection_type = 'serial' WHERE is_default = 1").run();
+    const unsupportedKickRes = await request(app).post('/api/printers/kick-drawer');
+    assert(
+      unsupportedKickRes.status === 400 &&
+        unsupportedKickRes.body.error === 'Unsupported printer connection type',
+      'kick-drawer returns 400 for unsupported printer connection type',
+    );
+    const unsupportedActiveRes = await request(app).post('/api/printers/test-active');
+    assert(
+      unsupportedActiveRes.status === 400 &&
+        unsupportedActiveRes.body.error === 'Unsupported printer connection type',
+      'test-active returns 400 for unsupported printer connection type',
+    );
+    db.prepare("UPDATE printers SET connection_type = 'network' WHERE is_default = 1").run();
+    db.prepare('PRAGMA ignore_check_constraints = OFF').run();
+
     const deviceA = makeWebUsbTestDevice('Printer A', 1);
     const deviceB = makeWebUsbTestDevice('Counter WebUSB Printer', 2);
     const devices = [deviceA.device, deviceB.device];

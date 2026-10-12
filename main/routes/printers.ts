@@ -639,6 +639,8 @@ router.post(
             bytes: Array.from(testData),
             printerName: printer.name,
           });
+        default:
+          return res.status(400).json({ error: 'Unsupported printer connection type' });
       }
 
       if (result.ok) {

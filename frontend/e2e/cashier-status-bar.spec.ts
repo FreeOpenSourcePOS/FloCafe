@@ -160,7 +160,8 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
 
     await page.reload();
     await expect(shiftPill).toContainText('Shift opened');
-    await expect(page.getByTestId('status-bar-printer')).toHaveAttribute('title', /configured/i);
+    await expect(page.getByTestId('status-bar-printer')).toHaveAttribute('title', /network/i);
+    await expect(page.getByTestId('status-bar-printer')).toContainText('Disposable E2E Printer');
     await expect(kickDrawerBtn).toHaveCount(1);
 
     // 6. Capture screenshot of clean frontline bar
@@ -262,5 +263,46 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await drawerToggleBtn.click();
     await page.getByTestId('telemetry-drawer-backdrop').click({ position: { x: 10, y: 10 } });
     await expect(drawerToggleBtn).toBeFocused();
+  });
+
+  test.afterAll(async ({ request }) => {
+    try {
+      const loginRes = await request.post(`${BASE}/api/auth/login`, {
+        data: { email: 'owner@flo.local', password: 'E2ePass123!' },
+      });
+      if (loginRes.ok()) {
+        const { token } = await loginRes.json();
+        const authHeaders = { Authorization: `Bearer ${token}` };
+
+        const sessionRes = await request.get(`${BASE}/api/cash-sessions/current`, {
+          headers: authHeaders,
+        });
+        if (sessionRes.ok()) {
+          const session = await sessionRes.json();
+          if (session?.id && session?.status === 'open') {
+            await request.post(`${BASE}/api/cash-sessions/${session.id}/close`, {
+              headers: authHeaders,
+              data: { counted_cash_cents: 0 },
+            });
+          }
+        }
+
+        const printersRes = await request.get(`${BASE}/api/printers`, { headers: authHeaders });
+        if (printersRes.ok()) {
+          const { printers = [] } = await printersRes.json();
+          for (const printer of printers) {
+            if (
+              (printer.name === 'Disposable E2E Printer' ||
+                printer.name === 'Counter WebUSB Printer') &&
+              !printer.is_default
+            ) {
+              await request.delete(`${BASE}/api/printers/${printer.id}`, { headers: authHeaders });
+            }
+          }
+        }
+      }
+    } catch {
+      // Graceful teardown
+    }
   });
 });

@@ -215,17 +215,32 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
               : roleKey.charAt(0).toUpperCase() + roleKey.slice(1)
     : null;
 
-  // Printer readiness
-  const isPrinterReady =
-    defaultPrinter?.connection_type === 'webusb' &&
+  // Printer readiness & status labeling
+  const isWebUsb = defaultPrinter?.connection_type === 'webusb';
+  const isNetwork = defaultPrinter?.connection_type === 'network';
+  const isUsb = defaultPrinter?.connection_type === 'usb';
+  const isServerPrinter = isNetwork || isUsb;
+
+  const isWebUsbReady =
+    isWebUsb &&
     printMethod === 'escpos' &&
     printerConnStatus === 'connected' &&
     deviceInfo?.productName === defaultPrinter.name &&
     isConfiguredWebUsbReady;
+  const isPrinterConnecting = isWebUsb && printerConnStatus === 'connecting';
+  const isPrinterReady = isServerPrinter || isWebUsbReady;
   const isPrinterConfigured = defaultPrinter !== null;
-  const isPrinterConnecting =
-    defaultPrinter?.connection_type === 'webusb' && printerConnStatus === 'connecting';
   const canTestPrint = tenantCan(currentTenant, 'printing.execute');
+
+  const printerTitle = !isPrinterConfigured
+    ? tSettings('printerOffline')
+    : isServerPrinter
+      ? `${defaultPrinter.name} (${isNetwork ? tSettings('connectionNetwork') : tSettings('connectionUsb')})`
+      : isWebUsbReady
+        ? `${defaultPrinter.name} (${tSettings('connectionWebusb')})`
+        : isPrinterConnecting
+          ? tPos('printerConnecting')
+          : `${defaultPrinter.name} (${tSettings('connectionWebusb')}) — ${tSettings('printerConfigured')}`;
 
   // Shift state
   const isShiftKnown = session !== undefined;
@@ -482,13 +497,7 @@ export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?
           <div
             data-testid="status-bar-printer"
             className="flex items-center gap-1.5 px-1.5 py-0.5"
-            title={
-              isPrinterReady
-                ? tPos('printerReady')
-                : isPrinterConfigured
-                  ? tSettings('printerConfigured')
-                  : tSettings('printerOffline')
-            }
+            title={printerTitle}
           >
             {isPrinterReady ? (
               <>

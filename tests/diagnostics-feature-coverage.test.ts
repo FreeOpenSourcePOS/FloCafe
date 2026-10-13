@@ -412,6 +412,16 @@ async function main() {
       body: { name: 'Another synthetic customer', phone: '+919876543210' },
     });
     assert.equal(duplicateCustomer.status, 409, 'duplicate customer phone is rejected');
+    assert.equal(
+      duplicateCustomer.data.error,
+      'Customer with this phone already exists',
+      'duplicate customer response includes standard error field',
+    );
+    assert.equal(
+      duplicateCustomer.data.message,
+      'Customer with this phone already exists',
+      'duplicate customer response preserves message field',
+    );
 
     const linkedProduct = await api(baseUrl, '/api/products/diag-feature-target', {
       method: 'DELETE',
@@ -1076,12 +1086,36 @@ async function main() {
       body: { name: ' ' },
     });
     assert.equal(invalidCustomerName.status, 400, 'empty customer name remains rejected');
+    assert.equal(
+      invalidCustomerName.data.error,
+      'Name is required',
+      'empty customer name response includes standard error field',
+    );
+    assert.equal(
+      invalidCustomerName.data.message,
+      'Name is required',
+      'empty customer name response preserves message field',
+    );
     const invalidCustomerPhone = await api(baseUrl, '/api/customers', {
       method: 'POST',
       headers: owner.authHeader,
       body: { name: 'Invalid phone customer', phone: 'bad' },
     });
     assert.equal(invalidCustomerPhone.status, 400, 'invalid customer phone remains rejected');
+    assert.equal(
+      typeof invalidCustomerPhone.data.error,
+      'string',
+      'invalid customer phone response includes string error field',
+    );
+    assert.ok(
+      invalidCustomerPhone.data.error.length > 0,
+      'invalid customer phone error field is non-empty',
+    );
+    assert.equal(
+      invalidCustomerPhone.data.error,
+      invalidCustomerPhone.data.message,
+      'invalid customer phone response preserves matching message field',
+    );
     const invalidCustomerAddress = await api(baseUrl, '/api/customers', {
       method: 'POST',
       headers: owner.authHeader,

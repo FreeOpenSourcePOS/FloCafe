@@ -54,6 +54,7 @@ export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
   const tCustomer = useTranslations('customer');
   const tCustomers = useTranslations('customers');
+  const tOrders = useTranslations('orders');
   const tPos = useTranslations('pos');
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -75,7 +76,14 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
-  const [form, setForm] = useState({ name: '', phone: '', email: '', country_code: dialCode });
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    notes: '',
+    country_code: dialCode,
+  });
 
   const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
   const [ledgerData, setLedgerData] = useState<{
@@ -146,7 +154,14 @@ export default function CustomersPage() {
   const openAdd = () => {
     setEditingCustomer(null);
 
-    setForm({ name: '', phone: '', email: '', country_code: dialCode });
+    setForm({
+      name: '',
+      phone: '',
+      email: '',
+      address: '',
+      notes: '',
+      country_code: dialCode,
+    });
     setShowForm(true);
   };
 
@@ -157,6 +172,8 @@ export default function CustomersPage() {
       name: c.name,
       phone: c.phone || '',
       email: c.email || '',
+      address: c.address || '',
+      notes: (c as Customer & { notes?: string | null }).notes || '',
       country_code: c.country_code || dialCode,
     });
     setShowForm(true);
@@ -604,6 +621,26 @@ export default function CustomersPage() {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              />
+              <input
+                type="text"
+                name="address"
+                aria-label={tPos('customerAddress')}
+                placeholder={`${tPos('customerAddress')} (${tCommon('optional')})`}
+                maxLength={300}
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              />
+              <textarea
+                name="notes"
+                aria-label={tOrders('notesOptional')}
+                placeholder={tOrders('notesOptional')}
+                maxLength={500}
+                rows={2}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none"
               />
               <Button type="submit" className="w-full">
                 {editingCustomer ? tCustomer('update') : tCustomer('add')}

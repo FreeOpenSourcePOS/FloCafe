@@ -95,13 +95,19 @@ function testValidation() {
   expectRejection([definition({ name: '   ' })], 'a blank charge name');
   expectRejection([definition({ name: 'x'.repeat(81) })], 'an over-long charge name');
   expectRejection([definition({ type: 'per_order' })], 'an unsupported charge type');
-  expectRejection([definition({ calculation_basis: 'discounted' })], 'an unsupported calculation basis');
+  expectRejection(
+    [definition({ calculation_basis: 'discounted' })],
+    'an unsupported calculation basis',
+  );
   expectRejection([definition({ order_types: ['bar'] })], 'an unknown order type');
   expectRejection([definition({ order_types: [] })], 'an empty order type list');
   expectRejection([definition({ value: -1 })], 'a negative value');
   expectRejection([definition({ value: MAX_PERCENTAGE + 1 })], 'a percentage above 100');
   expectRejection([definition({ value: 'abc' })], 'a non-numeric value');
-  expectRejection([definition({ type: 'fixed', value: Number.MAX_VALUE })], 'a fixed amount outside currency precision');
+  expectRejection(
+    [definition({ type: 'fixed', value: Number.MAX_VALUE })],
+    'a fixed amount outside currency precision',
+  );
   expectRejection([definition(), definition()], 'duplicate charge ids');
   expectRejection({ charges: [] }, 'a non-array payload');
   expectRejection([definition({ id: 'a'.repeat(65) })], 'an oversized charge id');
@@ -134,14 +140,20 @@ function testOverflowGuards() {
   } catch (error) {
     calculationRejected = error instanceof ChargeValidationError;
   }
-  assertOrThrow(calculationRejected, 'calculation rejects a fixed amount that overflows scaled minor units');
+  assertOrThrow(
+    calculationRejected,
+    'calculation rejects a fixed amount that overflows scaled minor units',
+  );
 
   const largestUsdAmount = Number.MAX_SAFE_INTEGER / 100;
   const largeCharges = calculateAppliedCharges({
-    definitions: normalizeChargeDefinitions([
-      definition({ id: 'large_a', type: 'fixed', value: largestUsdAmount }),
-      definition({ id: 'large_b', type: 'fixed', value: largestUsdAmount }),
-    ], USD),
+    definitions: normalizeChargeDefinitions(
+      [
+        definition({ id: 'large_a', type: 'fixed', value: largestUsdAmount }),
+        definition({ id: 'large_b', type: 'fixed', value: largestUsdAmount }),
+      ],
+      USD,
+    ),
     orderType: 'dine_in',
     subtotal: 0,
     discountAmount: 0,
@@ -164,15 +176,32 @@ function testOverflowGuards() {
   });
   assertEqualOrThrow(
     largePercentage[0].amount,
-    Number((BigInt(Number.MAX_SAFE_INTEGER) * 101n + 500n) / 1000n) / 100,
+    9097271247288.4,
     'an unsafe 10.1 percent product still yields an accurately rounded safe result',
   );
 
+  let percentageOverflowRejected = false;
+  try {
+    calculateAppliedCharges({
+      definitions: [{ ...definition({ value: 200 }) } as any],
+      orderType: 'dine_in',
+      subtotal: largestUsdAmount,
+      discountAmount: 0,
+      currencyDecimals: USD,
+    });
+  } catch (error) {
+    percentageOverflowRejected = error instanceof ChargeValidationError;
+  }
+  assertOrThrow(
+    percentageOverflowRejected,
+    'calculation rejects a percentage result that overflows safe integer minor units',
+  );
+
   const zeroAndFullPercentage = calculateAppliedCharges({
-    definitions: normalizeChargeDefinitions([
-      definition({ id: 'zero_fee', value: 0 }),
-      definition({ id: 'full_fee', value: 100 }),
-    ], USD),
+    definitions: normalizeChargeDefinitions(
+      [definition({ id: 'zero_fee', value: 0 }), definition({ id: 'full_fee', value: 100 })],
+      USD,
+    ),
     orderType: 'dine_in',
     subtotal: 12.34,
     discountAmount: 0,
@@ -182,6 +211,106 @@ function testOverflowGuards() {
     zeroAndFullPercentage.map((charge: any) => charge.amount),
     [0, 12.34],
     'zero and 100 percent retain currency rounding at ordinary amounts',
+  );
+}
+
+function testPercentageRoundingBoundaries() {
+  const halfCentFloatTrap = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([definition({ value: 65.74 })], USD),
+    orderType: 'dine_in',
+    subtotal: 29725.0,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertEqualOrThrow(
+    halfCentFloatTrap[0].amount,
+    19541.22,
+    '29725.00 at 65.74% rounds exact half-cent (1954121.5 minor units) up to 19541.22',
+  );
+
+  const adjacentRates = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions(
+      [
+        definition({ id: 'below_half', value: 10.49 }),
+        definition({ id: 'exact_half', value: 10.5 }),
+        definition({ id: 'above_half', value: 10.51 }),
+      ],
+      USD,
+    ),
+    orderType: 'dine_in',
+    subtotal: 1.0,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertDeepEqualOrThrow(
+    adjacentRates.map((charge: any) => charge.amount),
+    [0.1, 0.11, 0.11],
+    'adjacent below-half, exact-half, and above-half percentage products round half-up',
+  );
+
+  const moreThanTwoDecimalRate = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions(
+      [
+        definition({ id: 'three_dec_half', value: 12.345 }),
+        definition({ id: 'three_dec_below', value: 12.344 }),
+      ],
+      USD,
+    ),
+    orderType: 'dine_in',
+    subtotal: 100.0,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertDeepEqualOrThrow(
+    moreThanTwoDecimalRate.map((charge: any) => charge.amount),
+    [12.35, 12.34],
+    'rates with more than two decimal places retain full precision before rounding',
+  );
+
+  const scientificRates = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions(
+      [
+        definition({ id: 'sci_half', value: 5e-7 }),
+        definition({ id: 'sci_below', value: 4.9e-7 }),
+        definition({ id: 'sci_above', value: 5.1e-7 }),
+      ],
+      USD,
+    ),
+    orderType: 'dine_in',
+    subtotal: 1000000.0,
+    discountAmount: 0,
+    currencyDecimals: USD,
+  });
+  assertDeepEqualOrThrow(
+    scientificRates.map((charge: any) => charge.amount),
+    [0.01, 0, 0.01],
+    'scientific-notation percentage rates round accurately at the half-minor-unit boundary',
+  );
+
+  const jpyHalfTrap = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([definition({ value: 65.74 })], JPY),
+    orderType: 'dine_in',
+    subtotal: 2972500,
+    discountAmount: 0,
+    currencyDecimals: JPY,
+  });
+  assertEqualOrThrow(
+    jpyHalfTrap[0].amount,
+    1954122,
+    'zero-decimal currency rounds exact half minor unit up without floating-point drift',
+  );
+
+  const kwdHalfTrap = calculateAppliedCharges({
+    definitions: normalizeChargeDefinitions([definition({ value: 65.74 })], KWD),
+    orderType: 'dine_in',
+    subtotal: 2972.5,
+    discountAmount: 0,
+    currencyDecimals: KWD,
+  });
+  assertEqualOrThrow(
+    kwdHalfTrap[0].amount,
+    1954.122,
+    'three-decimal currency rounds exact half minor unit up without floating-point drift',
   );
 }
 
@@ -221,7 +350,9 @@ function testBasisAndTypes() {
   assertEqualOrThrow(percentage[0].rate, 12.5, 'a percentage fee records its rate');
 
   const takeAwayOnly = calculateAppliedCharges({
-    definitions: normalizeChargeDefinitions([definition({ order_types: ['takeaway', 'delivery'] })]),
+    definitions: normalizeChargeDefinitions([
+      definition({ order_types: ['takeaway', 'delivery'] }),
+    ]),
     orderType: 'dine_in',
     subtotal: 100,
     discountAmount: 0,
@@ -236,7 +367,16 @@ function testCurrencyPrecision() {
   assertEqualOrThrow(getCurrencyFractionDigits('KWD'), 3, 'KWD has three minor unit digits');
 
   const jpy = calculateAppliedCharges({
-    definitions: normalizeChargeDefinitions([definition({ value: 10 }), definition({ id: 'packaging_charge', name: 'Packaging', type: 'fixed', value: 50, order_types: ['dine_in'] })]),
+    definitions: normalizeChargeDefinitions([
+      definition({ value: 10 }),
+      definition({
+        id: 'packaging_charge',
+        name: 'Packaging',
+        type: 'fixed',
+        value: 50,
+        order_types: ['dine_in'],
+      }),
+    ]),
     orderType: 'dine_in',
     subtotal: 1235,
     discountAmount: 0,
@@ -265,7 +405,8 @@ function testCurrencyPrecision() {
   });
   assertEqualOrThrow(kwd[0].amount, 1.001, 'a KWD fee rounds to three decimal places');
   assertOrThrow(
-    Math.abs(kwd[0].amount * getCurrencyMinorUnitFactor('KWD') - Math.round(kwd[0].amount * 1000)) < 1e-9,
+    Math.abs(kwd[0].amount * getCurrencyMinorUnitFactor('KWD') - Math.round(kwd[0].amount * 1000)) <
+      1e-9,
     'a KWD fee lands on a whole fils',
   );
 
@@ -285,7 +426,11 @@ function testCurrencyPrecision() {
     discountAmount: 0,
     currencyDecimals: USD,
   });
-  assertEqualOrThrow(negativeSubtotal[0].amount, 0, 'a negative subtotal yields a zero fee, never a negative one');
+  assertEqualOrThrow(
+    negativeSubtotal[0].amount,
+    0,
+    'a negative subtotal yields a zero fee, never a negative one',
+  );
 
   const overDiscounted = calculateAppliedCharges({
     definitions: normalizeChargeDefinitions([definition({ value: 10, calculation_basis: 'net' })]),
@@ -294,7 +439,11 @@ function testCurrencyPrecision() {
     discountAmount: 500,
     currencyDecimals: USD,
   });
-  assertEqualOrThrow(overDiscounted[0].amount, 0, 'a discount exceeding the subtotal floors the net fee at zero');
+  assertEqualOrThrow(
+    overDiscounted[0].amount,
+    0,
+    'a discount exceeding the subtotal floors the net fee at zero',
+  );
 }
 
 function testWaiverState() {
@@ -342,7 +491,11 @@ function testWaiverState() {
     10,
     'a mandatory charge cannot be zeroed by a stray waiver id',
   );
-  assertEqualOrThrow(mandatoryWaiverAttempt[0].waived, false, 'a mandatory charge never records waived: true');
+  assertEqualOrThrow(
+    mandatoryWaiverAttempt[0].waived,
+    false,
+    'a mandatory charge never records waived: true',
+  );
 }
 
 function testStandardColumnMapping() {
@@ -359,7 +512,11 @@ function testStandardColumnMapping() {
   });
   const columns = toStandardChargeColumns(charges, USD);
   assertEqualOrThrow(columns.service_charge, 10, 'service_charge maps onto the dedicated column');
-  assertEqualOrThrow(columns.packaging_charge, 2.5, 'packaging_charge maps onto the dedicated column');
+  assertEqualOrThrow(
+    columns.packaging_charge,
+    2.5,
+    'packaging_charge maps onto the dedicated column',
+  );
   assertEqualOrThrow(columns.other_charges, 7, 'non-standard charges are summed, not dropped');
   assertEqualOrThrow(
     columns.service_charge + columns.packaging_charge + columns.other_charges,
@@ -381,19 +538,27 @@ function testStandardColumnMapping() {
     JPY,
   );
   assertOrThrow(Number.isInteger(jpyColumns.service_charge), 'a JPY column mapping stays integral');
-  assertOrThrow(Number.isInteger(jpyColumns.packaging_charge), 'a JPY packaging column stays integral');
+  assertOrThrow(
+    Number.isInteger(jpyColumns.packaging_charge),
+    'a JPY packaging column stays integral',
+  );
 }
 
 function testParsing() {
-  const persisted = '[{"id":"service_charge","name":"Service Charge","type":"percentage","amount":10,'
-    + '"calculation_basis":"net","waived":true},'
-    + '{"id":"packaging_charge","name":"Packaging","type":"fixed","amount":2.5,'
-    + '"calculation_basis":"gross","waived":false}]';
+  const persisted =
+    '[{"id":"service_charge","name":"Service Charge","type":"percentage","amount":10,' +
+    '"calculation_basis":"net","waived":true},' +
+    '{"id":"packaging_charge","name":"Packaging","type":"fixed","amount":2.5,' +
+    '"calculation_basis":"gross","waived":false}]';
   const parsed = parseAppliedCharges(persisted);
   assertEqualOrThrow(parsed.length, 2, 'parses a persisted charges_breakdown payload');
   assertEqualOrThrow(parsed[0].waived, true, 'a persisted waiver is read as waived');
   assertDeepEqualOrThrow(parseAppliedCharges(null), [], 'a null breakdown reads as no charges');
-  assertDeepEqualOrThrow(parseAppliedCharges('{not json'), [], 'an unparseable breakdown reads as no charges');
+  assertDeepEqualOrThrow(
+    parseAppliedCharges('{not json'),
+    [],
+    'an unparseable breakdown reads as no charges',
+  );
   assertDeepEqualOrThrow(
     parseAppliedCharges('[{"id":"x"}]'),
     [],
@@ -405,6 +570,7 @@ function main() {
   resetCounters();
   testValidation();
   testOverflowGuards();
+  testPercentageRoundingBoundaries();
   testBasisAndTypes();
   testCurrencyPrecision();
   testWaiverState();

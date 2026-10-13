@@ -258,7 +258,7 @@ export default function AddonGroupsPage() {
                   {isExpanded ? (
                     <ChevronDown size={18} className="text-gray-400" />
                   ) : (
-                    <ChevronRight size={18} className="text-gray-400" />
+                    <ChevronRight size={18} className="text-gray-400 rtl-flip" />
                   )}
                   <div>
                     <div className="flex items-center gap-2">

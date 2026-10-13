@@ -1,5 +1,5 @@
 /**
- * Expense attempt durable storage contract (Issue #1055).
+ * Expense attempt durable storage contract.
  *
  * Usage: npx ts-node --transpile-only -P tests/tsconfig.json tests/expense-attempt.test.ts
  */

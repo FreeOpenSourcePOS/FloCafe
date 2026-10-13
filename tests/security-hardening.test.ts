@@ -27,6 +27,8 @@ const {
   createApp,
   assertEqual,
   assert,
+  assertEqualOrThrow,
+  assertOrThrow,
   getResults,
   closeDatabase,
   now,
@@ -38,6 +40,9 @@ const { kitchenRoutes } = require('../main/routes/kitchen');
 const { databaseRoutes } = require('../main/routes/database');
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 const { orderRoutes } = require('../main/routes/orders');
+const { settingsRoutes } = require('../main/routes/settings');
+const { registerRoutes } = require('../main/routes');
+const { setCachedPairingCode } = require('../main/db');
 
 function seedUser(db: any, id: string, role: string, email: string, categoryIds?: string[]) {
   db.prepare(`
@@ -83,6 +88,7 @@ async function main() {
     '/api/kitchen': kitchenRoutes,
     '/api/orders':  orderRoutes,
     '/api/db':      databaseRoutes,
+    '/api/settings': settingsRoutes,
   });
 
   const cashierStaff = await request(app).get('/api/staff').set(cashierAuth);
@@ -309,6 +315,139 @@ async function main() {
     type: 'dine_in', user_id: 'security-owner', items: [{ product_id: prodId, quantity: 1 }]
   });
   assertEqual(spoofedUserIdRes.body.order.user_id, 'security-server', 'a client-supplied user_id is ignored — the order is still attributed to the real authenticated caller');
+
+  // ── mobile_pairing_code protection on generic settings endpoints ─────────
+  const syntheticPairingCode = 'SYNTH-PAIR-9482';
+  const syntheticPairingSuffix = syntheticPairingCode.slice(-4);
+  db.prepare(`
+    INSERT OR REPLACE INTO settings (key, value, updated_at)
+    VALUES ('mobile_pairing_code', ?, ?)
+  `).run(syntheticPairingCode, now());
+
+  const ordinaryScalarRes = await request(app).get('/api/settings/timezone').set(waiterAuth);
+  assertEqualOrThrow(ordinaryScalarRes.status, 200, 'server can still read ordinary scalar settings');
+  assertEqualOrThrow(ordinaryScalarRes.body.setting?.value, 'Asia/Kolkata', 'ordinary scalar setting value is preserved');
+
+  const cashierScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(cashierAuth);
+  assertEqualOrThrow(cashierScalarPairing.status, 403, 'cashier cannot read mobile_pairing_code via scalar settings route');
+  assertOrThrow(!JSON.stringify(cashierScalarPairing.body).includes(syntheticPairingCode), 'cashier scalar denial omits pairing code');
+
+  const waiterScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(waiterAuth);
+  assertEqualOrThrow(waiterScalarPairing.status, 403, 'server cannot read mobile_pairing_code via scalar settings route');
+  assertOrThrow(!JSON.stringify(waiterScalarPairing.body).includes(syntheticPairingCode), 'server scalar denial omits pairing code');
+
+  const ownerScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(ownerAuth);
+  assertEqualOrThrow(ownerScalarPairing.status, 403, 'owner cannot read mobile_pairing_code via scalar settings route');
+  assertOrThrow(!JSON.stringify(ownerScalarPairing.body).includes(syntheticPairingCode), 'owner scalar denial omits pairing code');
+
+  for (const [roleLabel, authHeader] of [
+    ['cashier', cashierAuth],
+    ['server', waiterAuth],
+    ['owner', ownerAuth],
+  ] as const) {
+    const bulkRes = await request(app).get('/api/settings').set(authHeader);
+    assertEqualOrThrow(bulkRes.status, 200, `${roleLabel} can read bulk settings`);
+    const bulkSerialized = JSON.stringify(bulkRes.body);
+    assertOrThrow(
+      bulkRes.body.settings?.mobile_pairing_code === '****',
+      `${roleLabel} bulk settings fully masks non-empty mobile_pairing_code`,
+    );
+    assertOrThrow(
+      !bulkSerialized.includes(syntheticPairingCode) && !bulkSerialized.includes(syntheticPairingSuffix),
+      `${roleLabel} bulk settings exposes neither pairing code nor suffix`,
+    );
+  }
+
+  db.prepare(`
+    INSERT OR REPLACE INTO settings (key, value, updated_at)
+    VALUES ('mobile_pairing_code', '', ?)
+  `).run(now());
+  const emptyPairingBulk = await request(app).get('/api/settings').set(waiterAuth);
+  assertEqualOrThrow(emptyPairingBulk.status, 200, 'server can read bulk settings when mobile_pairing_code is empty');
+  assertOrThrow(
+    emptyPairingBulk.body.settings?.mobile_pairing_code === '',
+    'bulk settings returns empty string when mobile_pairing_code is empty',
+  );
+
+  // ── Dedicated mobile pairing endpoint remains reachable for mobile-access.manage ─
+  const registeredApp = createApp({});
+  registerRoutes(registeredApp);
+  const syntheticPairingExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  setCachedPairingCode(syntheticPairingCode, syntheticPairingExpiry);
+
+  const defaultServerDedicatedPairing = await request(registeredApp)
+    .get('/api/mobile/pairing-code')
+    .set(waiterAuth);
+  assertEqualOrThrow(
+    defaultServerDedicatedPairing.status,
+    403,
+    'default server cannot access dedicated /api/mobile/pairing-code route',
+  );
+  assertOrThrow(
+    !JSON.stringify(defaultServerDedicatedPairing.body).includes(syntheticPairingCode),
+    'dedicated pairing denial omits pairing code',
+  );
+
+  const ownerDedicatedPairing = await request(registeredApp)
+    .get('/api/mobile/pairing-code')
+    .set(ownerAuth);
+  assertEqualOrThrow(
+    ownerDedicatedPairing.status,
+    200,
+    'owner can access dedicated /api/mobile/pairing-code route',
+  );
+  assertOrThrow(
+    ownerDedicatedPairing.body?.pairing_code === syntheticPairingCode,
+    'owner dedicated pairing route returns cached synthetic pairing code',
+  );
+  assertEqualOrThrow(
+    ownerDedicatedPairing.body?.expires_at,
+    syntheticPairingExpiry,
+    'owner dedicated pairing route returns cached expiry',
+  );
+  assertOrThrow(
+    typeof ownerDedicatedPairing.body?.qr_data_url === 'string' &&
+      ownerDedicatedPairing.body.qr_data_url.startsWith('data:image/png;base64,'),
+    'owner dedicated pairing route returns QR data URL',
+  );
+
+  db.prepare(`
+    INSERT OR REPLACE INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES ('security-server', 'mobile-access.manage', 'allow', 'security-owner', ?, ?)
+  `).run(now(), now());
+
+  const grantedServerDedicatedPairing = await request(registeredApp)
+    .get('/api/mobile/pairing-code')
+    .set(waiterAuth);
+  assertEqualOrThrow(
+    grantedServerDedicatedPairing.status,
+    200,
+    'server with database-granted mobile-access.manage can access dedicated pairing route',
+  );
+  assertOrThrow(
+    grantedServerDedicatedPairing.body?.pairing_code === syntheticPairingCode,
+    'granted server dedicated pairing route returns cached synthetic pairing code',
+  );
+  assertEqualOrThrow(
+    grantedServerDedicatedPairing.body?.expires_at,
+    syntheticPairingExpiry,
+    'granted server dedicated pairing route returns cached expiry',
+  );
+
+  const grantedServerScalarSettings = await request(registeredApp)
+    .get('/api/settings/mobile_pairing_code')
+    .set(waiterAuth);
+  assertEqualOrThrow(
+    grantedServerScalarSettings.status,
+    403,
+    'generic scalar settings route stays blocked even with mobile-access.manage',
+  );
+
+  db.prepare(`
+    DELETE FROM user_permission_overrides
+    WHERE user_id = 'security-server' AND permission_id = 'mobile-access.manage'
+  `).run();
 
   const results = getResults();
   if (results.failed > 0) {

@@ -162,7 +162,9 @@ export default function ServerStandalonePage() {
   const tAuth = useTranslations('auth');
   const tTables = useTranslations('tables');
   const tCommon = useTranslations('common');
+  const tNav = useTranslations('nav');
   const tPos = useTranslations('pos');
+  const tSettings = useTranslations('settings');
 
   // Fall back to caller-supplied localized message for server-app errors without dotted error codes.
   const apiErrorT = (key: string): string => key;
@@ -957,12 +959,14 @@ export default function ServerStandalonePage() {
           </div>
           <button
             onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))}
+            aria-label={tSettings('refresh')}
             className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
           >
             <RefreshCw size={17} />
           </button>
           <button
             onClick={logout}
+            aria-label={tNav('logout')}
             className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
           >
             <LogOut size={17} />

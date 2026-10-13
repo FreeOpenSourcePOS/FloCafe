@@ -81,7 +81,11 @@ test.describe('Server App tableside ordering', () => {
   });
 
   test('fits mobile viewports without horizontal overflow', async ({ page }) => {
-    const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
+    const serverToken = getE2eToken(
+      'e2e-server',
+      `server-${Date.now()}-${Math.random()}@flo.local`,
+      'server',
+    );
     const viewports = [320, 375, 390, 430, 768];
 
     for (const width of viewports) {
@@ -89,10 +93,15 @@ test.describe('Server App tableside ordering', () => {
       await openServerApp(page, serverToken);
       await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
-      const headerButtons = page.locator('header button');
-      await expect(headerButtons).toHaveCount(2);
-      for (let i = 0; i < 2; i++) {
-        const box = await headerButtons.nth(i).boundingBox();
+      const header = page.locator('header');
+      const refreshButton = header.getByRole('button', { name: 'Refresh' });
+      const logoutButton = header.getByRole('button', { name: 'Logout' });
+      await expect(refreshButton).toBeVisible();
+      await expect(logoutButton).toBeVisible();
+      await expect(header.getByRole('button')).toHaveCount(2);
+
+      for (const button of [refreshButton, logoutButton]) {
+        const box = await button.boundingBox();
         expect(box).not.toBeNull();
         expect(box!.width).toBeGreaterThanOrEqual(44);
         expect(box!.height).toBeGreaterThanOrEqual(44);
@@ -103,5 +112,16 @@ test.describe('Server App tableside ordering', () => {
       });
       expect(hasOverflow).toBeFalsy();
     }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const header = page.locator('header');
+    const refreshTables = page.waitForResponse(
+      (res) => res.url().includes('/api/tables') && res.ok(),
+    );
+    await header.getByRole('button', { name: 'Refresh' }).click();
+    await refreshTables;
+
+    await header.getByRole('button', { name: 'Logout' }).click();
+    await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
   });
 });

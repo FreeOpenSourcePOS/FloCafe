@@ -603,6 +603,46 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     await expect(lastItem, 'the last cart row is reachable on a short viewport').toBeVisible();
   });
 
+  test('POS preserves usable cart items height and reachable checkout on a 1024x600 viewport', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await loginAsManager(page);
+    await page.goto(`${BASE}/pos`);
+
+    const names = await addSyntheticItemsToCart(page, 4);
+    const cartScroll = page.getByTestId('cart-items-scroll');
+    const cartScrollBox = await cartScroll.boundingBox();
+    expect(cartScrollBox, 'cart items container has bounds').not.toBeNull();
+    expect(
+      cartScrollBox!.height,
+      'cart items container maintains usable height on 1024x600 display',
+    ).toBeGreaterThanOrEqual(120);
+
+    const placeOrder = page.getByRole('button', { name: 'Place Order' });
+    const viewport = page.viewportSize();
+    expect(viewport, 'viewport is set').not.toBeNull();
+
+    await page.getByTestId('cart-shell').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await cartScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    const checkoutBox = await placeOrder.boundingBox();
+    expect(checkoutBox, 'checkout button has bounds').not.toBeNull();
+    expect(checkoutBox!.y, 'checkout button is not above the viewport').toBeGreaterThanOrEqual(-1);
+    expect(
+      checkoutBox!.y + checkoutBox!.height,
+      'checkout button is reachable inside the viewport',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
+
+    const cartShell = page.getByTestId('cart-shell');
+    const lastItem = cartShell.getByText(names[names.length - 1], { exact: false }).last();
+    await expect(lastItem, 'the last cart row is reachable on a 1024x600 viewport').toBeVisible();
+  });
+
   test('POS keeps checkout reachable at an effective 200% zoom viewport', async ({ page }) => {
     // 200% browser zoom on a 1024x768 window renders as a 512x384 CSS-pixel
     // viewport at 2x device pixels; below md the mobile cart drawer is the

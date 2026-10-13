@@ -82,7 +82,7 @@ input[type="number"] {
 
 /* Short viewports: the cart column becomes the single scroll owner, so order
  * type, totals and checkout stay reachable however long the item list is. */
-@media (max-height: 560px) {
+@media (max-height: 680px) {
   .pos-cart-shell {
     overflow-y: auto;
   }
@@ -92,6 +92,8 @@ input[type="number"] {
   }
 
   .pos-cart-items {
+    flex: 1 0 auto;
+    min-height: 7.5rem;
     overflow-y: visible;
   }
 }

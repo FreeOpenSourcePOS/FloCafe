@@ -170,7 +170,7 @@ Router: `main/routes/addon-groups.ts`. Full path: `/api/addon-groups`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | any authenticated role + addon-group read limiter | none | `{ addon_groups: [ ... ] }` with add-ons attached. |
 | `GET` | `/:id` | any authenticated role + addon-group read limiter | path: `id` | Single group with add-ons. |
-| `POST` | `/` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `addons` | `201` with the created group. |
+| `POST` | `/` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `is_active`, `addons` | `201` with the created group. |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `id`; body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `is_active`, `addons` | - |
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `id` | - |
 | `POST` | `/:groupId/addons` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `groupId`; body: `name`, `price`, `tax_category_id`, `tax_behavior`, `inherit_parent_tax_category`, `is_active`, `sort_order` | `201` with the created add-on. |

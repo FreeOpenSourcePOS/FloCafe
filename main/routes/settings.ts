@@ -118,6 +118,7 @@ function validBusinessLocation(timezone: unknown, currency: unknown, country: un
 }
 
 const SENSITIVE_SETTING_KEYS = new Set([
+  'mobile_pairing_code',
   'jwt_secret',
   'cloud_api_key',
   'cloud_device_secret',
@@ -158,6 +159,7 @@ export function isOrdersLayout(value: unknown): value is 'split' | 'cards' {
 
 function maskSetting(key: string, value: string): string {
   if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
+  if (key === 'mobile_pairing_code') return value ? '****' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }
@@ -1464,6 +1466,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'calendar',
   'theme_mode',
   'orders_layout',
+  'require_open_shift',
 ]);
 
 /**
@@ -1732,6 +1735,12 @@ router.put(
         return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
       }
       let valueToPersist: unknown = value;
+      if (req.params.key === 'require_open_shift') {
+        if (value !== true && value !== false && value !== 'true' && value !== 'false') {
+          return res.status(400).json({ error: 'require_open_shift must be a boolean' });
+        }
+        valueToPersist = value === true || value === 'true' ? 'true' : 'false';
+      }
       const diagnosticsChoice =
         req.params.key === 'diagnostics_consent' ||
         req.params.key === 'diagnostics_transmission_enabled';

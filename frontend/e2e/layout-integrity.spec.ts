@@ -34,6 +34,30 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   expect(card!.height, 'product card height').toBeGreaterThanOrEqual(44);
 });
 
+test('POS hides the floating mobile cart button on tablet and desktop viewports and keeps it touch-sized on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await loginAsManager(page);
+  await page.goto(`${BASE}/pos`);
+
+  await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+  const mobileCartButton = page.getByRole('button', { name: 'Cart' });
+  await expect(mobileCartButton, 'floating cart button hidden at 1024x768').toBeHidden();
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await expect(mobileCartButton, 'floating cart button hidden at 768x1024').toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mobileCartButton, 'floating cart button visible at 390x844').toBeVisible();
+
+  const box = await mobileCartButton.boundingBox();
+  expect(box, 'mobile cart button has bounds').not.toBeNull();
+  expect(box!.width, 'mobile cart button width >= 44px').toBeGreaterThanOrEqual(44);
+  expect(box!.height, 'mobile cart button height >= 44px').toBeGreaterThanOrEqual(44);
+});
+
 test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on the POS, KDS, and settings routes', async ({
   page,
 }) => {

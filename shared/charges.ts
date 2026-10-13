@@ -85,7 +85,9 @@ function normalizeChargeName(raw: unknown): string {
   const name = raw.trim();
   if (!name) throw new ChargeValidationError('Charge name is required');
   if (name.length > MAX_CHARGE_NAME_LENGTH) {
-    throw new ChargeValidationError(`Charge name must be at most ${MAX_CHARGE_NAME_LENGTH} characters`);
+    throw new ChargeValidationError(
+      `Charge name must be at most ${MAX_CHARGE_NAME_LENGTH} characters`,
+    );
   }
   return name;
 }
@@ -107,7 +109,9 @@ function normalizeOrderTypes(raw: unknown): ChargeOrderType[] {
     throw new ChargeValidationError('Charge must apply to at least one order type');
   }
   if (raw.length > MAX_CHARGE_ORDER_TYPES) {
-    throw new ChargeValidationError(`Charge cannot apply to more than ${MAX_CHARGE_ORDER_TYPES} order types`);
+    throw new ChargeValidationError(
+      `Charge cannot apply to more than ${MAX_CHARGE_ORDER_TYPES} order types`,
+    );
   }
   const seen = new Set<ChargeOrderType>();
   for (const entry of raw) {
@@ -161,7 +165,8 @@ export function normalizeChargeDefinitions(raw: unknown, currencyDecimals = 2): 
     }
 
     const value = normalizeChargeValue(type, entry.value);
-    if (type === 'fixed') toMinorUnits(value, Math.pow(10, normalizeCurrencyDecimals(currencyDecimals)));
+    if (type === 'fixed')
+      toMinorUnits(value, Math.pow(10, normalizeCurrencyDecimals(currencyDecimals)));
 
     definitions.push({
       id,
@@ -184,7 +189,10 @@ export function normalizeChargeDefinitions(raw: unknown, currencyDecimals = 2): 
 }
 
 /** Reads a stored definitions list for calculation, discarding anything invalid. */
-export function parseStoredChargeDefinitions(raw: unknown, currencyDecimals = 2): ChargeDefinition[] {
+export function parseStoredChargeDefinitions(
+  raw: unknown,
+  currencyDecimals = 2,
+): ChargeDefinition[] {
   try {
     return normalizeChargeDefinitions(raw, currencyDecimals);
   } catch {
@@ -231,17 +239,14 @@ function toMinorUnits(amount: number, factor: number): number {
 function addMinorUnits(total: number, amount: number): number {
   const sum = total + amount;
   if (!Number.isSafeInteger(sum)) {
-    throw new ChargeValidationError('Combined charge amounts exceed the supported currency precision');
+    throw new ChargeValidationError(
+      'Combined charge amounts exceed the supported currency precision',
+    );
   }
   return sum;
 }
 
 function percentageMinorUnits(basisMinor: number, percentage: number): number {
-  const product = basisMinor * percentage;
-  if (Number.isFinite(product) && Math.abs(product) <= Number.MAX_SAFE_INTEGER) {
-    return Math.round(product / 100);
-  }
-
   const [coefficient, exponentText] = percentage.toString().toLowerCase().split('e');
   const exponent = exponentText ? Number(exponentText) : 0;
   const [whole, fraction = ''] = coefficient.split('.');
@@ -290,8 +295,8 @@ export function calculateAppliedCharges(input: CalculateAppliedChargesInput): Ap
     const amountMinor = isWaived
       ? 0
       : definition.type === 'percentage'
-        // Integer minor units keep the percentage exact at the tenant's precision.
-        ? percentageMinorUnits(basisMinor, definition.value)
+        ? // Integer minor units keep the percentage exact at the tenant's precision.
+          percentageMinorUnits(basisMinor, definition.value)
         : Math.max(0, toMinorUnits(definition.value, factor));
 
     const charge: AppliedCharge = {
@@ -322,7 +327,10 @@ export interface StandardChargeColumns {
  * exports, the tax service and Z-reports already aggregate. Non-standard
  * charges are summed rather than dropped, so nothing is lost.
  */
-export function toStandardChargeColumns(charges: AppliedCharge[], currencyDecimals: number): StandardChargeColumns {
+export function toStandardChargeColumns(
+  charges: AppliedCharge[],
+  currencyDecimals: number,
+): StandardChargeColumns {
   const factor = Math.pow(10, normalizeCurrencyDecimals(currencyDecimals));
   let serviceMinor = 0;
   let packagingMinor = 0;
@@ -331,7 +339,8 @@ export function toStandardChargeColumns(charges: AppliedCharge[], currencyDecima
   for (const charge of charges) {
     const amountMinor = Math.max(0, toMinorUnits(charge.amount, factor));
     if (charge.id === 'service_charge') serviceMinor = addMinorUnits(serviceMinor, amountMinor);
-    else if (charge.id === 'packaging_charge') packagingMinor = addMinorUnits(packagingMinor, amountMinor);
+    else if (charge.id === 'packaging_charge')
+      packagingMinor = addMinorUnits(packagingMinor, amountMinor);
     else otherMinor = addMinorUnits(otherMinor, amountMinor);
   }
 
@@ -356,13 +365,13 @@ export function parseAppliedCharges(raw: unknown): AppliedCharge[] {
   if (!Array.isArray(parsed)) return [];
   return parsed.filter(
     (entry): entry is AppliedCharge =>
-      isRecord(entry)
-      && typeof entry.id === 'string'
-      && typeof entry.name === 'string'
-      && (entry.type === 'percentage' || entry.type === 'fixed')
-      && typeof entry.amount === 'number'
-      && Number.isFinite(entry.amount)
-      && (entry.calculation_basis === 'net' || entry.calculation_basis === 'gross'),
+      isRecord(entry) &&
+      typeof entry.id === 'string' &&
+      typeof entry.name === 'string' &&
+      (entry.type === 'percentage' || entry.type === 'fixed') &&
+      typeof entry.amount === 'number' &&
+      Number.isFinite(entry.amount) &&
+      (entry.calculation_basis === 'net' || entry.calculation_basis === 'gross'),
   );
 }
 

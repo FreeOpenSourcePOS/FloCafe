@@ -116,6 +116,7 @@ export function usePosKeyboardShortcuts(
         }
         if (cartItemCount > 0) {
           e.preventDefault();
+          if (e.repeat) return;
           handlersRef.current.onTender();
         }
         return;

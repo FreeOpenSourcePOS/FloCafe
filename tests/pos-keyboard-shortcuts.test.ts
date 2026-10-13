@@ -5,8 +5,14 @@
  */
 
 import assert from 'assert';
+import Module from 'module';
 import { parseQuantitySearch } from '../frontend/src/lib/quantity-search';
-import { isTypingTarget } from '../frontend/src/hooks/usePosKeyboardShortcuts';
+import {
+  isTypingTarget,
+  usePosKeyboardShortcuts,
+  type PosKeyboardShortcutHandlers,
+  type UsePosKeyboardShortcutsOptions,
+} from '../frontend/src/hooks/usePosKeyboardShortcuts';
 
 console.log('Testing parseQuantitySearch...');
 
@@ -135,4 +141,186 @@ assert.strictEqual(isTypingTarget(fakeBody), false, 'BODY element is NOT typing 
 assert.strictEqual(isTypingTarget(null), false, 'null target returns false');
 
 console.log('✓ All isTypingTarget tests passed.');
+
+console.log('Testing usePosKeyboardShortcuts keydown behavior...');
+
+{
+  class FakeHTMLElement {
+    tagName: string;
+    isContentEditable: boolean;
+    role: string | null;
+    constructor(tagName = 'DIV', role: string | null = null, isContentEditable = false) {
+      this.tagName = tagName;
+      this.role = role;
+      this.isContentEditable = isContentEditable;
+    }
+    getAttribute(attr: string) {
+      return attr === 'role' ? this.role : null;
+    }
+    matches(selector: string) {
+      const upper = this.tagName.toUpperCase();
+      if (selector.includes('button') && upper === 'BUTTON') return true;
+      if (selector.includes('[role="button"]') && this.role === 'button') return true;
+      return false;
+    }
+  }
+
+  let keydownListener: ((e: KeyboardEvent) => void) | null = null;
+  const originalWindow = (globalThis as Record<string, unknown>).window;
+  const originalHTMLElement = (globalThis as Record<string, unknown>).HTMLElement;
+  const moduleApi = Module as unknown as {
+    _load: (request: string, parent: unknown, isMain: boolean) => unknown;
+  };
+  const originalLoad = moduleApi._load;
+
+  (globalThis as Record<string, unknown>).HTMLElement = FakeHTMLElement;
+  (globalThis as Record<string, unknown>).window = {
+    addEventListener: (type: string, fn: (e: KeyboardEvent) => void) => {
+      if (type === 'keydown') keydownListener = fn;
+    },
+    removeEventListener: (type: string, fn: (e: KeyboardEvent) => void) => {
+      if (type === 'keydown' && keydownListener === fn) keydownListener = null;
+    },
+  };
+
+  const cleanups: Array<() => void> = [];
+  moduleApi._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request === 'react') {
+      return {
+        useRef: <T>(initial: T) => ({ current: initial }),
+        useEffect: (fn: () => void | (() => void)) => {
+          const cleanup = fn();
+          if (typeof cleanup === 'function') cleanups.push(cleanup);
+        },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    // Re-require hook module so it binds to our mocked react hooks
+    delete require.cache[require.resolve('../frontend/src/hooks/usePosKeyboardShortcuts')];
+    const { usePosKeyboardShortcuts: runHook } =
+      require('../frontend/src/hooks/usePosKeyboardShortcuts') as {
+        usePosKeyboardShortcuts: typeof usePosKeyboardShortcuts;
+      };
+
+    let tenderCalls = 0;
+    let incrementCalls = 0;
+    let decrementCalls = 0;
+    let focusSearchCalls = 0;
+
+    const handlers: PosKeyboardShortcutHandlers = {
+      onFocusSearch: () => {
+        focusSearchCalls += 1;
+      },
+      onTender: () => {
+        tenderCalls += 1;
+      },
+      onDismissModalOrBlur: () => false,
+      onIncrementLastItem: () => {
+        incrementCalls += 1;
+      },
+      onDecrementLastItem: () => {
+        decrementCalls += 1;
+      },
+    };
+
+    const options: UsePosKeyboardShortcutsOptions = {
+      enabled: true,
+      anyModalOpen: false,
+      tablePickerOpen: false,
+      cartItemCount: 2,
+    };
+
+    runHook(handlers, options);
+    assert.ok(keydownListener, 'keydown listener should be registered on window');
+
+    const dispatchKey = (overrides: Partial<KeyboardEvent> & { target?: unknown }) => {
+      let defaultPrevented = false;
+      const event = {
+        key: '',
+        code: '',
+        repeat: false,
+        ctrlKey: false,
+        metaKey: false,
+        altKey: false,
+        target: new FakeHTMLElement('DIV'),
+        preventDefault: () => {
+          defaultPrevented = true;
+        },
+        ...overrides,
+      } as unknown as KeyboardEvent;
+      keydownListener!(event);
+      return { defaultPrevented };
+    };
+
+    // 1. Repeat Space on canvas does NOT call onTender, but still prevents default
+    const repeatSpace = dispatchKey({ key: ' ', code: 'Space', repeat: true });
+    assert.strictEqual(
+      repeatSpace.defaultPrevented,
+      true,
+      'repeat Space on canvas prevents default',
+    );
+    assert.strictEqual(tenderCalls, 0, 'repeat Space on canvas must NOT call onTender');
+
+    // 2. Deliberate non-repeat Space calls onTender
+    const deliberateSpace = dispatchKey({ key: ' ', code: 'Space', repeat: false });
+    assert.strictEqual(
+      deliberateSpace.defaultPrevented,
+      true,
+      'deliberate Space on canvas prevents default',
+    );
+    assert.strictEqual(tenderCalls, 1, 'deliberate non-repeat Space calls onTender once');
+
+    // 3. Space on a button or [role="button"] does not call onTender or prevent default
+    const buttonSpace = dispatchKey({
+      key: ' ',
+      code: 'Space',
+      repeat: false,
+      target: new FakeHTMLElement('BUTTON'),
+    });
+    assert.strictEqual(
+      buttonSpace.defaultPrevented,
+      false,
+      'Space on button does not preventDefault',
+    );
+    assert.strictEqual(tenderCalls, 1, 'Space on button does not call onTender');
+
+    // 4. Typing immunity: Space, +, - inside an INPUT do not trigger canvas shortcuts
+    const inputTarget = new FakeHTMLElement('INPUT');
+    const inputSpace = dispatchKey({ key: ' ', code: 'Space', repeat: false, target: inputTarget });
+    assert.strictEqual(
+      inputSpace.defaultPrevented,
+      false,
+      'Space in INPUT does not preventDefault',
+    );
+    assert.strictEqual(tenderCalls, 1, 'Space in INPUT does not call onTender');
+
+    dispatchKey({ key: '+', code: 'Equal', repeat: false, target: inputTarget });
+    dispatchKey({ key: '-', code: 'Minus', repeat: false, target: inputTarget });
+    assert.strictEqual(incrementCalls, 0, '+ in INPUT does not increment');
+    assert.strictEqual(decrementCalls, 0, '- in INPUT does not decrement');
+
+    // 5. +/- quantity adjustments continue to work on both initial and repeat keydown
+    dispatchKey({ key: '+', code: 'Equal', repeat: false });
+    dispatchKey({ key: '+', code: 'Equal', repeat: true });
+    assert.strictEqual(incrementCalls, 2, '+ works on both initial and repeat keydown');
+
+    dispatchKey({ key: '-', code: 'Minus', repeat: false });
+    dispatchKey({ key: '-', code: 'Minus', repeat: true });
+    assert.strictEqual(decrementCalls, 2, '- works on both initial and repeat keydown');
+
+    void focusSearchCalls;
+  } finally {
+    while (cleanups.length > 0) {
+      cleanups.pop()?.();
+    }
+    moduleApi._load = originalLoad;
+    (globalThis as Record<string, unknown>).window = originalWindow;
+    (globalThis as Record<string, unknown>).HTMLElement = originalHTMLElement;
+  }
+}
+
+console.log('✓ All usePosKeyboardShortcuts keydown tests passed.');
 console.log('All POS keyboard shortcuts unit tests passed successfully.');

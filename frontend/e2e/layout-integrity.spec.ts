@@ -131,6 +131,50 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on
   );
 });
 
+test('sidebar theme toggle button does not vertically clip in Vietnamese (#1069)', async ({
+  page,
+}) => {
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill(E2E_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  try {
+    await setLanguage(page, 'vi');
+    await page.goto(`${BASE}/pos`);
+
+    const themeButton = page.getByTestId('sidebar-theme-toggle');
+    await expect(themeButton).toBeVisible();
+    await expect(themeButton).toContainText('Giao diện');
+
+    const metrics = await themeButton.evaluate((el) => {
+      const spans = Array.from(el.querySelectorAll('span')).map((span) => ({
+        text: span.textContent,
+        clientHeight: span.clientHeight,
+        scrollHeight: span.scrollHeight,
+      }));
+      return {
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        spans,
+      };
+    });
+    expect(
+      metrics.scrollHeight,
+      `Vietnamese sidebar theme toggle must not overflow vertically (got scrollHeight=${metrics.scrollHeight}, clientHeight=${metrics.clientHeight}, spans=${JSON.stringify(metrics.spans)})`,
+    ).toBeLessThanOrEqual(metrics.clientHeight + 2);
+    for (const span of metrics.spans) {
+      expect(
+        span.scrollHeight,
+        `Vietnamese sidebar theme toggle span "${span.text}" must not wrap/overflow vertically`,
+      ).toBeLessThanOrEqual(span.clientHeight + 2);
+    }
+  } finally {
+    await setLanguage(page, 'en');
+  }
+});
+
 /**
  * Scroll assertions for the POS and Orders control surfaces.
  *

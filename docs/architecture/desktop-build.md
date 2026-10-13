@@ -54,10 +54,10 @@ server serves the exported frontend from the same origin it serves `/api` on.
 
 `main/server.ts` mounts the API routers first and serves static files afterwards, so `/api/*` is
 never captured by the static fallback. The catch-all route for application pages is
-`app.get(/^(?!\/api|\/kds).*$/, ...)`: it deliberately excludes both the API prefix and the KDS
-WebSocket path. `resolveStaticPage` maps a route to its own exported `index.html` and refuses to
-build a path that would escape the export directory; unknown or unsafe paths fall back to the root
-page.
+`app.get(/^(?!\/api(?:\/|$)|\/kds(?:\/|$)).*$/, ...)`: it deliberately excludes both the API prefix
+and the KDS WebSocket path. `resolveStaticPage` maps a route to its own exported `index.html` and
+refuses to build a path that would escape the export directory; unknown or unsafe paths fall back to
+the root page.
 
 On Windows a middleware rewrites dotted `__next.` chunk requests, because Windows path handling
 does not preserve the nesting the export emits elsewhere.

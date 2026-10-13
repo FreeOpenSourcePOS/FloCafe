@@ -289,7 +289,7 @@ export default function StaffPage() {
               <h2 id="staff-modal-title" className="text-lg font-bold">
                 {editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}
               </h2>
-              <button type="button" onClick={closeForm}>
+              <button type="button" onClick={closeForm} aria-label={tCommon('close')}>
                 <X size={20} className="text-gray-400" />
               </button>
             </div>
@@ -444,7 +444,7 @@ export default function StaffPage() {
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('resetPasswordTitle')}</h2>
-              <button type="button" onClick={closeResetPassword}>
+              <button type="button" onClick={closeResetPassword} aria-label={tCommon('close')}>
                 <X size={20} className="text-gray-400" />
               </button>
             </div>

@@ -208,6 +208,7 @@ export default function CustomersPage() {
               <AlertCircle size={14} /> {tCustomers('actionRequired')}
               <button
                 onClick={() => router.push('/customers')}
+                aria-label={tCommon('clear')}
                 className="ms-1 text-red-500 hover:text-red-700"
               >
                 <X size={12} />
@@ -329,7 +330,13 @@ export default function CustomersPage() {
                   )}
                 </td>
                 <td className="p-4 text-center">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEdit(c)}
+                    aria-label={tCommon('edit')}
+                    title={tCommon('edit')}
+                  >
                     <Edit size={14} />
                   </Button>
                 </td>
@@ -338,6 +345,7 @@ export default function CustomersPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => openLedger(c)}
+                    aria-label={tCustomer('viewLedgerTitle')}
                     title={tCustomer('viewLedgerTitle')}
                   >
                     <History size={14} />
@@ -366,6 +374,7 @@ export default function CustomersPage() {
               </div>
               <button
                 onClick={() => setLedgerCustomer(null)}
+                aria-label={tCommon('close')}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-muted hover:bg-muted"
               >
                 <X size={16} className="text-muted-foreground" />
@@ -566,7 +575,7 @@ export default function CustomersPage() {
               <h2 className="text-lg font-bold">
                 {editingCustomer ? tCustomer('edit') : tCustomer('add')}
               </h2>
-              <button onClick={() => setShowForm(false)}>
+              <button onClick={() => setShowForm(false)} aria-label={tCommon('close')}>
                 <X size={20} className="text-gray-400" />
               </button>
             </div>

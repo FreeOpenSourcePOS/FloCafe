@@ -140,7 +140,7 @@ async function run() {
   }
   assertEqual(meRes4.status, 200, 'Refreshed token remains valid');
 
-  // Step 9: Refresh re-reads current user role from DB and preserves stale/inactive checks (#1077)
+  // Step 9: Refresh re-reads current user role from DB and preserves stale/inactive checks
   const freshDb = getDatabase();
   freshDb
     .prepare(`

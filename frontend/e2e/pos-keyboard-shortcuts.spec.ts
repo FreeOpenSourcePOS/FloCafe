@@ -433,6 +433,11 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
   }) => {
     const searchInput = page.getByTestId('pos-product-search');
     await searchInput.fill('Coffee');
+    const matchingCard = page
+      .getByTestId('pos-product-card')
+      .filter({ hasText: 'E2E Coffee' })
+      .first();
+    await expect(matchingCard).toBeVisible({ timeout: 5_000 });
 
     await searchInput.evaluate((el) => {
       el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
@@ -469,8 +474,11 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     await expect(searchInput).toHaveValue('Coffee');
 
     await searchInput.press('Enter');
-    const cartItem = page.getByTestId('cart-item').first();
-    await expect(cartItem).toBeVisible({ timeout: 5_000 });
+    const cartItems = page.getByTestId('cart-item');
+    await expect(cartItems).toHaveCount(1, { timeout: 5_000 });
+    const cartItem = cartItems.first();
+    await expect(cartItem).toContainText('E2E Coffee');
     await expect(cartItem.getByTestId('cart-item-qty')).toHaveText('1');
+    await expect(searchInput).toHaveValue('');
   });
 });

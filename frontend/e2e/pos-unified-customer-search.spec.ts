@@ -10,7 +10,7 @@ test('POS unified customer search: name/phone lookup, predictive create, and fie
 
   const attemptId = Date.now();
   const existingName = `Unified Existing ${attemptId}`;
-  const existingPhone = `+668${String(attemptId).slice(-8)}`;
+  const existingPhone = `+6689${String(attemptId).slice(-7)}`;
   const newCustomerPhone = `081${String(attemptId).slice(-7)}`;
   const newCustomerName = `Unified Created ${attemptId}`;
 

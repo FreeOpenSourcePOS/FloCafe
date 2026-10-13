@@ -325,7 +325,7 @@ export function startServerApp(): Promise<void> {
       requireServerAppAuth,
       (req: Request, res: Response) => {
         const token = req.headers.authorization?.split(' ')[1];
-        const user = (req as any).user as ServerAppUser;
+        const user = (req as Request & { user: ServerAppUser }).user;
         if (token) revokeToken(token, typeof user.exp === 'number' ? user.exp * 1000 : undefined);
         res.json({ success: true });
       },

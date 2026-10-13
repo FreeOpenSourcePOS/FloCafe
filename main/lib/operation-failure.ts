@@ -124,7 +124,11 @@ const REFUND_DISPLAY_CODES = [
   'approver_pin_invalid',
   'cash_session_required',
 ] as const;
-const CASH_SESSION_OPEN_DISPLAY_CODES = ['opening_float_invalid', 'session_already_open'] as const;
+const CASH_SESSION_OPEN_DISPLAY_CODES = [
+  'opening_float_invalid',
+  'session_already_open',
+  'day_already_closed',
+] as const;
 const CASH_SESSION_CLOSE_DISPLAY_CODES = [
   'session_id_invalid',
   'counted_cash_invalid',

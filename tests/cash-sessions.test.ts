@@ -1229,6 +1229,7 @@ async function main() {
     .set('Authorization', `Bearer ${managerToken}`)
     .send({ isReprint: false });
   assert(managerDayPrint.status === 403, 'manager cannot print day-close Z (403)');
+  db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(dayClose.body?.zReport?.id);
 
   // ── Section 7: round-2 review findings ────────────────────────────────
   console.log('Section 7: partial block, case-insensitive gate, refund gate');
@@ -1396,6 +1397,32 @@ async function main() {
   assert(
     mClose2.status === 200 && mClose2.body?.variance_cents === 0,
     'session uses its own float, not the movement',
+  );
+
+  // ── Section 9: closed business day blocks new shift open ─────────────
+  console.log('Section 9: closed business day blocks new shift open');
+  const closedDayRes = await request(app)
+    .post('/api/cash-closures')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .send({ business_date: todayLocal, opening_float_cents: 7000, counted_cash_cents: 7000 });
+  assert(closedDayRes.status === 201, 'owner closes current business day (201)');
+  const closedDayOpen = await request(app)
+    .post('/api/cash-sessions/open')
+    .set('x-operation-id', '55555555-5555-4555-8555-555555555555')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ opening_float_cents: 1000 });
+  assert(
+    closedDayOpen.status === 409,
+    `opening a shift on a closed business day is 409 (got ${closedDayOpen.status})`,
+  );
+  assert(
+    closedDayOpen.body?.display_code === 'day_already_closed',
+    'closed-day shift open rejection uses day_already_closed',
+  );
+  assert(
+    (db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions WHERE status = 'open'`).get() as any).c ===
+      0,
+    'rejected open on closed day does not create an open session',
   );
 
   console.log('='.repeat(50));

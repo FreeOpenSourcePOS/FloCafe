@@ -218,7 +218,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     });
     expect(billsBeforeRes.ok()).toBe(true);
     const billsBeforeData = await billsBeforeRes.json();
-    const paidBillsBeforeCount = (billsBeforeData.bills || []).length;
+    const paidBillsBeforeCount = billsBeforeData.pagination.total;
 
     let orderCreateRequests = 0;
     let paymentCreateRequests = 0;
@@ -331,7 +331,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
         headers: managerHeaders,
       });
       const billsMidData = await billsMidRes.json();
-      expect((billsMidData.bills || []).length).toBe(paidBillsBeforeCount);
+      expect(billsMidData.pagination.total).toBe(paidBillsBeforeCount);
 
       // Release key (keyup) then press a fresh non-repeat Space to confirm once
       await page.evaluate(() => {
@@ -359,7 +359,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
         headers: managerHeaders,
       });
       const billsAfterData = await billsAfterRes.json();
-      expect((billsAfterData.bills || []).length).toBe(paidBillsBeforeCount + 1);
+      expect(billsAfterData.pagination.total).toBe(paidBillsBeforeCount + 1);
 
       // Also verify fresh non-repeat Enter after keyup confirms once on a second order
       await page.getByRole('button', { name: 'Takeaway' }).click();
@@ -409,7 +409,7 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
         headers: managerHeaders,
       });
       const billsAfterEnterData = await billsAfterEnterRes.json();
-      expect((billsAfterEnterData.bills || []).length).toBe(paidBillsBeforeCount + 2);
+      expect(billsAfterEnterData.pagination.total).toBe(paidBillsBeforeCount + 2);
     } finally {
       page.off('request', onRequest);
     }

@@ -143,7 +143,7 @@ function loadComponents(): {
     const ReactDOMServer = frontendRequire('react-dom/server');
     const { ChevronRight, ChevronDown } = frontendRequire('lucide-react');
     const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
-    const faMessages = require('../frontend/src/locales/fa.json');
+    const faMessages = require('../frontend/src/lib/i18n/messages/fa.json');
     const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
     const { Ltr } = require('../frontend/src/components/layout/Ltr');
@@ -402,7 +402,7 @@ function run(): void {
       const markup = ReactDOMServer.renderToStaticMarkup(
         React.createElement(
           IntlProvider,
-          { locale: getLanguageLocale('fa'), messages: faMessages },
+          { locale: getLanguageLocale('fa'), messages: faMessages, timeZone: 'UTC' },
           React.createElement(AddonGroupsProbe)
         )
       );

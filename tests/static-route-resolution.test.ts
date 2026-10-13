@@ -28,7 +28,10 @@ fs.mkdirSync(path.join(fixture, 'kds-standalone'));
 fs.writeFileSync(path.join(fixture, 'kds-standalone', 'index.html'), 'kds-standalone');
 
 assert.equal(resolveStaticPage(fixture, '/whatsapp'), path.join(fixture, 'whatsapp', 'index.html'));
-assert.equal(resolveStaticPage(fixture, '/whatsapp/'), path.join(fixture, 'whatsapp', 'index.html'));
+assert.equal(
+  resolveStaticPage(fixture, '/whatsapp/'),
+  path.join(fixture, 'whatsapp', 'index.html'),
+);
 assert.equal(
   resolveStaticPage(fixture, '/kds-standalone'),
   path.join(fixture, 'kds-standalone', 'index.html'),

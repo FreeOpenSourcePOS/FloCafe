@@ -118,6 +118,7 @@ function validBusinessLocation(timezone: unknown, currency: unknown, country: un
 }
 
 const SENSITIVE_SETTING_KEYS = new Set([
+  'mobile_pairing_code',
   'jwt_secret',
   'cloud_api_key',
   'cloud_device_secret',
@@ -158,6 +159,7 @@ export function isOrdersLayout(value: unknown): value is 'split' | 'cards' {
 
 function maskSetting(key: string, value: string): string {
   if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
+  if (key === 'mobile_pairing_code') return value ? '****' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }

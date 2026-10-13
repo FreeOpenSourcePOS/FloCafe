@@ -331,12 +331,15 @@ export default function AppSidebar() {
               data-testid="sidebar-theme-toggle"
               onClick={cycleThemeMode}
               tooltip={`${tSettings('themeTitle')}: ${themeModeLabel}`}
+              className="h-auto min-h-8 py-1.5 whitespace-normal"
             >
               <ThemeModeIcon className="size-4 shrink-0" />
-              <span className="min-w-0 truncate">{tSettings('themeTitle')}</span>
-              <span className="ms-auto min-w-0 truncate text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-                {themeModeLabel}
-              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 leading-tight group-data-[collapsible=icon]:hidden">
+                <span className="min-w-0 break-words">{tSettings('themeTitle')}</span>
+                <span className="ms-auto min-w-0 break-words text-end text-xs text-muted-foreground">
+                  {themeModeLabel}
+                </span>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

@@ -323,4 +323,176 @@ console.log('Testing usePosKeyboardShortcuts keydown behavior...');
 }
 
 console.log('✓ All usePosKeyboardShortcuts keydown tests passed.');
+
+console.log('Testing ProductGrid search Enter IME composition guard...');
+
+const path = require('node:path');
+const ROOT = path.join(__dirname, '..');
+const moduleApi = require('node:module') as {
+  _resolveFilename: (...args: unknown[]) => string;
+  _load: (...args: unknown[]) => unknown;
+};
+const originalResolveFilename = moduleApi._resolveFilename;
+const originalLoad = moduleApi._load;
+
+try {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: unknown,
+    isMain: boolean,
+    options?: unknown,
+  ) {
+    const resolvedRequest =
+      request === '@countries'
+        ? path.resolve(ROOT, 'main/countries.ts')
+        : request.startsWith('@/')
+          ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+          : request;
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  const React = require(path.join(ROOT, 'frontend/node_modules/react'));
+  const mocks: Record<string, unknown> = {
+    react: {
+      ...React,
+      useRef: (initial: unknown) => ({ current: initial }),
+      useEffect: () => undefined,
+      useMemo: (fn: () => unknown) => fn(),
+    },
+    'lucide-react': {
+      Search: () => null,
+      SlidersHorizontal: () => null,
+    },
+    'react-hot-toast': {
+      __esModule: true,
+      default: { error: () => undefined },
+    },
+    'use-intl': {
+      useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+    },
+    '@/store/cart': {
+      useCartStore: () => ({ items: [] }),
+    },
+    '@/store/pos-settings': {
+      usePosSettingsStore: () => ({ showProductImages: false }),
+    },
+    '@/hooks/useFormatCurrency': {
+      useFormatCurrency: () => (amount: number) => String(amount),
+    },
+    '@/lib/api': {
+      __esModule: true,
+      default: { defaults: { baseURL: 'http://localhost:3001/api' } },
+    },
+  };
+
+  moduleApi._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  const ProductGrid = require('../frontend/src/components/pos/ProductGrid').default;
+
+  function findByTestId(node: unknown, testId: string): { props: Record<string, unknown> } | null {
+    if (Array.isArray(node)) {
+      for (const child of node) {
+        const found = findByTestId(child, testId);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (!node || typeof node !== 'object') return null;
+    const el = node as { props?: Record<string, unknown> };
+    if (el.props?.['data-testid'] === testId) return el as { props: Record<string, unknown> };
+    if (el.props?.children) return findByTestId(el.props.children, testId);
+    return null;
+  }
+
+  const coffeeProduct = {
+    id: 'prod-coffee',
+    name: 'Coffee',
+    price: 3.5,
+    category_id: 'cat-drinks',
+    is_active: true,
+    variants: [],
+    addon_groups: [],
+  };
+
+  const addedProducts: Array<{ product: unknown; quantity: number }> = [];
+  const searchUpdates: string[] = [];
+
+  const tree = ProductGrid({
+    categories: [],
+    products: [coffeeProduct],
+    selectedCategory: null,
+    setSelectedCategory: () => undefined,
+    search: 'Coffee',
+    setSearch: (s: string) => searchUpdates.push(s),
+    currency: 'USD',
+    onProductClick: (product: unknown, quantity: number) =>
+      addedProducts.push({ product, quantity }),
+    onScannedVariant: () => undefined,
+    onScaledProduct: () => undefined,
+  });
+
+  const searchInput = findByTestId(tree, 'pos-product-search');
+  assert.ok(searchInput, 'renders pos-product-search input');
+  const onKeyDown = searchInput.props.onKeyDown as (e: Record<string, unknown>) => void;
+  assert.strictEqual(typeof onKeyDown, 'function', 'search input has onKeyDown handler');
+
+  // 1. IME composition confirmation via nativeEvent.isComposing + keyCode 229
+  onKeyDown({
+    key: 'Enter',
+    keyCode: 229,
+    nativeEvent: { isComposing: true },
+  });
+  assert.strictEqual(
+    addedProducts.length,
+    0,
+    'Enter with nativeEvent.isComposing=true and keyCode=229 must not add product to cart',
+  );
+  assert.strictEqual(searchUpdates.length, 0, 'IME Enter must not clear search input');
+
+  // 2. IME composition confirmation via e.isComposing
+  onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    isComposing: true,
+    nativeEvent: { isComposing: false },
+  });
+  assert.strictEqual(
+    addedProducts.length,
+    0,
+    'Enter with e.isComposing=true must not add product to cart',
+  );
+
+  // 3. IME composition confirmation via keyCode 229 fallback
+  onKeyDown({
+    key: 'Enter',
+    keyCode: 229,
+    nativeEvent: { isComposing: false },
+  });
+  assert.strictEqual(
+    addedProducts.length,
+    0,
+    'Enter with keyCode=229 must not add product to cart',
+  );
+
+  // 4. Non-composing Enter still adds matched product to cart
+  onKeyDown({
+    key: 'Enter',
+    keyCode: 13,
+    nativeEvent: { isComposing: false },
+  });
+  assert.deepStrictEqual(
+    addedProducts,
+    [{ product: coffeeProduct, quantity: 1 }],
+    'non-composing Enter adds matched product to cart',
+  );
+  assert.deepStrictEqual(searchUpdates, [''], 'non-composing Enter clears search input');
+} finally {
+  moduleApi._load = originalLoad;
+  moduleApi._resolveFilename = originalResolveFilename;
+}
+
+console.log('✓ All ProductGrid search Enter IME composition tests passed.');
 console.log('All POS keyboard shortcuts unit tests passed successfully.');

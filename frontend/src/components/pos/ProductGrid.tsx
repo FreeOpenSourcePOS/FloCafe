@@ -252,6 +252,13 @@ export default function ProductGrid({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
+              if (
+                e.nativeEvent?.isComposing ||
+                (e as { isComposing?: boolean }).isComposing ||
+                e.keyCode === 229
+              ) {
+                return;
+              }
               if (e.key !== 'Enter') return;
               // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
               const trimmed = search.trim();

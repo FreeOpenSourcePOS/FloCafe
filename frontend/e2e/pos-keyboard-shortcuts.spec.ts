@@ -427,4 +427,50 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     const shortcutsModal = page.getByTestId('keyboard-shortcuts-modal');
     await expect(shortcutsModal).not.toBeVisible();
   });
+
+  test('IME composition confirmation Enter in product search does not add product to cart', async ({
+    page,
+  }) => {
+    const searchInput = page.getByTestId('pos-product-search');
+    await searchInput.fill('Coffee');
+
+    await searchInput.evaluate((el) => {
+      el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 229,
+          isComposing: true,
+          bubbles: true,
+        }),
+      );
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          isComposing: true,
+          bubbles: true,
+        }),
+      );
+      el.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 229,
+          isComposing: false,
+          bubbles: true,
+        }),
+      );
+      el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    });
+
+    await expect(page.getByTestId('cart-item')).toHaveCount(0);
+    await expect(searchInput).toHaveValue('Coffee');
+
+    await searchInput.press('Enter');
+    const cartItem = page.getByTestId('cart-item').first();
+    await expect(cartItem).toBeVisible({ timeout: 5_000 });
+    await expect(cartItem.getByTestId('cart-item-qty')).toHaveText('1');
+  });
 });

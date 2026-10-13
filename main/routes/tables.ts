@@ -552,6 +552,9 @@ router.post(
           error.status = 404;
           throw error;
         }
+        if (!targetTable.is_active) {
+          throw Object.assign(new Error('Target table is not active'), { status: 400 });
+        }
 
         const order = activeOrderForTable(db, sourceTableId, order_id) as any;
         if (!order) {

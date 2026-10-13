@@ -21,16 +21,27 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-tables-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct, seedTable,
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedCategory,
+  seedProduct,
+  seedTable,
   seedCustomer,
-  api, assertOrThrow, assertEqualOrThrow, assertIncludesOrThrow,
-  closeDatabase, getDatabase, now,
+  api,
+  assertOrThrow,
+  assertEqualOrThrow,
+  assertIncludesOrThrow,
+  closeDatabase,
+  getDatabase,
+  now,
 } = require('./helpers/test-setup');
 
 const { tableRoutes } = require('../main/routes/tables');
@@ -73,7 +84,10 @@ async function main() {
     // Key assertion: ID must be a string in tbl-{uuid} format
     const tableId = createRes.data.table.id;
     assertEqualOrThrow(typeof tableId, 'string', 'Table ID is a string');
-    assertOrThrow(/^tbl-[a-f0-9]{8}$/.test(tableId), `Table ID matches tbl-{8-hex-chars} format: ${tableId}`);
+    assertOrThrow(
+      /^tbl-[a-f0-9]{8}$/.test(tableId),
+      `Table ID matches tbl-{8-hex-chars} format: ${tableId}`,
+    );
     console.log(`   ✓ Created table with ID: ${tableId}`);
 
     // ═══════════════════════════════════════════════════════════════════
@@ -91,7 +105,10 @@ async function main() {
     const createdTable = listRes.data.tables.find((t: any) => t.number === 'T-NEW-1');
     assertOrThrow(createdTable, 'Created table found in list');
     assertEqualOrThrow(typeof createdTable.id, 'string', 'Listed table ID is a string');
-    assertOrThrow(/^tbl-[a-f0-9]{8}$/.test(createdTable.id), `Listed table ID matches format: ${createdTable.id}`);
+    assertOrThrow(
+      /^tbl-[a-f0-9]{8}$/.test(createdTable.id),
+      `Listed table ID matches format: ${createdTable.id}`,
+    );
     console.log(`   ✓ Listed table with ID: ${createdTable.id}`);
 
     // ═══════════════════════════════════════════════════════════════════
@@ -102,15 +119,21 @@ async function main() {
     seedTable(db, 'tbl-reservation', 90, 4);
     seedCustomer(db, 'cust-reservation-1', 'Reserved Guest', '+1 555 123 4567');
     seedCustomer(db, 'cust-reservation-2', 'Replacement Guest', '+1 555 765 4321');
-    db.prepare(`INSERT INTO customers (id, name, phone, is_active, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`)
-      .run('cust-reservation-inactive', 'Inactive Guest', '+1 555 000 0000', now(), now());
+    db.prepare(
+      `INSERT INTO customers (id, name, phone, is_active, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)`,
+    ).run('cust-reservation-inactive', 'Inactive Guest', '+1 555 000 0000', now(), now());
     seedCategory(db, 'cat-reservation', 'Reservation Menu');
     seedProduct(db, 'prod-reservation', 'cat-reservation', 'Tea', 5);
 
     const noAuthReservation = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
+      method: 'PATCH',
+      body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
     });
-    assertEqualOrThrow(noAuthReservation.status, 401, 'reservation customer cannot be linked without authentication');
+    assertEqualOrThrow(
+      noAuthReservation.status,
+      401,
+      'reservation customer cannot be linked without authentication',
+    );
     const { getJWTSecret: getReservationJwtSecret } = require('../main/routes/auth');
     const reservationCashierToken = require('jsonwebtoken').sign(
       { userId: 'reservation-cashier', email: 'reservation-cashier@test.local', role: 'cashier' },
@@ -118,52 +141,90 @@ async function main() {
       { expiresIn: '1h' },
     );
     const cashierReservation = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: { Authorization: `Bearer ${reservationCashierToken}` },
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${reservationCashierToken}` },
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
     });
-    assertEqualOrThrow(cashierReservation.status, 403, 'cashier cannot link a customer to a reservation');
+    assertEqualOrThrow(
+      cashierReservation.status,
+      403,
+      'cashier cannot link a customer to a reservation',
+    );
 
     const missingCustomer = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'missing-customer' },
     });
     assertEqualOrThrow(missingCustomer.status, 400, 'nonexistent reservation customer is rejected');
 
     const inactiveCustomer = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-inactive' },
     });
     assertEqualOrThrow(inactiveCustomer.status, 400, 'inactive reservation customer is rejected');
 
     const malformedCustomer = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 1 },
     });
-    assertEqualOrThrow(malformedCustomer.status, 400, 'non-string reservation customer ID is rejected');
+    assertEqualOrThrow(
+      malformedCustomer.status,
+      400,
+      'non-string reservation customer ID is rejected',
+    );
 
     const linkOnAvailable = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'available', reservation_customer_id: 'cust-reservation-1' },
     });
-    assertEqualOrThrow(linkOnAvailable.status, 400, 'reservation customer cannot be linked to a non-reserved table');
+    assertEqualOrThrow(
+      linkOnAvailable.status,
+      400,
+      'reservation customer cannot be linked to a non-reserved table',
+    );
 
     const reserveRes = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
     });
     assertEqualOrThrow(reserveRes.status, 200, 'valid reservation with a customer succeeds');
-    assertEqualOrThrow(reserveRes.data.table.reservation_customer_id, 'cust-reservation-1', 'reservation customer ID persists');
-    assertEqualOrThrow(reserveRes.data.table.reservation_customer_name, 'Reserved Guest', 'reservation response hydrates customer name');
-    assertEqualOrThrow(reserveRes.data.table.reservation_customer_phone, '+1 555 123 4567', 'reservation response hydrates customer phone');
+    assertEqualOrThrow(
+      reserveRes.data.table.reservation_customer_id,
+      'cust-reservation-1',
+      'reservation customer ID persists',
+    );
+    assertEqualOrThrow(
+      reserveRes.data.table.reservation_customer_name,
+      'Reserved Guest',
+      'reservation response hydrates customer name',
+    );
+    assertEqualOrThrow(
+      reserveRes.data.table.reservation_customer_phone,
+      '+1 555 123 4567',
+      'reservation response hydrates customer phone',
+    );
 
     const reloadRes = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
-    assertEqualOrThrow(reloadRes.data.table.reservation_customer_name, 'Reserved Guest', 'GET after reload returns reservation customer name');
-    assertEqualOrThrow(reloadRes.data.table.reservation_customer_phone, '+1 555 123 4567', 'GET after reload returns reservation customer phone');
+    assertEqualOrThrow(
+      reloadRes.data.table.reservation_customer_name,
+      'Reserved Guest',
+      'GET after reload returns reservation customer name',
+    );
+    assertEqualOrThrow(
+      reloadRes.data.table.reservation_customer_phone,
+      '+1 555 123 4567',
+      'GET after reload returns reservation customer phone',
+    );
     // requirePermission() resolves effective permissions from a real users row
     // keyed by the JWT's userId — the token alone is not authoritative.
     db.prepare(
       `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-       VALUES ('reservation-chef', 'Reservation Chef', 'reservation-chef@test.local', 'unused', 'chef', 1, ?, ?)`
+       VALUES ('reservation-chef', 'Reservation Chef', 'reservation-chef@test.local', 'unused', 'chef', 1, ?, ?)`,
     ).run(now(), now());
     const reservationChefToken = require('jsonwebtoken').sign(
       { userId: 'reservation-chef', email: 'reservation-chef@test.local', role: 'chef' },
@@ -171,129 +232,316 @@ async function main() {
       { expiresIn: '1h' },
     );
     const unauthenticatedTables = await api(baseUrl, '/api/tables');
-    assertEqualOrThrow(unauthenticatedTables.status, 401, 'table reads still require authentication');
+    assertEqualOrThrow(
+      unauthenticatedTables.status,
+      401,
+      'table reads still require authentication',
+    );
     const chefTables = await api(baseUrl, '/api/tables', {
       headers: { Authorization: `Bearer ${reservationChefToken}` },
     });
     assertEqualOrThrow(chefTables.status, 200, 'chef can read tables');
-    const chefReservationTable = chefTables.data.tables.find((table: any) => table.id === 'tbl-reservation');
+    const chefReservationTable = chefTables.data.tables.find(
+      (table: any) => table.id === 'tbl-reservation',
+    );
     assertEqualOrThrow(chefReservationTable.status, 'reserved', 'chef can read the table status');
-    assertEqualOrThrow(chefReservationTable.reservation_customer_id, null, 'table list redacts the reservation customer ID for chefs');
-    assertEqualOrThrow(chefReservationTable.reservation_customer_name, null, 'table list redacts the reservation customer name for chefs');
-    assertEqualOrThrow(chefReservationTable.reservation_customer_phone, null, 'table list redacts the reservation customer phone for chefs');
+    assertEqualOrThrow(
+      chefReservationTable.reservation_customer_id,
+      null,
+      'table list redacts the reservation customer ID for chefs',
+    );
+    assertEqualOrThrow(
+      chefReservationTable.reservation_customer_name,
+      null,
+      'table list redacts the reservation customer name for chefs',
+    );
+    assertEqualOrThrow(
+      chefReservationTable.reservation_customer_phone,
+      null,
+      'table list redacts the reservation customer phone for chefs',
+    );
     const chefTable = await api(baseUrl, '/api/tables/tbl-reservation', {
       headers: { Authorization: `Bearer ${reservationChefToken}` },
     });
     assertEqualOrThrow(chefTable.status, 200, 'chef can read one table');
-    assertEqualOrThrow(chefTable.data.table.status, 'reserved', 'single-table read includes state for chefs');
-    assertEqualOrThrow(chefTable.data.table.reservation_customer_id, null, 'single-table read redacts the reservation customer ID for chefs');
-    assertEqualOrThrow(chefTable.data.table.reservation_customer_name, null, 'single-table read redacts the reservation customer name for chefs');
-    assertEqualOrThrow(chefTable.data.table.reservation_customer_phone, null, 'single-table read redacts the reservation customer phone for chefs');
+    assertEqualOrThrow(
+      chefTable.data.table.status,
+      'reserved',
+      'single-table read includes state for chefs',
+    );
+    assertEqualOrThrow(
+      chefTable.data.table.reservation_customer_id,
+      null,
+      'single-table read redacts the reservation customer ID for chefs',
+    );
+    assertEqualOrThrow(
+      chefTable.data.table.reservation_customer_name,
+      null,
+      'single-table read redacts the reservation customer name for chefs',
+    );
+    assertEqualOrThrow(
+      chefTable.data.table.reservation_customer_phone,
+      null,
+      'single-table read redacts the reservation customer phone for chefs',
+    );
 
     const replaceRes = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
-    assertEqualOrThrow(replaceRes.data.table.reservation_customer_id, 'cust-reservation-2', 'a new reservation replaces the previous customer');
-    assertEqualOrThrow(replaceRes.data.table.reservation_customer_name, 'Replacement Guest', 'replacement customer is hydrated');
+    assertEqualOrThrow(
+      replaceRes.data.table.reservation_customer_id,
+      'cust-reservation-2',
+      'a new reservation replaces the previous customer',
+    );
+    assertEqualOrThrow(
+      replaceRes.data.table.reservation_customer_name,
+      'Replacement Guest',
+      'replacement customer is hydrated',
+    );
 
     const releaseRes = await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader, body: { status: 'available' },
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'available' },
     });
-    assertEqualOrThrow(releaseRes.data.table.reservation_customer_id, null, 'leaving reserved for available clears the reservation customer');
-    assertEqualOrThrow(releaseRes.data.table.reservation_customer_name, null, 'released table has no hydrated customer name');
-    db.prepare("UPDATE tables SET status = 'available', reservation_customer_id = ? WHERE id = ?")
-      .run('cust-reservation-1', 'tbl-reservation');
-    assertEqualOrThrow(db.prepare('SELECT reservation_customer_id FROM tables WHERE id = ?').get('tbl-reservation').reservation_customer_id,
-      null, 'table status trigger clears a customer included in a non-reserved update');
+    assertEqualOrThrow(
+      releaseRes.data.table.reservation_customer_id,
+      null,
+      'leaving reserved for available clears the reservation customer',
+    );
+    assertEqualOrThrow(
+      releaseRes.data.table.reservation_customer_name,
+      null,
+      'released table has no hydrated customer name',
+    );
+    db.prepare(
+      "UPDATE tables SET status = 'available', reservation_customer_id = ? WHERE id = ?",
+    ).run('cust-reservation-1', 'tbl-reservation');
+    assertEqualOrThrow(
+      db.prepare('SELECT reservation_customer_id FROM tables WHERE id = ?').get('tbl-reservation')
+        .reservation_customer_id,
+      null,
+      'table status trigger clears a customer included in a non-reserved update',
+    );
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
     const holdRes = await api(baseUrl, '/api/held-orders', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
-        tableId: 'tbl-reservation', customerId: 'cust-reservation-2', guestCount: 1,
-        items: [{ id: 'held-reservation-item', product: { id: 'prod-reservation' }, quantity: 1, addons: [] }],
+        tableId: 'tbl-reservation',
+        customerId: 'cust-reservation-2',
+        guestCount: 1,
+        items: [
+          {
+            id: 'held-reservation-item',
+            product: { id: 'prod-reservation' },
+            quantity: 1,
+            addons: [],
+          },
+        ],
       },
     });
     assertEqualOrThrow(holdRes.status, 200, 'holding a reserved table succeeds');
-    const heldReservation = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
-    assertEqualOrThrow(heldReservation.data.table.status, 'held', 'held order marks table held');
-    assertEqualOrThrow(heldReservation.data.table.reservation_customer_id, null, 'leaving reserved for held clears the reservation customer');
-    const unholdRes = await api(baseUrl, `/api/held-orders/tbl-reservation?heldOrderId=${encodeURIComponent(holdRes.data.id)}`, {
-      method: 'DELETE', headers: authHeader,
+    const heldReservation = await api(baseUrl, '/api/tables/tbl-reservation', {
+      headers: authHeader,
     });
-    assertEqualOrThrow(unholdRes.status, 200, 'held reservation can be released before creating a regular order');
+    assertEqualOrThrow(heldReservation.data.table.status, 'held', 'held order marks table held');
+    assertEqualOrThrow(
+      heldReservation.data.table.reservation_customer_id,
+      null,
+      'leaving reserved for held clears the reservation customer',
+    );
+    const unholdRes = await api(
+      baseUrl,
+      `/api/held-orders/tbl-reservation?heldOrderId=${encodeURIComponent(holdRes.data.id)}`,
+      {
+        method: 'DELETE',
+        headers: authHeader,
+      },
+    );
+    assertEqualOrThrow(
+      unholdRes.status,
+      200,
+      'held reservation can be released before creating a regular order',
+    );
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
     const reservationOrderWithMismatch = await api(baseUrl, '/api/orders', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
-        type: 'dine_in', table_id: 'tbl-reservation', customer_id: 'cust-reservation-1',
+        type: 'dine_in',
+        table_id: 'tbl-reservation',
+        customer_id: 'cust-reservation-1',
         items: [{ product_id: 'prod-reservation', quantity: 1 }],
       },
     });
-    assertEqualOrThrow(reservationOrderWithMismatch.status, 201, 'dine-in order with a mismatched customer can use a reserved table');
-    assertEqualOrThrow(reservationOrderWithMismatch.data.order.customer_id, 'cust-reservation-1', 'explicit order customer takes precedence over the reserved customer');
-    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(reservationOrderWithMismatch.data.order.id);
+    assertEqualOrThrow(
+      reservationOrderWithMismatch.status,
+      201,
+      'dine-in order with a mismatched customer can use a reserved table',
+    );
+    assertEqualOrThrow(
+      reservationOrderWithMismatch.data.order.customer_id,
+      'cust-reservation-1',
+      'explicit order customer takes precedence over the reserved customer',
+    );
+    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(
+      reservationOrderWithMismatch.data.order.id,
+    );
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
     const reservationOrderWithoutCustomer = await api(baseUrl, '/api/orders', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
-        type: 'dine_in', table_id: 'tbl-reservation',
+        type: 'dine_in',
+        table_id: 'tbl-reservation',
         items: [{ product_id: 'prod-reservation', quantity: 1 }],
       },
     });
-    assertEqualOrThrow(reservationOrderWithoutCustomer.status, 201, 'dine-in order without a customer can use a reserved table');
-    assertEqualOrThrow(reservationOrderWithoutCustomer.data.order.customer_id, 'cust-reservation-2', 'reserved customer fills an omitted order customer');
-    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(reservationOrderWithoutCustomer.data.order.id);
+    assertEqualOrThrow(
+      reservationOrderWithoutCustomer.status,
+      201,
+      'dine-in order without a customer can use a reserved table',
+    );
+    assertEqualOrThrow(
+      reservationOrderWithoutCustomer.data.order.customer_id,
+      'cust-reservation-2',
+      'reserved customer fills an omitted order customer',
+    );
+    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(
+      reservationOrderWithoutCustomer.data.order.id,
+    );
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
-      method: 'PATCH', headers: authHeader,
+      method: 'PATCH',
+      headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
     const reservationOrder = await api(baseUrl, '/api/orders', {
-      method: 'POST', headers: authHeader,
+      method: 'POST',
+      headers: authHeader,
       body: {
-        type: 'dine_in', table_id: 'tbl-reservation', customer_id: 'cust-reservation-2',
+        type: 'dine_in',
+        table_id: 'tbl-reservation',
+        customer_id: 'cust-reservation-2',
         items: [{ product_id: 'prod-reservation', quantity: 1 }],
       },
     });
-    assertEqualOrThrow(reservationOrder.status, 201, 'dine-in order can be created for a reserved table');
-    assertEqualOrThrow(reservationOrder.data.order.customer_id, 'cust-reservation-2', 'reserved customer is attached to the order');
-    const reservationOrderList = await api(baseUrl, '/api/orders?table_id=tbl-reservation', { headers: authHeader });
-    assertEqualOrThrow(reservationOrderList.data.orders[0].customer.name, 'Replacement Guest', 'Orders API hydrates the linked reservation customer');
-    const occupiedReservation = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
-    assertEqualOrThrow(occupiedReservation.data.table.status, 'occupied', 'order creation marks reserved table occupied');
-    assertEqualOrThrow(occupiedReservation.data.table.reservation_customer_id, null, 'order creation clears the consumed reservation');
-    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer_id, 'cust-reservation-2', 'sales table reads retain the linked active-order customer ID');
-    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer.name, 'Replacement Guest', 'sales table reads retain the linked active-order customer');
-    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer.phone, '+1 555 765 4321', 'sales table reads retain the linked active-order customer phone');
+    assertEqualOrThrow(
+      reservationOrder.status,
+      201,
+      'dine-in order can be created for a reserved table',
+    );
+    assertEqualOrThrow(
+      reservationOrder.data.order.customer_id,
+      'cust-reservation-2',
+      'reserved customer is attached to the order',
+    );
+    const reservationOrderList = await api(baseUrl, '/api/orders?table_id=tbl-reservation', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      reservationOrderList.data.orders[0].customer.name,
+      'Replacement Guest',
+      'Orders API hydrates the linked reservation customer',
+    );
+    const occupiedReservation = await api(baseUrl, '/api/tables/tbl-reservation', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      occupiedReservation.data.table.status,
+      'occupied',
+      'order creation marks reserved table occupied',
+    );
+    assertEqualOrThrow(
+      occupiedReservation.data.table.reservation_customer_id,
+      null,
+      'order creation clears the consumed reservation',
+    );
+    strictAssert.equal(
+      occupiedReservation.data.table.activeOrder.customer_id,
+      'cust-reservation-2',
+      'sales table reads retain the linked active-order customer ID',
+    );
+    strictAssert.equal(
+      occupiedReservation.data.table.activeOrder.customer.name,
+      'Replacement Guest',
+      'sales table reads retain the linked active-order customer',
+    );
+    strictAssert.equal(
+      occupiedReservation.data.table.activeOrder.customer.phone,
+      '+1 555 765 4321',
+      'sales table reads retain the linked active-order customer phone',
+    );
     const chefOccupiedTables = await api(baseUrl, '/api/tables', {
       headers: { Authorization: `Bearer ${reservationChefToken}` },
     });
-    const chefOccupiedTable = chefOccupiedTables.data.tables.find((table: any) => table.id === 'tbl-reservation');
-    strictAssert.equal(chefOccupiedTable.status, 'occupied', 'chef can still read occupied table state');
-    strictAssert.equal(chefOccupiedTable.activeOrder.customer_id, null, 'chef table list redacts the active-order customer ID');
-    strictAssert.equal(chefOccupiedTable.activeOrder.customer, null, 'chef table list redacts the active-order customer details');
-    strictAssert.equal(chefOccupiedTable.current_order.customer_id, null, 'chef table list redacts the current-order customer ID alias');
-    strictAssert.equal(chefOccupiedTable.current_order.customer, null, 'chef table list redacts the current-order customer details alias');
+    const chefOccupiedTable = chefOccupiedTables.data.tables.find(
+      (table: any) => table.id === 'tbl-reservation',
+    );
+    strictAssert.equal(
+      chefOccupiedTable.status,
+      'occupied',
+      'chef can still read occupied table state',
+    );
+    strictAssert.equal(
+      chefOccupiedTable.activeOrder.customer_id,
+      null,
+      'chef table list redacts the active-order customer ID',
+    );
+    strictAssert.equal(
+      chefOccupiedTable.activeOrder.customer,
+      null,
+      'chef table list redacts the active-order customer details',
+    );
+    strictAssert.equal(
+      chefOccupiedTable.current_order.customer_id,
+      null,
+      'chef table list redacts the current-order customer ID alias',
+    );
+    strictAssert.equal(
+      chefOccupiedTable.current_order.customer,
+      null,
+      'chef table list redacts the current-order customer details alias',
+    );
     const chefOccupiedTableDetail = await api(baseUrl, '/api/tables/tbl-reservation', {
       headers: { Authorization: `Bearer ${reservationChefToken}` },
     });
-    strictAssert.equal(chefOccupiedTableDetail.data.table.status, 'occupied', 'chef can still read occupied table detail');
-    strictAssert.equal(chefOccupiedTableDetail.data.table.activeOrder.customer_id, null, 'chef table detail redacts the active-order customer ID');
-    strictAssert.equal(chefOccupiedTableDetail.data.table.activeOrder.customer, null, 'chef table detail redacts the active-order customer details');
-    console.log('   ✓ Reservation customer survives reload, flows to orders, and clears on table transitions');
+    strictAssert.equal(
+      chefOccupiedTableDetail.data.table.status,
+      'occupied',
+      'chef can still read occupied table detail',
+    );
+    strictAssert.equal(
+      chefOccupiedTableDetail.data.table.activeOrder.customer_id,
+      null,
+      'chef table detail redacts the active-order customer ID',
+    );
+    strictAssert.equal(
+      chefOccupiedTableDetail.data.table.activeOrder.customer,
+      null,
+      'chef table detail redacts the active-order customer details',
+    );
+    console.log(
+      '   ✓ Reservation customer survives reload, flows to orders, and clears on table transitions',
+    );
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario C: ID type consistency across queries
@@ -324,7 +572,11 @@ async function main() {
     assertEqualOrThrow(editRes.data.table.capacity, 6, 'capacity is updated');
     assertEqualOrThrow(editRes.data.table.floor, 'First', 'floor is updated');
     assertEqualOrThrow(editRes.data.table.section, 'Patio', 'section is updated');
-    assertEqualOrThrow(editRes.data.table.activeOrder, null, 'normalized activeOrder field is returned');
+    assertEqualOrThrow(
+      editRes.data.table.activeOrder,
+      null,
+      'normalized activeOrder field is returned',
+    );
 
     const clearRes = await api(baseUrl, `/api/tables/${tableId}`, {
       method: 'PUT',
@@ -347,8 +599,16 @@ async function main() {
       body: JSON.stringify({ name: duplicateCreate.data.table.number }),
     });
     assertEqualOrThrow(duplicateRename.status, 400, 'duplicate table rename is rejected');
-    assertIncludesOrThrow(duplicateRename.data.error, 'already exists', 'duplicate rename returns a clear validation message');
-    assertEqualOrThrow(duplicateRename.data.code, 'TABLE_NAME_DUPLICATE', 'duplicate rename returns a stable UI error code');
+    assertIncludesOrThrow(
+      duplicateRename.data.error,
+      'already exists',
+      'duplicate rename returns a clear validation message',
+    );
+    assertEqualOrThrow(
+      duplicateRename.data.code,
+      'TABLE_NAME_DUPLICATE',
+      'duplicate rename returns a stable UI error code',
+    );
 
     const invalidName = await api(baseUrl, `/api/tables/${tableId}`, {
       method: 'PUT',
@@ -356,7 +616,11 @@ async function main() {
       body: JSON.stringify({ name: { unexpected: true } }),
     });
     assertEqualOrThrow(invalidName.status, 400, 'object table names are rejected');
-    assertEqualOrThrow(invalidName.data.code, 'TABLE_NAME_REQUIRED', 'malformed names return a stable UI error code');
+    assertEqualOrThrow(
+      invalidName.data.code,
+      'TABLE_NAME_REQUIRED',
+      'malformed names return a stable UI error code',
+    );
 
     const nullName = await api(baseUrl, `/api/tables/${tableId}`, {
       method: 'PUT',
@@ -364,7 +628,11 @@ async function main() {
       body: JSON.stringify({ name: null }),
     });
     assertEqualOrThrow(nullName.status, 400, 'null table names are rejected');
-    assertEqualOrThrow(nullName.data.code, 'TABLE_NAME_REQUIRED', 'null names return a stable UI error code');
+    assertEqualOrThrow(
+      nullName.data.code,
+      'TABLE_NAME_REQUIRED',
+      'null names return a stable UI error code',
+    );
 
     const invalidCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
       method: 'PUT',
@@ -372,7 +640,11 @@ async function main() {
       body: JSON.stringify({ capacity: 0 }),
     });
     assertEqualOrThrow(invalidCapacity.status, 400, 'non-positive capacity is rejected');
-    assertEqualOrThrow(invalidCapacity.data.code, 'TABLE_CAPACITY_INVALID', 'invalid capacity returns a stable UI error code');
+    assertEqualOrThrow(
+      invalidCapacity.data.code,
+      'TABLE_CAPACITY_INVALID',
+      'invalid capacity returns a stable UI error code',
+    );
 
     const invalidLocation = await api(baseUrl, `/api/tables/${tableId}`, {
       method: 'PUT',
@@ -380,32 +652,63 @@ async function main() {
       body: JSON.stringify({ floor: { label: 'First' } }),
     });
     assertEqualOrThrow(invalidLocation.status, 400, 'non-text floor is rejected');
-    assertEqualOrThrow(invalidLocation.data.code, 'TABLE_LOCATION_INVALID', 'invalid location returns a stable UI error code');
+    assertEqualOrThrow(
+      invalidLocation.data.code,
+      'TABLE_LOCATION_INVALID',
+      'invalid location returns a stable UI error code',
+    );
 
     const invalidCreate = await api(baseUrl, '/api/tables', {
       method: 'POST',
       headers: authHeader,
       body: JSON.stringify({ name: ['not-a-name'], capacity: 2 }),
     });
-    assertEqualOrThrow(invalidCreate.status, 400, 'malformed names are rejected during table creation');
-    assertEqualOrThrow(invalidCreate.data.code, 'TABLE_NAME_REQUIRED', 'create validation uses the same stable UI error code');
+    assertEqualOrThrow(
+      invalidCreate.status,
+      400,
+      'malformed names are rejected during table creation',
+    );
+    assertEqualOrThrow(
+      invalidCreate.data.code,
+      'TABLE_NAME_REQUIRED',
+      'create validation uses the same stable UI error code',
+    );
 
-    for (const [label, malformedCapacity] of [['boolean', true], ['array', [2]]] as const) {
+    for (const [label, malformedCapacity] of [
+      ['boolean', true],
+      ['array', [2]],
+    ] as const) {
       const invalidCreateCapacity = await api(baseUrl, '/api/tables', {
         method: 'POST',
         headers: authHeader,
         body: JSON.stringify({ name: `T-BAD-CREATE-${label}`, capacity: malformedCapacity }),
       });
-      assertEqualOrThrow(invalidCreateCapacity.status, 400, `${label} capacity is rejected during table creation`);
-      assertEqualOrThrow(invalidCreateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} create rejection has a stable UI error code`);
+      assertEqualOrThrow(
+        invalidCreateCapacity.status,
+        400,
+        `${label} capacity is rejected during table creation`,
+      );
+      assertEqualOrThrow(
+        invalidCreateCapacity.data.code,
+        'TABLE_CAPACITY_INVALID',
+        `${label} create rejection has a stable UI error code`,
+      );
 
       const invalidUpdateCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
         method: 'PUT',
         headers: authHeader,
         body: JSON.stringify({ capacity: malformedCapacity }),
       });
-      assertEqualOrThrow(invalidUpdateCapacity.status, 400, `${label} capacity is rejected during table editing`);
-      assertEqualOrThrow(invalidUpdateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} edit rejection has a stable UI error code`);
+      assertEqualOrThrow(
+        invalidUpdateCapacity.status,
+        400,
+        `${label} capacity is rejected during table editing`,
+      );
+      assertEqualOrThrow(
+        invalidUpdateCapacity.data.code,
+        'TABLE_CAPACITY_INVALID',
+        `${label} edit rejection has a stable UI error code`,
+      );
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -434,10 +737,26 @@ async function main() {
 
     const liveTables = await api(baseUrl, '/api/tables', { headers: authHeader });
     const liveSource = liveTables.data.tables.find((t: any) => t.id === 'tbl-move-source');
-    assertEqualOrThrow(liveSource.activeOrder.id, orderId, 'GET /tables includes active order for occupied table');
-    assertEqualOrThrow(liveSource.current_order.id, orderId, 'GET /tables includes current_order alias for frontend compatibility');
-    assertEqualOrThrow(liveSource.current_order.customer.name, 'Table Guest', 'current_order includes customer for mismatch warning');
-    assertEqualOrThrow(liveSource.seated_at, orderRes.data.order.created_at, 'GET /tables exposes seated_at from the active order (#595)');
+    assertEqualOrThrow(
+      liveSource.activeOrder.id,
+      orderId,
+      'GET /tables includes active order for occupied table',
+    );
+    assertEqualOrThrow(
+      liveSource.current_order.id,
+      orderId,
+      'GET /tables includes current_order alias for frontend compatibility',
+    );
+    assertEqualOrThrow(
+      liveSource.current_order.customer.name,
+      'Table Guest',
+      'current_order includes customer for mismatch warning',
+    );
+    assertEqualOrThrow(
+      liveSource.seated_at,
+      orderRes.data.order.created_at,
+      'GET /tables exposes seated_at from the active order (#595)',
+    );
 
     const moveRes = await api(baseUrl, '/api/tables/tbl-move-source/move-order', {
       method: 'POST',
@@ -446,17 +765,45 @@ async function main() {
     });
     assertEqualOrThrow(moveRes.status, 200, 'move order returns 200');
     assertEqualOrThrow(moveRes.data.order.id, orderId, 'same order is returned');
-    assertEqualOrThrow(moveRes.data.order.table_id, 'tbl-move-target', 'order table_id moves to target');
-    assertEqualOrThrow(Number(moveRes.data.order.table.name), 92, 'response includes new table for KOT/KDS consumers');
+    assertEqualOrThrow(
+      moveRes.data.order.table_id,
+      'tbl-move-target',
+      'order table_id moves to target',
+    );
+    assertEqualOrThrow(
+      Number(moveRes.data.order.table.name),
+      92,
+      'response includes new table for KOT/KDS consumers',
+    );
     assertEqualOrThrow(moveRes.data.sourceTable.status, 'available', 'source table is freed');
     assertEqualOrThrow(moveRes.data.targetTable.status, 'occupied', 'target table is occupied');
-    assertEqualOrThrow(moveRes.data.targetTable.activeOrder.id, orderId, 'target table now exposes active order');
-    assertEqualOrThrow(moveRes.data.targetTable.current_order.id, orderId, 'target table also exposes current_order alias');
-    assertEqualOrThrow(moveRes.data.targetTable.seated_at, orderRes.data.order.created_at, 'target table seated_at reflects the moved order (#595)');
-    assertEqualOrThrow(moveRes.data.sourceTable.seated_at, null, 'freed source table has no seated_at (#595)');
+    assertEqualOrThrow(
+      moveRes.data.targetTable.activeOrder.id,
+      orderId,
+      'target table now exposes active order',
+    );
+    assertEqualOrThrow(
+      moveRes.data.targetTable.current_order.id,
+      orderId,
+      'target table also exposes current_order alias',
+    );
+    assertEqualOrThrow(
+      moveRes.data.targetTable.seated_at,
+      orderRes.data.order.created_at,
+      'target table seated_at reflects the moved order (#595)',
+    );
+    assertEqualOrThrow(
+      moveRes.data.sourceTable.seated_at,
+      null,
+      'freed source table has no seated_at (#595)',
+    );
 
     const movedOrder = await api(baseUrl, `/api/orders/${orderId}`, { headers: authHeader });
-    assertEqualOrThrow(Number(movedOrder.data.order.table.name), 92, 'order detail resolves the new table immediately');
+    assertEqualOrThrow(
+      Number(movedOrder.data.order.table.name),
+      92,
+      'order detail resolves the new table immediately',
+    );
 
     const occupiedMove = await api(baseUrl, '/api/tables/tbl-move-target/move-order', {
       method: 'POST',
@@ -465,24 +812,84 @@ async function main() {
     });
     assertEqualOrThrow(occupiedMove.status, 200, 'order can be moved again to a free table');
 
+    const deactivateTargetRes = await api(baseUrl, '/api/tables/tbl-move-target/deactivate', {
+      method: 'POST',
+      headers: authHeader,
+    });
+    assertEqualOrThrow(deactivateTargetRes.status, 200, 'free target table can be deactivated');
+    assertEqualOrThrow(
+      deactivateTargetRes.data.table.is_active,
+      0,
+      'target table is marked inactive',
+    );
+
+    const inactiveMove = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target' },
+    });
+    assertEqualOrThrow(
+      inactiveMove.status,
+      400,
+      'moving order onto a deactivated table is rejected',
+    );
+    assertIncludesOrThrow(
+      inactiveMove.data.error,
+      'not active',
+      'deactivated target table rejection includes clear error message',
+    );
+
+    const orderAfterRejectedMove = await api(baseUrl, `/api/orders/${orderId}`, {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      orderAfterRejectedMove.data.order.table_id,
+      tableId,
+      'order remains on source table after rejected move',
+    );
+    const sourceAfterRejectedMove = await api(baseUrl, `/api/tables/${tableId}`, {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      sourceAfterRejectedMove.data.table.status,
+      'occupied',
+      'source table remains occupied after rejected move',
+    );
+    assertEqualOrThrow(
+      sourceAfterRejectedMove.data.table.activeOrder.id,
+      orderId,
+      'source table retains active order after rejected move',
+    );
+
     // ═══════════════════════════════════════════════════════════════════
     // Scenario E: Migration handles NULL IDs
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario E: Migration handles NULL IDs ───');
     // Simulate old table with NULL ID (from pre-fix INSERT)
-    db.prepare(`INSERT INTO tables (number, capacity, status) VALUES (?, ?, ?)`).run('T-NULL-TEST', 4, 'available');
+    db.prepare(`INSERT INTO tables (number, capacity, status) VALUES (?, ?, ?)`).run(
+      'T-NULL-TEST',
+      4,
+      'available',
+    );
 
     // Verify NULL ID exists before migration
-    const nullTable = db.prepare(`SELECT id, typeof(id) FROM tables WHERE number = ?`).get('T-NULL-TEST') as any;
+    const nullTable = db
+      .prepare(`SELECT id, typeof(id) FROM tables WHERE number = ?`)
+      .get('T-NULL-TEST') as any;
     assertOrThrow(nullTable.id === null, 'Table has NULL ID before migration');
 
     // Run migration logic
     db.exec(`UPDATE tables SET id = 'tbl-' || rowid WHERE id IS NULL`);
 
     // Verify ID is now a string
-    const migratedTable = db.prepare(`SELECT id, typeof(id) FROM tables WHERE number = ?`).get('T-NULL-TEST') as any;
+    const migratedTable = db
+      .prepare(`SELECT id, typeof(id) FROM tables WHERE number = ?`)
+      .get('T-NULL-TEST') as any;
     assertEqualOrThrow(typeof migratedTable.id, 'string', 'Migrated table has string ID');
-    assertOrThrow(/^tbl-\d+$/.test(migratedTable.id), `Migrated ID matches tbl-{rowid} format: ${migratedTable.id}`);
+    assertOrThrow(
+      /^tbl-\d+$/.test(migratedTable.id),
+      `Migrated ID matches tbl-{rowid} format: ${migratedTable.id}`,
+    );
     console.log(`   ✓ Migrated NULL ID to: ${migratedTable.id}`);
 
     // ═══════════════════════════════════════════════════════════════════
@@ -509,7 +916,11 @@ async function main() {
       body: { position_y: 61.25 },
     });
     assertEqualOrThrow(floorPutRes2.status, 200, 'partial PUT accepted');
-    assertEqualOrThrow(floorPutRes2.data.table.position_x, 25.5, 'position_x preserved on partial update');
+    assertEqualOrThrow(
+      floorPutRes2.data.table.position_x,
+      25.5,
+      'position_x preserved on partial update',
+    );
     assertEqualOrThrow(floorPutRes2.data.table.position_y, 61.25, 'position_y updated');
 
     const floorListRes = await api(baseUrl, '/api/tables', { headers: authHeader });
@@ -519,7 +930,10 @@ async function main() {
     assertEqualOrThrow(floorTable.capacity, 4, 'other fields untouched by position save');
     assertEqualOrThrow(floorTable.status, 'available', 'status untouched by position save');
     const untouched = floorListRes.data.tables.find((t: any) => t.id === 'tbl-floor-2');
-    assertOrThrow(untouched.position_x === null && untouched.position_y === null, 'unpositioned table stays off-map');
+    assertOrThrow(
+      untouched.position_x === null && untouched.position_y === null,
+      'unpositioned table stays off-map',
+    );
     console.log('   ✓ Floorplan positions persist via PUT/GET');
 
     // ── Batch layout endpoint: PATCH /api/tables/positions ──
@@ -551,15 +965,16 @@ async function main() {
       method: 'PATCH',
       headers: authHeader,
       body: {
-        positions: [
-          { id: 'tbl-floor-1', position_x: null, position_y: null },
-        ],
+        positions: [{ id: 'tbl-floor-1', position_x: null, position_y: null }],
       },
     });
     assertEqualOrThrow(unplaceBatchRes.status, 200, 'unplace via batch returns 200');
     const unplaceCheck = await api(baseUrl, '/api/tables', { headers: authHeader });
     const u1 = unplaceCheck.data.tables.find((t: any) => t.id === 'tbl-floor-1');
-    assertOrThrow(u1.position_x === null && u1.position_y === null, 'tbl-floor-1 unplaced via batch');
+    assertOrThrow(
+      u1.position_x === null && u1.position_y === null,
+      'tbl-floor-1 unplaced via batch',
+    );
     console.log('   ✓ Unplace tables via batch PATCH /tables/positions');
 
     // ── Unplace via PUT /tables/:id (COALESCE null trap fix) ──
@@ -569,8 +984,16 @@ async function main() {
       body: { position_x: null, position_y: null },
     });
     assertEqualOrThrow(putUnplaceRes.status, 200, 'unplace via PUT returns 200');
-    assertEqualOrThrow(putUnplaceRes.data.table.position_x, null, 'tbl-floor-2 position_x cleared via PUT');
-    assertEqualOrThrow(putUnplaceRes.data.table.position_y, null, 'tbl-floor-2 position_y cleared via PUT');
+    assertEqualOrThrow(
+      putUnplaceRes.data.table.position_x,
+      null,
+      'tbl-floor-2 position_x cleared via PUT',
+    );
+    assertEqualOrThrow(
+      putUnplaceRes.data.table.position_y,
+      null,
+      'tbl-floor-2 position_y cleared via PUT',
+    );
     console.log('   ✓ Unplace tables via PUT /tables/:id');
 
     // ── POST accepts a 0 coordinate (no falsy-to-null coercion) ──
@@ -580,7 +1003,11 @@ async function main() {
       body: { number: 'TT-ZERO', capacity: 2, floor: 'Ground', position_x: 0, position_y: 0 },
     });
     assertEqualOrThrow(postZeroRes.status, 201, 'POST with 0 coordinates returns 201');
-    assertEqualOrThrow(postZeroRes.data.table.position_x, 0, 'position_x 0 persists instead of coercing to null');
+    assertEqualOrThrow(
+      postZeroRes.data.table.position_x,
+      0,
+      'position_x 0 persists instead of coercing to null',
+    );
     console.log('   ✓ POST persists a 0 coordinate');
 
     // ── POST rejects out-of-range coordinates ──
@@ -598,7 +1025,7 @@ async function main() {
     const cashierToken = jwt.sign(
       { userId: 'cashier-test-001', email: 'cashier@test.local', role: 'cashier' },
       getJWTSecret(),
-      { expiresIn: '1h' }
+      { expiresIn: '1h' },
     );
     const cashierHeader = { Authorization: `Bearer ${cashierToken}` };
 
@@ -607,7 +1034,11 @@ async function main() {
       headers: cashierHeader,
       body: { positions: [{ id: 'tbl-floor-1', position_x: 50, position_y: 50 }] },
     });
-    assertEqualOrThrow(cashierPatchRes.status, 403, 'cashier role is denied on PATCH /tables/positions');
+    assertEqualOrThrow(
+      cashierPatchRes.status,
+      403,
+      'cashier role is denied on PATCH /tables/positions',
+    );
     console.log('   ✓ RBAC enforced on layout positions endpoint');
 
     // ── Coordinate range validation (0–100 canvas percent) ──
@@ -650,7 +1081,9 @@ main()
     fs.rmSync(testDir, { recursive: true, force: true });
   })
   .catch((error) => {
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.error(error);

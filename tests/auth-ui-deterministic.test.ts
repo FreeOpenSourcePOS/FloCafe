@@ -99,17 +99,21 @@ async function run() {
     'staff without a page permission fall back to login',
   );
 
-  const landingPermissions = new Map<string, string>(
-    LANDING_PAGE_CANDIDATES.map(([permission, route]: readonly [string, string]) => [
-      route,
-      permission,
-    ]),
+  const pagePermissionsByRoute = new Map<string, string>(PAGE_PERMISSIONS);
+  assert.equal(
+    pagePermissionsByRoute.get('/addon-groups'),
+    'catalog.manage',
+    '/addon-groups requires catalog.manage in PAGE_PERMISSIONS',
   );
+
+  const landingRouteByPermission = new Map<string, string>(LANDING_PAGE_CANDIDATES);
   for (const [route, permission] of PAGE_PERMISSIONS) {
+    const landingRoute = landingRouteByPermission.get(permission);
+    assert.ok(landingRoute, `${route} (${permission}) has a landing-page candidate`);
     assert.equal(
-      landingPermissions.get(route),
+      pagePermissionsByRoute.get(landingRoute),
       permission,
-      `${route} has a landing-page candidate with matching permission`,
+      `${route} has a landing-page candidate (${landingRoute}) with matching permission`,
     );
   }
 

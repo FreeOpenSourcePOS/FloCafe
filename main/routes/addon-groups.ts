@@ -362,6 +362,7 @@ router.post(
         max_selection,
         allow_multiple_quantities,
         sort_order,
+        is_active,
         addons,
       } = req.body;
 
@@ -423,8 +424,8 @@ router.post(
       const groupId = randomUUID();
       const { group, groupAddons } = withTxn(() => {
         db.prepare(`
-        INSERT INTO addon_groups (id, name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO addon_groups (id, name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
           groupId,
           groupName,
@@ -434,6 +435,7 @@ router.post(
           max,
           normalizeBoolean(allow_multiple_quantities, false) ? 1 : 0,
           order,
+          normalizeBoolean(is_active, true) ? 1 : 0,
           now(),
           now(),
         );

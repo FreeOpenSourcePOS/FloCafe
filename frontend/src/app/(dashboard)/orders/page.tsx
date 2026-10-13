@@ -1711,7 +1711,7 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
-      {filters.search.trim() && tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
+      {tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
         <div className="shrink-0 text-center py-3 border-t border-border">
           <Button
             variant="outline"

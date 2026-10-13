@@ -52,6 +52,32 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
+const http = require('http');
+const originalCreateServer = http.createServer;
+http.createServer = function (listener) {
+  if (typeof listener !== 'function') {
+    return originalCreateServer.apply(this, arguments);
+  }
+  return originalCreateServer.call(this, (req, res) => {
+    const match =
+      req.method === 'GET' && req.url && req.url.match(/^\/api\/products\/([^/?]+)\/image/);
+    if (match) {
+      const assetPath = path.join(__dirname, 'assets', `${decodeURIComponent(match[1])}.webp`);
+      if (fs.existsSync(assetPath)) {
+        const buf = fs.readFileSync(assetPath);
+        res.writeHead(200, {
+          'Content-Type': 'image/webp',
+          'Content-Length': buf.length,
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(buf);
+        return;
+      }
+    }
+    return listener(req, res);
+  });
+};
+
 const {
   initDatabase,
   getDatabase,
@@ -73,7 +99,6 @@ async function seedActiveOrders() {
     { expiresIn: '2h' },
   );
 
-  const http = require('http');
   function postOrder(body) {
     return new Promise((resolve, reject) => {
       const data = JSON.stringify(body);
@@ -92,9 +117,13 @@ async function seedActiveOrders() {
         (res) => {
           let resBody = '';
           res.on('data', (c) => (resBody += c));
-          res.on('end', () =>
-            resolve({ status: res.statusCode, data: JSON.parse(resBody || '{}') }),
-          );
+          res.on('end', () => {
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+              reject(new Error(`POST /api/orders ${res.statusCode}: ${resBody}`));
+              return;
+            }
+            resolve({ status: res.statusCode, data: JSON.parse(resBody || '{}') });
+          });
         },
       );
       req.on('error', reject);

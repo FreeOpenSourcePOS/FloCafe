@@ -16,11 +16,19 @@ const { transcodeMedia } = require('./media-pipeline.cjs');
 
 const JWT_SECRET = 'showcase-secret-key-123';
 const DOCS_SHOWCASE_DIR = path.resolve(__dirname, '../../docs/assets/showcase');
-const WEBSITE_SHOWCASE_DIR = path.resolve(__dirname, '../../../flopos.com-showcase/media/showcase');
+const DEFAULT_WEBSITE_ROOT = path.resolve(__dirname, '../../../flopos.com-showcase');
+const explicitWebsiteDir = process.env.WEBSITE_SHOWCASE_DIR || process.env.FLO_SHOWCASE_WEBSITE_DIR;
+const WEBSITE_SHOWCASE_DIR = explicitWebsiteDir
+  ? path.resolve(explicitWebsiteDir)
+  : fs.existsSync(DEFAULT_WEBSITE_ROOT)
+    ? path.join(DEFAULT_WEBSITE_ROOT, 'media/showcase')
+    : null;
 const RAW_VIDEO_DIR = path.join(require('os').tmpdir(), 'flo-showcase-raw');
 
 fs.mkdirSync(DOCS_SHOWCASE_DIR, { recursive: true });
-fs.mkdirSync(WEBSITE_SHOWCASE_DIR, { recursive: true });
+if (WEBSITE_SHOWCASE_DIR) {
+  fs.mkdirSync(WEBSITE_SHOWCASE_DIR, { recursive: true });
+}
 fs.mkdirSync(RAW_VIDEO_DIR, { recursive: true });
 
 function getAuthToken(role = 'manager', userId = 'user-manager') {
@@ -630,27 +638,36 @@ async function main() {
     env: { ...process.env, PORT: '3001', KDS_PORT: '3002', SERVER_APP_PORT: '3003' },
   });
 
-  await new Promise((resolve, reject) => {
-    server.stdout.on('data', (d) => {
-      const msg = d.toString();
-      process.stdout.write(msg);
-      if (msg.includes('All services ready for capture')) {
-        resolve();
-      }
-    });
-    server.on('error', reject);
-    setTimeout(() => reject(new Error('Server start timeout')), 30000);
-  });
-
-  console.log('[Runner] Launching headless browser...');
-  const browser = await chromium.launch({
-    headless: true,
-  });
-
+  let browser;
   const results = {};
   const requestedScene = process.argv.find((a) => a.startsWith('--scene='))?.split('=')[1];
 
   try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Server start timeout')), 30000);
+      server.stdout.on('data', (d) => {
+        const msg = d.toString();
+        process.stdout.write(msg);
+        if (msg.includes('All services ready for capture')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      server.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      server.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Server exited early: ${code}`));
+      });
+    });
+
+    console.log('[Runner] Launching headless browser...');
+    browser = await chromium.launch({
+      headless: true,
+    });
+
     if (!requestedScene || requestedScene === 'pos-checkout') {
       results['pos-checkout'] = await recordPosCheckout(browser);
     }
@@ -687,7 +704,9 @@ async function main() {
     );
   } finally {
     console.log('[Runner] Cleaning up browser and server...');
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
     server.kill('SIGINT');
   }
 }

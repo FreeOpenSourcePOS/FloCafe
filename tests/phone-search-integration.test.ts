@@ -261,7 +261,7 @@ async function main() {
     list = res.data?.data || [];
     assertEqual(list.length, 0, 'list filter preserves is_active = 1 filtering');
 
-    // ── Issue #1065: domestic trunk-zero search via configured country ──────
+    // ── Domestic trunk-zero search via configured country ──────────────────
     db.prepare(
       "INSERT INTO settings (key, value, updated_at) VALUES ('country', 'TH', datetime('now')) ON CONFLICT(key) DO UPDATE SET value = 'TH', updated_at = excluded.updated_at",
     ).run();
@@ -281,6 +281,14 @@ async function main() {
       `domestic trunk-zero query "0899123456" matches +66899123456 (got ${list.length})`,
     );
     assertEqual(list[0]?.id, thCustomerId, 'domestic trunk-zero query returns TH E.164 customer');
+
+    res = await api(apiBase, '/customers?search=0899&per_page=10', { headers: authHeader });
+    list = res.data?.data || [];
+    assertEqual(
+      list.length,
+      0,
+      `partial leading-zero query "0899" does not produce an incorrect match (got ${list.length})`,
+    );
 
     res = await api(apiBase, '/customers?search=899123&per_page=10', { headers: authHeader });
     list = res.data?.data || [];

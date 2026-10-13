@@ -640,7 +640,40 @@ test.describe('checkout controls stay visible while catalog and cart content scr
 
     const cartShell = page.getByTestId('cart-shell');
     const lastItem = cartShell.getByText(names[names.length - 1], { exact: false }).last();
-    await expect(lastItem, 'the last cart row is reachable on a 1024x600 viewport').toBeVisible();
+    await expect(
+      lastItem,
+      'the last cart row is reachable on a 1024x600 viewport',
+    ).toBeInViewport();
+
+    await cartShell.getByRole('button', { name: 'Delivery' }).click();
+    const deliveryCartScrollBox = await cartScroll.boundingBox();
+    expect(deliveryCartScrollBox, 'delivery cart items container has bounds').not.toBeNull();
+    expect(
+      deliveryCartScrollBox!.height,
+      'cart items container maintains usable height with taller Delivery header on 1024x600 display',
+    ).toBeGreaterThanOrEqual(120);
+
+    await cartShell.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await cartScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    const deliveryCheckoutBox = await placeOrder.boundingBox();
+    expect(deliveryCheckoutBox, 'delivery checkout button has bounds').not.toBeNull();
+    expect(
+      deliveryCheckoutBox!.y,
+      'delivery checkout button is not above the viewport',
+    ).toBeGreaterThanOrEqual(-1);
+    expect(
+      deliveryCheckoutBox!.y + deliveryCheckoutBox!.height,
+      'delivery checkout button is reachable inside the viewport',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
+    await expect(
+      lastItem,
+      'the last cart row remains in viewport with taller Delivery header on 1024x600',
+    ).toBeInViewport();
   });
 
   test('POS keeps checkout reachable at an effective 200% zoom viewport', async ({ page }) => {

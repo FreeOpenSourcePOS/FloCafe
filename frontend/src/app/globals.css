@@ -69,13 +69,15 @@ input[type="number"] {
   appearance: textfield;
 }
 
-.touch-target {
-  min-height: 44px;
-  min-width: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  touch-action: manipulation;
+@layer components {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+  }
 }
 
 /* Short viewports: the cart column becomes the single scroll owner, so order

@@ -113,7 +113,8 @@ function seedHarborBean(db) {
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
-    ['store_name', 'Harbor & Bean Café'],
+    ['store_name', 'Harbor & Bean Cafe'],
+    ['business_name', 'Harbor & Bean Cafe'],
     ['store_address', '42 Ocean Pier Way, Suite 100'],
     ['store_phone', '+1 555-0100'],
     ['taxes_enabled', 'true'],
@@ -300,12 +301,12 @@ function seedHarborBean(db) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run('ri-milk', 'rec-flat-white', 'sup-whole-milk', 0.25, 'l', createdAt);
 
-  // 8. Tables & Floor Plan
+  // 8. Tables & Floor Plan (percentage coordinates 0-100 on canvas)
   const tables = [
-    ['tab-1', 'T1', 2, 'available', 'Main Dining', 'Center', 180, 140],
-    ['tab-2', 'T2', 4, 'occupied', 'Main Dining', 'Window', 420, 140],
-    ['tab-3', 'T3', 6, 'available', 'Main Dining', 'Corner', 180, 320],
-    ['tab-4', 'T4', 4, 'available', 'Patio', 'Outdoor', 420, 320],
+    ['tab-1', 'T1', 2, 'available', 'Main Dining', 'Center', 25, 35],
+    ['tab-2', 'T2', 4, 'occupied', 'Main Dining', 'Window', 65, 35],
+    ['tab-3', 'T3', 6, 'available', 'Main Dining', 'Corner', 45, 70],
+    ['tab-4', 'T4', 4, 'available', 'Patio', 'Outdoor', 50, 50],
   ];
   for (const [id, num, cap, status, floor, sec, x, y] of tables) {
     db.prepare(`

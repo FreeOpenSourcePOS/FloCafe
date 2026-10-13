@@ -93,7 +93,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>High-Speed Counter POS</h3>
       <p>Fast, touch-optimized checkout built for busy café rushes. Filter menu categories with a tap, adjust item quantities on the fly, and accept cash or card payments with zero lag.</p>
-      <p><a href="docs/architecture/order-lifecycle.md">Order and checkout guide &rarr;</a></p>
+      <p><a href="https://flopos.com/documentation/getting-started">Getting started guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -106,7 +106,6 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Custom Modifiers &amp; Add-ons</h3>
       <p>Tailor every drink and dish to customer preferences. Configure milk selections (whole, oat, almond), extra espresso shots, syrup flavors, and kitchen prep instructions effortlessly.</p>
-      <p><a href="docs/architecture/order-lifecycle.md">Modifiers and menu guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -119,7 +118,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Real-Time Kitchen Display (KDS)</h3>
       <p>Keep kitchen staff and baristas in sync with a digital ticket board. Drag orders from waiting to preparing to ready, track prep times, and eliminate lost paper tickets.</p>
-      <p><a href="docs/architecture/overview.md">Kitchen display setup &rarr;</a></p>
+      <p><a href="https://flopos.com/documentation/kitchen-display">Kitchen display guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -132,7 +131,6 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Visual Tables &amp; Floor Plan</h3>
       <p>See your entire dining area at a glance. Track occupied and open tables, check how long guests have been seated to optimize turnaround, and view checks instantly.</p>
-      <p><a href="docs/architecture/overview.md">Table management guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -145,7 +143,6 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Handheld Waiter App</h3>
       <p>Take orders right at the table from any smartphone or tablet. Servers select menu items, apply modifiers, and fire tickets directly to the kitchen without walking back to the counter.</p>
-      <p><a href="docs/reference/roles-and-permissions.md">Staff and waiter app guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -158,7 +155,6 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Split Payments &amp; Multi-Tender</h3>
       <p>Split bills equally across guests or accept multiple payment types on a single ticket. Handle partial cash, card, and loyalty point redemptions with automatic change calculations.</p>
-      <p><a href="docs/architecture/order-lifecycle.md">Split payments and settlement guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>
@@ -169,9 +165,8 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>Recipe &amp; Stock Tracking</h3>
-      <p>Track inventory consumption automatically. Coffee beans, milk, and bakery supplies deplete as orders are placed, with real-time stock movement history and low-stock alerts.</p>
-      <p><a href="docs/reference/product-invariants.md">Inventory tracking guide &rarr;</a></p>
+      <h3>Supplies &amp; Stock Tracking</h3>
+      <p>Manage raw ingredients and café supplies with precision. Record stock deliveries, waste, and manual adjustments, track unit costs, and review complete movement audit logs.</p>
     </td>
     <td width="50%">
       <picture>
@@ -184,7 +179,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
     <td width="50%" valign="top">
       <h3>Thermal Receipt &amp; Kitchen Printing</h3>
       <p>Print clean customer receipts and kitchen order slips on standard 58mm or 80mm thermal receipt printers over USB or local network, complete with itemized tax summaries.</p>
-      <p><a href="docs/printers.md">Printer configuration guide &rarr;</a></p>
+      <p><a href="https://flopos.com/documentation/printers">Printer configuration guide &rarr;</a></p>
     </td>
     <td width="50%">
       <picture>

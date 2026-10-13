@@ -22,10 +22,32 @@ process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX = '10000';
 process.env.FLO_WHATSAPP_SOCKET_DISABLED = '1';
 process.env.NODE_ENV = 'test';
 
+class RasterSurfaceStub {
+  destroyed = false;
+  webContents = {
+    on: () => {},
+    removeListener: () => {},
+    send: () => {},
+    loadURL: async () => {},
+  };
+  isDestroyed() {
+    return this.destroyed;
+  }
+  close() {
+    this.destroyed = true;
+  }
+  on() {}
+  removeListener() {}
+}
+
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'electron') {
-    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => '3.12.88' } };
+    return {
+      app: { isPackaged: true, getPath: () => testDir, getVersion: () => '3.12.88' },
+      ipcMain: { on: () => {}, removeListener: () => {}, handle: () => {} },
+      BrowserWindow: RasterSurfaceStub,
+    };
   }
   return originalLoad.apply(this, arguments);
 };

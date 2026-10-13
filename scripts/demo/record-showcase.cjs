@@ -93,6 +93,12 @@ async function recordPosCheckout(browser) {
   // Assert payment success toast appears
   await page.waitForSelector('text=/Order #.* paid/i', { timeout: 8000 });
 
+  // Assert no printer error or warning toast
+  const warningToast = page.locator('text=/not printed|raster rendering failed/i');
+  if (await warningToast.isVisible()) {
+    throw new Error('Warning toast detected on checkout');
+  }
+
   // Hold on success state
   await page.waitForTimeout(1600);
 
@@ -181,11 +187,10 @@ async function recordKdsKanban(browser) {
   const token = getAuthToken('chef', 'user-chef');
   await setupPageAuth(page, token, 'http://127.0.0.1:3002/kds-standalone');
 
-  // Switch to Kanban view if button is visible
+  // Switch to Kanban view
   const kanbanBtn = page.getByRole('button', { name: 'Kanban', exact: true });
-  if (await kanbanBtn.isVisible()) {
-    await smoothClick(page, kanbanBtn, { moveDuration: 400, postClickWait: 500 });
-  }
+  await kanbanBtn.waitFor({ state: 'visible', timeout: 10000 });
+  await smoothClick(page, kanbanBtn, { moveDuration: 400, postClickWait: 500 });
 
   // Wait for board columns to be ready
   const pendingCol = page.locator('div:has(> div > span:text-is("Waiting"))').last();
@@ -253,6 +258,27 @@ async function recordFloorplanTables(browser) {
   await canvas.waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(600);
 
+  // Verify Main Dining tables (T1, T2, T3) are rendered
+  await canvas.locator('text=T1').waitFor({ state: 'visible', timeout: 5000 });
+  await canvas.locator('text=T2').waitFor({ state: 'visible', timeout: 5000 });
+  await canvas.locator('text=T3').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(500);
+
+  // Switch to Patio tab (T4)
+  const floorTabs = page.getByTestId('floorplan-floor-tabs');
+  const patioTab = floorTabs.getByRole('button', { name: /Patio/i });
+  await patioTab.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, patioTab, { moveDuration: 500, postClickWait: 700 });
+  await canvas.locator('text=T4').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(600);
+
+  // Switch back to Main Dining
+  const diningTab = floorTabs.getByRole('button', { name: /Main Dining/i });
+  await diningTab.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, diningTab, { moveDuration: 500, postClickWait: 700 });
+  await canvas.locator('text=T2').waitFor({ state: 'visible', timeout: 5000 });
+  await page.waitForTimeout(500);
+
   // Click occupied Table T2
   const t2Table = canvas.locator('text=T2').first();
   await t2Table.waitFor({ state: 'visible', timeout: 5000 });
@@ -301,14 +327,19 @@ async function recordServerApp(browser) {
   await t1Btn.waitFor({ state: 'visible', timeout: 10000 });
   await smoothClick(page, t1Btn, { moveDuration: 500, postClickWait: 600 });
 
+  // Wait for product images to load
+  const coldBrewImg = page.locator('img[alt="Nitro Cold Brew"]');
+  await coldBrewImg.waitFor({ state: 'visible', timeout: 8000 });
+  const sconeImg = page.locator('img[alt="Blueberry Scone"]');
+  await sconeImg.waitFor({ state: 'visible', timeout: 8000 });
+  await page.waitForTimeout(400);
+
   // Tap Cold Brew
   const coldBrew = page.getByText('Nitro Cold Brew').first();
-  await coldBrew.waitFor({ state: 'visible', timeout: 5000 });
   await smoothClick(page, coldBrew, { moveDuration: 500, postClickWait: 500 });
 
   // Tap Scone
   const scone = page.getByText('Blueberry Scone').first();
-  await scone.waitFor({ state: 'visible', timeout: 5000 });
   await smoothClick(page, scone, { moveDuration: 500, postClickWait: 500 });
 
   // Open cart drawer on mobile
@@ -436,6 +467,18 @@ async function recordSplitPayments(browser) {
   await doneBtn.waitFor({ state: 'visible', timeout: 5000 });
   await smoothClick(page, doneBtn, { moveDuration: 500, postClickWait: 800 });
 
+  // Switch to "All" tab in order list so completed order is visible
+  const allTab = page.getByRole('button', { name: 'All', exact: true });
+  await allTab.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, allTab, { moveDuration: 500, postClickWait: 600 });
+
+  // Click completed order row to view final order check with "Paid" badge
+  const completedOrder = page.locator('li button:has-text("T2")').first();
+  await completedOrder.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, completedOrder, { moveDuration: 500, postClickWait: 600 });
+
+  // Assert order ticket details with Paid badge
+  await page.waitForSelector('text=Paid', { timeout: 5000 });
   await page.waitForTimeout(1600);
 
   const rawVideo = await page.video().path();
@@ -541,21 +584,24 @@ async function recordThermalPrinting(browser) {
   await kotMode.waitFor({ state: 'visible', timeout: 5000 });
   await smoothClick(page, kotMode, { moveDuration: 500, postClickWait: 600 });
 
-  // Switch to Detailed Tax Bill
-  const taxBill = page.getByRole('button', { name: /Detailed Tax Bill/i }).first();
-  await taxBill.waitFor({ state: 'visible', timeout: 5000 });
-  await smoothClick(page, taxBill, { moveDuration: 500, postClickWait: 600 });
+  // Switch to Basic Receipt (Thermal)
+  const basicReceipt = page.getByRole('button', { name: /Basic Receipt/i }).first();
+  await basicReceipt.waitFor({ state: 'visible', timeout: 5000 });
+  await smoothClick(page, basicReceipt, { moveDuration: 500, postClickWait: 600 });
 
   // Click Run Test Print
   const runTestBtn = page.getByRole('button', { name: /Run Test/i });
   await runTestBtn.waitFor({ state: 'visible', timeout: 5000 });
   await smoothClick(page, runTestBtn, { moveDuration: 500, postClickWait: 800 });
 
-  // Assert print success toast appears
-  await page
-    .getByText(/printed/i)
-    .first()
-    .waitFor({ state: 'visible', timeout: 8000 });
+  // Assert genuine receipt print success toast appears
+  await page.waitForSelector('text=Receipt printed', { timeout: 8000 });
+
+  // Assert no warning or fallback toast
+  const warningToast = page.locator('text=/No thermal printer|not printed|system print/i');
+  if (await warningToast.isVisible()) {
+    throw new Error('Warning or fallback toast detected on thermal printing');
+  }
 
   // Scroll data preview into view
   const preview = page.getByText('Data Preview').first();

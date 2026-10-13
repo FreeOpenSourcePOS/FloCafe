@@ -1615,3 +1615,32 @@ test('Charges generate distinct native IDs for non-ASCII names', async ({ page }
   expect(savedCharges[1].id).toMatch(/^charge-[0-9a-f]{32}$/);
   expect(savedCharges[0].id).not.toBe(savedCharges[1].id);
 });
+
+test('Direct KDS tab load hydrates KOT state and shows double-off warning when both are disabled', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  const kdsPanel = page.getByRole('tabpanel');
+  await expect(
+    kdsPanel.getByRole('switch', { name: 'Kitchen Display System', exact: true }),
+  ).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+});

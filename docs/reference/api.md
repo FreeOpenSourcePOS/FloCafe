@@ -429,7 +429,7 @@ Router: `main/routes/cash-sessions.ts`. Full path: `/api/cash-sessions`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/open` | `ROLE_ACCESS.ownerManagerCashier` | body: `opening_float_cents` | Body `opening_float_cents` (integer minor units, defaults to 0). |
+| `POST` | `/open` | `ROLE_ACCESS.ownerManagerCashier` | body: `opening_float_cents` | Body `opening_float_cents` (integer minor units, defaults to 0). `409` when a shift is already open (`session_already_open`) or the current store business day is already closed (`day_already_closed`). |
 | `GET` | `/current` | `ROLE_ACCESS.ownerManagerCashier` | none | The open shift, or `null` when none is open. |
 | `POST` | `/:id/close` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `notes` | Closes the shift with optional `notes`. |
 

@@ -94,6 +94,18 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Press Escape to dismiss
     await page.keyboard.press('Escape');
     await expect(modal).not.toBeVisible();
+
+    // When an input is focused and F1 opens help, a single Escape closes help before blurring the input
+    const searchInput = page.getByTestId('pos-product-search');
+    await searchInput.focus();
+    await expect(searchInput).toBeFocused();
+    await page.keyboard.press('F1');
+    await expect(modal).toBeVisible({ timeout: 5_000 });
+    await page.keyboard.press('Escape');
+    await expect(modal).not.toBeVisible();
+    await expect(searchInput).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(searchInput).not.toBeFocused();
   });
 
   test('/ focuses product search input, and multiplier search adds item with quantity', async ({
@@ -139,6 +151,17 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
     // Test '-' key decrements cart quantity back to 5
     await page.keyboard.press('-');
     await expect(qtySpan).toHaveText('5');
+
+    // Browser/OS modifier combinations must not alter cart quantity
+    await page.keyboard.press('Control+Minus');
+    await page.keyboard.press('Meta+Minus');
+    await page.keyboard.press('Alt+Minus');
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '-', code: 'Digit6', altKey: true, bubbles: true }),
+      );
+    });
+    await expect(qtySpan).toHaveText('5');
   });
 
   test('F2 toggles table picker, and Escape dismisses it', async ({ page }) => {
@@ -151,6 +174,20 @@ test.describe('POS Keyboard Shortcuts & Rapid Cashier Ergonomics', () => {
 
     // F2 toggles the active table picker closed
     await page.keyboard.press('F2');
+    await expect(tableModal).not.toBeVisible();
+
+    // macOS Option+2 (key: '™', code: 'Digit2') toggles table picker open and closed
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '™', code: 'Digit2', altKey: true, bubbles: true }),
+      );
+    });
+    await expect(tableModal).toBeVisible({ timeout: 5_000 });
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: '™', code: 'Digit2', altKey: true, bubbles: true }),
+      );
+    });
     await expect(tableModal).not.toBeVisible();
 
     // F2 does not open the table picker for takeaway orders

@@ -56,7 +56,6 @@ const SCREEN_FILES = [
   'frontend/src/app/(dashboard)/dashboard/page.tsx',
   'frontend/src/app/(dashboard)/orders/page.tsx',
   'frontend/src/app/(dashboard)/products/page.tsx',
-  'frontend/src/app/(dashboard)/addon-groups/page.tsx',
   'frontend/src/app/(dashboard)/customers/page.tsx',
   'frontend/src/app/(dashboard)/tables/page.tsx',
   'frontend/src/components/pos/CartPanel.tsx',
@@ -93,7 +92,27 @@ const PHYSICAL_UTIL_RE =
  */
 const ALLOWLIST: Record<string, string[]> = {};
 
+function collectElements(
+  node: unknown,
+  predicate: (element: any) => boolean,
+  result: any[] = []
+): any[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, result);
+    return result;
+  }
+  if (!node || typeof node !== 'object') return result;
+  if (predicate(node)) result.push(node);
+  const props = (node as { props?: { children?: unknown } }).props;
+  if (props) collectElements(props.children, predicate, result);
+  return result;
+}
+
 function loadComponents(): {
+  AddonGroupsPage: () => any;
+  ChevronRight: any;
+  ChevronDown: any;
+  faMessages: Record<string, any>;
   DirectionalToaster: any;
   usePosSettingsStore: any;
   Ltr: any;
@@ -109,7 +128,9 @@ function loadComponents(): {
 
   moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
     let resolvedRequest = request;
-    if (request.startsWith('@/')) {
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(ROOT, 'main/countries.ts');
+    } else if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
     } else if (request.startsWith('@print/')) {
       resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
@@ -120,12 +141,27 @@ function loadComponents(): {
   try {
     const React = frontendRequire('react');
     const ReactDOMServer = frontendRequire('react-dom/server');
+    const { ChevronRight, ChevronDown } = frontendRequire('lucide-react');
+    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
+    const faMessages = require('../frontend/src/locales/fa.json');
     const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
     const { Ltr } = require('../frontend/src/components/layout/Ltr');
     const { IntlProvider } = frontendRequire('use-intl');
     const { getLanguageLocale } = require('../frontend/src/lib/i18n');
-    return { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer };
+    return {
+      AddonGroupsPage,
+      ChevronRight,
+      ChevronDown,
+      faMessages,
+      DirectionalToaster,
+      usePosSettingsStore,
+      Ltr,
+      IntlProvider,
+      getLanguageLocale,
+      React,
+      ReactDOMServer,
+    };
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
   }
@@ -189,7 +225,19 @@ function run(): void {
   //    #376: DirectionalToaster reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
   //    matches the language under test.
-  const { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer } = loadComponents();
+  const {
+    AddonGroupsPage,
+    ChevronRight,
+    ChevronDown,
+    faMessages,
+    DirectionalToaster,
+    usePosSettingsStore,
+    Ltr,
+    IntlProvider,
+    getLanguageLocale,
+    React,
+    ReactDOMServer,
+  } = loadComponents();
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
@@ -314,6 +362,142 @@ function run(): void {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');
+
+  const sampleAddonGroup = {
+    id: 'group-rtl-1',
+    name: 'Extras',
+    description: 'Optional extras',
+    is_required: false,
+    allow_multiple_quantities: false,
+    min_selection: 0,
+    max_selection: 2,
+    is_active: true,
+    addons: [{ id: 'addon-rtl-1', name: 'Extra Shot', price: 0, is_active: true }],
+  };
+  const originalUseState = React.useState;
+  let expandedGroupState: number | string | null = null;
+  try {
+    const renderAddonGroupsPage = () => {
+      let stateCall = 0;
+      React.useState = ((initial: unknown) => {
+        stateCall += 1;
+        if (stateCall === 1) return [[sampleAddonGroup], () => undefined];
+        if (stateCall === 2) return [false, () => undefined];
+        if (stateCall === 6) {
+          return [
+            expandedGroupState,
+            (next: number | string | null) => {
+              expandedGroupState = next;
+            },
+          ];
+        }
+        return [initial, () => undefined];
+      }) as typeof React.useState;
+
+      let capturedTree: any;
+      function AddonGroupsProbe() {
+        capturedTree = AddonGroupsPage();
+        return capturedTree;
+      }
+      const markup = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(
+          IntlProvider,
+          { locale: getLanguageLocale('fa'), messages: faMessages },
+          React.createElement(AddonGroupsProbe)
+        )
+      );
+      return { tree: capturedTree, markup };
+    };
+
+    const collapsedRender = renderAddonGroupsPage();
+    const collapsedChevronRights = collectElements(
+      collapsedRender.tree,
+      (el) => el.type === ChevronRight
+    );
+    const collapsedChevronDowns = collectElements(
+      collapsedRender.tree,
+      (el) => el.type === ChevronDown
+    );
+    assert(
+      collapsedChevronRights.length === 1 && collapsedChevronDowns.length === 0,
+      `Collapsed AddonGroupsPage header must render ChevronRight and not ChevronDown (got ${collapsedChevronRights.length} ChevronRight, ${collapsedChevronDowns.length} ChevronDown)`
+    );
+    const collapsedClassTokens = String(collapsedChevronRights[0].props?.className ?? '')
+      .trim()
+      .split(/\s+/);
+    assert(
+      collapsedClassTokens.includes('rtl-flip'),
+      `Collapsed AddonGroupsPage ChevronRight must include rtl-flip in className, got: "${collapsedChevronRights[0].props?.className}"`
+    );
+    assert(
+      collapsedRender.markup.includes('lucide-chevron-right') &&
+        collapsedRender.markup.includes('rtl-flip') &&
+        !collapsedRender.markup.includes('lucide-chevron-down'),
+      `Collapsed AddonGroupsPage markup must render lucide-chevron-right with rtl-flip`
+    );
+
+    const collapsedToggleBtn = collectElements(
+      collapsedRender.tree,
+      (el) =>
+        el.type === 'button' &&
+        collectElements(el, (child) => child.type === ChevronRight).length > 0
+    )[0];
+    assert(
+      typeof collapsedToggleBtn?.props?.onClick === 'function',
+      'Collapsed AddonGroupsPage header must expose an onClick toggle button'
+    );
+    collapsedToggleBtn.props.onClick();
+    assert(
+      expandedGroupState === sampleAddonGroup.id,
+      `Toggling collapsed AddonGroupsPage header must expand group ${sampleAddonGroup.id}, got: ${expandedGroupState}`
+    );
+
+    const expandedRender = renderAddonGroupsPage();
+    const expandedChevronRights = collectElements(
+      expandedRender.tree,
+      (el) => el.type === ChevronRight
+    );
+    const expandedChevronDowns = collectElements(
+      expandedRender.tree,
+      (el) => el.type === ChevronDown
+    );
+    assert(
+      expandedChevronDowns.length === 1 && expandedChevronRights.length === 0,
+      `Expanded AddonGroupsPage header must render ChevronDown and not ChevronRight (got ${expandedChevronDowns.length} ChevronDown, ${expandedChevronRights.length} ChevronRight)`
+    );
+    const expandedClassTokens = String(expandedChevronDowns[0].props?.className ?? '')
+      .trim()
+      .split(/\s+/);
+    assert(
+      !expandedClassTokens.includes('rtl-flip'),
+      `Expanded AddonGroupsPage ChevronDown must not include rtl-flip in className, got: "${expandedChevronDowns[0].props?.className}"`
+    );
+    assert(
+      expandedRender.markup.includes('lucide-chevron-down') &&
+        !expandedRender.markup.includes('lucide-chevron-right') &&
+        !expandedRender.markup.includes('rtl-flip'),
+      'Expanded AddonGroupsPage markup must render lucide-chevron-down without rtl-flip'
+    );
+
+    const expandedToggleBtn = collectElements(
+      expandedRender.tree,
+      (el) =>
+        el.type === 'button' &&
+        collectElements(el, (child) => child.type === ChevronDown).length > 0
+    )[0];
+    assert(
+      typeof expandedToggleBtn?.props?.onClick === 'function',
+      'Expanded AddonGroupsPage header must expose an onClick toggle button'
+    );
+    expandedToggleBtn.props.onClick();
+    assert(
+      expandedGroupState === null,
+      `Toggling expanded AddonGroupsPage header must collapse group back to null, got: ${expandedGroupState}`
+    );
+  } finally {
+    React.useState = originalUseState;
+  }
+  console.log('  ✓ AddonGroupsPage renders ChevronRight with rtl-flip when collapsed and ChevronDown without rtl-flip when expanded');
 
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');
 }

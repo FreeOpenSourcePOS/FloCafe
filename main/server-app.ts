@@ -51,6 +51,7 @@ type ServerAppUser = {
   email?: string;
   role: string;
   iat?: number;
+  exp?: number;
 };
 
 function normalizeEmail(email: unknown): string {
@@ -123,6 +124,7 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
       email: user.email,
       role: user.role,
       iat: decoded.iat,
+      exp: decoded.exp,
     } satisfies ServerAppUser;
     next();
   } catch {
@@ -323,7 +325,8 @@ export function startServerApp(): Promise<void> {
       requireServerAppAuth,
       (req: Request, res: Response) => {
         const token = req.headers.authorization?.split(' ')[1];
-        if (token) revokeToken(token);
+        const user = (req as any).user as ServerAppUser;
+        if (token) revokeToken(token, typeof user.exp === 'number' ? user.exp * 1000 : undefined);
         res.json({ success: true });
       },
     );

@@ -975,6 +975,41 @@ test('Save All preserves printing edits during business hydration', async ({ pag
   });
 });
 
+test('Printers tab hydrates KDS enabled state on direct load for the double-off warning', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Both the Kitchen Display and KOT printing are off. Kitchen items won't display or print anywhere — orders will need to be marked served directly at the counter.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+});
+
 test('Rapid Settings navigation stays below the read rate limit', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);
@@ -1801,15 +1836,19 @@ test('Failed kitchen setting saves before initial hydration completes reconcile 
       return;
     }
     kdsGets += 1;
-    if (kdsGets === 1) {
-      signalInitialKdsGetStarted();
+    if (kdsGets <= 2) {
+      if (kdsGets === 2) signalInitialKdsGetStarted();
       await initialHydrationHeld;
     }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ setting: { value: 'false' } }),
-    });
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value: 'false' } }),
+      });
+    } catch {
+      // Aborted when leaving Printers tab before initial KDS hydration finishes.
+    }
   });
   await page.route('**/api/settings/require_kitchen_delivered_before_settlement', async (route) => {
     if (route.request().method() === 'PUT') {

@@ -2514,6 +2514,10 @@ export default function SettingsPage() {
             if (!active()) return;
             applyHydratedKitchenSetting('kotPrintingEnabled', res?.data.setting?.value !== 'false');
           }),
+          readOptional('/settings/kds_enabled').then((res) => {
+            if (!active()) return;
+            applyHydratedKitchenSetting('kdsEnabled', res?.data.setting?.value !== 'false');
+          }),
         ]);
         return;
       }

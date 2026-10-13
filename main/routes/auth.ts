@@ -420,7 +420,7 @@ router.post('/refresh', (req: Request, res: Response) => {
     // keep refreshing itself into new tokens forever, bypassing revocation entirely.
     const db = getDatabase();
     const user = db
-      .prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?')
+      .prepare('SELECT role, is_active, tokens_valid_after FROM users WHERE id = ?')
       .get(decoded.userId) as any;
     if (!user || user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -431,7 +431,7 @@ router.post('/refresh', (req: Request, res: Response) => {
       {
         userId: decoded.userId,
         email: decoded.email,
-        role: decoded.role,
+        role: user.role,
         tenantId: decoded.tenantId,
         remember,
         jti: randomUUID(),

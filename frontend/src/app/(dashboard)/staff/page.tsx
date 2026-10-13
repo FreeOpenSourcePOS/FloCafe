@@ -195,6 +195,17 @@ export default function StaffPage() {
     setShowPin(false);
   };
 
+  useEffect(() => {
+    if (!showForm) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeForm();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showForm]);
+
   const closeResetPassword = () => {
     setShowResetPw(false);
     setShowResetPassword(false);

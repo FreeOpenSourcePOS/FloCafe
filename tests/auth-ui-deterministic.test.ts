@@ -193,6 +193,269 @@ async function run() {
     'single-tenant login auto-selects the tenant',
   );
 
+  // ── 5. Staff create/edit modal closes when Escape is pressed (#1098) ──
+  const originalResolveFilename = Module._resolveFilename;
+  const originalWindow = (globalThis as any).window;
+  const rootDir = path.resolve(__dirname, '..');
+
+  Module._resolveFilename = function (
+    request: string,
+    parent: unknown,
+    isMain: boolean,
+    options?: unknown,
+  ) {
+    if (request.startsWith('@/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(rootDir, 'frontend/src', request.slice(2)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    if (request.startsWith('@shared/')) {
+      return originalResolveFilename.call(
+        this,
+        path.resolve(rootDir, 'shared', request.slice('@shared/'.length)),
+        parent,
+        isMain,
+        options,
+      );
+    }
+    return originalResolveFilename.call(this, request, parent, isMain, options);
+  };
+
+  try {
+    const keydownListeners = new Set<(e: { key: string }) => void>();
+    (globalThis as any).window = {
+      addEventListener: (type: string, fn: (e: { key: string }) => void) => {
+        if (type === 'keydown') keydownListeners.add(fn);
+      },
+      removeEventListener: (type: string, fn: (e: { key: string }) => void) => {
+        if (type === 'keydown') keydownListeners.delete(fn);
+      },
+    };
+
+    const dispatchKeydown = (key: string) => {
+      for (const listener of [...keydownListeners]) {
+        listener({ key });
+      }
+    };
+
+    const states: unknown[] = [];
+    const effectSlots: Array<{ deps?: unknown[]; cleanup?: unknown }> = [];
+    const pendingEffects: Array<() => void> = [];
+
+    const reactHooks = {
+      useState: (initial: unknown) => {
+        const idx = currentStateIdx++;
+        if (idx >= states.length) {
+          states.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
+        }
+        const setState = (next: unknown) => {
+          states[idx] =
+            typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
+        };
+        return [states[idx], setState];
+      },
+      useEffect: (effect: () => unknown, deps?: unknown[]) => {
+        const idx = currentEffectIdx++;
+        const prev = effectSlots[idx];
+        const depsChanged =
+          !prev ||
+          !deps ||
+          !prev.deps ||
+          deps.length !== prev.deps.length ||
+          deps.some((d, i) => !Object.is(d, prev.deps![i]));
+        if (depsChanged) {
+          pendingEffects.push(() => {
+            if (prev && typeof prev.cleanup === 'function') {
+              prev.cleanup();
+            }
+            const cleanup = effect();
+            effectSlots[idx] = { deps, cleanup };
+          });
+        }
+      },
+    };
+
+    let currentStateIdx = 0;
+    let currentEffectIdx = 0;
+
+    const IconStub = () => null;
+    const ButtonStub = (props: Record<string, unknown>) => ({ type: 'Button', props });
+    const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({
+      type,
+      props,
+      key,
+    });
+
+    Module._load = function (request: string, parent: unknown, isMain: boolean) {
+      if (request === 'react') return reactHooks;
+      if (request === 'react/jsx-runtime') {
+        return { jsx: jsxElement, jsxs: jsxElement, Fragment: 'Fragment' };
+      }
+      if (request === 'use-intl') {
+        return { useTranslations: (ns: string) => (key: string) => `${ns}.${key}` };
+      }
+      if (request === 'react-hot-toast') {
+        return { __esModule: true, default: { success: () => {}, error: () => {} } };
+      }
+      if (request === 'lucide-react') {
+        return {
+          Plus: IconStub,
+          X: IconStub,
+          Edit: IconStub,
+          RotateCcw: IconStub,
+          Eye: IconStub,
+          EyeOff: IconStub,
+        };
+      }
+      if (request === '@/components/ui/button') return { Button: ButtonStub };
+      if (request === '@/components/settings/PermissionMatrix') {
+        return { PermissionMatrix: () => null };
+      }
+      if (request === '@/components/settings/PermissionAuditLog') {
+        return { PermissionAuditLog: () => null };
+      }
+      if (request === '@/store/auth') {
+        return {
+          useAuthStore: () => ({
+            currentTenant: {
+              id: 1,
+              role: 'owner',
+              permission_ids: [
+                'authorization.manage',
+                'staff.operational.manage',
+                'staff.privileged.manage',
+              ],
+            },
+          }),
+        };
+      }
+      if (request === '@/lib/api') {
+        return {
+          __esModule: true,
+          default: {
+            get: async (url: string) => {
+              if (url === '/authorization/users' || url === '/staff') {
+                return {
+                  data: {
+                    users: [
+                      {
+                        id: 'staff-1',
+                        name: 'Sam Server',
+                        email: 'sam@flo.local',
+                        role: 'server',
+                        is_active: 1,
+                        has_pin: false,
+                      },
+                    ],
+                  },
+                };
+              }
+              if (url === '/kitchen-stations') return { data: { kitchenStations: [] } };
+              if (url === '/settings/kds_enabled') return { data: { setting: { value: 'true' } } };
+              return { data: {} };
+            },
+          },
+        };
+      }
+      return originalLoad.apply(this, arguments as any);
+    };
+
+    const collectElements = (
+      node: unknown,
+      predicate: (el: any) => boolean,
+      acc: any[] = [],
+    ): any[] => {
+      if (Array.isArray(node)) {
+        for (const child of node) collectElements(child, predicate, acc);
+        return acc;
+      }
+      if (!node || typeof node !== 'object') return acc;
+      if (predicate(node)) acc.push(node);
+      const children = (node as { props?: { children?: unknown } }).props?.children;
+      if (children !== undefined) collectElements(children, predicate, acc);
+      return acc;
+    };
+
+    const StaffPage = require('../frontend/src/app/(dashboard)/staff/page').default;
+    const renderStaffPage = () => {
+      currentStateIdx = 0;
+      currentEffectIdx = 0;
+      pendingEffects.length = 0;
+      const tree = StaffPage();
+      while (pendingEffects.length > 0) {
+        const runEffect = pendingEffects.shift()!;
+        runEffect();
+      }
+      return tree;
+    };
+
+    const findDialog = (tree: unknown) =>
+      collectElements(tree, (el) => el.props?.role === 'dialog')[0];
+
+    let tree = renderStaffPage();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'staff modal starts closed');
+
+    // Open Add Staff modal
+    const addButton = collectElements(
+      tree,
+      (el) =>
+        el.type === ButtonStub &&
+        Array.isArray(el.props?.children) &&
+        el.props.children.includes('staff.addButton'),
+    )[0];
+    assert.ok(addButton, 'Add Staff button renders');
+    addButton.props.onClick();
+
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'Add Staff dialog opens when Add Staff is clicked');
+
+    // Non-Escape keys leave the dialog open
+    dispatchKeydown('Enter');
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'non-Escape key leaves the Add Staff dialog open');
+
+    // Escape closes the Add Staff modal
+    dispatchKeydown('Escape');
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Add Staff dialog');
+    assert.equal(
+      keydownListeners.size,
+      0,
+      'window keydown listener is cleaned up when the dialog closes',
+    );
+
+    // Open Edit Staff modal and verify Escape closes it as well
+    const editButton = collectElements(
+      tree,
+      (el) =>
+        el.type === ButtonStub &&
+        Array.isArray(el.props?.children) &&
+        el.props.children.includes('common.edit'),
+    )[0];
+    assert.ok(editButton, 'Edit Staff button renders for loaded staff row');
+    editButton.props.onClick();
+
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'Edit Staff dialog opens when Edit is clicked');
+
+    dispatchKeydown('Escape');
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Edit Staff dialog');
+
+    for (const slot of effectSlots) {
+      if (slot && typeof slot.cleanup === 'function') slot.cleanup();
+    }
+  } finally {
+    Module._resolveFilename = originalResolveFilename;
+    (globalThis as any).window = originalWindow;
+  }
+
   console.log('\n✅ Deterministic auth login error handling tests passed');
 }
 

@@ -280,7 +280,7 @@
     "test:customer-display-settings-route": "node tests/run-electron-node-test.cjs tests/customer-display-settings-route.test.ts",
     "test:units": "ts-node --transpile-only -P tests/tsconfig.json tests/units.test.ts",
     "test:supplies-service": "node tests/run-electron-node-test.cjs tests/supplies-service.test.ts",
-    "test:expenses": "node tests/run-electron-node-test.cjs tests/expense-records.test.ts && node tests/run-electron-node-test.cjs tests/expense-api.test.ts && node tests/run-electron-node-test.cjs tests/expense-payments.test.ts",
+    "test:expenses": "ts-node --transpile-only -P tests/tsconfig.json tests/expense-attempt.test.ts && node tests/run-electron-node-test.cjs tests/expense-records.test.ts && node tests/run-electron-node-test.cjs tests/expense-api.test.ts && node tests/run-electron-node-test.cjs tests/expense-payments.test.ts",
     "test:recipe-order-lifecycle": "node tests/run-electron-node-test.cjs tests/recipe-order-lifecycle.test.ts",
     "test:receipt-column-oracle": "ts-node --transpile-only -P tests/tsconfig.json tests/receipt-column-oracle.test.ts",
     "test:jwt-secret-cache-identity": "node tests/run-electron-node-test.cjs tests/jwt-secret-cache-identity.test.ts",

@@ -62,7 +62,11 @@ async function main() {
         addons: [{ name: 'Inactive Numeric Zero', price: 0, is_active: 0 }],
       },
     });
-    assertEqual(res.status, 400, 'numeric is_active: 0 is treated as inactive for selection bounds');
+    assertEqual(
+      res.status,
+      400,
+      'numeric is_active: 0 is treated as inactive for selection bounds',
+    );
 
     res = await api(baseUrl, '/api/addon-groups', {
       method: 'POST',
@@ -78,9 +82,41 @@ async function main() {
       },
     });
     assertEqual(res.status, 201, 'valid add-on group is created');
+    assertEqual(
+      res.data.addon_group.is_active,
+      true,
+      'group create defaults is_active to true when omitted',
+    );
     const bulkGroupId = res.data.addon_group.id;
-    const hidden = db.prepare('SELECT is_active FROM addons WHERE addon_group_id = ? AND name = ?').get(bulkGroupId, 'Hidden') as any;
+    const bulkGroupRow = db
+      .prepare('SELECT is_active FROM addon_groups WHERE id = ?')
+      .get(bulkGroupId) as any;
+    assertEqual(bulkGroupRow.is_active, 1, 'omitted group is_active is stored as 1');
+    const hidden = db
+      .prepare('SELECT is_active FROM addons WHERE addon_group_id = ? AND name = ?')
+      .get(bulkGroupId, 'Hidden') as any;
     assertEqual(hidden.is_active, 0, 'bulk create persists submitted inactive child state');
+
+    res = await api(baseUrl, '/api/addon-groups', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        name: 'Created Inactive Group',
+        min_selection: 0,
+        max_selection: 1,
+        is_active: false,
+      },
+    });
+    assertEqual(res.status, 201, 'inactive add-on group is created');
+    assertEqual(
+      res.data.addon_group.is_active,
+      false,
+      'group create response reflects is_active: false',
+    );
+    const inactiveGroupRow = db
+      .prepare('SELECT is_active FROM addon_groups WHERE id = ?')
+      .get(res.data.addon_group.id) as any;
+    assertEqual(inactiveGroupRow.is_active, 0, 'group create persists is_active: false as 0');
 
     console.log('\n─── Group edits preserve add-on identities ───');
     const createdAt = '2026-08-09 10:00:00';
@@ -109,14 +145,20 @@ async function main() {
       },
     });
     assertEqual(res.status, 200, 'bulk group edit succeeds');
-    const kept = db.prepare('SELECT id, name, price, created_at, is_active FROM addons WHERE id = ?').get('addon-246-keep') as any;
+    const kept = db
+      .prepare('SELECT id, name, price, created_at, is_active FROM addons WHERE id = ?')
+      .get('addon-246-keep') as any;
     assertEqual(kept.name, 'New Name', 'existing add-on row is updated in place');
     assertEqual(kept.price, 6, 'existing add-on price is updated');
     assertEqual(kept.created_at, createdAt, 'existing add-on created_at is preserved');
     assertEqual(kept.is_active, 1, 'existing add-on stays active');
-    const omitted = db.prepare('SELECT is_active FROM addons WHERE id = ?').get('addon-246-omit') as any;
+    const omitted = db
+      .prepare('SELECT is_active FROM addons WHERE id = ?')
+      .get('addon-246-omit') as any;
     assertEqual(omitted.is_active, 0, 'omitted child is soft-deactivated instead of deleted');
-    const newAddon = db.prepare('SELECT id FROM addons WHERE addon_group_id = ? AND name = ?').get('group-246', 'Brand New') as any;
+    const newAddon = db
+      .prepare('SELECT id FROM addons WHERE addon_group_id = ? AND name = ?')
+      .get('group-246', 'Brand New') as any;
     assert(Boolean(newAddon?.id), 'new child is inserted when no id is supplied');
 
     res = await api(baseUrl, '/api/addon-groups/group-246', {

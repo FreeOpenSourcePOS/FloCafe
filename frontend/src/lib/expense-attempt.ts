@@ -7,7 +7,7 @@ import { createPaymentIdempotencyKey } from './payment-idempotency';
  * committed. One slot only: the workflow allows a single in-flight mutation.
  */
 export const EXPENSE_ATTEMPT_STORAGE_KEY = 'flo.expenses.attempt.v1';
-export const expenseAttemptStorageKey = (actorId: number, tenantId: number): string =>
+export const expenseAttemptStorageKey = (actorId: string, tenantId: number): string =>
   `${EXPENSE_ATTEMPT_STORAGE_KEY}:${tenantId}:${actorId}`;
 
 export type ExpenseAttemptKind =
@@ -27,7 +27,7 @@ export interface ExpenseAttemptSnapshot {
   paymentId: string | null;
   idempotencyKey: string;
   body: Record<string, unknown>;
-  actorId: number;
+  actorId: string;
   tenantId: number;
   createdAt: string;
 }
@@ -58,14 +58,19 @@ function attemptStorage(): Storage {
 function isSnapshot(value: unknown): value is ExpenseAttemptSnapshot {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const attempt = value as Partial<ExpenseAttemptSnapshot>;
-  return typeof attempt.kind === 'string'
-    && typeof attempt.path === 'string'
-    && attempt.path.length > 0
-    && typeof attempt.idempotencyKey === 'string'
-    && attempt.idempotencyKey.length > 0
-    && typeof attempt.actorId === 'number'
-    && typeof attempt.tenantId === 'number'
-    && !!attempt.body && typeof attempt.body === 'object' && !Array.isArray(attempt.body);
+  return (
+    typeof attempt.kind === 'string' &&
+    typeof attempt.path === 'string' &&
+    attempt.path.length > 0 &&
+    typeof attempt.idempotencyKey === 'string' &&
+    attempt.idempotencyKey.length > 0 &&
+    typeof attempt.actorId === 'string' &&
+    attempt.actorId.length > 0 &&
+    typeof attempt.tenantId === 'number' &&
+    !!attempt.body &&
+    typeof attempt.body === 'object' &&
+    !Array.isArray(attempt.body)
+  );
 }
 
 /** Builds the snapshot to persist, with a fresh key for a submission nothing has answered yet. */
@@ -75,7 +80,7 @@ export function newExpenseAttempt(input: {
   expenseId: string | null;
   paymentId: string | null;
   body: Record<string, unknown>;
-  actorId: number;
+  actorId: string;
   tenantId: number;
 }): ExpenseAttemptSnapshot {
   return {
@@ -89,7 +94,10 @@ export function newExpenseAttempt(input: {
  * Reads the slot for the given actor and store. A mismatched attempt remains
  * untouched so its owner can retry, and this session never submits under its key.
  */
-export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAttemptSnapshot | null {
+export function readExpenseAttempt(
+  actorId: string,
+  tenantId: number,
+): ExpenseAttemptSnapshot | null {
   const scopedKey = expenseAttemptStorageKey(actorId, tenantId);
   let raw: string | null;
   try {
@@ -100,7 +108,11 @@ export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAt
       const legacyRaw = storage.getItem(EXPENSE_ATTEMPT_STORAGE_KEY);
       if (legacyRaw !== null) {
         const legacyParsed: unknown = JSON.parse(legacyRaw);
-        if (isSnapshot(legacyParsed) && legacyParsed.actorId === actorId && legacyParsed.tenantId === tenantId) {
+        if (
+          isSnapshot(legacyParsed) &&
+          legacyParsed.actorId === actorId &&
+          legacyParsed.tenantId === tenantId
+        ) {
           return legacyParsed;
         }
       }
@@ -116,7 +128,8 @@ export function readExpenseAttempt(actorId: number, tenantId: number): ExpenseAt
     throw new ExpenseAttemptStorageError();
   }
   if (!isSnapshot(parsed)) throw new ExpenseAttemptStorageError();
-  if (parsed.actorId !== actorId || parsed.tenantId !== tenantId) throw new ExpenseAttemptStorageError();
+  if (parsed.actorId !== actorId || parsed.tenantId !== tenantId)
+    throw new ExpenseAttemptStorageError();
   return parsed;
 }
 
@@ -142,7 +155,11 @@ export function persistExpenseAttempt(snapshot: ExpenseAttemptSnapshot): void {
 }
 
 /** Clears the slot once the mutation is known to be committed or rejected. */
-export function clearExpenseAttempt(actorId: number, tenantId: number, idempotencyKey: string): boolean {
+export function clearExpenseAttempt(
+  actorId: string,
+  tenantId: number,
+  idempotencyKey: string,
+): boolean {
   const scopedKey = expenseAttemptStorageKey(actorId, tenantId);
   try {
     const storage = attemptStorage();

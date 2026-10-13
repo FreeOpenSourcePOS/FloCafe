@@ -957,13 +957,13 @@ export default function ServerStandalonePage() {
           </div>
           <button
             onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))}
-            className="rounded-lg border border-border p-2 text-muted-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
           >
             <RefreshCw size={17} />
           </button>
           <button
             onClick={logout}
-            className="rounded-lg border border-border p-2 text-muted-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
           >
             <LogOut size={17} />
           </button>

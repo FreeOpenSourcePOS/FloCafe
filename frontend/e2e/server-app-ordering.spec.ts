@@ -89,6 +89,15 @@ test.describe('Server App tableside ordering', () => {
       await openServerApp(page, serverToken);
       await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
+      const headerButtons = page.locator('header button');
+      await expect(headerButtons).toHaveCount(2);
+      for (let i = 0; i < 2; i++) {
+        const box = await headerButtons.nth(i).boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+
       const hasOverflow = await page.evaluate(() => {
         return document.documentElement.scrollWidth > window.innerWidth;
       });

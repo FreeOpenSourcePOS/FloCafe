@@ -50,7 +50,7 @@ function readStoredAttemptState(
 ): ExpenseAttemptState {
   if (!user || !tenant) return { attempt: null, storageBlocked: false };
   try {
-    return { attempt: readExpenseAttempt(user.id, tenant.id), storageBlocked: false };
+    return { attempt: readExpenseAttempt(String(user.id), tenant.id), storageBlocked: false };
   } catch {
     return { attempt: null, storageBlocked: true };
   }
@@ -109,7 +109,9 @@ export default function ExpenseWorkflow({
   const [view, setView] = useState<'main' | 'payment' | 'reverse' | 'void' | 'replace'>('main');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [attemptState, setAttemptState] = useState<ExpenseAttemptState>(() => readStoredAttemptState(user, currentTenant));
+  const [attemptState, setAttemptState] = useState<ExpenseAttemptState>(() =>
+    readStoredAttemptState(user, currentTenant),
+  );
   const [detail, setDetail] = useState<ExpenseDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(mode === 'detail');
 
@@ -138,10 +140,12 @@ export default function ExpenseWorkflow({
 
   const activeCategories = categories.filter((category) => category.is_active === 1);
   const attempt = attemptState.attempt;
-  const setAttempt = (next: ExpenseAttemptSnapshot | null) => setAttemptState({ attempt: next, storageBlocked: false });
+  const setAttempt = (next: ExpenseAttemptSnapshot | null) =>
+    setAttemptState({ attempt: next, storageBlocked: false });
   // The freshly loaded record wins over the list row once it is that same record.
   const record = detail && detail.id === expense?.id ? detail : expense;
-  const fmtMinor = (amountMinor: number) => fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
+  const fmtMinor = (amountMinor: number) =>
+    fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
 
   /** Replacing copies the source values into the fresh form. */
   const openReplace = () => {
@@ -158,23 +162,30 @@ export default function ExpenseWorkflow({
     setView('replace');
   };
 
-  const applyDetail = useCallback((expenseId: string, data: Record<string, unknown>, append: boolean) => {
-    const payments = (data.payments ?? []) as ExpensePaymentRecord[];
-    setDetail((previous) => ({
-      ...(data.expense as ExpenseRecord),
-      id: expenseId,
-      payments: append && previous?.id === expenseId ? [...previous.payments, ...payments] : payments,
-      paymentsNextCursor: (data.paymentsNextCursor as string | null) ?? null,
-    }));
-  }, []);
+  const applyDetail = useCallback(
+    (expenseId: string, data: Record<string, unknown>, append: boolean) => {
+      const payments = (data.payments ?? []) as ExpensePaymentRecord[];
+      setDetail((previous) => ({
+        ...(data.expense as ExpenseRecord),
+        id: expenseId,
+        payments:
+          append && previous?.id === expenseId ? [...previous.payments, ...payments] : payments,
+        paymentsNextCursor: (data.paymentsNextCursor as string | null) ?? null,
+      }));
+    },
+    [],
+  );
 
   // Reads for the open record only; paging is a separate event-driven call.
   const loadDetail = useCallback(() => {
     if (mode !== 'detail' || !expense) return;
     const expenseId = expense.id;
-    api.get(`/expenses/${expenseId}`, { params: { payments_limit: PAYMENTS_PAGE_SIZE } })
+    api
+      .get(`/expenses/${expenseId}`, { params: { payments_limit: PAYMENTS_PAGE_SIZE } })
       .then(({ data }) => applyDetail(expenseId, data, false))
-      .catch(() => { toast.error(t('detailLoadFailed')); })
+      .catch(() => {
+        toast.error(t('detailLoadFailed'));
+      })
       .finally(() => setDetailLoading(false));
   }, [applyDetail, expense, mode, t]);
 
@@ -227,7 +238,7 @@ export default function ExpenseWorkflow({
           expenseId: expense?.id ?? null,
           paymentId: options.paymentId ?? null,
           body,
-          actorId: user.id,
+          actorId: String(user.id),
           tenantId: currentTenant.id,
         });
         persistExpenseAttempt(snapshot);
@@ -237,21 +248,25 @@ export default function ExpenseWorkflow({
           const response = await api.post(path, body, {
             headers: { 'Idempotency-Key': snapshot.idempotencyKey },
           });
-          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey))
+            setAttempt(null);
           return { data: response.data, snapshot };
         } catch (error) {
           if (isUnresolvedExpenseFailure(error)) {
             setErrors({ form: t('attemptNotice') });
             return null;
           }
-          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey))
+            setAttempt(null);
           setErrors({ form: t('saveFailed') });
           return null;
         }
       });
     } catch {
       if (!persisted) {
-        setAttemptState((current) => current.attempt ? current : { attempt: null, storageBlocked: true });
+        setAttemptState((current) =>
+          current.attempt ? current : { attempt: null, storageBlocked: true },
+        );
         setErrors({ form: t('attemptStorageBlocked') });
       } else {
         setErrors({ form: t('attemptNotice') });
@@ -270,17 +285,20 @@ export default function ExpenseWorkflow({
     try {
       const data = await withExpenseAttemptLock(async () => {
         const stored = readExpenseAttempt(snapshot.actorId, snapshot.tenantId);
-        if (!stored || stored.idempotencyKey !== snapshot.idempotencyKey) throw new Error('Expense attempt changed');
+        if (!stored || stored.idempotencyKey !== snapshot.idempotencyKey)
+          throw new Error('Expense attempt changed');
         try {
           const response = await api.post(snapshot.path, snapshot.body, {
             headers: { 'Idempotency-Key': snapshot.idempotencyKey },
           });
-          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
+          if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey))
+            setAttempt(null);
           return response.data as Record<string, unknown>;
         } catch (error) {
           const status = (error as { response?: { status?: unknown } })?.response?.status;
           if (!isUnresolvedExpenseFailure(error) && status !== 401 && status !== 403) {
-            if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey)) setAttempt(null);
+            if (clearExpenseAttempt(snapshot.actorId, snapshot.tenantId, snapshot.idempotencyKey))
+              setAttempt(null);
           }
           throw error;
         }
@@ -368,7 +386,9 @@ export default function ExpenseWorkflow({
 
   const openPayment = () => {
     setErrors({});
-    const paymentMinorFactor = getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code);
+    const paymentMinorFactor = getCurrencyMinorUnitFactor(
+      record?.currency_code ?? context.currency_code,
+    );
     setPaymentAmount(unitAdapter.toDisplay((record?.due_minor ?? 0) / paymentMinorFactor));
     setPaymentReference('');
     setCashReturned(false);
@@ -379,7 +399,11 @@ export default function ExpenseWorkflow({
   const submitPayment = async () => {
     if (!expense || !record) return;
     const paymentMinorFactor = getCurrencyMinorUnitFactor(record.currency_code);
-    const cents = displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, paymentMinorFactor);
+    const cents = displayAmountToCents(
+      String(paymentAmount ?? ''),
+      unitAdapter,
+      paymentMinorFactor,
+    );
     if (cents === null || cents <= 0) {
       setErrors({ amount: t('amountRequired') });
       focusAmount();
@@ -440,7 +464,9 @@ export default function ExpenseWorkflow({
       return;
     }
     setErrors({});
-    const result = await sendMutation('expense.void', `/expenses/${expense.id}/void`, { reason: reason.trim() });
+    const result = await sendMutation('expense.void', `/expenses/${expense.id}/void`, {
+      reason: reason.trim(),
+    });
     if (result) resolveCommitted(result.snapshot, result.data);
   };
 
@@ -448,9 +474,13 @@ export default function ExpenseWorkflow({
     if (!newCategoryName.trim()) return;
     setBusy(true);
     try {
-      const { data } = await api.post('/expenses/categories', { name: newCategoryName.trim() }, {
-        headers: { 'Idempotency-Key': createPaymentIdempotencyKey() },
-      });
+      const { data } = await api.post(
+        '/expenses/categories',
+        { name: newCategoryName.trim() },
+        {
+          headers: { 'Idempotency-Key': createPaymentIdempotencyKey() },
+        },
+      );
       const created = data.category as ExpenseCategory;
       onCategoryCreated(created);
       setCategoryId(created.id);
@@ -469,11 +499,15 @@ export default function ExpenseWorkflow({
   const paymentsCursor = detail && detail.id === expense?.id ? detail.paymentsNextCursor : null;
   const hasUnreversedPayments = (record?.paid_minor ?? 0) !== 0;
   const cashBlocked = paymentMethod === 'cash' && (!canMoveDrawer || !context.cash_session_open);
-  const cashReversalBlocked = reversalTarget?.method === 'cash' && (!canMoveDrawer || !context.cash_session_open);
+  const cashReversalBlocked =
+    reversalTarget?.method === 'cash' && (!canMoveDrawer || !context.cash_session_open);
 
-  const fieldError = (key: keyof FieldErrors) => errors[key]
-    ? <p className="mt-1 text-xs text-red-600" role="alert">{errors[key]}</p>
-    : null;
+  const fieldError = (key: keyof FieldErrors) =>
+    errors[key] ? (
+      <p className="mt-1 text-xs text-red-600" role="alert">
+        {errors[key]}
+      </p>
+    ) : null;
 
   const closeButton = (
     <button
@@ -487,7 +521,10 @@ export default function ExpenseWorkflow({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" data-testid="expense-workflow">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      data-testid="expense-workflow"
+    >
       <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-6 pb-4 pt-5">
           <div>
@@ -519,10 +556,19 @@ export default function ExpenseWorkflow({
               role="status"
               aria-live="polite"
             >
-              <p>{errors.form ?? (attemptState.storageBlocked ? t('attemptStorageBlocked') : t('attemptNotice'))}</p>
+              <p>
+                {errors.form ??
+                  (attemptState.storageBlocked ? t('attemptStorageBlocked') : t('attemptNotice'))}
+              </p>
               {attempt && (
                 <div className="mt-2 flex gap-2">
-                  <Button type="button" size="sm" onClick={retryAttempt} disabled={busy} data-testid="expense-attempt-retry">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={retryAttempt}
+                    disabled={busy}
+                    data-testid="expense-attempt-retry"
+                  >
                     {t('attemptRetry')}
                   </Button>
                 </div>
@@ -533,7 +579,9 @@ export default function ExpenseWorkflow({
           {(open === 'create' || open === 'replace') && (
             <div className="space-y-3" data-testid="expense-form">
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-category">{t('category')}</label>
+                <label className="mb-1 block text-sm font-medium" htmlFor="expense-category">
+                  {t('category')}
+                </label>
                 <div className="flex gap-2">
                   <select
                     id="expense-category"
@@ -544,17 +592,26 @@ export default function ExpenseWorkflow({
                   >
                     <option value="">{t('category')}</option>
                     {activeCategories.map((category) => (
-                      <option key={category.id} value={category.id}>{category.name}</option>
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
                     ))}
                   </select>
-                  <Button type="button" variant="outline" onClick={() => setShowNewCategory((value) => !value)} data-testid="expense-form-new-category">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowNewCategory((value) => !value)}
+                    data-testid="expense-form-new-category"
+                  >
                     {t('newCategory')}
                   </Button>
                 </div>
                 {fieldError('category')}
                 {showNewCategory && (
                   <div className="mt-2 flex gap-2">
-                    <label className="sr-only" htmlFor="expense-category-name">{t('categoryName')}</label>
+                    <label className="sr-only" htmlFor="expense-category-name">
+                      {t('categoryName')}
+                    </label>
                     <input
                       id="expense-category-name"
                       data-testid="expense-form-category-name"
@@ -563,7 +620,12 @@ export default function ExpenseWorkflow({
                       placeholder={t('categoryName')}
                       className="w-full rounded-lg border border-border px-3 py-2 outline-none focus:ring-2 focus:ring-brand"
                     />
-                    <Button type="button" onClick={createCategory} disabled={busy} data-testid="expense-form-category-save">
+                    <Button
+                      type="button"
+                      onClick={createCategory}
+                      disabled={busy}
+                      data-testid="expense-form-category-save"
+                    >
                       {tCommon('save')}
                     </Button>
                   </div>
@@ -571,7 +633,9 @@ export default function ExpenseWorkflow({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-description">{t('description')}</label>
+                <label className="mb-1 block text-sm font-medium" htmlFor="expense-description">
+                  {t('description')}
+                </label>
                 <input
                   id="expense-description"
                   ref={descriptionRef}
@@ -585,7 +649,9 @@ export default function ExpenseWorkflow({
 
               <div className="flex gap-3">
                 <div className="flex-1" ref={amountFieldRef}>
-                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-amount">{tCommon('amount')}</label>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-amount">
+                    {tCommon('amount')}
+                  </label>
                   <CurrencyAmountInput
                     id="expense-amount"
                     data-testid="expense-form-amount"
@@ -597,7 +663,9 @@ export default function ExpenseWorkflow({
                   {fieldError('amount')}
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-incurred-on">{t('incurredOn')}</label>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-incurred-on">
+                    {t('incurredOn')}
+                  </label>
                   <input
                     id="expense-incurred-on"
                     type="date"
@@ -613,7 +681,9 @@ export default function ExpenseWorkflow({
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-payee">{t('payee')}</label>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-payee">
+                    {t('payee')}
+                  </label>
                   <input
                     id="expense-payee"
                     data-testid="expense-form-payee"
@@ -623,7 +693,9 @@ export default function ExpenseWorkflow({
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-notes">{t('notes')}</label>
+                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-notes">
+                    {t('notes')}
+                  </label>
                   <input
                     id="expense-notes"
                     data-testid="expense-form-notes"
@@ -638,7 +710,12 @@ export default function ExpenseWorkflow({
               {open === 'replace' && (
                 <div>
                   <p className="mb-1 text-sm text-muted-foreground">{t('replaceConsequence')}</p>
-                  <label className="mb-1 block text-sm font-medium" htmlFor="expense-replace-reason">{tInventory('reason')}</label>
+                  <label
+                    className="mb-1 block text-sm font-medium"
+                    htmlFor="expense-replace-reason"
+                  >
+                    {tInventory('reason')}
+                  </label>
                   <textarea
                     id="expense-replace-reason"
                     ref={reasonRef}
@@ -663,7 +740,12 @@ export default function ExpenseWorkflow({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{tCommon('amount')}</dt>
-                  <dd className="font-semibold">{fmtMinor(record.amount_minor)} <span className="text-xs font-normal text-muted-foreground">{record.currency_code}</span></dd>
+                  <dd className="font-semibold">
+                    {fmtMinor(record.amount_minor)}{' '}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {record.currency_code}
+                    </span>
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('incurredOn')}</dt>
@@ -675,7 +757,13 @@ export default function ExpenseWorkflow({
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('status')}</dt>
-                  <dd data-testid="expense-detail-status">{record.status === 'active' ? tCommon('active') : record.status === 'voided' ? t('statusVoided') : t('statusReplaced')}</dd>
+                  <dd data-testid="expense-detail-status">
+                    {record.status === 'active'
+                      ? tCommon('active')
+                      : record.status === 'voided'
+                        ? t('statusVoided')
+                        : t('statusReplaced')}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">{t('netPaid')}</dt>
@@ -708,18 +796,33 @@ export default function ExpenseWorkflow({
               </dl>
 
               <div>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">{t('payments')}</h3>
+                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                  {t('payments')}
+                </h3>
                 {payments.length === 0 && !detailLoading && (
-                  <p className="text-sm text-muted-foreground" data-testid="expense-payments-empty">{t('noPayments')}</p>
+                  <p className="text-sm text-muted-foreground" data-testid="expense-payments-empty">
+                    {t('noPayments')}
+                  </p>
                 )}
                 <ul className="divide-y divide-border" data-testid="expense-payments">
                   {payments.map((payment) => (
-                    <li key={payment.id} className="flex items-center justify-between gap-2 py-2" data-testid="expense-payment-row">
+                    <li
+                      key={payment.id}
+                      className="flex items-center justify-between gap-2 py-2"
+                      data-testid="expense-payment-row"
+                    >
                       <div className="text-sm">
                         <p className={payment.reversal_of ? 'text-red-600' : 'text-foreground'}>
-                          {payment.reversal_of ? '−' : '+'}{fmtMinor(payment.amount_minor)}{' '}
+                          {payment.reversal_of ? '−' : '+'}
+                          {fmtMinor(payment.amount_minor)}{' '}
                           <span className="text-muted-foreground">
-                            {payment.method === 'cash' ? tPos('methodCash') : payment.method === 'card' ? tPos('methodCard') : payment.method === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther')}
+                            {payment.method === 'cash'
+                              ? tPos('methodCash')
+                              : payment.method === 'card'
+                                ? tPos('methodCard')
+                                : payment.method === 'bank_transfer'
+                                  ? t('methodBankTransfer')
+                                  : t('methodOther')}
                           </span>
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -729,17 +832,19 @@ export default function ExpenseWorkflow({
                           {payment.cash_movement_id ? ` · #${payment.cash_movement_id}` : ''}
                         </p>
                       </div>
-                      {canReverse && !payment.reversal_of && !payments.some((row) => row.reversal_of === payment.id) && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openReversal(payment)}
-                          data-testid="expense-reverse-payment"
-                        >
-                          {t('reversalTitle')}
-                        </Button>
-                      )}
+                      {canReverse &&
+                        !payment.reversal_of &&
+                        !payments.some((row) => row.reversal_of === payment.id) && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openReversal(payment)}
+                            data-testid="expense-reverse-payment"
+                          >
+                            {t('reversalTitle')}
+                          </Button>
+                        )}
                     </li>
                   ))}
                 </ul>
@@ -762,7 +867,9 @@ export default function ExpenseWorkflow({
           {open === 'payment' && record && (
             <div className="space-y-3" data-testid="expense-payment-form">
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-method">{t('method')}</label>
+                <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-method">
+                  {t('method')}
+                </label>
                 <select
                   id="expense-payment-method"
                   data-testid="expense-payment-method"
@@ -771,15 +878,29 @@ export default function ExpenseWorkflow({
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 outline-none focus:ring-2 focus:ring-brand"
                 >
                   {PAYMENT_METHODS.map((method) => (
-                    <option key={method} value={method} disabled={method === 'cash' && !canMoveDrawer}>
-                      {method === 'cash' ? tPos('methodCash') : method === 'card' ? tPos('methodCard') : method === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther')}
+                    <option
+                      key={method}
+                      value={method}
+                      disabled={method === 'cash' && !canMoveDrawer}
+                    >
+                      {method === 'cash'
+                        ? tPos('methodCash')
+                        : method === 'card'
+                          ? tPos('methodCard')
+                          : method === 'bank_transfer'
+                            ? t('methodBankTransfer')
+                            : t('methodOther')}
                     </option>
                   ))}
                 </select>
-                {!canMoveDrawer && <p className="mt-1 text-xs text-muted-foreground">{t('cashUnavailable')}</p>}
+                {!canMoveDrawer && (
+                  <p className="mt-1 text-xs text-muted-foreground">{t('cashUnavailable')}</p>
+                )}
               </div>
               <div ref={amountFieldRef}>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-amount">{tCommon('amount')}</label>
+                <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-amount">
+                  {tCommon('amount')}
+                </label>
                 <CurrencyAmountInput
                   id="expense-payment-amount"
                   data-testid="expense-payment-amount"
@@ -791,7 +912,12 @@ export default function ExpenseWorkflow({
                 {fieldError('amount')}
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-payment-reference">{t('reference')}</label>
+                <label
+                  className="mb-1 block text-sm font-medium"
+                  htmlFor="expense-payment-reference"
+                >
+                  {t('reference')}
+                </label>
                 <input
                   id="expense-payment-reference"
                   data-testid="expense-payment-reference"
@@ -803,12 +929,28 @@ export default function ExpenseWorkflow({
               </div>
               <p className="rounded-lg bg-muted p-3 text-sm" data-testid="expense-payment-review">
                 {t('reviewPayment', {
-                  amount: fmtMinor(displayAmountToCents(String(paymentAmount ?? ''), unitAdapter, getCurrencyMinorUnitFactor(record.currency_code)) ?? 0),
-                  method: paymentMethod === 'cash' ? tPos('methodCash') : paymentMethod === 'card' ? tPos('methodCard') : paymentMethod === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther'),
+                  amount: fmtMinor(
+                    displayAmountToCents(
+                      String(paymentAmount ?? ''),
+                      unitAdapter,
+                      getCurrencyMinorUnitFactor(record.currency_code),
+                    ) ?? 0,
+                  ),
+                  method:
+                    paymentMethod === 'cash'
+                      ? tPos('methodCash')
+                      : paymentMethod === 'card'
+                        ? tPos('methodCard')
+                        : paymentMethod === 'bank_transfer'
+                          ? t('methodBankTransfer')
+                          : t('methodOther'),
                 })}
               </p>
               {paymentMethod === 'cash' && (
-                <p className="text-sm text-muted-foreground" data-testid="expense-payment-cash-notice">
+                <p
+                  className="text-sm text-muted-foreground"
+                  data-testid="expense-payment-cash-notice"
+                >
                   {context.cash_session_open ? t('cashNotice') : t('cashSessionClosed')}
                 </p>
               )}
@@ -820,14 +962,25 @@ export default function ExpenseWorkflow({
               <p className="text-sm" data-testid="expense-reversal-confirm">
                 {t('reversalConfirm', {
                   amount: fmtMinor(reversalTarget.amount_minor),
-                  method: reversalTarget.method === 'cash' ? tPos('methodCash') : reversalTarget.method === 'card' ? tPos('methodCard') : reversalTarget.method === 'bank_transfer' ? t('methodBankTransfer') : t('methodOther'),
+                  method:
+                    reversalTarget.method === 'cash'
+                      ? tPos('methodCash')
+                      : reversalTarget.method === 'card'
+                        ? tPos('methodCard')
+                        : reversalTarget.method === 'bank_transfer'
+                          ? t('methodBankTransfer')
+                          : t('methodOther'),
                 })}
               </p>
               {reversalTarget.method === 'cash' && (
                 <>
                   <p className="text-sm text-muted-foreground">{t('cashReversalNotice')}</p>
-                  {!canMoveDrawer && <p className="text-sm text-muted-foreground">{t('cashUnavailable')}</p>}
-                  {!context.cash_session_open && <p className="text-sm text-muted-foreground">{t('cashSessionClosed')}</p>}
+                  {!canMoveDrawer && (
+                    <p className="text-sm text-muted-foreground">{t('cashUnavailable')}</p>
+                  )}
+                  {!context.cash_session_open && (
+                    <p className="text-sm text-muted-foreground">{t('cashSessionClosed')}</p>
+                  )}
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -840,7 +993,9 @@ export default function ExpenseWorkflow({
                 </>
               )}
               <div>
-                <label className="mb-1 block text-sm font-medium" htmlFor="expense-reversal-reason">{tInventory('reason')}</label>
+                <label className="mb-1 block text-sm font-medium" htmlFor="expense-reversal-reason">
+                  {tInventory('reason')}
+                </label>
                 <textarea
                   id="expense-reversal-reason"
                   ref={reasonRef}
@@ -858,7 +1013,9 @@ export default function ExpenseWorkflow({
           {open === 'void' && (
             <div className="space-y-3" data-testid="expense-void-form">
               <p className="text-sm text-muted-foreground">{t('voidConsequence')}</p>
-              <label className="mb-1 block text-sm font-medium" htmlFor="expense-void-reason">{tInventory('reason')}</label>
+              <label className="mb-1 block text-sm font-medium" htmlFor="expense-void-reason">
+                {tInventory('reason')}
+              </label>
               <textarea
                 id="expense-void-reason"
                 ref={reasonRef}
@@ -878,7 +1035,14 @@ export default function ExpenseWorkflow({
             {open === 'main' && mode === 'detail' && record && (
               <>
                 {canPay && (
-                  <Button type="button" onClick={openPayment} disabled={busy || locked || record.status !== 'active' || record.due_minor === 0} data-testid="expense-record-payment">
+                  <Button
+                    type="button"
+                    onClick={openPayment}
+                    disabled={
+                      busy || locked || record.status !== 'active' || record.due_minor === 0
+                    }
+                    data-testid="expense-record-payment"
+                  >
                     {t('paymentTitle')}
                   </Button>
                 )}
@@ -914,29 +1078,56 @@ export default function ExpenseWorkflow({
             )}
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>{tCommon('cancel')}</Button>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+              {tCommon('cancel')}
+            </Button>
             {open === 'create' && (
-              <Button type="button" onClick={submitCreate} disabled={busy || locked} data-testid="expense-form-submit">
+              <Button
+                type="button"
+                onClick={submitCreate}
+                disabled={busy || locked}
+                data-testid="expense-form-submit"
+              >
                 {tCommon('save')}
               </Button>
             )}
             {open === 'replace' && (
-              <Button type="button" onClick={submitReplace} disabled={busy || locked} data-testid="expense-form-submit">
+              <Button
+                type="button"
+                onClick={submitReplace}
+                disabled={busy || locked}
+                data-testid="expense-form-submit"
+              >
                 {tCommon('save')}
               </Button>
             )}
             {open === 'payment' && (
-              <Button type="button" onClick={submitPayment} disabled={busy || locked || cashBlocked} data-testid="expense-payment-submit">
+              <Button
+                type="button"
+                onClick={submitPayment}
+                disabled={busy || locked || cashBlocked}
+                data-testid="expense-payment-submit"
+              >
                 {t('paymentTitle')}
               </Button>
             )}
             {open === 'reverse' && (
-              <Button type="button" onClick={submitReversal} disabled={busy || locked || cashReversalBlocked} data-testid="expense-reversal-submit">
+              <Button
+                type="button"
+                onClick={submitReversal}
+                disabled={busy || locked || cashReversalBlocked}
+                data-testid="expense-reversal-submit"
+              >
                 {t('reversalTitle')}
               </Button>
             )}
             {open === 'void' && (
-              <Button type="button" onClick={submitVoid} disabled={busy || locked} data-testid="expense-void-submit">
+              <Button
+                type="button"
+                onClick={submitVoid}
+                disabled={busy || locked}
+                data-testid="expense-void-submit"
+              >
                 {t('voidTitle')}
               </Button>
             )}

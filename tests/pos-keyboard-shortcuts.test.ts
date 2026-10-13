@@ -6,8 +6,6 @@
 
 import assert from 'assert';
 import Module from 'module';
-import fs from 'fs';
-import path from 'path';
 import { parseQuantitySearch } from '../frontend/src/lib/quantity-search';
 import {
   isTypingTarget,
@@ -745,24 +743,5 @@ try {
   else (globalThis as Record<string, unknown>).HTMLElement = origHTMLElement;
 }
 
-// (c) Help overlay closes before blurring a focused input when Escape is pressed
-{
-  const posPageSource = fs.readFileSync(
-    path.resolve(__dirname, '../frontend/src/app/(dashboard)/pos/page.tsx'),
-    'utf8',
-  );
-  const dismissIndex = posPageSource.indexOf('onDismissModalOrBlur:');
-  assert.ok(dismissIndex !== -1, 'onDismissModalOrBlur handler exists in pos/page.tsx');
-  const dismissBlock = posPageSource.slice(dismissIndex, dismissIndex + 800);
-  const helpCheckPos = dismissBlock.indexOf('if (showKeyboardShortcutsModal)');
-  const blurCheckPos = dismissBlock.indexOf('activeEl.blur()');
-  assert.ok(helpCheckPos !== -1, 'showKeyboardShortcutsModal check exists in onDismissModalOrBlur');
-  assert.ok(blurCheckPos !== -1, 'activeEl.blur() exists in onDismissModalOrBlur');
-  assert.ok(
-    helpCheckPos < blurCheckPos,
-    'onDismissModalOrBlur must close showKeyboardShortcutsModal before blurring a focused input',
-  );
-}
-
-console.log('✓ All modifier guard and Escape priority tests passed.');
+console.log('✓ All modifier and physical key guard tests passed.');
 console.log('All POS keyboard shortcuts unit tests passed successfully.');

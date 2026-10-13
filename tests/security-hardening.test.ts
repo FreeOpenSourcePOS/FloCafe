@@ -68,13 +68,14 @@ async function main() {
   console.log('Security Hardening Regression Tests');
   console.log('='.repeat(60));
 
-
   const db = initTestDb();
-  const ownerAuth   = seedUser(db, 'security-owner',   'owner',   'security-owner@test.local');
+  const ownerAuth = seedUser(db, 'security-owner', 'owner', 'security-owner@test.local');
   const managerAuth = seedUser(db, 'security-manager', 'manager', 'security-manager@test.local');
   const cashierAuth = seedUser(db, 'security-cashier', 'cashier', 'security-cashier@test.local');
-  const waiterAuth  = seedUser(db, 'security-server',  'server',  'security-server@test.local');
-  const chefAuth    = seedUser(db, 'security-chef',    'chef',    'security-chef@test.local', ['cat-security']);
+  const waiterAuth = seedUser(db, 'security-server', 'server', 'security-server@test.local');
+  const chefAuth = seedUser(db, 'security-chef', 'chef', 'security-chef@test.local', [
+    'cat-security',
+  ]);
 
   db.prepare(`
     INSERT OR IGNORE INTO categories (id, name, is_active, created_at, updated_at)
@@ -82,12 +83,12 @@ async function main() {
   `).run(now(), now());
 
   const app = createApp({
-    '/api/auth':    authRoutes,
-    '/api/staff':   staffRoutes,
-    '/api/kds':     kdsRoutes,
+    '/api/auth': authRoutes,
+    '/api/staff': staffRoutes,
+    '/api/kds': kdsRoutes,
     '/api/kitchen': kitchenRoutes,
-    '/api/orders':  orderRoutes,
-    '/api/db':      databaseRoutes,
+    '/api/orders': orderRoutes,
+    '/api/db': databaseRoutes,
     '/api/settings': settingsRoutes,
   });
 
@@ -148,19 +149,28 @@ async function main() {
   assertEqual(exportRes.status, 200, 'owner can call /api/db/export');
 
   const exportBody = exportRes.body;
-  assert(Array.isArray(exportBody.redacted_fields), 'export response includes redacted_fields list');
+  assert(
+    Array.isArray(exportBody.redacted_fields),
+    'export response includes redacted_fields list',
+  );
 
   // jwt_secret must be redacted in the settings rows
   const settingsRows: { key: string; value: string }[] = exportBody.data?.settings ?? [];
   const jwtRow = settingsRows.find((r: any) => r.key === 'jwt_secret');
   if (jwtRow) {
     assert(jwtRow.value === '[REDACTED]', 'jwt_secret value is [REDACTED] in export (vuln-0005)');
-    assert(exportBody.redacted_fields.includes('settings.jwt_secret'), 'jwt_secret listed in redacted_fields');
+    assert(
+      exportBody.redacted_fields.includes('settings.jwt_secret'),
+      'jwt_secret listed in redacted_fields',
+    );
   }
 
   const deletionTokenRow = settingsRows.find((r: any) => r.key === 'cloud_deletion_status_token');
   assert(!!deletionTokenRow, 'cloud_deletion_status_token setting is present to be redacted');
-  assert(deletionTokenRow?.value === '[REDACTED]', 'cloud_deletion_status_token value is [REDACTED] in export (issue #220)');
+  assert(
+    deletionTokenRow?.value === '[REDACTED]',
+    'cloud_deletion_status_token value is [REDACTED] in export (issue #220)',
+  );
   assert(
     exportBody.redacted_fields.includes('settings.cloud_deletion_status_token'),
     'cloud_deletion_status_token listed in redacted_fields',
@@ -168,8 +178,14 @@ async function main() {
 
   const cloudLastErrorRow = settingsRows.find((r: any) => r.key === 'cloud_last_error');
   assert(!!cloudLastErrorRow, 'cloud_last_error setting is present to be redacted');
-  assert(cloudLastErrorRow?.value === '[REDACTED]', 'legacy cloud_last_error is redacted in export');
-  assert(exportBody.redacted_fields.includes('settings.cloud_last_error'), 'cloud_last_error listed in redacted_fields');
+  assert(
+    cloudLastErrorRow?.value === '[REDACTED]',
+    'legacy cloud_last_error is redacted in export',
+  );
+  assert(
+    exportBody.redacted_fields.includes('settings.cloud_last_error'),
+    'cloud_last_error listed in redacted_fields',
+  );
 
   // password and pin_hash must be absent from all user rows
   const userRows: Record<string, any>[] = exportBody.data?.users ?? [];
@@ -178,61 +194,101 @@ async function main() {
     assert(!('pin_hash' in user), 'users.pin_hash absent from export (vuln-0005)');
   }
   if (userRows.length > 0) {
-    assert(exportBody.redacted_fields.includes('users.password'), 'users.password listed in redacted_fields');
+    assert(
+      exportBody.redacted_fields.includes('users.password'),
+      'users.password listed in redacted_fields',
+    );
   }
 
   // cloud_sync_outbox table must be excluded entirely
-  assert(!('cloud_sync_outbox' in exportBody.data), 'cloud_sync_outbox excluded from export (vuln-0005)');
+  assert(
+    !('cloud_sync_outbox' in exportBody.data),
+    'cloud_sync_outbox excluded from export (vuln-0005)',
+  );
 
   // ── vuln-0006: Password Policy Enforcement ────────────────────────────────
   // Test staff creation
   const weakCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', email: 'weak-password@test.local', password: '1', role: 'cashier'
+    name: 'test',
+    email: 'weak-password@test.local',
+    password: '1',
+    role: 'cashier',
   });
-  assertEqual(weakCreateRes.status, 400, 'owner cannot create staff with weak password (vuln-0006)');
-  assert(weakCreateRes.body.error.includes('at least 8 characters'), 'create staff returns policy error');
+  assertEqual(
+    weakCreateRes.status,
+    400,
+    'owner cannot create staff with weak password (vuln-0006)',
+  );
+  assert(
+    weakCreateRes.body.error.includes('at least 8 characters'),
+    'create staff returns policy error',
+  );
 
   const strongCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', password: 'StrongPass1', role: 'cashier', email: 'test1@test.local'
+    name: 'test',
+    password: 'StrongPass1',
+    role: 'cashier',
+    email: 'test1@test.local',
   });
-  assertEqual(strongCreateRes.status, 201, 'owner can create staff with strong password (vuln-0006)');
+  assertEqual(
+    strongCreateRes.status,
+    201,
+    'owner can create staff with strong password (vuln-0006)',
+  );
   const newStaffId = strongCreateRes.body.staff.id;
 
   // Test staff update
   const weakUpdateRes = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
-    password: 'a'
+    password: 'a',
   });
-  assertEqual(weakUpdateRes.status, 400, 'owner cannot update staff with weak password (vuln-0006)');
+  assertEqual(
+    weakUpdateRes.status,
+    400,
+    'owner cannot update staff with weak password (vuln-0006)',
+  );
 
   const strongUpdateRes = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
-    password: 'StrongPass2'
+    password: 'StrongPass2',
   });
   assertEqual(strongUpdateRes.status, 200, 'owner can update staff with strong password');
 
   // Test password change
   const weakChangeRes = await request(app).post('/api/auth/password/change').set(ownerAuth).send({
-    current_password: 'testpass123', password: 'a'
+    current_password: 'testpass123',
+    password: 'a',
   });
   assertEqual(weakChangeRes.status, 400, 'user cannot change to weak password (vuln-0006)');
 
   const strongChangeRes = await request(app).post('/api/auth/password/change').set(ownerAuth).send({
-    current_password: 'testpass123', password: 'StrongPass3'
+    current_password: 'testpass123',
+    password: 'StrongPass3',
   });
   assertEqual(strongChangeRes.status, 200, 'user can change to strong password');
 
   // Password changes must throttle LAN requests and lock out repeated guesses
   // for the targeted account.
-  const passwordChangeLockoutAuth = seedUser(db, 'password-change-lockout', 'cashier', 'password-change-lockout@test.local');
+  const passwordChangeLockoutAuth = seedUser(
+    db,
+    'password-change-lockout',
+    'cashier',
+    'password-change-lockout@test.local',
+  );
   for (let i = 0; i < 5; i++) {
-    const wrongCurrentRes = await request(app).post('/api/auth/password/change')
+    const wrongCurrentRes = await request(app)
+      .post('/api/auth/password/change')
       .set(passwordChangeLockoutAuth)
       .send({ current_password: 'wrong-current-password', password: 'StrongPass4' });
     assertEqual(wrongCurrentRes.status, 400, `wrong current password attempt ${i + 1} is rejected`);
   }
-  const lockedPasswordChangeRes = await request(app).post('/api/auth/password/change')
+  const lockedPasswordChangeRes = await request(app)
+    .post('/api/auth/password/change')
     .set(passwordChangeLockoutAuth)
     .send({ current_password: 'wrong-current-password', password: 'StrongPass4' });
-  assertEqual(lockedPasswordChangeRes.status, 429, 'password changes lock after repeated current-password failures');
+  assertEqual(
+    lockedPasswordChangeRes.status,
+    429,
+    'password changes lock after repeated current-password failures',
+  );
   assert(
     String(lockedPasswordChangeRes.body.error || '').includes('password change attempts'),
     'password-change lockout returns the expected error',
@@ -246,7 +302,7 @@ async function main() {
   let rateLimitHit = false;
   for (let i = 0; i < 12; i++) {
     const res = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
-      name: 'rate-limit-test'
+      name: 'rate-limit-test',
     });
     if (res.status === 429) {
       rateLimitHit = true;
@@ -272,16 +328,28 @@ async function main() {
 
   // Seed two orders: one by manager, one by server (different creators)
   const prodId = 'test-prod-1';
-  db.prepare("INSERT OR REPLACE INTO products (id, name, price, stock_quantity, tax_type) VALUES (?, 'Test', 100, 10, 'exclusive')").run(prodId);
+  db.prepare(
+    "INSERT OR REPLACE INTO products (id, name, price, stock_quantity, tax_type) VALUES (?, 'Test', 100, 10, 'exclusive')",
+  ).run(prodId);
 
-  const managerOrderRes = await request(app).post('/api/orders/').set(managerAuth).send({
-    type: 'dine_in', user_id: 'security-manager', items: [{ product_id: prodId, quantity: 1 }]
-  });
+  const managerOrderRes = await request(app)
+    .post('/api/orders/')
+    .set(managerAuth)
+    .send({
+      type: 'dine_in',
+      user_id: 'security-manager',
+      items: [{ product_id: prodId, quantity: 1 }],
+    });
   const managerOrderId = managerOrderRes.body.order.id;
 
-  const waiterOrderRes = await request(app).post('/api/orders/').set(waiterAuth).send({
-    type: 'dine_in', user_id: 'security-server', items: [{ product_id: prodId, quantity: 1 }]
-  });
+  const waiterOrderRes = await request(app)
+    .post('/api/orders/')
+    .set(waiterAuth)
+    .send({
+      type: 'dine_in',
+      user_id: 'security-server',
+      items: [{ product_id: prodId, quantity: 1 }],
+    });
   const waiterOrderId = waiterOrderRes.body.order.id;
 
   // 3. A server sees every order in the list, including ones other staff created.
@@ -289,11 +357,20 @@ async function main() {
   assertEqual(waiterListRes.status, 200, 'server can access /api/orders/');
   const waiterSeenIds = waiterListRes.body.orders.map((o: any) => o.id);
   assert(waiterSeenIds.includes(waiterOrderId), 'server sees their own order');
-  assert(waiterSeenIds.includes(managerOrderId), 'server also sees an order created by another user');
+  assert(
+    waiterSeenIds.includes(managerOrderId),
+    'server also sees an order created by another user',
+  );
 
   // 4. Reading another user's order by id succeeds too.
-  const waiterGetManagerOrder = await request(app).get(`/api/orders/${managerOrderId}`).set(waiterAuth);
-  assertEqual(waiterGetManagerOrder.status, 200, 'server can read an order created by another user');
+  const waiterGetManagerOrder = await request(app)
+    .get(`/api/orders/${managerOrderId}`)
+    .set(waiterAuth);
+  assertEqual(
+    waiterGetManagerOrder.status,
+    200,
+    'server can read an order created by another user',
+  );
 
   // 5. And their own order, same as anyone else's.
   const waiterGetOwnOrder = await request(app).get(`/api/orders/${waiterOrderId}`).set(waiterAuth);
@@ -303,18 +380,35 @@ async function main() {
   // not for access control. The real POS frontend never sends user_id — it
   // must come from the authenticated session, not the request body, so the
   // audit trail can't be spoofed by the client.
-  const noBodyUserIdRes = await request(app).post('/api/orders/').set(waiterAuth).send({
-    type: 'dine_in', items: [{ product_id: prodId, quantity: 1 }]
-  });
+  const noBodyUserIdRes = await request(app)
+    .post('/api/orders/')
+    .set(waiterAuth)
+    .send({
+      type: 'dine_in',
+      items: [{ product_id: prodId, quantity: 1 }],
+    });
   assertEqual(noBodyUserIdRes.status, 201, 'server can create an order without sending user_id');
-  assertEqual(noBodyUserIdRes.body.order.user_id, 'security-server', 'order is attributed to the authenticated server, not left NULL');
+  assertEqual(
+    noBodyUserIdRes.body.order.user_id,
+    'security-server',
+    'order is attributed to the authenticated server, not left NULL',
+  );
 
   // A spoofed user_id in the body must be ignored — attribution always comes
   // from the session, never the client.
-  const spoofedUserIdRes = await request(app).post('/api/orders/').set(waiterAuth).send({
-    type: 'dine_in', user_id: 'security-owner', items: [{ product_id: prodId, quantity: 1 }]
-  });
-  assertEqual(spoofedUserIdRes.body.order.user_id, 'security-server', 'a client-supplied user_id is ignored — the order is still attributed to the real authenticated caller');
+  const spoofedUserIdRes = await request(app)
+    .post('/api/orders/')
+    .set(waiterAuth)
+    .send({
+      type: 'dine_in',
+      user_id: 'security-owner',
+      items: [{ product_id: prodId, quantity: 1 }],
+    });
+  assertEqual(
+    spoofedUserIdRes.body.order.user_id,
+    'security-server',
+    'a client-supplied user_id is ignored — the order is still attributed to the real authenticated caller',
+  );
 
   // ── mobile_pairing_code protection on generic settings endpoints ─────────
   const syntheticPairingCode = 'SYNTH-PAIR-9482';
@@ -325,20 +419,55 @@ async function main() {
   `).run(syntheticPairingCode, now());
 
   const ordinaryScalarRes = await request(app).get('/api/settings/timezone').set(waiterAuth);
-  assertEqualOrThrow(ordinaryScalarRes.status, 200, 'server can still read ordinary scalar settings');
-  assertEqualOrThrow(ordinaryScalarRes.body.setting?.value, 'Asia/Kolkata', 'ordinary scalar setting value is preserved');
+  assertEqualOrThrow(
+    ordinaryScalarRes.status,
+    200,
+    'server can still read ordinary scalar settings',
+  );
+  assertEqualOrThrow(
+    ordinaryScalarRes.body.setting?.value,
+    'Asia/Kolkata',
+    'ordinary scalar setting value is preserved',
+  );
 
-  const cashierScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(cashierAuth);
-  assertEqualOrThrow(cashierScalarPairing.status, 403, 'cashier cannot read mobile_pairing_code via scalar settings route');
-  assertOrThrow(!JSON.stringify(cashierScalarPairing.body).includes(syntheticPairingCode), 'cashier scalar denial omits pairing code');
+  const cashierScalarPairing = await request(app)
+    .get('/api/settings/mobile_pairing_code')
+    .set(cashierAuth);
+  assertEqualOrThrow(
+    cashierScalarPairing.status,
+    403,
+    'cashier cannot read mobile_pairing_code via scalar settings route',
+  );
+  assertOrThrow(
+    !JSON.stringify(cashierScalarPairing.body).includes(syntheticPairingCode),
+    'cashier scalar denial omits pairing code',
+  );
 
-  const waiterScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(waiterAuth);
-  assertEqualOrThrow(waiterScalarPairing.status, 403, 'server cannot read mobile_pairing_code via scalar settings route');
-  assertOrThrow(!JSON.stringify(waiterScalarPairing.body).includes(syntheticPairingCode), 'server scalar denial omits pairing code');
+  const waiterScalarPairing = await request(app)
+    .get('/api/settings/mobile_pairing_code')
+    .set(waiterAuth);
+  assertEqualOrThrow(
+    waiterScalarPairing.status,
+    403,
+    'server cannot read mobile_pairing_code via scalar settings route',
+  );
+  assertOrThrow(
+    !JSON.stringify(waiterScalarPairing.body).includes(syntheticPairingCode),
+    'server scalar denial omits pairing code',
+  );
 
-  const ownerScalarPairing = await request(app).get('/api/settings/mobile_pairing_code').set(ownerAuth);
-  assertEqualOrThrow(ownerScalarPairing.status, 403, 'owner cannot read mobile_pairing_code via scalar settings route');
-  assertOrThrow(!JSON.stringify(ownerScalarPairing.body).includes(syntheticPairingCode), 'owner scalar denial omits pairing code');
+  const ownerScalarPairing = await request(app)
+    .get('/api/settings/mobile_pairing_code')
+    .set(ownerAuth);
+  assertEqualOrThrow(
+    ownerScalarPairing.status,
+    403,
+    'owner cannot read mobile_pairing_code via scalar settings route',
+  );
+  assertOrThrow(
+    !JSON.stringify(ownerScalarPairing.body).includes(syntheticPairingCode),
+    'owner scalar denial omits pairing code',
+  );
 
   for (const [roleLabel, authHeader] of [
     ['cashier', cashierAuth],
@@ -353,7 +482,8 @@ async function main() {
       `${roleLabel} bulk settings fully masks non-empty mobile_pairing_code`,
     );
     assertOrThrow(
-      !bulkSerialized.includes(syntheticPairingCode) && !bulkSerialized.includes(syntheticPairingSuffix),
+      !bulkSerialized.includes(syntheticPairingCode) &&
+        !bulkSerialized.includes(syntheticPairingSuffix),
       `${roleLabel} bulk settings exposes neither pairing code nor suffix`,
     );
   }
@@ -363,7 +493,11 @@ async function main() {
     VALUES ('mobile_pairing_code', '', ?)
   `).run(now());
   const emptyPairingBulk = await request(app).get('/api/settings').set(waiterAuth);
-  assertEqualOrThrow(emptyPairingBulk.status, 200, 'server can read bulk settings when mobile_pairing_code is empty');
+  assertEqualOrThrow(
+    emptyPairingBulk.status,
+    200,
+    'server can read bulk settings when mobile_pairing_code is empty',
+  );
   assertOrThrow(
     emptyPairingBulk.body.settings?.mobile_pairing_code === '',
     'bulk settings returns empty string when mobile_pairing_code is empty',
@@ -463,7 +597,9 @@ main()
     console.log('\nSecurity hardening tests passed');
   })
   .catch((error) => {
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.error(error);

@@ -365,9 +365,19 @@ async function main() {
   console.log('Section 3: enforcement gate, default off');
   const { billRoutes } = require('../main/routes/bills');
   const { cashClosureRoutes } = require('../main/routes/cash-closures');
+  const { settingsRoutes } = require('../main/routes/settings');
   app.use('/api/bills', billRoutes);
   app.use('/api/cash-closures', cashClosureRoutes);
-  assert(!!billRoutes && !!cashClosureRoutes, 'bills + closures routers mount');
+  app.use('/api/settings', settingsRoutes);
+  assert(
+    !!billRoutes && !!cashClosureRoutes && !!settingsRoutes,
+    'bills + closures + settings routers mount',
+  );
+  const ownerSettingsToken = jwt.sign(
+    { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
+    getJWTSecret(),
+    { expiresIn: '1h' },
+  );
 
   function seedUnpaidBill(tag: string): number {
     const m = past(600_000);
@@ -395,7 +405,58 @@ async function main() {
     .send({ method: 'cash', amount: 50 });
   assert(payOff.status === 200, 'enforcement off: cash payment without a session works (200)');
 
-  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
+  const unauthorizedShiftSetting = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ value: 'true' });
+  assert(
+    unauthorizedShiftSetting.status === 403 && getSettingValue('require_open_shift') === 'false',
+    'cashier cannot update require_open_shift via settings API (403)',
+  );
+
+  for (const invalidValue of ['yes', '1', '0', '', 1, 0, null, {}]) {
+    const invalidShiftSetting = await request(app)
+      .put('/api/settings/require_open_shift')
+      .set('Authorization', `Bearer ${ownerSettingsToken}`)
+      .send({ value: invalidValue });
+    assert(
+      invalidShiftSetting.status === 400 && getSettingValue('require_open_shift') === 'false',
+      `owner PUT /api/settings/require_open_shift rejects invalid value ${JSON.stringify(invalidValue)} (400)`,
+    );
+  }
+
+  const enableShiftBoolean = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: true });
+  assert(
+    enableShiftBoolean.status === 200 &&
+      enableShiftBoolean.body?.setting?.value === 'true' &&
+      getSettingValue('require_open_shift') === 'true',
+    'owner PUT /api/settings/require_open_shift with boolean true stores "true" (200)',
+  );
+
+  const disableShiftBoolean = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: false });
+  assert(
+    disableShiftBoolean.status === 200 &&
+      disableShiftBoolean.body?.setting?.value === 'false' &&
+      getSettingValue('require_open_shift') === 'false',
+    'owner PUT /api/settings/require_open_shift with boolean false stores "false" (200)',
+  );
+
+  const enableShiftString = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: 'true' });
+  assert(
+    enableShiftString.status === 200 &&
+      enableShiftString.body?.setting?.value === 'true' &&
+      getSettingValue('require_open_shift') === 'true',
+    'owner PUT /api/settings/require_open_shift with "true" enables shift gate (200)',
+  );
   const billOn = seedUnpaidBill('on');
   const payOn = await request(app)
     .post(`/api/bills/${billOn}/payment`)
@@ -480,7 +541,16 @@ async function main() {
       reason: 'test',
     });
   assert(movBlocked.status === 409, 'enforcement on: drawer movement without a session is 409');
-  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+  const disableShiftString = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: 'false' });
+  assert(
+    disableShiftString.status === 200 &&
+      disableShiftString.body?.setting?.value === 'false' &&
+      getSettingValue('require_open_shift') === 'false',
+    'owner PUT /api/settings/require_open_shift with "false" disables shift gate (200)',
+  );
   const payOnLate = await request(app)
     .post(`/api/bills/${billOn}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`)

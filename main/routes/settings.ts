@@ -1464,6 +1464,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'calendar',
   'theme_mode',
   'orders_layout',
+  'require_open_shift',
 ]);
 
 /**
@@ -1732,6 +1733,12 @@ router.put(
         return res.status(400).json({ error: 'orders_layout must be "split" or "cards"' });
       }
       let valueToPersist: unknown = value;
+      if (req.params.key === 'require_open_shift') {
+        if (value !== true && value !== false && value !== 'true' && value !== 'false') {
+          return res.status(400).json({ error: 'require_open_shift must be a boolean' });
+        }
+        valueToPersist = value === true || value === 'true' ? 'true' : 'false';
+      }
       const diagnosticsChoice =
         req.params.key === 'diagnostics_consent' ||
         req.params.key === 'diagnostics_transmission_enabled';

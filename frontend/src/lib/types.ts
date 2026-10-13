@@ -189,6 +189,7 @@ export interface Customer {
   favourite_dishes?: string[] | null;
   tag_counts?: Record<string, number> | null;
   address?: string | null;
+  notes?: string | null;
 }
 
 export interface Order {
@@ -273,7 +274,16 @@ export interface Bill {
   paid_amount: number;
   balance: number;
   payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
-  payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string; tendered_amount?: number; change_amount?: number }[] | null;
+  payment_details:
+    | {
+        method: string;
+        payment_method_id?: number;
+        amount: number;
+        timestamp: string;
+        tendered_amount?: number;
+        change_amount?: number;
+      }[]
+    | null;
   split_group_id?: string | null;
   split_label?: string | null;
   /** Itemised unified engine charges; null on bills created before the engine. */

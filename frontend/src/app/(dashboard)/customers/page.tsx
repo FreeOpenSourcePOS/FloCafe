@@ -173,7 +173,7 @@ export default function CustomersPage() {
       phone: c.phone || '',
       email: c.email || '',
       address: c.address || '',
-      notes: (c as Customer & { notes?: string | null }).notes || '',
+      notes: c.notes || '',
       country_code: c.country_code || dialCode,
     });
     setShowForm(true);
@@ -190,7 +190,14 @@ export default function CustomersPage() {
       toast.error(tPos('invalidPhone', { country: countryName(defaultCountry) }));
       return;
     }
-    const payload = { ...form, phone: norm.e164 ?? '', country_code: norm.countryCode ?? '' };
+    const { address, ...restForm } = form;
+    const includeAddress = !editingCustomer || address !== (editingCustomer.address || '');
+    const payload = {
+      ...restForm,
+      ...(includeAddress ? { address } : {}),
+      phone: norm.e164 ?? '',
+      country_code: norm.countryCode ?? '',
+    };
     try {
       if (editingCustomer) {
         await api.put(`/customers/${editingCustomer.id}`, payload);
@@ -201,8 +208,15 @@ export default function CustomersPage() {
       }
       setShowForm(false);
       setRefreshKey((k) => k + 1);
-    } catch {
-      toast.error(tCustomer('saveFailed'));
+    } catch (err: unknown) {
+      const serverMessage =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { message?: string; error?: string } } }).response?.data
+              ?.message ||
+            (err as { response?: { data?: { message?: string; error?: string } } }).response?.data
+              ?.error
+          : undefined;
+      toast.error(serverMessage || tCustomer('saveFailed'));
     }
   };
 
@@ -586,8 +600,8 @@ export default function CustomersPage() {
       )}
 
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">
                 {editingCustomer ? tCustomer('edit') : tCustomer('add')}
@@ -627,7 +641,6 @@ export default function CustomersPage() {
                 name="address"
                 aria-label={tPos('customerAddress')}
                 placeholder={`${tPos('customerAddress')} (${tCommon('optional')})`}
-                maxLength={300}
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"

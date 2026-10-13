@@ -490,16 +490,30 @@ async function testCustomersPageModalAddressAndNotes() {
   mocks['@/components/ui/button'] = {
     Button: (props: Record<string, unknown>) => React.createElement('button', props),
   };
+  const toastErrors: string[] = [];
   mocks['react-hot-toast'] = {
     __esModule: true,
-    default: { success: () => undefined, error: () => undefined },
+    default: {
+      success: () => undefined,
+      error: (msg: string) => {
+        toastErrors.push(msg);
+      },
+    },
   };
   (mocks['@/lib/api'] as any).default.post = async (url: string, payload: unknown) => {
     submissions.push({ method: 'POST', url, payload });
     return { data: { customer: { id: 'cust-new', ...(payload as object) } } };
   };
-  (mocks['@/lib/api'] as any).default.put = async (url: string, payload: unknown) => {
+  (mocks['@/lib/api'] as any).default.put = async (url: string, payload: any) => {
     submissions.push({ method: 'PUT', url, payload });
+    if (typeof payload?.address === 'string' && payload.address.length > 300) {
+      const err: any = new Error('Request failed with status code 400');
+      err.response = {
+        status: 400,
+        data: { error: 'Customer address exceed maximum length of 300 characters' },
+      };
+      throw err;
+    }
     return { data: { customer: { id: 'cust-1', ...(payload as object) } } };
   };
 
@@ -531,6 +545,7 @@ async function testCustomersPageModalAddressAndNotes() {
     }
   };
 
+  const legacyLongAddress = 'L'.repeat(350);
   states[0] = [
     {
       id: 'cust-1',
@@ -542,6 +557,18 @@ async function testCustomersPageModalAddressAndNotes() {
       notes: 'VIP guest',
       visits_count: 3,
       total_spent: 120,
+      wallet_balance: 0,
+    },
+    {
+      id: 'cust-legacy',
+      name: 'Charles Babbage',
+      phone: '+919876543212',
+      country_code: '+91',
+      email: 'charles@example.com',
+      address: legacyLongAddress,
+      notes: 'Legacy record',
+      visits_count: 1,
+      total_spent: 50,
       wallet_balance: 0,
     },
   ];
@@ -557,6 +584,20 @@ async function testCustomersPageModalAddressAndNotes() {
   addBtn.props.onClick();
 
   let modalTree = renderTree();
+  const modalCard = collectElements(
+    modalTree,
+    (el) =>
+      el.type === 'div' &&
+      typeof el.props?.className === 'string' &&
+      el.props.className.includes('max-w-sm'),
+  )[0];
+  assert.ok(modalCard, 'customer modal card is rendered');
+  assert.ok(
+    modalCard.props.className.includes('max-h-[90vh]') &&
+      modalCard.props.className.includes('overflow-y-auto'),
+    'customer modal card is constrained to viewport height with vertical scrolling',
+  );
+
   const findField = (tree: unknown, name: string, i18nKey: string) =>
     collectElements(
       tree,
@@ -569,11 +610,6 @@ async function testCustomersPageModalAddressAndNotes() {
   let notesField = findField(modalTree, 'notes', 'notesOptional');
   assert.ok(addressField, 'customer modal renders an address input');
   assert.ok(notesField, 'customer modal renders a notes field');
-  assert.equal(
-    addressField.props.maxLength,
-    300,
-    'address input enforces the 300-character backend limit',
-  );
   assert.equal(
     notesField.props.maxLength,
     500,
@@ -609,11 +645,18 @@ async function testCustomersPageModalAddressAndNotes() {
   assert.equal(submissions[0].payload.address, '221B Baker St', 'create payload includes address');
   assert.equal(submissions[0].payload.notes, 'Ring bell twice', 'create payload includes notes');
 
-  const afterCreateTree = renderTree();
-  const tbody = collectElements(afterCreateTree, (el) => el.type === 'tbody')[0];
-  const rowButtons = collectElements(tbody, (el) => typeof el.props?.onClick === 'function');
-  rowButtons[0].props.onClick();
+  const openEditRow = (rowIndex: number) => {
+    const tree = renderTree();
+    const tbody = collectElements(tree, (el) => el.type === 'tbody')[0];
+    const rows = collectElements(tbody, (el) => el.type === 'tr');
+    const rowButtons = collectElements(
+      rows[rowIndex],
+      (el) => typeof el.props?.onClick === 'function',
+    );
+    rowButtons[0].props.onClick();
+  };
 
+  openEditRow(0);
   modalTree = renderTree();
   addressField = findField(modalTree, 'address', 'customerAddress');
   notesField = findField(modalTree, 'notes', 'notesOptional');
@@ -630,7 +673,7 @@ async function testCustomersPageModalAddressAndNotes() {
   notesField.props.onChange({ target: { value: 'Leave at reception' } });
   modalTree = renderTree();
 
-  const editForm = collectElements(modalTree, (el) => el.type === 'form')[0];
+  let editForm = collectElements(modalTree, (el) => el.type === 'form')[0];
   await editForm.props.onSubmit({ preventDefault: () => undefined });
   assert.equal(submissions.length, 2, 'submitting the edit modal sends PUT /customers/:id');
   assert.equal(submissions[1].method, 'PUT');
@@ -646,8 +689,82 @@ async function testCustomersPageModalAddressAndNotes() {
     'edit payload includes updated notes',
   );
 
+  openEditRow(0);
+  modalTree = renderTree();
+  addressField = findField(modalTree, 'address', 'customerAddress');
+  addressField.props.onChange({ target: { value: '' } });
+  modalTree = renderTree();
+  notesField = findField(modalTree, 'notes', 'notesOptional');
+  notesField.props.onChange({ target: { value: '' } });
+  modalTree = renderTree();
+
+  editForm = collectElements(modalTree, (el) => el.type === 'form')[0];
+  await editForm.props.onSubmit({ preventDefault: () => undefined });
+  assert.equal(submissions.length, 3, 'clearing fields sends PUT /customers/:id');
+  assert.equal(
+    submissions[2].payload.address,
+    '',
+    'clearing address sends empty string in edit payload',
+  );
+  assert.equal(
+    submissions[2].payload.notes,
+    '',
+    'clearing notes sends empty string in edit payload',
+  );
+
+  openEditRow(1);
+  modalTree = renderTree();
+  addressField = findField(modalTree, 'address', 'customerAddress');
+  assert.equal(
+    addressField.props.value,
+    legacyLongAddress,
+    'edit modal hydrates legacy over-limit address',
+  );
+  const editNameInput = collectElements(
+    modalTree,
+    (el) => el.props?.placeholder === 'customer.name',
+  )[0];
+  editNameInput.props.onChange({ target: { value: 'Charles Babbage Jr.' } });
+  modalTree = renderTree();
+
+  editForm = collectElements(modalTree, (el) => el.type === 'form')[0];
+  await editForm.props.onSubmit({ preventDefault: () => undefined });
+  assert.equal(submissions.length, 4, 'editing unrelated field on legacy customer sends PUT');
+  assert.equal(submissions[3].url, '/customers/cust-legacy');
+  assert.equal(submissions[3].payload.name, 'Charles Babbage Jr.');
+  assert.equal(
+    'address' in submissions[3].payload,
+    false,
+    'unchanged address is omitted from edit payload so legacy over-limit addresses are preserved',
+  );
+
+  openEditRow(0);
+  modalTree = renderTree();
+  addressField = findField(modalTree, 'address', 'customerAddress');
+  addressField.props.onChange({ target: { value: 'A'.repeat(350) } });
+  modalTree = renderTree();
+
+  editForm = collectElements(modalTree, (el) => el.type === 'form')[0];
+  await editForm.props.onSubmit({ preventDefault: () => undefined });
+  assert.equal(submissions.length, 5, 'changing address to over-limit value sends PUT');
+  assert.equal(submissions[4].payload.address, 'A'.repeat(350));
+  assert.equal(
+    toastErrors[toastErrors.length - 1],
+    'Customer address exceed maximum length of 300 characters',
+    'changed over-limit address surfaces backend validation error',
+  );
+
   addBtn.props.onClick();
   modalTree = renderTree();
+  const reopenedNameInput = collectElements(
+    modalTree,
+    (el) => el.props?.placeholder === 'customer.name',
+  )[0];
+  const reopenedPhoneInput = collectElements(modalTree, (el) => el.props?.type === 'tel')[0];
+  const reopenedEmailInput = collectElements(modalTree, (el) => el.props?.type === 'email')[0];
+  assert.equal(reopenedNameInput.props.value, '', 'reopening create modal resets name');
+  assert.equal(reopenedPhoneInput.props.value, '', 'reopening create modal resets phone');
+  assert.equal(reopenedEmailInput.props.value, '', 'reopening create modal resets email');
   assert.equal(
     findField(modalTree, 'address', 'customerAddress').props.value,
     '',
@@ -659,7 +776,7 @@ async function testCustomersPageModalAddressAndNotes() {
     'reopening create modal resets notes',
   );
   console.log(
-    '  ✓ customer create/edit modal renders, hydrates, resets, and submits address and notes',
+    '  ✓ customer create/edit modal renders, hydrates, resets, omits unchanged address, and validates changed address',
   );
 }
 

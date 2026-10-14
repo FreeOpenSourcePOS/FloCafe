@@ -329,8 +329,16 @@ router.get(
         const search = `%${rawSearch}%`;
 
         if (isPhoneLikeSearch) {
-          query += ` AND (c.name LIKE ? OR ${phoneDigitsSearch} LIKE ? OR c.email LIKE ?)`;
-          params.push(search, `%${digitsSearch}%`, search);
+          const tenantCountry = getSettingValue('country') || '';
+          const parsedPhone = parsePhoneE164(rawSearch, tenantCountry);
+          const e164Digits = parsedPhone ? stripPhoneDigits(parsedPhone.e164) : '';
+          if (e164Digits && e164Digits !== digitsSearch) {
+            query += ` AND (c.name LIKE ? OR ${phoneDigitsSearch} LIKE ? OR ${phoneDigitsSearch} LIKE ? OR c.email LIKE ?)`;
+            params.push(search, `%${digitsSearch}%`, `%${e164Digits}%`, search);
+          } else {
+            query += ` AND (c.name LIKE ? OR ${phoneDigitsSearch} LIKE ? OR c.email LIKE ?)`;
+            params.push(search, `%${digitsSearch}%`, search);
+          }
         } else {
           query += ' AND (c.name LIKE ? OR c.email LIKE ?)';
           params.push(search, search);
@@ -514,7 +522,7 @@ router.post(
 
       if (!name || !name.trim()) {
         captureCustomerValidation('fc.backend.customer.create.validation', 'name_required');
-        return res.status(400).json({ message: 'Name is required' });
+        return res.status(400).json({ error: 'Name is required', message: 'Name is required' });
       }
 
       const db = getDatabase();
@@ -542,8 +550,11 @@ router.post(
         const parsed = parsePhoneE164(finalPhone, tenantCountry);
         if (!parsed) {
           captureCustomerValidation('fc.backend.customer.create.validation', 'phone_invalid');
+          const invalidPhoneMsg =
+            'Phone number is not valid. Use international format (e.g. +919876543210).';
           return res.status(400).json({
-            message: 'Phone number is not valid. Use international format (e.g. +919876543210).',
+            error: invalidPhoneMsg,
+            message: invalidPhoneMsg,
           });
         }
         finalPhone = parsed.e164;
@@ -585,7 +596,11 @@ router.post(
             } catch {
               // Diagnostics cannot change the duplicate-customer response.
             }
-            return res.status(409).json({ message: 'Customer with this phone already exists' });
+            const duplicatePhoneMsg = 'Customer with this phone already exists';
+            return res.status(409).json({
+              error: duplicatePhoneMsg,
+              message: duplicatePhoneMsg,
+            });
           }
         }
       }
@@ -611,7 +626,9 @@ router.post(
       res.status(201).json({ customer });
     } catch (error: any) {
       console.error('[Customer POST error]', error);
-      res.status(500).json({ message: 'Failed to create customer' });
+      res
+        .status(500)
+        .json({ error: 'Failed to create customer', message: 'Failed to create customer' });
     }
   },
 );

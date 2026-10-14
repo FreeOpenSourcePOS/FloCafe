@@ -1161,12 +1161,16 @@ export default function ProductsPage() {
                             <>
                               <button
                                 onClick={() => openEdit(product)}
+                                aria-label={tCommon('edit')}
+                                title={tCommon('edit')}
                                 className="p-1.5 text-gray-400 hover:text-brand"
                               >
                                 <Pencil size={16} />
                               </button>
                               <button
                                 onClick={() => handleDelete(product.id)}
+                                aria-label={tCommon('delete')}
+                                title={tCommon('delete')}
                                 className="p-1.5 text-gray-400 hover:text-red-600"
                               >
                                 <Trash2 size={16} />
@@ -1195,7 +1199,11 @@ export default function ProductsPage() {
                   <h2 className="text-lg font-bold">
                     {editingProduct ? t('editProductTitle') : t('addProductTitle')}
                   </h2>
-                  <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground">
+                  <button
+                    onClick={resetForm}
+                    aria-label={tCommon('close')}
+                    className="text-gray-400 hover:text-muted-foreground"
+                  >
                     <X size={20} />
                   </button>
                 </div>
@@ -1714,6 +1722,7 @@ export default function ProductsPage() {
                               {tagLabelText(tag)}
                               <button
                                 type="button"
+                                aria-label={tCommon('remove')}
                                 onClick={() =>
                                   setForm((prev) => ({
                                     ...prev,
@@ -1992,12 +2001,16 @@ export default function ProductsPage() {
                             <>
                               <button
                                 onClick={() => openEditCategory(cat)}
+                                aria-label={tCommon('edit')}
+                                title={tCommon('edit')}
                                 className="p-1.5 text-gray-400 hover:text-brand"
                               >
                                 <Pencil size={16} />
                               </button>
                               <button
                                 onClick={() => handleCategoryDelete(cat.id, cat.name)}
+                                aria-label={tCommon('delete')}
+                                title={tCommon('delete')}
                                 className="p-1.5 text-gray-400 hover:text-red-600"
                               >
                                 <Trash2 size={16} />
@@ -2027,6 +2040,7 @@ export default function ProductsPage() {
                   </h2>
                   <button
                     onClick={resetCategoryForm}
+                    aria-label={tCommon('close')}
                     className="text-gray-400 hover:text-muted-foreground"
                   >
                     <X size={20} />
@@ -2196,12 +2210,16 @@ export default function ProductsPage() {
                           <>
                             <button
                               onClick={() => openEditAddonGroup(group)}
+                              aria-label={tCommon('edit')}
+                              title={tCommon('edit')}
                               className="p-1.5 text-gray-400 hover:text-brand"
                             >
                               <Pencil size={16} />
                             </button>
                             <button
                               onClick={() => handleAddonGroupDelete(group.id)}
+                              aria-label={tCommon('delete')}
+                              title={tCommon('delete')}
                               className="p-1.5 text-gray-400 hover:text-red-600"
                             >
                               <Trash2 size={16} />
@@ -2230,6 +2248,7 @@ export default function ProductsPage() {
                   </h2>
                   <button
                     onClick={resetAddonForm}
+                    aria-label={tCommon('close')}
                     className="text-gray-400 hover:text-muted-foreground"
                   >
                     <X size={20} />
@@ -2361,6 +2380,7 @@ export default function ProductsPage() {
                               />
                               <button
                                 type="button"
+                                aria-label={tCommon('remove')}
                                 onClick={() => removeAddonItem(idx)}
                                 className="text-gray-400 hover:text-red-500"
                               >
@@ -2437,6 +2457,7 @@ export default function ProductsPage() {
               <h2 className="text-lg font-bold">{t('assignTaxCategory')}</h2>
               <button
                 onClick={() => setShowBulkTaxModal(false)}
+                aria-label={tCommon('close')}
                 className="text-gray-400 hover:text-muted-foreground"
               >
                 <X size={20} />
@@ -2499,6 +2520,7 @@ export default function ProductsPage() {
               </h2>
               <button
                 onClick={() => setShowCsvModal(false)}
+                aria-label={tCommon('close')}
                 className="text-gray-400 hover:text-muted-foreground"
               >
                 <X size={20} />
@@ -2649,6 +2671,7 @@ export default function ProductsPage() {
                 onClick={() =>
                   setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })
                 }
+                aria-label={tCommon('close')}
                 className="text-gray-400 hover:text-muted-foreground"
               >
                 <X size={20} />

@@ -65,6 +65,7 @@ Recurring procedures with an outcome.
 | --- | --- |
 | [adding-a-language.md](guides/adding-a-language.md) | Adding a locale, from scaffolding to the verification commands. |
 | [adding-a-tax-pack.md](guides/adding-a-tax-pack.md) | Authoring and shipping a country tax pack. |
+| [showcase-recording.md](guides/showcase-recording.md) | Capturing and transcoding automated visual feature showcase assets. |
 | [testing-printers.md](guides/testing-printers.md) | Validating a physical printer against the print pipeline. |
 
 ## Maintainers

@@ -2257,13 +2257,13 @@ export default function POSPage() {
         toggleFullscreen();
       },
       onDismissModalOrBlur: () => {
+        if (showKeyboardShortcutsModal) {
+          setShowKeyboardShortcutsModal(false);
+          return true;
+        }
         const activeEl = document.activeElement as HTMLElement | null;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
           activeEl.blur();
-          return true;
-        }
-        if (showKeyboardShortcutsModal) {
-          setShowKeyboardShortcutsModal(false);
           return true;
         }
         if (showTablePicker) {

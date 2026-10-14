@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
@@ -411,9 +411,39 @@ export default function SettingsPage() {
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
   const activeTabRef = useRef(activeTab);
+  const currentTenantIdRef = useRef<number | null>(currentTenant?.id ?? null);
   const hydrationTouchVersions = useRef(new Map<string, number>());
+  const pendingKitchenSaves = useRef(
+    new Map<'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered', number>(),
+  );
+  const confirmedKitchenVersions = useRef(
+    new Map<'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered', number>(),
+  );
+  const failedKitchenSaveVersions = useRef(
+    new Map<'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered', number>(),
+  );
+  const confirmedKitchenSettings = useRef<{
+    tenantId: number | null;
+    kdsEnabled?: boolean;
+    kotPrintingEnabled?: boolean;
+    requireKitchenDelivered?: boolean;
+  }>({ tenantId: currentTenant?.id ?? null });
+  const getActiveTenantId = () =>
+    useAuthStore.getState()?.currentTenant?.id ?? currentTenantIdRef.current;
+  const syncTenantTracking = (tenantId: number | null) => {
+    if (currentTenantIdRef.current !== tenantId) {
+      currentTenantIdRef.current = tenantId;
+      hydrationTouchVersions.current.clear();
+      pendingKitchenSaves.current.clear();
+      confirmedKitchenVersions.current.clear();
+      failedKitchenSaveVersions.current.clear();
+      confirmedKitchenSettings.current = { tenantId };
+    }
+  };
   const markHydrationTouched = (field: string) => {
-    hydrationTouchVersions.current.set(field, (hydrationTouchVersions.current.get(field) || 0) + 1);
+    const nextVersion = (hydrationTouchVersions.current.get(field) || 0) + 1;
+    hydrationTouchVersions.current.set(field, nextVersion);
+    return nextVersion;
   };
   const loadedSettingsTabs = useRef(new Set<string>());
   const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
@@ -1642,9 +1672,7 @@ export default function SettingsPage() {
 
   // Kitchen workflow toggle states (defaults to enabled).
   const [kdsEnabledSetting, setKdsEnabledSetting] = useState(true);
-  const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
   const [requireKitchenDeliveredSetting, setRequireKitchenDeliveredSetting] = useState(false);
-  const [savingRequireKitchenDelivered, setSavingRequireKitchenDelivered] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
   const [savingServerAppEnabled, setSavingServerAppEnabled] = useState(false);
   const [serverAppBillPrintingEnabledSetting, setServerAppBillPrintingEnabledSetting] =
@@ -1652,7 +1680,6 @@ export default function SettingsPage() {
   const [savingServerAppBillPrintingEnabled, setSavingServerAppBillPrintingEnabled] =
     useState(false);
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
-  const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
     prefix: 'ORD',
@@ -1667,6 +1694,10 @@ export default function SettingsPage() {
   const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
   const orderNumberFormRef = useRef(orderNumberForm);
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
+
+  useLayoutEffect(() => {
+    syncTenantTracking(currentTenant?.id ?? null);
+  }, [currentTenant?.id]);
 
   useEffect(() => {
     loyaltyFormRef.current = { loyaltyEnabled, globalCashbackPercent };
@@ -1921,6 +1952,25 @@ export default function SettingsPage() {
     }
   };
 
+  const applyKitchenSettingValue = (
+    field: 'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered',
+    enabled: boolean,
+    tenantId: number | null,
+  ) => {
+    if (field === 'kdsEnabled') {
+      setKdsEnabledSetting(enabled);
+      posSettings.setKdsEnabled(enabled);
+      setKdsSettingTenantId(tenantId);
+      return;
+    }
+    if (field === 'kotPrintingEnabled') {
+      setKotPrintingEnabledSetting(enabled);
+      posSettings.setKotPrintingEnabled(enabled);
+      return;
+    }
+    setRequireKitchenDeliveredSetting(enabled);
+  };
+
   const loadSettingsTab = async (
     tab: string,
     signal: AbortSignal,
@@ -1941,8 +1991,38 @@ export default function SettingsPage() {
         }
       }
     };
-    const active = () => !signal.aborted;
+    const tenantIdAtHydrationStart = getActiveTenantId();
+    syncTenantTracking(tenantIdAtHydrationStart);
+    const active = () => !signal.aborted && getActiveTenantId() === tenantIdAtHydrationStart;
     const hydrationTouchSnapshot = new Map(hydrationTouchVersions.current);
+    const isHydrationTouched = (field: string) =>
+      (hydrationTouchVersions.current.get(field) || 0) > (hydrationTouchSnapshot.get(field) || 0);
+    const applyHydratedKitchenSetting = (
+      field: 'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered',
+      enabled: boolean,
+    ) => {
+      if (!active()) return;
+      const inFlight = (pendingKitchenSaves.current.get(field) || 0) > 0;
+      const currentVersion = hydrationTouchVersions.current.get(field) || 0;
+      const isReconcilingFailedSave =
+        currentVersion > 0 &&
+        failedKitchenSaveVersions.current.get(field) === currentVersion &&
+        (confirmedKitchenVersions.current.get(field) || 0) < currentVersion;
+      if (!inFlight && (!isHydrationTouched(field) || isReconcilingFailedSave)) {
+        if (confirmedKitchenSettings.current.tenantId !== tenantIdAtHydrationStart) {
+          confirmedKitchenSettings.current = { tenantId: tenantIdAtHydrationStart };
+        }
+        confirmedKitchenSettings.current[field] = enabled;
+        applyKitchenSettingValue(field, enabled, tenantIdAtHydrationStart);
+        return;
+      }
+      if (
+        confirmedKitchenSettings.current.tenantId === tenantIdAtHydrationStart &&
+        confirmedKitchenSettings.current[field] === undefined
+      ) {
+        confirmedKitchenSettings.current[field] = enabled;
+      }
+    };
     const readOptional = async (path: string) => {
       try {
         return await get(path);
@@ -2432,9 +2512,11 @@ export default function SettingsPage() {
           loadPrinting(printingAtHydrationStart, billFormAtHydrationStart),
           readOptional('/settings/kot_printing_enabled').then((res) => {
             if (!active()) return;
-            const enabled = res?.data.setting?.value !== 'false';
-            setKotPrintingEnabledSetting(enabled);
-            posSettings.setKotPrintingEnabled(enabled);
+            applyHydratedKitchenSetting('kotPrintingEnabled', res?.data.setting?.value !== 'false');
+          }),
+          readOptional('/settings/kds_enabled').then((res) => {
+            if (!active()) return;
+            applyHydratedKitchenSetting('kdsEnabled', res?.data.setting?.value !== 'false');
           }),
         ]);
         return;
@@ -2442,10 +2524,7 @@ export default function SettingsPage() {
       if (tab === 'kitchen-stations') {
         const { data } = await get('/settings/kds_enabled');
         if (!active()) return;
-        const enabled = data.setting?.value !== 'false';
-        setKdsEnabledSetting(enabled);
-        posSettings.setKdsEnabled(enabled);
-        setKdsSettingTenantId(currentTenant?.id ?? null);
+        applyHydratedKitchenSetting('kdsEnabled', data.setting?.value !== 'false');
 
         const [stationsLoaded, categoriesLoaded, staffLoaded, printersLoaded] = await Promise.all([
           fetchStations(signal),
@@ -2459,33 +2538,47 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'kds') {
-        const [kdsInfoLoaded, settingLoaded, deliverySettingLoaded] = await Promise.all([
-          fetchKdsInfo(signal),
-          get('/settings/kds_enabled')
-            .then((res) => {
-              if (!active()) return false;
-              const enabled = res.data.setting?.value !== 'false';
-              setKdsEnabledSetting(enabled);
-              posSettings.setKdsEnabled(enabled);
-              setKdsSettingTenantId(currentTenant?.id ?? null);
-              return true;
-            })
-            .catch((error) => {
-              if (isRequestCancelled(error)) throw error;
-              return false;
-            }),
-          get('/settings/require_kitchen_delivered_before_settlement')
-            .then((res) => {
-              if (!active()) return false;
-              setRequireKitchenDeliveredSetting(res.data.setting?.value === 'true');
-              return true;
-            })
-            .catch((error) => {
-              if (isRequestCancelled(error)) throw error;
-              return false;
-            }),
-        ]);
-        if (!kdsInfoLoaded || !settingLoaded || !deliverySettingLoaded) {
+        const [kdsInfoLoaded, settingLoaded, kotSettingLoaded, deliverySettingLoaded] =
+          await Promise.all([
+            fetchKdsInfo(signal),
+            get('/settings/kds_enabled')
+              .then((res) => {
+                if (!active()) return false;
+                applyHydratedKitchenSetting('kdsEnabled', res.data.setting?.value !== 'false');
+                return true;
+              })
+              .catch((error) => {
+                if (isRequestCancelled(error)) throw error;
+                return false;
+              }),
+            readOptional('/settings/kot_printing_enabled')
+              .then((res) => {
+                if (!active()) return false;
+                applyHydratedKitchenSetting(
+                  'kotPrintingEnabled',
+                  res?.data.setting?.value !== 'false',
+                );
+                return true;
+              })
+              .catch((error) => {
+                if (isRequestCancelled(error)) throw error;
+                return false;
+              }),
+            get('/settings/require_kitchen_delivered_before_settlement')
+              .then((res) => {
+                if (!active()) return false;
+                applyHydratedKitchenSetting(
+                  'requireKitchenDelivered',
+                  res.data.setting?.value === 'true',
+                );
+                return true;
+              })
+              .catch((error) => {
+                if (isRequestCancelled(error)) throw error;
+                return false;
+              }),
+          ]);
+        if (!kdsInfoLoaded || !settingLoaded || !kotSettingLoaded || !deliverySettingLoaded) {
           throw new Error('KDS hydration failed');
         }
         return;
@@ -3080,41 +3173,142 @@ export default function SettingsPage() {
     }
   };
 
-  // Saved immediately because turning KDS off invalidates pairing tokens server-side.
-  const saveKdsEnabled = async (enabled: boolean) => {
-    const previous = kdsEnabledSetting;
-    setKdsEnabledSetting(enabled);
-    posSettings.setKdsEnabled(enabled);
-    setSavingKdsEnabled(true);
+  const reconcileKitchenSetting = async (
+    field: 'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered',
+    saveTenantId: number | null,
+    failedVersion: number,
+  ) => {
+    const isStillCurrentFailure = () =>
+      getActiveTenantId() === saveTenantId &&
+      (pendingKitchenSaves.current.get(field) || 0) === 0 &&
+      (hydrationTouchVersions.current.get(field) || 0) === failedVersion &&
+      (confirmedKitchenVersions.current.get(field) || 0) < failedVersion;
+
+    if (!isStillCurrentFailure()) return;
+
+    const path =
+      field === 'kdsEnabled'
+        ? '/settings/kds_enabled'
+        : field === 'kotPrintingEnabled'
+          ? '/settings/kot_printing_enabled'
+          : '/settings/require_kitchen_delivered_before_settlement';
+
     try {
-      await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
-      setKdsSettingTenantId(currentTenant?.id ?? null);
-      if (currentTenant?.id)
-        loadedSettingsTabs.current.delete(`${currentTenant.id}:kitchen-stations`);
-      toast.success(enabled ? t('kdsEnabledOn') : t('kdsEnabledOff'));
-    } catch {
-      setKdsEnabledSetting(previous);
-      posSettings.setKdsEnabled(previous);
-      toast.error(t('saveFailed'));
-    } finally {
-      setSavingKdsEnabled(false);
+      const res = await api.get(path);
+      if (!isStillCurrentFailure()) return;
+      const rawValue = res?.data?.setting?.value;
+      const authoritative =
+        field === 'requireKitchenDelivered' ? rawValue === 'true' : rawValue !== 'false';
+      if (confirmedKitchenSettings.current.tenantId !== saveTenantId) {
+        confirmedKitchenSettings.current = { tenantId: saveTenantId };
+      }
+      confirmedKitchenSettings.current[field] = authoritative;
+      applyKitchenSettingValue(field, authoritative, saveTenantId);
+    } catch (error) {
+      if (
+        (field === 'kotPrintingEnabled' || field === 'kdsEnabled') &&
+        axios.isAxiosError(error) &&
+        error.response?.status === 404
+      ) {
+        if (!isStillCurrentFailure()) return;
+        if (confirmedKitchenSettings.current.tenantId !== saveTenantId) {
+          confirmedKitchenSettings.current = { tenantId: saveTenantId };
+        }
+        confirmedKitchenSettings.current[field] = true;
+        applyKitchenSettingValue(field, true, saveTenantId);
+        return;
+      }
+      if (getActiveTenantId() === saveTenantId && saveTenantId !== null) {
+        loadedSettingsTabs.current.delete(`${saveTenantId}:kds`);
+        loadedSettingsTabs.current.delete(`${saveTenantId}:receipts-printers`);
+        loadedSettingsTabs.current.delete(`${saveTenantId}:kitchen-stations`);
+      }
     }
   };
 
-  const saveRequireKitchenDelivered = async (enabled: boolean) => {
-    const previous = requireKitchenDeliveredSetting;
-    setRequireKitchenDeliveredSetting(enabled);
-    setSavingRequireKitchenDelivered(true);
+  const saveKitchenSetting = async (
+    field: 'kdsEnabled' | 'kotPrintingEnabled' | 'requireKitchenDelivered',
+    enabled: boolean,
+    defaultFallback: boolean,
+    path: string,
+    toasts?: { on: string; off: string },
+  ) => {
+    const saveTenantId = getActiveTenantId();
+    syncTenantTracking(saveTenantId);
+    const editVersion = markHydrationTouched(field);
+    failedKitchenSaveVersions.current.delete(field);
+    pendingKitchenSaves.current.set(field, (pendingKitchenSaves.current.get(field) || 0) + 1);
+    applyKitchenSettingValue(field, enabled, saveTenantId);
+    let shouldReconcile = false;
+    let failedVersion = editVersion;
     try {
-      await api.put('/settings/require_kitchen_delivered_before_settlement', {
-        value: enabled ? 'true' : 'false',
-      });
+      await api.put(path, { value: enabled ? 'true' : 'false' });
+      if (getActiveTenantId() === saveTenantId) {
+        const currentVersion = hydrationTouchVersions.current.get(field) || 0;
+        const confirmedVersion =
+          currentVersion === editVersion ? markHydrationTouched(field) : editVersion;
+        const previousConfirmedVersion = confirmedKitchenVersions.current.get(field) || 0;
+        if (confirmedVersion >= previousConfirmedVersion) {
+          confirmedKitchenVersions.current.set(field, confirmedVersion);
+          if (confirmedKitchenSettings.current.tenantId !== saveTenantId) {
+            confirmedKitchenSettings.current = { tenantId: saveTenantId };
+          }
+          confirmedKitchenSettings.current[field] = enabled;
+        }
+        if (currentVersion === editVersion) {
+          applyKitchenSettingValue(field, enabled, saveTenantId);
+          if (toasts) toast.success(enabled ? toasts.on : toasts.off);
+        }
+      }
+      if (field === 'kdsEnabled' && saveTenantId) {
+        loadedSettingsTabs.current.delete(`${saveTenantId}:kitchen-stations`);
+      }
     } catch {
-      setRequireKitchenDeliveredSetting(previous);
-      toast.error(t('saveFailed'));
+      if (getActiveTenantId() === saveTenantId) {
+        const currentVersion = hydrationTouchVersions.current.get(field) || 0;
+        if (currentVersion === editVersion) {
+          failedVersion = markHydrationTouched(field);
+          failedKitchenSaveVersions.current.set(field, failedVersion);
+          const fallback =
+            confirmedKitchenSettings.current.tenantId === saveTenantId &&
+            confirmedKitchenSettings.current[field] !== undefined
+              ? confirmedKitchenSettings.current[field]!
+              : defaultFallback;
+          applyKitchenSettingValue(field, fallback, saveTenantId);
+          shouldReconcile = true;
+          toast.error(t('saveFailed'));
+        }
+      }
     } finally {
-      setSavingRequireKitchenDelivered(false);
+      if (getActiveTenantId() === saveTenantId) {
+        const remaining = Math.max(0, (pendingKitchenSaves.current.get(field) || 0) - 1);
+        if (remaining === 0) {
+          pendingKitchenSaves.current.delete(field);
+        } else {
+          pendingKitchenSaves.current.set(field, remaining);
+        }
+      }
     }
+    if (shouldReconcile) {
+      await reconcileKitchenSetting(field, saveTenantId, failedVersion);
+    }
+  };
+
+  // Saved immediately because turning KDS off invalidates pairing tokens server-side.
+  const saveKdsEnabled = async (enabled: boolean) => {
+    await saveKitchenSetting('kdsEnabled', enabled, true, '/settings/kds_enabled', {
+      on: t('kdsEnabledOn'),
+      off: t('kdsEnabledOff'),
+    });
+  };
+
+  const saveRequireKitchenDelivered = async (enabled: boolean) => {
+    await saveKitchenSetting(
+      'requireKitchenDelivered',
+      enabled,
+      false,
+      '/settings/require_kitchen_delivered_before_settlement',
+    );
   };
 
   const saveServerAppEnabled = async (enabled: boolean) => {
@@ -3153,20 +3347,16 @@ export default function SettingsPage() {
   };
 
   const saveKotPrintingEnabled = async (enabled: boolean) => {
-    const previous = kotPrintingEnabledSetting;
-    setKotPrintingEnabledSetting(enabled);
-    posSettings.setKotPrintingEnabled(enabled);
-    setSavingKotPrintingEnabled(true);
-    try {
-      await api.put('/settings/kot_printing_enabled', { value: enabled ? 'true' : 'false' });
-      toast.success(enabled ? t('kotPrintingEnabledOn') : t('kotPrintingEnabledOff'));
-    } catch {
-      setKotPrintingEnabledSetting(previous);
-      posSettings.setKotPrintingEnabled(previous);
-      toast.error(t('saveFailed'));
-    } finally {
-      setSavingKotPrintingEnabled(false);
-    }
+    await saveKitchenSetting(
+      'kotPrintingEnabled',
+      enabled,
+      true,
+      '/settings/kot_printing_enabled',
+      {
+        on: t('kotPrintingEnabledOn'),
+        off: t('kotPrintingEnabledOff'),
+      },
+    );
   };
 
   const saveLoyalty = async (silent = false) => {
@@ -4411,7 +4601,7 @@ export default function SettingsPage() {
                     value={kdsEnabledSetting}
                     label={t('kdsEnabledToggle')}
                     onChange={(v) => {
-                      if (!savingKdsEnabled) saveKdsEnabled(v);
+                      void saveKdsEnabled(v);
                     }}
                   />
                 </div>
@@ -4442,7 +4632,7 @@ export default function SettingsPage() {
                     value={requireKitchenDeliveredSetting}
                     label={t('requireKitchenDeliveredToggle')}
                     onChange={(value) => {
-                      if (!savingRequireKitchenDelivered) void saveRequireKitchenDelivered(value);
+                      void saveRequireKitchenDelivered(value);
                     }}
                   />
                 </div>
@@ -5385,7 +5575,7 @@ export default function SettingsPage() {
               billTemplateCards={billTemplateCards}
               kotPrintingEnabledSetting={kotPrintingEnabledSetting}
               saveKotPrintingEnabled={saveKotPrintingEnabled}
-              savingKotPrintingEnabled={savingKotPrintingEnabled}
+              savingKotPrintingEnabled={false}
               kdsEnabledSetting={kdsEnabledSetting}
               pulseCustomMethods={pulseCustomMethods}
               markHydrationTouched={markHydrationTouched}

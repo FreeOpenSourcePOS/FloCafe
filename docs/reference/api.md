@@ -170,7 +170,7 @@ Router: `main/routes/addon-groups.ts`. Full path: `/api/addon-groups`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | any authenticated role + addon-group read limiter | none | `{ addon_groups: [ ... ] }` with add-ons attached. |
 | `GET` | `/:id` | any authenticated role + addon-group read limiter | path: `id` | Single group with add-ons. |
-| `POST` | `/` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `addons` | `201` with the created group. |
+| `POST` | `/` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `is_active`, `addons` | `201` with the created group. |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `id`; body: `name`, `description`, `is_required`, `min_selection`, `max_selection`, `allow_multiple_quantities`, `sort_order`, `is_active`, `addons` | - |
 | `DELETE` | `/:id` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `id` | - |
 | `POST` | `/:groupId/addons` | `ROLE_ACCESS.ownerManager` + addon-group write limiter | path: `groupId`; body: `name`, `price`, `tax_category_id`, `tax_behavior`, `inherit_parent_tax_category`, `is_active`, `sort_order` | `201` with the created add-on. |
@@ -429,7 +429,7 @@ Router: `main/routes/cash-sessions.ts`. Full path: `/api/cash-sessions`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/open` | `ROLE_ACCESS.ownerManagerCashier` | body: `opening_float_cents` | Body `opening_float_cents` (integer minor units, defaults to 0). |
+| `POST` | `/open` | `ROLE_ACCESS.ownerManagerCashier` | body: `opening_float_cents` | Body `opening_float_cents` (integer minor units, defaults to 0). `409` when a shift is already open (`session_already_open`) or the current store business day is already closed (`day_already_closed`). |
 | `GET` | `/current` | `ROLE_ACCESS.ownerManagerCashier` | none | The open shift, or `null` when none is open. |
 | `POST` | `/:id/close` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `notes` | Closes the shift with optional `notes`. |
 

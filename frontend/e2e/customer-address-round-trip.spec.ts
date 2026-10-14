@@ -169,3 +169,205 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   expect(slipPayload.order.delivery_address ?? '').toBe('');
   expect(slipPayload.order.customer.address).toBe(ADDRESS);
 });
+
+test('Customers page modal creates, edits, clears, preserves unchanged legacy address, validates changed address, resets state, and scrolls on short viewports', async ({
+  page,
+}, testInfo) => {
+  const loginResponse = await page.request.post(`${BASE}/api/auth/login`, {
+    data: { email: 'manager@flo.local', password: E2E_PASSWORD },
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+  const { access_token: token } = await loginResponse.json();
+  const auth = { Authorization: `Bearer ${token}` };
+
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#password').fill(E2E_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL('**/pos/**', { timeout: 20000 });
+
+  await page.goto(`${BASE}/customers`);
+  await expect(page.getByRole('heading', { name: 'Customers' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Add Customer' }).click();
+  const addModal = page
+    .locator('div.fixed.inset-0')
+    .filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
+  await expect(addModal).toBeVisible();
+
+  const addressInput = addModal.getByLabel('Customer address');
+  const notesInput = addModal.getByLabel('Notes (optional)');
+  await expect(addressInput).toHaveValue('');
+  await expect(notesInput).toHaveValue('');
+
+  const suffix = String(Date.now()).slice(-4);
+  const customerName = `Modal Customer ${suffix}`;
+  const customerPhone = `+66 83 777 ${suffix}`;
+  const initialAddress = '221B Baker St, London';
+  const initialNotes = 'Ring bell twice';
+
+  await addModal.getByPlaceholder('Name').fill(customerName);
+  await addModal.locator('input[type="tel"]').fill(customerPhone);
+  await addressInput.fill(initialAddress);
+  await notesInput.fill(initialNotes);
+
+  const createResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'POST' && url.pathname === '/api/customers';
+  });
+  let listRefreshPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === '/api/customers';
+  });
+  await addModal.getByRole('button', { name: 'Add Customer' }).click();
+  const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBe(201);
+  const created = (await createResponse.json()).customer;
+  expect(created.address).toBe(initialAddress);
+  expect(created.notes).toBe(initialNotes);
+  await expect(addModal).toBeHidden();
+  await listRefreshPromise;
+
+  const row = page.locator('tbody tr').filter({ hasText: customerName }).first();
+  await expect(row).toBeVisible();
+  await row.locator('td').nth(6).locator('button').click();
+
+  const editModal = page
+    .locator('div.fixed.inset-0')
+    .filter({ has: page.getByRole('heading', { name: 'Edit Customer' }) });
+  await expect(editModal).toBeVisible();
+  await expect(editModal.getByLabel('Customer address')).toHaveValue(initialAddress);
+  await expect(editModal.getByLabel('Notes (optional)')).toHaveValue(initialNotes);
+
+  const updatedAddress = '42 Wallaby Way, Sydney';
+  const updatedNotes = 'Leave at reception';
+  await editModal.getByLabel('Customer address').fill(updatedAddress);
+  await editModal.getByLabel('Notes (optional)').fill(updatedNotes);
+
+  let putResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'PUT' && url.pathname === `/api/customers/${created.id}`;
+  });
+  listRefreshPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === '/api/customers';
+  });
+  await editModal.getByRole('button', { name: 'Update' }).click();
+  let putResponse = await putResponsePromise;
+  expect(putResponse.status()).toBe(200);
+  let updated = (await putResponse.json()).customer;
+  expect(updated.address).toBe(updatedAddress);
+  expect(updated.notes).toBe(updatedNotes);
+  await expect(editModal).toBeHidden();
+  await listRefreshPromise;
+
+  await row.locator('td').nth(6).locator('button').click();
+  await expect(editModal).toBeVisible();
+  await expect(editModal.getByLabel('Customer address')).toHaveValue(updatedAddress);
+  await expect(editModal.getByLabel('Notes (optional)')).toHaveValue(updatedNotes);
+
+  await editModal.getByLabel('Customer address').fill('');
+  await editModal.getByLabel('Notes (optional)').fill('');
+  putResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'PUT' && url.pathname === `/api/customers/${created.id}`;
+  });
+  listRefreshPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === '/api/customers';
+  });
+  await editModal.getByRole('button', { name: 'Update' }).click();
+  putResponse = await putResponsePromise;
+  expect(putResponse.status()).toBe(200);
+  updated = (await putResponse.json()).customer;
+  expect(updated.address).toBeNull();
+  expect(updated.notes).toBeNull();
+  await expect(editModal).toBeHidden();
+  await listRefreshPromise;
+
+  const legacyLongAddress = 'L'.repeat(350);
+  await page.route('**/api/customers*', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const json = await response.json();
+    if (Array.isArray(json?.data)) {
+      json.data = json.data.map((item: { id: string | number; address?: string | null }) =>
+        item.id === created.id ? { ...item, address: legacyLongAddress } : item,
+      );
+    }
+    await route.fulfill({ response, json });
+  });
+
+  await page.reload();
+  const reloadedRow = page.locator('tbody tr').filter({ hasText: customerName }).first();
+  await expect(reloadedRow).toBeVisible();
+  await reloadedRow.locator('td').nth(6).locator('button').click();
+  await expect(editModal).toBeVisible();
+  await expect(editModal.getByLabel('Customer address')).toHaveValue(legacyLongAddress);
+
+  const renamedCustomer = `${customerName} Updated`;
+  await editModal.getByPlaceholder('Name').fill(renamedCustomer);
+  putResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'PUT' && url.pathname === `/api/customers/${created.id}`;
+  });
+  listRefreshPromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === '/api/customers';
+  });
+  await editModal.getByRole('button', { name: 'Update' }).click();
+  putResponse = await putResponsePromise;
+  expect(putResponse.status()).toBe(200);
+  expect('address' in putResponse.request().postDataJSON()).toBe(false);
+  await expect(editModal).toBeHidden();
+  await listRefreshPromise;
+  await page.unroute('**/api/customers*');
+
+  const renamedRow = page.locator('tbody tr').filter({ hasText: renamedCustomer }).first();
+  await expect(renamedRow).toBeVisible();
+  await renamedRow.locator('td').nth(6).locator('button').click();
+  await expect(editModal).toBeVisible();
+
+  const overLimitAddress = 'A'.repeat(350);
+  await editModal.getByLabel('Customer address').fill(overLimitAddress);
+  putResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'PUT' && url.pathname === `/api/customers/${created.id}`;
+  });
+  await editModal.getByRole('button', { name: 'Update' }).click();
+  putResponse = await putResponsePromise;
+  expect(putResponse.status()).toBe(400);
+  await expect(page.getByText(/address/i).first()).toBeVisible({ timeout: 5000 });
+  await expect(editModal).toBeVisible();
+
+  await editModal.locator('button').first().click();
+  await expect(editModal).toBeHidden();
+
+  await page.getByRole('button', { name: 'Add Customer' }).click();
+  await expect(addModal).toBeVisible();
+  await expect(addModal.getByPlaceholder('Name')).toHaveValue('');
+  await expect(addModal.locator('input[type="tel"]')).toHaveValue('');
+  await expect(addModal.locator('input[type="email"]')).toHaveValue('');
+  await expect(addModal.getByLabel('Customer address')).toHaveValue('');
+  await expect(addModal.getByLabel('Notes (optional)')).toHaveValue('');
+
+  await page.setViewportSize({ width: 667, height: 320 });
+  const modalCard = addModal.locator('div.bg-card');
+  const cardBox = await modalCard.boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.height).toBeLessThanOrEqual(320);
+
+  const submitButton = addModal.getByRole('button', { name: 'Add Customer' });
+  await submitButton.scrollIntoViewIfNeeded();
+  await expect(submitButton).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('customers-modal-landscape.png') });
+
+  const afterVerify = await page.request.get(`${BASE}/api/customers/${created.id}`, {
+    headers: auth,
+  });
+  expect(afterVerify.ok()).toBeTruthy();
+  expect((await afterVerify.json()).customer.name).toBe(renamedCustomer);
+});

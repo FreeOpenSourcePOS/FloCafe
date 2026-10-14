@@ -365,9 +365,19 @@ async function main() {
   console.log('Section 3: enforcement gate, default off');
   const { billRoutes } = require('../main/routes/bills');
   const { cashClosureRoutes } = require('../main/routes/cash-closures');
+  const { settingsRoutes } = require('../main/routes/settings');
   app.use('/api/bills', billRoutes);
   app.use('/api/cash-closures', cashClosureRoutes);
-  assert(!!billRoutes && !!cashClosureRoutes, 'bills + closures routers mount');
+  app.use('/api/settings', settingsRoutes);
+  assert(
+    !!billRoutes && !!cashClosureRoutes && !!settingsRoutes,
+    'bills + closures + settings routers mount',
+  );
+  const ownerSettingsToken = jwt.sign(
+    { userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' },
+    getJWTSecret(),
+    { expiresIn: '1h' },
+  );
 
   function seedUnpaidBill(tag: string): number {
     const m = past(600_000);
@@ -395,7 +405,58 @@ async function main() {
     .send({ method: 'cash', amount: 50 });
   assert(payOff.status === 200, 'enforcement off: cash payment without a session works (200)');
 
-  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
+  const unauthorizedShiftSetting = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ value: 'true' });
+  assert(
+    unauthorizedShiftSetting.status === 403 && getSettingValue('require_open_shift') === 'false',
+    'cashier cannot update require_open_shift via settings API (403)',
+  );
+
+  for (const invalidValue of ['yes', '1', '0', '', 1, 0, null, {}]) {
+    const invalidShiftSetting = await request(app)
+      .put('/api/settings/require_open_shift')
+      .set('Authorization', `Bearer ${ownerSettingsToken}`)
+      .send({ value: invalidValue });
+    assert(
+      invalidShiftSetting.status === 400 && getSettingValue('require_open_shift') === 'false',
+      `owner PUT /api/settings/require_open_shift rejects invalid value ${JSON.stringify(invalidValue)} (400)`,
+    );
+  }
+
+  const enableShiftBoolean = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: true });
+  assert(
+    enableShiftBoolean.status === 200 &&
+      enableShiftBoolean.body?.setting?.value === 'true' &&
+      getSettingValue('require_open_shift') === 'true',
+    'owner PUT /api/settings/require_open_shift with boolean true stores "true" (200)',
+  );
+
+  const disableShiftBoolean = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: false });
+  assert(
+    disableShiftBoolean.status === 200 &&
+      disableShiftBoolean.body?.setting?.value === 'false' &&
+      getSettingValue('require_open_shift') === 'false',
+    'owner PUT /api/settings/require_open_shift with boolean false stores "false" (200)',
+  );
+
+  const enableShiftString = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: 'true' });
+  assert(
+    enableShiftString.status === 200 &&
+      enableShiftString.body?.setting?.value === 'true' &&
+      getSettingValue('require_open_shift') === 'true',
+    'owner PUT /api/settings/require_open_shift with "true" enables shift gate (200)',
+  );
   const billOn = seedUnpaidBill('on');
   const payOn = await request(app)
     .post(`/api/bills/${billOn}/payment`)
@@ -480,7 +541,16 @@ async function main() {
       reason: 'test',
     });
   assert(movBlocked.status === 409, 'enforcement on: drawer movement without a session is 409');
-  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+  const disableShiftString = await request(app)
+    .put('/api/settings/require_open_shift')
+    .set('Authorization', `Bearer ${ownerSettingsToken}`)
+    .send({ value: 'false' });
+  assert(
+    disableShiftString.status === 200 &&
+      disableShiftString.body?.setting?.value === 'false' &&
+      getSettingValue('require_open_shift') === 'false',
+    'owner PUT /api/settings/require_open_shift with "false" disables shift gate (200)',
+  );
   const payOnLate = await request(app)
     .post(`/api/bills/${billOn}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1159,6 +1229,7 @@ async function main() {
     .set('Authorization', `Bearer ${managerToken}`)
     .send({ isReprint: false });
   assert(managerDayPrint.status === 403, 'manager cannot print day-close Z (403)');
+  db.prepare(`DELETE FROM cash_closures WHERE id = ?`).run(dayClose.body?.zReport?.id);
 
   // ── Section 7: round-2 review findings ────────────────────────────────
   console.log('Section 7: partial block, case-insensitive gate, refund gate');
@@ -1327,6 +1398,163 @@ async function main() {
     mClose2.status === 200 && mClose2.body?.variance_cents === 0,
     'session uses its own float, not the movement',
   );
+
+  // ── Section 9: closed business day blocks new shift open ─────────────
+  console.log('Section 9: closed business day blocks new shift open');
+  const RealDate = global.Date;
+  const withFixedClock = async <T>(isoUtc: string, fn: () => Promise<T>): Promise<T> => {
+    const fixedMs = RealDate.parse(isoUtc);
+    class FixedDate extends RealDate {
+      constructor(...args: any[]) {
+        if (args.length === 0) {
+          super(fixedMs);
+        } else {
+          super(...(args as [any]));
+        }
+      }
+      static now(): number {
+        return fixedMs;
+      }
+    }
+    global.Date = FixedDate as DateConstructor;
+    try {
+      return await fn();
+    } finally {
+      global.Date = RealDate;
+    }
+  };
+
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'America/New_York', ?) ON CONFLICT(key) DO UPDATE SET value='America/New_York', updated_at=excluded.updated_at`,
+  ).run(now());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '04:00', ?) ON CONFLICT(key) DO UPDATE SET value='04:00', updated_at=excluded.updated_at`,
+  ).run(now());
+
+  try {
+    // Seed closed adjacent calendar days (2026-06-13 and 2026-06-15) while
+    // leaving the effective business date 2026-06-14 open.
+    await withFixedClock('2026-06-15T12:00:00.000Z', async () => {
+      const closePriorDay = await request(app)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ business_date: '2026-06-13', opening_float_cents: 0, counted_cash_cents: 0 });
+      assert(closePriorDay.status === 201, 'owner closes prior business day 2026-06-13 (201)');
+      const closeCalendarDay = await request(app)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ business_date: '2026-06-15', opening_float_cents: 0, counted_cash_cents: 0 });
+      assert(
+        closeCalendarDay.status === 201,
+        'owner closes calendar date 2026-06-15 before boundary test (201)',
+      );
+    });
+
+    // At 2026-06-15T06:30:00.000Z, local time in America/New_York (EDT, UTC-4)
+    // is 2026-06-15 02:30:00: both UTC and local calendar dates are 2026-06-15,
+    // but before the 04:00 business_day_start_time the effective business date
+    // is 2026-06-14.
+    await withFixedClock('2026-06-15T06:30:00.000Z', async () => {
+      const openOnUnclosedEffectiveDay = await request(app)
+        .post('/api/cash-sessions/open')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ opening_float_cents: 2500 });
+      assert(
+        openOnUnclosedEffectiveDay.status === 200,
+        `closing calendar date 2026-06-15 does not block opening on effective business day 2026-06-14 (got ${openOnUnclosedEffectiveDay.status})`,
+      );
+      const effectiveDayFloat = db
+        .prepare(
+          `SELECT amount_cents FROM cash_drawer_movements WHERE business_date = '2026-06-14' AND movement_type = 'opening_float' AND voided_at IS NULL`,
+        )
+        .get() as { amount_cents: number } | undefined;
+      assert(
+        effectiveDayFloat?.amount_cents === 2500,
+        'shift open before 04:00 local cutoff mirrors opening float onto effective business date 2026-06-14',
+      );
+      const closeEffectiveDayShift = await request(app)
+        .post(`/api/cash-sessions/${openOnUnclosedEffectiveDay.body?.id}/close`)
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ counted_cash_cents: 2500 });
+      assert(
+        closeEffectiveDayShift.status === 200,
+        'shift on effective business day 2026-06-14 closes cleanly (200)',
+      );
+
+      const closedEffectiveDayRes = await request(app)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ business_date: '2026-06-14', opening_float_cents: 2500, counted_cash_cents: 2500 });
+      assert(
+        closedEffectiveDayRes.status === 201,
+        'owner closes effective business day 2026-06-14 (201)',
+      );
+
+      const sessionsBefore = (
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as { c: number }
+      ).c;
+      const movementsBefore = (
+        db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as { c: number }
+      ).c;
+
+      const closedDayPositiveFloatOpen = await request(app)
+        .post('/api/cash-sessions/open')
+        .set('x-operation-id', '55555555-5555-4555-8555-555555555555')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ opening_float_cents: 1000 });
+      assert(
+        closedDayPositiveFloatOpen.status === 409,
+        `opening a shift with positive float on closed effective business day is 409 (got ${closedDayPositiveFloatOpen.status})`,
+      );
+      assert(
+        closedDayPositiveFloatOpen.body?.display_code === 'day_already_closed',
+        'positive-float shift open rejection uses day_already_closed',
+      );
+      assert(
+        (db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions WHERE status = 'open'`).get() as any)
+          .c === 0 &&
+          (db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as any).c === sessionsBefore,
+        'rejected positive-float open on closed day creates no cash session',
+      );
+      assert(
+        (db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as any).c ===
+          movementsBefore,
+        'rejected positive-float open on closed day creates no drawer movement',
+      );
+
+      const closedDayZeroFloatOpen = await request(app)
+        .post('/api/cash-sessions/open')
+        .set('x-operation-id', '66666666-6666-4666-8666-666666666666')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ opening_float_cents: 0 });
+      assert(
+        closedDayZeroFloatOpen.status === 409,
+        `opening a shift with zero float on closed effective business day is 409 (got ${closedDayZeroFloatOpen.status})`,
+      );
+      assert(
+        closedDayZeroFloatOpen.body?.display_code === 'day_already_closed',
+        'zero-float shift open rejection uses day_already_closed',
+      );
+      assert(
+        (db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions WHERE status = 'open'`).get() as any)
+          .c === 0 &&
+          (db.prepare(`SELECT COUNT(*) AS c FROM cash_sessions`).get() as any).c === sessionsBefore,
+        'rejected zero-float open on closed day creates no cash session',
+      );
+      assert(
+        (db.prepare(`SELECT COUNT(*) AS c FROM cash_drawer_movements`).get() as any).c ===
+          movementsBefore,
+        'rejected zero-float open on closed day creates no drawer movement',
+      );
+    });
+  } finally {
+    db.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'UTC', ?) ON CONFLICT(key) DO UPDATE SET value='UTC', updated_at=excluded.updated_at`,
+    ).run(now());
+    db.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '00:00', ?) ON CONFLICT(key) DO UPDATE SET value='00:00', updated_at=excluded.updated_at`,
+    ).run(now());
+  }
 
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${total}, failed ${failed}`);

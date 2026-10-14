@@ -283,9 +283,13 @@ export function startServer(): Promise<void> {
       app.use(express.static(frontendDir, { dotfiles: 'allow', index: false }));
 
       // Serve each Next.js static route index directly to avoid root redirects.
-      app.get(/^(?!\/api|\/kds).*$/, staticRouteRateLimit(), (req: Request, res: Response) => {
-        res.sendFile(resolveStaticPage(frontendDir, req.path), { dotfiles: 'allow' });
-      });
+      app.get(
+        /^(?!\/api(?:\/|$)|\/kds(?:\/|$)).*$/,
+        staticRouteRateLimit(),
+        (req: Request, res: Response) => {
+          res.sendFile(resolveStaticPage(frontendDir, req.path), { dotfiles: 'allow' });
+        },
+      );
     } else {
       console.warn('[Server] Frontend build not found. Run `npm run build:frontend` first.');
       app.get('/', (_req: Request, res: Response) => {

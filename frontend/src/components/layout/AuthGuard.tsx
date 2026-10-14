@@ -48,6 +48,7 @@ export const PAGE_PERMISSIONS = [
   ['/dashboard', 'dashboard.view'],
   ['/orders', 'orders.read'],
   ['/products', 'catalog.manage'],
+  ['/addon-groups', 'catalog.manage'],
   ['/inventory', 'inventory.view'],
   ['/expenses', 'expenses.view'],
   ['/tables', 'tables.view'],

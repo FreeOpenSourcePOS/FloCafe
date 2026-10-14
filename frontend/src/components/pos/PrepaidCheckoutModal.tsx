@@ -516,6 +516,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
       if (e.key === ' ' || e.code === 'Space' || e.key === 'Enter') {
         e.preventDefault();
+        if (e.repeat) return;
         if (processing || taxLoading || !preview || hasInvalidFixedDiscount) return;
 
         if (totalPaymentMinor < remainingMinor) {

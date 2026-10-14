@@ -38,7 +38,7 @@ const {
 } = require('./helpers/test-setup');
 
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
-const { initDatabase } = require('../main/db');
+const { getDatabase, initDatabase } = require('../main/db');
 const { staffRoutes } = require('../main/routes/staff');
 const { clearRevokedTokens, revokeToken, isTokenRevoked } = require('../main/middleware/security');
 
@@ -69,9 +69,7 @@ async function run() {
   assert(!!token, 'Access token returned');
 
   // Step 2: Use token for authed endpoint (/api/auth/me) -> 200
-  const meRes1 = await request(app)
-    .get('/api/auth/me')
-    .set('Authorization', `Bearer ${token}`);
+  const meRes1 = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`);
   assertEqual(meRes1.status, 200, '/api/auth/me succeeds with valid token');
 
   // Step 3: Refresh token with valid token -> 200
@@ -89,9 +87,7 @@ async function run() {
   assertEqual(logoutRes.status, 200, 'Logout succeeds');
 
   // Step 5: Attempt token reuse after logout -> 401
-  const meRes2 = await request(app)
-    .get('/api/auth/me')
-    .set('Authorization', `Bearer ${token}`);
+  const meRes2 = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`);
   assertEqual(meRes2.status, 401, 'Token reuse after logout fails with 401');
 
   // Step 6: Refresh using revoked token -> 401
@@ -130,7 +126,7 @@ async function run() {
   const expiredToken = jwt.sign(
     { userId: 'jwt-owner-1', email: 'jwt-owner@test.local', role: 'owner' },
     getJWTSecret(),
-    { expiresIn: '-1s' }
+    { expiresIn: '-1s' },
   );
   const meRes3 = await request(app)
     .get('/api/auth/me')
@@ -138,13 +134,60 @@ async function run() {
   assertEqual(meRes3.status, 401, 'Expired token fails with 401');
 
   // Step 8: New token from refresh is still valid
-  const meRes4 = await request(app)
-    .get('/api/auth/me')
-    .set('Authorization', `Bearer ${newToken}`);
+  const meRes4 = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${newToken}`);
   if (meRes4.status !== 200) {
     console.log('meRes4 status:', meRes4.status, 'body:', meRes4.body);
   }
   assertEqual(meRes4.status, 200, 'Refreshed token remains valid');
+
+  // Step 9: Refresh re-reads current user role from DB and preserves stale/inactive checks
+  const freshDb = getDatabase();
+  freshDb
+    .prepare(`
+    INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES ('jwt-manager-1', 'JWT Manager', 'jwt-manager@test.local', ?, 'manager', 1, ?, ?)
+  `)
+    .run(bcrypt.hashSync('Pass1234!', 10), now(), now());
+
+  const managerLoginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ email: 'jwt-manager@test.local', password: 'Pass1234!' });
+  assertEqual(managerLoginRes.status, 200, 'Manager login succeeds');
+  const managerToken = managerLoginRes.body.access_token;
+  assertEqual(
+    jwt.verify(managerToken, getJWTSecret()).role,
+    'manager',
+    'Initial token carries manager role',
+  );
+
+  freshDb.prepare(`UPDATE users SET role = 'server' WHERE id = 'jwt-manager-1'`).run();
+
+  const roleRefreshRes = await request(app)
+    .post('/api/auth/refresh')
+    .set('Authorization', `Bearer ${managerToken}`);
+  assertEqual(roleRefreshRes.status, 200, 'Refresh after role change succeeds');
+  const refreshedRoleClaims = jwt.verify(roleRefreshRes.body.access_token, getJWTSecret());
+  assertEqual(
+    refreshedRoleClaims.role,
+    'server',
+    'Refreshed token carries updated role from database',
+  );
+
+  freshDb
+    .prepare(`UPDATE users SET tokens_valid_after = ? WHERE id = 'jwt-manager-1'`)
+    .run(new Date(Date.now() + 60_000).toISOString());
+  const staleRefreshRes = await request(app)
+    .post('/api/auth/refresh')
+    .set('Authorization', `Bearer ${managerToken}`);
+  assertEqual(staleRefreshRes.status, 401, 'Refresh rejects token stale via tokens_valid_after');
+
+  freshDb
+    .prepare(`UPDATE users SET tokens_valid_after = NULL, is_active = 0 WHERE id = 'jwt-manager-1'`)
+    .run();
+  const inactiveRefreshRes = await request(app)
+    .post('/api/auth/refresh')
+    .set('Authorization', `Bearer ${managerToken}`);
+  assertEqual(inactiveRefreshRes.status, 401, 'Refresh rejects token for inactive user');
 
   const results = getResults();
   if (results.failed > 0) {
@@ -160,7 +203,9 @@ run()
     fs.rmSync(testDir, { recursive: true, force: true });
   })
   .catch((err) => {
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.error(err);

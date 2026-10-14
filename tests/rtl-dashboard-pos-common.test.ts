@@ -92,7 +92,28 @@ const PHYSICAL_UTIL_RE =
  */
 const ALLOWLIST: Record<string, string[]> = {};
 
+function collectElements(
+  node: unknown,
+  predicate: (element: any) => boolean,
+  result: any[] = [],
+): any[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, result);
+    return result;
+  }
+  if (!node || typeof node !== 'object') return result;
+  if (predicate(node)) result.push(node);
+  const props = (node as { props?: { children?: unknown } }).props;
+  if (props) collectElements(props.children, predicate, result);
+  return result;
+}
+
 function loadComponents(): {
+  AddonGroupsPage: () => any;
+  api: { get: (...args: any[]) => any };
+  ChevronRight: any;
+  ChevronDown: any;
+  faMessages: Record<string, any>;
   DirectionalToaster: any;
   usePosSettingsStore: any;
   Ltr: any;
@@ -106,9 +127,16 @@ function loadComponents(): {
   };
   const originalResolveFilename = moduleApi._resolveFilename;
 
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  moduleApi._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
-    if (request.startsWith('@/')) {
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(ROOT, 'main/countries.ts');
+    } else if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
     } else if (request.startsWith('@print/')) {
       resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
@@ -119,12 +147,29 @@ function loadComponents(): {
   try {
     const React = frontendRequire('react');
     const ReactDOMServer = frontendRequire('react-dom/server');
+    const { ChevronRight, ChevronDown } = frontendRequire('lucide-react');
+    const api = require('../frontend/src/lib/api').default;
+    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
+    const faMessages = require('../frontend/src/lib/i18n/messages/fa.json');
     const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
     const { Ltr } = require('../frontend/src/components/layout/Ltr');
     const { IntlProvider } = frontendRequire('use-intl');
     const { getLanguageLocale } = require('../frontend/src/lib/i18n');
-    return { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer };
+    return {
+      AddonGroupsPage,
+      api,
+      ChevronRight,
+      ChevronDown,
+      faMessages,
+      DirectionalToaster,
+      usePosSettingsStore,
+      Ltr,
+      IntlProvider,
+      getLanguageLocale,
+      React,
+      ReactDOMServer,
+    };
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
   }
@@ -151,7 +196,9 @@ function run(): void {
     }
     totalPhysical += matches.length;
   }
-  console.log(`  ✓ batch screens use logical direction utilities (${totalPhysical} allowlisted physical cases)`);
+  console.log(
+    `  ✓ batch screens use logical direction utilities (${totalPhysical} allowlisted physical cases)`,
+  );
 
   // 2. Directional icons carry `.rtl-flip`.
   const iconFiles = SCREEN_FILES.filter((f) => {
@@ -162,12 +209,17 @@ function run(): void {
     const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
     lines.forEach((line, i) => {
       // Only flag JSX usage (`<Arrow…`, `<Chevron…`), not the lucide import statement.
-      if (/<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(line) && !line.includes('rtl-flip')) {
+      if (
+        /<(ArrowLeft|ArrowRight|ChevronLeft|ChevronRight)\b/.test(line) &&
+        !line.includes('rtl-flip')
+      ) {
         assert(false, `${file}:${i + 1} uses a directional icon without rtl-flip: ${line.trim()}`);
       }
     });
   }
-  console.log(`  ✓ directional icons carry rtl-flip (${iconFiles.length} file(s) with directional icons)`);
+  console.log(
+    `  ✓ directional icons carry rtl-flip (${iconFiles.length} file(s) with directional icons)`,
+  );
 
   // 3. Icons rendered before their label must use `me-*` (inline-end), never
   //    `ms-*` (inline-start). Match a lucide icon component with an `ms-*`
@@ -178,7 +230,10 @@ function run(): void {
     const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
     lines.forEach((line, i) => {
       if (iconBeforeTextRe.test(line)) {
-        assert(false, `${file}:${i + 1} icon-before-text uses ms-* (inline-start) instead of me-*: ${line.trim()}`);
+        assert(
+          false,
+          `${file}:${i + 1} icon-before-text uses ms-* (inline-start) instead of me-*: ${line.trim()}`,
+        );
       }
     });
   }
@@ -188,11 +243,29 @@ function run(): void {
   //    #376: DirectionalToaster reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
   //    matches the language under test.
-  const { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer } = loadComponents();
+  const {
+    AddonGroupsPage,
+    api,
+    ChevronRight,
+    ChevronDown,
+    faMessages,
+    DirectionalToaster,
+    usePosSettingsStore,
+    Ltr,
+    IntlProvider,
+    getLanguageLocale,
+    React,
+    ReactDOMServer,
+  } = loadComponents();
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
-  function renderDirectionalToaster(locale: string): { position?: string; containerStyle?: any; markup: string; key?: string | null } {
+  function renderDirectionalToaster(locale: string): {
+    position?: string;
+    containerStyle?: any;
+    markup: string;
+    key?: string | null;
+  } {
     let capturedProps: any;
     let capturedKey: string | null | undefined;
     function Probe() {
@@ -202,117 +275,355 @@ function run(): void {
       return elem;
     }
     const markup = ReactDOMServer.renderToStaticMarkup(
-      React.createElement(IntlProvider, { locale }, React.createElement(Probe))
+      React.createElement(IntlProvider, { locale }, React.createElement(Probe)),
     );
-    return { position: capturedProps?.position, containerStyle: capturedProps?.containerStyle, markup, key: capturedKey };
+    return {
+      position: capturedProps?.position,
+      containerStyle: capturedProps?.containerStyle,
+      markup,
+      key: capturedKey,
+    };
   }
 
   usePosSettingsStore.getState().setLanguage('fa');
   const renderedFa = renderDirectionalToaster(getLanguageLocale('fa'));
   assert(
     renderedFa.position === 'top-left',
-    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`
+    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`,
   );
   assert(
     renderedFa.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
-    `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedFa.containerStyle?.top}`
+    `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedFa.containerStyle?.top}`,
   );
   assert(
     typeof renderedFa.markup === 'string' && renderedFa.markup.length > 0,
-    'DirectionalToaster must render static markup for Persian'
+    'DirectionalToaster must render static markup for Persian',
   );
   assert(
     renderedFa.key === 'rtl',
-    `DirectionalToaster must key its Toaster "rtl" for Persian so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedFa.key}`
+    `DirectionalToaster must key its Toaster "rtl" for Persian so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedFa.key}`,
   );
 
   usePosSettingsStore.getState().setLanguage('ur');
   const renderedUr = renderDirectionalToaster(getLanguageLocale('ur'));
-  assert(renderedUr.position === 'top-left', `DirectionalToaster must set position="top-left" for Urdu (ur), got: ${renderedUr.position}`);
-  assert(renderedUr.key === 'rtl', `DirectionalToaster must key its Toaster "rtl" for Urdu (ur), got: ${renderedUr.key}`);
+  assert(
+    renderedUr.position === 'top-left',
+    `DirectionalToaster must set position="top-left" for Urdu (ur), got: ${renderedUr.position}`,
+  );
+  assert(
+    renderedUr.key === 'rtl',
+    `DirectionalToaster must key its Toaster "rtl" for Urdu (ur), got: ${renderedUr.key}`,
+  );
 
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'ru', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const ltrLang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+  ] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
     const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
     assert(
       renderedLtr.position === 'top-right',
-      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`
+      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`,
     );
     assert(
       renderedLtr.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
-      `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedLtr.containerStyle?.top}`
+      `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedLtr.containerStyle?.top}`,
     );
     assert(
       typeof renderedLtr.markup === 'string' && renderedLtr.markup.length > 0,
-      `DirectionalToaster must render static markup for ${ltrLang}`
+      `DirectionalToaster must render static markup for ${ltrLang}`,
     );
     assert(
       renderedLtr.key === 'ltr',
-      `DirectionalToaster must key its Toaster "ltr" for ${ltrLang} so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedLtr.key}`
+      `DirectionalToaster must key its Toaster "ltr" for ${ltrLang} so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedLtr.key}`,
     );
   }
-  console.log('  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages with titlebar offset');
-  console.log('  ✓ DirectionalToaster keys its Toaster by direction to force remount instead of a live position swap (insertBefore/NotFoundError regression guard)');
+  console.log(
+    '  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages with titlebar offset',
+  );
+  console.log(
+    '  ✓ DirectionalToaster keys its Toaster by direction to force remount instead of a live position swap (insertBefore/NotFoundError regression guard)',
+  );
 
   // 5. Executable Ltr component rendering for POS/operational values.
   const orderRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, { className: 'font-mono text-sm' }, '#ORD-2026-0042')
+    React.createElement(Ltr, { className: 'font-mono text-sm' }, '#ORD-2026-0042'),
   );
   assert(
     orderRender === '<span dir="ltr" class="ltr-island font-mono text-sm">#ORD-2026-0042</span>',
-    `Ltr must isolate order numbers with dir="ltr", got: ${orderRender}`
+    `Ltr must isolate order numbers with dir="ltr", got: ${orderRender}`,
   );
 
   const phoneRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, '+98 21 1234 5678')
+    React.createElement(Ltr, null, '+98 21 1234 5678'),
   );
   assert(
     phoneRender === '<span dir="ltr" class="ltr-island">+98 21 1234 5678</span>',
-    `Ltr must isolate customer phone numbers with dir="ltr", got: ${phoneRender}`
+    `Ltr must isolate customer phone numbers with dir="ltr", got: ${phoneRender}`,
   );
 
   const printerRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, { as: 'code', className: 'text-xs' }, '192.168.1.100:9100')
+    React.createElement(Ltr, { as: 'code', className: 'text-xs' }, '192.168.1.100:9100'),
   );
   assert(
     printerRender === '<code dir="ltr" class="ltr-island text-xs">192.168.1.100:9100</code>',
-    `Ltr must isolate printer IP/port endpoints, got: ${printerRender}`
+    `Ltr must isolate printer IP/port endpoints, got: ${printerRender}`,
   );
 
-  const vidRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, null, 'VID:04B8')
-  );
+  const vidRender = ReactDOMServer.renderToStaticMarkup(React.createElement(Ltr, null, 'VID:04B8'));
   assert(
     vidRender === '<span dir="ltr" class="ltr-island">VID:04B8</span>',
-    `Ltr must isolate device VID values, got: ${vidRender}`
+    `Ltr must isolate device VID values, got: ${vidRender}`,
   );
 
   const tableRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, { as: 'span', className: 'px-1' }, 'TBL-4')
+    React.createElement(Ltr, { as: 'span', className: 'px-1' }, 'TBL-4'),
   );
   assert(
     tableRender === '<span dir="ltr" class="ltr-island px-1">TBL-4</span>',
-    `Ltr must isolate table identifiers, got: ${tableRender}`
+    `Ltr must isolate table identifiers, got: ${tableRender}`,
   );
 
   const jsonRender = ReactDOMServer.renderToStaticMarkup(
-    React.createElement(Ltr, { as: 'pre', className: 'text-xs font-mono' }, '{"table": 4, "guests": 2}')
+    React.createElement(
+      Ltr,
+      { as: 'pre', className: 'text-xs font-mono' },
+      '{"table": 4, "guests": 2}',
+    ),
   );
   assert(
-    jsonRender === '<pre dir="ltr" class="ltr-island text-xs font-mono">{&quot;table&quot;: 4, &quot;guests&quot;: 2}</pre>',
-    `Ltr must isolate technical JSON payloads, got: ${jsonRender}`
+    jsonRender ===
+      '<pre dir="ltr" class="ltr-island text-xs font-mono">{&quot;table&quot;: 4, &quot;guests&quot;: 2}</pre>',
+    `Ltr must isolate technical JSON payloads, got: ${jsonRender}`,
   );
-  console.log('  ✓ Ltr component isolates POS operational values (order #, phone, IP, VID, table, JSON)');
+  console.log(
+    '  ✓ Ltr component isolates POS operational values (order #, phone, IP, VID, table, JSON)',
+  );
 
   // 6. Shared language-direction metadata (single source of truth).
   const { getLanguageDirection } = require('../frontend/src/lib/i18n');
   for (const rtlLang of ['fa', 'ur'] as const) {
     assert(getLanguageDirection(rtlLang) === 'rtl', `${rtlLang} must resolve to rtl`);
   }
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'ru', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
+  for (const ltrLang of [
+    'en',
+    'es',
+    'fr',
+    'pt',
+    'ru',
+    'it',
+    'ja',
+    'zh',
+    'zh-tw',
+    'ko',
+    'id',
+    'nl',
+    'hi',
+    'bn',
+    'sq',
+    'vi',
+    'th',
+    'ne',
+  ] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');
+
+  const sampleAddonGroup = {
+    id: 'group-rtl-1',
+    name: 'Extras',
+    description: 'Optional extras',
+    is_required: false,
+    allow_multiple_quantities: false,
+    min_selection: 0,
+    max_selection: 2,
+    is_active: true,
+    addons: [{ id: 'addon-rtl-1', name: 'Extra Shot', price: 0, is_active: true }],
+  };
+  const originalUseState = React.useState;
+  const originalUseEffect = React.useEffect;
+  const originalApiGet = api.get;
+  try {
+    const hookStates: unknown[] = [];
+    let mountedEffectsRan = false;
+    api.get = (url: string) => {
+      assert(url === '/addon-groups', `Unexpected api.get URL in AddonGroupsPage: ${url}`);
+      const response = { data: { addon_groups: [sampleAddonGroup] } };
+      const chain = {
+        then(onFulfilled?: (val: typeof response) => unknown) {
+          if (onFulfilled) onFulfilled(response);
+          return chain;
+        },
+        catch() {
+          return chain;
+        },
+        finally(onFinally?: () => void) {
+          if (onFinally) onFinally();
+          return chain;
+        },
+      };
+      return chain;
+    };
+
+    const renderAddonGroupsPage = () => {
+      let hookSlot = 0;
+      const pendingEffects: Array<() => void | (() => void)> = [];
+      React.useState = ((initial: unknown) => {
+        const slot = hookSlot++;
+        if (slot >= hookStates.length) {
+          hookStates.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
+        }
+        const setState = (next: unknown) => {
+          hookStates[slot] =
+            typeof next === 'function'
+              ? (next as (prev: unknown) => unknown)(hookStates[slot])
+              : next;
+        };
+        return [hookStates[slot], setState];
+      }) as typeof React.useState;
+      React.useEffect = ((effect: () => void | (() => void)) => {
+        if (!mountedEffectsRan) {
+          pendingEffects.push(effect);
+        }
+      }) as typeof React.useEffect;
+
+      let capturedTree: any;
+      function AddonGroupsProbe() {
+        capturedTree = AddonGroupsPage();
+        return capturedTree;
+      }
+      const markup = ReactDOMServer.renderToStaticMarkup(
+        React.createElement(
+          IntlProvider,
+          { locale: getLanguageLocale('fa'), messages: faMessages, timeZone: 'UTC' },
+          React.createElement(AddonGroupsProbe),
+        ),
+      );
+      if (!mountedEffectsRan) {
+        mountedEffectsRan = true;
+        for (const effect of pendingEffects) effect();
+      }
+      return { tree: capturedTree, markup };
+    };
+
+    // Initial mount pass runs useEffect -> api.get('/addon-groups'), populating state via setters.
+    renderAddonGroupsPage();
+
+    const collapsedRender = renderAddonGroupsPage();
+    const collapsedChevronRights = collectElements(
+      collapsedRender.tree,
+      (el) => el.type === ChevronRight,
+    );
+    const collapsedChevronDowns = collectElements(
+      collapsedRender.tree,
+      (el) => el.type === ChevronDown,
+    );
+    assert(
+      collapsedChevronRights.length === 1 && collapsedChevronDowns.length === 0,
+      `Collapsed AddonGroupsPage header must render ChevronRight and not ChevronDown (got ${collapsedChevronRights.length} ChevronRight, ${collapsedChevronDowns.length} ChevronDown)`,
+    );
+    const collapsedClassTokens = String(collapsedChevronRights[0].props?.className ?? '')
+      .trim()
+      .split(/\s+/);
+    assert(
+      collapsedClassTokens.includes('rtl-flip'),
+      `Collapsed AddonGroupsPage ChevronRight must include rtl-flip in className, got: "${collapsedChevronRights[0].props?.className}"`,
+    );
+    assert(
+      collapsedRender.markup.includes('lucide-chevron-right') &&
+        collapsedRender.markup.includes('rtl-flip') &&
+        !collapsedRender.markup.includes('lucide-chevron-down'),
+      `Collapsed AddonGroupsPage markup must render lucide-chevron-right with rtl-flip`,
+    );
+
+    const collapsedToggleBtn = collectElements(
+      collapsedRender.tree,
+      (el) =>
+        el.type === 'button' &&
+        collectElements(el, (child) => child.type === ChevronRight).length > 0,
+    )[0];
+    assert(
+      typeof collapsedToggleBtn?.props?.onClick === 'function',
+      'Collapsed AddonGroupsPage header must expose an onClick toggle button',
+    );
+    collapsedToggleBtn.props.onClick();
+
+    const expandedRender = renderAddonGroupsPage();
+    const expandedChevronRights = collectElements(
+      expandedRender.tree,
+      (el) => el.type === ChevronRight,
+    );
+    const expandedChevronDowns = collectElements(
+      expandedRender.tree,
+      (el) => el.type === ChevronDown,
+    );
+    assert(
+      expandedChevronDowns.length === 1 && expandedChevronRights.length === 0,
+      `Expanded AddonGroupsPage header must render ChevronDown and not ChevronRight (got ${expandedChevronDowns.length} ChevronDown, ${expandedChevronRights.length} ChevronRight)`,
+    );
+    const expandedClassTokens = String(expandedChevronDowns[0].props?.className ?? '')
+      .trim()
+      .split(/\s+/);
+    assert(
+      !expandedClassTokens.includes('rtl-flip'),
+      `Expanded AddonGroupsPage ChevronDown must not include rtl-flip in className, got: "${expandedChevronDowns[0].props?.className}"`,
+    );
+    assert(
+      expandedRender.markup.includes('lucide-chevron-down') &&
+        !expandedRender.markup.includes('lucide-chevron-right') &&
+        !expandedRender.markup.includes('rtl-flip'),
+      'Expanded AddonGroupsPage markup must render lucide-chevron-down without rtl-flip',
+    );
+
+    const expandedToggleBtn = collectElements(
+      expandedRender.tree,
+      (el) =>
+        el.type === 'button' &&
+        collectElements(el, (child) => child.type === ChevronDown).length > 0,
+    )[0];
+    assert(
+      typeof expandedToggleBtn?.props?.onClick === 'function',
+      'Expanded AddonGroupsPage header must expose an onClick toggle button',
+    );
+    expandedToggleBtn.props.onClick();
+
+    const recollapsedRender = renderAddonGroupsPage();
+    const recollapsedChevronRights = collectElements(
+      recollapsedRender.tree,
+      (el) => el.type === ChevronRight,
+    );
+    const recollapsedChevronDowns = collectElements(
+      recollapsedRender.tree,
+      (el) => el.type === ChevronDown,
+    );
+    assert(
+      recollapsedChevronRights.length === 1 && recollapsedChevronDowns.length === 0,
+      `Toggling expanded AddonGroupsPage header must collapse back to ChevronRight (got ${recollapsedChevronRights.length} ChevronRight, ${recollapsedChevronDowns.length} ChevronDown)`,
+    );
+  } finally {
+    React.useState = originalUseState;
+    React.useEffect = originalUseEffect;
+    api.get = originalApiGet;
+  }
+  console.log(
+    '  ✓ AddonGroupsPage renders ChevronRight with rtl-flip when collapsed and ChevronDown without rtl-flip when expanded',
+  );
 
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');
 }

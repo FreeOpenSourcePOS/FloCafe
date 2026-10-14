@@ -13,7 +13,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export function normalizePathname(pathname: string | null | undefined): string {
   if (!pathname) return '';
-  return pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return pathname.replace(/\/+$/, '') || '/';
 }
 
 /** Parses backend UTC timestamp (YYYY-MM-DD HH:MM:SS or ISO) into Date

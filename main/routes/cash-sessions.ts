@@ -23,6 +23,7 @@ import {
   nextZNumber,
 } from '../db';
 import { requirePermission } from '../services/authorization';
+import { closedDayExists } from '../services/cash-drawer-movements';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
 import {
   computePeriodAggregates,
@@ -280,6 +281,13 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
       }
       if (getOpenSession(db))
         throw httpError('A shift is already open', 409, 'session_already_open');
+      const openBusinessDate = localDateInTimezone(
+        new Date(),
+        tenantTimezone(),
+        tenantBusinessDayStartTime(db),
+      );
+      if (closedDayExists(db, openBusinessDate))
+        throw httpError('This day is already closed', 409, 'day_already_closed');
       const openedAt = now();
       const insert = db
         .prepare(`
@@ -294,11 +302,6 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
       // double-count there. One movement per day (schema constraint): a
       // second shift reuses the first float for day-close purposes.
       if (openingFloatCents > 0) {
-        const openBusinessDate = localDateInTimezone(
-          new Date(),
-          tenantTimezone(),
-          tenantBusinessDayStartTime(db),
-        );
         const existingFloat = db
           .prepare(
             `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,

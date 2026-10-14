@@ -31,8 +31,11 @@ console.log('='.repeat(70));
 
 console.log('\n─── normalizePathname ───');
 check('strips a single trailing slash', normalizePathname('/pos/') === '/pos');
+check('strips multiple trailing slashes', normalizePathname('/staff//') === '/staff');
+check('strips three trailing slashes', normalizePathname('/settings///') === '/settings');
 check('leaves a path with no trailing slash alone', normalizePathname('/pos') === '/pos');
 check('leaves root "/" alone, not emptied', normalizePathname('/') === '/');
+check('normalizes multiple root slashes "///" to "/"', normalizePathname('///') === '/');
 check(
   'strips the trailing slash on a nested path',
   normalizePathname('/settings/billing/') === '/settings/billing',
@@ -44,6 +47,7 @@ console.log('\n─── (dashboard)/layout.tsx: isPos / isSettings parity ─�
 for (const [rawPos, rawKds, rawSettings] of [
   ['/pos', '/kds', '/settings'], // dev / cloud build
   ['/pos/', '/kds/', '/settings/'], // desktop build (trailingSlash: true)
+  ['/pos//', '/kds//', '/settings///'], // repeated trailing slashes
 ] as const) {
   const pos = normalizePathname(rawPos);
   const isPos = pos === '/pos' || pos === '/kds';
@@ -68,7 +72,7 @@ function settingsGateFires(rawPathname: string, canOpenSettings: boolean): boole
   return pathname === '/settings' && !canOpenSettings;
 }
 
-for (const rawStaff of ['/staff', '/staff/'] as const) {
+for (const rawStaff of ['/staff', '/staff/', '/staff//', '/staff///'] as const) {
   check(
     `an unauthorized user on "${rawStaff}" is redirected (gate fires)`,
     staffGateFires(rawStaff, false) === true,
@@ -78,7 +82,7 @@ for (const rawStaff of ['/staff', '/staff/'] as const) {
     staffGateFires(rawStaff, true) === false,
   );
 }
-for (const rawSettings of ['/settings', '/settings/'] as const) {
+for (const rawSettings of ['/settings', '/settings/', '/settings//', '/settings///'] as const) {
   check(
     `an unauthorized user on "${rawSettings}" is redirected (gate fires)`,
     settingsGateFires(rawSettings, false) === true,
@@ -90,4 +94,4 @@ for (const rawSettings of ['/settings', '/settings/'] as const) {
 }
 
 console.log(`\n${'='.repeat(70)}`);
-console.log('All 20 trailing-slash routing checks passed.');
+console.log('All trailing-slash routing checks passed.');

@@ -34,6 +34,30 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   expect(card!.height, 'product card height').toBeGreaterThanOrEqual(44);
 });
 
+test('POS hides the floating mobile cart button on tablet and desktop viewports and keeps it touch-sized on mobile', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await loginAsManager(page);
+  await page.goto(`${BASE}/pos`);
+
+  await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+  const mobileCartButton = page.getByRole('button', { name: 'Cart' });
+  await expect(mobileCartButton, 'floating cart button hidden at 1024x768').toBeHidden();
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await expect(mobileCartButton, 'floating cart button hidden at 768x1024').toBeHidden();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(mobileCartButton, 'floating cart button visible at 390x844').toBeVisible();
+
+  const box = await mobileCartButton.boundingBox();
+  expect(box, 'mobile cart button has bounds').not.toBeNull();
+  expect(box!.width, 'mobile cart button width >= 44px').toBeGreaterThanOrEqual(44);
+  expect(box!.height, 'mobile cart button height >= 44px').toBeGreaterThanOrEqual(44);
+});
+
 test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on the POS, KDS, and settings routes', async ({
   page,
 }) => {
@@ -105,6 +129,175 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on
     viewportHeight - 40,
     0,
   );
+});
+
+test('sidebar theme toggle button does not clip horizontally or vertically across locales, sidebar states, and theme modes (#1069)', async ({
+  page,
+}) => {
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill(E2E_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  const locales = [
+    {
+      code: 'vi',
+      title: 'Giao diện',
+      modes: [
+        { mode: 'system', label: 'Theo hệ thống' },
+        { mode: 'light', label: 'Sáng' },
+        { mode: 'dark', label: 'Tối' },
+      ],
+    },
+    {
+      code: 'tr',
+      title: 'Tema ve Renk Modu',
+      modes: [
+        { mode: 'system', label: 'Sistem Varsayılanı' },
+        { mode: 'light', label: 'Açık Tema' },
+        { mode: 'dark', label: 'Koyu Tema' },
+      ],
+    },
+  ] as const;
+
+  const resetThemeToSystem = async () => {
+    const res = await page.request.put(`${BASE}/api/settings/theme_mode`, {
+      headers: { Authorization: `Bearer ${getE2eToken()}` },
+      data: { value: 'system' },
+    });
+    expect(res.ok(), 'resetting theme_mode=system must succeed').toBeTruthy();
+  };
+
+  try {
+    const sidebar = page.locator('[data-slot="sidebar"]');
+    const themeButton = page.getByTestId('sidebar-theme-toggle');
+
+    for (const locale of locales) {
+      await resetThemeToSystem();
+      await setLanguage(page, locale.code);
+      await page.goto(`${BASE}/pos`);
+      await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+      await expect(themeButton).toBeVisible();
+
+      for (const { mode, label } of locale.modes) {
+        const context = `${locale.code} expanded (${mode})`;
+        await expect(themeButton, `${context}: title visible`).toContainText(locale.title);
+        await expect(themeButton, `${context}: mode label visible`).toContainText(label);
+
+        const metrics = await themeButton.evaluate((el) => {
+          const spans = Array.from(el.querySelectorAll('span')).map((span) => ({
+            text: span.textContent,
+            clientWidth: span.clientWidth,
+            scrollWidth: span.scrollWidth,
+            clientHeight: span.clientHeight,
+            scrollHeight: span.scrollHeight,
+          }));
+          return {
+            clientWidth: el.clientWidth,
+            scrollWidth: el.scrollWidth,
+            clientHeight: el.clientHeight,
+            scrollHeight: el.scrollHeight,
+            spans,
+          };
+        });
+
+        expect(
+          metrics.scrollWidth,
+          `${context}: button must not overflow horizontally (${JSON.stringify(metrics)})`,
+        ).toBeLessThanOrEqual(metrics.clientWidth + 1);
+        expect(
+          metrics.scrollHeight,
+          `${context}: button must not overflow vertically (${JSON.stringify(metrics)})`,
+        ).toBeLessThanOrEqual(metrics.clientHeight + 2);
+        expect(metrics.spans.length, `${context}: renders title and mode spans`).toBe(2);
+        for (const span of metrics.spans) {
+          expect(
+            span.clientWidth,
+            `${context}: span "${span.text}" has visible width`,
+          ).toBeGreaterThan(0);
+          expect(
+            span.clientHeight,
+            `${context}: span "${span.text}" has visible height`,
+          ).toBeGreaterThan(0);
+          expect(
+            span.scrollWidth,
+            `${context}: span "${span.text}" must not clip horizontally`,
+          ).toBeLessThanOrEqual(span.clientWidth + 1);
+          expect(
+            span.scrollHeight,
+            `${context}: span "${span.text}" must not clip vertically`,
+          ).toBeLessThanOrEqual(span.clientHeight + 2);
+        }
+
+        await Promise.all([
+          page.waitForResponse(
+            (r) => r.url().includes('/api/settings/theme_mode') && r.request().method() === 'PUT',
+          ),
+          themeButton.click(),
+        ]);
+      }
+
+      await page.keyboard.press('Control+b');
+      await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
+      await expect(themeButton).toHaveCSS('width', '32px');
+
+      for (const { mode } of locale.modes) {
+        const context = `${locale.code} collapsed (${mode})`;
+        await expect(themeButton.locator('svg'), `${context}: icon visible`).toBeVisible();
+
+        const collapsedMetrics = await themeButton.evaluate((el) => {
+          const spans = Array.from(el.querySelectorAll('span')).map((span) => ({
+            text: span.textContent,
+            clientWidth: span.clientWidth,
+            scrollWidth: span.scrollWidth,
+            clientHeight: span.clientHeight,
+            scrollHeight: span.scrollHeight,
+          }));
+          return {
+            clientWidth: el.clientWidth,
+            scrollWidth: el.scrollWidth,
+            clientHeight: el.clientHeight,
+            scrollHeight: el.scrollHeight,
+            spans,
+          };
+        });
+
+        expect(collapsedMetrics.clientWidth, `${context}: compact width`).toBe(32);
+        expect(collapsedMetrics.clientHeight, `${context}: compact height`).toBe(32);
+        expect(
+          collapsedMetrics.scrollWidth,
+          `${context}: collapsed button must not overflow horizontally`,
+        ).toBeLessThanOrEqual(collapsedMetrics.clientWidth + 1);
+        expect(
+          collapsedMetrics.scrollHeight,
+          `${context}: collapsed button must not overflow vertically`,
+        ).toBeLessThanOrEqual(collapsedMetrics.clientHeight + 2);
+        for (const span of collapsedMetrics.spans) {
+          expect(span.clientWidth, `${context}: span "${span.text}" hidden when collapsed`).toBe(0);
+          expect(span.clientHeight, `${context}: span "${span.text}" hidden when collapsed`).toBe(
+            0,
+          );
+        }
+
+        await Promise.all([
+          page.waitForResponse(
+            (r) => r.url().includes('/api/settings/theme_mode') && r.request().method() === 'PUT',
+          ),
+          themeButton.click(),
+        ]);
+      }
+
+      await page.keyboard.press('Control+b');
+      await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+      await expect
+        .poll(async () => themeButton.evaluate((el) => el.clientWidth))
+        .toBeGreaterThan(100);
+    }
+  } finally {
+    await resetThemeToSystem().catch(() => {});
+    await setLanguage(page, 'en');
+  }
 });
 
 /**
@@ -408,6 +601,79 @@ test.describe('checkout controls stay visible while catalog and cart content scr
     const cartShell = page.getByTestId('cart-shell');
     const lastItem = cartShell.getByText(names[names.length - 1], { exact: false }).last();
     await expect(lastItem, 'the last cart row is reachable on a short viewport').toBeVisible();
+  });
+
+  test('POS preserves usable cart items height and reachable checkout on a 1024x600 viewport', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await loginAsManager(page);
+    await page.goto(`${BASE}/pos`);
+
+    const names = await addSyntheticItemsToCart(page, 4);
+    const cartScroll = page.getByTestId('cart-items-scroll');
+    const cartScrollBox = await cartScroll.boundingBox();
+    expect(cartScrollBox, 'cart items container has bounds').not.toBeNull();
+    expect(
+      cartScrollBox!.height,
+      'cart items container maintains usable height on 1024x600 display',
+    ).toBeGreaterThanOrEqual(120);
+
+    const placeOrder = page.getByRole('button', { name: 'Place Order' });
+    const viewport = page.viewportSize();
+    expect(viewport, 'viewport is set').not.toBeNull();
+
+    await page.getByTestId('cart-shell').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await cartScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    const checkoutBox = await placeOrder.boundingBox();
+    expect(checkoutBox, 'checkout button has bounds').not.toBeNull();
+    expect(checkoutBox!.y, 'checkout button is not above the viewport').toBeGreaterThanOrEqual(-1);
+    expect(
+      checkoutBox!.y + checkoutBox!.height,
+      'checkout button is reachable inside the viewport',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
+
+    const cartShell = page.getByTestId('cart-shell');
+    const lastItem = cartShell.getByText(names[names.length - 1], { exact: false }).last();
+    await expect(
+      lastItem,
+      'the last cart row is reachable on a 1024x600 viewport',
+    ).toBeInViewport();
+
+    await cartShell.getByRole('button', { name: 'Delivery' }).click();
+    const deliveryCartScrollBox = await cartScroll.boundingBox();
+    expect(deliveryCartScrollBox, 'delivery cart items container has bounds').not.toBeNull();
+    expect(
+      deliveryCartScrollBox!.height,
+      'cart items container maintains usable height with taller Delivery header on 1024x600 display',
+    ).toBeGreaterThanOrEqual(120);
+
+    await cartShell.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await cartScroll.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+
+    const deliveryCheckoutBox = await placeOrder.boundingBox();
+    expect(deliveryCheckoutBox, 'delivery checkout button has bounds').not.toBeNull();
+    expect(
+      deliveryCheckoutBox!.y,
+      'delivery checkout button is not above the viewport',
+    ).toBeGreaterThanOrEqual(-1);
+    expect(
+      deliveryCheckoutBox!.y + deliveryCheckoutBox!.height,
+      'delivery checkout button is reachable inside the viewport',
+    ).toBeLessThanOrEqual(viewport!.height + 1);
+    await expect(
+      lastItem,
+      'the last cart row remains in viewport with taller Delivery header on 1024x600',
+    ).toBeInViewport();
   });
 
   test('POS keeps checkout reachable at an effective 200% zoom viewport', async ({ page }) => {
@@ -1649,4 +1915,107 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     );
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
+});
+
+test('staff modals close on Escape, ignore non-Escape keys, restore trigger focus, and clean up keydown listeners', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const activeKeydownListeners = new Set<EventListenerOrEventListenerObject>();
+    const origAdd = window.addEventListener.bind(window);
+    const origRemove = window.removeEventListener.bind(window);
+    window.addEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === 'keydown' && listener) activeKeydownListeners.add(listener);
+      return origAdd(type, listener as EventListener, options);
+    };
+    window.removeEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      if (type === 'keydown' && listener) activeKeydownListeners.delete(listener);
+      return origRemove(type, listener as EventListener, options);
+    };
+    (
+      window as unknown as { __getActiveKeydownListenerCount: () => number }
+    ).__getActiveKeydownListenerCount = () => activeKeydownListeners.size;
+  });
+
+  await loginAsManager(page);
+  await page.goto(`${BASE}/staff`);
+
+  const getListenerCount = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as { __getActiveKeydownListenerCount: () => number }
+      ).__getActiveKeydownListenerCount(),
+    );
+
+  const addTrigger = page.getByRole('button', { name: 'Add Staff', exact: true }).first();
+  const serverCard = page.locator('div.bg-card').filter({ hasText: 'server@flo.local' });
+  const editTrigger = serverCard.getByRole('button', { name: 'Edit', exact: true });
+  const resetPwTrigger = serverCard.getByRole('button', { name: 'Reset PW', exact: true });
+
+  await expect(addTrigger).toBeVisible();
+  await expect(editTrigger).toBeVisible();
+  await expect(resetPwTrigger).toBeVisible();
+
+  const baselineListeners = await getListenerCount();
+
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    await addTrigger.click();
+    const addDialog = page.getByRole('dialog', { name: 'Add Staff' });
+    await expect(addDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const addNameInput = addDialog.getByPlaceholder('Name');
+    await addNameInput.click();
+    await page.keyboard.type('Alex');
+    await page.keyboard.press('Tab');
+    await expect(addDialog).toBeVisible();
+    await expect(addTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(addTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+
+    await editTrigger.click();
+    const editDialog = page.getByRole('dialog', { name: 'Edit Staff' });
+    await expect(editDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const editNameInput = editDialog.getByPlaceholder('Name');
+    await editNameInput.click();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Backspace');
+    await expect(editDialog).toBeVisible();
+    await expect(editTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(editTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+
+    await resetPwTrigger.click();
+    const resetDialog = page.getByRole('dialog', { name: 'Reset Password' });
+    await expect(resetDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const resetInput = resetDialog.getByPlaceholder('New Password (leave empty to keep)');
+    await resetInput.click();
+    await page.keyboard.type('Secret123');
+    await page.keyboard.press('Enter');
+    await expect(resetDialog).toBeVisible();
+    await expect(resetPwTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(resetPwTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+  }
 });

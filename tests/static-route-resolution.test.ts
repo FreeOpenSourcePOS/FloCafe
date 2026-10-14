@@ -59,12 +59,14 @@ async function getFreeTcpPort(): Promise<number> {
 }
 
 async function main() {
-  process.env.PORT = String(await getFreeTcpPort());
-  initDatabase();
-  await startServer();
-  const baseUrl = `http://127.0.0.1:${getServerPort()}`;
-
+  let serverStarted = false;
   try {
+    process.env.PORT = String(await getFreeTcpPort());
+    initDatabase();
+    await startServer();
+    serverStarted = true;
+    const baseUrl = `http://127.0.0.1:${getServerPort()}`;
+
     const whatsappRes = await fetch(`${baseUrl}/whatsapp`);
     assert.equal(whatsappRes.status, 200);
     assert.equal(await whatsappRes.text(), 'whatsapp');
@@ -86,9 +88,14 @@ async function main() {
     const apiUnknownRes = await fetch(`${baseUrl}/api/auth/nonexistent`);
     assert.equal(apiUnknownRes.status, 404);
   } finally {
-    await stopServer();
-    closeDatabase();
-    fs.rmSync(testDir, { recursive: true, force: true });
+    try {
+      if (serverStarted) {
+        await stopServer();
+      }
+    } finally {
+      closeDatabase();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
   }
 
   console.log('✅ Static route resolution tests passed');

@@ -1916,3 +1916,106 @@ test.describe('inventory movements refresh owns the pagination cursor', () => {
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 });
+
+test('staff modals close on Escape, ignore non-Escape keys, restore trigger focus, and clean up keydown listeners', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const activeKeydownListeners = new Set<EventListenerOrEventListenerObject>();
+    const origAdd = window.addEventListener.bind(window);
+    const origRemove = window.removeEventListener.bind(window);
+    window.addEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type === 'keydown' && listener) activeKeydownListeners.add(listener);
+      return origAdd(type, listener as EventListener, options);
+    };
+    window.removeEventListener = function (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) {
+      if (type === 'keydown' && listener) activeKeydownListeners.delete(listener);
+      return origRemove(type, listener as EventListener, options);
+    };
+    (
+      window as unknown as { __getActiveKeydownListenerCount: () => number }
+    ).__getActiveKeydownListenerCount = () => activeKeydownListeners.size;
+  });
+
+  await loginAsManager(page);
+  await page.goto(`${BASE}/staff`);
+
+  const getListenerCount = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as { __getActiveKeydownListenerCount: () => number }
+      ).__getActiveKeydownListenerCount(),
+    );
+
+  const addTrigger = page.getByRole('button', { name: 'Add Staff', exact: true }).first();
+  const serverCard = page.locator('div.bg-card').filter({ hasText: 'server@flo.local' });
+  const editTrigger = serverCard.getByRole('button', { name: 'Edit', exact: true });
+  const resetPwTrigger = serverCard.getByRole('button', { name: 'Reset PW', exact: true });
+
+  await expect(addTrigger).toBeVisible();
+  await expect(editTrigger).toBeVisible();
+  await expect(resetPwTrigger).toBeVisible();
+
+  const baselineListeners = await getListenerCount();
+
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    await addTrigger.click();
+    const addDialog = page.getByRole('dialog', { name: 'Add Staff' });
+    await expect(addDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const addNameInput = addDialog.getByPlaceholder('Name');
+    await addNameInput.click();
+    await page.keyboard.type('Alex');
+    await page.keyboard.press('Tab');
+    await expect(addDialog).toBeVisible();
+    await expect(addTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(addTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+
+    await editTrigger.click();
+    const editDialog = page.getByRole('dialog', { name: 'Edit Staff' });
+    await expect(editDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const editNameInput = editDialog.getByPlaceholder('Name');
+    await editNameInput.click();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('Backspace');
+    await expect(editDialog).toBeVisible();
+    await expect(editTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(editTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+
+    await resetPwTrigger.click();
+    const resetDialog = page.getByRole('dialog', { name: 'Reset Password' });
+    await expect(resetDialog).toBeVisible();
+    expect(await getListenerCount()).toBe(baselineListeners + 1);
+
+    const resetInput = resetDialog.getByPlaceholder('New Password (leave empty to keep)');
+    await resetInput.click();
+    await page.keyboard.type('Secret123');
+    await page.keyboard.press('Enter');
+    await expect(resetDialog).toBeVisible();
+    await expect(resetPwTrigger).not.toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(resetPwTrigger).toBeFocused();
+    expect(await getListenerCount()).toBe(baselineListeners);
+  }
+});

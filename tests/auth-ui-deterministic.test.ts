@@ -193,7 +193,6 @@ async function run() {
     'single-tenant login auto-selects the tenant',
   );
 
-  // ── 5. Staff create/edit modal closes when Escape is pressed (#1098) ──
   const originalResolveFilename = Module._resolveFilename;
   const originalWindow = (globalThis as any).window;
   const rootDir = path.resolve(__dirname, '..');
@@ -243,6 +242,7 @@ async function run() {
     };
 
     const states: unknown[] = [];
+    const refs: Array<{ current: unknown }> = [];
     const effectSlots: Array<{ deps?: unknown[]; cleanup?: unknown }> = [];
     const pendingEffects: Array<() => void> = [];
 
@@ -257,6 +257,13 @@ async function run() {
             typeof next === 'function' ? (next as (prev: unknown) => unknown)(states[idx]) : next;
         };
         return [states[idx], setState];
+      },
+      useRef: (initial: unknown) => {
+        const idx = currentRefIdx++;
+        if (idx >= refs.length) {
+          refs.push({ current: initial });
+        }
+        return refs[idx];
       },
       useEffect: (effect: () => unknown, deps?: unknown[]) => {
         const idx = currentEffectIdx++;
@@ -280,15 +287,29 @@ async function run() {
     };
 
     let currentStateIdx = 0;
+    let currentRefIdx = 0;
     let currentEffectIdx = 0;
+    let focusedElement: unknown = null;
 
     const IconStub = () => null;
     const ButtonStub = (props: Record<string, unknown>) => ({ type: 'Button', props });
-    const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => ({
-      type,
-      props,
-      key,
-    });
+    const jsxElement = (type: unknown, props: Record<string, unknown>, key?: unknown) => {
+      const el = {
+        type,
+        props,
+        key,
+        focus: () => {
+          focusedElement = el;
+        },
+      };
+      const ref = props?.ref;
+      if (typeof ref === 'function') {
+        ref(el);
+      } else if (ref && typeof ref === 'object' && 'current' in ref) {
+        (ref as { current: unknown }).current = el;
+      }
+      return el;
+    };
 
     Module._load = function (request: string, parent: unknown, isMain: boolean) {
       if (request === 'react') return reactHooks;
@@ -383,6 +404,7 @@ async function run() {
     const StaffPage = require('../frontend/src/app/(dashboard)/staff/page').default;
     const renderStaffPage = () => {
       currentStateIdx = 0;
+      currentRefIdx = 0;
       currentEffectIdx = 0;
       pendingEffects.length = 0;
       const tree = StaffPage();
@@ -401,52 +423,89 @@ async function run() {
     tree = renderStaffPage();
     assert.equal(findDialog(tree), undefined, 'staff modal starts closed');
 
-    // Open Add Staff modal
-    const addButton = collectElements(
-      tree,
-      (el) =>
-        el.type === ButtonStub &&
-        Array.isArray(el.props?.children) &&
-        el.props.children.includes('staff.addButton'),
-    )[0];
-    assert.ok(addButton, 'Add Staff button renders');
-    addButton.props.onClick();
+    const findButtonByLabel = (node: unknown, label: string) =>
+      collectElements(
+        node,
+        (el) =>
+          el.type === ButtonStub &&
+          Array.isArray(el.props?.children) &&
+          el.props.children.includes(label),
+      )[0];
 
-    tree = renderStaffPage();
-    assert.ok(findDialog(tree), 'Add Staff dialog opens when Add Staff is clicked');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const addButton = findButtonByLabel(tree, 'staff.addButton');
+      assert.ok(addButton, 'Add Staff button renders');
+      focusedElement = null;
+      addButton.props.onClick({ currentTarget: addButton });
 
-    // Non-Escape keys leave the dialog open
-    dispatchKeydown('Enter');
-    tree = renderStaffPage();
-    assert.ok(findDialog(tree), 'non-Escape key leaves the Add Staff dialog open');
+      tree = renderStaffPage();
+      assert.ok(findDialog(tree), 'Add Staff dialog opens when Add Staff is clicked');
+      assert.equal(keydownListeners.size, 1, 'exactly one keydown listener is active while open');
 
-    // Escape closes the Add Staff modal
-    dispatchKeydown('Escape');
-    tree = renderStaffPage();
-    assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Add Staff dialog');
-    assert.equal(
-      keydownListeners.size,
-      0,
-      'window keydown listener is cleaned up when the dialog closes',
-    );
+      dispatchKeydown('Enter');
+      tree = renderStaffPage();
+      assert.ok(findDialog(tree), 'non-Escape key leaves the Add Staff dialog open');
 
-    // Open Edit Staff modal and verify Escape closes it as well
-    const editButton = collectElements(
-      tree,
-      (el) =>
-        el.type === ButtonStub &&
-        Array.isArray(el.props?.children) &&
-        el.props.children.includes('common.edit'),
-    )[0];
+      dispatchKeydown('Escape');
+      tree = renderStaffPage();
+      assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Add Staff dialog');
+      assert.equal(focusedElement, addButton, 'closing Add Staff restores focus to Add Staff');
+      assert.equal(
+        keydownListeners.size,
+        0,
+        'window keydown listener is cleaned up when the dialog closes',
+      );
+    }
+
+    const editButton = findButtonByLabel(tree, 'common.edit');
     assert.ok(editButton, 'Edit Staff button renders for loaded staff row');
-    editButton.props.onClick();
+    focusedElement = null;
+    editButton.props.onClick({ currentTarget: editButton });
 
     tree = renderStaffPage();
     assert.ok(findDialog(tree), 'Edit Staff dialog opens when Edit is clicked');
+    assert.equal(keydownListeners.size, 1, 'exactly one keydown listener is active in Edit Staff');
+
+    dispatchKeydown('Enter');
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'non-Escape key leaves the Edit Staff dialog open');
 
     dispatchKeydown('Escape');
     tree = renderStaffPage();
     assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Edit Staff dialog');
+    assert.equal(focusedElement, editButton, 'closing Edit Staff restores focus to Edit Staff');
+    assert.equal(keydownListeners.size, 0, 'window keydown listener is cleaned up after Edit');
+
+    const resetPwButton = findButtonByLabel(tree, 'staff.resetPwButton');
+    assert.ok(resetPwButton, 'Reset Password button renders for loaded staff row');
+    focusedElement = null;
+    resetPwButton.props.onClick({ currentTarget: resetPwButton });
+
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'Reset Password dialog opens when Reset Password is clicked');
+    assert.equal(
+      keydownListeners.size,
+      1,
+      'exactly one keydown listener is active in Reset Password',
+    );
+
+    dispatchKeydown('Enter');
+    tree = renderStaffPage();
+    assert.ok(findDialog(tree), 'non-Escape key leaves the Reset Password dialog open');
+
+    dispatchKeydown('Escape');
+    tree = renderStaffPage();
+    assert.equal(findDialog(tree), undefined, 'pressing Escape closes the Reset Password dialog');
+    assert.equal(
+      focusedElement,
+      resetPwButton,
+      'closing Reset Password restores focus to Reset Password',
+    );
+    assert.equal(
+      keydownListeners.size,
+      0,
+      'window keydown listener is cleaned up after Reset Password',
+    );
 
     for (const slot of effectSlots) {
       if (slot && typeof slot.cleanup === 'function') slot.cleanup();

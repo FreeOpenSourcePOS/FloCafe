@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -71,6 +71,11 @@ export default function StaffPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const addTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const editTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const resetPwTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const formTriggerRef = useRef<HTMLElement | null>(null);
+  const resetPwTriggerRef = useRef<HTMLElement | null>(null);
 
   const fetchStaff = async () => {
     try {
@@ -100,7 +105,8 @@ export default function StaffPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [canManagePermissions]);
 
-  const openAdd = () => {
+  const openAdd = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    formTriggerRef.current = e?.currentTarget ?? addTriggerRef.current;
     setEditingStaff(null);
     setForm({
       name: '',
@@ -116,7 +122,8 @@ export default function StaffPage() {
     setShowForm(true);
   };
 
-  const openEdit = (s: Staff) => {
+  const openEdit = (s: Staff, e?: React.MouseEvent<HTMLButtonElement>) => {
+    formTriggerRef.current = e?.currentTarget ?? editTriggerRefs.current[s.id] ?? null;
     setEditingStaff(s);
     setForm({
       name: s.name,
@@ -132,7 +139,8 @@ export default function StaffPage() {
     setShowForm(true);
   };
 
-  const openResetPw = (s: Staff) => {
+  const openResetPw = (s: Staff, e?: React.MouseEvent<HTMLButtonElement>) => {
+    resetPwTriggerRef.current = e?.currentTarget ?? resetPwTriggerRefs.current[s.id] ?? null;
     setResetPwStaff(s);
     setNewPassword('');
     setConfirmNewPassword('');
@@ -193,23 +201,25 @@ export default function StaffPage() {
     setShowForm(false);
     setShowPassword(false);
     setShowPin(false);
+    formTriggerRef.current?.focus();
   };
-
-  useEffect(() => {
-    if (!showForm) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        closeForm();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showForm]);
 
   const closeResetPassword = () => {
     setShowResetPw(false);
     setShowResetPassword(false);
+    resetPwTriggerRef.current?.focus();
   };
+
+  useEffect(() => {
+    if (!showForm && !showResetPw) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showForm) closeForm();
+      if (showResetPw) closeResetPassword();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showForm, showResetPw]);
 
   const toggleActive = async (s: Staff) => {
     try {
@@ -230,7 +240,7 @@ export default function StaffPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         {canManageStaff && (
-          <Button onClick={openAdd}>
+          <Button ref={addTriggerRef} onClick={openAdd}>
             <Plus size={16} className="me-1" /> {t('addButton')}
           </Button>
         )}
@@ -257,10 +267,24 @@ export default function StaffPage() {
             {canManageStaff &&
               (canManagePrivilegedStaff || !hasRole(s.role, ROLE_ACCESS.ownerManager)) && (
                 <div className="flex flex-wrap gap-2 mt-3">
-                  <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
+                  <Button
+                    ref={(el) => {
+                      editTriggerRefs.current[s.id] = el;
+                    }}
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => openEdit(s, e)}
+                  >
                     <Edit size={14} className="me-1" /> {tCommon('edit')}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
+                  <Button
+                    ref={(el) => {
+                      resetPwTriggerRefs.current[s.id] = el;
+                    }}
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => openResetPw(s, e)}
+                  >
                     <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
                   </Button>
                   <Button
@@ -452,9 +476,16 @@ export default function StaffPage() {
 
       {showResetPw && resetPwStaff && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-password-modal-title"
+            className="bg-card rounded-2xl p-6 w-full max-w-sm"
+          >
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{t('resetPasswordTitle')}</h2>
+              <h2 id="reset-password-modal-title" className="text-lg font-bold">
+                {t('resetPasswordTitle')}
+              </h2>
               <button type="button" onClick={closeResetPassword} aria-label={tCommon('close')}>
                 <X size={20} className="text-gray-400" />
               </button>

@@ -1616,6 +1616,89 @@ test('Charges generate distinct native IDs for non-ASCII names', async ({ page }
   expect(savedCharges[0].id).not.toBe(savedCharges[1].id);
 });
 
+async function readPersistedPosKitchenSettings(
+  page: Page,
+): Promise<{ kdsEnabled?: boolean; kotPrintingEnabled?: boolean }> {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem('pos-settings');
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as {
+      state?: { kdsEnabled?: boolean; kotPrintingEnabled?: boolean };
+    };
+    return {
+      kdsEnabled: parsed.state?.kdsEnabled,
+      kotPrintingEnabled: parsed.state?.kotPrintingEnabled,
+    };
+  });
+}
+
+async function switchMockedTenant(page: Page, tenantId: number, tenantName: string): Promise<void> {
+  await page.evaluate(
+    ({ id, name }) => {
+      type FiberHook = {
+        memoizedState?: unknown;
+        next?: FiberHook | null;
+      };
+      type FiberNode = {
+        memoizedState?: FiberHook | null;
+        return?: FiberNode | null;
+      };
+      const root = document.querySelector('main') || document.body;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+      let node: Node | null = root;
+      while (node) {
+        const fiberKey = Object.keys(node).find((k) => k.startsWith('__reactFiber$'));
+        let fiber = fiberKey
+          ? ((node as unknown as Record<string, FiberNode | undefined>)[fiberKey] ?? null)
+          : null;
+        while (fiber) {
+          let hook = fiber.memoizedState ?? null;
+          while (hook) {
+            const candidate = hook.memoizedState;
+            const storeState =
+              candidate &&
+              typeof candidate === 'object' &&
+              'value' in candidate &&
+              (candidate as { value?: unknown }).value !== undefined
+                ? (candidate as { value?: unknown }).value
+                : candidate;
+            if (
+              storeState &&
+              typeof storeState === 'object' &&
+              'updateCurrentTenant' in storeState &&
+              typeof (
+                storeState as {
+                  updateCurrentTenant?: (tenant: {
+                    id: number;
+                    name: string;
+                    slug: string;
+                  }) => void;
+                }
+              ).updateCurrentTenant === 'function'
+            ) {
+              (
+                storeState as {
+                  updateCurrentTenant: (tenant: { id: number; name: string; slug: string }) => void;
+                }
+              ).updateCurrentTenant({
+                id,
+                name,
+                slug: name.toLowerCase().replace(/\s+/g, '-'),
+              });
+              return;
+            }
+            hook = hook.next ?? null;
+          }
+          fiber = fiber.return ?? null;
+        }
+        node = walker.nextNode();
+      }
+      throw new Error('Could not locate auth store in React fiber tree');
+    },
+    { id: tenantId, name: tenantName },
+  );
+}
+
 test('Direct KDS tab load hydrates KOT state and shows double-off warning when both are disabled', async ({
   page,
 }) => {
@@ -1643,4 +1726,556 @@ test('Direct KDS tab load hydrates KOT state and shows double-off warning when b
   await expect(
     kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
   ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+});
+
+test('Failed kitchen setting saves before initial hydration completes reconcile to persisted values', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let releaseInitialKotHydration!: () => void;
+  let signalInitialKotGetStarted!: () => void;
+  let releaseInitialHydration!: () => void;
+  let signalInitialKdsGetStarted!: () => void;
+  let signalInitialDeliveryGetStarted!: () => void;
+  let releaseHeldReconcileGet!: () => void;
+  let signalHeldReconcileGetStarted!: () => void;
+  const initialKotHydrationHeld = new Promise<void>((resolve) => {
+    releaseInitialKotHydration = resolve;
+  });
+  const initialKotGetStarted = new Promise<void>((resolve) => {
+    signalInitialKotGetStarted = resolve;
+  });
+  const initialHydrationHeld = new Promise<void>((resolve) => {
+    releaseInitialHydration = resolve;
+  });
+  const initialKdsGetStarted = new Promise<void>((resolve) => {
+    signalInitialKdsGetStarted = resolve;
+  });
+  const initialDeliveryGetStarted = new Promise<void>((resolve) => {
+    signalInitialDeliveryGetStarted = resolve;
+  });
+  const heldReconcileGet = new Promise<void>((resolve) => {
+    releaseHeldReconcileGet = resolve;
+  });
+  const heldReconcileGetStarted = new Promise<void>((resolve) => {
+    signalHeldReconcileGetStarted = resolve;
+  });
+
+  let kotGets = 0;
+  let kdsGets = 0;
+  let deliveryGets = 0;
+  let deliveryPuts = 0;
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'unavailable' }),
+      });
+      return;
+    }
+    kotGets += 1;
+    if (kotGets === 1) {
+      signalInitialKotGetStarted();
+      await initialKotHydrationHeld;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'unavailable' }),
+      });
+      return;
+    }
+    kdsGets += 1;
+    if (kdsGets === 1) {
+      signalInitialKdsGetStarted();
+      await initialHydrationHeld;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/require_kitchen_delivered_before_settlement', async (route) => {
+    if (route.request().method() === 'PUT') {
+      deliveryPuts += 1;
+      if (deliveryPuts === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'unavailable' }),
+        });
+        return;
+      }
+      const value = String(route.request().postDataJSON()?.value);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value } }),
+      });
+      return;
+    }
+    deliveryGets += 1;
+    if (deliveryGets === 1) {
+      signalInitialDeliveryGetStarted();
+      await initialHydrationHeld;
+    } else if (deliveryGets === 2) {
+      signalHeldReconcileGetStarted();
+      await heldReconcileGet;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'true' } }),
+    });
+  });
+
+  // 1. KOT failed save before initial hydration on Printers tab reconciles to persisted 'false'.
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  await initialKotGetStarted;
+  const printersPanel = page.getByRole('tabpanel');
+  const kotSwitch = printersPanel.getByRole('switch', {
+    name: 'KOT Ticket Printing',
+    exact: true,
+  });
+  const failedKotPut = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kot_printing_enabled' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 503,
+  );
+  await kotSwitch.click();
+  await failedKotPut;
+  releaseInitialKotHydration();
+  await expect(kotSwitch).toHaveAttribute('aria-checked', 'false');
+
+  // 2. KDS and kitchen-delivery failed saves before KDS tab hydration reconcile to persisted values.
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await initialKdsGetStarted;
+  await initialDeliveryGetStarted;
+
+  const kdsPanel = page.getByRole('tabpanel');
+  const kdsSwitch = kdsPanel.getByRole('switch', { name: 'Kitchen Display System', exact: true });
+  const deliverySwitch = kdsPanel.getByRole('switch', {
+    name: 'Require kitchen delivery before billing',
+    exact: true,
+  });
+
+  const failedKdsPut = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 503,
+  );
+  const failedDeliveryPut = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/require_kitchen_delivered_before_settlement' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 503,
+  );
+
+  await kdsSwitch.click();
+  await deliverySwitch.click();
+  await failedKdsPut;
+  await failedDeliveryPut;
+  await heldReconcileGetStarted;
+  releaseInitialHydration();
+
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+  await expect(deliverySwitch).toHaveAttribute('aria-checked', 'true');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+
+  // 3. A slow reconciliation GET from the pre-hydration failed PUT does not overwrite a newer user edit.
+  const secondDeliveryPut = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/require_kitchen_delivered_before_settlement' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 200,
+  );
+  const reconcileGetDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/require_kitchen_delivered_before_settlement' &&
+      res.request().method() === 'GET',
+  );
+  await deliverySwitch.click();
+  await secondDeliveryPut;
+  releaseHeldReconcileGet();
+  await reconcileGetDone;
+
+  await expect(deliverySwitch).toHaveAttribute('aria-checked', 'false');
+});
+
+test('Switching from Printers to KDS while KOT save is pending preserves successful save and reconciles failed save', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let persistedKot = 'false';
+  let releasePendingPut!: () => void;
+  let signalPutStarted!: () => void;
+  let releaseKdsTabKotGet!: () => void;
+  let signalKdsTabKotGetStarted!: () => void;
+  let holdNextPut = false;
+  let failNextPut = false;
+  let holdNextGet = false;
+
+  let pendingPutHeld = new Promise<void>((resolve) => {
+    releasePendingPut = resolve;
+  });
+  let putStarted = new Promise<void>((resolve) => {
+    signalPutStarted = resolve;
+  });
+  const kdsTabKotGetHeld = new Promise<void>((resolve) => {
+    releaseKdsTabKotGet = resolve;
+  });
+  const kdsTabKotGetStarted = new Promise<void>((resolve) => {
+    signalKdsTabKotGetStarted = resolve;
+  });
+
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const requestedValue = route.request().postDataJSON()?.value;
+      signalPutStarted();
+      if (holdNextPut) {
+        await pendingPutHeld;
+      }
+      if (failNextPut) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'unavailable' }),
+        });
+        return;
+      }
+      persistedKot = String(requestedValue);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value: persistedKot } }),
+      });
+      return;
+    }
+    const snapshotValue = persistedKot;
+    if (holdNextGet) {
+      holdNextGet = false;
+      signalKdsTabKotGetStarted();
+      await kdsTabKotGetHeld;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: snapshotValue } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  const printersPanel = page.getByRole('tabpanel');
+  const kotSwitch = printersPanel.getByRole('switch', {
+    name: 'KOT Ticket Printing',
+    exact: true,
+  });
+  await expect(kotSwitch).toHaveAttribute('aria-checked', 'false');
+
+  // Part 1: Enable KOT on Printers tab, switch to KDS tab before PUT finishes, and let stale GET return 'false' first.
+  holdNextPut = true;
+  holdNextGet = true;
+  await kotSwitch.click();
+  await putStarted;
+
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await kdsTabKotGetStarted;
+  const staleKotGetDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kot_printing_enabled' &&
+      res.request().method() === 'GET',
+  );
+  releaseKdsTabKotGet();
+  await staleKotGetDone;
+
+  const kotPutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kot_printing_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  releasePendingPut();
+  await kotPutDone;
+
+  const kdsPanel = page.getByRole('tabpanel');
+  await expect(
+    kdsPanel.getByRole('switch', { name: 'Kitchen Display System', exact: true }),
+  ).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: true,
+    });
+
+  // Part 2: Toggle KOT off on Printers tab while switching back to KDS tab, and fail the PUT.
+  await page.getByRole('button', { name: 'Printers', exact: true }).click();
+  await expect(kotSwitch).toHaveAttribute('aria-checked', 'true');
+
+  pendingPutHeld = new Promise<void>((resolve) => {
+    releasePendingPut = resolve;
+  });
+  putStarted = new Promise<void>((resolve) => {
+    signalPutStarted = resolve;
+  });
+  holdNextPut = true;
+  failNextPut = true;
+
+  await kotSwitch.click();
+  await putStarted;
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  // Optimistically both KDS and KOT are off while PUT is in flight.
+  await expect(
+    page.getByRole('tabpanel').getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+
+  const failedKotPutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kot_printing_enabled' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 503,
+  );
+  releasePendingPut();
+  await failedKotPutDone;
+
+  // Failed PUT reconciles KOT back to confirmed 'true', hiding the double-off warning.
+  await expect(
+    page.getByRole('tabpanel').getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: true,
+    });
+});
+
+test('Rapid repeated kitchen setting changes ignore out-of-order responses and keep POS store in sync', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let persistedKds = 'false';
+  const pendingPuts: Array<{ value: string; release: () => void }> = [];
+
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const value = String(route.request().postDataJSON()?.value);
+      await new Promise<void>((resolve) => {
+        pendingPuts.push({ value, release: resolve });
+      });
+      persistedKds = value;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value } }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: persistedKds } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  const kdsPanel = page.getByRole('tabpanel');
+  const kdsSwitch = kdsPanel.getByRole('switch', { name: 'Kitchen Display System', exact: true });
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+
+  // Rapidly toggle ON ('true') then OFF ('false') while both PUTs are in flight.
+  await kdsSwitch.click();
+  await kdsSwitch.click();
+  await expect.poll(() => pendingPuts.length).toBe(2);
+  expect(pendingPuts.map((p) => p.value)).toEqual(['true', 'false']);
+
+  // Resolve the second PUT ('false') FIRST, then resolve the first PUT ('true') out of order.
+  const secondPutResponse = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  pendingPuts[1].release();
+  await secondPutResponse;
+
+  const firstPutResponse = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  pendingPuts[0].release();
+  await firstPutResponse;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+});
+
+test('Tenant switch while KDS/KOT requests are pending ignores stale tenant responses', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let activeMockTenantId = 1;
+  let releaseTenant1KotGet!: () => void;
+  let signalTenant1KotGetStarted!: () => void;
+  let releaseTenant1KdsPut!: () => void;
+  let signalTenant1KdsPutStarted!: () => void;
+  const tenant1KotGetHeld = new Promise<void>((resolve) => {
+    releaseTenant1KotGet = resolve;
+  });
+  const tenant1KotGetStarted = new Promise<void>((resolve) => {
+    signalTenant1KotGetStarted = resolve;
+  });
+  const tenant1KdsPutHeld = new Promise<void>((resolve) => {
+    releaseTenant1KdsPut = resolve;
+  });
+  const tenant1KdsPutStarted = new Promise<void>((resolve) => {
+    signalTenant1KdsPutStarted = resolve;
+  });
+
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      signalTenant1KdsPutStarted();
+      await tenant1KdsPutHeld;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value: 'false' } }),
+      });
+      return;
+    }
+    const value = activeMockTenantId === 1 ? 'true' : 'true';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    if (activeMockTenantId === 1) {
+      signalTenant1KotGetStarted();
+      await tenant1KotGetHeld;
+      try {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ setting: { value: 'false' } }),
+        });
+      } catch {
+        // Aborted when tenant 1 effect cleans up.
+      }
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'true' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  await tenant1KotGetStarted;
+
+  const kdsPanel = page.getByRole('tabpanel');
+  const kdsSwitch = kdsPanel.getByRole('switch', { name: 'Kitchen Display System', exact: true });
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'true');
+
+  // Start a PUT turning KDS off under tenant 1 while tenant 1's KOT GET is also still pending.
+  await kdsSwitch.click();
+  await tenant1KdsPutStarted;
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+
+  // Switch to tenant 2 while tenant 1's GET and PUT are both pending.
+  activeMockTenantId = 2;
+  const tenant2KotGetDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kot_printing_enabled' &&
+      res.request().method() === 'GET' &&
+      res.status() === 200,
+  );
+  await switchMockedTenant(page, 2, 'Second Cafe');
+  await tenant2KotGetDone;
+
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'true');
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: true,
+      kotPrintingEnabled: true,
+    });
+
+  // Now release tenant 1's stale GET and PUT and verify neither overwrites tenant 2.
+  const stalePutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  releaseTenant1KotGet();
+  releaseTenant1KdsPut();
+  await stalePutDone;
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'true');
+  await expect(
+    kdsPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: true,
+      kotPrintingEnabled: true,
+    });
 });

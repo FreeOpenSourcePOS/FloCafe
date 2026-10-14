@@ -206,6 +206,22 @@ async function main(): Promise<void> {
     ['A-3'],
   );
 
+  // Above the feed limit, the newest active orders stay eligible and the board order is oldest first
+  db.prepare("DELETE FROM orders WHERE order_number LIKE 'B-%'").run();
+  const insertBulk = db.prepare(
+    `INSERT INTO orders (order_number, status, created_at, updated_at) VALUES (?, 'ready', ?, ?)`,
+  );
+  for (let i = 1; i <= 105; i++) {
+    const stamp = `2030-01-01 00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}`;
+    insertBulk.run(`B-${String(i).padStart(3, '0')}`, stamp, stamp);
+  }
+  const bulk = (await request(app).get(FEED).set(display)).body.orders.map((o: any) => o.number);
+  assert.equal(bulk.length, 100, 'the feed is capped at 100 orders');
+  assert.ok(bulk.includes('B-105'), 'the newest active order is never crowded out');
+  assert.ok(!bulk.includes('B-001'), 'the oldest orders are the ones dropped');
+  assert.deepEqual([...bulk].sort(), bulk, 'the board still receives oldest first');
+  db.prepare("DELETE FROM orders WHERE order_number LIKE 'B-%'").run();
+
   // Scope: the display token opens nothing else
   for (const [method, url] of [
     ['get', '/api/orders'],

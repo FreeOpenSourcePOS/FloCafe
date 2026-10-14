@@ -115,13 +115,16 @@ export function buildDisplayFeed(): CustomerDisplayFeed {
   const placeholders = config.statuses.map(() => '?').join(', ');
   const orders = db
     .prepare(
-      `SELECT o.id AS id,
-              COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
-              o.status AS status
-       FROM orders o
-       WHERE o.status IN (${placeholders})
-       ORDER BY o.created_at ASC, o.id ASC
-       LIMIT ${FEED_ORDER_LIMIT}`,
+      `SELECT id, number, status FROM (
+         SELECT o.id AS id,
+                COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
+                o.status AS status,
+                o.created_at AS created_at
+         FROM orders o
+         WHERE o.status IN (${placeholders})
+         ORDER BY o.created_at DESC, o.id DESC
+         LIMIT ${FEED_ORDER_LIMIT}
+       ) ORDER BY created_at ASC, id ASC`,
     )
     .all(...config.statuses) as CustomerDisplayFeed['orders'];
   return { business_name: settings.business_name || '', config, orders };

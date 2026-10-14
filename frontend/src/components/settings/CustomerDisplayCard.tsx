@@ -34,7 +34,7 @@ function PairedDisplays() {
   const [displays, setDisplays] = useState<PairedDisplay[]>([]);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
-  const [pairingLink, setPairingLink] = useState<string | null>(null);
+  const [pairingLink, setPairingLink] = useState<{ id: string; url: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,7 +57,10 @@ function PairedDisplays() {
         { id: data.id, label: data.label, created_at: data.created_at, last_seen_at: null },
         ...prev,
       ]);
-      setPairingLink(`${window.location.origin}${CUSTOMER_DISPLAY_PATH}#token=${data.token}`);
+      setPairingLink({
+        id: data.id,
+        url: `${window.location.origin}${CUSTOMER_DISPLAY_PATH}#token=${data.token}`,
+      });
       setLabel('');
     } catch (error) {
       const limit = (error as { response?: { status?: number } })?.response?.status === 409;
@@ -71,6 +74,7 @@ function PairedDisplays() {
     try {
       await api.delete(`/settings/customer-display/tokens/${id}`);
       setDisplays((prev) => prev.filter((display) => display.id !== id));
+      setPairingLink((prev) => (prev?.id === id ? null : prev));
       toast.success(t('revoked'));
     } catch {
       toast.error(t('revokeFailed'));
@@ -79,7 +83,7 @@ function PairedDisplays() {
 
   function copyLink() {
     if (!pairingLink) return;
-    navigator.clipboard.writeText(pairingLink).then(
+    navigator.clipboard.writeText(pairingLink.url).then(
       () => toast.success(t('urlCopied')),
       () => toast.error(t('pairFailed')),
     );
@@ -122,7 +126,7 @@ function PairedDisplays() {
         <div className="mb-4 rounded-lg border border-border bg-muted p-3">
           <p className="text-sm font-medium text-foreground">{t('pairedLinkTitle')}</p>
           <code dir="ltr" className="block break-all text-xs my-2">
-            {pairingLink}
+            {pairingLink.url}
           </code>
           <div className="flex flex-wrap items-center gap-3">
             <button

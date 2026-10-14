@@ -25,6 +25,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
+const expressRateLimit = require('express-rate-limit');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerDisplayFeedRoutes } = require('../main/routes/customer-display-feed');
@@ -71,6 +72,16 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(express.json());
+  // Same order as main/server.ts: rate limit, then requireAuth, then routes.
+  app.use(
+    '/api',
+    expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
   app.use(requireAuth);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/customer-display', customerDisplayFeedRoutes);

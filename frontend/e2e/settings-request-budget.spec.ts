@@ -2318,3 +2318,241 @@ test('Tenant switch while KDS/KOT requests are pending ignores stale tenant resp
       kotPrintingEnabled: true,
     });
 });
+
+test('Direct Printers tab load hides double-off warning when KDS is enabled and KOT is disabled', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'true' } }),
+    });
+  });
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  const printersPanel = page.getByRole('tabpanel');
+  await expect(
+    printersPanel.getByRole('switch', { name: 'KOT Ticket Printing', exact: true }),
+  ).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    printersPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: true,
+      kotPrintingEnabled: false,
+    });
+});
+
+test('Switching from KDS to Printers while KDS save is pending preserves successful saves in both directions and reconciles failed save', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let persistedKds = 'false';
+  let releasePendingPut!: () => void;
+  let signalPutStarted!: () => void;
+  let releasePrintersTabKdsGet!: () => void;
+  let signalPrintersTabKdsGetStarted!: () => void;
+  let holdNextPut = false;
+  let failNextPut = false;
+  let holdNextPrintersGet = false;
+
+  let pendingPutHeld = new Promise<void>((resolve) => {
+    releasePendingPut = resolve;
+  });
+  let putStarted = new Promise<void>((resolve) => {
+    signalPutStarted = resolve;
+  });
+  let printersTabKdsGetHeld = new Promise<void>((resolve) => {
+    releasePrintersTabKdsGet = resolve;
+  });
+  let printersTabKdsGetStarted = new Promise<void>((resolve) => {
+    signalPrintersTabKdsGetStarted = resolve;
+  });
+
+  await page.route('**/api/settings/kot_printing_enabled', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'false' } }),
+    });
+  });
+  await page.route('**/api/settings/kds_enabled', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const requestedValue = route.request().postDataJSON()?.value;
+      signalPutStarted();
+      if (holdNextPut) {
+        await pendingPutHeld;
+      }
+      if (failNextPut) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'unavailable' }),
+        });
+        return;
+      }
+      persistedKds = String(requestedValue);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ setting: { value: persistedKds } }),
+      });
+      return;
+    }
+    const snapshotValue = persistedKds;
+    if (holdNextPrintersGet) {
+      holdNextPrintersGet = false;
+      signalPrintersTabKdsGetStarted();
+      await printersTabKdsGetHeld;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: snapshotValue } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  const kdsSwitch = page
+    .getByRole('tabpanel')
+    .getByRole('switch', { name: 'Kitchen Display System', exact: true });
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+
+  // Part 1: Enable KDS on KDS tab, navigate to unvisited Printers tab before PUT finishes, and let stale GET return 'false' first.
+  holdNextPut = true;
+  holdNextPrintersGet = true;
+  await kdsSwitch.click();
+  await putStarted;
+
+  await page.getByRole('button', { name: 'Printers', exact: true }).click();
+  await printersTabKdsGetStarted;
+  const stalePrintersGetDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'GET',
+  );
+  releasePrintersTabKdsGet();
+  await stalePrintersGetDone;
+
+  const kdsPutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  releasePendingPut();
+  await kdsPutDone;
+
+  const printersPanel = page.getByRole('tabpanel');
+  await expect(
+    printersPanel.getByRole('switch', { name: 'KOT Ticket Printing', exact: true }),
+  ).toHaveAttribute('aria-checked', 'false');
+  await expect(
+    printersPanel.getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: true,
+      kotPrintingEnabled: false,
+    });
+
+  // Part 2 (reverse transition): Reload on KDS tab with KDS enabled, disable KDS while PUT is pending, navigate to unvisited Printers tab whose GET returns stale 'true' first.
+  await page.goto(`${BASE}/settings?tab=kds`);
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'true');
+
+  pendingPutHeld = new Promise<void>((resolve) => {
+    releasePendingPut = resolve;
+  });
+  putStarted = new Promise<void>((resolve) => {
+    signalPutStarted = resolve;
+  });
+  printersTabKdsGetHeld = new Promise<void>((resolve) => {
+    releasePrintersTabKdsGet = resolve;
+  });
+  printersTabKdsGetStarted = new Promise<void>((resolve) => {
+    signalPrintersTabKdsGetStarted = resolve;
+  });
+  holdNextPut = true;
+  holdNextPrintersGet = true;
+
+  await kdsSwitch.click();
+  await putStarted;
+
+  await page.getByRole('button', { name: 'Printers', exact: true }).click();
+  await printersTabKdsGetStarted;
+  const stalePrintersTrueGetDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'GET',
+  );
+  releasePrintersTabKdsGet();
+  await stalePrintersTrueGetDone;
+
+  const kdsDisablePutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT',
+  );
+  releasePendingPut();
+  await kdsDisablePutDone;
+
+  await expect(
+    page.getByRole('tabpanel').getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+
+  // Part 3 (failed PUT): Switch back to KDS tab, enable KDS while PUT is held and will fail (503), navigate to Printers tab, and verify failure reconciles back to 'false' and restores the warning.
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await expect(kdsSwitch).toHaveAttribute('aria-checked', 'false');
+
+  pendingPutHeld = new Promise<void>((resolve) => {
+    releasePendingPut = resolve;
+  });
+  putStarted = new Promise<void>((resolve) => {
+    signalPutStarted = resolve;
+  });
+  holdNextPut = true;
+  failNextPut = true;
+
+  await kdsSwitch.click();
+  await putStarted;
+  await page.getByRole('button', { name: 'Printers', exact: true }).click();
+  await expect(
+    page.getByRole('tabpanel').getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toHaveCount(0);
+
+  const failedKdsPutDone = page.waitForResponse(
+    (res) =>
+      new URL(res.url()).pathname === '/api/settings/kds_enabled' &&
+      res.request().method() === 'PUT' &&
+      res.status() === 503,
+  );
+  releasePendingPut();
+  await failedKdsPutDone;
+
+  await expect(
+    page.getByRole('tabpanel').getByText(/Both the Kitchen Display and KOT printing are off/i),
+  ).toBeVisible();
+  await expect
+    .poll(() => readPersistedPosKitchenSettings(page))
+    .toEqual({
+      kdsEnabled: false,
+      kotPrintingEnabled: false,
+    });
+});

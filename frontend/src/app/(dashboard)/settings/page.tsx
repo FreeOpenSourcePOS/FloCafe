@@ -3206,7 +3206,7 @@ export default function SettingsPage() {
       applyKitchenSettingValue(field, authoritative, saveTenantId);
     } catch (error) {
       if (
-        field === 'kotPrintingEnabled' &&
+        (field === 'kotPrintingEnabled' || field === 'kdsEnabled') &&
         axios.isAxiosError(error) &&
         error.response?.status === 404
       ) {

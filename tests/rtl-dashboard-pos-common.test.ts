@@ -110,6 +110,7 @@ function collectElements(
 
 function loadComponents(): {
   AddonGroupsPage: () => any;
+  api: { get: (...args: any[]) => any };
   ChevronRight: any;
   ChevronDown: any;
   faMessages: Record<string, any>;
@@ -147,6 +148,7 @@ function loadComponents(): {
     const React = frontendRequire('react');
     const ReactDOMServer = frontendRequire('react-dom/server');
     const { ChevronRight, ChevronDown } = frontendRequire('lucide-react');
+    const api = require('../frontend/src/lib/api').default;
     const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
     const faMessages = require('../frontend/src/lib/i18n/messages/fa.json');
     const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
@@ -156,6 +158,7 @@ function loadComponents(): {
     const { getLanguageLocale } = require('../frontend/src/lib/i18n');
     return {
       AddonGroupsPage,
+      api,
       ChevronRight,
       ChevronDown,
       faMessages,
@@ -242,6 +245,7 @@ function run(): void {
   //    matches the language under test.
   const {
     AddonGroupsPage,
+    api,
     ChevronRight,
     ChevronDown,
     faMessages,
@@ -453,24 +457,51 @@ function run(): void {
     addons: [{ id: 'addon-rtl-1', name: 'Extra Shot', price: 0, is_active: true }],
   };
   const originalUseState = React.useState;
-  let expandedGroupState: number | string | null = null;
+  const originalUseEffect = React.useEffect;
+  const originalApiGet = api.get;
   try {
+    const hookStates: unknown[] = [];
+    let mountedEffectsRan = false;
+    api.get = (url: string) => {
+      assert(url === '/addon-groups', `Unexpected api.get URL in AddonGroupsPage: ${url}`);
+      const response = { data: { addon_groups: [sampleAddonGroup] } };
+      const chain = {
+        then(onFulfilled?: (val: typeof response) => unknown) {
+          if (onFulfilled) onFulfilled(response);
+          return chain;
+        },
+        catch() {
+          return chain;
+        },
+        finally(onFinally?: () => void) {
+          if (onFinally) onFinally();
+          return chain;
+        },
+      };
+      return chain;
+    };
+
     const renderAddonGroupsPage = () => {
-      let stateCall = 0;
+      let hookSlot = 0;
+      const pendingEffects: Array<() => void | (() => void)> = [];
       React.useState = ((initial: unknown) => {
-        stateCall += 1;
-        if (stateCall === 1) return [[sampleAddonGroup], () => undefined];
-        if (stateCall === 2) return [false, () => undefined];
-        if (stateCall === 6) {
-          return [
-            expandedGroupState,
-            (next: number | string | null) => {
-              expandedGroupState = next;
-            },
-          ];
+        const slot = hookSlot++;
+        if (slot >= hookStates.length) {
+          hookStates.push(typeof initial === 'function' ? (initial as () => unknown)() : initial);
         }
-        return [initial, () => undefined];
+        const setState = (next: unknown) => {
+          hookStates[slot] =
+            typeof next === 'function'
+              ? (next as (prev: unknown) => unknown)(hookStates[slot])
+              : next;
+        };
+        return [hookStates[slot], setState];
       }) as typeof React.useState;
+      React.useEffect = ((effect: () => void | (() => void)) => {
+        if (!mountedEffectsRan) {
+          pendingEffects.push(effect);
+        }
+      }) as typeof React.useEffect;
 
       let capturedTree: any;
       function AddonGroupsProbe() {
@@ -484,8 +515,15 @@ function run(): void {
           React.createElement(AddonGroupsProbe),
         ),
       );
+      if (!mountedEffectsRan) {
+        mountedEffectsRan = true;
+        for (const effect of pendingEffects) effect();
+      }
       return { tree: capturedTree, markup };
     };
+
+    // Initial mount pass runs useEffect -> api.get('/addon-groups'), populating state via setters.
+    renderAddonGroupsPage();
 
     const collapsedRender = renderAddonGroupsPage();
     const collapsedChevronRights = collectElements(
@@ -525,10 +563,6 @@ function run(): void {
       'Collapsed AddonGroupsPage header must expose an onClick toggle button',
     );
     collapsedToggleBtn.props.onClick();
-    assert(
-      expandedGroupState === sampleAddonGroup.id,
-      `Toggling collapsed AddonGroupsPage header must expand group ${sampleAddonGroup.id}, got: ${expandedGroupState}`,
-    );
 
     const expandedRender = renderAddonGroupsPage();
     const expandedChevronRights = collectElements(
@@ -568,12 +602,24 @@ function run(): void {
       'Expanded AddonGroupsPage header must expose an onClick toggle button',
     );
     expandedToggleBtn.props.onClick();
+
+    const recollapsedRender = renderAddonGroupsPage();
+    const recollapsedChevronRights = collectElements(
+      recollapsedRender.tree,
+      (el) => el.type === ChevronRight,
+    );
+    const recollapsedChevronDowns = collectElements(
+      recollapsedRender.tree,
+      (el) => el.type === ChevronDown,
+    );
     assert(
-      expandedGroupState === null,
-      `Toggling expanded AddonGroupsPage header must collapse group back to null, got: ${expandedGroupState}`,
+      recollapsedChevronRights.length === 1 && recollapsedChevronDowns.length === 0,
+      `Toggling expanded AddonGroupsPage header must collapse back to ChevronRight (got ${recollapsedChevronRights.length} ChevronRight, ${recollapsedChevronDowns.length} ChevronDown)`,
     );
   } finally {
     React.useState = originalUseState;
+    React.useEffect = originalUseEffect;
+    api.get = originalApiGet;
   }
   console.log(
     '  ✓ AddonGroupsPage renders ChevronRight with rtl-flip when collapsed and ChevronDown without rtl-flip when expanded',

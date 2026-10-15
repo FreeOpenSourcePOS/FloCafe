@@ -89,7 +89,8 @@ interface CancelModal {
 }
 
 function orderHasCollectedPayment(order: Order): boolean {
-  const bills = order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
+  const bills =
+    order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
   return bills.some((candidate) => {
     const status = String(candidate.payment_status || '');
     const paidAmount = Number(candidate.paid_amount || 0);

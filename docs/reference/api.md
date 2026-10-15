@@ -310,9 +310,11 @@ one. Failures without a registered tuple may retain the `{ error }` response.
   recorded collected funds. Cancellation preserves bill payment and refund records (refunds remain a
   separate operation via `/api/refunds`) and restores product, variant, add-on, and recipe stock
   only for items still in `pending` status.
-- Every overridden `status_changed` audit log entry records `actor_user_id`, `approved_by`,
-  `overridden_safeguards`, `bill_ids`, `outstanding_amount`, `outstanding_amounts`, and
-  `collected_amount`, and never records the PIN.
+- When `approver_id` (or `manager_id`) is supplied on an overridden transition, PIN verification is
+  restricted to that active user. Every overridden `status_changed` audit log entry records
+  `actor_user_id`, `approved_by`, `overridden_safeguards`, `bill_ids`, `outstanding_amount`,
+  `outstanding_amounts`, and `collected_amount` (plus `undelivered_items` when overriding kitchen
+  delivery), and never records the PIN.
 
 Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
 (deferred, not immediate) transaction rather than from the JWT claim, and re-run every policy check

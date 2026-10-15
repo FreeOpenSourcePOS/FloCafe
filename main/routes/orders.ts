@@ -2130,7 +2130,16 @@ router.patch(
             WHERE b.order_id = ?
             ORDER BY b.id ASC
           `)
-          .all(req.params.id) as any[];
+          .all(req.params.id) as Array<{
+          id: string;
+          total?: number | null;
+          round_off?: number | null;
+          paid_amount?: number | null;
+          refunded_cents?: number | null;
+          balance?: number | null;
+          payment_details?: unknown;
+          payment_status?: string | null;
+        }>;
 
         const evaluatedBills = billRows.map((b) => {
           const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
@@ -2143,7 +2152,7 @@ router.patch(
             0,
             Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
           );
-          let parsedPaymentDetails: any[] = [];
+          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
           if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
             try {
               const parsed = JSON.parse(b.payment_details);
@@ -2152,7 +2161,7 @@ router.patch(
               parsedPaymentDetails = [];
             }
           } else if (Array.isArray(b.payment_details)) {
-            parsedPaymentDetails = b.payment_details;
+            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
           }
           const detailsPaidMinor = parsedPaymentDetails.reduce(
             (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
@@ -2177,7 +2186,9 @@ router.patch(
             : 0;
           const isSettled =
             !isPayable ||
-            (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
+            (paymentStatus === 'paid' &&
+              unpaidBalanceMinor === 0 &&
+              recordedPaidMinor >= totalMinor);
           return {
             id: b.id,
             paymentStatus,
@@ -2296,14 +2307,17 @@ router.patch(
             });
           }
 
+          type PinApproverCandidate = { id: string; role: string; pin_hash: string };
           const explicitApproverId = req.body.approver_id || req.body.manager_id;
           const candidateUsers = explicitApproverId
             ? (db
-                .prepare('SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL')
-                .all(explicitApproverId) as any[])
+                .prepare(
+                  'SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                )
+                .all(explicitApproverId) as PinApproverCandidate[])
             : (db
                 .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-                .all() as any[]);
+                .all() as PinApproverCandidate[]);
 
           const user = candidateUsers.find(
             (candidate) =>

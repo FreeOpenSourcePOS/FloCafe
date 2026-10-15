@@ -68,7 +68,9 @@ function assertEqual(actual: any, expected: any, message: string) {
     console.log(`  ✓ ${message}`);
   } else {
     failed++;
-    console.error(`  ✗ ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    console.error(
+      `  ✗ ${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -83,7 +85,7 @@ async function listen(app: any): Promise<http.Server> {
 async function request(
   baseUrl: string,
   urlPath: string,
-  options: Record<string, any> = {}
+  options: Record<string, any> = {},
 ): Promise<{ status: number; data: any }> {
   const fetchOptions: any = {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -113,14 +115,16 @@ function seedTestData() {
   const db = getDatabase();
   // Regional settings come from signup, never a fallback; seed one
   // explicitly so resolveRegionalSnapshot() resolves.
-  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`,
+  ).run(now());
 
   // Create a manager user with a hashed PIN
   managerUserId = 'mgr-test-001';
   const pinHash = bcrypt.hashSync(MANAGER_PIN, 10);
   db.prepare(
     `INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     managerUserId,
     'Test Manager',
@@ -130,53 +134,63 @@ function seedTestData() {
     pinHash,
     1,
     now(),
-    now()
+    now(),
   );
 
   // Create a product for order items
+  db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`).run(
+    'cat-test',
+    'Test',
+    1,
+  );
   db.prepare(
-    `INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`
-  ).run('cat-test', 'Test', 1);
-  db.prepare(
-    `INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`,
   ).run('prod-test', 'cat-test', 'Test Item', 100, 1, 1);
 
   // Create orders in various statuses
   const insertOrder = db.prepare(
     `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   // Pending order (no override required)
   insertOrder.run('ORD-TEST-001', null, 'takeaway', 'pending', 100, 100, now(), now());
-  const pendingId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-001') as any).id;
+  const pendingId = (
+    db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-001') as any
+  ).id;
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(pendingId, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'pending', now(), now());
 
   // Preparing order (override required)
   insertOrder.run('ORD-TEST-002', null, 'takeaway', 'preparing', 100, 100, now(), now());
-  const preparingId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-002') as any).id;
+  const preparingId = (
+    db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-002') as any
+  ).id;
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(preparingId, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'preparing', now(), now());
 
   // Ready order (override required)
   insertOrder.run('ORD-TEST-003', null, 'takeaway', 'ready', 100, 100, now(), now());
-  const readyId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-003') as any).id;
+  const readyId = (
+    db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-003') as any
+  ).id;
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(readyId, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'ready', now(), now());
 
   // Served order (override required)
   insertOrder.run('ORD-TEST-004', null, 'takeaway', 'served', 100, 100, now(), now());
-  const servedId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-004') as any).id;
+  const servedId = (
+    db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-TEST-004') as any
+  ).id;
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(servedId, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'served', now(), now());
 }
 
@@ -205,9 +219,18 @@ async function main() {
 
   // Add auth middleware (replicate requireAuth from server.ts)
   app.use((req: any, res: any, next: any) => {
-    if (!req.path.startsWith('/api')) { next(); return; }
-    if (req.path === '/api/health') { next(); return; }
-    if (req.path.startsWith('/api/auth')) { next(); return; }
+    if (!req.path.startsWith('/api')) {
+      next();
+      return;
+    }
+    if (req.path === '/api/health') {
+      next();
+      return;
+    }
+    if (req.path.startsWith('/api/auth')) {
+      next();
+      return;
+    }
 
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -232,7 +255,7 @@ async function main() {
   const token = jwt.sign(
     { userId: managerUserId, email: 'mgr@test.local', role: 'manager' },
     getJWTSecret(),
-    { expiresIn: '1h' }
+    { expiresIn: '1h' },
   );
   const authHeader = `Bearer ${token}`;
 
@@ -242,7 +265,9 @@ async function main() {
     {
       // Get the pending order ID
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-001'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-001'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -257,7 +282,9 @@ async function main() {
     console.log('\n2. Cancel preparing order without PIN (should fail)');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -271,7 +298,9 @@ async function main() {
     console.log('\n3. Cancel preparing order with wrong PIN (should fail)');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -285,11 +314,17 @@ async function main() {
     console.log('\n4. Cancel preparing order with valid PIN');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-002'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
-        body: JSON.stringify({ status: 'cancelled', override_pin: MANAGER_PIN, reason: 'Item out of stock' }),
+        body: JSON.stringify({
+          status: 'cancelled',
+          override_pin: MANAGER_PIN,
+          reason: 'Item out of stock',
+        }),
       });
       assertEqual(res.status, 200, 'returns 200 for cancelling with valid PIN');
       assertEqual(res.data.order.status, 'cancelled', 'preparing order status becomes cancelled');
@@ -299,7 +334,9 @@ async function main() {
     console.log('\n5. Cancel ready order with valid PIN');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-003'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-003'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -313,7 +350,9 @@ async function main() {
     console.log('\n6. Cancel served order with valid PIN');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-004'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-004'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -338,7 +377,9 @@ async function main() {
     console.log('\n8. Invalid status value');
     {
       const db = getDatabase();
-      const order = db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-001'").get() as any;
+      const order = db
+        .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-001'")
+        .get() as any;
       const res = await request(baseUrl, `/api/orders/${order.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
@@ -354,90 +395,169 @@ async function main() {
       const db = getDatabase();
       db.prepare(
         `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-         VALUES ('ORD-TEST-PAID-PENDING', null, 'takeaway', 'pending', 100, 100, ?, ?)`
+         VALUES ('ORD-TEST-PAID-PENDING', null, 'takeaway', 'pending', 100, 100, ?, ?)`,
       ).run(now(), now());
-      const paidPendingId = (db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-PAID-PENDING'").get() as any).id;
+      const paidPendingId = (
+        db
+          .prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-PAID-PENDING'")
+          .get() as any
+      ).id;
       db.prepare(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-         VALUES (?, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'pending', ?, ?)`
+         VALUES (?, 'prod-test', 'Test Item', 100, 1, 100, 0, 100, 'pending', ?, ?)`,
       ).run(paidPendingId, now(), now());
       db.prepare(
         `INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, discount_amount, total, payment_status, paid_amount, balance, payment_details, created_at, updated_at)
-         VALUES ('BILL-PAID-PENDING', ?, 100, 0, 0, 100, 'paid', 100, 0, ?, ?, ?)`
+         VALUES ('BILL-PAID-PENDING', ?, 100, 0, 0, 100, 'paid', 100, 0, ?, ?, ?)`,
       ).run(paidPendingId, JSON.stringify([{ method: 'cash', amount: 100 }]), now(), now());
-      const paidBillId = (db.prepare("SELECT id FROM bills WHERE bill_number = 'BILL-PAID-PENDING'").get() as any).id;
+      const paidBillId = (
+        db.prepare("SELECT id FROM bills WHERE bill_number = 'BILL-PAID-PENDING'").get() as any
+      ).id;
 
       const noPinRes = await request(baseUrl, `/api/orders/${paidPendingId}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
         body: JSON.stringify({ status: 'cancelled', reason: 'Guest left' }),
       });
-      assertEqual(noPinRes.status, 400, 'pending order with collected funds rejects cancellation without PIN');
-      assert(String(noPinRes.data.error).includes('Manager PIN'), 'collected-funds rejection mentions Manager PIN');
+      assertEqual(
+        noPinRes.status,
+        400,
+        'pending order with collected funds rejects cancellation without PIN',
+      );
+      assert(
+        String(noPinRes.data.error).includes('Manager PIN'),
+        'collected-funds rejection mentions Manager PIN',
+      );
 
       const wrongPinRes = await request(baseUrl, `/api/orders/${paidPendingId}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
         body: JSON.stringify({ status: 'cancelled', override_pin: WRONG_PIN }),
       });
-      assertEqual(wrongPinRes.status, 403, 'pending order with collected funds rejects wrong PIN with 403');
+      assertEqual(
+        wrongPinRes.status,
+        403,
+        'pending order with collected funds rejects wrong PIN with 403',
+      );
 
       const validPinRes = await request(baseUrl, `/api/orders/${paidPendingId}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
-        body: JSON.stringify({ status: 'cancelled', override_pin: MANAGER_PIN, reason: 'Guest left' }),
+        body: JSON.stringify({
+          status: 'cancelled',
+          override_pin: MANAGER_PIN,
+          reason: 'Guest left',
+        }),
       });
-      assertEqual(validPinRes.status, 200, 'pending order with collected funds cancels with valid manager PIN');
-      assertEqual(validPinRes.data.order.status, 'cancelled', 'order status becomes cancelled after PIN approval');
+      assertEqual(
+        validPinRes.status,
+        200,
+        'pending order with collected funds cancels with valid manager PIN',
+      );
+      assertEqual(
+        validPinRes.data.order.status,
+        'cancelled',
+        'order status becomes cancelled after PIN approval',
+      );
 
-      const billAfterCancel = db.prepare('SELECT payment_status, paid_amount, balance, payment_details FROM bills WHERE id = ?').get(paidBillId) as any;
-      assertEqual(billAfterCancel.payment_status, 'paid', 'cancellation does not erase paid bill status');
-      assertEqual(Number(billAfterCancel.paid_amount), 100, 'cancellation preserves collected paid_amount');
-      const refundCount = (db.prepare('SELECT COUNT(*) as c FROM refunds WHERE bill_id = ?').get(paidBillId) as any).c;
+      const billAfterCancel = db
+        .prepare(
+          'SELECT payment_status, paid_amount, balance, payment_details FROM bills WHERE id = ?',
+        )
+        .get(paidBillId) as any;
+      assertEqual(
+        billAfterCancel.payment_status,
+        'paid',
+        'cancellation does not erase paid bill status',
+      );
+      assertEqual(
+        Number(billAfterCancel.paid_amount),
+        100,
+        'cancellation preserves collected paid_amount',
+      );
+      const refundCount = (
+        db.prepare('SELECT COUNT(*) as c FROM refunds WHERE bill_id = ?').get(paidBillId) as any
+      ).c;
       assertEqual(refundCount, 0, 'cancellation does not automatically create a refund record');
 
-      const cancelAudit = db.prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1`).get(paidPendingId) as any;
+      const cancelAudit = db
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1`,
+        )
+        .get(paidPendingId) as any;
       const auditDetails = JSON.parse(cancelAudit?.details_json || '{}');
       assertEqual(cancelAudit?.actor_user_id, managerUserId, 'cancel audit records actor identity');
-      assertEqual(auditDetails.approved_by, managerUserId, 'cancel audit records approver identity');
-      assert(Array.isArray(auditDetails.overridden_safeguards) && auditDetails.overridden_safeguards.includes('collected_funds'), 'cancel audit records collected_funds safeguard');
-      assert(Array.isArray(auditDetails.bill_ids) && auditDetails.bill_ids.includes(paidBillId), 'cancel audit records bill IDs');
-      assertEqual(Number(auditDetails.collected_amount), 100, 'cancel audit records collected amount');
-      assert(!String(cancelAudit?.details_json).includes(MANAGER_PIN), 'cancel audit never records the PIN');
+      assertEqual(
+        auditDetails.approved_by,
+        managerUserId,
+        'cancel audit records approver identity',
+      );
+      assert(
+        Array.isArray(auditDetails.overridden_safeguards) &&
+          auditDetails.overridden_safeguards.includes('collected_funds'),
+        'cancel audit records collected_funds safeguard',
+      );
+      assert(
+        Array.isArray(auditDetails.bill_ids) && auditDetails.bill_ids.includes(paidBillId),
+        'cancel audit records bill IDs',
+      );
+      assertEqual(
+        Number(auditDetails.collected_amount),
+        100,
+        'cancel audit records collected amount',
+      );
+      assert(
+        !String(cancelAudit?.details_json).includes(MANAGER_PIN),
+        'cancel audit never records the PIN',
+      );
     }
 
     // ── Test 10: Pending order with only pending items restores only pending inventory (#1057) ──
-    console.log('\n10. Mixed pending and in-progress items restore only pending stock on order cancel');
+    console.log(
+      '\n10. Mixed pending and in-progress items restore only pending stock on order cancel',
+    );
     {
       resetPinRateLimitForTests();
       const db = getDatabase();
       db.prepare(
         `INSERT INTO products (id, category_id, name, price, is_active, track_inventory, stock_quantity, sort_order)
-         VALUES ('prod-inv-cancel', 'cat-test', 'Tracked Cancel Item', 50, 1, 1, 6, 2)`
+         VALUES ('prod-inv-cancel', 'cat-test', 'Tracked Cancel Item', 50, 1, 1, 6, 2)`,
       ).run();
       db.prepare(
         `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-         VALUES ('ORD-TEST-MIXED-STOCK', null, 'takeaway', 'preparing', 200, 200, ?, ?)`
+         VALUES ('ORD-TEST-MIXED-STOCK', null, 'takeaway', 'preparing', 200, 200, ?, ?)`,
       ).run(now(), now());
-      const mixedOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-MIXED-STOCK'").get() as any).id;
+      const mixedOrderId = (
+        db.prepare("SELECT id FROM orders WHERE order_number = 'ORD-TEST-MIXED-STOCK'").get() as any
+      ).id;
       // 1 pending item (qty 2, deducted 2) + 1 preparing item (qty 2, deducted 2) -> current stock 6 means initial was 10
       db.prepare(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, inventory_deducted_quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-         VALUES (?, 'prod-inv-cancel', 'Tracked Cancel Item', 50, 2, 2, 100, 0, 100, 'pending', ?, ?)`
+         VALUES (?, 'prod-inv-cancel', 'Tracked Cancel Item', 50, 2, 2, 100, 0, 100, 'pending', ?, ?)`,
       ).run(mixedOrderId, now(), now());
       db.prepare(
         `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, inventory_deducted_quantity, subtotal, tax_amount, total, status, created_at, updated_at)
-         VALUES (?, 'prod-inv-cancel', 'Tracked Cancel Item', 50, 2, 2, 100, 0, 100, 'preparing', ?, ?)`
+         VALUES (?, 'prod-inv-cancel', 'Tracked Cancel Item', 50, 2, 2, 100, 0, 100, 'preparing', ?, ?)`,
       ).run(mixedOrderId, now(), now());
 
       const cancelMixedRes = await request(baseUrl, `/api/orders/${mixedOrderId}/status`, {
         method: 'PATCH',
         headers: { Authorization: authHeader },
-        body: JSON.stringify({ status: 'cancelled', override_pin: MANAGER_PIN, reason: 'Guest walked out' }),
+        body: JSON.stringify({
+          status: 'cancelled',
+          override_pin: MANAGER_PIN,
+          reason: 'Guest walked out',
+        }),
       });
       assertEqual(cancelMixedRes.status, 200, 'cancels mixed order with valid manager PIN');
-      const stockAfter = (db.prepare("SELECT stock_quantity FROM products WHERE id = 'prod-inv-cancel'").get() as any).stock_quantity;
-      assertEqual(stockAfter, 8, 'only the pending item (qty 2) is restored to stock; preparing item (qty 2) is not restored');
+      const stockAfter = (
+        db.prepare("SELECT stock_quantity FROM products WHERE id = 'prod-inv-cancel'").get() as any
+      ).stock_quantity;
+      assertEqual(
+        stockAfter,
+        8,
+        'only the pending item (qty 2) is restored to stock; preparing item (qty 2) is not restored',
+      );
     }
   } finally {
     server.close();

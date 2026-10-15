@@ -1,9 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import {
-  login, addToCart, placeOrderAndPayCash, fetchOrder, fetchProductStock,
-  createTrackedProduct, deleteProduct, openOrderOverflowMenu, setApprovalPin,
-  gross, money, fmt, overlay,
+  login,
+  addToCart,
+  placeOrderAndPayCash,
+  fetchOrder,
+  fetchProductStock,
+  createTrackedProduct,
+  deleteProduct,
+  openOrderOverflowMenu,
+  setApprovalPin,
+  gross,
+  money,
+  fmt,
+  overlay,
 } from './helpers';
 
 /**
@@ -42,7 +52,9 @@ test.afterAll(async ({ request }) => {
 });
 
 test.describe('@ci-tier2 operations admin - order lifecycle', () => {
-  test('a POS order, settled in cash, matches the record it created line for line', async ({ page }) => {
+  test('a POS order, settled in cash, matches the record it created line for line', async ({
+    page,
+  }) => {
     await login(page, 'owner');
     await page.goto(`${E2E_BASE_URL}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
@@ -65,14 +77,19 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     expect(order.items.reduce((sum, i) => sum + i.quantity, 0)).toBe(3);
   });
 
-  test('a paid order offers a refund, and issuing it settles against the recorded sale', async ({ page }) => {
+  test('a paid order offers a refund, and issuing it settles against the recorded sale', async ({
+    page,
+  }) => {
     await login(page, 'owner');
     await page.goto(`${E2E_BASE_URL}/pos`);
     await addToCart(page, 'E2E Coffee', 1);
     const orderNumber = await placeOrderAndPayCash(page);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    const row = page.getByRole('button').filter({ hasText: `#${orderNumber}` }).first();
+    const row = page
+      .getByRole('button')
+      .filter({ hasText: `#${orderNumber}` })
+      .first();
     await expect(row).toBeVisible();
     await row.click();
 
@@ -97,19 +114,32 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     await expect(page.getByText(/Refund issued/i).first()).toBeVisible({ timeout: 30_000 });
 
     // The refund is on the record, and the original sale is still a completed order.
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
     const listed = await page.request.get(`${E2E_BASE_URL}/api/refunds`, { headers });
     expect(listed.ok()).toBeTruthy();
-    const { refunds } = (await listed.json()) as { refunds: Array<{ amount_cents: number; method: string; approved_by: string }> };
-    const issued = refunds.find((r) => r.approved_by === 'e2e-owner' && r.amount_cents === Math.round(paid.total * 100));
-    expect(issued, 'the issued refund must be recorded for the amount that was collected').toBeTruthy();
+    const { refunds } = (await listed.json()) as {
+      refunds: Array<{ amount_cents: number; method: string; approved_by: string }>;
+    };
+    const issued = refunds.find(
+      (r) => r.approved_by === 'e2e-owner' && r.amount_cents === Math.round(paid.total * 100),
+    );
+    expect(
+      issued,
+      'the issued refund must be recorded for the amount that was collected',
+    ).toBeTruthy();
     expect(issued?.method).toBe('cash');
     expect((await fetchOrder(page, orderNumber)).status).toBe('completed');
   });
 
-  test('adding a line to an open order recomputes tax and deducts the extra stock', async ({ page }) => {
+  test('adding a line to an open order recomputes tax and deducts the extra stock', async ({
+    page,
+  }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const before = await fetchProductStock(page, tracked.id);
 
@@ -118,7 +148,9 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
       data: { type: 'takeaway', items: [{ product_id: tracked.id, quantity: 2 }] },
     });
     expect(created.status()).toBe(201);
-    const { order } = (await created.json()) as { order: { id: number; order_number: string; subtotal: number } };
+    const { order } = (await created.json()) as {
+      order: { id: number; order_number: string; subtotal: number };
+    };
 
     expect(order.subtotal).toBe(80);
     expect(await fetchProductStock(page, tracked.id)).toBe(before - 2);
@@ -127,7 +159,10 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
       headers,
       data: { items: [{ product_id: tracked.id, quantity: 1 }] },
     });
-    expect(added.ok(), `adding a line to an open order must succeed (got ${added.status()})`).toBeTruthy();
+    expect(
+      added.ok(),
+      `adding a line to an open order must succeed (got ${added.status()})`,
+    ).toBeTruthy();
 
     const reloaded = await fetchOrder(page, order.order_number);
     expect(reloaded.subtotal).toBe(120);
@@ -138,7 +173,9 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
 
   test('cancelling an unpaid order returns every deducted unit to stock', async ({ page }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const before = await fetchProductStock(page, cancelProbe.id);
 
@@ -147,14 +184,19 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
       data: { type: 'takeaway', items: [{ product_id: cancelProbe.id, quantity: 3 }] },
     });
     expect(created.status()).toBe(201);
-    const { order } = (await created.json()) as { order: { id: number; order_number: string; subtotal: number } };
+    const { order } = (await created.json()) as {
+      order: { id: number; order_number: string; subtotal: number };
+    };
 
     expect(order.subtotal).toBe(90);
     expect(await fetchProductStock(page, cancelProbe.id)).toBe(before - 3);
 
     // Cancel from the Orders screen, the way staff would.
     await page.goto(`${E2E_BASE_URL}/orders`);
-    const row = page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first();
+    const row = page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .first();
     await expect(row).toBeVisible();
     await row.click();
 
@@ -172,8 +214,12 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
 
     // The operator gets a confirmation, and the cancelled order leaves the
     // Active list it was on.
-    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole('button').filter({ hasText: `#${order.order_number}` })).toHaveCount(0);
+    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${order.order_number}` }),
+    ).toHaveCount(0);
 
     const after = await fetchOrder(page, order.order_number);
     expect(after.status).toBe('cancelled');
@@ -181,16 +227,22 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     expect(await fetchProductStock(page, cancelProbe.id)).toBe(before);
   });
 
-  test('cancelling a pending order with collected payment requires a manager PIN and keeps the dialog open on error', async ({ page }) => {
+  test('cancelling a pending order with collected payment requires a manager PIN and keeps the dialog open on error', async ({
+    page,
+  }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const created = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
       headers,
       data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 2 }] },
     });
     expect(created.status()).toBe(201);
-    const { order } = (await created.json()) as { order: { id: number; order_number: string; total: number } };
+    const { order } = (await created.json()) as {
+      order: { id: number; order_number: string; total: number };
+    };
 
     const billGen = await page.request.post(`${E2E_BASE_URL}/api/bills/generate`, {
       headers,
@@ -207,7 +259,10 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     expect(partialPay.ok()).toBeTruthy();
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    const row = page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first();
+    const row = page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .first();
     await expect(row).toBeVisible();
     await row.click();
 
@@ -230,34 +285,49 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     // Supplying the valid manager/owner PIN completes the cancellation without erasing collected payment.
     await pinInput.fill(OWNER_APPROVAL_PIN);
     await sheet.getByRole('button', { name: /Confirm Cancel/i }).click();
-    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({
+      timeout: 30_000,
+    });
 
     const cancelled = await fetchOrder(page, order.order_number);
     expect(cancelled.status).toBe('cancelled');
     const billRes = await page.request.get(`${E2E_BASE_URL}/api/bills/${bill.id}`, { headers });
     expect(billRes.ok()).toBeTruthy();
-    const { bill: storedBill } = (await billRes.json()) as { bill: { paid_amount: number; payment_status: string } };
+    const { bill: storedBill } = (await billRes.json()) as {
+      bill: { paid_amount: number; payment_status: string };
+    };
     expect(Number(storedBill.paid_amount)).toBe(20);
     expect(storedBill.payment_status).toBe('partial');
   });
 
-  test('the Orders screen shows this order\'s own totals, and each line its own gross', async ({ page }) => {
+  test("the Orders screen shows this order's own totals, and each line its own gross", async ({
+    page,
+  }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const created = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
       headers,
       data: {
         type: 'dine_in',
         guest_count: 2,
-        items: [{ product_id: 'e2e-product', quantity: 1 }, { product_id: tracked.id, quantity: 2 }],
+        items: [
+          { product_id: 'e2e-product', quantity: 1 },
+          { product_id: tracked.id, quantity: 2 },
+        ],
       },
     });
     expect(created.status()).toBe(201);
     const { order } = (await created.json()) as { order: { order_number: string } };
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    await page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first().click();
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${order.order_number}` })
+      .first()
+      .click();
 
     const detail = await page.locator('body').innerText();
     const shown = {

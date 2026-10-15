@@ -295,31 +295,33 @@ export default function AppSidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => {
-                const [hrefPath, hrefQuery] = item.href.split('?');
-                const isActive =
-                  !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
-                      <Link href={item.href} onClick={closeMobile}>
-                        <span className="relative flex size-4 shrink-0 items-center justify-center">
-                          <item.icon className="size-4 shrink-0" />
-                          {item.href === '/settings' && emailNeedsAttention && (
-                            <span
-                              aria-label="Email verification required"
-                              className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar"
-                            />
-                          )}
-                        </span>
-                        <span>{t(item.labelKey)}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            <nav aria-label={tCommon('menu')}>
+              <SidebarMenu>
+                {navItems.map((item) => {
+                  const [hrefPath, hrefQuery] = item.href.split('?');
+                  const isActive =
+                    !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                        <Link href={item.href} onClick={closeMobile}>
+                          <span className="relative flex size-4 shrink-0 items-center justify-center">
+                            <item.icon className="size-4 shrink-0" />
+                            {item.href === '/settings' && emailNeedsAttention && (
+                              <span
+                                aria-label="Email verification required"
+                                className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar"
+                              />
+                            )}
+                          </span>
+                          <span>{t(item.labelKey)}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </nav>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>

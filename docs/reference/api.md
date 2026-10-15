@@ -109,9 +109,15 @@ credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
 create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable
 with `FLO_AUTH_RATE_LIMIT_MAX`.
 
-Per-resource limiters named in the tables below (for example the order read and write limiters) are
-`express-rate-limit` instances declared in their own route file. They apply to every caller
-including LAN addresses.
+Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
+their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
+In [`main/routes/orders.ts`](../../main/routes/orders.ts), `orderWriteRateLimit` and
+`orderItemCancelRateLimit` remain separate 60-requests-per-minute buckets (configurable via
+`FLO_ORDER_WRITE_RATE_LIMIT_MAX` when set to a positive integer) and exempt authenticated callers
+connecting from private, loopback, or Tailscale socket addresses (`isAllowedPrivateIp` on
+`req.socket.remoteAddress`, ignoring caller-supplied forwarding headers), while still rate-limiting
+public or unauthenticated traffic and returning `{ error: "Too many requests, please try again later." }`
+on `429`.
 
 ## Main API (`:3001`)
 
@@ -247,7 +253,7 @@ Router: `main/routes/tables.ts`. Full path: `/api/tables`.
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `number`, `name`, `capacity`, `floor`, `section`, `position_x`, `position_y`, `kitchen_station_id` | - |
 | `POST` | `/:id/deactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | Soft-deactivates the table rather than deleting it. |
 | `POST` | `/:id/reactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
-| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | - |
+| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | `{ order, sourceTable, targetTable }`. `400` when `target_table_id` is missing, matches `id`, or names an inactive table; `404` when either table or the active order is not found; `409` when the destination table has an active or held order or is `reserved`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `status`, `reservation_customer_id` | Body `status`, plus `reservation_customer_id` for reservation state. |
 
 ### Kitchen stations

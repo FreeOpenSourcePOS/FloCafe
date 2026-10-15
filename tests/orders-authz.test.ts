@@ -22,7 +22,7 @@ const {
   initTestDb, startServer, api, assert, assertEqual, getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
-const { orderRoutes } = require('../main/routes/orders');
+const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
 const { registerRoutes } = require('../main/routes/index');
 
 function seedUser(db: any, id: string, role: string, pin?: string) {
@@ -136,6 +136,175 @@ async function main() {
     });
     assertEqual(invalidPin.status, 403, 'cashier with an invalid manager PIN is denied');
     assert(String(invalidPin.data.error).includes('Invalid manager PIN'), 'invalid PIN denial identifies the PIN, not the role');
+
+    // #1056: Unpaid order completion safeguards & explicit owner/manager PIN override
+    resetPinRateLimitForTests();
+    const unbilledOrder = seedOrderWithItem(db, 'UNBILLED-COMPLETE', 'owner-authz');
+    db.prepare(`UPDATE orders SET status = 'served' WHERE id = ?`).run(unbilledOrder.orderId);
+    db.prepare(`UPDATE order_items SET status = 'served' WHERE order_id = ?`).run(unbilledOrder.orderId);
+
+    const ownerUnbilledNoPin = await api(baseUrl, `/api/orders/${unbilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: ownerAuth,
+    });
+    assertEqual(ownerUnbilledNoPin.status, 400, 'logged-in owner cannot complete an unbilled positive-total order without an explicit PIN');
+    assertEqual((db.prepare('SELECT status FROM orders WHERE id = ?').get(unbilledOrder.orderId) as any).status, 'served', 'unbilled order remains served when PIN is omitted');
+
+    const unpaidBilledOrder = seedOrderWithItem(db, 'UNPAID-BILL-COMPLETE', 'manager-authz');
+    db.prepare(`UPDATE orders SET status = 'served' WHERE id = ?`).run(unpaidBilledOrder.orderId);
+    db.prepare(`UPDATE order_items SET status = 'served' WHERE order_id = ?`).run(unpaidBilledOrder.orderId);
+    const unpaidBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: unpaidBilledOrder.orderId }, headers: managerAuth,
+    });
+    assertEqual(unpaidBillRes.status, 201, 'generated bill for unpaid completion test');
+    const unpaidBillId = unpaidBillRes.data.bill.id;
+
+    const managerUnpaidNoPin = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: managerAuth,
+    });
+    assertEqual(managerUnpaidNoPin.status, 400, 'logged-in manager cannot complete an order with an unpaid bill without an explicit PIN');
+
+    const cashierPinComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed', override_pin: '9876' }, headers: cashierAuth,
+    });
+    assertEqual(cashierPinComplete.status, 403, 'cashier PIN cannot authorize unpaid order completion');
+
+    // Inactive manager PIN must be rejected
+    seedUser(db, 'inactive-mgr', 'manager', '4321');
+    db.prepare(`UPDATE users SET is_active = 0 WHERE id = 'inactive-mgr'`).run();
+    const inactiveMgrComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed', override_pin: '4321' }, headers: cashierAuth,
+    });
+    assertEqual(inactiveMgrComplete.status, 403, 'inactive manager PIN cannot authorize unpaid order completion');
+
+    // Manager lacking payments.take permission cannot authorize unpaid completion override
+    db.prepare(`INSERT INTO role_permission_overrides (role, permission_id, effect, updated_by, updated_at) VALUES ('manager', 'payments.take', 'deny', 'owner-authz', ?)`).run(now());
+    try {
+      const noPayPermComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+        method: 'PATCH', body: { status: 'completed', override_pin: '1234' }, headers: cashierAuth,
+      });
+      assertEqual(noPayPermComplete.status, 403, 'manager without payments.take cannot approve unpaid completion');
+    } finally {
+      db.prepare(`DELETE FROM role_permission_overrides WHERE role = 'manager' AND permission_id = 'payments.take'`).run();
+    }
+
+    // Rate limit after 5 failed PIN attempts on completion
+    resetPinRateLimitForTests();
+    for (let i = 1; i <= 5; i++) {
+      const bad = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+        method: 'PATCH', body: { status: 'completed', override_pin: '0000' }, headers: cashierAuth,
+      });
+      assertEqual(bad.status, 403, `failed completion PIN attempt ${i} returns 403`);
+    }
+    const rateLimitedComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed', override_pin: '1234' }, headers: cashierAuth,
+    });
+    assertEqual(rateLimitedComplete.status, 429, '6th completion PIN attempt after 5 failures is rate-limited with 429');
+    assertEqual((db.prepare('SELECT status FROM orders WHERE id = ?').get(unpaidBilledOrder.orderId) as any).status, 'served', 'rate-limited attempt does not mutate order status');
+
+    resetPinRateLimitForTests();
+    const validOverrideComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed', override_pin: '1234' }, headers: cashierAuth,
+    });
+    assertEqual(validOverrideComplete.status, 200, 'valid manager PIN overrides unpaid completion');
+    const billAfterOverride = db.prepare('SELECT payment_status, paid_amount, balance, payment_details FROM bills WHERE id = ?').get(unpaidBillId) as any;
+    assertEqual(billAfterOverride.payment_status, 'unpaid', 'completion override does not mark unpaid bill as paid');
+    assertEqual(Number(billAfterOverride.paid_amount), 0, 'completion override does not manufacture paid_amount');
+    assert(Number(billAfterOverride.balance) > 0, 'completion override preserves outstanding bill balance');
+
+    const completeAudits = db.prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed'`).all(unpaidBilledOrder.orderId) as any[];
+    assertEqual(completeAudits.length, 1, 'valid completion override writes exactly one status_changed audit entry');
+    const completeAuditDetails = JSON.parse(completeAudits[0].details_json || '{}');
+    assertEqual(completeAudits[0].actor_user_id, 'cashier-authz', 'completion audit records actor identity');
+    assertEqual(completeAuditDetails.approved_by, 'manager-authz', 'completion audit records approver identity');
+    assert(Array.isArray(completeAuditDetails.overridden_safeguards) && completeAuditDetails.overridden_safeguards.includes('unsettled_payment'), 'completion audit records unsettled_payment safeguard');
+    assert(Array.isArray(completeAuditDetails.bill_ids) && completeAuditDetails.bill_ids.includes(unpaidBillId), 'completion audit records bill IDs');
+    assert(Number(completeAuditDetails.outstanding_amount) > 0, 'completion audit records outstanding amount');
+    assert(!String(completeAudits[0].details_json).includes('1234'), 'completion audit never logs the PIN');
+
+    // Same-state retry on completed order is a harmless idempotent no-op without PIN
+    const retryComplete = await api(baseUrl, `/api/orders/${unpaidBilledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: cashierAuth,
+    });
+    assertEqual(retryComplete.status, 200, 'same-state completed retry succeeds without PIN');
+    const completeAuditsAfterRetry = db.prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed'`).all(unpaidBilledOrder.orderId) as any[];
+    assertEqual(completeAuditsAfterRetry.length, 1, 'same-state retry does not record a duplicate audit entry');
+
+    // Ordinary settled completion succeeds without PIN when kitchen requirement is satisfied
+    const settledOrder = seedOrderWithItem(db, 'SETTLED-COMPLETE', 'cashier-authz');
+    db.prepare(`UPDATE orders SET status = 'served' WHERE id = ?`).run(settledOrder.orderId);
+    db.prepare(`UPDATE order_items SET status = 'served' WHERE order_id = ?`).run(settledOrder.orderId);
+    const settledBillGen = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: settledOrder.orderId }, headers: cashierAuth,
+    });
+    assertEqual(settledBillGen.status, 201, 'generated bill for settled completion test');
+    const settledPay = await api(baseUrl, `/api/bills/${settledBillGen.data.bill.id}/payment`, {
+      method: 'POST', body: { method: 'cash', amount: settledBillGen.data.bill.total }, headers: cashierAuth,
+    });
+    assertEqual(settledPay.status, 200, 'paid bill for settled completion test');
+    db.prepare(`UPDATE orders SET status = 'served', completed_at = NULL WHERE id = ?`).run(settledOrder.orderId);
+    const settledComplete = await api(baseUrl, `/api/orders/${settledOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: cashierAuth,
+    });
+    assertEqual(settledComplete.status, 200, 'settled order completes without requiring an override PIN');
+
+    // Kitchen delivery enforcement on completion when require_kitchen_delivered_before_settlement is enabled
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('require_kitchen_delivered_before_settlement', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = 'true', updated_at = excluded.updated_at`).run(now());
+    try {
+      const undeliveredPaidOrder = seedOrderWithItem(db, 'KITCHEN-BLOCK-COMPLETE', 'cashier-authz');
+      const undeliveredBillGen = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST', body: { order_id: undeliveredPaidOrder.orderId }, headers: cashierAuth,
+      });
+      assertEqual(undeliveredBillGen.status, 201, 'generated bill for undelivered completion test');
+      const undeliveredPay = await api(baseUrl, `/api/bills/${undeliveredBillGen.data.bill.id}/payment`, {
+        method: 'POST', body: { method: 'cash', amount: undeliveredBillGen.data.bill.total, override_pin: '1234' }, headers: cashierAuth,
+      });
+      assertEqual(undeliveredPay.status, 200, 'paid bill with kitchen override for undelivered completion test');
+      db.prepare(`UPDATE orders SET status = 'preparing', completed_at = NULL WHERE id = ?`).run(undeliveredPaidOrder.orderId);
+
+      const blockedKitchenComplete = await api(baseUrl, `/api/orders/${undeliveredPaidOrder.orderId}/status`, {
+        method: 'PATCH', body: { status: 'completed' }, headers: ownerAuth,
+      });
+      assertEqual(blockedKitchenComplete.status, 400, 'completion is blocked without PIN when kitchen delivery policy requires served items');
+
+      const overriddenKitchenComplete = await api(baseUrl, `/api/orders/${undeliveredPaidOrder.orderId}/status`, {
+        method: 'PATCH', body: { status: 'completed', override_pin: '5678' }, headers: cashierAuth,
+      });
+      assertEqual(overriddenKitchenComplete.status, 200, 'owner PIN overrides kitchen-undelivered completion block');
+      const kitchenCompleteAudit = db.prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1`).get(undeliveredPaidOrder.orderId) as any;
+      const kitchenAuditDetails = JSON.parse(kitchenCompleteAudit?.details_json || '{}');
+      assertEqual(kitchenAuditDetails.approved_by, 'owner-authz', 'kitchen completion override records owner approver');
+      assert(Array.isArray(kitchenAuditDetails.overridden_safeguards) && kitchenAuditDetails.overridden_safeguards.includes('kitchen_undelivered'), 'kitchen completion override records kitchen_undelivered safeguard');
+    } finally {
+      db.prepare(`UPDATE settings SET value = 'false', updated_at = ? WHERE key = 'require_kitchen_delivered_before_settlement'`).run(now());
+    }
+
+    // Split checks: completion requires all payable checks to be settled and cover order total
+    const splitOrder = seedOrderWithItem(db, 'SPLIT-COMPLETE', 'cashier-authz');
+    db.prepare(`UPDATE orders SET status = 'served', subtotal = 200, total = 200 WHERE id = ?`).run(splitOrder.orderId);
+    db.prepare(`UPDATE order_items SET status = 'served', quantity = 2, subtotal = 200, total = 200 WHERE id = ?`).run(splitOrder.itemId);
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, split_group_id, subtotal, tax_amount, discount_amount, total, payment_status, paid_amount, balance, payment_details, created_at, updated_at)
+       VALUES ('BILL-SPLIT-A', ?, 'sg-1', 100, 0, 0, 100, 'paid', 100, 0, ?, ?, ?)`
+    ).run(splitOrder.orderId, JSON.stringify([{ method: 'cash', amount: 100 }]), now(), now());
+    db.prepare(
+      `INSERT INTO bills (bill_number, order_id, split_group_id, subtotal, tax_amount, discount_amount, total, payment_status, paid_amount, balance, payment_details, created_at, updated_at)
+       VALUES ('BILL-SPLIT-B', ?, 'sg-1', 100, 0, 0, 100, 'unpaid', 0, 100, '[]', ?, ?)`
+    ).run(splitOrder.orderId, now(), now());
+
+    const halfPaidSplitComplete = await api(baseUrl, `/api/orders/${splitOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: ownerAuth,
+    });
+    assertEqual(halfPaidSplitComplete.status, 400, 'split-check order with an unpaid check cannot complete without PIN');
+
+    db.prepare(`UPDATE bills SET payment_status = 'paid', paid_amount = 100, balance = 0, payment_details = ? WHERE bill_number = 'BILL-SPLIT-B'`)
+      .run(JSON.stringify([{ method: 'card', amount: 100 }]));
+    const fullPaidSplitComplete = await api(baseUrl, `/api/orders/${splitOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'completed' }, headers: cashierAuth,
+    });
+    assertEqual(fullPaidSplitComplete.status, 200, 'split-check order completes without PIN once all payable checks are settled');
   } finally {
     server.close();
     closeDatabase();

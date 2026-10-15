@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, placeOrderAndPayCash, addToCart, ownerAuth, money, fmt } from './helpers';
 
@@ -17,6 +17,20 @@ const RUN = Date.now().toString(36).slice(-4);
 let settled: Array<{ order_number: string; total: number; subtotal: number; customer?: string }>;
 let open: { order_number: string };
 let customerName: string;
+
+async function settleOrderViaBill(request: APIRequestContext, headers: Record<string, string>, orderId: number) {
+  const billRes = await request.post(`${E2E_BASE_URL}/api/bills/generate`, {
+    headers,
+    data: { order_id: orderId },
+  });
+  expect(billRes.ok()).toBeTruthy();
+  const { bill } = (await billRes.json()) as { bill: { id: number; total: number } };
+  const payRes = await request.post(`${E2E_BASE_URL}/api/bills/${bill.id}/payment`, {
+    headers,
+    data: { method: 'cash', amount: bill.total },
+  });
+  expect(payRes.ok()).toBeTruthy();
+}
 
 test.describe('@ci-tier2 operations admin - order history', () => {
   test.beforeAll(async ({ request }) => {
@@ -42,11 +56,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
       expect(res.status()).toBe(201);
       const { order } = (await res.json()) as { order: { id: number; order_number: string; total: number; subtotal: number } };
       // Settle it the same way the POS does, so it lands in history as completed.
-      const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${order.id}/status`, {
-        headers: ownerAuth(),
-        data: { status: 'completed' },
-      });
-      expect(completed.ok()).toBeTruthy();
+      await settleOrderViaBill(request, ownerAuth(), order.id);
       settled.push(order);
     }
 
@@ -65,11 +75,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
 
     // Settle it too, so every entry in `settled` really is a settled sale and
     // the Completed filter is being asked a fair question.
-    const completedDelivery = await request.patch(`${E2E_BASE_URL}/api/orders/${delivery.id}/status`, {
-      headers: ownerAuth(),
-      data: { status: 'completed' },
-    });
-    expect(completedDelivery.ok()).toBeTruthy();
+    await settleOrderViaBill(request, ownerAuth(), delivery.id);
     settled.push({ ...delivery, customer: customerName });
 
     const openRes = await request.post(`${E2E_BASE_URL}/api/orders`, {
@@ -155,11 +161,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
       data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
     });
     const { order } = (await created.json()) as { order: { id: number; order_number: string } };
-    const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${order.id}/status`, {
-      headers,
-      data: { status: 'completed' },
-    });
-    expect(completed.ok()).toBeTruthy();
+    await settleOrderViaBill(request, headers, order.id);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
 
@@ -274,11 +276,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     });
     expect(created.status()).toBe(201);
     const sale = ((await created.json()) as { order: { id: number; order_number: string; subtotal: number; total: number } }).order;
-    const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${sale.id}/status`, {
-      headers,
-      data: { status: 'completed' },
-    });
-    expect(completed.ok()).toBeTruthy();
+    await settleOrderViaBill(request, headers, sale.id);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
     await page.getByRole('button', { name: 'All', exact: true }).first().click();

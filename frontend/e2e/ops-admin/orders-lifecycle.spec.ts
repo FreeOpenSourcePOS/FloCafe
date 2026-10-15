@@ -181,6 +181,66 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     expect(await fetchProductStock(page, cancelProbe.id)).toBe(before);
   });
 
+  test('cancelling a pending order with collected payment requires a manager PIN and keeps the dialog open on error', async ({ page }) => {
+    await login(page, 'owner');
+    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+
+    const created = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
+      headers,
+      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 2 }] },
+    });
+    expect(created.status()).toBe(201);
+    const { order } = (await created.json()) as { order: { id: number; order_number: string; total: number } };
+
+    const billGen = await page.request.post(`${E2E_BASE_URL}/api/bills/generate`, {
+      headers,
+      data: { order_id: order.id },
+    });
+    expect(billGen.status()).toBe(201);
+    const { bill } = (await billGen.json()) as { bill: { id: number; total: number } };
+
+    // Record a partial payment so the order remains active and pending while holding collected funds.
+    const partialPay = await page.request.post(`${E2E_BASE_URL}/api/bills/${bill.id}/payment`, {
+      headers,
+      data: { method: 'cash', amount: 20 },
+    });
+    expect(partialPay.ok()).toBeTruthy();
+
+    await page.goto(`${E2E_BASE_URL}/orders`);
+    const row = page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first();
+    await expect(row).toBeVisible();
+    await row.click();
+
+    await openOrderOverflowMenu(page);
+    await page.getByRole('menuitem', { name: /^Cancel$/ }).click();
+
+    const sheet = overlay(page);
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText(`Cancel Order #${order.order_number}`);
+    const pinInput = sheet.locator('#overridePin');
+    await expect(pinInput).toBeVisible();
+
+    // Recoverable rejection (wrong PIN) keeps the dialog open so staff can correct the PIN.
+    await pinInput.fill('9999');
+    await sheet.getByRole('button', { name: /Confirm Cancel/i }).click();
+    await expect(sheet).toBeVisible();
+    await expect(pinInput).toBeVisible();
+    expect((await fetchOrder(page, order.order_number)).status).toBe('pending');
+
+    // Supplying the valid manager/owner PIN completes the cancellation without erasing collected payment.
+    await pinInput.fill(OWNER_APPROVAL_PIN);
+    await sheet.getByRole('button', { name: /Confirm Cancel/i }).click();
+    await expect(page.getByText(/Order cancelled successfully/i).first()).toBeVisible({ timeout: 30_000 });
+
+    const cancelled = await fetchOrder(page, order.order_number);
+    expect(cancelled.status).toBe('cancelled');
+    const billRes = await page.request.get(`${E2E_BASE_URL}/api/bills/${bill.id}`, { headers });
+    expect(billRes.ok()).toBeTruthy();
+    const { bill: storedBill } = (await billRes.json()) as { bill: { paid_amount: number; payment_status: string } };
+    expect(Number(storedBill.paid_amount)).toBe(20);
+    expect(storedBill.payment_status).toBe('partial');
+  });
+
   test('the Orders screen shows this order\'s own totals, and each line its own gross', async ({ page }) => {
     await login(page, 'owner');
     const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();

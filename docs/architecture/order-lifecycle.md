@@ -166,7 +166,16 @@ enabled, excluding the share funded by wallet points.
 ## Order status
 
 `PATCH /api/orders/:id/status` advances the order through preparation, service, and terminal
-statuses. Its allowed transitions, no-op rule, and cancellation approval requirements are in the
+statuses inside a single transaction. Ordinary `completed` transitions require settled payable bills
+covering the order total (an unbilled positive-total order is not considered paid) and, when
+`require_kitchen_delivered_before_settlement` applies, no kitchen items remaining in `pending`,
+`preparing`, or `ready`. Unsettled completion or undelivered-kitchen completion requires an explicit
+active owner or manager `override_pin` (being logged in as owner or manager does not bypass the PIN)
+and leaves bill balances and payment records untouched. Cancelling an order requires an explicit
+active owner or manager `override_pin` when the order or any item has progressed past `pending` or
+when any bill holds collected funds; cancellation preserves payment and refund records and restores
+product, variant, add-on, and recipe stock only for items still in `pending` status. Allowed
+transitions, audit fields, and approval rules are in the
 [API reference](../reference/api.md#orders). Kitchen item status is a separate surface
 (`/api/order-items`); see [order-item status](../reference/api.md#order-item-status).
 

@@ -259,6 +259,21 @@ async function main() {
       assertEqualOrThrow(stockOf(db, OAT), voidBefore - 6, 'voiding leaves the add-on stock consumed');
       assertEqualOrThrow(movementsFor(db, OAT).length, movementsBefore, 'a void appends no add-on movement at all');
       assertEqualOrThrow(validateInventoryLedgerDatabase(db), null, 'the pool reconciles after a void');
+
+      // Whole-order cancellation restores add-on stock only for pending lines; prepared lines use waste semantics.
+      const mixedBefore = stockOf(db, OAT);
+      const mixedOrder = (await createOrder([
+        burgerWith(1, [{ id: OAT, quantity: 2 }]),
+        { product_id: 'prod-wrap', quantity: 1, addons: [{ id: OAT, quantity: 3 }] },
+      ])).data.order;
+      assertEqualOrThrow(stockOf(db, OAT), mixedBefore - 5, 'mixed order debits 2 and 3');
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(mixedOrder.items[0].id);
+      const mixedCancel = await api(baseUrl, `/api/orders/${mixedOrder.id}/status`, {
+        method: 'PATCH', headers: manager.authHeader, body: { status: 'cancelled', override_pin: '1234', reason: 'cancelled mid-prep' },
+      });
+      assertEqualOrThrow(mixedCancel.status, 200, 'mixed order cancels with manager PIN');
+      assertEqualOrThrow(stockOf(db, OAT), mixedBefore - 2, 'only the pending line (3) restores add-on stock; the preparing line (2) stays consumed');
+      assertEqualOrThrow(validateInventoryLedgerDatabase(db), null, 'the pool reconciles after mixed whole-order cancel');
     }
 
     // ── 7. Restoring a line re-deducts what it recorded ───────────────────

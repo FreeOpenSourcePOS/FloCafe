@@ -225,7 +225,7 @@ async function main() {
     assert(typeof sameServed.data.order.tax_breakdown !== 'string', 'same-state status response parses tax breakdown');
     assert(typeof sameServed.data.order.tax_snapshot !== 'string', 'same-state status response parses tax snapshot');
 
-    const toComp = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'completed' } });
+    const toComp = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'completed', override_pin: '1234' } });
     assertEqual(toComp.status, 200, 'served -> completed is valid');
     assertEqual(db.prepare('SELECT status FROM orders WHERE id = ?').get(fwdId).status, 'completed', 'served -> completed persists completed');
 
@@ -276,7 +276,7 @@ async function main() {
     const completeRes = await api(baseUrl, `/api/orders/${completedOrderId}/status`, {
       method: 'PATCH',
       headers: authHeader,
-      body: { status: 'completed' },
+      body: { status: 'completed', override_pin: '1234' },
     });
     assertEqual(completeRes.status, 200, 'completed-order fixture reaches completed state');
 

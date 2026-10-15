@@ -211,6 +211,32 @@ async function main() {
     assertEqual(cancel3.status, 200, 'order with only voided item cancels');
     assertEqual(stockOf(db, beans.id), beansBeforeOrder3Cancel, 'whole-order cancel skips voided item supplies');
 
+    const mixedRecipeOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-latte', quantity: 1 },
+          { product_id: 'prod-latte', quantity: 2 },
+        ],
+      },
+    });
+    assertEqual(mixedRecipeOrder.status, 201, 'mixed recipe order created');
+    const beansAfterMixedCreate = stockOf(db, beans.id);
+    await api(baseUrl, `/api/order-items/${mixedRecipeOrder.data.order.items[0].id}/status`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'preparing' },
+    });
+    const cancelMixedRecipe = await api(baseUrl, `/api/orders/${mixedRecipeOrder.data.order.id}/status`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'cancelled', override_pin: '1234' },
+    });
+    assertEqual(cancelMixedRecipe.status, 200, 'mixed recipe order cancels with manager PIN');
+    assertEqual(stockOf(db, beans.id), beansAfterMixedCreate + 36, 'whole-order cancel restores recipe stock only for the pending item (2 x 18 g) and skips the preparing item (1 x 18 g)');
+
     console.log('\n--- 7. Inactive recipe skips depletion ---');
     saveRecipe(db, {
       productId: 'prod-latte',

@@ -153,10 +153,16 @@ session, and the closing actor is recorded on the closure row. The route is
 where the stored session and the actor are read together. This is a context policy, not a
 permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md).
 
-**Order cancellation.** Cashiers can cancel a whole order while it is pending. If the order or any
-item has advanced to `preparing` or later, an owner or manager approval PIN is required. The rule
-turns on stored order and item status, not on whether a KDS screen is open; printing a kitchen
-ticket does not advance the status.
+**Order cancellation and completion overrides.** Staff holding `orders.status.update` can cancel a
+whole order without a PIN only while the order and all of its items are `pending` and no bill holds
+collected funds. If the order or any item has advanced to `preparing` or later, or if any bill holds
+recorded collected payment, an active owner or manager approval PIN (`override_pin`, with
+`orders.status.update` and `orders.item.cancel`) is required; cancellation preserves payment and
+refund records and restores inventory only for `pending` items. Similarly, completing an order with
+unsettled payable bills, an unbilled positive total, or undelivered kitchen items (when
+`require_kitchen_delivered_before_settlement` applies) requires an explicit active owner or manager
+PIN (with `payments.take` when overriding unsettled payment), even when the logged-in user is
+already an owner or manager.
 
 **Owner visibility.** The permission editor itself is rendered only for an authenticated user
 holding `authorization.manage` — an active owner, always. The API enforces this independently;

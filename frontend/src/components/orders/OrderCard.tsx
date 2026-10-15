@@ -226,6 +226,22 @@ export function OrderCard({
   })();
   const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
   const hasEligibleRefund = paidBills.length > 0;
+  const hasCollectedFunds = orderBills.some((candidate) => {
+    const status = String(candidate.payment_status || '');
+    const paidAmount = Number(candidate.paid_amount || 0);
+    const total = Number(candidate.total || 0);
+    const detailsCount = Array.isArray(candidate.payment_details) ? candidate.payment_details.length : 0;
+    return (
+      (paidAmount > 0 && status !== 'refunded') ||
+      status === 'partial' ||
+      status === 'partially_refunded' ||
+      (status === 'paid' && (total > 0 || detailsCount > 0))
+    );
+  });
+  const cancelRequiresPin =
+    order.status !== 'pending' ||
+    Boolean(order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) ||
+    hasCollectedFunds;
 
   const checkoutButtonLabel = (() => {
     if (generatingBillId === order.id) return tOrders('generating');
@@ -352,7 +368,7 @@ export function OrderCard({
                       disabled={cancellingOrderId === order.id}
                       className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/40"
                     >
-                      {order.status === 'pending' ? (
+                      {!cancelRequiresPin ? (
                         <XCircle size={14} className="me-2" />
                       ) : (
                         <Lock size={14} className="me-2" />

@@ -642,6 +642,37 @@ async function main() {
       200,
       'split-check order completes without PIN once all payable checks are settled',
     );
+
+    // Missing regional currency/country settings must fail with 409 RegionalNotConfiguredError
+    const unconfiguredCurrencyOrder = seedOrderWithItem(db, 'NO-CURRENCY', 'cashier-authz');
+    const savedSettings = db
+      .prepare(`SELECT key, value FROM settings WHERE key IN ('currency', 'country')`)
+      .all() as { key: string; value: string }[];
+    try {
+      db.prepare(`DELETE FROM settings WHERE key IN ('currency', 'country')`).run();
+      const missingRegionalRes = await api(
+        baseUrl,
+        `/api/orders/${unconfiguredCurrencyOrder.orderId}/status`,
+        {
+          method: 'PATCH',
+          body: { status: 'completed' },
+          headers: ownerAuth,
+        },
+      );
+      assertEqual(
+        missingRegionalRes.status,
+        409,
+        'missing regional settings return 409 instead of guessing currency decimals',
+      );
+    } finally {
+      for (const row of savedSettings) {
+        db.prepare(`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)`).run(
+          row.key,
+          row.value,
+          now(),
+        );
+      }
+    }
   } finally {
     server.close();
     closeDatabase();

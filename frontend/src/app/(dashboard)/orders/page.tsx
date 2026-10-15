@@ -1379,7 +1379,13 @@ export default function OrdersPage() {
       setCancelModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const message =
+        typeof err?.response?.data?.error === 'string'
+          ? err.response.data.error
+          : typeof err?.message === 'string'
+            ? err.message
+            : '';
       if (/PIN/i.test(message)) {
         setCancelModal((prev) => (prev ? { ...prev, requiresPin: true } : prev));
       }

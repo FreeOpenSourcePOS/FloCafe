@@ -298,6 +298,59 @@ test.describe('@ci-tier2 operations admin - order lifecycle', () => {
     };
     expect(Number(storedBill.paid_amount)).toBe(20);
     expect(storedBill.payment_status).toBe('partial');
+
+    // If another till records a partial payment after the cancel dialog is already open,
+    // the initial Confirm Cancel rejection keeps the dialog open and reveals the PIN input.
+    const latePayCreated = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
+      headers,
+      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 2 }] },
+    });
+    expect(latePayCreated.status()).toBe(201);
+    const { order: latePayOrder } = (await latePayCreated.json()) as {
+      order: { id: number; order_number: string };
+    };
+    const lateBillGen = await page.request.post(`${E2E_BASE_URL}/api/bills/generate`, {
+      headers,
+      data: { order_id: latePayOrder.id },
+    });
+    expect(lateBillGen.status()).toBe(201);
+    const { bill: lateBill } = (await lateBillGen.json()) as { bill: { id: number } };
+
+    await page.goto(`${E2E_BASE_URL}/orders`);
+    const lateRow = page
+      .getByRole('button')
+      .filter({ hasText: `#${latePayOrder.order_number}` })
+      .first();
+    await expect(lateRow).toBeVisible();
+    await lateRow.click();
+
+    await openOrderOverflowMenu(page);
+    await page.getByRole('menuitem', { name: /^Cancel$/ }).click();
+
+    const lateSheet = overlay(page);
+    await expect(lateSheet).toBeVisible();
+    await expect(lateSheet.locator('#overridePin')).toHaveCount(0);
+
+    // Another till collects partial payment while the dialog is open.
+    const concurrentPay = await page.request.post(
+      `${E2E_BASE_URL}/api/bills/${lateBill.id}/payment`,
+      {
+        headers,
+        data: { method: 'cash', amount: 15 },
+      },
+    );
+    expect(concurrentPay.ok()).toBeTruthy();
+
+    await lateSheet.getByRole('button', { name: /Confirm Cancel/i }).click();
+    await expect(lateSheet).toBeVisible();
+    await expect(lateSheet.locator('#overridePin')).toBeVisible();
+
+    await lateSheet.locator('#overridePin').fill(OWNER_APPROVAL_PIN);
+    await lateSheet.getByRole('button', { name: /Confirm Cancel/i }).click();
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${latePayOrder.order_number}` }),
+    ).toHaveCount(0);
+    expect((await fetchOrder(page, latePayOrder.order_number)).status).toBe('cancelled');
   });
 
   test("the Orders screen shows this order's own totals, and each line its own gross", async ({

@@ -2109,16 +2109,9 @@ router.patch(
         const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
         const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
 
-        let minorFactor = 100;
-        let fractionDigits = 2;
-        try {
-          const tenantCurrency = getTenantCurrency();
-          minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
-          fractionDigits = getCurrencyFractionDigits(tenantCurrency);
-        } catch {
-          minorFactor = 100;
-          fractionDigits = 2;
-        }
+        const tenantCurrency = getTenantCurrency();
+        const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+        const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
         const roundCurrency = (amount: number): number =>
           fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
 

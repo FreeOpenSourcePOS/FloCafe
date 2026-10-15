@@ -55,6 +55,20 @@ function readInitialAttemptState(
   }
 }
 
+function attemptBodiesMatch(a: OrderItemEditAttemptBody, b: OrderItemEditAttemptBody): boolean {
+  if (a.expected_edit_version !== b.expected_edit_version || a.quantity !== b.quantity) {
+    return false;
+  }
+  if (a.replacement === undefined || b.replacement === undefined) {
+    return a.replacement === b.replacement;
+  }
+  return (
+    a.replacement.product_id === b.replacement.product_id &&
+    a.replacement.quantity === b.replacement.quantity &&
+    (a.replacement.variant_id ?? '') === (b.replacement.variant_id ?? '')
+  );
+}
+
 /** Owner-only edit of a live order line: change its quantity or swap it for another product. */
 export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: Props) {
   const tOrders = useTranslations('orders');
@@ -137,6 +151,26 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     onClose();
   };
 
+  const refreshAfterConflict = async () => {
+    try {
+      const { data } = await api.get(`/orders/${orderId}`);
+      const refreshedOrder = (data?.order ?? data) as Order | undefined;
+      if (refreshedOrder && typeof refreshedOrder === 'object' && 'id' in refreshedOrder) {
+        const latestItem = refreshedOrder.items?.find((entry) => entry.id === currentItem.id);
+        if (latestItem) {
+          setRefreshedItem(latestItem);
+          setQuantity(String(latestItem.quantity));
+        }
+        onSaved(refreshedOrder);
+      }
+    } catch {
+      // Best-effort refresh before closing the conflicted modal.
+    }
+    inFlightRef.current = false;
+    setSaving(false);
+    onClose();
+  };
+
   const save = async () => {
     if (inFlightRef.current || saving || !canSave) return;
     if (tenantId === null || !actorId || attemptState.storageBlocked) {
@@ -148,6 +182,25 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     setSaving(true);
     let persisted = lockedAttempt !== null;
 
+    const buildBody = (): OrderItemEditAttemptBody => {
+      const expectedEditVersion =
+        typeof currentItem.edit_version === 'number' &&
+        Number.isSafeInteger(currentItem.edit_version) &&
+        currentItem.edit_version >= 0
+          ? currentItem.edit_version
+          : 0;
+      return mode === 'quantity'
+        ? { expected_edit_version: expectedEditVersion, quantity: parsedQuantity }
+        : {
+            expected_edit_version: expectedEditVersion,
+            replacement: {
+              product_id: effectiveSelected!.id,
+              quantity: parsedQuantity,
+              ...(variantId ? { variant_id: variantId } : {}),
+            },
+          };
+    };
+
     try {
       const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, currentItem.id);
       const committedOrder = await withOrderItemEditAttemptLock(scopedKey, async () => {
@@ -155,37 +208,23 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
         let snapshot: OrderItemEditAttemptSnapshot;
 
         if (existing) {
+          const intended = lockedAttempt ?? { mode, body: buildBody() };
+          if (
+            existing.mode !== intended.mode ||
+            !attemptBodiesMatch(existing.body, intended.body)
+          ) {
+            return null;
+          }
           snapshot = existing;
           persisted = true;
           setAttemptState({ attempt: snapshot, storageBlocked: false });
         } else {
-          const expectedEditVersion =
-            typeof currentItem.edit_version === 'number' &&
-            Number.isSafeInteger(currentItem.edit_version) &&
-            currentItem.edit_version >= 0
-              ? currentItem.edit_version
-              : 0;
-          const body: OrderItemEditAttemptBody =
-            mode === 'quantity'
-              ? {
-                  expected_edit_version: expectedEditVersion,
-                  quantity: parsedQuantity,
-                }
-              : {
-                  expected_edit_version: expectedEditVersion,
-                  replacement: {
-                    product_id: effectiveSelected!.id,
-                    quantity: parsedQuantity,
-                    ...(variantId ? { variant_id: variantId } : {}),
-                  },
-                };
-
           snapshot = newOrderItemEditAttempt({
             mode,
             path: `/orders/${orderId}/items/${currentItem.id}/edit`,
             orderId,
             itemId: currentItem.id,
-            body,
+            body: buildBody(),
             actorId,
             tenantId,
           });
@@ -229,6 +268,12 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
         }
       });
 
+      if (committedOrder === null) {
+        toast.error(tOrders('editItemFailed'));
+        await refreshAfterConflict();
+        return;
+      }
+
       toast.success(tOrders('itemEdited'));
       onSaved(committedOrder);
       inFlightRef.current = false;
@@ -245,23 +290,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
         ?.error;
       toast.error(message || tOrders('editItemFailed'));
       if (status === 409) {
-        try {
-          const { data } = await api.get(`/orders/${orderId}`);
-          const refreshedOrder = (data?.order ?? data) as Order | undefined;
-          if (refreshedOrder && typeof refreshedOrder === 'object' && 'id' in refreshedOrder) {
-            const latestItem = refreshedOrder.items?.find((entry) => entry.id === currentItem.id);
-            if (latestItem) {
-              setRefreshedItem(latestItem);
-              setQuantity(String(latestItem.quantity));
-            }
-            onSaved(refreshedOrder);
-          }
-        } catch {
-          // Best-effort refresh before closing the conflicted modal.
-        }
-        inFlightRef.current = false;
-        setSaving(false);
-        onClose();
+        await refreshAfterConflict();
         return;
       }
     } finally {

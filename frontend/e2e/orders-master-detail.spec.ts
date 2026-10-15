@@ -591,8 +591,9 @@ test.describe('owner live order item edit and superseded cancellation handling',
     expect(capturedRequests[1].key).toBe(capturedRequests[0].key);
     expect(capturedRequests[1].body).toEqual(capturedRequests[0].body);
 
-    // Modal closes after commit and superseded line does not offer a Restore button
+    // Modal closes after commit and the superseded line leaves no voided-items
+    // toggle, so the Restore control inside that list never renders
     await expect(qtyInput).toBeHidden();
-    await expect(page.getByTitle('Restore item')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /voided item/i })).toHaveCount(0);
   });
 });

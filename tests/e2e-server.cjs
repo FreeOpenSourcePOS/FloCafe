@@ -44,16 +44,36 @@ Module._load = function (request, parent, isMain) {
 
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/main/db');
-const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/main/shutdown');
+const {
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  beginDatabaseShutdown,
+  waitForDatabaseRequests,
+  now,
+} = require('../dist/main/db');
+const {
+  createExitCodeAwareShutdown,
+  waitForHttpShutdownWork,
+  isShutdownTimeout,
+} = require('../dist/main/shutdown');
 const { startServer, stopServer, getServerPort } = require('../dist/main/server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('../dist/main/server-app');
-const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/main/services/whatsapp');
+const {
+  shutdown: shutdownWhatsApp,
+  requestShutdown: requestWhatsAppShutdown,
+} = require('../dist/main/services/whatsapp');
 const { startStandaloneServers } = require('../dist/main/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
-const testTaxPack = { ...flatRatePackData, id: 'test-th-pack', country: 'TH', currency: 'THB', publisher: 'FreeOpenSourcePOS' };
+const testTaxPack = {
+  ...flatRatePackData,
+  id: 'test-th-pack',
+  country: 'TH',
+  currency: 'THB',
+  publisher: 'FreeOpenSourcePOS',
+};
 
 // BUNDLED_COUNTRY_PACKS (main/tax-packs/bundled.ts) only ships the generic
 // pack — real country packs (e.g. Thailand, India) are separately-published
@@ -82,7 +102,15 @@ function installAndActivateTaxPack(db, pack) {
       active_version_id = excluded.active_version_id,
       status = 'active',
       updated_at = excluded.updated_at
-  `).run(pack.id, pack.publisher, pack.country, pack.jurisdiction, versionId, installedAt, installedAt);
+  `).run(
+    pack.id,
+    pack.publisher,
+    pack.country,
+    pack.jurisdiction,
+    versionId,
+    installedAt,
+    installedAt,
+  );
 
   db.prepare(`
     INSERT OR REPLACE INTO country_pack_versions (
@@ -90,13 +118,25 @@ function installAndActivateTaxPack(db, pack) {
       effective_from, effective_to, min_flo_version, published_at, status, created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
   `).run(
-    versionId, pack.id, pack.version, pack.schemaVersion,
+    versionId,
+    pack.id,
+    pack.version,
+    pack.schemaVersion,
     JSON.stringify({
-      id: pack.id, publisher: pack.publisher, country: pack.country,
-      jurisdiction: pack.jurisdiction, version: pack.version, publishedAt: pack.publishedAt,
+      id: pack.id,
+      publisher: pack.publisher,
+      country: pack.country,
+      jurisdiction: pack.jurisdiction,
+      version: pack.version,
+      publishedAt: pack.publishedAt,
     }),
-    packJson, digest, pack.effectiveFrom, pack.effectiveTo || null, pack.minFloVersion,
-    pack.publishedAt, installedAt,
+    packJson,
+    digest,
+    pack.effectiveFrom,
+    pack.effectiveTo || null,
+    pack.minFloVersion,
+    pack.publishedAt,
+    installedAt,
   );
 
   const insertCategory = db.prepare(`
@@ -106,8 +146,13 @@ function installAndActivateTaxPack(db, pack) {
   `);
   for (const category of pack.categories) {
     insertCategory.run(
-      `${versionId}:category:${category.id}`, versionId, category.id, category.label,
-      category.defaultBehavior || null, JSON.stringify(category), installedAt,
+      `${versionId}:category:${category.id}`,
+      versionId,
+      category.id,
+      category.label,
+      category.defaultBehavior || null,
+      JSON.stringify(category),
+      installedAt,
     );
   }
 
@@ -119,9 +164,17 @@ function installAndActivateTaxPack(db, pack) {
   `);
   for (const rule of pack.rules) {
     insertRule.run(
-      `${versionId}:rule:${rule.id}`, versionId, rule.id, rule.label, rule.type,
-      rule.rate || null, rule.amount || null, rule.appliesPer || null,
-      JSON.stringify(rule.baseRuleIds || []), JSON.stringify(rule), installedAt,
+      `${versionId}:rule:${rule.id}`,
+      versionId,
+      rule.id,
+      rule.label,
+      rule.type,
+      rule.rate || null,
+      rule.amount || null,
+      rule.appliesPer || null,
+      JSON.stringify(rule.baseRuleIds || []),
+      JSON.stringify(rule),
+      installedAt,
     );
   }
 }
@@ -151,9 +204,11 @@ function assertRequiredPortAvailable(port, service) {
 }
 
 function seedUser(id, email, role) {
-  getDatabase().prepare(
-    'INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)'
-  ).run(id, `E2E ${role}`, email, bcrypt.hashSync('E2ePass123!', 10), role, now(), now());
+  getDatabase()
+    .prepare(
+      'INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)',
+    )
+    .run(id, `E2E ${role}`, email, bcrypt.hashSync('E2ePass123!', 10), role, now(), now());
 }
 
 function seedPosFixture() {
@@ -174,81 +229,120 @@ function seedPosFixture() {
     // turn taxes on itself rather than rely on a global default.
     ['taxes_enabled', 'true'],
   ]) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
-      .run(key, value, createdAt);
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+      key,
+      value,
+      createdAt,
+    );
   }
   installAndActivateTaxPack(db, testTaxPack);
   db.prepare(
-    'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)'
+    'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
   ).run('e2e-category', 'E2E Menu', 1, createdAt, createdAt);
   db.prepare(
     `INSERT INTO products (
        id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
        cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
   ).run(
-    'e2e-product', 'e2e-category', 'E2E Coffee', 60, 'none', 'standard', 'exclusive',
-    0, 0, 999, 1, createdAt, createdAt,
+    'e2e-product',
+    'e2e-category',
+    'E2E Coffee',
+    60,
+    'none',
+    'standard',
+    'exclusive',
+    0,
+    0,
+    999,
+    1,
+    createdAt,
+    createdAt,
   );
+  db.prepare(
+    `INSERT OR IGNORE INTO customers (
+       id, name, phone, country_code, is_active, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, 1, ?, ?)`,
+  ).run('e2e-customer', 'E2E Guest', '+66800000001', '+66', createdAt, createdAt);
 }
 
 let exitRequested = false;
 let shutdownRequested = false;
-const requestStop = createExitCodeAwareShutdown(async () => {
-  let cleanupFailed = false;
-  let databaseBlocked = false;
-  try { await stopServerApp(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] Server App cleanup failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  try { await stopServer(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] Main server cleanup failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  try { await stopKdsServer(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] KDS server cleanup failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  try { await shutdownWhatsApp(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] WhatsApp cleanup failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  try { await waitForHttpShutdownWork(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] HTTP handler cleanup failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
-    cleanupFailed = true;
-    databaseBlocked = true;
-    console.error('[E2E] Database request drain failed:', error);
-    if (isShutdownTimeout(error)) throw error;
-  }
-  if (!databaseBlocked) {
-    try { closeDatabase(); } catch (error) {
+const requestStop = createExitCodeAwareShutdown(
+  async () => {
+    let cleanupFailed = false;
+    let databaseBlocked = false;
+    try {
+      await stopServerApp();
+    } catch (error) {
       cleanupFailed = true;
-      console.error('[E2E] Database cleanup failed:', error);
+      databaseBlocked = true;
+      console.error('[E2E] Server App cleanup failed:', error);
+      if (isShutdownTimeout(error)) throw error;
     }
-  }
-  Module._load = originalLoad;
-  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] Fixture cleanup failed:', error);
-  }
-  return cleanupFailed ? 1 : 0;
-}, {
-  onShutdownRequested: requestWhatsAppShutdown,
-  onFatalTimeout: () => process.exit(1),
-});
+    try {
+      await stopServer();
+    } catch (error) {
+      cleanupFailed = true;
+      databaseBlocked = true;
+      console.error('[E2E] Main server cleanup failed:', error);
+      if (isShutdownTimeout(error)) throw error;
+    }
+    try {
+      await stopKdsServer();
+    } catch (error) {
+      cleanupFailed = true;
+      databaseBlocked = true;
+      console.error('[E2E] KDS server cleanup failed:', error);
+      if (isShutdownTimeout(error)) throw error;
+    }
+    try {
+      await shutdownWhatsApp();
+    } catch (error) {
+      cleanupFailed = true;
+      databaseBlocked = true;
+      console.error('[E2E] WhatsApp cleanup failed:', error);
+      if (isShutdownTimeout(error)) throw error;
+    }
+    try {
+      await waitForHttpShutdownWork();
+    } catch (error) {
+      cleanupFailed = true;
+      databaseBlocked = true;
+      console.error('[E2E] HTTP handler cleanup failed:', error);
+      if (isShutdownTimeout(error)) throw error;
+    }
+    try {
+      beginDatabaseShutdown();
+      await waitForDatabaseRequests();
+    } catch (error) {
+      cleanupFailed = true;
+      databaseBlocked = true;
+      console.error('[E2E] Database request drain failed:', error);
+      if (isShutdownTimeout(error)) throw error;
+    }
+    if (!databaseBlocked) {
+      try {
+        closeDatabase();
+      } catch (error) {
+        cleanupFailed = true;
+        console.error('[E2E] Database cleanup failed:', error);
+      }
+    }
+    Module._load = originalLoad;
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch (error) {
+      cleanupFailed = true;
+      console.error('[E2E] Fixture cleanup failed:', error);
+    }
+    return cleanupFailed ? 1 : 0;
+  },
+  {
+    onShutdownRequested: requestWhatsAppShutdown,
+    onFatalTimeout: () => process.exit(1),
+  },
+);
 
 async function stop(exitCode = 0) {
   shutdownRequested = true;
@@ -262,7 +356,10 @@ async function stop(exitCode = 0) {
 (async () => {
   await assertRequiredPortAvailable(expectedPort(process.env.E2E_BASE_URL, 3001), 'Main API');
   await assertRequiredPortAvailable(expectedPort(process.env.E2E_KDS_BASE_URL, 3002), 'KDS');
-  await assertRequiredPortAvailable(expectedPort(process.env.E2E_SERVER_APP_BASE_URL, 3003), 'Server App');
+  await assertRequiredPortAvailable(
+    expectedPort(process.env.E2E_SERVER_APP_BASE_URL, 3003),
+    'Server App',
+  );
   await startStandaloneServers({
     initializeDatabase: initDatabase,
     prepare: () => {
@@ -283,7 +380,9 @@ async function stop(exitCode = 0) {
   };
   const actualPorts = { main: getServerPort(), kds: getKdsPort(), serverApp: getServerAppPort() };
   if (Object.entries(expectedPorts).some(([key, port]) => actualPorts[key] !== port)) {
-    throw new Error(`E2E service port mismatch: expected ${JSON.stringify(expectedPorts)}, got ${JSON.stringify(actualPorts)}`);
+    throw new Error(
+      `E2E service port mismatch: expected ${JSON.stringify(expectedPorts)}, got ${JSON.stringify(actualPorts)}`,
+    );
   }
   console.log('[E2E] Main, KDS, and Server App servers ready');
 })().catch((error) => {

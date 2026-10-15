@@ -407,9 +407,94 @@ test.describe('Table Move UI Live Validation', () => {
       // Take screenshot 8: Guard against occupied / inactive tables
       await captureScreenshot(page, '08-occupied-table-disabled.png', testInfo);
 
-      // Close modal
-      await guardModal.getByRole('button', { name: 'Cancel' }).first().click();
+      // Destination changed to reserved after initial modal read must be rejected with 409
+      const reservedCustomer = { id: 'e2e-customer', name: 'E2E Guest' };
+
+      const reserveT1Res = await request.patch(`${BASE}/api/tables/${table1.id}/status`, {
+        headers: authHeaders,
+        data: { status: 'reserved', reservation_customer_id: reservedCustomer.id },
+      });
+      expect(reserveT1Res.status()).toBe(200);
+
+      const directReservedMoveRes = await request.post(
+        `${BASE}/api/tables/${table2.id}/move-order`,
+        {
+          headers: authHeaders,
+          data: { target_table_id: table1.id },
+        },
+      );
+      expect(directReservedMoveRes.status()).toBe(409);
+
+      const candidateT1InGuard = guardModal.getByRole('button', { name: new RegExp(t1Num) });
+      await expect(candidateT1InGuard).toBeVisible();
+      await candidateT1InGuard.click();
+
+      const confirmReservedMoveBtn = guardModal.getByRole('button', {
+        name: new RegExp(`Move to ${t1Num}`),
+      });
+      const [reservedMoveResponse] = await Promise.all([
+        page.waitForResponse(
+          (res) =>
+            res.url().includes(`/api/tables/${table2.id}/move-order`) &&
+            res.request().method() === 'POST',
+        ),
+        confirmReservedMoveBtn.click(),
+      ]);
+      expect(reservedMoveResponse.status()).toBe(409);
+      await expect(page.locator('text=Target table is reserved')).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(
+        page.locator('text=Destination table already has an active order'),
+      ).not.toBeVisible();
+      await expect(guardModal).toBeVisible();
+
+      const checkTablesReserved = await (
+        await request.get(`${BASE}/api/tables`, { headers: authHeaders })
+      ).json();
+      const checkedReservedT1 = checkTablesReserved.tables.find(
+        (t: {
+          id: string;
+          status: string;
+          reservation_customer_id?: string | null;
+          reservation_customer_name?: string | null;
+        }) => t.id === table1.id,
+      );
+      const checkedOccupiedT2 = checkTablesReserved.tables.find(
+        (t: { id: string; status: string; activeOrder?: { id: string } }) => t.id === table2.id,
+      );
+      expect(checkedReservedT1.status).toBe('reserved');
+      expect(checkedReservedT1.reservation_customer_id).toBe(reservedCustomer.id);
+      expect(checkedReservedT1.reservation_customer_name).toBe(reservedCustomer.name);
+      expect(checkedOccupiedT2.status).toBe('occupied');
+      expect(checkedOccupiedT2.activeOrder.id).toBe(order1.id);
+
+      // Releasing reservation back to available allows the move to succeed
+      const releaseT1Res = await request.patch(`${BASE}/api/tables/${table1.id}/status`, {
+        headers: authHeaders,
+        data: { status: 'available' },
+      });
+      expect(releaseT1Res.status()).toBe(200);
+
+      await confirmReservedMoveBtn.click();
+      await expect(page.locator(`text=Order moved from ${t2Num} to ${t1Num}`)).toBeVisible({
+        timeout: 10_000,
+      });
       await expect(guardModal).not.toBeVisible();
+
+      const checkTablesAfterRelease = await (
+        await request.get(`${BASE}/api/tables`, { headers: authHeaders })
+      ).json();
+      expect(
+        checkTablesAfterRelease.tables.find(
+          (t: { id: string; status: string }) => t.id === table1.id,
+        ).status,
+      ).toBe('occupied');
+      expect(
+        checkTablesAfterRelease.tables.find(
+          (t: { id: string; status: string }) => t.id === table2.id,
+        ).status,
+      ).toBe('available');
     } finally {
       // Cleanup created orders and tables
       if (order1.id) {
@@ -424,6 +509,12 @@ test.describe('Table Move UI Live Validation', () => {
       }
       for (const tbl of [table1, table2, table3, table4]) {
         if (tbl.id) {
+          await request
+            .patch(`${BASE}/api/tables/${tbl.id}/status`, {
+              headers: authHeaders,
+              data: { status: 'available' },
+            })
+            .catch(() => {});
           await request
             .post(`${BASE}/api/tables/${tbl.id}/deactivate`, { headers: authHeaders })
             .catch(() => {});

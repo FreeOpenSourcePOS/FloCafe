@@ -755,6 +755,8 @@
     "walkInCustomer": "Passerende klant",
     "whatsappFailed": "Kan WhatsApp niet openen",
     "selectOrderPlaceholder": "Selecteer links een bestelling om de details te bekijken.",
+    "orderNotInCurrentList": "Deze bestelling staat niet meer in de huidige lijst.",
+    "orderMissing": "Deze bestelling bestaat niet meer of is niet beschikbaar.",
     "itemCount": "{count, plural, one {1 artikel} other {# artikelen}}"
   },
   "pos": {

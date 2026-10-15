@@ -755,6 +755,8 @@
     "walkInCustomer": "Клиент без стола",
     "whatsappFailed": "Не удалось открыть WhatsApp.",
     "selectOrderPlaceholder": "Выберите заказ слева, чтобы увидеть подробности.",
+    "orderNotInCurrentList": "Этого заказа больше нет в текущем списке.",
+    "orderMissing": "Этот заказ больше не существует или недоступен.",
     "itemCount": "{count, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}"
   },
   "pos": {

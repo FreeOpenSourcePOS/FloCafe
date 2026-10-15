@@ -755,6 +755,8 @@
     "walkInCustomer": "Client de passage",
     "whatsappFailed": "Impossible d’ouvrir WhatsApp",
     "selectOrderPlaceholder": "Sélectionnez une commande à gauche pour afficher les détails.",
+    "orderNotInCurrentList": "Cette commande ne figure plus dans la liste actuelle.",
+    "orderMissing": "Cette commande n’existe plus ou n’est plus disponible.",
     "itemCount": "{count, plural, one {1 article} other {# articles}}"
   },
   "pos": {

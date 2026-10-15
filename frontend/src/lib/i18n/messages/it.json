@@ -755,6 +755,8 @@
     "walkInCustomer": "Cliente senza prenotazione",
     "whatsappFailed": "Impossibile aprire WhatsApp",
     "selectOrderPlaceholder": "Seleziona un ordine a sinistra per visualizzare i dettagli.",
+    "orderNotInCurrentList": "Questo ordine non è più nell’elenco corrente.",
+    "orderMissing": "Questo ordine non esiste più o non è disponibile.",
     "itemCount": "{count, plural, one {1 articolo} other {# articoli}}"
   },
   "pos": {

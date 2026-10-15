@@ -755,6 +755,8 @@
     "walkInCustomer": "العميل العابر",
     "whatsappFailed": "فشل فتح تطبيق WhatsApp",
     "selectOrderPlaceholder": "اختر طلبًا على اليسار لعرض التفاصيل.",
+    "orderNotInCurrentList": "لم يعد هذا الطلب ضمن القائمة الحالية.",
+    "orderMissing": "لم يعد هذا الطلب موجودًا أو غير متاح.",
     "itemCount": "{count, plural, zero {لا توجد عناصر} one {عنصر واحد} two {عنصران} few {# عناصر} many {# عنصرًا} other {# عنصر}}"
   },
   "pos": {

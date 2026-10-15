@@ -14,6 +14,7 @@ import {
   utcDayBounds,
   utcTodayDate,
   recordOrderAudit,
+  isKdsEnabled,
 } from '../db';
 import {
   calculateConfiguredChargeTaxes,
@@ -546,19 +547,53 @@ router.get(
       const db = getDatabase();
       const wheres: string[] = [];
       const params: any[] = [];
+      const view = typeof req.query.view === 'string' ? req.query.view : 'all';
+      if (!['all', 'active', 'unpaid'].includes(view)) {
+        return res.status(400).json({ error: 'Invalid view parameter.' });
+      }
+      const activeOrderPredicate = `(
+        (orders.status NOT IN ('cancelled', 'completed'))
+        OR (
+          orders.status = 'completed'
+          AND ? = 1
+          AND EXISTS (
+            SELECT 1 FROM order_items AS active_item
+            WHERE active_item.order_id = orders.id
+              AND active_item.status IN ('pending', 'preparing', 'ready')
+          )
+        )
+      )`;
+      if (view === 'active') {
+        wheres.push(activeOrderPredicate);
+        params.push(isKdsEnabled() ? 1 : 0);
+      } else if (view === 'unpaid') {
+        wheres.push("orders.status != 'cancelled'");
+        wheres.push(`(
+          NOT EXISTS (SELECT 1 FROM bills AS existing_bill WHERE existing_bill.order_id = orders.id)
+          OR EXISTS (
+            SELECT 1 FROM bills AS payable_bill
+            WHERE payable_bill.order_id = orders.id
+              AND COALESCE(payable_bill.payment_status, 'unpaid') IN ('unpaid', 'partial')
+              AND payable_bill.balance > 0
+          )
+        )`);
+      }
 
-      if (req.query.status) {
-        const statuses = (req.query.status as string).split(',');
-        if (statuses.length === 1) {
-          wheres.push('status = ?');
+      if (typeof req.query.status === 'string' && req.query.status) {
+        const statuses = req.query.status.split(',');
+        if (statuses.length === 1 && statuses[0] === 'active') {
+          wheres.push(activeOrderPredicate);
+          params.push(isKdsEnabled() ? 1 : 0);
+        } else if (statuses.length === 1) {
+          wheres.push('orders.status = ?');
           params.push(statuses[0]);
         } else {
-          wheres.push(`status IN (${statuses.map(() => '?').join(',')})`);
+          wheres.push(`orders.status IN (${statuses.map(() => '?').join(',')})`);
           params.push(...statuses);
         }
       }
       if (req.query.type) {
-        wheres.push('type = ?');
+        wheres.push('orders.type = ?');
         params.push(req.query.type);
       }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
@@ -611,19 +646,21 @@ router.get(
         }
       }
       if (req.query.table_id) {
-        wheres.push('table_id = ?');
+        wheres.push('orders.table_id = ?');
         params.push(req.query.table_id);
       }
       // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
       // composed with `id` to break ties when many orders share a second.
       if (typeof req.query.before_id === 'string' && /^\d+$/.test(req.query.before_id)) {
         const oid = parseInt(req.query.before_id, 10);
-        const ref = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(oid) as
-          | { created_at: string }
-          | undefined;
-        if (ref) {
-          wheres.push('(created_at, id) < (?, ?)');
-          params.push(ref.created_at, oid);
+        if (Number.isSafeInteger(oid) && oid > 0) {
+          const ref = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(oid) as
+            | { created_at: string }
+            | undefined;
+          if (ref) {
+            wheres.push('(orders.created_at, orders.id) < (?, ?)');
+            params.push(ref.created_at, oid);
+          }
         }
       }
 
@@ -640,9 +677,9 @@ router.get(
 
       const orders = db
         .prepare(`
-      SELECT * FROM orders
+      SELECT orders.* FROM orders
       ${whereSql}
-      ORDER BY created_at DESC, id DESC
+      ORDER BY orders.created_at DESC, orders.id DESC
       LIMIT ?
     `)
         .all(...params, perPagePlusOne) as any[];

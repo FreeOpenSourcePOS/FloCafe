@@ -13,9 +13,55 @@ import {
   resolveRegionalSnapshot,
   type RegionalSnapshot,
 } from '../countries';
-import { toCsvRow } from '../lib/csv';
+import {
+  FLO_CSV_ENCODING_COLUMN,
+  FLO_CSV_ENCODING_QUOTE_V1,
+  decodeLegacyProvenField,
+  decodeQuoteV1Field,
+  toQuoteV1CsvRow,
+} from '../lib/csv';
 
 const router = Router();
+
+const TEXT_HEADER_FIELDS = new Set([
+  'name',
+  'description',
+  'color',
+  'icon',
+  'sku',
+  'category',
+  'tags',
+  'group_name',
+  'addon_name',
+]);
+
+type CsvRowEncodingResult =
+  | { ok: true; mode: 'quote-v1' | 'unmarked' }
+  | { ok: false; error: string };
+
+function resolveCsvRowEncoding(row: Record<string, string>): CsvRowEncodingResult {
+  const marker = row[FLO_CSV_ENCODING_COLUMN] ?? '';
+  if (marker === '') {
+    return { ok: true, mode: 'unmarked' };
+  }
+  if (marker === FLO_CSV_ENCODING_QUOTE_V1) {
+    return { ok: true, mode: 'quote-v1' };
+  }
+  return {
+    ok: false,
+    error: `unsupported ${FLO_CSV_ENCODING_COLUMN} "${marker}"`,
+  };
+}
+
+function formatProductTagsForCsv(rawTags: string | null | undefined): string {
+  if (!rawTags) return '';
+  try {
+    const parsed = JSON.parse(rawTags);
+    return Array.isArray(parsed) ? parsed.join(',') : String(rawTags);
+  } catch {
+    return String(rawTags);
+  }
+}
 
 function captureInvalidMenuCsvInput(): void {
   const failure = serializeOperationFailure({
@@ -195,7 +241,11 @@ function toObjects(rows: string[][]): Record<string, string>[] {
     }
     const obj: Record<string, string> = {};
     headers.forEach((h, i) => {
-      obj[h] = (row[i] ?? '').trim();
+      const rawCell = row[i] ?? '';
+      obj[h] =
+        TEXT_HEADER_FIELDS.has(h) && /^\s+[=+\-@]/.test(rawCell)
+          ? rawCell.trimEnd()
+          : rawCell.trim();
     });
     return obj;
   });
@@ -358,9 +408,18 @@ router.get(
       const rows = db
         .prepare('SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY sort_order, name')
         .all() as any[];
-      const lines = ['name,description,color,icon,sort_order'];
+      const lines = [`name,description,color,icon,sort_order,${FLO_CSV_ENCODING_COLUMN}`];
       for (const c of rows)
-        lines.push(toCsvRow([c.name, c.description, c.color, c.icon, c.sort_order]));
+        lines.push(
+          toQuoteV1CsvRow([
+            c.name,
+            c.description,
+            c.color,
+            c.icon,
+            c.sort_order,
+            FLO_CSV_ENCODING_QUOTE_V1,
+          ]),
+        );
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="categories-export.csv"');
       res.send(lines.join('\n'));
@@ -388,20 +447,12 @@ router.get(
         )
         .all() as any[];
       const lines = [
-        'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active',
+        `id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active,${FLO_CSV_ENCODING_COLUMN}`,
       ];
       for (const p of rows) {
-        let tags = '';
-        if (p.tags) {
-          try {
-            const t = JSON.parse(p.tags);
-            tags = Array.isArray(t) ? t.join(',') : p.tags;
-          } catch {
-            tags = p.tags;
-          }
-        }
+        const tags = formatProductTagsForCsv(p.tags);
         lines.push(
-          toCsvRow([
+          toQuoteV1CsvRow([
             p.id,
             p.sku,
             p.name,
@@ -414,6 +465,7 @@ router.get(
             p.cb_percent !== null ? p.cb_percent : '',
             tags,
             p.is_active ? 'yes' : 'no',
+            FLO_CSV_ENCODING_QUOTE_V1,
           ]),
         );
       }
@@ -440,7 +492,7 @@ router.get(
         .prepare('SELECT * FROM addon_groups WHERE is_active = 1 ORDER BY sort_order, name')
         .all() as any[];
       const lines = [
-        'group_name,addon_name,price,group_required,group_min_select,group_max_select,track_inventory,stock_quantity,low_stock_threshold',
+        `group_name,addon_name,price,group_required,group_min_select,group_max_select,track_inventory,stock_quantity,low_stock_threshold,${FLO_CSV_ENCODING_COLUMN}`,
       ];
       for (const g of groups) {
         const addons = db
@@ -450,7 +502,7 @@ router.get(
           .all(g.id) as any[];
         for (const a of addons)
           lines.push(
-            toCsvRow([
+            toQuoteV1CsvRow([
               g.name,
               a.name,
               formatAmountForCsv(a.price, regionalSnapshot),
@@ -460,6 +512,7 @@ router.get(
               a.track_inventory ? 'yes' : 'no',
               Number(a.stock_quantity ?? 0),
               Number(a.low_stock_threshold ?? 0),
+              FLO_CSV_ENCODING_QUOTE_V1,
             ]),
           );
       }
@@ -505,7 +558,23 @@ router.post(
 
       db.transaction(() => {
         for (let i = 0; i < rows.length; i++) {
-          const r = rows[i];
+          const rawRow = rows[i];
+          const encoding = resolveCsvRowEncoding(rawRow);
+          if (!encoding.ok) {
+            failed++;
+            errors.push(`Row ${i + 2}: ${encoding.error}`);
+            continue;
+          }
+          const r: Record<string, string> =
+            encoding.mode === 'quote-v1'
+              ? {
+                  ...rawRow,
+                  name: decodeQuoteV1Field(rawRow.name ?? ''),
+                  description: decodeQuoteV1Field(rawRow.description ?? ''),
+                  color: decodeQuoteV1Field(rawRow.color ?? ''),
+                  icon: decodeQuoteV1Field(rawRow.icon ?? ''),
+                }
+              : rawRow;
           if (!r.name) {
             failed++;
             errors.push(`Row ${i + 2}: missing name`);
@@ -606,9 +675,79 @@ router.post(
         changedRows = 0;
       const errors: string[] = [];
 
+      const findExistingProduct = db.prepare(
+        `SELECT p.id, p.name, p.sku, p.description, p.tags, p.is_active, c.name AS category_name
+         FROM products p
+         LEFT JOIN categories c ON p.category_id = c.id
+         WHERE p.id = ? AND p.deleted_at IS NULL`,
+      );
+
       db.transaction(() => {
         for (let i = 0; i < rows.length; i++) {
-          const r = rows[i];
+          const rawRow = rows[i];
+          const encoding = resolveCsvRowEncoding(rawRow);
+          if (!encoding.ok) {
+            failed++;
+            errors.push(`Row ${i + 2}: ${encoding.error}`);
+            continue;
+          }
+
+          let r: Record<string, string>;
+          let existingProduct:
+            | {
+                id: string;
+                name: string;
+                sku: string | null;
+                description: string | null;
+                tags: string | null;
+                is_active: number;
+                category_name: string | null;
+              }
+            | undefined;
+
+          if (encoding.mode === 'quote-v1') {
+            r = {
+              ...rawRow,
+              id: decodeQuoteV1Field(rawRow.id ?? ''),
+              sku: decodeQuoteV1Field(rawRow.sku ?? ''),
+              name: decodeQuoteV1Field(rawRow.name ?? ''),
+              category: decodeQuoteV1Field(rawRow.category ?? ''),
+              description: decodeQuoteV1Field(rawRow.description ?? ''),
+              tax_category: decodeQuoteV1Field(rawRow.tax_category ?? ''),
+              tax_behavior: decodeQuoteV1Field(rawRow.tax_behavior ?? ''),
+              tags: decodeQuoteV1Field(rawRow.tags ?? ''),
+            };
+            if (r.id) {
+              existingProduct = findExistingProduct.get(r.id) as typeof existingProduct;
+            }
+          } else {
+            if (rawRow.id) {
+              existingProduct = findExistingProduct.get(rawRow.id) as typeof existingProduct;
+            }
+            if (existingProduct) {
+              r = {
+                ...rawRow,
+                id: existingProduct.id,
+                sku: decodeLegacyProvenField(rawRow.sku ?? '', existingProduct.sku),
+                name: decodeLegacyProvenField(rawRow.name ?? '', existingProduct.name),
+                category: decodeLegacyProvenField(
+                  rawRow.category ?? '',
+                  existingProduct.category_name,
+                ),
+                description: decodeLegacyProvenField(
+                  rawRow.description ?? '',
+                  existingProduct.description,
+                ),
+                tags: decodeLegacyProvenField(
+                  rawRow.tags ?? '',
+                  formatProductTagsForCsv(existingProduct.tags),
+                ),
+              };
+            } else {
+              r = rawRow;
+            }
+          }
+
           if (!r.name) {
             failed++;
             errors.push(`Row ${i + 2}: missing name`);
@@ -711,42 +850,37 @@ router.post(
           }
 
           // If an id is provided and matches an existing product, update it.
-          if (r.id) {
-            const existing = db
-              .prepare('SELECT id, is_active FROM products WHERE id = ? AND deleted_at IS NULL')
-              .get(r.id) as { id: string; is_active: number } | undefined;
-            if (existing) {
-              db.prepare(
-                `UPDATE products SET name=?, category_id=?, price=?, description=?, cost=?,
+          if (existingProduct) {
+            db.prepare(
+              `UPDATE products SET name=?, category_id=?, price=?, description=?, cost=?,
            tax_type=?, tax_rate=?,
            tax_category_id=CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
            tax_behavior=CASE WHEN ? = 1 THEN ? ELSE tax_behavior END,
            cb_percent=?, tags=?, is_active=?, sku=?, updated_at=?
            WHERE id=?`,
-              ).run(
-                r.name,
-                categoryId,
-                price,
-                r.description || null,
-                cost,
-                'none',
-                0,
-                hasTaxCategoryColumn ? 1 : 0,
-                taxCategoryId,
-                hasTaxBehaviorColumn ? 1 : 0,
-                taxBehavior,
-                cbPercent,
-                tagsJson,
-                isActive,
-                sku,
-                now(),
-                r.id,
-              );
-              if (existing.is_active === 0 && isActive === 1) reactivated++;
-              else updated++;
-              changedRows++;
-              continue;
-            }
+            ).run(
+              r.name,
+              categoryId,
+              price,
+              r.description || null,
+              cost,
+              'none',
+              0,
+              hasTaxCategoryColumn ? 1 : 0,
+              taxCategoryId,
+              hasTaxBehaviorColumn ? 1 : 0,
+              taxBehavior,
+              cbPercent,
+              tagsJson,
+              isActive,
+              sku,
+              now(),
+              existingProduct.id,
+            );
+            if (existingProduct.is_active === 0 && isActive === 1) reactivated++;
+            else updated++;
+            changedRows++;
+            continue;
           }
 
           // No id or unrecognized id — insert as new, skip if name+category duplicate.
@@ -814,8 +948,8 @@ router.post(
       const hasTrackInventoryColumn = headers.has('track_inventory');
       const hasStockQuantityColumn = headers.has('stock_quantity');
       const hasLowStockThresholdColumn = headers.has('low_stock_threshold');
-      const rows = toObjects(parsedCsv);
-      if (!rows.length) {
+      const rawRows = toObjects(parsedCsv);
+      if (!rawRows.length) {
         captureInvalidMenuCsvInput();
         return res.status(400).json({ error: 'CSV has no data rows' });
       }
@@ -835,6 +969,62 @@ router.post(
         changedRows = 0;
       const errors: string[] = [];
       const groupCache: Record<string, string> = {};
+
+      const findExistingAddon = db.prepare(
+        `SELECT a.id, a.name AS addon_name, a.addon_group_id, g.name AS group_name
+         FROM addons a
+         JOIN addon_groups g ON g.id = a.addon_group_id
+         WHERE a.id = ?`,
+      );
+      const findExistingGroupById = db.prepare('SELECT id, name FROM addon_groups WHERE id = ?');
+
+      const preparedRows = rawRows.map(
+        (rawRow): { encodingError: string | null; row: Record<string, string> } => {
+          const encoding = resolveCsvRowEncoding(rawRow);
+        if (!encoding.ok) {
+          return { encodingError: encoding.error, row: rawRow };
+        }
+        if (encoding.mode === 'quote-v1') {
+          return {
+            encodingError: null,
+            row: {
+              ...rawRow,
+              group_name: decodeQuoteV1Field(rawRow.group_name ?? ''),
+              addon_name: decodeQuoteV1Field(rawRow.addon_name ?? ''),
+            },
+          };
+        }
+        let groupName = rawRow.group_name ?? '';
+        let addonName = rawRow.addon_name ?? '';
+        const addonId = rawRow.id || rawRow.addon_id || '';
+        const groupId = rawRow.group_id || rawRow.addon_group_id || '';
+        if (addonId) {
+          const existingAddon = findExistingAddon.get(addonId) as
+            | { id: string; addon_name: string; addon_group_id: string; group_name: string }
+            | undefined;
+          if (existingAddon) {
+            groupName = decodeLegacyProvenField(groupName, existingAddon.group_name);
+            addonName = decodeLegacyProvenField(addonName, existingAddon.addon_name);
+          }
+        }
+        if (groupId) {
+          const existingGroup = findExistingGroupById.get(groupId) as
+            | { id: string; name: string }
+            | undefined;
+          if (existingGroup) {
+            groupName = decodeLegacyProvenField(groupName, existingGroup.name);
+          }
+        }
+        return {
+          encodingError: null,
+          row: {
+            ...rawRow,
+            group_name: groupName,
+            addon_name: addonName,
+          },
+        };
+      });
+
       type AddonGroupImportPlan = {
         existing?: {
           id: string;
@@ -852,7 +1042,8 @@ router.post(
       };
       const groupPlans = new Map<string, AddonGroupImportPlan>();
 
-      for (const row of rows) {
+      for (const { encodingError, row } of preparedRows) {
+        if (encodingError) continue;
         if (!row.group_name || !row.addon_name) continue;
 
         const priceResult = parseNumericField(row.price, 'price', {
@@ -940,8 +1131,13 @@ router.post(
       }
 
       db.transaction(() => {
-        for (let i = 0; i < rows.length; i++) {
-          const r = rows[i];
+        for (let i = 0; i < preparedRows.length; i++) {
+          const { encodingError, row: r } = preparedRows[i];
+          if (encodingError) {
+            failed++;
+            errors.push(`Row ${i + 2}: ${encodingError}`);
+            continue;
+          }
           let rowChanged = false;
           if (!r.group_name || !r.addon_name) {
             failed++;

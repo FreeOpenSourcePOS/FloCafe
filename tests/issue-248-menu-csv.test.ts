@@ -817,6 +817,363 @@ async function main() {
       tooLongCell.data.error.includes('length'),
       'value-bound error identifies the resource limit',
     );
+
+    console.log('\n─── Multi-cycle quote-v1 export/import round trips ───');
+    const roundTripCategories = [
+      { id: 'cat-rt-eq', name: '=Equals Category', desc: '-Minus description', color: 'blue', icon: '☕', sort: 10 },
+      { id: 'cat-rt-plus', name: '+Plus, Category', desc: '@At description,\nwith newline', color: 'green', icon: '🍔', sort: 11 },
+      { id: 'cat-rt-minus', name: '-Minus Category', desc: '=Formula desc', color: 'pink', icon: '🍰', sort: 12 },
+      { id: 'cat-rt-at', name: '@At Category', desc: '+Plus desc', color: 'amber', icon: '🎁', sort: 13 },
+      { id: 'cat-rt-ws', name: ' =Space Formula Category', desc: '\t+Tab Formula Desc', color: 'blue', icon: '☕', sort: 14 },
+      { id: 'cat-rt-quote', name: "'Chef's Category", desc: "'Genuine quote, \"quoted\"\r\ndesc", color: 'green', icon: '🍔', sort: 15 },
+      { id: 'cat-rt-qformula', name: "'+Quoted Formula Category", desc: "''Double Quoted Desc", color: 'pink', icon: '🍰', sort: 16 },
+    ];
+    for (const c of roundTripCategories) {
+      db.prepare(
+        `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      ).run(c.id, c.name, c.id, c.desc, c.color, c.icon, c.sort, now(), now());
+    }
+
+    const roundTripProducts = [
+      { id: 'prod-rt-eq', catId: 'cat-rt-eq', sku: '=SKU-EQ', name: '=Combo Deal', price: 11, desc: '+Rich, "bold"\nflavor', cost: 4, tags: ['=tag-eq', 'featured'] },
+      { id: 'prod-rt-plus', catId: 'cat-rt-plus', sku: '+SKU-PLUS', name: '+Special Curry, Large', price: 14.5, desc: '-Spiced\r\ncurry', cost: 5, tags: ['+tag-plus'] },
+      { id: 'prod-rt-minus', catId: 'cat-rt-minus', sku: '-SKU-MINUS', name: '-Discount Tea', price: 6, desc: '@Tea note', cost: 2, tags: ['-tag-minus'] },
+      { id: 'prod-rt-at', catId: 'cat-rt-at', sku: '@SKU-AT', name: '@House Special', price: 18, desc: '=House note', cost: 7, tags: ['@tag-at'] },
+      { id: 'prod-rt-ws-space', catId: 'cat-rt-ws', sku: ' +SKU-SPACE', name: ' =Space Formula Roast', price: 9, desc: ' -Space desc', cost: 3, tags: ['veg'] },
+      { id: 'prod-rt-ws-tab', catId: 'cat-rt-ws', sku: '\t@SKU-TAB', name: '\t+Tab Formula Espresso', price: 9.5, desc: '\n=Newline Formula Desc', cost: 3, tags: ['veg'] },
+      { id: 'prod-rt-quote', catId: 'cat-rt-quote', sku: "'SKU-QUOTE", name: "'Chef's Signature, \"Hot\"\nBurger", price: 21, desc: "'Authentic recipe", cost: 8, tags: ["'chef-tag"] },
+      { id: 'prod-rt-qformula', catId: 'cat-rt-qformula', sku: "'+SKU-QF", name: "'+Literal Escaped Plus", price: 16, desc: "''Double Apostrophe Note", cost: 6, tags: ["'+literal-tag"] },
+      { id: 'prod-rt-qws', catId: 'cat-rt-qformula', sku: "' =SKU-QWS", name: "' =Literal Space Formula", price: 17, desc: "''@Double Quote At", cost: 6, tags: ['veg'] },
+    ];
+    for (const p of roundTripProducts) {
+      db.prepare(
+        `INSERT INTO products (id, name, category_id, price, description, cost, tax_type, tax_rate,
+         cb_percent, tags, is_active, sku, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'none', 0, NULL, ?, 1, ?, 0, ?, ?)`,
+      ).run(p.id, p.name, p.catId, p.price, p.desc, p.cost, JSON.stringify(p.tags), p.sku, now(), now());
+    }
+
+    const roundTripAddons = [
+      { groupId: 'ag-rt-eq', groupName: '=Formula Group', addonId: 'ad-rt-plus', addonName: '+Extra Spice, Hot', price: 2 },
+      { groupId: 'ag-rt-minus', groupName: '-Minus Group', addonId: 'ad-rt-at', addonName: '@House Drizzle', price: 3 },
+      { groupId: 'ag-rt-ws', groupName: ' =Space Group', addonId: 'ad-rt-ws', addonName: '\t+Tab Addon', price: 1.5 },
+      { groupId: 'ag-rt-quote', groupName: "'Chef's Addons", addonId: 'ad-rt-quote', addonName: "'Artisan Cheese", price: 4 },
+      { groupId: 'ag-rt-qf', groupName: "'+Quoted Formula Group", addonId: 'ad-rt-qf', addonName: "''Double Apostrophe Addon", price: 2.5 },
+    ];
+    for (const a of roundTripAddons) {
+      db.prepare(
+        `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, is_active, sort_order, created_at, updated_at)
+         VALUES (?, ?, 0, 0, 1, 1, 0, ?, ?)`,
+      ).run(a.groupId, a.groupName, now(), now());
+      db.prepare(
+        `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, 0, ?, ?)`,
+      ).run(a.addonId, a.groupId, a.addonName, a.price, now(), now());
+    }
+    db.prepare(
+      `INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?), (?, ?)`,
+    ).run('prod-rt-plus', 'ag-rt-eq', 'prod-rt-quote', 'ag-rt-quote');
+
+    const initialCatCount = (db.prepare('SELECT COUNT(*) AS count FROM categories WHERE deleted_at IS NULL').get() as any).count;
+    const initialProdCount = (db.prepare('SELECT COUNT(*) AS count FROM products WHERE deleted_at IS NULL').get() as any).count;
+    const initialGroupCount = (db.prepare('SELECT COUNT(*) AS count FROM addon_groups').get() as any).count;
+    const initialAddonCount = (db.prepare('SELECT COUNT(*) AS count FROM addons').get() as any).count;
+
+    for (let cycle = 1; cycle <= 3; cycle++) {
+      const catExportCsv = await fetchText(baseUrl, '/api/menu/csv/export/categories', authHeader);
+      const prodExportCsv = await fetchText(baseUrl, '/api/menu/csv/export/products', authHeader);
+      const addonExportCsv = await fetchText(baseUrl, '/api/menu/csv/export/addons', authHeader);
+
+      assertIncludesOrThrow(
+        catExportCsv.split('\n')[0],
+        'flo_csv_encoding',
+        `cycle ${cycle}: categories export header includes flo_csv_encoding`,
+      );
+      assertIncludesOrThrow(
+        prodExportCsv.split('\n')[0],
+        'flo_csv_encoding',
+        `cycle ${cycle}: products export header includes flo_csv_encoding`,
+      );
+      assertIncludesOrThrow(
+        addonExportCsv.split('\n')[0],
+        'flo_csv_encoding',
+        `cycle ${cycle}: addons export header includes flo_csv_encoding`,
+      );
+
+      const catImportRes = await api(baseUrl, '/api/menu/csv/import/categories', {
+        method: 'POST',
+        body: { csv: catExportCsv },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(catImportRes.status, 200, `cycle ${cycle}: categories re-import succeeds`);
+      assertEqualOrThrow(catImportRes.data.created, 0, `cycle ${cycle}: categories re-import creates no duplicates`);
+      assertEqualOrThrow(catImportRes.data.failed, 0, `cycle ${cycle}: categories re-import has no failures`);
+
+      const prodImportRes = await api(baseUrl, '/api/menu/csv/import/products', {
+        method: 'POST',
+        body: { csv: prodExportCsv },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(prodImportRes.status, 200, `cycle ${cycle}: products re-import succeeds`);
+      assertEqualOrThrow(prodImportRes.data.created, 0, `cycle ${cycle}: products re-import creates no duplicates`);
+      assertEqualOrThrow(prodImportRes.data.failed, 0, `cycle ${cycle}: products re-import has no failures`);
+
+      const addonImportRes = await api(baseUrl, '/api/menu/csv/import/addons', {
+        method: 'POST',
+        body: { csv: addonExportCsv },
+        headers: authHeader,
+      });
+      assertEqualOrThrow(addonImportRes.status, 200, `cycle ${cycle}: addons re-import succeeds`);
+      assertEqualOrThrow(addonImportRes.data.groups_created, 0, `cycle ${cycle}: addons re-import creates no duplicate groups`);
+      assertEqualOrThrow(addonImportRes.data.addons_created, 0, `cycle ${cycle}: addons re-import creates no duplicate addons`);
+      assertEqualOrThrow(addonImportRes.data.failed, 0, `cycle ${cycle}: addons re-import has no failures`);
+    }
+
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM categories WHERE deleted_at IS NULL').get() as any).count,
+      initialCatCount,
+      'category count is unchanged after 3 export/import cycles',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM products WHERE deleted_at IS NULL').get() as any).count,
+      initialProdCount,
+      'product count is unchanged after 3 export/import cycles',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM addon_groups').get() as any).count,
+      initialGroupCount,
+      'addon_group count is unchanged after 3 export/import cycles',
+    );
+    assertEqualOrThrow(
+      (db.prepare('SELECT COUNT(*) AS count FROM addons').get() as any).count,
+      initialAddonCount,
+      'addon count is unchanged after 3 export/import cycles',
+    );
+
+    for (const c of roundTripCategories) {
+      const row = db.prepare('SELECT name, description FROM categories WHERE id = ?').get(c.id) as any;
+      assertEqualOrThrow(row.name, c.name, `category ${c.id} name is preserved across round trips`);
+      assertEqualOrThrow(row.description, c.desc, `category ${c.id} description is preserved across round trips`);
+    }
+
+    for (const p of roundTripProducts) {
+      const row = db
+        .prepare('SELECT name, sku, description, category_id, tags FROM products WHERE id = ?')
+        .get(p.id) as any;
+      assertEqualOrThrow(row.name, p.name, `product ${p.id} name is preserved across round trips`);
+      assertEqualOrThrow(row.sku, p.sku, `product ${p.id} sku is preserved across round trips`);
+      assertEqualOrThrow(row.description, p.desc, `product ${p.id} description is preserved across round trips`);
+      assertEqualOrThrow(row.category_id, p.catId, `product ${p.id} category_id association is preserved`);
+      assertEqualOrThrow(row.tags, JSON.stringify(p.tags), `product ${p.id} tags are preserved across round trips`);
+    }
+
+    for (const a of roundTripAddons) {
+      const groupRow = db.prepare('SELECT name FROM addon_groups WHERE id = ?').get(a.groupId) as any;
+      const addonRow = db.prepare('SELECT name, addon_group_id FROM addons WHERE id = ?').get(a.addonId) as any;
+      assertEqualOrThrow(groupRow.name, a.groupName, `addon group ${a.groupId} name is preserved`);
+      assertEqualOrThrow(addonRow.name, a.addonName, `addon ${a.addonId} name is preserved`);
+      assertEqualOrThrow(addonRow.addon_group_id, a.groupId, `addon ${a.addonId} group association is preserved`);
+    }
+
+    const preservedLinks = db
+      .prepare('SELECT COUNT(*) AS count FROM addon_group_product WHERE (product_id = ? AND addon_group_id = ?) OR (product_id = ? AND addon_group_id = ?)')
+      .get('prod-rt-plus', 'ag-rt-eq', 'prod-rt-quote', 'ag-rt-quote') as any;
+    assertEqualOrThrow(preservedLinks.count, 2, 'product-to-addon-group associations remain stable');
+
+    console.log('\n─── Unmarked legacy imports: decode only when proven by stable ID ───');
+    // 1. Existing product with formula-leading fields: unmarked legacy import with matching ID decodes proven fields.
+    const legacyProvenProductImport = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          `prod-rt-plus,'+SKU-PLUS,"'+Special Curry, Large","'+Plus, Category",19,"'-Spiced\r\ncurry",5,,,,'+tag-plus,yes`,
+          `prod-rt-ws-space,' +SKU-SPACE,' =Space Formula Roast,' =Space Formula Category,11,' -Space desc,3,,,,veg,yes`,
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyProvenProductImport.status, 200, 'unmarked legacy product import with proven IDs succeeds');
+    assertEqualOrThrow(legacyProvenProductImport.data.updated, 2, 'proven legacy product rows update existing records');
+    assertEqualOrThrow(legacyProvenProductImport.data.failed, 0, 'proven legacy product rows do not fail');
+    const provenPlusProd = db
+      .prepare('SELECT name, sku, description, price, category_id, tags FROM products WHERE id = ?')
+      .get('prod-rt-plus') as any;
+    assertEqualOrThrow(provenPlusProd.name, '+Special Curry, Large', 'proven legacy product name is decoded');
+    assertEqualOrThrow(provenPlusProd.sku, '+SKU-PLUS', 'proven legacy product sku is decoded');
+    assertEqualOrThrow(provenPlusProd.description, '-Spiced\r\ncurry', 'proven legacy product description is decoded');
+    assertEqualOrThrow(provenPlusProd.price, 19, 'proven legacy product price is updated');
+    assertEqualOrThrow(provenPlusProd.category_id, 'cat-rt-plus', 'proven legacy product category association is preserved');
+    assertEqualOrThrow(provenPlusProd.tags, JSON.stringify(['+tag-plus']), 'proven legacy product tags are decoded');
+
+    const provenSpaceProd = db
+      .prepare('SELECT name, sku, description FROM products WHERE id = ?')
+      .get('prod-rt-ws-space') as any;
+    assertEqualOrThrow(provenSpaceProd.name, ' =Space Formula Roast', 'proven legacy whitespace-formula product name is decoded');
+    assertEqualOrThrow(provenSpaceProd.sku, ' +SKU-SPACE', 'proven legacy whitespace-formula product sku is decoded');
+    assertEqualOrThrow(provenSpaceProd.description, ' -Space desc', 'proven legacy whitespace-formula product description is decoded');
+
+    // 2. Existing product whose stored name already begins with an apostrophe (ambiguous record): must NOT be renamed!
+    const legacyAmbiguousExistingProd = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          `prod-rt-qformula,'+SKU-QF,'+Literal Escaped Plus,'+Quoted Formula Category,22,''Double Apostrophe Note,6,,,,'+literal-tag,yes`,
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyAmbiguousExistingProd.status, 200, 'unmarked import of existing ambiguous product succeeds');
+    assertEqualOrThrow(legacyAmbiguousExistingProd.data.updated, 1, 'existing ambiguous product is updated');
+    const ambiguousProdRow = db
+      .prepare('SELECT name, sku, price FROM products WHERE id = ?')
+      .get('prod-rt-qformula') as any;
+    assertEqualOrThrow(
+      ambiguousProdRow.name,
+      "'+Literal Escaped Plus",
+      'existing ambiguous product name is not stripped or renamed',
+    );
+    assertEqualOrThrow(
+      ambiguousProdRow.sku,
+      "'+SKU-QF",
+      'existing ambiguous product sku is not stripped',
+    );
+    assertEqualOrThrow(ambiguousProdRow.price, 22, 'existing ambiguous product price updates normally');
+
+    // 3. Unmarked product rows without ID or with unrecognized ID: preserve ambiguous leading apostrophes.
+    const legacyUnprovenProd = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          `,,'+Ambiguous Unmarked New,CSV Category,10,'-Ambiguous Desc,2,,,,,yes`,
+          `unknown-legacy-id,,'+Ambiguous Unmarked Fallback,CSV Category,12,'=Ambiguous Desc 2,3,,,,,yes`,
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyUnprovenProd.status, 200, 'unmarked unproven product rows import');
+    assertEqualOrThrow(legacyUnprovenProd.data.created, 2, 'unmarked unproven products are created');
+    assert(
+      db.prepare('SELECT id FROM products WHERE name = ?').get("'+Ambiguous Unmarked New") !== undefined,
+      'unmarked product without ID preserves its leading apostrophe',
+    );
+    assert(
+      db.prepare('SELECT id FROM products WHERE name = ?').get("'+Ambiguous Unmarked Fallback") !== undefined,
+      'unmarked product with unrecognized ID preserves its leading apostrophe',
+    );
+
+    // 4. Unmarked category import: category-only rows have no proof of identity, so ambiguous names are preserved.
+    const legacyCatImport = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,description,color,icon,sort_order',
+          "'=Equals Category,'-Minus description,blue,☕,20",
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyCatImport.status, 200, 'unmarked legacy category import succeeds');
+    assertEqualOrThrow(
+      legacyCatImport.data.created,
+      1,
+      'unmarked category row without proof of identity preserves its literal leading apostrophe',
+    );
+    assert(
+      db.prepare('SELECT id FROM categories WHERE name = ? AND deleted_at IS NULL').get("'=Equals Category") !== undefined,
+      'ambiguous unmarked category name is preserved as-is',
+    );
+    assert(
+      db.prepare('SELECT id FROM categories WHERE id = ?').get('cat-rt-eq') !== undefined,
+      'original category record remains intact',
+    );
+
+    // 5. Unmarked add-on import: proven when stable ID matches existing add-on, preserved when unproven or ambiguous.
+    const legacyProvenAddonImport = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          'id,group_name,addon_name,price,group_required,group_min_select,group_max_select',
+          'ad-rt-at,\'-Minus Group,\'@House Drizzle,3,yes,0,1',
+          ',\'+Unproven Legacy Group,\'@Unproven Legacy Addon,4,no,0,1',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(legacyProvenAddonImport.status, 200, 'unmarked add-on import with mixed proven/unproven rows succeeds');
+    assertEqualOrThrow(legacyProvenAddonImport.data.groups_updated, 1, 'ID-proven legacy add-on row updates its existing group');
+    assertEqualOrThrow(legacyProvenAddonImport.data.skipped, 1, 'ID-proven legacy add-on row matches existing active add-on');
+    assertEqualOrThrow(legacyProvenAddonImport.data.groups_created, 1, 'unproven legacy add-on row creates its literal group');
+    assertEqualOrThrow(legacyProvenAddonImport.data.addons_created, 1, 'unproven legacy add-on row creates its literal add-on');
+    assert(
+      db.prepare('SELECT id FROM addon_groups WHERE name = ?').get("'+Unproven Legacy Group") !== undefined,
+      'unproven legacy add-on group preserves its leading apostrophe',
+    );
+    assert(
+      db.prepare('SELECT id FROM addons WHERE name = ?').get("'@Unproven Legacy Addon") !== undefined,
+      'unproven legacy add-on preserves its leading apostrophe',
+    );
+
+    console.log('\n─── Unsupported non-empty flo_csv_encoding markers are rejected ───');
+    const badCatEncoding = await api(baseUrl, '/api/menu/csv/import/categories', {
+      method: 'POST',
+      body: {
+        csv: [
+          'name,description,color,icon,sort_order,flo_csv_encoding',
+          'Rejected Encoding Category,Desc,blue,☕,1,quote-v2',
+          'Blank Marker Category,Desc,green,🍔,2,',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(badCatEncoding.status, 200, 'category import with unsupported encoding returns row validation results');
+    assertEqualOrThrow(badCatEncoding.data.failed, 1, 'unsupported category encoding marker fails validation');
+    assertEqualOrThrow(badCatEncoding.data.created, 1, 'row with empty flo_csv_encoding beside unsupported row still imports');
+    assert(
+      badCatEncoding.data.errors.some((e: string) => e.includes('unsupported flo_csv_encoding "quote-v2"')),
+      'category validation error reports unsupported flo_csv_encoding',
+    );
+    assertEqualOrThrow(
+      db.prepare('SELECT id FROM categories WHERE name = ?').get('Rejected Encoding Category'),
+      undefined,
+      'category row with unsupported encoding marker is not persisted',
+    );
+
+    const badProdEncoding = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: [
+          `${PRODUCT_HEADER},flo_csv_encoding`,
+          ',,Rejected Encoding Product,CSV Category,10,Desc,2,,,,,yes,unsupported-v9',
+        ].join('\n'),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(badProdEncoding.status, 200, 'product import with unsupported encoding returns row validation results');
+    assertEqualOrThrow(badProdEncoding.data.failed, 1, 'unsupported product encoding marker fails validation');
+    assertEqualOrThrow(badProdEncoding.data.created, 0, 'unsupported product encoding marker creates no product');
+    assert(
+      badProdEncoding.data.errors.some((e: string) => e.includes('unsupported flo_csv_encoding "unsupported-v9"')),
+      'product validation error reports unsupported flo_csv_encoding',
+    );
+
+    const badAddonEncoding = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          `${ADDON_HEADER},flo_csv_encoding`,
+          'Rejected Encoding Group,Rejected Encoding Addon,5,no,0,1,legacy-v0',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(badAddonEncoding.status, 200, 'addon import with unsupported encoding returns row validation results');
+    assertEqualOrThrow(badAddonEncoding.data.failed, 1, 'unsupported addon encoding marker fails validation');
+    assertEqualOrThrow(badAddonEncoding.data.addons_created, 0, 'unsupported addon encoding marker creates no addon');
+    assert(
+      badAddonEncoding.data.errors.some((e: string) => e.includes('unsupported flo_csv_encoding "legacy-v0"')),
+      'addon validation error reports unsupported flo_csv_encoding',
+    );
   } finally {
     server.close();
     closeDatabase();

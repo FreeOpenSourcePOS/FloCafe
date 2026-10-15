@@ -364,62 +364,164 @@ test.describe('Server App tableside ordering', () => {
     await notesInput.fill('Retry note');
 
     const idempotencyKeys: string[] = [];
-    let shouldFail = true;
-    await page.route('**/api/orders', async (route) => {
+    const postPaths: string[] = [];
+    let simulateLostCommitResponse = true;
+    await page.route('**/api/orders*', async (route) => {
       if (route.request().method() !== 'POST') {
         await route.continue();
         return;
       }
+      const url = new URL(route.request().url());
+      postPaths.push(url.pathname);
       const key = route.request().headers()['idempotency-key'] || '';
       idempotencyKeys.push(key);
-      if (shouldFail) {
-        shouldFail = false;
+      if (simulateLostCommitResponse) {
+        simulateLostCommitResponse = false;
+        const committed = await route.fetch();
+        expect(committed.ok()).toBeTruthy();
         await route.fulfill({
           status: 500,
           contentType: 'application/json',
-          body: JSON.stringify({ error: 'Temporary failure' }),
+          body: JSON.stringify({ error: 'Temporary failure after commit' }),
         });
         return;
       }
       await route.continue();
     });
 
-    // First send attempt fails: draft and notes must remain intact.
+    // First send commits on backend, but response is lost: draft and notes must remain intact.
     await page.getByRole('button', { name: 'Send to kitchen' }).first().click();
     await expect(page.getByRole('button', { name: 'Send to kitchen' }).first()).toBeEnabled();
     await expect(notesInput).toHaveValue('Retry note');
     await expect(page.getByRole('button', { name: 'Remove item' }).first()).toBeEnabled();
 
-    // Retry unmodified draft: must reuse the exact same Idempotency-Key and succeed.
-    await page.getByRole('button', { name: 'Send to kitchen' }).first().click();
+    // Switch away to Table B and back to Table A so the newly created order loads while the draft remains.
+    const reloadTableAOrder = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableA.id}`),
+    );
+    await page.getByRole('button', { name: new RegExp(tableBName) }).click();
+    await page.getByRole('button', { name: new RegExp(tableAName) }).click();
+    await reloadTableAOrder;
+    await expect(page.getByText('2 x E2E Coffee').first()).toBeVisible();
+
+    // Retrying the unmodified draft must replay the original POST /api/orders with the same key instead of appending a second time.
+    await page.getByRole('button', { name: 'Add to order' }).first().click();
     await expect(page.getByText('Order sent').first()).toBeVisible();
+    expect(postPaths).toEqual(['/api/orders', '/api/orders']);
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[0]).toBeTruthy();
     expect(idempotencyKeys[1]).toBe(idempotencyKeys[0]);
 
-    // Delay a subsequent GET /api/orders for Table A, switch to Table B before it resolves,
-    // and verify Table A's order does not render on Table B.
+    const ordersAAfterRetryRes = await page.request.get(`${E2E_BASE_URL}/api/orders`, {
+      headers,
+      params: { table_id: tableA.id, type: 'dine_in', per_page: 5 },
+    });
+    const { orders: ordersAAfterRetry } = await ordersAAfterRetryRes.json();
+    expect(ordersAAfterRetry).toHaveLength(1);
+    expect(ordersAAfterRetry[0]?.items).toHaveLength(1);
+    expect(ordersAAfterRetry[0]?.items[0]?.quantity).toBe(2);
+
+    // Delay a subsequent GET /api/orders for Table A, wait for interception before switching back to Table B,
+    // and wait for its released response to finish before asserting Table A's order does not render on Table B.
+    let markTableAOrderGetIntercepted!: () => void;
+    const tableAOrderGetIntercepted = new Promise<void>((resolve) => {
+      markTableAOrderGetIntercepted = resolve;
+    });
     let releaseTableAOrderGet!: () => void;
     const tableAOrderGetGate = new Promise<void>((resolve) => {
       releaseTableAOrderGet = resolve;
     });
+    let failNextTableALookup = false;
     let delayedOnce = false;
     await page.route('**/api/orders?*', async (route) => {
       const url = route.request().url();
+      if (failNextTableALookup && url.includes(`table_id=${tableA.id}`)) {
+        failNextTableALookup = false;
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Lookup failed' }),
+        });
+        return;
+      }
       if (!delayedOnce && url.includes(`table_id=${tableA.id}`)) {
         delayedOnce = true;
+        markTableAOrderGetIntercepted();
         await tableAOrderGetGate;
       }
       await route.continue();
     });
 
+    const firstTableBOrderGet = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableB.id}`),
+    );
     await page.getByRole('button', { name: new RegExp(tableBName) }).click();
+    await firstTableBOrderGet;
+
+    const delayedTableAOrderGet = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableA.id}`),
+    );
     await page.getByRole('button', { name: new RegExp(tableAName) }).click();
+    await tableAOrderGetIntercepted;
+
+    const secondTableBOrderGet = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableB.id}`),
+    );
     await page.getByRole('button', { name: new RegExp(tableBName) }).click();
+    await secondTableBOrderGet;
+
     releaseTableAOrderGet();
+    const staleTableAResponse = await delayedTableAOrderGet;
+    expect(staleTableAResponse.ok()).toBeTruthy();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve(null))));
 
     await expect(page.locator('header')).toContainText(tableBName);
     await expect(page.getByText('2 x E2E Coffee')).toHaveCount(0);
+
+    // Prepare a new draft on Table B, then return to occupied Table A while its lookup fails:
+    // Send must remain blocked until Table A's lookup succeeds so it cannot create a separate order.
+    await search.fill('E2E Coffee');
+    await search.press('Enter');
+    await expect(page.getByRole('button', { name: 'Send to kitchen' }).first()).toBeEnabled();
+
+    failNextTableALookup = true;
+    const failedTableALookup = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableA.id}`),
+    );
+    await page.getByRole('button', { name: new RegExp(tableAName) }).click();
+    await failedTableALookup;
+
+    const sendOnTableAButton = page.getByRole('button', { name: 'Send to kitchen' }).first();
+    await expect(sendOnTableAButton).toBeDisabled();
+    await sendOnTableAButton.dispatchEvent('click');
+    expect(postPaths).toHaveLength(2);
+
+    // Refreshing recovers Table A's order lookup and switches the action to append ("Add to order").
+    const recoveredTableALookup = page.waitForResponse(
+      (res) =>
+        res.request().method() === 'GET' &&
+        res.url().includes('/api/orders') &&
+        res.url().includes(`table_id=${tableA.id}`) &&
+        res.ok(),
+    );
+    await page.locator('header').getByRole('button', { name: 'Refresh' }).click();
+    await recoveredTableALookup;
+    await expect(page.getByRole('button', { name: 'Add to order' }).first()).toBeEnabled();
 
     const ordersBRes = await page.request.get(`${E2E_BASE_URL}/api/orders`, {
       headers,

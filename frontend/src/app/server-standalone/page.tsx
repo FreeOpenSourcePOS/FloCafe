@@ -147,15 +147,27 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
+type SendSnapshot = {
+  tableId: string;
+  tableName: string | undefined;
+  orderId: number | null;
+  orderCustomer: Order['customer'] | null;
+  existingItemIds: Set<number>;
+  draftLines: DraftLine[];
+  customerName: string;
+  customerPhone: string;
+  orderNotes: string;
+};
+
 function sendAttemptSignature(
-  scopeId: string,
+  tableId: string,
   draft: DraftLine[],
   customerName: string,
   customerPhone: string,
   orderNotes: string,
 ): string {
   const items = draft.map((line) => `${line.id}:${line.quantity}`).join('|');
-  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}|${orderNotes.trim()}`;
+  return `${tableId}|${items}|${customerName.trim()}|${customerPhone.trim()}|${orderNotes.trim()}`;
 }
 
 export default function ServerStandalonePage() {
@@ -187,6 +199,7 @@ export default function ServerStandalonePage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [tablesLoaded, setTablesLoaded] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>('');
+  const [orderLoadedTableId, setOrderLoadedTableId] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([]);
@@ -209,13 +222,19 @@ export default function ServerStandalonePage() {
   const [sending, setSending] = useState(false);
   // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
   const sendInFlightRef = useRef(false);
-  // Nonce for the in-flight send attempt, paired with a signature of what defines it (draft/customer/order).
-  // Reused only while retrying that exact same attempt; a content change or a success both rotate it.
-  const sendAttemptRef = useRef<{ signature: string; nonce: string } | null>(null);
+  // Nonce and frozen target snapshot for the pending send attempt, paired with a signature of what defines it.
+  // Reused while retrying that exact same attempt so a lost create response cannot switch to append on retry.
+  const sendAttemptRef = useRef<{
+    signature: string;
+    nonce: string;
+    snapshot: SendSnapshot;
+  } | null>(null);
   const sendSeqRef = useRef(0);
   const addonModalSendSeqRef = useRef(0);
   const editingDraftSendSeqRef = useRef(0);
   const selectedTableIdRef = useRef('');
+  const orderLoadedTableIdRef = useRef('');
+  const orderLookupFailedRef = useRef(false);
   const orderLoadSeqRef = useRef(0);
 
   async function loadAll(options?: { allowWhileSending?: boolean }) {
@@ -247,33 +266,62 @@ export default function ServerStandalonePage() {
     if (!api || !tableId) return;
     if (sendInFlightRef.current && !options?.allowWhileSending) return;
     const loadSeq = ++orderLoadSeqRef.current;
+    orderLookupFailedRef.current = false;
+    if (!options?.allowWhileSending) {
+      orderLoadedTableIdRef.current = '';
+      setOrderLoadedTableId('');
+    }
     cancelPendingCustomerLookup();
-    const res = await api.get('/api/orders', {
-      params: {
-        table_id: tableId,
-        type: 'dine_in',
-        status: 'pending,preparing,ready',
-        per_page: 1,
-      },
-    });
-    if (
-      (sendInFlightRef.current && !options?.allowWhileSending) ||
-      loadSeq !== orderLoadSeqRef.current ||
-      selectedTableIdRef.current !== tableId
-    ) {
-      return;
+    try {
+      const res = await api.get('/api/orders', {
+        params: {
+          table_id: tableId,
+          type: 'dine_in',
+          status: 'pending,preparing,ready',
+          per_page: 1,
+        },
+      });
+      if (
+        (sendInFlightRef.current && !options?.allowWhileSending) ||
+        loadSeq !== orderLoadSeqRef.current ||
+        selectedTableIdRef.current !== tableId
+      ) {
+        return;
+      }
+      const order = res.data.orders?.[0] || null;
+      setCurrentOrder(order);
+      const pendingAttempt =
+        sendAttemptRef.current?.snapshot.tableId === tableId
+          ? sendAttemptRef.current.snapshot
+          : null;
+      if (pendingAttempt) {
+        setCustomerName(pendingAttempt.customerName);
+        setCustomerPhone(pendingAttempt.customerPhone);
+      } else if (order?.customer) {
+        setCustomerName(order.customer.name || '');
+        setCustomerPhone(order.customer.phone || '');
+      } else {
+        setCustomerName('');
+        setCustomerPhone('');
+      }
+      setCustomerMatch(null);
+      setCustomerSearched(false);
+      orderLoadedTableIdRef.current = tableId;
+      setOrderLoadedTableId(tableId);
+    } catch (error) {
+      if (
+        !options?.allowWhileSending &&
+        !sendInFlightRef.current &&
+        loadSeq === orderLoadSeqRef.current &&
+        selectedTableIdRef.current === tableId
+      ) {
+        setCurrentOrder(null);
+        orderLoadedTableIdRef.current = '';
+        setOrderLoadedTableId('');
+        orderLookupFailedRef.current = true;
+      }
+      throw error;
     }
-    const order = res.data.orders?.[0] || null;
-    setCurrentOrder(order);
-    if (order?.customer) {
-      setCustomerName(order.customer.name || '');
-      setCustomerPhone(order.customer.phone || '');
-    } else {
-      setCustomerName('');
-      setCustomerPhone('');
-    }
-    setCustomerMatch(null);
-    setCustomerSearched(false);
   }
 
   useEffect(() => {
@@ -330,6 +378,8 @@ export default function ServerStandalonePage() {
     let cancelled = false;
     const loadSeq = ++orderLoadSeqRef.current;
     const targetTableId = selectedTableId;
+    orderLookupFailedRef.current = false;
+    orderLoadedTableIdRef.current = '';
     cancelPendingCustomerLookup();
     api
       .get('/api/orders', {
@@ -351,7 +401,14 @@ export default function ServerStandalonePage() {
         }
         const order = res.data.orders?.[0] || null;
         setCurrentOrder(order);
-        if (order?.customer) {
+        const pendingAttempt =
+          sendAttemptRef.current?.snapshot.tableId === targetTableId
+            ? sendAttemptRef.current.snapshot
+            : null;
+        if (pendingAttempt) {
+          setCustomerName(pendingAttempt.customerName);
+          setCustomerPhone(pendingAttempt.customerPhone);
+        } else if (order?.customer) {
           setCustomerName(order.customer.name || '');
           setCustomerPhone(order.customer.phone || '');
         } else {
@@ -360,6 +417,8 @@ export default function ServerStandalonePage() {
         }
         setCustomerMatch(null);
         setCustomerSearched(false);
+        orderLoadedTableIdRef.current = targetTableId;
+        setOrderLoadedTableId(targetTableId);
       })
       .catch(() => {
         if (
@@ -369,6 +428,9 @@ export default function ServerStandalonePage() {
           selectedTableIdRef.current === targetTableId
         ) {
           setCurrentOrder(null);
+          orderLoadedTableIdRef.current = '';
+          setOrderLoadedTableId('');
+          orderLookupFailedRef.current = true;
         }
       });
     return () => {
@@ -422,6 +484,7 @@ export default function ServerStandalonePage() {
 
   function handleCustomerPhoneChange(value: string) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setCustomerPhone(value);
     setCustomerMatch(null);
     setCustomerSearched(false);
@@ -431,22 +494,35 @@ export default function ServerStandalonePage() {
 
   function handleCustomerNameChange(value: string) {
     if (sendInFlightRef.current || customerMatch) return;
+    sendAttemptRef.current = null;
     setCustomerName(value);
   }
 
   function handleOrderNotesChange(value: string) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setOrderNotes(value.slice(0, 200));
   }
 
   function selectTable(tableId: string) {
-    if (sendInFlightRef.current || tableId === selectedTableIdRef.current) return;
+    if (sendInFlightRef.current) return;
+    if (tableId === selectedTableIdRef.current) {
+      if (orderLookupFailedRef.current) {
+        loadOrder(tableId).catch(() => toast.error(t('couldNotLoadData')));
+      }
+      return;
+    }
     selectedTableIdRef.current = tableId;
+    orderLookupFailedRef.current = false;
+    orderLoadedTableIdRef.current = '';
+    setOrderLoadedTableId('');
     orderLoadSeqRef.current += 1;
     cancelPendingCustomerLookup();
     setCurrentOrder(null);
-    setCustomerName('');
-    setCustomerPhone('');
+    const pendingAttempt =
+      sendAttemptRef.current?.snapshot.tableId === tableId ? sendAttemptRef.current.snapshot : null;
+    setCustomerName(pendingAttempt?.customerName ?? '');
+    setCustomerPhone(pendingAttempt?.customerPhone ?? '');
     setCustomerMatch(null);
     setCustomerSearched(false);
     setSelectedTableId(tableId);
@@ -454,7 +530,10 @@ export default function ServerStandalonePage() {
 
   function handleRefresh() {
     if (sendInFlightRef.current) return;
-    loadAll().catch(() => toast.error(t('refreshFailed')));
+    const tableId = selectedTableIdRef.current;
+    Promise.all([loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(() =>
+      toast.error(t('refreshFailed')),
+    );
   }
 
   function openAddonModal(
@@ -510,6 +589,7 @@ export default function ServerStandalonePage() {
     variant: ProductVariant | null = null,
   ) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setDraft((lines) => {
       const lineId = generateCartItemId(
         product.id,
@@ -545,6 +625,7 @@ export default function ServerStandalonePage() {
     variant: ProductVariant | null = null,
   ) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setDraft((lines) => {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
@@ -595,11 +676,13 @@ export default function ServerStandalonePage() {
 
   function removeDraftLine(lineId: string) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setDraft((lines) => lines.filter((line) => line.id !== lineId));
   }
 
   function changeQty(lineId: string, delta: number) {
     if (sendInFlightRef.current) return;
+    sendAttemptRef.current = null;
     setDraft((lines) =>
       lines
         .map((line) => (line.id === lineId ? { ...line, quantity: line.quantity + delta } : line))
@@ -707,9 +790,17 @@ export default function ServerStandalonePage() {
   }
 
   async function sendDraft() {
-    if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
+    if (
+      !api ||
+      !selectedTableId ||
+      orderLoadedTableIdRef.current !== selectedTableId ||
+      draft.length === 0 ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
     const snapshotTable = tables.find((table) => table.id === selectedTableId) || null;
-    const snapshot = {
+    const candidateSnapshot: SendSnapshot = {
       tableId: selectedTableId,
       tableName: snapshotTable ? snapshotTable.name || snapshotTable.number : undefined,
       orderId: currentOrder?.id ?? null,
@@ -726,19 +817,21 @@ export default function ServerStandalonePage() {
     // Nonce first via the LAN-safe helper: anything thrown after the
     // sending flag is set sticks the UI on Sending... forever.
     const signature = sendAttemptSignature(
-      `${snapshot.tableId}:${snapshot.orderId ?? 'new'}`,
-      snapshot.draftLines,
-      snapshot.customerName,
-      snapshot.customerPhone,
-      snapshot.orderNotes,
+      candidateSnapshot.tableId,
+      candidateSnapshot.draftLines,
+      candidateSnapshot.customerName,
+      candidateSnapshot.customerPhone,
+      candidateSnapshot.orderNotes,
     );
     if (sendAttemptRef.current?.signature !== signature) {
       sendAttemptRef.current = {
         signature,
         nonce: createPaymentIdempotencyKey(),
+        snapshot: candidateSnapshot,
       };
     }
-    const idempotencyKey = `server-app-${snapshot.tableId}-${sendAttemptRef.current.nonce}`;
+    const { nonce, snapshot } = sendAttemptRef.current;
+    const idempotencyKey = `server-app-${snapshot.tableId}-${nonce}`;
     sendSeqRef.current += 1;
     orderLoadSeqRef.current += 1;
     cancelPendingCustomerLookup();
@@ -796,6 +889,8 @@ export default function ServerStandalonePage() {
       setOrderNotes((currentNotes) => (currentNotes === snapshot.orderNotes ? '' : currentNotes));
       if (selectedTableIdRef.current === snapshot.tableId) {
         setCurrentOrder(rawOrder as unknown as Order);
+        orderLoadedTableIdRef.current = snapshot.tableId;
+        setOrderLoadedTableId(snapshot.tableId);
       }
       setMobileCartOpen(false);
       await Promise.all([
@@ -1072,7 +1167,12 @@ export default function ServerStandalonePage() {
       </div>
       <button
         onClick={sendDraft}
-        disabled={!selectedTableId || draft.length === 0 || sending}
+        disabled={
+          !selectedTableId ||
+          orderLoadedTableId !== selectedTableId ||
+          draft.length === 0 ||
+          sending
+        }
         className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50"
       >
         <Send size={17} />

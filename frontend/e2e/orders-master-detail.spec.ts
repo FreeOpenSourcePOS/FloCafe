@@ -229,6 +229,137 @@ test.describe('orders master/detail is the default layout', () => {
     await expect(page.getByText('E2E Coffee')).toBeVisible();
   });
 
+  test('Load more restores a displaced selection and ignores its late detail response', async ({
+    page,
+  }) => {
+    const headers = {
+      Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+    };
+    const orders: Array<{ id: number; order_number: string }> = [];
+    for (let index = 0; index < 15; index += 1) {
+      const response = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          special_instructions: `Live pagination race ${index}`,
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(response.status()).toBe(201);
+      const { order } = (await response.json()) as { order: { id: number; order_number: string } };
+      orders.push(order);
+    }
+
+    const selected = orders[0];
+    await login(page);
+    await page.goto(`${BASE}/orders`);
+    const selectedRow = page.getByRole('button').filter({ hasText: `#${selected.order_number}` });
+    await expect(selectedRow).toBeVisible();
+    await selectedRow.click();
+
+    const detail = page.getByTestId('orders-detail-panel');
+    await expect(detail).toContainText(`#${selected.order_number}`);
+    await expect(detail.getByText('Pending', { exact: true })).toBeVisible();
+
+    let releaseLookup!: () => void;
+    let markLookupStarted!: () => void;
+    let finishLookup!: () => void;
+    const lookupGate = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    const lookupStarted = new Promise<void>((resolve) => {
+      markLookupStarted = resolve;
+    });
+    const lookupFinished = new Promise<void>((resolve) => {
+      finishLookup = resolve;
+    });
+    let heldLookups = 0;
+
+    await page.route('**/api/orders/*', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() !== 'GET' || url.pathname !== `/api/orders/${selected.id}`) {
+        await route.continue();
+        return;
+      }
+
+      try {
+        const response = await route.fetch();
+        const body = (await response.json()) as { order: { status: string } };
+        expect(body.order.status).toBe('pending');
+        heldLookups += 1;
+        markLookupStarted();
+        await lookupGate;
+        await route.fulfill({ response, body: JSON.stringify(body) });
+      } finally {
+        finishLookup();
+      }
+    });
+
+    try {
+      const newOrder = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          special_instructions: 'New order displaces the selected row',
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(newOrder.status()).toBe(201);
+
+      const outsideListNotice = page.getByText('This order is no longer in the current list.');
+      await expect(outsideListNotice).toBeVisible({ timeout: 20000 });
+      await lookupStarted;
+
+      const refreshedPage = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === '/api/orders' &&
+          !url.searchParams.has('before_id')
+        );
+      });
+      const statusResponse = await page.request.patch(`${BASE}/api/orders/${selected.id}/status`, {
+        headers,
+        data: { status: 'preparing' },
+      });
+      expect(statusResponse.ok()).toBeTruthy();
+      await refreshedPage;
+
+      await page
+        .getByTestId('orders-master-pane')
+        .getByRole('button', { name: 'Load more' })
+        .click();
+      await expect(selectedRow).toBeVisible();
+      await expect(detail.getByText('Preparing', { exact: true })).toBeVisible();
+      await expect(outsideListNotice).toBeHidden();
+
+      const lateLookupResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' && url.pathname === `/api/orders/${selected.id}`
+        );
+      });
+      releaseLookup();
+      await lookupFinished;
+      const staleResponse = await lateLookupResponse;
+      await staleResponse.finished();
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      await expect(detail.getByText('Preparing', { exact: true })).toBeVisible();
+      await expect(outsideListNotice).toBeHidden();
+      expect(heldLookups).toBe(1);
+    } finally {
+      releaseLookup();
+      if (heldLookups > 0) await lookupFinished;
+      await page.unroute('**/api/orders/*');
+    }
+  });
+
   test('the detail pane carries applied charges and the pre-bill print action', async ({
     page,
   }) => {

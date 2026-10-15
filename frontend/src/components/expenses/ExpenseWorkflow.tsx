@@ -144,8 +144,10 @@ export default function ExpenseWorkflow({
     setAttemptState({ attempt: next, storageBlocked: false });
   // The freshly loaded record wins over the list row once it is that same record.
   const record = detail && detail.id === expense?.id ? detail : expense;
-  const fmtMinor = (amountMinor: number) =>
-    fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
+  const fmtMinor = (amountMinor: number | null) =>
+    amountMinor === null
+      ? tCommon('notAvailable')
+      : fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
 
   /** Replacing copies the source values into the fresh form. */
   const openReplace = () => {
@@ -154,7 +156,11 @@ export default function ExpenseWorkflow({
     if (expense) {
       setDescription(expense.description);
       setCategoryId(expense.category_id);
-      setAmount(unitAdapter.toDisplay(expense.amount_minor / minorFactor));
+      setAmount(
+        expense.amount_minor === null
+          ? ''
+          : unitAdapter.toDisplay(expense.amount_minor / minorFactor),
+      );
       setIncurredOn(expense.incurred_on);
       setPayee(expense.payee ?? '');
       setNotes(expense.notes ?? '');
@@ -409,7 +415,7 @@ export default function ExpenseWorkflow({
       focusAmount();
       return;
     }
-    if (cents > record.due_minor) {
+    if (record.due_minor === null || cents > record.due_minor) {
       setErrors({ amount: t('exceedsDue', { amount: fmtMinor(record.due_minor) }) });
       focusAmount();
       return;
@@ -1039,7 +1045,7 @@ export default function ExpenseWorkflow({
                     type="button"
                     onClick={openPayment}
                     disabled={
-                      busy || locked || record.status !== 'active' || record.due_minor === 0
+                      busy || locked || record.status !== 'active' || !record.due_minor
                     }
                     data-testid="expense-record-payment"
                   >

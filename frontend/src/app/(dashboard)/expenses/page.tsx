@@ -40,7 +40,10 @@ export default function ExpensesPage() {
   const tOrders = useTranslations('orders');
   const { currentTenant, refreshAuthContext } = useAuthStore();
   const fmt = useFormatCurrency();
-  const fmtMinor = (amountMinor: number, currencyCode: string) => fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
+  const fmtMinor = (amountMinor: number | null, currencyCode: string) =>
+    amountMinor === null
+      ? tCommon('notAvailable')
+      : fmt(amountMinor / getCurrencyMinorUnitFactor(currencyCode));
 
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
 

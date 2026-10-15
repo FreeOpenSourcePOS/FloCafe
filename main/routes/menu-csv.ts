@@ -981,49 +981,50 @@ router.post(
       const preparedRows = rawRows.map(
         (rawRow): { encodingError: string | null; row: Record<string, string> } => {
           const encoding = resolveCsvRowEncoding(rawRow);
-        if (!encoding.ok) {
-          return { encodingError: encoding.error, row: rawRow };
-        }
-        if (encoding.mode === 'quote-v1') {
+          if (!encoding.ok) {
+            return { encodingError: encoding.error, row: rawRow };
+          }
+          if (encoding.mode === 'quote-v1') {
+            return {
+              encodingError: null,
+              row: {
+                ...rawRow,
+                group_name: decodeQuoteV1Field(rawRow.group_name ?? ''),
+                addon_name: decodeQuoteV1Field(rawRow.addon_name ?? ''),
+              },
+            };
+          }
+          let groupName = rawRow.group_name ?? '';
+          let addonName = rawRow.addon_name ?? '';
+          const addonId = rawRow.id || rawRow.addon_id || '';
+          const groupId = rawRow.group_id || rawRow.addon_group_id || '';
+          if (addonId) {
+            const existingAddon = findExistingAddon.get(addonId) as
+              | { id: string; addon_name: string; addon_group_id: string; group_name: string }
+              | undefined;
+            if (existingAddon) {
+              groupName = decodeLegacyProvenField(groupName, existingAddon.group_name);
+              addonName = decodeLegacyProvenField(addonName, existingAddon.addon_name);
+            }
+          }
+          if (groupId) {
+            const existingGroup = findExistingGroupById.get(groupId) as
+              | { id: string; name: string }
+              | undefined;
+            if (existingGroup) {
+              groupName = decodeLegacyProvenField(groupName, existingGroup.name);
+            }
+          }
           return {
             encodingError: null,
             row: {
               ...rawRow,
-              group_name: decodeQuoteV1Field(rawRow.group_name ?? ''),
-              addon_name: decodeQuoteV1Field(rawRow.addon_name ?? ''),
+              group_name: groupName,
+              addon_name: addonName,
             },
           };
-        }
-        let groupName = rawRow.group_name ?? '';
-        let addonName = rawRow.addon_name ?? '';
-        const addonId = rawRow.id || rawRow.addon_id || '';
-        const groupId = rawRow.group_id || rawRow.addon_group_id || '';
-        if (addonId) {
-          const existingAddon = findExistingAddon.get(addonId) as
-            | { id: string; addon_name: string; addon_group_id: string; group_name: string }
-            | undefined;
-          if (existingAddon) {
-            groupName = decodeLegacyProvenField(groupName, existingAddon.group_name);
-            addonName = decodeLegacyProvenField(addonName, existingAddon.addon_name);
-          }
-        }
-        if (groupId) {
-          const existingGroup = findExistingGroupById.get(groupId) as
-            | { id: string; name: string }
-            | undefined;
-          if (existingGroup) {
-            groupName = decodeLegacyProvenField(groupName, existingGroup.name);
-          }
-        }
-        return {
-          encodingError: null,
-          row: {
-            ...rawRow,
-            group_name: groupName,
-            addon_name: addonName,
-          },
-        };
-      });
+        },
+      );
 
       type AddonGroupImportPlan = {
         existing?: {

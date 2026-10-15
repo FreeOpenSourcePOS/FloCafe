@@ -518,7 +518,7 @@ Router: `main/routes/print-templates.ts`. Full path: `/api/print-templates`.
 
 Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 
-Category, product, and add-on exports append a `flo_csv_encoding` column set to `quote-v1`. Under `quote-v1`, an original leading apostrophe (`'`) on a non-numeric field is doubled before `toCsvRow` in [`main/lib/csv.ts`](../../main/lib/csv.ts) prefixes formula-triggering values (`=`, `+`, `-`, `@`, including behind leading whitespace) with a protective `'`. On import, rows marked with `flo_csv_encoding=quote-v1` strip that single encoding-added apostrophe; rows with an omitted or empty `flo_csv_encoding` are treated as unmarked legacy rows and decode only when a stable ID on a product or add-on row matches an existing record whose stored value proves the leading apostrophe came from formula protection, preserving ambiguous legacy values (including category-only rows without proof of identity); and rows with any other non-empty `flo_csv_encoding` value fail per-row validation. See [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity).
+Category, product, and add-on exports include `flo_csv_encoding=quote-v1` for reversible formula protection; see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity) for marked, unmarked legacy, and unsupported encoding rules.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |

@@ -881,11 +881,7 @@ async function main() {
       ).run('var-edit', JSON.stringify({ id: 'var-edit', name: 'Large' }), order.itemId);
       db.prepare("UPDATE product_variants SET name = 'Huge' WHERE id = 'var-edit'").run();
       const reduced = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
-      assertEqualOrThrow(
-        reduced.status,
-        200,
-        'reduction of a line with a stored variant succeeds',
-      );
+      assertEqualOrThrow(reduced.status, 200, 'reduction of a line with a stored variant succeeds');
       const active = db
         .prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'pending'")
         .all(order.orderId) as any[];

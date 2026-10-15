@@ -445,11 +445,7 @@ export default function OrdersPage() {
       if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
         return true;
       const selectedId = selectedOrderIdRef.current;
-      if (
-        selectedId !== null &&
-        cursor === undefined &&
-        (refreshLoadedPages || !hasLoadedOlderOrdersRef.current)
-      ) {
+      if (selectedId !== null) {
         const refreshedSelection = orders.find((order) => order.id === selectedId);
         if (refreshedSelection) {
           selectedOrderLookupIdRef.current++;
@@ -457,7 +453,10 @@ export default function OrdersPage() {
           setSelectedOrderSnapshot(refreshedSelection);
           setSelectedOrderNotInCurrentList(false);
           setSelectedOrderMissing(false);
-        } else {
+        } else if (
+          cursor === undefined &&
+          (refreshLoadedPages || !hasLoadedOlderOrdersRef.current)
+        ) {
           setSelectedOrderNotInCurrentList(true);
           setSelectedOrderMissing(false);
           refreshSelectedOrder(selectedId);

@@ -144,10 +144,10 @@ test('customer display pairing uses the selected POS address and reuses its toke
   });
   await devicePage.goto(pairingUrl);
   await expect(devicePage.getByText('E2E Cafe', { exact: true })).toBeVisible();
-  await expect(devicePage.getByText('A-42', { exact: true })).toBeVisible();
+  await expect(devicePage.getByTestId('customer-display-ready-scroll')).toContainText('A-42');
   await expect(devicePage).toHaveURL(`${localOrigin}/customer-display/`);
   await devicePage.reload();
-  await expect(devicePage.getByText('A-42', { exact: true })).toBeVisible();
+  await expect(devicePage.getByTestId('customer-display-ready-scroll')).toContainText('A-42');
   expect(feedRequests).toBeGreaterThanOrEqual(2);
   revoked = true;
   await expect(

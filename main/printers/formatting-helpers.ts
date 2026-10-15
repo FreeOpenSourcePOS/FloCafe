@@ -71,7 +71,10 @@ export function itemNameWidth(cols: number, amtLen: number): number {
 }
 
 export function itemAmountWidth(
-  order: { items?: Array<{ status?: unknown; total?: number; addons?: unknown }> } | null | undefined,
+  order:
+    | { items?: Array<{ status?: unknown; total?: number; addons?: unknown }> }
+    | null
+    | undefined,
   prefix: string,
   locale: string,
   trimDecimals: boolean,

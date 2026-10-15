@@ -74,9 +74,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   );
   const [quantity, setQuantity] = useState(() =>
     String(
-      lockedAttempt?.body.quantity ??
-        lockedAttempt?.body.replacement?.quantity ??
-        item.quantity,
+      lockedAttempt?.body.quantity ?? lockedAttempt?.body.replacement?.quantity ?? item.quantity,
     ),
   );
   const [products, setProducts] = useState<Product[]>([]);
@@ -106,9 +104,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
 
   const effectiveSelected = useMemo(() => {
     if (lockedAttempt?.mode === 'replace' && lockedAttempt.body.replacement?.product_id) {
-      return (
-        products.find((p) => p.id === lockedAttempt.body.replacement?.product_id) ?? selected
-      );
+      return products.find((p) => p.id === lockedAttempt.body.replacement?.product_id) ?? selected;
     }
     return selected;
   }, [lockedAttempt, products, selected]);

@@ -1,6 +1,10 @@
-
 import { parseDbTimestamp } from '../db';
-import { formatMoney, getCurrencyMinorUnitFactor, type CurrencyDisplay, type DigitMode } from '../countries';
+import {
+  formatMoney,
+  getCurrencyMinorUnitFactor,
+  type CurrencyDisplay,
+  type DigitMode,
+} from '../countries';
 import { printLabel } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
@@ -8,7 +12,6 @@ import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capa
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
-
   formatVariantItemHeading,
   parseVariantSelection,
   pushWrapped,
@@ -61,11 +64,17 @@ function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: numbe
   }
   if (!Array.isArray(candidates)) return [];
   return candidates
-    .filter((addon: unknown): addon is { name: string; quantity?: number } =>
-      Boolean(addon) && typeof addon === 'object' && typeof (addon as { name?: unknown }).name === 'string')
+    .filter(
+      (addon: unknown): addon is { name: string; quantity?: number } =>
+        Boolean(addon) &&
+        typeof addon === 'object' &&
+        typeof (addon as { name?: unknown }).name === 'string',
+    )
     .map((addon) => ({
       name: addon.name,
-      ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+      ...(typeof addon.quantity === 'number' &&
+      Number.isFinite(addon.quantity) &&
+      addon.quantity > 0
         ? { quantity: addon.quantity }
         : {}),
     }));
@@ -108,7 +117,12 @@ export interface DeliverySlipItemRow {
 export function buildDeliverySlipPrintData(
   order: DeliverySlipOrderRow,
   items: readonly DeliverySlipItemRow[],
-  contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
+  contact: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    addressSource?: DeliverySlipAddressSource | null;
+  },
   options: {
     showCustomerPhone?: boolean;
     locale?: string;
@@ -117,12 +131,18 @@ export function buildDeliverySlipPrintData(
     digits?: DigitMode;
   } = {},
 ): DeliverySlipPrintData {
-  const orderAddress = typeof order?.delivery_address === 'string' ? order.delivery_address.trim() : '';
+  const orderAddress =
+    typeof order?.delivery_address === 'string' ? order.delivery_address.trim() : '';
   const customerAddress = typeof contact?.address === 'string' ? contact.address.trim() : '';
-  const { text: address, truncatedChars } = clampAddress(orderAddress.length > 0 ? orderAddress : customerAddress);
-  const addressSource: DeliverySlipAddressSource | null = address.length === 0
-    ? null
-    : (orderAddress.length > 0 ? 'order' : (contact?.addressSource ?? 'customer'));
+  const { text: address, truncatedChars } = clampAddress(
+    orderAddress.length > 0 ? orderAddress : customerAddress,
+  );
+  const addressSource: DeliverySlipAddressSource | null =
+    address.length === 0
+      ? null
+      : orderAddress.length > 0
+        ? 'order'
+        : (contact?.addressSource ?? 'customer');
   const { text: note, truncatedChars: noteTruncatedChars } = clampDeliverySlipText(
     String(order?.special_instructions ?? '').trim(),
   );
@@ -132,8 +152,9 @@ export function buildDeliverySlipPrintData(
   const expectedMethod = sanitizeDeliverySlipPaymentMethod(order?.expected_payment_method);
   // The persisted identity, not today's method table, decides whether the stored
   // name prints literally - a later rename or deactivation cannot change it.
-  const expectedMethodIsCustom = Number.isSafeInteger(Number(order?.expected_payment_method_id))
-    && Number(order?.expected_payment_method_id) > 0;
+  const expectedMethodIsCustom =
+    Number.isSafeInteger(Number(order?.expected_payment_method_id)) &&
+    Number(order?.expected_payment_method_id) > 0;
 
   const ticketItems = Array.isArray(items)
     ? items.filter((item) => !isTerminalItemStatus(item?.status))
@@ -144,18 +165,19 @@ export function buildDeliverySlipPrintData(
     paymentBills,
     getCurrencyMinorUnitFactor(String(options.currency ?? '')),
   );
-  const formatAmount = (amount: number) => formatMoney(amount, String(options.currency ?? ''), options.locale ?? 'en-US', {
-    currencyDisplay: options.currencyDisplay,
-    digits: options.digits,
-  });
+  const formatAmount = (amount: number) =>
+    formatMoney(amount, String(options.currency ?? ''), options.locale ?? 'en-US', {
+      currencyDisplay: options.currencyDisplay,
+      digits: options.digits,
+    });
   const payment = paymentSummary
     ? {
-      ...paymentSummary,
-      formattedAmount: formatAmount(paymentSummary.amount),
-      formattedAmountDue: formatAmount(paymentSummary.amountDue),
-      ...(expectedMethod ? { expectedMethod } : {}),
-      ...(expectedMethodIsCustom ? { expectedMethodIsCustom: true } : {}),
-    }
+        ...paymentSummary,
+        formattedAmount: formatAmount(paymentSummary.amount),
+        formattedAmountDue: formatAmount(paymentSummary.amountDue),
+        ...(expectedMethod ? { expectedMethod } : {}),
+        ...(expectedMethodIsCustom ? { expectedMethodIsCustom: true } : {}),
+      }
     : undefined;
   return {
     order: {
@@ -236,7 +258,9 @@ function slipBlock<K extends DeliverySlipDocumentBlock['kind']>(
   document: DeliverySlipDocument,
   kind: K,
 ): Extract<DeliverySlipDocumentBlock, { kind: K }> | undefined {
-  return document.blocks.find((block): block is Extract<DeliverySlipDocumentBlock, { kind: K }> => block.kind === kind);
+  return document.blocks.find(
+    (block): block is Extract<DeliverySlipDocumentBlock, { kind: K }> => block.kind === kind,
+  );
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -245,13 +269,25 @@ function labelOf(label: SemanticLabel): string {
 
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 
-function thermalSafeText(value: string, fallback: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
-  const merged = mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping);
+function thermalSafeText(
+  value: string,
+  fallback: string,
+  arabicShaping: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
+  const merged = mergeThermalCapabilities(
+    capabilities ?? GENERIC_THERMAL_CAPABILITIES,
+    arabicShaping,
+  );
   if (merged.raster.enabled === true && !isThermalTextRepresentable(value, merged)) return value;
   return thermalTextFallback(value, fallback, merged);
 }
 
-function thermalSafeMetadataValue(value: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+function thermalSafeMetadataValue(
+  value: string,
+  arabicShaping: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
   return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, arabicShaping, capabilities);
 }
 
@@ -266,8 +302,23 @@ function slipHeaderLines(
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
 
-  const banner = thermalSafeText(labelOf(header.banner), 'DELIVERY SLIP', options.arabicShaping, options.capabilities);
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
+  const banner = thermalSafeText(
+    labelOf(header.banner),
+    'DELIVERY SLIP',
+    options.arabicShaping,
+    options.capabilities,
+  );
+  lines.push(
+    '{CENTER}{BOLD}' +
+      truncateShapedLine(
+        banner,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ) +
+      '{/BOLD}{/CENTER}',
+  );
   sourceLines.push(labelOf(header.banner));
   sourceControlLines.push(lines.at(-1) ?? '');
   lines.push('');
@@ -280,7 +331,15 @@ function slipHeaderLines(
     options.arabicShaping,
     options.capabilities,
   );
-  lines.push(truncateShapedLine(orderNumberLabel, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(
+    truncateShapedLine(
+      orderNumberLabel,
+      cols,
+      options.arabicShaping,
+      options.language,
+      options.capabilities,
+    ),
+  );
   sourceLines.push(labelOf(header.orderNumberLabel).replace('{number}', header.orderNumber.text));
   sourceControlLines.push(lines.at(-1) ?? '');
 
@@ -290,19 +349,38 @@ function slipHeaderLines(
     const orderType = shouldUseOrderTypeFallback(localized, thermalCapabilities)
       ? fallback
       : thermalSafeText(localized, fallback, options.arabicShaping, options.capabilities);
-    lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
+    lines.push(
+      truncateShapedLine(
+        orderType,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ),
+    );
     sourceLines.push(`${labelOf(header.orderType.label)}: ${header.orderType.value.text}`);
     sourceControlLines.push(lines.at(-1) ?? '');
   }
 
-  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
+  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString(
+    (options.locale ?? 'en-US') + '-u-nu-latn',
+    tzOptions,
+  );
   const timeLine = thermalSafeText(
     `${labelOf(header.timeLabel)}: ${time}`,
     `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
     options.arabicShaping,
     options.capabilities,
   );
-  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(
+    truncateShapedLine(
+      timeLine,
+      cols,
+      options.arabicShaping,
+      options.language,
+      options.capabilities,
+    ),
+  );
   sourceLines.push(`${labelOf(header.timeLabel)}: ${time}`);
   sourceControlLines.push(lines.at(-1) ?? '');
   return lines;
@@ -317,7 +395,17 @@ function slipContactLines(
   const cols = options.columns;
   const lines: string[] = [];
   if (contact.name) {
-    lines.push('{CENTER}{FONT_B}' + truncateShapedLine(contact.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
+    lines.push(
+      '{CENTER}{FONT_B}' +
+        truncateShapedLine(
+          contact.name.text,
+          cols,
+          options.arabicShaping,
+          options.language,
+          options.capabilities,
+        ) +
+        '{/FONT_B}{/CENTER}',
+    );
     sourceLines.push(contact.name.text);
     sourceControlLines.push(lines.at(-1) ?? '');
   }
@@ -329,19 +417,22 @@ function slipContactLines(
   if (contact.address) {
     // Wrapped, not truncated: a wrapped address stays readable at every rung.
     // pushWrapped is the helper the receipt uses for the shop's own address.
-    const labeled = thermalSafeText(
-      `${labelOf(contact.addressLabel)}: `,
-      'Delivery address: ',
-      options.arabicShaping,
-      options.capabilities,
-    ) + contact.address.text;
+    const labeled =
+      thermalSafeText(
+        `${labelOf(contact.addressLabel)}: `,
+        'Delivery address: ',
+        options.arabicShaping,
+        options.capabilities,
+      ) + contact.address.text;
     const start = lines.length;
     pushWrapped(lines, labeled, cols, options.language, options.capabilities);
     sourceLines.push(labeled);
     sourceControlLines.push(lines[start] ?? '');
     if (contact.addressTruncatedChars > 0) {
-      const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
-        .replace('{count}', String(contact.addressTruncatedChars));
+      const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated').replace(
+        '{count}',
+        String(contact.addressTruncatedChars),
+      );
       pushWrapped(lines, marker, cols, options.language, options.capabilities);
       sourceLines.push(marker);
       sourceControlLines.push(lines.at(-1) ?? '');
@@ -358,18 +449,24 @@ function slipNoteLines(
 ): string[] {
   const lines: string[] = [];
   for (const [label, fallback, text, truncatedChars] of [
-    [notes.deliveryNoteLabel, 'Delivery note: ', notes.deliveryNote, notes.deliveryNoteTruncatedChars],
+    [
+      notes.deliveryNoteLabel,
+      'Delivery note: ',
+      notes.deliveryNote,
+      notes.deliveryNoteTruncatedChars,
+    ],
     [notes.label, 'Note: ', notes.note, notes.noteTruncatedChars],
   ] as const) {
     // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
     // than one that runs long. pushWrapped is the same helper the address uses.
     if (text) {
-      const labeled = thermalSafeText(
-        `${labelOf(label)}: `,
-        fallback,
-        options.arabicShaping,
-        options.capabilities,
-      ) + text.text;
+      const labeled =
+        thermalSafeText(
+          `${labelOf(label)}: `,
+          fallback,
+          options.arabicShaping,
+          options.capabilities,
+        ) + text.text;
       const start = lines.length;
       pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
       sourceLines.push(labeled);
@@ -378,8 +475,10 @@ function slipNoteLines(
     // A courier instruction that ends without saying it was cut reads as the whole
     // instruction, so the drop is stated on the paper rather than only in the data.
     if (truncatedChars > 0) {
-      const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated')
-        .replace('{count}', String(truncatedChars));
+      const marker = printLabel(options.language, 'print.deliverySlip.addressTruncated').replace(
+        '{count}',
+        String(truncatedChars),
+      );
       pushWrapped(lines, marker, options.columns, options.language, options.capabilities);
       sourceLines.push(marker);
       sourceControlLines.push(lines.at(-1) ?? '');
@@ -392,52 +491,109 @@ function slipPaymentLines(
   payment: DeliverySlipPaymentBlock,
   options: DeliverySlipDocumentRenderOptions,
 ): string[] {
-  const fallbackStatus = payment.status === 'paid'
-    ? 'PAID'
-    : payment.status === 'refunded'
-      ? 'REFUNDED'
-      : payment.status === 'partially_refunded'
-        ? 'PARTIAL REFUND'
-        : !payment.detailsText
-          ? 'AMOUNT DUE'
-          : 'TO COLLECT';
-  const status = thermalSafeText(labelOf(payment.label), fallbackStatus, options.arabicShaping, options.capabilities);
+  const fallbackStatus =
+    payment.status === 'paid'
+      ? 'PAID'
+      : payment.status === 'refunded'
+        ? 'REFUNDED'
+        : payment.status === 'partially_refunded'
+          ? 'PARTIAL REFUND'
+          : !payment.detailsText
+            ? 'AMOUNT DUE'
+            : 'TO COLLECT';
+  const status = thermalSafeText(
+    labelOf(payment.label),
+    fallbackStatus,
+    options.arabicShaping,
+    options.capabilities,
+  );
   const method = payment.methodLabel?.primary ?? payment.methodName?.text ?? '';
-  const totalLabel = thermalSafeText(printLabel(options.language, 'pos.total'), 'Total', options.arabicShaping, options.capabilities);
-  const summary = payment.status === 'paid'
-    ? `${status}: ${method ? `${method} ` : ''}(${totalLabel}: ${payment.amountText.text})`
-    : payment.status === 'unpaid' && payment.detailsText
-      ? `${status}: ${payment.amountText.text} (${payment.detailsText.text})`
-      : `${status}${payment.amountText.text ? `: ${payment.amountText.text}` : ''}`;
+  const totalLabel = thermalSafeText(
+    printLabel(options.language, 'pos.total'),
+    'Total',
+    options.arabicShaping,
+    options.capabilities,
+  );
+  const summary =
+    payment.status === 'paid'
+      ? `${status}: ${method ? `${method} ` : ''}(${totalLabel}: ${payment.amountText.text})`
+      : payment.status === 'unpaid' && payment.detailsText
+        ? `${status}: ${payment.amountText.text} (${payment.detailsText.text})`
+        : `${status}${payment.amountText.text ? `: ${payment.amountText.text}` : ''}`;
   const lines: string[] = [];
   pushWrapped(lines, summary, options.columns, options.language, options.capabilities);
   if (lines.length > 0) lines[0] = `{BOLD}${lines[0]}{/BOLD}`;
-  if ((payment.status === 'paid' || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.detailsText) {
-    pushWrapped(lines, payment.detailsText.text, options.columns, options.language, options.capabilities);
+  if (
+    (payment.status === 'paid' ||
+      payment.status === 'refunded' ||
+      payment.status === 'partially_refunded') &&
+    payment.detailsText
+  ) {
+    pushWrapped(
+      lines,
+      payment.detailsText.text,
+      options.columns,
+      options.language,
+      options.capabilities,
+    );
   }
   return lines;
 }
 
-function slipItemLines(row: DeliverySlipItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
+function slipItemLines(
+  row: DeliverySlipItemsBlock['rows'][number],
+  cols: number,
+  arabicShaping: boolean,
+  language: string,
+  capabilities?: ThermalPrinterCapabilities,
+): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
   // These all arrive through directionalText, which already neutralised control
   // tokens, so the renderer only has to fit them to the column.
-  lines.push('{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities) + '{/BOLD}');
+  lines.push(
+    '{BOLD}' +
+      itemPrefix +
+      truncateShapedLine(
+        row.name.text,
+        Math.max(1, cols - displayCellWidth(itemPrefix)),
+        arabicShaping,
+        language,
+        capabilities,
+      ) +
+      '{/BOLD}',
+  );
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
-    const name = truncate(addon.text, Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)), language, capabilities);
+    const name = truncate(
+      addon.text,
+      Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)),
+      language,
+      capabilities,
+    );
     lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
+    lines.push(
+      '  >> ' +
+        truncateShapedLine(
+          row.specialInstructions.text,
+          Math.max(1, cols - 8),
+          arabicShaping,
+          language,
+          capabilities,
+        ),
+    );
   }
   return lines;
 }
 
 /** Map a DeliverySlipDocument onto the ESC/POS token-line layout. */
-export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument, options: DeliverySlipDocumentRenderOptions): string[] {
+export function renderDeliverySlipDocumentToLines(
+  document: DeliverySlipDocument,
+  options: DeliverySlipDocumentRenderOptions,
+): string[] {
   const lines: string[] = [];
   const cols = options.columns;
   const bar = '='.repeat(cols);
@@ -511,7 +667,10 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
         sourceControlLines: paymentLines,
         financial: true,
       });
-      options.financialLineRanges?.push({ lineIndex: paymentStart, lineCount: paymentLines.length });
+      options.financialLineRanges?.push({
+        lineIndex: paymentStart,
+        lineCount: paymentLines.length,
+      });
       lines.push('-'.repeat(cols));
     }
   }
@@ -519,7 +678,13 @@ export function renderDeliverySlipDocumentToLines(document: DeliverySlipDocument
   if (items) {
     for (const [rowIndex, row] of items.rows.entries()) {
       const rowStart = lines.length;
-      const rowLines = slipItemLines(row, cols, options.arabicShaping, options.language, options.capabilities);
+      const rowLines = slipItemLines(
+        row,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      );
       lines.push(...rowLines);
       const sourceLines = [`${row.quantity}x  ${row.name.text}`];
       const sourceControlLines = [rowLines[0] ?? ''];
@@ -567,7 +732,12 @@ export interface DeliverySlipDocumentRenderResult {
 export function renderDeliverySlipViaDocument(
   order: DeliverySlipOrderRow,
   items: readonly DeliverySlipItemRow[],
-  contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
+  contact: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    addressSource?: DeliverySlipAddressSource | null;
+  },
   opts: {
     columns: number;
     language: string;
@@ -610,13 +780,18 @@ export function renderDeliverySlipViaDocument(
     rasterGroups,
     financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, {
-    cutMode: opts.cutMode,
-    arabicShaping: opts.arabicShaping,
-    columns: opts.columns,
-    language: opts.language,
-    capabilities: opts.capabilities,
-    financialLineRanges,
-  }, warnings);
+  const data = buildEscPos(
+    lines,
+    opts.useUnicode,
+    {
+      cutMode: opts.cutMode,
+      arabicShaping: opts.arabicShaping,
+      columns: opts.columns,
+      language: opts.language,
+      capabilities: opts.capabilities,
+      financialLineRanges,
+    },
+    warnings,
+  );
   return { document, lines, data, warnings, rasterGroups };
 }

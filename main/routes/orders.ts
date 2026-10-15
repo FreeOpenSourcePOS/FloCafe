@@ -4225,7 +4225,10 @@ router.patch(
             oldQuantity,
             decimals,
           );
-          const itemSubtotal = Math.max(0, Number((itemBaseTotal - itemDiscount).toFixed(decimals)));
+          const itemSubtotal = Math.max(
+            0,
+            Number((itemBaseTotal - itemDiscount).toFixed(decimals)),
+          );
           const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
           const itemTotal =
             itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
@@ -4544,7 +4547,10 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         throw Object.assign(new Error('Cannot restore items on a paid order'), { statusCode: 400 });
       }
 
-      if (currentItem.status === 'cancelled' && isOrderItemSuperseded(db, orderId, currentItem.id)) {
+      if (
+        currentItem.status === 'cancelled' &&
+        isOrderItemSuperseded(db, orderId, currentItem.id)
+      ) {
         throw Object.assign(new Error('Superseded order items cannot be restored'), {
           statusCode: 400,
         });

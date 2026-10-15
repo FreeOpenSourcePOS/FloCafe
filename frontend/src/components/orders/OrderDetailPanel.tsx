@@ -157,9 +157,7 @@ function OrderDetailContent({
   const [showVoidedItems, setShowVoidedItems] = useState(false);
   const [showPrintActivity, setShowPrintActivity] = useState(false);
 
-  const activeItems = (order.items || []).filter(
-    (i) => !isTerminalItemStatus(i.status),
-  );
+  const activeItems = (order.items || []).filter((i) => !isTerminalItemStatus(i.status));
   const inactiveItems = (order.items || []).filter(
     (i) => ['cancelled', 'voided', 'refunded'].includes(i.status) && !i.superseded,
   );

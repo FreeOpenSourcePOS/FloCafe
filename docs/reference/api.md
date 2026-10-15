@@ -323,10 +323,10 @@ one. Failures without a registered tuple may retain the `{ error }` response.
   `outstanding_amounts`, and `collected_amount` (plus `undelivered_items` when overriding kitchen
   delivery), and never records the PIN.
 
-Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
-(deferred, not immediate) transaction rather than from the JWT claim, and re-run every policy check
-there. Each opens the single transaction scope it runs in; the route does not wrap the handler
-again.
+`PATCH .../cancel` and `PATCH .../restore` resolve the caller's effective permissions from the
+database inside a `withTxn` (deferred, not immediate) transaction rather than from the JWT claim,
+and re-run every policy check there. Each opens the single transaction scope it runs in; the route
+does not wrap the handler again.
 
 `PATCH .../cancel` is a policy switch, not a plain status write:
 

@@ -13,8 +13,7 @@ export const orderItemEditAttemptStorageKey = (
   actorId: string,
   orderId: number | string,
   itemId: number | string,
-): string =>
-  `${ORDER_ITEM_EDIT_ATTEMPT_STORAGE_KEY}:${tenantId}:${actorId}:${orderId}:${itemId}`;
+): string => `${ORDER_ITEM_EDIT_ATTEMPT_STORAGE_KEY}:${tenantId}:${actorId}:${orderId}:${itemId}`;
 
 export type OrderItemEditAttemptMode = 'quantity' | 'replace';
 

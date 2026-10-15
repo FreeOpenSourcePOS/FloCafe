@@ -4,6 +4,7 @@ import type { Order } from '@/lib/types';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { escapeHtml } from './web-print';
 import { formatItemHeading } from './item-heading';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export interface OrderSlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -28,30 +29,44 @@ export interface OrderSlipLabels {
 }
 
 /** Renders order.subtotal/tax_amount/total as already computed by the backend — no tax math happens here. */
-export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opts: OrderSlipWebPrintOptions = {}): string {
+export function generateOrderSlipHtml(
+  order: Order,
+  labels: OrderSlipLabels,
+  opts: OrderSlipWebPrintOptions = {},
+): string {
   const paperWidth = opts.paperWidth ?? 58;
   const fontSize = paperWidth === 58 ? '10px' : '12px';
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
-  const money = (value: unknown) => formatCurrencyForTenant(Number(value || 0), opts.country || '', opts.currency || '');
+  const money = (value: unknown) =>
+    formatCurrencyForTenant(Number(value || 0), opts.country || '', opts.currency || '');
   const locale = opts.locale || 'en';
   const direction = opts.direction === 'rtl' ? 'rtl' : 'ltr';
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
-  const items = order.items ?? [];
-  const itemRows = items.map((item) => `
+  const items = (order.items ?? []).filter((item) => !isTerminalItemStatus(item.status));
+  const itemRows = items
+    .map(
+      (item) => `
     <div style="margin:${padding} 0;display:flex;justify-content:space-between;gap:8px;">
       <span>${escapeHtml(item.quantity)}x ${escapeHtml(formatItemHeading(item.product_name, item.variant_selection))}</span>
       <span>${escapeHtml(money(item.subtotal ?? item.unit_price * item.quantity))}</span>
     </div>
-    ${(item.addons ?? []).filter((addon) => addon?.name).map((addon) => `
+    ${(item.addons ?? [])
+      .filter((addon) => addon?.name)
+      .map(
+        (addon) => `
       <div style="padding-inline-start:1em;display:flex;justify-content:space-between;gap:8px;color:#444;">
         <span>+ ${escapeHtml(addon.name)}${(addon.quantity ?? 1) > 1 ? ` x${escapeHtml(addon.quantity)}` : ''}</span>
         ${addon.price ? `<span>${escapeHtml(money(addon.price))}</span>` : ''}
       </div>
-    `).join('')}
+    `,
+      )
+      .join('')}
     ${item.special_instructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${escapeHtml(item.special_instructions)}</div>` : ''}
-  `).join('');
+  `,
+    )
+    .join('');
 
   return `
     <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">

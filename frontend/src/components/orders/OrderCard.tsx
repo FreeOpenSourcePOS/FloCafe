@@ -35,6 +35,7 @@ import {
   XCircle,
   Download,
   Loader2,
+  Pencil,
 } from 'lucide-react';
 import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
 import { receiptChargeLines } from '@/lib/charges';
@@ -44,6 +45,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
@@ -182,6 +184,8 @@ interface OrderCardProps {
   onCreateCustomer?: (orderId: number, search: string) => void;
   onCreateNewOrderForCustomer: (order: Order) => void;
   onDownloadPrintPreview?: (billId: number) => void;
+  canEditItems?: boolean;
+  onEditItem?: (order: Order, item: OrderItem) => void;
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
@@ -221,6 +225,8 @@ export function OrderCard({
   onCreateCustomer,
   onCreateNewOrderForCustomer,
   onDownloadPrintPreview,
+  canEditItems = false,
+  onEditItem,
   onDeleteItem,
   onVoidItem,
   onRestoreItem,
@@ -238,11 +244,9 @@ export function OrderCard({
   const [showVoidedItems, setShowVoidedItems] = useState(false);
   const [showPrintActivity, setShowPrintActivity] = useState(false);
 
-  const activeItems = (order.items || []).filter(
-    (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),
-  );
-  const inactiveItems = (order.items || []).filter((i) =>
-    ['cancelled', 'voided'].includes(i.status),
+  const activeItems = (order.items || []).filter((i) => !isTerminalItemStatus(i.status));
+  const inactiveItems = (order.items || []).filter(
+    (i) => ['cancelled', 'voided', 'refunded'].includes(i.status) && !i.superseded,
   );
 
   const bill = order.bill;
@@ -686,6 +690,19 @@ export function OrderCard({
                       {fmt(Number(item.total))}
                     </span>
 
+                    {canEditItems &&
+                      onEditItem &&
+                      !isPaid &&
+                      !['completed', 'cancelled'].includes(order.status) && (
+                        <button
+                          type="button"
+                          onClick={() => onEditItem(order, item)}
+                          className="size-8 flex items-center justify-center text-muted-foreground hover:text-foreground active:scale-95 rounded-md hover:bg-muted transition-colors touch-manipulation"
+                          title={tOrders('editItem')}
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                     {/* Touchscreen-accessible item actions for Manager */}
                     {canCancelItems &&
                       !isPaid &&

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft } from 'lucide-react';
+import { X, ShoppingCart, Users, Printer, Loader2, ArrowRightLeft, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -13,6 +13,8 @@ import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
 import MoveTableModal from '@/components/tables/MoveTableModal';
+import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 interface Props {
   table: Table;
@@ -46,10 +48,13 @@ export default function TableCheckoutModal({
   tables,
 }: Props) {
   const t = useTranslations('pos');
+  const tOrders = useTranslations('orders');
   const tTables = useTranslations('tables');
   const tReceipt = useTranslations('receipt');
   const { currentTenant } = useAuthStore();
   const canMoveTable = tenantCan(currentTenant, 'tables.orders.move');
+  const canEditItems = tenantCan(currentTenant, 'orders.item.edit');
+  const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -180,7 +185,7 @@ export default function TableCheckoutModal({
         : ((await api.get(`/bills/${bill.id}`)).data.bill as Bill);
       const splitOrder = detailedBill.order as Order | undefined;
       const splitItems = (splitOrder?.items || []).filter(
-        (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
+        (item) => !isTerminalItemStatus(item.status),
       );
       const hasDivisibleItems =
         splitItems.length > 0 &&
@@ -236,11 +241,26 @@ export default function TableCheckoutModal({
   }
 
   // Filter active items (not cancelled)
-  const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
+  const activeItems = (order.items || []).filter(
+    (item: OrderItem) => !isTerminalItemStatus(item.status),
+  );
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
 
   return (
     <>
+      {editingItem && (
+        <EditOrderItemModal
+          orderId={order.id}
+          item={editingItem}
+          onClose={() => setEditingItem(null)}
+          onSaved={() => {
+            api
+              .get(`/orders/${order.id}`)
+              .then(({ data }) => setOrder(data.order as Order))
+              .catch(() => toast.error(t('loadOrderFailed')));
+          }}
+        />
+      )}
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
         <div className="bg-card rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
           <div className="flex justify-between items-center p-5 border-b border-border">
@@ -308,6 +328,16 @@ export default function TableCheckoutModal({
                     <span className="text-xs text-muted-foreground ms-2 font-medium">
                       {formatItemTotal(item.total, item.subtotal)}
                     </span>
+                    {canEditItems && order.bill?.payment_status !== 'paid' && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingItem(item)}
+                        className="ms-1 size-6 flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-background"
+                        title={tOrders('editItem')}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

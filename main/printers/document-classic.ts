@@ -67,6 +67,7 @@ import {
   type ThermalLayoutContext,
 } from '../../shared/print';
 import { receiptChargeLines } from '../../shared/charges';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 
 // Direction facts (registry-derived, no language unions).
 
@@ -121,7 +122,9 @@ export function buildBillPrintData(
   business: any,
   isReprint: boolean,
 ): PrintData {
-  const items = Array.isArray(order?.items) ? order.items : [];
+  const items = (Array.isArray(order?.items) ? order.items : []).filter(
+    (item: { status?: string | null }) => !isExcludedFromBillReceipt(item?.status),
+  );
   return {
     isReprint,
     order: {

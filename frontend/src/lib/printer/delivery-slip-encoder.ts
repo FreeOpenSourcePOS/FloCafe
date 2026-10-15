@@ -3,7 +3,11 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
-import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
+import {
+  safePrinterText as writeSafePrinterText,
+  wrapPrinterText,
+  type PrintWarning,
+} from './warnings';
 import { printLabelResolver } from './print-document';
 import { formatItemHeading } from './item-heading';
 import {
@@ -12,6 +16,7 @@ import {
   sanitizeDeliverySlipPaymentMethod,
   type DeliverySlipPrintData,
 } from '@print/document';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export type DeliverySlipPayment = NonNullable<DeliverySlipPrintData['payment']>;
 
@@ -47,6 +52,7 @@ export interface DeliverySlipOrder {
 }
 
 export interface DeliverySlipItem {
+  status?: string | null;
   product_name: string;
   /** Sold variant snapshot; the slip heading names the variant when present. */
   variant_selection?: unknown;
@@ -58,18 +64,25 @@ export interface DeliverySlipItem {
 
 function paymentMethodLabel(method: string, label: (concept: string) => string): string {
   switch (method.toLowerCase()) {
-    case 'cash': return label('pos.methodCash');
-    case 'card': return label('pos.methodCard');
+    case 'cash':
+      return label('pos.methodCash');
+    case 'card':
+      return label('pos.methodCard');
     case 'wallet':
     case 'loyalty':
-    case 'loyalty wallet': return label('pos.methodWallet');
-    default: return method;
+    case 'loyalty wallet':
+      return label('pos.methodWallet');
+    default:
+      return method;
   }
 }
 
 // Paper-size fallback only; callers that know the configured printer pass
 // `columns`. The number itself lives in `columnsForReceiptPaperSize`.
-const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
+const CHARS: Record<58 | 80, number> = {
+  58: columnsForReceiptPaperSize(58),
+  80: columnsForReceiptPaperSize(80),
+};
 
 export function buildDeliverySlipBytes(
   order: DeliverySlipOrder,
@@ -78,12 +91,7 @@ export function buildDeliverySlipBytes(
   opts: DeliverySlipWebUsbOptions = {},
   warnings: PrintWarning[] = [],
 ): Uint8Array {
-  const {
-    paperWidth = 58,
-    language = 'en',
-    timezone,
-    arabicShaping = false,
-  } = opts;
+  const { paperWidth = 58, language = 'en', timezone, arabicShaping = false } = opts;
   const cols = opts.columns ?? CHARS[paperWidth];
   const safePrinterText = writeSafePrinterText;
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -93,30 +101,93 @@ export function buildDeliverySlipBytes(
   const bar = '='.repeat(cols);
 
   enc.align('center').bold(true);
-  safePrinterText(enc, label('print.deliverySlip.banner'), warnings, true, arabicShaping, undefined, cols, language);
+  safePrinterText(
+    enc,
+    label('print.deliverySlip.banner'),
+    warnings,
+    true,
+    arabicShaping,
+    undefined,
+    cols,
+    language,
+  );
   enc.bold(false).align('left').newline().newline();
 
-  safePrinterText(enc, `${label('pos.orderNumber').replace('{number}', order.order_number)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(
+    enc,
+    `${label('pos.orderNumber').replace('{number}', order.order_number)}`,
+    warnings,
+    false,
+    arabicShaping,
+    undefined,
+    cols,
+    language,
+  ).newline();
   if (order.type) {
-    safePrinterText(enc, `${label('print.kot.type')}: ${order.type.replace(/_/g, ' ').toUpperCase()}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(
+      enc,
+      `${label('print.kot.type')}: ${order.type.replace(/_/g, ' ').toUpperCase()}`,
+      warnings,
+      false,
+      arabicShaping,
+      undefined,
+      cols,
+      language,
+    ).newline();
   }
-  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, 'en-US', timezone ? { timeZone: timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(
+    enc,
+    `${label('print.time')}: ${formatTime(order.created_at, 'en-US', timezone ? { timeZone: timezone } : undefined)}`,
+    warnings,
+    false,
+    arabicShaping,
+    undefined,
+    cols,
+    language,
+  ).newline();
 
   enc.newline();
   enc.align('center');
   if (contact.name) {
     enc.bold(true);
-    safePrinterText(enc, contact.name, warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(
+      enc,
+      contact.name,
+      warnings,
+      false,
+      arabicShaping,
+      undefined,
+      cols,
+      language,
+    ).newline();
     enc.bold(false);
   }
   if (contact.phone) {
-    safePrinterText(enc, `${label('print.numberShort')}: ${contact.phone}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(
+      enc,
+      `${label('print.numberShort')}: ${contact.phone}`,
+      warnings,
+      false,
+      arabicShaping,
+      undefined,
+      cols,
+      language,
+    ).newline();
   }
   // Wrapped, not truncated: a wrapped address stays readable at 32 columns.
   if (contact.address) {
     const labeled = `${label('print.deliverySlip.address')}: ${contact.address}`;
     for (const row of wrapPrinterText(labeled, cols)) {
-      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      safePrinterText(
+        enc,
+        row,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+      ).newline();
     }
   }
   // The delivery and order notes are printed once for the whole delivery,
@@ -125,17 +196,40 @@ export function buildDeliverySlipBytes(
     [label('print.deliverySlip.deliveryNote'), order.delivery_note],
     [label('print.note'), order.special_instructions],
   ] as const) {
-    const { text: note, truncatedChars: noteTruncated } = clampDeliverySlipText((rawNote ?? '').trim());
+    const { text: note, truncatedChars: noteTruncated } = clampDeliverySlipText(
+      (rawNote ?? '').trim(),
+    );
     if (note) {
       const labeled = `${noteLabel}: ${note}`;
       for (const row of wrapPrinterText(labeled, cols)) {
-        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+        safePrinterText(
+          enc,
+          row,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          cols,
+          language,
+        ).newline();
       }
     }
     if (noteTruncated > 0) {
-      const marker = label('print.deliverySlip.addressTruncated').replace('{count}', String(noteTruncated));
+      const marker = label('print.deliverySlip.addressTruncated').replace(
+        '{count}',
+        String(noteTruncated),
+      );
       for (const row of wrapPrinterText(marker, cols)) {
-        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+        safePrinterText(
+          enc,
+          row,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          cols,
+          language,
+        ).newline();
       }
     }
   }
@@ -168,13 +262,36 @@ export function buildDeliverySlipBytes(
           : status;
     enc.newline().bold(true);
     for (const row of wrapPrinterText(summary, cols)) {
-      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
+      safePrinterText(
+        enc,
+        row,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+        true,
+      ).newline();
     }
     enc.bold(false);
-    if ((isPaid || payment.status === 'refunded' || payment.status === 'partially_refunded') && payment.formattedAmountDue) {
+    if (
+      (isPaid || payment.status === 'refunded' || payment.status === 'partially_refunded') &&
+      payment.formattedAmountDue
+    ) {
       const due = `${label('print.deliverySlip.amountDue')}: ${payment.formattedAmountDue}`;
       for (const row of wrapPrinterText(due, cols)) {
-        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language, true).newline();
+        safePrinterText(
+          enc,
+          row,
+          warnings,
+          false,
+          arabicShaping,
+          undefined,
+          cols,
+          language,
+          true,
+        ).newline();
       }
     }
   }
@@ -182,17 +299,44 @@ export function buildDeliverySlipBytes(
   enc.align('left').newline();
   enc.text(dash).newline().newline();
 
-  for (const item of items ?? []) {
+  for (const item of (items ?? []).filter((entry) => !isTerminalItemStatus(entry?.status))) {
     const prefix = `${item.quantity}x  `;
     enc.bold(true);
-    safePrinterText(enc, prefix + formatItemHeading(item.product_name, item.variant_selection), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(
+      enc,
+      prefix + formatItemHeading(item.product_name, item.variant_selection),
+      warnings,
+      false,
+      arabicShaping,
+      undefined,
+      cols,
+      language,
+    ).newline();
     enc.bold(false);
     for (const addon of item.addons ?? []) {
       const suffix = addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : '';
-      safePrinterText(enc, `  + ${addon.name}${suffix}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+      safePrinterText(
+        enc,
+        `  + ${addon.name}${suffix}`,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+      ).newline();
     }
     if (item.special_instructions) {
-      safePrinterText(enc, `  >> ${item.special_instructions}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+      safePrinterText(
+        enc,
+        `  >> ${item.special_instructions}`,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+      ).newline();
     }
   }
 

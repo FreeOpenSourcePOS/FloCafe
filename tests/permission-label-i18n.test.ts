@@ -27,7 +27,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const { assertOrThrow, assertEqualOrThrow, assertGreaterThanOrThrow } = require('./helpers/test-setup');
+const {
+  assertOrThrow,
+  assertEqualOrThrow,
+  assertGreaterThanOrThrow,
+} = require('./helpers/test-setup');
 import type { PermissionArea, PermissionId } from '../shared/permissions';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -43,13 +47,19 @@ function readLocaleNames(): string[] {
 /** Permission ids straight from the catalog, so the test follows the catalog. */
 function readPermissionIds(): string[] {
   const source = fs.readFileSync(PERMISSIONS, 'utf8');
-  const body = source.slice(source.indexOf('export const PERMISSION_DEFINITIONS'), source.indexOf('] as const satisfies readonly PermissionDefinitionShape[]'));
-  return [...body.matchAll(/\{ id: '([^']+)'/g)].map(([, id]) => id);
+  const body = source.slice(
+    source.indexOf('export const PERMISSION_DEFINITIONS'),
+    source.indexOf('] as const satisfies readonly PermissionDefinitionShape[]'),
+  );
+  return [...body.matchAll(/\{\s*id: '([^']+)'/g)].map(([, id]) => id);
 }
 
 function readPermissionAreas(): string[] {
   const source = fs.readFileSync(PERMISSIONS, 'utf8');
-  const block = source.slice(source.indexOf('export type PermissionArea'), source.indexOf('export type PermissionRisk'));
+  const block = source.slice(
+    source.indexOf('export type PermissionArea'),
+    source.indexOf('export type PermissionRisk'),
+  );
   return [...block.matchAll(/'([\w-]+)'/g)].map(([, area]) => area);
 }
 
@@ -63,7 +73,8 @@ function readPermissionMap(mapName: string, quoted: boolean): Map<string, string
   const start = source.indexOf(`export const ${mapName} = {`);
   if (start === -1) throw new Error(`frontend/src/lib/i18n/enums.ts has no ${mapName}`);
   const end = source.indexOf('} as const satisfies', start);
-  if (end === -1) throw new Error(`${mapName} has no "as const satisfies" clause, so it is not exhaustive`);
+  if (end === -1)
+    throw new Error(`${mapName} has no "as const satisfies" clause, so it is not exhaustive`);
   const body = source.slice(start, end);
   const pattern = quoted
     ? /'([^']+)':\s*'([^']+)'/g
@@ -79,10 +90,15 @@ function readPermissionMap(mapName: string, quoted: boolean): Map<string, string
 
 function run(): void {
   console.log('Permission label coverage:');
-  const en = JSON.parse(fs.readFileSync(path.join(ROOT, 'frontend/src/lib/i18n/messages/en.json'), 'utf8'));
+  const en = JSON.parse(
+    fs.readFileSync(path.join(ROOT, 'frontend/src/lib/i18n/messages/en.json'), 'utf8'),
+  );
   const capabilities = en.permissionMatrix?.capabilities as Record<string, string>;
   const areas = en.permissionMatrix?.areas as Record<string, string>;
-  assertOrThrow(capabilities && typeof capabilities === 'object', 'en.json defines permissionMatrix.capabilities');
+  assertOrThrow(
+    capabilities && typeof capabilities === 'object',
+    'en.json defines permissionMatrix.capabilities',
+  );
   assertOrThrow(areas && typeof areas === 'object', 'en.json defines permissionMatrix.areas');
 
   // 1. Every capability the catalog defines is named, and every name is real.
@@ -91,10 +107,18 @@ function run(): void {
   assertGreaterThanOrThrow(ids.length, 60, 'the permission catalog is the full set, not a subset');
 
   const unmapped = ids.filter((id) => !labelKeys.has(id));
-  assertEqualOrThrow(unmapped.length, 0, `every permission id is labelled, unmapped: ${unmapped.join(', ')}`);
+  assertEqualOrThrow(
+    unmapped.length,
+    0,
+    `every permission id is labelled, unmapped: ${unmapped.join(', ')}`,
+  );
 
   const stale = [...labelKeys.keys()].filter((id) => !ids.includes(id));
-  assertEqualOrThrow(stale.length, 0, `no label points at a retired permission id: ${stale.join(', ')}`);
+  assertEqualOrThrow(
+    stale.length,
+    0,
+    `no label points at a retired permission id: ${stale.join(', ')}`,
+  );
 
   for (const [id, key] of labelKeys) {
     assertOrThrow(
@@ -109,10 +133,18 @@ function run(): void {
   assertGreaterThanOrThrow(areaNames.length, 15, 'the PermissionArea union is the full set');
 
   const unnamedAreas = areaNames.filter((area) => !areaKeys.has(area));
-  assertEqualOrThrow(unnamedAreas.length, 0, `every permission area is named, unnamed: ${unnamedAreas.join(', ')}`);
+  assertEqualOrThrow(
+    unnamedAreas.length,
+    0,
+    `every permission area is named, unnamed: ${unnamedAreas.join(', ')}`,
+  );
 
   const staleAreas = [...areaKeys.keys()].filter((area) => !areaNames.includes(area));
-  assertEqualOrThrow(staleAreas.length, 0, `no area name points at a retired area: ${staleAreas.join(', ')}`);
+  assertEqualOrThrow(
+    staleAreas.length,
+    0,
+    `no area name points at a retired area: ${staleAreas.join(', ')}`,
+  );
 
   for (const [area, key] of areaKeys) {
     assertOrThrow(
@@ -141,8 +173,8 @@ function run(): void {
     }
   }
   console.log(
-    `  ✓ ${ids.length} permissions + ${areaNames.length} areas resolve to `
-    + `${labelKeys.size} + ${areaKeys.size} keys in all ${locales.length} locales`,
+    `  ✓ ${ids.length} permissions + ${areaNames.length} areas resolve to ` +
+      `${labelKeys.size} + ${areaKeys.size} keys in all ${locales.length} locales`,
   );
 
   // 4. The renderer must not fall back to de-slugifying the id. This is asserted by
@@ -150,7 +182,10 @@ function run(): void {
   //    component: a `permissionLabel` that accepts a translator and ignores it used
   //    to satisfy the previous source-regex version of this check, which is the exact
   //    defect this file was written to prevent.
-  const { permissionLabel, permissionAreaLabel } = require('../frontend/src/lib/i18n/permission-labels');
+  const {
+    permissionLabel,
+    permissionAreaLabel,
+  } = require('../frontend/src/lib/i18n/permission-labels');
   // A `useTranslations('permissionMatrix')` translator receives namespace-relative
   // keys, so the stub does too.
   const enMessages = new Map<string, string>([
@@ -170,15 +205,18 @@ function run(): void {
       `permissionLabel resolves ${id} to a real translated key`,
     );
     // The old defect printed the de-slugified id, e.g. "orders · status · update".
-    assertOrThrow(
-      label !== id.split('.').join(' · '),
-      `permissionLabel does not de-slugify ${id}`,
-    );
+    assertOrThrow(label !== id.split('.').join(' · '), `permissionLabel does not de-slugify ${id}`);
   }
   for (const area of areaNames) {
     const heading = permissionAreaLabel(area as PermissionArea, translator as never);
-    assertOrThrow(!heading.startsWith('UNMAPPED:'), `permissionAreaLabel resolves ${area} to a real key`);
-    assertOrThrow(heading !== area.replace(/-/g, ' '), `permissionAreaLabel does not de-slugify ${area}`);
+    assertOrThrow(
+      !heading.startsWith('UNMAPPED:'),
+      `permissionAreaLabel resolves ${area} to a real key`,
+    );
+    assertOrThrow(
+      heading !== area.replace(/-/g, ' '),
+      `permissionAreaLabel does not de-slugify ${area}`,
+    );
   }
 
   // 5. The fallback is retained, deliberately: a bad catalog response must not crash a row.
@@ -187,7 +225,8 @@ function run(): void {
     'permissionLabel keeps the id-splitting fallback for an unmapped id',
   );
   assertOrThrow(
-    permissionAreaLabel('not-a-real-area' as PermissionArea, translator as never) === 'not a real area',
+    permissionAreaLabel('not-a-real-area' as PermissionArea, translator as never) ===
+      'not a real area',
     'permissionAreaLabel keeps the id-splitting fallback for an unmapped area',
   );
 

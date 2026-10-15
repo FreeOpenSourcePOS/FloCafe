@@ -1142,4 +1142,51 @@ console.log('\n▶ Kernel purity (static import audit)');
   ok('shared/print/document.ts imports only kernel-relative modules');
 }
 
+// ---------------------------------------------------------------------------
+// Cancelled, voided, and void_adjustment items never print on a bill, while
+// refunded sale rows remain on historical bill copies whose totals include them
+// ---------------------------------------------------------------------------
+
+{
+  const { order, bill, business } = buildParityFixtures();
+  const live = order.items.length;
+  assert(live > 0, 'fixture has items');
+  const excludedStatuses = ['cancelled', 'voided', 'void_adjustment'];
+  const withTerminal = {
+    ...order,
+    items: [
+      ...order.items,
+      ...excludedStatuses.map((status, index) => ({
+        ...order.items[0],
+        id: 9000 + index,
+        product_name: `Removed ${status}`,
+        status,
+      })),
+      {
+        ...order.items[0],
+        id: 9099,
+        product_name: 'Historical refunded sale',
+        status: 'refunded',
+      },
+    ],
+  };
+  const printData = buildBillPrintData(withTerminal, bill, business, false);
+  assert.equal(
+    printData.order.items.length,
+    live + 1,
+    'excluded terminal items are dropped while refunded sale row remains',
+  );
+  assert(
+    printData.order.items.every((item) => !item.productName.startsWith('Removed')),
+    'removed item names never reach the bill',
+  );
+  assert(
+    printData.order.items.some((item) => item.productName === 'Historical refunded sale'),
+    'refunded historical sale item remains on bill receipt',
+  );
+  ok(
+    'cancelled, voided, and void_adjustment items are excluded while refunded sale rows remain on the bill',
+  );
+}
+
 console.log(`\nPrintDocument unit tests: ${passed} checks passed.`);

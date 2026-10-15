@@ -18,7 +18,7 @@ import { sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import type { Table, Product, ProductVariant, Customer, Addon } from '@/lib/types';
 import { cartItemToOrderItem } from '@/lib/cart-order-item';
-import type { Order, Bill } from '@/lib/types';
+import type { Order, OrderItem, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
@@ -59,6 +59,7 @@ import { classifyOrderRequestFailure } from '@/lib/order-attempt';
 import { OrderCard } from '@/components/orders/OrderCard';
 import { OrdersMasterList } from '@/components/orders/OrdersMasterList';
 import { OrderDetailPanel } from '@/components/orders/OrderDetailPanel';
+import EditOrderItemModal from '@/components/orders/EditOrderItemModal';
 import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
@@ -211,6 +212,9 @@ export default function OrdersPage() {
 
   // Void (in-progress item) modal state
   const [voidItemModal, setVoidItemModal] = useState<VoidItemModal | null>(null);
+  const [editItemTarget, setEditItemTarget] = useState<{ order: Order; item: OrderItem } | null>(
+    null,
+  );
   const [voidingItem, setVoidingItem] = useState(false);
 
   // Consolidated discount modal state
@@ -304,6 +308,7 @@ export default function OrdersPage() {
   const selectedOrderLookupIdRef = useRef(0);
   const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
+  const canEditItems = tenantCan(currentTenant, 'orders.item.edit');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
   const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
@@ -1727,6 +1732,8 @@ export default function OrdersPage() {
               orderMissing={selectedOrderMissing}
               now={now}
               canCancelItems={canCancelItems}
+              canEditItems={canEditItems}
+              onEditItem={(order, item) => setEditItemTarget({ order, item })}
               canRestoreItems={canRestoreItems}
               canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
@@ -1794,6 +1801,8 @@ export default function OrdersPage() {
               order={order}
               now={now}
               canCancelItems={canCancelItems}
+              canEditItems={canEditItems}
+              onEditItem={(order, item) => setEditItemTarget({ order, item })}
               canRestoreItems={canRestoreItems}
               canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
@@ -2023,6 +2032,14 @@ export default function OrdersPage() {
       )}
 
       {/* Void In-Progress Item Modal */}
+      {editItemTarget && (
+        <EditOrderItemModal
+          orderId={editItemTarget.order.id}
+          item={editItemTarget.item}
+          onClose={() => setEditItemTarget(null)}
+          onSaved={() => fetchOrders(undefined, { refreshLoadedPages: true })}
+        />
+      )}
       {voidItemModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">

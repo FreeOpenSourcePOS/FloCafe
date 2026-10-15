@@ -778,3 +778,87 @@ test.describe('a held cart resumed from another order type keeps its charge sele
     expect(Number(opt!.amount), 'the optional fee keeps its configured amount').toBe(5);
   });
 });
+
+test.describe('owner live order item edit and superseded cancellation handling', () => {
+  test('persists attempt with Idempotency-Key and expected_edit_version, reuses key on 503 retry, and hides restore on superseded line', async ({
+    page,
+  }) => {
+    const ownerHeaders = {
+      Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
+    };
+    const orderResponse = await page.request.post(`${BASE}/api/orders`, {
+      headers: ownerHeaders,
+      data: {
+        type: 'takeaway',
+        special_instructions: 'E2E item edit test',
+        items: [{ product_id: 'e2e-product', quantity: 3 }],
+      },
+    });
+    expect(orderResponse.status()).toBe(201);
+    const order = (await orderResponse.json()).order as { id: number; order_number: string };
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('owner@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await setLanguage(page, 'en');
+
+    await page.goto(`${BASE}/orders`);
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+
+    const editButton = page.getByTitle('Edit item').first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+
+    const qtyInput = page.locator('input[type="number"]');
+    await expect(qtyInput).toBeVisible();
+    await qtyInput.fill('2');
+
+    const capturedRequests: { key: string | undefined; body: Record<string, unknown> }[] = [];
+    let shouldFailFirst = true;
+    await page.route(`**/api/orders/${order.id}/items/*/edit`, async (route) => {
+      const req = route.request();
+      capturedRequests.push({
+        key: req.headers()['idempotency-key'],
+        body: req.postDataJSON() as Record<string, unknown>,
+      });
+      if (shouldFailFirst) {
+        shouldFailFirst = false;
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Temporary server failure' }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => capturedRequests.length).toBe(1);
+    expect(capturedRequests[0].key).toBeTruthy();
+    expect(capturedRequests[0].body).toEqual({
+      expected_edit_version: 0,
+      quantity: 2,
+    });
+
+    // After uncertain 503 failure, the quantity input is locked to the persisted attempt
+    await expect(qtyInput).toBeDisabled();
+
+    // Retry reuses the exact same Idempotency-Key and payload
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect.poll(() => capturedRequests.length).toBe(2);
+    expect(capturedRequests[1].key).toBe(capturedRequests[0].key);
+    expect(capturedRequests[1].body).toEqual(capturedRequests[0].body);
+
+    // Modal closes after commit; anchor on the refetched order (the new 2x
+    // line) so the superseded line's absence from the voided-items toggle is
+    // asserted against post-refresh state, not the stale pre-edit order
+    await expect(qtyInput).toBeHidden();
+    await expect(page.getByText('2x', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /voided item/i })).toHaveCount(0);
+  });
+});

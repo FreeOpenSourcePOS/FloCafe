@@ -358,7 +358,7 @@ export interface ExpenseRecord {
   description: string;
   payee: string | null;
   notes: string | null;
-  amount_minor: number;
+  amount_minor: number | null;
   currency_code: string;
   incurred_on: string;
   created_by: string;
@@ -369,7 +369,7 @@ export interface ExpenseRecord {
   void_reason: string | null;
   status: ExpenseStatus;
   paid_minor: number;
-  due_minor: number;
+  due_minor: number | null;
 }
 
 export interface ExpensePaymentRecord {

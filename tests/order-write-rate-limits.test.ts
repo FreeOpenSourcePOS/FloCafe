@@ -30,6 +30,7 @@ process.env.JWT_SECRET = 'test-secret-order-write-rate-limits';
 
 const bcrypt = require('bcryptjs');
 const express = require('express');
+const expressRateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const {
   initTestDb,
@@ -126,6 +127,7 @@ async function main() {
 
   const app = express();
   app.use(express.json());
+  app.use(expressRateLimit({ windowMs: 60 * 1000, limit: 1000 }));
   // Allow tests to simulate socket remoteAddress and req.ip independently of X-Forwarded-For
   app.use((req: any, _res: any, next: any) => {
     const simulatedSocketIp = req.get('x-test-socket-ip');

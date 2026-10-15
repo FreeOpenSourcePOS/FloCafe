@@ -254,9 +254,9 @@ function PairedDisplays({
             />
             <span className="min-w-0">
               <span className="block font-medium">{t('primaryLanAddress')}</span>
-              <code dir="ltr" className="block break-all text-xs text-muted-foreground">
+              <span dir="ltr" className="block break-all font-mono text-xs text-muted-foreground">
                 {primaryOrigin}
-              </code>
+              </span>
             </span>
           </label>
         )}
@@ -276,9 +276,9 @@ function PairedDisplays({
                     disabled={busy}
                     className="mt-1"
                   />
-                  <code dir="ltr" className="break-all text-xs text-muted-foreground">
+                  <span dir="ltr" className="break-all font-mono text-xs text-muted-foreground">
                     {origin}
-                  </code>
+                  </span>
                 </label>
               ))}
               {localPreviewOrigin &&
@@ -294,9 +294,12 @@ function PairedDisplays({
                     />
                     <span className="min-w-0">
                       <span className="block font-medium">{t('localPreviewAddress')}</span>
-                      <code dir="ltr" className="block break-all text-xs text-muted-foreground">
+                      <span
+                        dir="ltr"
+                        className="block break-all font-mono text-xs text-muted-foreground"
+                      >
                         {localPreviewOrigin}
-                      </code>
+                      </span>
                     </span>
                   </label>
                 )}

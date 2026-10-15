@@ -1258,7 +1258,7 @@ test('Network pairing cards explain local and VPN/mesh QR choices across setting
     'Use when devices connect via a VPN or mesh network across different subnets or locations';
   const expectLocalAddressCard = async () => {
     const localAddress = 'http://10.42.0.25:3001';
-    const localCard = page.getByText(localAddress, { exact: true }).locator('xpath=..');
+    const localCard = page.getByRole('link', { name: localAddress, exact: true }).locator('xpath=..');
     await expect(localCard.getByRole('link')).toHaveAttribute('href', localAddress);
     await expect(localCard.getByText('Local Network', { exact: true })).toBeVisible();
     await expect(localCard).toContainText(englishLocalHint);

@@ -28,6 +28,16 @@ async function openKdsSettingsTab(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Paired displays', exact: true })).toBeVisible({
     timeout: 30_000,
   });
+  const checkedAddress = page.locator('input[name="customer-display-pairing-address"]:checked');
+  const lanUnavailable = page.getByText(
+    'LAN pairing is unavailable. Select the local preview to use this computer only.',
+    { exact: true },
+  );
+  await expect(checkedAddress.or(lanUnavailable).first()).toBeVisible({ timeout: 30_000 });
+  if ((await checkedAddress.count()) === 0) {
+    await page.getByRole('radio', { name: /This computer only \(local preview\)/ }).check();
+    await expect(checkedAddress).toHaveCount(1);
+  }
 }
 
 async function revokeAllDisplayTokens(request: APIRequestContext): Promise<void> {

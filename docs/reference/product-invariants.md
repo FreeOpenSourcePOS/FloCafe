@@ -417,3 +417,47 @@ address that looks complete is worse than one holding a marked one.
 product migration because store-local overrides live in sparse tables. It would also have to
 address `customers.view`, which is the wider exposure. Raise it as its own issue rather than
 narrowing one print route.
+
+---
+
+## Catalog CSV encoding and legacy apostrophe ambiguity
+
+**Rule:** Catalog CSV exports (`categories`, `products`, and `addons`) carry a `flo_csv_encoding`
+column set to `quote-v1`. Under `quote-v1`, an original leading apostrophe (`'`) on a non-numeric
+field is doubled before `toCsvRow` applies spreadsheet formula protection (prefixing `'` onto
+non-numeric values starting with `=`, `+`, `-`, `@`, or leading whitespace before those
+characters).
+
+1. **Marked imports (`flo_csv_encoding=quote-v1`).** The importer removes the single apostrophe
+   added by `quote-v1` encoding (either from doubling an original leading `'` or from formula
+   protection), making repeated export and import cycles lossless across formula-leading values,
+   leading whitespace before formula triggers, and genuine leading apostrophes.
+2. **Unmarked legacy imports (missing or empty `flo_csv_encoding`).** The `quote-v1` decoding rule
+   is never applied to unmarked rows. On product or add-on rows carrying a stable ID that matches an
+   existing record, a leading apostrophe is removed only when comparison with that exact existing
+   record's stored value proves the apostrophe was added by formula protection. All other unmarked
+   values - including category-only rows without proof of identity, rows without a matching ID, and
+   existing records whose stored values already begin with `'` - are preserved as-is.
+3. **Unsupported markers.** Any non-empty `flo_csv_encoding` value other than `quote-v1` is rejected
+   as a per-row import validation error.
+
+**Reason:** Pre-`quote-v1` exports prefixed formula-triggering strings with `'` without escaping
+genuine leading apostrophes, making `'=foo` in an unmarked file ambiguous between an escaped formula
+and a literal apostrophe. Stripping leading apostrophes unconditionally on unmarked files would
+corrupt genuine apostrophes, while leaving new exports unmarked would mutate formula-leading names
+and spawn duplicate categories and add-ons on round-trip imports.
+
+**Enforced by:** `toQuoteV1CsvRow()`, `encodeQuoteV1Field()`, `decodeQuoteV1Field()`, and
+`decodeLegacyProvenField()` in [`main/lib/csv.ts`](../../main/lib/csv.ts), and the export and import
+handlers in [`main/routes/menu-csv.ts`](../../main/routes/menu-csv.ts). Other CSV exporters continue
+using `toCsvRow()` directly.
+
+**How to verify:**
+
+```sh
+npm run test:issue-248-csv
+```
+
+**Change policy:** changing the `quote-v1` encoding rules or stripping unmarked apostrophes without
+existing-record proof requires an explicit product decision, because either change can silently
+rename catalog items or create duplicate categories and add-ons during CSV imports.

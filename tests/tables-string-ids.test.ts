@@ -861,6 +861,214 @@ async function main() {
       'source table retains active order after rejected move',
     );
 
+    const reactivateTargetRes = await api(baseUrl, '/api/tables/tbl-move-target/reactivate', {
+      method: 'POST',
+      headers: authHeader,
+    });
+    assertEqualOrThrow(reactivateTargetRes.status, 200, 'target table can be reactivated');
+
+    const reserveTargetRes = await api(baseUrl, '/api/tables/tbl-move-target/status', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
+    });
+    assertEqualOrThrow(reserveTargetRes.status, 200, 'target table can be reserved with customer');
+
+    const reservedMove = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target' },
+    });
+    assertEqualOrThrow(
+      reservedMove.status,
+      409,
+      'moving order onto a reserved table is rejected with 409',
+    );
+    assertIncludesOrThrow(
+      reservedMove.data.error,
+      'reserved',
+      'reserved target table rejection includes clear error message',
+    );
+
+    const reservedOverrideMove = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target', override: true, force: true },
+    });
+    assertEqualOrThrow(
+      reservedOverrideMove.status,
+      409,
+      'reserved destination move does not allow an override option',
+    );
+
+    const orderAfterReservedMove = await api(baseUrl, `/api/orders/${orderId}`, {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      orderAfterReservedMove.data.order.table_id,
+      tableId,
+      'order remains on source table after reserved move rejection',
+    );
+    const sourceAfterReservedMove = await api(baseUrl, `/api/tables/${tableId}`, {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      sourceAfterReservedMove.data.table.status,
+      'occupied',
+      'source table remains occupied after reserved move rejection',
+    );
+    assertEqualOrThrow(
+      sourceAfterReservedMove.data.table.activeOrder.id,
+      orderId,
+      'source table retains active order after reserved move rejection',
+    );
+    const targetAfterReservedMove = await api(baseUrl, '/api/tables/tbl-move-target', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      targetAfterReservedMove.data.table.status,
+      'reserved',
+      'target table remains reserved after rejected move',
+    );
+    assertEqualOrThrow(
+      targetAfterReservedMove.data.table.activeOrder,
+      null,
+      'reserved target table has no active order after rejected move',
+    );
+    assertEqualOrThrow(
+      targetAfterReservedMove.data.table.reservation_customer_id,
+      'cust-reservation-1',
+      'reserved target table preserves reservation customer ID',
+    );
+    assertEqualOrThrow(
+      targetAfterReservedMove.data.table.reservation_customer_name,
+      'Reserved Guest',
+      'reserved target table preserves reservation customer name',
+    );
+    assertEqualOrThrow(
+      targetAfterReservedMove.data.table.reservation_customer_phone,
+      '+1 555 123 4567',
+      'reserved target table preserves reservation customer phone',
+    );
+
+    // Destination changed to reserved after the initial read is checked again inside the move transaction
+    const clearReserveTargetRes = await api(baseUrl, '/api/tables/tbl-move-target/status', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'available' },
+    });
+    assertEqualOrThrow(clearReserveTargetRes.status, 200, 'target table returned to available');
+
+    const initialReadRes = await api(baseUrl, '/api/tables/tbl-move-target', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      initialReadRes.data.table.status,
+      'available',
+      'initial read sees target table as available',
+    );
+
+    const reserveAfterInitialReadRes = await api(baseUrl, '/api/tables/tbl-move-target/status', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'reserved', reservation_customer_id: 'cust-reservation-1' },
+    });
+    assertEqualOrThrow(
+      reserveAfterInitialReadRes.status,
+      200,
+      'destination changed to reserved after initial read',
+    );
+
+    const moveAfterInitialRead = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target' },
+    });
+    assertEqualOrThrow(
+      moveAfterInitialRead.status,
+      409,
+      'destination changed to reserved after initial read is rejected with 409',
+    );
+    const targetAfterStaleReadMove = await api(baseUrl, '/api/tables/tbl-move-target', {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      targetAfterStaleReadMove.data.table.status,
+      'reserved',
+      'target table remains reserved when changed after initial read',
+    );
+    assertEqualOrThrow(
+      targetAfterStaleReadMove.data.table.reservation_customer_id,
+      'cust-reservation-1',
+      'target table preserves reservation customer when changed after initial read',
+    );
+
+    // Also verify in-transaction re-check if targetTable status changes after first SELECT inside withTxn
+    await api(baseUrl, '/api/tables/tbl-move-target/status', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'available' },
+    });
+    const origPrepare = db.prepare.bind(db);
+    let injectedMidMoveReservation = false;
+    db.prepare = ((sql: string) => {
+      if (!injectedMidMoveReservation && sql.includes('FROM held_orders WHERE table_id = ?')) {
+        injectedMidMoveReservation = true;
+        origPrepare(
+          "UPDATE tables SET status = 'reserved', reservation_customer_id = ?, updated_at = ? WHERE id = ?",
+        ).run('cust-reservation-1', now(), 'tbl-move-target');
+      }
+      return origPrepare(sql);
+    }) as typeof db.prepare;
+
+    let midReadReservedMove: { status: number; data: { error?: string } };
+    try {
+      midReadReservedMove = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+        method: 'POST',
+        headers: authHeader,
+        body: { target_table_id: 'tbl-move-target' },
+      });
+    } finally {
+      db.prepare = origPrepare;
+    }
+    assertOrThrow(injectedMidMoveReservation, 'mid-move reservation state change was triggered');
+    assertEqualOrThrow(
+      midReadReservedMove.status,
+      409,
+      'destination changed to reserved after initial in-transaction read is rejected with 409',
+    );
+    const sourceAfterMidReadMove = await api(baseUrl, `/api/tables/${tableId}`, {
+      headers: authHeader,
+    });
+    assertEqualOrThrow(
+      sourceAfterMidReadMove.data.table.status,
+      'occupied',
+      'source table remains occupied when in-transaction re-check rejects move',
+    );
+
+    // Valid available-table moves still succeed once reservation is released
+    await api(baseUrl, '/api/tables/tbl-move-target/status', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'available' },
+    });
+    const availableMoveAfterReserve = await api(baseUrl, `/api/tables/${tableId}/move-order`, {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target' },
+    });
+    assertEqualOrThrow(
+      availableMoveAfterReserve.status,
+      200,
+      'valid move to available table succeeds after reservation is released',
+    );
+    const restoreMove = await api(baseUrl, '/api/tables/tbl-move-target/move-order', {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: tableId },
+    });
+    assertEqualOrThrow(restoreMove.status, 200, 'order restored to tableId');
+
     // ═══════════════════════════════════════════════════════════════════
     // Scenario E: Migration handles NULL IDs
     // ═══════════════════════════════════════════════════════════════════

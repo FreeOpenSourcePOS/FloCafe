@@ -23,6 +23,7 @@ const {
   seedOwnerUser,
   seedCategory,
   seedProduct,
+  api,
   assert,
   assertIncludes,
   assertEqual,
@@ -32,7 +33,11 @@ const {
 } = require('./helpers/test-setup');
 const { menuCsvRoutes } = require('../main/routes/menu-csv');
 
-async function getText(baseUrl: string, urlPath: string, headers: Record<string, string>): Promise<string> {
+async function getText(
+  baseUrl: string,
+  urlPath: string,
+  headers: Record<string, string>,
+): Promise<string> {
   const response = await (globalThis as any).fetch(baseUrl + urlPath, { headers });
   return await response.text();
 }
@@ -62,7 +67,9 @@ async function main() {
   seedProduct(db, 'prod-formula', 'cat-formula', '+SUM(1,2)', 12.5);
   db.prepare(`UPDATE products SET description = ? WHERE id = ?`).run('-1+2', 'prod-formula');
   db.prepare(`INSERT INTO addon_groups (id, name) VALUES ('ag-formula', 'Extras')`).run();
-  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-formula', 'ag-formula', '@SUM(A1:A2)', 5, 1)`).run();
+  db.prepare(
+    `INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-formula', 'ag-formula', '@SUM(A1:A2)', 5, 1)`,
+  ).run();
 
   const app = createApp({ '/api/menu/csv': menuCsvRoutes });
   const { baseUrl, server } = await startServer(app);
@@ -71,13 +78,28 @@ async function main() {
     console.log('\n─── Categories export neutralizes a leading "=" ───');
     {
       const csv = await getText(baseUrl, '/api/menu/csv/export/categories', authHeader);
+      assertIncludes(
+        csv.split('\n')[0],
+        'flo_csv_encoding',
+        'categories export header includes flo_csv_encoding',
+      );
+      assertIncludes(csv, ',quote-v1', 'categories export rows carry quote-v1 marker');
       assertIncludes(csv, "'=HYPERLINK", 'leading "=" is prefixed with a single quote');
-      assert(!/,"?=HYPERLINK/.test(csv) && !/^=HYPERLINK/.test(csv), 'no bare "=" formula cell remains in the categories export');
+      assert(
+        !/,"?=HYPERLINK/.test(csv) && !/^=HYPERLINK/.test(csv),
+        'no bare "=" formula cell remains in the categories export',
+      );
     }
 
     console.log('\n─── Products export neutralizes "+" and "-" ───');
     {
       const csv = await getText(baseUrl, '/api/menu/csv/export/products', authHeader);
+      assertIncludes(
+        csv.split('\n')[0],
+        'flo_csv_encoding',
+        'products export header includes flo_csv_encoding',
+      );
+      assertIncludes(csv, ',quote-v1', 'products export rows carry quote-v1 marker');
       assertIncludes(csv, "'+SUM(1,2)", 'leading "+" is prefixed with a single quote');
       assertIncludes(csv, "'-1+2", 'leading "-" is prefixed with a single quote');
       assertIncludes(csv, '12.5', 'numeric fields (price) are preserved as numbers');
@@ -104,30 +126,85 @@ async function main() {
 
       const csv = await getText(baseUrl, '/api/menu/csv/export/products', authHeader);
       for (const [label, tag] of whitespaceTriggers) {
-        assertIncludes(csv, `'${tag}`, `leading-${label} formula tag is prefixed with a single quote`);
+        assertIncludes(
+          csv,
+          `'${tag}`,
+          `leading-${label} formula tag is prefixed with a single quote`,
+        );
         const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        assert(!new RegExp(`(^|,)${escaped}(,|$)`, 'm').test(csv),
-          `no unneutralized leading-${label} formula cell remains in the export`);
+        assert(
+          !new RegExp(`(^|,)${escaped}(,|$)`, 'm').test(csv),
+          `no unneutralized leading-${label} formula cell remains in the export`,
+        );
       }
       for (const [label, tag] of whitespaceTriggers) {
         const id = `prod-ws-${whitespaceTriggers.findIndex((t) => t[0] === label)}`;
         const row = csvRecordStartingAt(csv, id);
         assert(row !== null, `a record carrying the leading-${label} tag is present`);
-        // 12 columns means 11 separators; quoting the cell must not add one.
-        assertEqual((row!.match(/,/g) || []).length, 11,
-          `the leading-${label} tag did not shift the surrounding columns`);
+        // 13 columns means 12 separators; quoting the cell must not add one.
+        assertEqual(
+          (row!.match(/,/g) || []).length,
+          12,
+          `the leading-${label} tag did not shift the surrounding columns`,
+        );
+      }
+
+      // Re-importing the quote-v1 export must restore each tag byte-for-byte:
+      // decodeQuoteV1Field puts the safety whitespace back, and the importer
+      // must not trim it away again (regression: "\t=1+1" stored as "=1+1").
+      const reimport = await api(baseUrl, '/api/menu/csv/import/products', {
+        method: 'POST',
+        body: { csv },
+        headers: authHeader,
+      });
+      assertEqual(reimport.status, 200, 'quote-v1 product export re-imports');
+      assertEqual(reimport.data.failed, 0, 'whitespace-trigger rows re-import without failures');
+      for (const [label, tag] of whitespaceTriggers) {
+        const id = `prod-ws-${whitespaceTriggers.findIndex((t) => t[0] === label)}`;
+        const stored = db.prepare('SELECT tags FROM products WHERE id = ?').get(id) as any;
+        assertEqual(
+          stored.tags,
+          JSON.stringify([tag]),
+          `the leading-${label} formula tag survives the quote-v1 round trip unchanged`,
+        );
       }
     }
 
     console.log('\n─── Add-ons export neutralizes a leading "@" ───');
     {
       const csv = await getText(baseUrl, '/api/menu/csv/export/addons', authHeader);
+      assertIncludes(
+        csv.split('\n')[0],
+        'flo_csv_encoding',
+        'addons export header includes flo_csv_encoding',
+      );
+      assertIncludes(csv, ',quote-v1', 'addons export rows carry quote-v1 marker');
       assertIncludes(csv, "'@SUM(A1:A2)", 'leading "@" is prefixed with a single quote');
+    }
+
+    console.log('\n─── Quote-v1 doubles genuine leading apostrophes on export ───');
+    {
+      seedCategory(db, 'cat-quote', "'Chef's Category");
+      seedProduct(db, 'prod-quote', 'cat-quote', "'+Quoted Formula", 9);
+      const catCsv = await getText(baseUrl, '/api/menu/csv/export/categories', authHeader);
+      const prodCsv = await getText(baseUrl, '/api/menu/csv/export/products', authHeader);
+      assertIncludes(
+        catCsv,
+        "''Chef's Category",
+        'genuine leading apostrophe is doubled on category export',
+      );
+      assertIncludes(
+        prodCsv,
+        "''+Quoted Formula",
+        'genuine leading apostrophe before formula char is doubled once on product export',
+      );
     }
   } finally {
     server.close();
     closeDatabase();
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   }
 
   const { passed, failed, total } = getResults();

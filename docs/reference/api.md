@@ -109,9 +109,15 @@ credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
 create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable
 with `FLO_AUTH_RATE_LIMIT_MAX`.
 
-Per-resource limiters named in the tables below (for example the order read and write limiters) are
-`express-rate-limit` instances declared in their own route file. They apply to every caller
-including LAN addresses.
+Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
+their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
+In [`main/routes/orders.ts`](../../main/routes/orders.ts), `orderWriteRateLimit` and
+`orderItemCancelRateLimit` remain separate 60-requests-per-minute buckets (configurable via
+`FLO_ORDER_WRITE_RATE_LIMIT_MAX` when set to a positive integer) and exempt authenticated callers
+connecting from private, loopback, or Tailscale socket addresses (`isAllowedPrivateIp` on
+`req.socket.remoteAddress`, ignoring caller-supplied forwarding headers), while still rate-limiting
+public or unauthenticated traffic and returning `{ error: "Too many requests, please try again later." }`
+on `429`.
 
 ## Main API (`:3001`)
 
@@ -247,7 +253,7 @@ Router: `main/routes/tables.ts`. Full path: `/api/tables`.
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `number`, `name`, `capacity`, `floor`, `section`, `position_x`, `position_y`, `kitchen_station_id` | - |
 | `POST` | `/:id/deactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | Soft-deactivates the table rather than deleting it. |
 | `POST` | `/:id/reactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
-| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | - |
+| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | `{ order, sourceTable, targetTable }`. `400` when `target_table_id` is missing, matches `id`, or names an inactive table; `404` when either table or the active order is not found; `409` when the destination table has an active or held order or is `reserved`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `status`, `reservation_customer_id` | Body `status`, plus `reservation_customer_id` for reservation state. |
 
 ### Kitchen stations
@@ -544,15 +550,17 @@ Router: `main/routes/print-templates.ts`. Full path: `/api/print-templates`.
 
 Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 
+Category, product, and add-on exports include `flo_csv_encoding=quote-v1` for reversible formula protection; see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity) for marked, unmarked legacy, and unsupported encoding rules.
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/template/:type` | `ROLE_ACCESS.ownerManager` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
-| `GET` | `/export/categories` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `categories-export.csv`. |
-| `GET` | `/export/products` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `products-export.csv`. |
-| `GET` | `/export/addons` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `addons-export.csv`. |
-| `POST` | `/import/categories` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. Per-row validation errors are reported in the response. |
-| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
-| `POST` | `/import/addons` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
+| `GET` | `/template/:type` | `catalog.import-export` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
+| `GET` | `/export/categories` | `catalog.import-export` | none | `text/csv` attachment `categories-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/products` | `catalog.import-export` | none | `text/csv` attachment `products-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/addons` | `catalog.import-export` | none | `text/csv` attachment `addons-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `POST` | `/import/categories` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows, preserves unmarked category names, and reports per-row validation errors in the response. |
+| `POST` | `/import/products` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Decodes `quote-v1` rows and ID-proven legacy product fields. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
+| `POST` | `/import/addons` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows and ID-proven legacy add-on fields, and reports counts plus per-row `errors`. |
 
 ### Settings
 

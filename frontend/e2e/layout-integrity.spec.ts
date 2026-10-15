@@ -1642,6 +1642,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
   }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await loginAsManager(page);
+    await page.clock.install();
     const orders = displayOrders(100, 100);
     const longReceiptNumber =
       'INV-2026-NORTH-REGION-COUNTER-04-VERY-LONG-RECEIPT-00000123456789012345678901234567890';
@@ -1653,6 +1654,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     const ready = page.getByTestId('customer-display-ready-scroll');
     const receiptRow = preparing.locator('[data-order-id="display-preparing-1"]:visible');
+    await receiptRow.waitFor();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
     await expect(
       preparing.locator('[data-order-id="display-preparing-2"]:visible'),
@@ -1740,12 +1743,16 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.clock.install();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     const initialOrders = displayOrders(20, 50);
     const feed = await mockDisplayOrders(page, initialOrders);
     const originalReadyOrderIds = new Set(
       initialOrders.filter((order) => order.status === 'ready').map((order) => order.id),
     );
     await page.goto(`${BASE}/customer-display`);
+    await page.clock.runFor(1);
+    await expect(page.locator('header')).toBeVisible();
+    await page.clock.runFor(1);
 
     const ready = page.getByTestId('customer-display-ready-scroll');
     const readReadyIds = () =>
@@ -2061,6 +2068,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         .locator('[data-order-id]:visible')
         .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
     await expect(preparing.locator('[data-order-id="display-preparing-1"]:visible')).toBeVisible();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     const currentPage = await readIds();
     expect(currentPage.length).toBeGreaterThan(0);
 

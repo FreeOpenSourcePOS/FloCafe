@@ -17,6 +17,7 @@ import {
   sanitizeDeliverySlipPaymentMethod,
   type DeliverySlipPrintData,
 } from '@print/document';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -65,7 +66,8 @@ export function generateDeliverySlipHtml(
   const timezone = opts.timezone;
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
-  const itemRows = (items ?? []).map((item) => `
+  const activeItems = (items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
+  const itemRows = activeItems.map((item) => `
     <div style="margin:${padding} 0;font-weight:bold;">${escapeHtml(`${item.quantity}x ${formatItemHeading(item.product_name, item.variant_selection)}`)}</div>
     ${(item.addons ?? []).map((addon) => `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : ''}</div>`).join('')}
     ${item.special_instructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${escapeHtml(item.special_instructions)}</div>` : ''}

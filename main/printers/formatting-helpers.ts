@@ -25,6 +25,7 @@ import {
   type RasterSemanticUnit,
 } from '../../shared/print/raster';
 import { isGeneratedPrintLanguage } from '../print/print-labels.generated';
+import { isTerminalItemStatus } from '../../shared/order-item-status';
 import type { PrinterCutMode } from './profiles';
 
 export type { PrintWarning };
@@ -70,7 +71,7 @@ export function itemNameWidth(cols: number, amtLen: number): number {
 }
 
 export function itemAmountWidth(
-  order: { items?: Array<{ total?: number; addons?: unknown }> } | null | undefined,
+  order: { items?: Array<{ status?: unknown; total?: number; addons?: unknown }> } | null | undefined,
   prefix: string,
   locale: string,
   trimDecimals: boolean,
@@ -79,6 +80,7 @@ export function itemAmountWidth(
 ): number {
   let width = 10;
   for (const item of order?.items ?? []) {
+    if (isTerminalItemStatus(item.status)) continue;
     width = Math.max(
       width,
       displayCellWidth(

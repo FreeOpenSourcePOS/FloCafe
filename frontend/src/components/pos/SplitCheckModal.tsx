@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Bill, Order, OrderItem } from '@/lib/types';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 type SplitMode = 'table' | 'guest';
 
@@ -16,12 +17,11 @@ type SplitMode = 'table' | 'guest';
 export const MIN_CHECKS = 2;
 export const MAX_CHECKS = 20;
 const MAX_LABEL_LENGTH = 40;
-const EXCLUDED_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 
 /** Only whole, positive quantities of live lines can be divided. */
 function selectableItems(order: Order | null): OrderItem[] {
   return ((order?.items || []) as OrderItem[]).filter((item) => (
-    !EXCLUDED_ITEM_STATUSES.includes(item.status ?? '')
+    !isTerminalItemStatus(item.status)
     && Number.isSafeInteger(Number(item.quantity))
     && Number(item.quantity) > 0
   ));

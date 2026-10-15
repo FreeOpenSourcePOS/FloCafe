@@ -185,7 +185,7 @@ export default function TableCheckoutModal({
         : ((await api.get(`/bills/${bill.id}`)).data.bill as Bill);
       const splitOrder = detailedBill.order as Order | undefined;
       const splitItems = (splitOrder?.items || []).filter(
-        (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
+        (item) => !isTerminalItemStatus(item.status),
       );
       const hasDivisibleItems =
         splitItems.length > 0 &&

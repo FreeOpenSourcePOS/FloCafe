@@ -25,6 +25,7 @@ import {
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
 import { displayCellWidth } from '../../shared/print/width';
+import { isTerminalItemStatus } from '../../shared/order-item-status';
 import {
   buildDeliverySlipDocument,
   clampDeliverySlipText,
@@ -97,6 +98,7 @@ export interface DeliverySlipOrderRow {
 }
 
 export interface DeliverySlipItemRow {
+  readonly status?: unknown;
   readonly product_name?: unknown;
   readonly quantity?: unknown;
   readonly addons?: unknown;
@@ -133,7 +135,9 @@ export function buildDeliverySlipPrintData(
   const expectedMethodIsCustom = Number.isSafeInteger(Number(order?.expected_payment_method_id))
     && Number(order?.expected_payment_method_id) > 0;
 
-  const ticketItems = Array.isArray(items) ? items : [];
+  const ticketItems = Array.isArray(items)
+    ? items.filter((item) => !isTerminalItemStatus(item?.status))
+    : [];
   const paymentBills = Array.isArray(order?.bills) ? order.bills : order?.bill;
   const paymentSummary = resolveDeliverySlipPaymentSummary(
     order?.total,

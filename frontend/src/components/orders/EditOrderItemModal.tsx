@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'use-intl';
@@ -9,6 +9,19 @@ import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { activeVariants } from '@/lib/product-variants';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import {
+  clearOrderItemEditAttempt,
+  isUnresolvedOrderItemEditFailure,
+  newOrderItemEditAttempt,
+  orderItemEditAttemptStorageKey,
+  persistOrderItemEditAttempt,
+  readOrderItemEditAttempt,
+  withOrderItemEditAttemptLock,
+  type OrderItemEditAttemptBody,
+  type OrderItemEditAttemptMode,
+  type OrderItemEditAttemptSnapshot,
+} from '@/lib/order-item-edit-attempt';
+import { useAuthStore } from '@/store/auth';
 import type { Order, OrderItem, Product } from '@/lib/types';
 
 interface Props {
@@ -18,20 +31,62 @@ interface Props {
   onSaved: (order: Order) => void;
 }
 
-type Mode = 'quantity' | 'replace';
+interface AttemptState {
+  attempt: OrderItemEditAttemptSnapshot | null;
+  storageBlocked: boolean;
+}
+
+function readInitialAttemptState(
+  tenantId: number | null,
+  actorId: string | null,
+  orderId: number,
+  itemId: number,
+): AttemptState {
+  if (tenantId === null || !actorId) {
+    return { attempt: null, storageBlocked: true };
+  }
+  try {
+    return {
+      attempt: readOrderItemEditAttempt(tenantId, actorId, orderId, itemId),
+      storageBlocked: false,
+    };
+  } catch {
+    return { attempt: null, storageBlocked: true };
+  }
+}
 
 /** Owner-only edit of a live order line: change its quantity or swap it for another product. */
 export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  const [mode, setMode] = useState<Mode>('quantity');
-  const [quantity, setQuantity] = useState(String(item.quantity));
+  const { user, currentTenant } = useAuthStore();
+  const actorId = user ? String(user.id) : null;
+  const tenantId = currentTenant?.id ?? null;
+
+  const [attemptState, setAttemptState] = useState<AttemptState>(() =>
+    readInitialAttemptState(tenantId, actorId, orderId, item.id),
+  );
+  const lockedAttempt = attemptState.attempt;
+
+  const [mode, setMode] = useState<OrderItemEditAttemptMode>(
+    () => lockedAttempt?.mode ?? 'quantity',
+  );
+  const [quantity, setQuantity] = useState(() =>
+    String(
+      lockedAttempt?.body.quantity ??
+        lockedAttempt?.body.replacement?.quantity ??
+        item.quantity,
+    ),
+  );
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Product | null>(null);
-  const [variantId, setVariantId] = useState('');
+  const [variantId, setVariantId] = useState(
+    () => lockedAttempt?.body.replacement?.variant_id ?? '',
+  );
   const [saving, setSaving] = useState(false);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (mode !== 'replace' || products.length > 0) return;
@@ -49,38 +104,140 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
       .slice(0, 30);
   }, [products, search]);
 
-  const variants = selected ? activeVariants(selected.variants) : [];
+  const effectiveSelected = useMemo(() => {
+    if (lockedAttempt?.mode === 'replace' && lockedAttempt.body.replacement?.product_id) {
+      return (
+        products.find((p) => p.id === lockedAttempt.body.replacement?.product_id) ?? selected
+      );
+    }
+    return selected;
+  }, [lockedAttempt, products, selected]);
+
+  const variants = effectiveSelected ? activeVariants(effectiveSelected.variants) : [];
   const parsedQuantity = Number(quantity);
   const quantityValid = Number.isFinite(parsedQuantity) && parsedQuantity > 0;
+  const operationLocked = saving || lockedAttempt !== null;
   const canSave =
-    quantityValid &&
-    (mode === 'quantity'
-      ? parsedQuantity !== Number(item.quantity)
-      : !!selected && (variants.length === 0 || !!variantId));
+    !attemptState.storageBlocked &&
+    (lockedAttempt !== null ||
+      (quantityValid &&
+        (mode === 'quantity'
+          ? parsedQuantity !== Number(item.quantity)
+          : !!effectiveSelected && (variants.length === 0 || !!variantId))));
+
+  const handleClose = () => {
+    if (inFlightRef.current || saving) return;
+    onClose();
+  };
 
   const save = async () => {
-    if (!canSave || saving) return;
+    if (inFlightRef.current || saving || !canSave) return;
+    if (tenantId === null || !actorId || attemptState.storageBlocked) {
+      toast.error(tOrders('editItemFailed'));
+      return;
+    }
+
+    inFlightRef.current = true;
     setSaving(true);
+    let persisted = lockedAttempt !== null;
+
     try {
-      const body =
-        mode === 'quantity'
-          ? { quantity: parsedQuantity }
-          : {
-              replacement: {
-                product_id: selected!.id,
-                quantity: parsedQuantity,
-                ...(variantId ? { variant_id: variantId } : {}),
-              },
-            };
-      const { data } = await api.patch(`/orders/${orderId}/items/${item.id}/edit`, body);
+      const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, item.id);
+      const committedOrder = await withOrderItemEditAttemptLock(scopedKey, async () => {
+        const existing = readOrderItemEditAttempt(tenantId, actorId, orderId, item.id);
+        let snapshot: OrderItemEditAttemptSnapshot;
+
+        if (existing) {
+          snapshot = existing;
+          persisted = true;
+          setAttemptState({ attempt: snapshot, storageBlocked: false });
+        } else {
+          const expectedEditVersion =
+            typeof item.edit_version === 'number' &&
+            Number.isSafeInteger(item.edit_version) &&
+            item.edit_version >= 0
+              ? item.edit_version
+              : 0;
+          const body: OrderItemEditAttemptBody =
+            mode === 'quantity'
+              ? {
+                  expected_edit_version: expectedEditVersion,
+                  quantity: parsedQuantity,
+                }
+              : {
+                  expected_edit_version: expectedEditVersion,
+                  replacement: {
+                    product_id: effectiveSelected!.id,
+                    quantity: parsedQuantity,
+                    ...(variantId ? { variant_id: variantId } : {}),
+                  },
+                };
+
+          snapshot = newOrderItemEditAttempt({
+            mode,
+            path: `/orders/${orderId}/items/${item.id}/edit`,
+            orderId,
+            itemId: item.id,
+            body,
+            actorId,
+            tenantId,
+          });
+          persistOrderItemEditAttempt(snapshot);
+          persisted = true;
+          setAttemptState({ attempt: snapshot, storageBlocked: false });
+        }
+
+        try {
+          const { data } = await api.patch(snapshot.path, snapshot.body, {
+            headers: { 'Idempotency-Key': snapshot.idempotencyKey },
+          });
+          if (
+            clearOrderItemEditAttempt(
+              snapshot.tenantId,
+              snapshot.actorId,
+              snapshot.orderId,
+              snapshot.itemId,
+              snapshot.idempotencyKey,
+            )
+          ) {
+            setAttemptState({ attempt: null, storageBlocked: false });
+          }
+          return data.order as Order;
+        } catch (error) {
+          const status = (error as { response?: { status?: unknown } })?.response?.status;
+          if (!isUnresolvedOrderItemEditFailure(error) && status !== 401 && status !== 403) {
+            if (
+              clearOrderItemEditAttempt(
+                snapshot.tenantId,
+                snapshot.actorId,
+                snapshot.orderId,
+                snapshot.itemId,
+                snapshot.idempotencyKey,
+              )
+            ) {
+              setAttemptState({ attempt: null, storageBlocked: false });
+            }
+          }
+          throw error;
+        }
+      });
+
       toast.success(tOrders('itemEdited'));
-      onSaved(data.order as Order);
+      onSaved(committedOrder);
+      inFlightRef.current = false;
+      setSaving(false);
       onClose();
     } catch (error) {
+      if (!persisted) {
+        setAttemptState((current) =>
+          current.attempt ? current : { attempt: null, storageBlocked: true },
+        );
+      }
       const message = (error as { response?: { data?: { error?: string } } })?.response?.data
         ?.error;
       toast.error(message || tOrders('editItemFailed'));
     } finally {
+      inFlightRef.current = false;
       setSaving(false);
     }
   };
@@ -96,8 +253,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           </h2>
           <button
             type="button"
-            onClick={onClose}
-            className="size-8 flex items-center justify-center rounded-md hover:bg-muted"
+            onClick={handleClose}
+            disabled={saving}
+            className="size-8 flex items-center justify-center rounded-md hover:bg-muted disabled:opacity-50"
             aria-label={tCommon('close')}
           >
             <X size={18} />
@@ -112,7 +270,11 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
                 type="button"
                 size="sm"
                 variant={mode === value ? 'default' : 'outline'}
-                onClick={() => setMode(value)}
+                disabled={operationLocked}
+                onClick={() => {
+                  if (inFlightRef.current || operationLocked) return;
+                  setMode(value);
+                }}
               >
                 {value === 'quantity' ? tOrders('editQuantityTab') : tOrders('editReplaceTab')}
               </Button>
@@ -124,9 +286,13 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
               <input
                 type="search"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                disabled={operationLocked}
+                onChange={(event) => {
+                  if (inFlightRef.current || operationLocked) return;
+                  setSearch(event.target.value);
+                }}
                 placeholder={tOrders('editSearchProducts')}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
               />
               <div className="max-h-48 overflow-y-auto rounded-md border border-border divide-y divide-border">
                 {matches.length === 0 && (
@@ -136,11 +302,13 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
                   <button
                     key={product.id}
                     type="button"
+                    disabled={operationLocked}
                     onClick={() => {
+                      if (inFlightRef.current || operationLocked) return;
                       setSelected(product);
                       setVariantId('');
                     }}
-                    className={`w-full flex justify-between px-3 py-2 text-sm text-start hover:bg-muted ${selected?.id === product.id ? 'bg-muted font-medium' : ''}`}
+                    className={`w-full flex justify-between px-3 py-2 text-sm text-start hover:bg-muted disabled:opacity-50 ${effectiveSelected?.id === product.id ? 'bg-muted font-medium' : ''}`}
                   >
                     <span className="truncate">{product.name}</span>
                     <span className="text-muted-foreground shrink-0 ms-2">
@@ -152,8 +320,12 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
               {variants.length > 0 && (
                 <select
                   value={variantId}
-                  onChange={(event) => setVariantId(event.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  disabled={operationLocked}
+                  onChange={(event) => {
+                    if (inFlightRef.current || operationLocked) return;
+                    setVariantId(event.target.value);
+                  }}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
                 >
                   <option value="">{tOrders('editChooseVariant')}</option>
                   {variants.map((variant) => (
@@ -174,14 +346,18 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
               min="0"
               step="any"
               value={quantity}
-              onChange={(event) => setQuantity(event.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              disabled={operationLocked}
+              onChange={(event) => {
+                if (inFlightRef.current || operationLocked) return;
+                setQuantity(event.target.value);
+              }}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
             />
           </label>
         </div>
 
         <div className="flex justify-end gap-2 p-4 border-t border-border">
-          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+          <Button type="button" variant="outline" onClick={handleClose} disabled={saving}>
             {tCommon('cancel')}
           </Button>
           <Button type="button" onClick={save} disabled={!canSave || saving}>

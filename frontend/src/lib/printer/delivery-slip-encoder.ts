@@ -12,6 +12,7 @@ import {
   sanitizeDeliverySlipPaymentMethod,
   type DeliverySlipPrintData,
 } from '@print/document';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export type DeliverySlipPayment = NonNullable<DeliverySlipPrintData['payment']>;
 
@@ -47,6 +48,7 @@ export interface DeliverySlipOrder {
 }
 
 export interface DeliverySlipItem {
+  status?: string | null;
   product_name: string;
   /** Sold variant snapshot; the slip heading names the variant when present. */
   variant_selection?: unknown;
@@ -182,7 +184,7 @@ export function buildDeliverySlipBytes(
   enc.align('left').newline();
   enc.text(dash).newline().newline();
 
-  for (const item of items ?? []) {
+  for (const item of (items ?? []).filter((entry) => !isTerminalItemStatus(entry?.status))) {
     const prefix = `${item.quantity}x  `;
     enc.bold(true);
     safePrinterText(enc, prefix + formatItemHeading(item.product_name, item.variant_selection), warnings, false, arabicShaping, undefined, cols, language).newline();

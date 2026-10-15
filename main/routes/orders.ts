@@ -766,6 +766,10 @@ interface OrderItemInput {
   variant_selection?: unknown;
   modifier_selection?: unknown;
   special_instructions?: string | null;
+  recipe_snapshot?: unknown;
+  inventory_deducted_quantity?: number;
+  inventory_target_product_id?: string | null;
+  inventory_target_variant_id?: string | null;
   addons?:
     | {
         id?: string;
@@ -837,7 +841,19 @@ function insertOrderItems(
       : variant
         ? variantUnitPrice(variant, isOnlineOrder)
         : parseFloat(String(product.price));
-    const deduction = resolveInventoryDeduction(product, quantity, variant);
+    const deduction =
+      context.preserveSelections && typeof item.inventory_deducted_quantity === 'number'
+        ? item.inventory_deducted_quantity > 0
+          ? {
+              productId: item.inventory_target_product_id ?? product.id,
+              variantId:
+                item.inventory_target_variant_id !== undefined
+                  ? item.inventory_target_variant_id
+                  : (variant?.id ?? null),
+              deductedQuantity: item.inventory_deducted_quantity,
+            }
+          : null
+        : resolveInventoryDeduction(product, quantity, variant);
     if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
       throw Object.assign(
         new Error(`Invalid price for ${product.name}: must be a non-negative number`),
@@ -877,12 +893,15 @@ function insertOrderItems(
       : null;
 
     const itemCreatedAt = now();
-    const recipeSnapshot = buildRecipeSnapshot(
-      db,
-      product.id,
-      quantity,
-      variant?.recipe_multiplier ?? 1,
-    );
+    const recipeSnapshot =
+      context.preserveSelections && item.recipe_snapshot !== undefined
+        ? (item.recipe_snapshot as ReturnType<typeof buildRecipeSnapshot>)
+        : buildRecipeSnapshot(
+            db,
+            product.id,
+            quantity,
+            variant?.recipe_multiplier ?? 1,
+          );
     const insertItemResult = insertItem.run(
       orderId,
       product.id,
@@ -4270,6 +4289,15 @@ router.patch(
         let superseded = false;
         let wastedQuantity: number | undefined;
 
+        if (!hasQuantity && !isPendingLine) {
+          throw Object.assign(
+            new Error(
+              'Cannot replace an item once kitchen preparation has started; reduce quantity or void instead',
+            ),
+            { statusCode: 400 },
+          );
+        }
+
         if (isStartedQuantityDecrease) {
           const product = db
             .prepare('SELECT * FROM products WHERE id = ?')
@@ -4420,6 +4448,22 @@ router.patch(
                   (Number(addon.inventory_deducted_quantity || 0) * heldRatio).toFixed(6),
                 ),
               }));
+              const heldRecipeSnapshot = parseRecipeSnapshot(oldItem.recipe_snapshot);
+              if (heldRecipeSnapshot) {
+                newItem.recipe_snapshot = {
+                  ...heldRecipeSnapshot,
+                  components: heldRecipeSnapshot.components.map((component) => ({
+                    ...component,
+                    quantity: Number((component.quantity * heldRatio).toFixed(6)),
+                  })),
+                };
+              }
+              const oldTarget = orderItemInventoryTarget(db, oldItem);
+              newItem.inventory_deducted_quantity = Number(
+                (Number(oldItem.inventory_deducted_quantity || 0) * heldRatio).toFixed(6),
+              );
+              newItem.inventory_target_product_id = oldTarget?.productId ?? null;
+              newItem.inventory_target_variant_id = oldTarget?.variantId ?? null;
             } else {
               const resolved = resolveItemAddons(
                 db,

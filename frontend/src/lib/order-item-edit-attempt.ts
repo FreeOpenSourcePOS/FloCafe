@@ -24,6 +24,13 @@ export interface OrderItemEditAttemptBody {
     product_id: string;
     quantity: number;
     variant_id?: string;
+    addons?: Array<{
+      id?: string | number;
+      name?: string;
+      price?: number;
+      quantity?: number;
+    }>;
+    special_instructions?: string;
   };
   reason?: string;
 }

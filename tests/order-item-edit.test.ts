@@ -911,7 +911,9 @@ async function main() {
     console.log('\n─── Replacement (Pending vs Started) ───');
     {
       // Pending replacement: restores original stock, cancels original as superseded, deducts replacement
+      // Pending replacement: restores original stock, cancels original as superseded, deducts replacement
       const pendingOrder = seedOrder(db, 'REPLACE-PENDING', 'pending', 2, 2);
+      const pendingBill = seedBill(db, pendingOrder.orderId, 200, 0, 'unpaid');
       const prodEditBefore = stockOfProduct('prod-edit');
       const prodOtherBefore = stockOfProduct('prod-other');
       const pendingResp = await edit(
@@ -936,80 +938,69 @@ async function main() {
         prodOtherBefore - 2,
         'pending replacement deducts replacement item stock',
       );
+      assertEqualOrThrow(
+        (db.prepare('SELECT total FROM bills WHERE id = ?').get(pendingBill.id) as any).total,
+        300,
+        'the pending order bill is re-synced to 300',
+      );
 
-      // Started replacement: voids original WITHOUT restoring stock, preserves waste, creates and deducts replacement as pending
+      // Started replacement: rejected with 400 because kitchen prep has already started
       const order = seedOrder(db, 'REPLACE-STARTED', 'preparing', 2, 2);
-      const bill = seedBill(db, order.orderId, 200, 0, 'unpaid');
-      const startedProdEditBefore = stockOfProduct('prod-edit');
-      const startedProdOtherBefore = stockOfProduct('prod-other');
+      seedBill(db, order.orderId, 200, 0, 'unpaid');
       const response = await edit(
         order.orderId,
         order.itemId,
         { replacement: { product_id: 'prod-other', quantity: 2 } },
         ownerAuth,
       );
-      assertEqualOrThrow(response.status, 200, 'owner can replace a started item');
       assertEqualOrThrow(
-        itemStatus(order.itemId),
-        'voided',
-        'started replaced line is voided (not cancelled)',
-      );
-      const hydratedOld = (response.data.order.items as any[]).find(
-        (line) => line.id === order.itemId,
+        response.status,
+        400,
+        'replacing a started item is rejected with 400',
       );
       assertEqualOrThrow(
-        hydratedOld?.superseded,
-        true,
-        'started voided replaced line is flagged superseded',
+        response.data.error,
+        'Cannot replace an item once kitchen preparation has started; reduce quantity or void instead',
+        'helpful error message returned for started replacement',
       );
-      const fresh = db
-        .prepare('SELECT * FROM order_items WHERE order_id = ? AND id != ?')
-        .get(order.orderId, order.itemId) as any;
+
+      // Regression: pending quantity reduction scales stored recipe snapshot & deduction
+      // even after catalog recipe has been modified.
+      const catalogShiftOrder = seedOrder(db, 'CATALOG-SHIFT', 'pending', 3, 3);
+      const shiftSnap = buildRecipeSnapshot(db, 'prod-edit', 3);
+      db.prepare('UPDATE order_items SET recipe_snapshot = ? WHERE id = ?').run(
+        JSON.stringify(shiftSnap),
+        catalogShiftOrder.itemId,
+      );
+      applyRecipeSnapshot(db, shiftSnap, {
+        direction: 'deplete',
+        actorUserId: 'owner-edit',
+        referenceId: String(catalogShiftOrder.itemId),
+      });
+
+      // Change catalog recipe from 10g to 20g beans
+      db.prepare('UPDATE recipe_items SET quantity = 20 WHERE supply_id = ?').run(beans.id);
+      const supplyBeforeShift = stockOfSupply(beans.id);
+
+      const shiftResp = await edit(
+        catalogShiftOrder.orderId,
+        catalogShiftOrder.itemId,
+        { quantity: 2 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(shiftResp.status, 200, 'pending reduction succeeds under catalog recipe shift');
       assertEqualOrThrow(
-        fresh?.product_id,
-        'prod-other',
-        'the replacement line is the new product',
+        stockOfSupply(beans.id),
+        supplyBeforeShift + 10,
+        'scaled snapshot restores 30g and deducts 20g (net +10g), NOT deducting 40g (net -10g)',
       );
-      assertEqualOrThrow(
-        fresh?.status,
-        'pending',
-        'the replacement goes to the kitchen as pending',
-      );
-      assertEqualOrThrow(orderTotal(order.orderId), 300, 'order total uses the replacement price');
-      assertEqualOrThrow(
-        stockOfProduct('prod-edit'),
-        startedProdEditBefore,
-        'started replacement does NOT restore original item stock (preserves waste)',
-      );
-      assertEqualOrThrow(
-        stockOfProduct('prod-other'),
-        startedProdOtherBefore - 2,
-        'started replacement deducts replacement item stock',
-      );
-      const audit = db
-        .prepare("SELECT * FROM order_audit_log WHERE order_item_id = ? AND action = 'item_edited'")
-        .get(order.itemId) as any;
-      const details = JSON.parse(audit.details_json);
-      assertEqualOrThrow(
-        details.wasted_quantity,
-        2,
-        'started replacement records wasted_quantity in edit audit',
-      );
-      assertEqualOrThrow(
-        details.superseded,
-        true,
-        'started replacement records superseded: true in edit audit',
-      );
-      assertEqualOrThrow(
-        (db.prepare('SELECT total FROM bills WHERE id = ?').get(bill.id) as any).total,
-        300,
-        'the bill is re-synced',
-      );
+      // Restore recipe back to 10 for subsequent tests
+      db.prepare('UPDATE recipe_items SET quantity = 10 WHERE supply_id = ?').run(beans.id);
 
       // Verify bill print preview excludes cancelled/voided/superseded lines and matches totals
       const printPreview = await api(baseUrl, '/api/printers/print-bill', {
         method: 'POST',
-        body: { billId: bill.id, preview: true },
+        body: { billId: pendingBill.id, preview: true },
         headers: ownerAuth,
       });
       assertEqualOrThrow(printPreview.status, 200, 'bill print preview succeeds after edit');

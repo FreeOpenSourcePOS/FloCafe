@@ -1651,6 +1651,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.goto(`${BASE}/customer-display`);
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
+    const ready = page.getByTestId('customer-display-ready-scroll');
     const receiptRow = preparing.locator('[data-order-id="display-preparing-1"]:visible');
     await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
     await expect(
@@ -1666,28 +1667,54 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       await page.setViewportSize(viewport);
       await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
       await page.waitForFunction(() => {
-        const board = document.querySelector('[data-testid="customer-display-preparing-scroll"]');
-        if (!board) return false;
-        const visibleRows = [
-          ...board.querySelectorAll('[data-testid="customer-display-order-row"]'),
-        ].filter((row) => getComputedStyle(row).visibility === 'visible');
-        return visibleRows.length < 100;
+        return [
+          'customer-display-preparing-scroll',
+          'customer-display-ready-scroll',
+        ].every((testId) => {
+          const board = document.querySelector(`[data-testid="${testId}"]`);
+          if (!board) return false;
+          const visibleRows = [
+            ...board.querySelectorAll('[data-testid="customer-display-order-row"]'),
+          ].filter((row) => getComputedStyle(row).visibility === 'visible');
+          return visibleRows.length > 0 && visibleRows.length < 100;
+        });
       });
 
-      const layout = await preparing.evaluate((element) => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-        visibleRows: [
-          ...element.querySelectorAll('[data-testid="customer-display-order-row"]'),
-        ].filter((row) => getComputedStyle(row).visibility === 'visible').length,
-      }));
-      expect(layout.scrollWidth, 'the TV board has no horizontal overflow').toBeLessThanOrEqual(
-        layout.clientWidth,
-      );
-      expect(layout.visibleRows, 'the board shows a page instead of a long scroll').toBeGreaterThan(
-        0,
-      );
-      expect(layout.visibleRows).toBeLessThan(100);
+      for (const [name, board] of [['preparing', preparing], ['ready', ready]] as const) {
+        const layout = await board.evaluate((element) => {
+          const boardBounds = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const usableTop = boardBounds.top + Number.parseFloat(style.paddingTop);
+          const usableBottom = boardBounds.bottom - Number.parseFloat(style.paddingBottom);
+          const visibleRows = [
+            ...element.querySelectorAll('[data-testid="customer-display-order-row"]'),
+          ]
+            .filter((row) => getComputedStyle(row).visibility === 'visible')
+            .map((row) => {
+              const bounds = row.getBoundingClientRect();
+              return { top: bounds.top, bottom: bounds.bottom };
+            });
+          return {
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+            usableTop,
+            usableBottom,
+            visibleRows,
+          };
+        });
+        expect(
+          layout.scrollWidth,
+          `${name} TV board has no horizontal overflow`,
+        ).toBeLessThanOrEqual(layout.clientWidth);
+        expect(layout.visibleRows.length, `${name} board shows a measured page`).toBeGreaterThan(0);
+        expect(layout.visibleRows.length).toBeLessThan(100);
+        expect(
+          layout.visibleRows.every(
+            (row) => row.top >= layout.usableTop - 1 && row.bottom <= layout.usableBottom + 1,
+          ),
+          `${name} TV rows fit vertically inside the usable column area`,
+        ).toBe(true);
+      }
       const documentWidths = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
@@ -1713,7 +1740,11 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.clock.install();
-    const feed = await mockDisplayOrders(page, displayOrders(20, 50));
+    const initialOrders = displayOrders(20, 50);
+    const feed = await mockDisplayOrders(page, initialOrders);
+    const originalReadyOrderIds = new Set(
+      initialOrders.filter((order) => order.status === 'ready').map((order) => order.id),
+    );
     await page.goto(`${BASE}/customer-display`);
 
     const ready = page.getByTestId('customer-display-ready-scroll');
@@ -1806,7 +1837,11 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await expect.poll(readReadyIds).not.toEqual(firstOrdinaryPage);
     const secondOrdinaryPage = await readReadyIds();
     expect(
-      secondOrdinaryPage.every((id) => id?.startsWith('display-ready-')),
+      secondOrdinaryPage.length,
+      'the next ordinary page is nonempty during arrivals',
+    ).toBeGreaterThan(0);
+    expect(
+      secondOrdinaryPage.every((id) => !!id && originalReadyOrderIds.has(id)),
       'the next rotation returns to older eligible orders during arrivals',
     ).toBe(true);
     expectPinned(
@@ -1823,10 +1858,158 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.clock.runFor(20_000);
     const laterOrdinaryPage = await readReadyIds();
     expect(
-      laterOrdinaryPage.every((id) => id?.startsWith('display-ready-')),
+      laterOrdinaryPage.length,
+      'continued arrivals keep a nonempty ordinary page in rotation',
+    ).toBeGreaterThan(0);
+    expect(
+      laterOrdinaryPage.every((id) => !!id && originalReadyOrderIds.has(id)),
       'continued arrivals keep older eligible orders in the rotation',
     ).toBe(true);
   });
+
+  for (const feedKind of ['paired', 'signed-in'] as const) {
+    test(`a stalled ${feedKind} feed reports stale data and resumes polling`, async ({
+      page,
+      browser,
+      request,
+    }) => {
+      const isPaired = feedKind === 'paired';
+      const feedPath = isPaired ? '/api/customer-display/feed' : '/api/orders';
+      let routePage = page;
+      let displayContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+      let displayTokenId: string | undefined;
+      let displayToken: string | undefined;
+      let requestCount = 0;
+      let releaseHeldResponse!: () => void;
+      let markHeldRequestStarted!: () => void;
+      let markHeldRequestFinished!: () => void;
+      const heldResponse = new Promise<void>((resolve) => {
+        releaseHeldResponse = resolve;
+      });
+      const heldRequestStarted = new Promise<void>((resolve) => {
+        markHeldRequestStarted = resolve;
+      });
+      const heldRequestFinished = new Promise<void>((resolve) => {
+        markHeldRequestFinished = resolve;
+      });
+      const initialOrders = displayOrders(1, 1);
+      const recoveredOrders = displayOrders(2, 1);
+      const responseBody = (orders: DisplayOrder[]) =>
+        isPaired
+          ? {
+              business_name: 'Flo Cafe',
+              config: {
+                statuses: ['pending', 'preparing', 'ready'],
+                refresh_seconds: 3,
+                show_updated: true,
+              },
+              orders: orders.map((order) => ({
+                id: order.id,
+                number: order.bill.bill_number || order.order_number,
+                status: order.status,
+              })),
+            }
+          : { orders };
+
+      try {
+        if (isPaired) {
+          const created = await request.post(`${BASE}/api/settings/customer-display/tokens`, {
+            headers: { Authorization: `Bearer ${getE2eToken()}` },
+            data: { label: 'Stalled feed test' },
+          });
+          expect(created.status(), 'the test display token is created').toBe(201);
+          const createdToken = (await created.json()) as { id: string; token: string };
+          displayTokenId = createdToken.id;
+          displayToken = createdToken.token;
+          displayContext = await browser.newContext();
+          routePage = await displayContext.newPage();
+        } else {
+          await loginAsManager(routePage);
+          await routePage.route(
+            (url) => url.pathname === '/api/settings/customer-display',
+            (route) =>
+              route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                  statuses: ['pending', 'preparing', 'ready'],
+                  refresh_seconds: 3,
+                  show_updated: true,
+                }),
+              }),
+          );
+        }
+        await routePage.setViewportSize({ width: 1440, height: 900 });
+        await routePage.route(
+          (url) => url.pathname === feedPath,
+          async (route) => {
+            requestCount += 1;
+            if (requestCount === 2) {
+              markHeldRequestStarted();
+              await heldResponse;
+              try {
+                await route.fulfill({
+                  status: 200,
+                  contentType: 'application/json',
+                  body: JSON.stringify(responseBody(initialOrders)),
+                });
+              } catch {
+                // The browser aborts this deliberately held request when its deadline expires.
+              }
+              markHeldRequestFinished();
+              return;
+            }
+
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify(
+                responseBody(requestCount === 1 ? initialOrders : recoveredOrders),
+              ),
+            });
+          },
+        );
+
+        await routePage.goto(
+          isPaired
+            ? `${BASE}/customer-display/#token=${displayToken}`
+            : `${BASE}/customer-display`,
+        );
+        const preparing = routePage.getByTestId('customer-display-preparing-scroll');
+        const firstOrder = preparing.locator('[data-order-id="display-preparing-1"]:visible');
+        await expect(firstOrder, 'the first successful feed populates the board').toBeVisible();
+
+        await routePage.waitForTimeout(3000);
+        await heldRequestStarted;
+        await routePage.waitForTimeout(10_000);
+        const staleMessage = routePage.getByText(
+          'Connection lost. Showing the last available orders.',
+        );
+        await expect(staleMessage, 'the stalled feed is reported as stale data').toBeVisible();
+        await expect(firstOrder, 'the last successful order stays visible').toBeVisible();
+
+        const recoveredResponse = routePage.waitForResponse(
+          (response) => new URL(response.url()).pathname === feedPath && response.status() === 200,
+        );
+        await routePage.waitForTimeout(2500);
+        await recoveredResponse;
+        await expect(
+          preparing.locator('[data-order-id="display-preparing-2"]:visible'),
+          'a later poll recovers after the stalled request is aborted',
+        ).toBeVisible();
+        await expect(staleMessage, 'the successful recovery clears the stale warning').toHaveCount(0);
+      } finally {
+        releaseHeldResponse();
+        if (requestCount === 2) await heldRequestFinished;
+        await displayContext?.close();
+        if (displayTokenId) {
+          await request.delete(`${BASE}/api/settings/customer-display/tokens/${displayTokenId}`, {
+            headers: { Authorization: `Bearer ${getE2eToken()}` },
+          });
+        }
+      }
+    });
+  }
 
   test('each column pages independently when only one has multiple pages', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });

@@ -40,6 +40,7 @@ interface OrderBoardSectionProps {
 }
 
 const ORDER_PAGE_INTERVAL_MS = 10_000;
+const CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS = 10_000;
 const ORDER_ROW_GAP_FALLBACK = 12;
 const ORDER_ROW_HEIGHT_FALLBACK = 72;
 
@@ -529,7 +530,12 @@ export default function CustomerDisplayPage() {
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
   const feedSessionRef = useRef(0);
   const feedRequestRef = useRef(0);
-  const feedInFlightRef = useRef<{ session: number; request: number } | null>(null);
+  const feedInFlightRef = useRef<{
+    session: number;
+    request: number;
+    controller: AbortController;
+    timeout: number;
+  } | null>(null);
   const previousReadyOrderIdsRef = useRef<Set<string> | null>(null);
   const readyTrackingContextRef = useRef<{
     pairedToken: string | null;
@@ -565,16 +571,23 @@ export default function CustomerDisplayPage() {
     async (token: string, session: number) => {
       if (feedInFlightRef.current?.session === session) return;
       const request = ++feedRequestRef.current;
-      feedInFlightRef.current = { session, request };
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
+      );
+      feedInFlightRef.current = { session, request, controller, timeout };
       try {
         const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: 'no-store',
+          signal: controller.signal,
         });
         if (response.status === 401) {
           if (session !== feedSessionRef.current) return;
           feedSessionRef.current += 1;
           feedRequestRef.current += 1;
+          window.clearTimeout(timeout);
           feedInFlightRef.current = null;
           previousReadyOrderIdsRef.current = null;
           setNewlyReadyOrderIds(new Set());
@@ -601,6 +614,7 @@ export default function CustomerDisplayPage() {
           feedInFlightRef.current?.session === session &&
           feedInFlightRef.current.request === request
         ) {
+          window.clearTimeout(timeout);
           feedInFlightRef.current = null;
         }
         if (session === feedSessionRef.current && request === feedRequestRef.current)
@@ -614,14 +628,22 @@ export default function CustomerDisplayPage() {
     async (session: number) => {
       if (feedInFlightRef.current?.session === session) return;
       const request = ++feedRequestRef.current;
-      feedInFlightRef.current = { session, request };
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
+      );
+      feedInFlightRef.current = { session, request, controller, timeout };
       try {
         const { data: latestConfig } = await api
-          .get('/settings/customer-display')
+          .get('/settings/customer-display', { signal: controller.signal })
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
-        const { data } = await api.get('/orders', { params: { per_page: 50 } });
+        const { data } = await api.get('/orders', {
+          params: { per_page: 50 },
+          signal: controller.signal,
+        });
         if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
         const nextOrders = (data.orders || [])
           .filter((order: Order) => (activeConfig.statuses as string[]).includes(order.status))
@@ -642,6 +664,7 @@ export default function CustomerDisplayPage() {
           feedInFlightRef.current?.session === session &&
           feedInFlightRef.current.request === request
         ) {
+          window.clearTimeout(timeout);
           feedInFlightRef.current = null;
         }
         if (session === feedSessionRef.current && request === feedRequestRef.current)
@@ -704,6 +727,11 @@ export default function CustomerDisplayPage() {
       clearTimeout(initial);
       clearInterval(interval);
       if (feedSessionRef.current === session) feedSessionRef.current += 1;
+      const inFlight = feedInFlightRef.current;
+      if (inFlight?.session === session) {
+        window.clearTimeout(inFlight.timeout);
+        inFlight.controller.abort();
+      }
     };
   }, [
     pairedToken,

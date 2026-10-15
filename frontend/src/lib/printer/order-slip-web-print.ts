@@ -4,6 +4,7 @@ import type { Order } from '@/lib/types';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { escapeHtml } from './web-print';
 import { formatItemHeading } from './item-heading';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export interface OrderSlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -38,7 +39,7 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   const direction = opts.direction === 'rtl' ? 'rtl' : 'ltr';
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
-  const items = order.items ?? [];
+  const items = (order.items ?? []).filter((item) => !isTerminalItemStatus(item.status));
   const itemRows = items.map((item) => `
     <div style="margin:${padding} 0;display:flex;justify-content:space-between;gap:8px;">
       <span>${escapeHtml(item.quantity)}x ${escapeHtml(formatItemHeading(item.product_name, item.variant_selection))}</span>

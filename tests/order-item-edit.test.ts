@@ -125,20 +125,78 @@ async function main() {
   db.prepare(`INSERT INTO products (id, category_id, name, price, tax_type, is_active, sort_order, created_at, updated_at)
     VALUES ('prod-other', 'cat-edit', 'Other item', 150, 'none', 1, 2, ?, ?)`).run(now(), now());
 
+  const { createSupply, getSupply } = require('../main/services/supplies');
+  const { saveRecipe, buildRecipeSnapshot, applyRecipeSnapshot } = require('../main/services/recipes');
+  const { adjustProductStock } = require('../main/services/inventory');
+
   const ownerAuth = seedUser(db, 'owner-edit', 'owner', '5678');
   const managerAuth = seedUser(db, 'mgr-edit', 'manager', '1234');
+  db.prepare(
+    `UPDATE products SET track_inventory = 1, stock_quantity = 50 WHERE id = 'prod-other'`,
+  ).run();
+  const beans = createSupply(db, {
+    name: 'Coffee Beans',
+    baseUnit: 'g',
+    stockQuantity: 1000,
+    lowStockThreshold: 100,
+    actorUserId: 'owner-edit',
+  });
+  saveRecipe(db, {
+    productId: 'prod-edit',
+    yieldQuantity: 1,
+    items: [{ supply_id: beans.id, quantity: 10, unit: 'g' }],
+  });
+  db.prepare(
+    `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, allow_multiple_quantities, is_active, created_at, updated_at)
+     VALUES ('ag-edit', 'Shots', 0, 0, 5, 1, 1, ?, ?)`,
+  ).run(now(), now());
+  db.prepare(
+    `INSERT INTO addon_group_product (addon_group_id, product_id) VALUES ('ag-edit', 'prod-edit')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO addons (id, addon_group_id, name, price, is_active, track_inventory, stock_quantity, created_at, updated_at)
+     VALUES ('addon-edit', 'ag-edit', 'Extra Shot', 20, 1, 1, 100, ?, ?)`,
+  ).run(now(), now());
+
   const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes });
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
-  const edit = (orderId: any, itemId: any, body: any, headers: any) =>
-    api(baseUrl, `/api/orders/${orderId}/items/${itemId}/edit`, { method: 'PATCH', body, headers });
+  let keyCounter = 0;
+  const nextKey = (prefix = 'edit-key') => `${prefix}-${++keyCounter}`;
+  const edit = (
+    orderId: any,
+    itemId: any,
+    body: any,
+    headers: any,
+    idempotencyKey: string | null = nextKey(),
+  ) =>
+    api(baseUrl, `/api/orders/${orderId}/items/${itemId}/edit`, {
+      method: 'PATCH',
+      body:
+        body && typeof body === 'object' && !('expected_edit_version' in body)
+          ? { expected_edit_version: 0, ...body }
+          : body,
+      headers: idempotencyKey
+        ? { ...headers, 'Idempotency-Key': idempotencyKey }
+        : headers,
+    });
   const itemStatus = (id: any) =>
     (db.prepare('SELECT status FROM order_items WHERE id = ?').get(id) as any).status;
   const orderTotal = (id: any) =>
     Number((db.prepare('SELECT total FROM orders WHERE id = ?').get(id) as any).total);
+  const stockOfProduct = (id: string) =>
+    Number(
+      (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(id) as any)
+        .stock_quantity,
+    );
+  const stockOfAddon = (id: string) =>
+    Number(
+      (db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(id) as any).stock_quantity,
+    );
+  const stockOfSupply = (id: string) => Number(getSupply(db, id).stock_quantity);
 
   try {
-    console.log('\n─── Permission ───');
+    console.log('\n─── Permission & Required Contract Fields ───');
     {
       const order = seedOrder(db, 'PERM', 'pending');
       const response = await edit(order.orderId, order.itemId, { quantity: 3 }, managerAuth);
@@ -148,61 +206,401 @@ async function main() {
         'pending',
         'a refused edit leaves the item untouched',
       );
+
+      const missingKey = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 3 },
+        ownerAuth,
+        null,
+      );
+      assertEqualOrThrow(missingKey.status, 400, 'missing Idempotency-Key is rejected with 400');
+
+      const missingVersion = await api(
+        baseUrl,
+        `/api/orders/${order.orderId}/items/${order.itemId}/edit`,
+        {
+          method: 'PATCH',
+          body: { quantity: 3 },
+          headers: { ...ownerAuth, 'Idempotency-Key': nextKey('missing-ver') },
+        },
+      );
+      assertEqualOrThrow(
+        missingVersion.status,
+        400,
+        'missing expected_edit_version is rejected with 400',
+      );
     }
 
-    console.log('\n─── Quantity ───');
+    console.log('\n─── Retry & Concurrent-Edit Safety (Idempotency + edit_version) ───');
     {
-      const order = seedOrder(db, 'QTY-DOWN', 'pending', 3, 3);
-      const bill = seedBill(db, order.orderId, 300, 0, 'unpaid');
+      // Regression: preparing 3 -> 5 replay stays at 5; same key with different body returns 409
+      const order = seedOrder(db, 'PREP-REPLAY', 'preparing', 3, 3);
       const stockBefore = stockOf(db);
+      const replayKey = nextKey('prep-3-to-5');
+      const first = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 5 },
+        ownerAuth,
+        replayKey,
+      );
+      assertEqualOrThrow(first.status, 200, 'first preparing 3 -> 5 succeeds');
+      const editedLineAfterFirst = (first.data.order.items as any[]).find(
+        (line) => line.id === order.itemId,
+      );
+      assertOrThrow(
+        typeof editedLineAfterFirst?.edit_version === 'number' &&
+          editedLineAfterFirst.edit_version > 0,
+        'edit_version advances to latest item audit ID after edit',
+      );
+
+      const auditCountAfterFirst = Number(
+        (
+          db
+            .prepare('SELECT COUNT(*) as cnt FROM order_audit_log WHERE order_id = ?')
+            .get(order.orderId) as any
+        ).cnt,
+      );
+
+      const replay = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 5 },
+        ownerAuth,
+        replayKey,
+      );
+      assertEqualOrThrow(replay.status, 200, 'replaying same key + request returns 200');
+      const activeItems = (replay.data.order.items as any[]).filter(
+        (line) => line.status !== 'cancelled' && line.status !== 'voided',
+      );
+      const totalQty = activeItems.reduce((sum, line) => sum + Number(line.quantity), 0);
+      assertEqualOrThrow(totalQty, 5, 'preparing 3 -> 5 replay stays at total quantity 5');
+      assertEqualOrThrow(
+        stockOf(db),
+        stockBefore - 2,
+        'replay does not deduct stock a second time',
+      );
+      const auditCountAfterReplay = Number(
+        (
+          db
+            .prepare('SELECT COUNT(*) as cnt FROM order_audit_log WHERE order_id = ?')
+            .get(order.orderId) as any
+        ).cnt,
+      );
+      assertEqualOrThrow(
+        auditCountAfterReplay,
+        auditCountAfterFirst,
+        'replay writes no additional audit rows',
+      );
+
+      const conflictSameKey = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 6 },
+        ownerAuth,
+        replayKey,
+      );
+      assertEqualOrThrow(
+        conflictSameKey.status,
+        409,
+        'reusing Idempotency-Key with a different request payload returns 409',
+      );
+
+      // Regression: two distinct stale edits (both with expected_edit_version: 0) cannot produce 7
+      const staleSecondEdit = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 5 },
+        ownerAuth,
+        nextKey('stale-distinct'),
+      );
+      assertEqualOrThrow(
+        staleSecondEdit.status,
+        409,
+        'distinct stale edit with outdated expected_edit_version returns 409',
+      );
+      const itemsAfterStale = db
+        .prepare(
+          "SELECT SUM(quantity) as total_qty FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided')",
+        )
+        .get(order.orderId) as any;
+      assertEqualOrThrow(
+        Number(itemsAfterStale.total_qty),
+        5,
+        'two distinct stale edits cannot produce 7',
+      );
+    }
+
+    console.log('\n─── Pending Quantity Edit & Superseded Restore Rejection ───');
+    {
+      // Regression: pending 3 -> 2 restores product/add-on/recipe once, marks superseded, and cannot restore to 5
+      const order = seedOrder(db, 'QTY-DOWN', 'pending', 3, 3);
+      const snap3 = buildRecipeSnapshot(db, 'prod-edit', 3);
+      const recipeSnapJson = JSON.stringify(snap3);
+      db.prepare('UPDATE order_items SET recipe_snapshot = ? WHERE id = ?').run(
+        recipeSnapJson,
+        order.itemId,
+      );
+      applyRecipeSnapshot(db, snap3, {
+        direction: 'deplete',
+        actorUserId: 'owner-edit',
+        referenceId: String(order.itemId),
+      });
+      db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+         VALUES (?, 'addon-edit', 'Extra Shot', 20, 1, 3, ?)`,
+      ).run(order.itemId, now());
+      adjustProductStock(db, {
+        productId: null,
+        addonId: 'addon-edit',
+        quantityDelta: -3,
+        movementType: 'sale',
+        referenceType: 'order_item',
+        referenceId: String(order.itemId),
+        actorUserId: 'owner-edit',
+      });
+      db.prepare('UPDATE order_items SET subtotal = 360, total = 360 WHERE id = ?').run(
+        order.itemId,
+      );
+      db.prepare('UPDATE orders SET subtotal = 360, total = 360 WHERE id = ?').run(order.orderId);
+
+      const bill = seedBill(db, order.orderId, 360, 0, 'unpaid');
+      const prodStockBefore = stockOf(db);
+      const addonStockBefore = stockOfAddon('addon-edit');
+      const supplyStockBefore = stockOfSupply(beans.id);
+
+      const pendingEditKey = nextKey('pending-3-to-2');
       const response = await edit(
         order.orderId,
         order.itemId,
-        { quantity: 1, reason: 'typo' },
+        { expected_edit_version: 0, quantity: 2, reason: 'typo' },
         ownerAuth,
+        pendingEditKey,
       );
-      assertEqualOrThrow(response.status, 200, 'owner can reduce a quantity');
+      assertEqualOrThrow(response.status, 200, 'owner can reduce a pending quantity');
       assertEqualOrThrow(itemStatus(order.itemId), 'cancelled', 'the original line is superseded');
-      assertEqualOrThrow(orderTotal(order.orderId), 100, 'order total follows the new quantity');
+      assertEqualOrThrow(orderTotal(order.orderId), 240, 'order total follows the new quantity');
       assertEqualOrThrow(
         stockOf(db),
-        stockBefore + 2,
-        'stock is restored for the removed units only',
+        prodStockBefore + 1,
+        'product stock net change is +1 (restored 3, deducted 2)',
       );
+      assertEqualOrThrow(
+        stockOfAddon('addon-edit'),
+        addonStockBefore + 1,
+        'add-on stock net change is +1 (restored 3, deducted 2)',
+      );
+      assertEqualOrThrow(
+        stockOfSupply(beans.id),
+        supplyStockBefore + 10,
+        'recipe supply stock net change is +10g (restored 30g, deducted 20g)',
+      );
+
+      // Replay after original line became terminal ('cancelled') still returns 200!
+      const replayTerminal = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 2, reason: 'typo' },
+        ownerAuth,
+        pendingEditKey,
+      );
+      assertEqualOrThrow(
+        replayTerminal.status,
+        200,
+        'replaying same key after pending line was superseded still returns stored 200',
+      );
+
       const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(bill.id) as any;
-      assertEqualOrThrow(updatedBill.total, 100, 'the unpaid bill total is re-synced');
-      assertEqualOrThrow(updatedBill.balance, 100, 'the unpaid bill balance is re-synced');
+      assertEqualOrThrow(updatedBill.total, 240, 'the unpaid bill total is re-synced');
+      assertEqualOrThrow(updatedBill.balance, 240, 'the unpaid bill balance is re-synced');
       const active = db
         .prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'pending'")
         .all(order.orderId) as any[];
       assertEqualOrThrow(active.length, 1, 'one active line remains');
-      assertEqualOrThrow(active[0].quantity, 1, 'the active line has the new quantity');
+      assertEqualOrThrow(active[0].quantity, 2, 'the active line has the new quantity');
       assertEqualOrThrow(active[0].unit_price, 100, 'the original unit price is preserved');
       const audit = db
         .prepare("SELECT * FROM order_audit_log WHERE order_item_id = ? AND action = 'item_edited'")
         .get(order.itemId) as any;
       assertEqualOrThrow(audit?.actor_user_id, 'owner-edit', 'the edit is attributed to the owner');
+      const auditDetails = JSON.parse(audit.details_json);
+      assertEqualOrThrow(
+        auditDetails.superseded,
+        true,
+        'pending edit audit records superseded: true',
+      );
+
+      // Attempt to restore the superseded cancelled line must fail with 400 and not produce 5
+      const restoreAttempt = await api(
+        baseUrl,
+        `/api/orders/${order.orderId}/items/${order.itemId}/restore`,
+        {
+          method: 'PATCH',
+          headers: ownerAuth,
+        },
+      );
+      assertEqualOrThrow(
+        restoreAttempt.status,
+        400,
+        'restoring a superseded cancelled line is rejected inside the transaction',
+      );
+      const activeQtyAfterRestoreAttempt = db
+        .prepare(
+          "SELECT SUM(quantity) as qty FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided')",
+        )
+        .get(order.orderId) as any;
+      assertEqualOrThrow(
+        Number(activeQtyAfterRestoreAttempt.qty),
+        2,
+        'pending 3 -> 2 cannot restore to 5',
+      );
     }
+
+    console.log('\n─── Started Quantity Decrease (In-Place, No Stock Restore, Preserves Snapshots & Waste) ───');
     {
-      const order = seedOrder(db, 'QTY-DOWN-PREP', 'preparing', 3);
-      const response = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
+      const order = seedOrder(db, 'QTY-DOWN-PREP', 'preparing', 3, 3);
+      const snap3 = buildRecipeSnapshot(db, 'prod-edit', 3);
+      const recipeSnapJson = JSON.stringify(snap3);
+      db.prepare(
+        `UPDATE order_items
+         SET recipe_snapshot = ?, discount_amount = 36, subtotal = 324, total = 324
+         WHERE id = ?`,
+      ).run(recipeSnapJson, order.itemId);
+      db.prepare(
+        `INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
+         VALUES (?, ?, 'owner-edit', 'item_discount_applied', ?, ?)`,
+      ).run(order.orderId, order.itemId, JSON.stringify({ discount_type: 'percentage', discount_value: 10 }), now());
+      const initialEditVersion = Number(
+        (
+          db
+            .prepare('SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?')
+            .get(order.orderId, order.itemId) as any
+        ).v,
+      );
+      applyRecipeSnapshot(db, snap3, {
+        direction: 'deplete',
+        actorUserId: 'owner-edit',
+        referenceId: String(order.itemId),
+      });
+      db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+         VALUES (?, 'addon-edit', 'Extra Shot', 20, 1, 3, ?)`,
+      ).run(order.itemId, now());
+      adjustProductStock(db, {
+        productId: null,
+        addonId: 'addon-edit',
+        quantityDelta: -3,
+        movementType: 'sale',
+        referenceType: 'order_item',
+        referenceId: String(order.itemId),
+        actorUserId: 'owner-edit',
+      });
+      db.prepare('UPDATE orders SET subtotal = 324, total = 324 WHERE id = ?').run(
+        order.orderId,
+      );
+
+      const prodStockBefore = stockOf(db);
+      const addonStockBefore = stockOfAddon('addon-edit');
+      const supplyStockBefore = stockOfSupply(beans.id);
+
+      const response = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: initialEditVersion, quantity: 2, reason: 'guest changed mind' },
+        ownerAuth,
+      );
       assertEqualOrThrow(
         response.status,
         200,
         'owner can reduce a line the kitchen already started',
       );
-      const active = db
-        .prepare(
-          "SELECT status, quantity FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled')",
-        )
+      const allLines = db
+        .prepare('SELECT * FROM order_items WHERE order_id = ?')
         .all(order.orderId) as any[];
-      assertEqualOrThrow(active.length, 1, 'one active line remains');
       assertEqualOrThrow(
-        active[0].status,
+        allLines.length,
+        1,
+        'started decrease updates the existing row in place without cancelling/reinserting',
+      );
+      assertEqualOrThrow(allLines[0].id, order.itemId, 'original item ID is preserved');
+      assertEqualOrThrow(
+        allLines[0].status,
         'preparing',
         'the reduced line keeps its kitchen status',
       );
+      assertEqualOrThrow(allLines[0].quantity, 2, 'billable quantity is updated to 2');
+      assertEqualOrThrow(
+        Number(allLines[0].inventory_deducted_quantity),
+        3,
+        'already-consumed inventory_deducted_quantity (3) is preserved on the line',
+      );
+      assertEqualOrThrow(
+        allLines[0].recipe_snapshot,
+        recipeSnapJson,
+        'already-consumed recipe_snapshot is preserved on the line',
+      );
+      assertEqualOrThrow(
+        Number(allLines[0].discount_amount),
+        24,
+        'item percentage discount is recomputed for the new billable quantity (10% of 240 = 24)',
+      );
+      assertEqualOrThrow(
+        Number(allLines[0].total),
+        216,
+        'item total is recomputed (240 - 24 = 216)',
+      );
+      assertEqualOrThrow(
+        orderTotal(order.orderId),
+        216,
+        'order total is recomputed via backend financial calculation',
+      );
+      const addonRow = db
+        .prepare('SELECT * FROM order_item_addons WHERE order_item_id = ?')
+        .get(order.itemId) as any;
+      assertEqualOrThrow(
+        Number(addonRow.price),
+        20,
+        'stored add-on per-unit price (20) is preserved',
+      );
+      assertEqualOrThrow(
+        Number(addonRow.inventory_deducted_quantity),
+        3,
+        'already-consumed add-on inventory_deducted_quantity (3) is preserved',
+      );
+      assertEqualOrThrow(
+        stockOf(db),
+        prodStockBefore,
+        'started decrease restores NO product stock and does not re-deduct',
+      );
+      assertEqualOrThrow(
+        stockOfAddon('addon-edit'),
+        addonStockBefore,
+        'started decrease restores NO add-on stock',
+      );
+      assertEqualOrThrow(
+        stockOfSupply(beans.id),
+        supplyStockBefore,
+        'started decrease restores NO recipe/supply stock',
+      );
+
+      const audit = db
+        .prepare("SELECT * FROM order_audit_log WHERE order_item_id = ? AND action = 'item_edited'")
+        .get(order.itemId) as any;
+      const details = JSON.parse(audit.details_json);
+      assertEqualOrThrow(
+        details.wasted_quantity,
+        1,
+        'started decrease records removed quantity as wasted_quantity in edit audit',
+      );
+      assertEqualOrThrow(
+        details.superseded,
+        false,
+        'started decrease records superseded: false in edit audit',
+      );
     }
+
+    console.log('\n─── Started Quantity Increase & Legitimate Cancellation Classification ───');
     {
       const order = seedOrder(db, 'QTY-UP-PREP', 'preparing', 2, 2);
       const stockBefore = stockOf(db);
@@ -220,7 +618,47 @@ async function main() {
       assertEqualOrThrow(extra?.status, 'pending', 'the extra line goes to the kitchen as pending');
       assertEqualOrThrow(orderTotal(order.orderId), 500, 'order total covers the new quantity');
       assertEqualOrThrow(stockOf(db), stockBefore - 3, 'stock is deducted for the extra units');
+
+      // Regression: legitimate cancellation of an item (even on an order with edit audits) is NOT superseded and CAN be restored
+      const cancelExtra = await api(
+        baseUrl,
+        `/api/orders/${order.orderId}/items/${extra.id}/cancel`,
+        {
+          method: 'PATCH',
+          body: { reason: 'customer cancelled extra' },
+          headers: ownerAuth,
+        },
+      );
+      assertEqualOrThrow(cancelExtra.status, 200, 'ordinary cancellation of pending extra line succeeds');
+      const cancelledExtraHydrated = (cancelExtra.data.order.items as any[]).find(
+        (line) => line.id === extra.id,
+      );
+      assertOrThrow(
+        !cancelledExtraHydrated?.superseded,
+        'legitimate cancellation is not flagged superseded',
+      );
+
+      // Also test ordinary cancellation of a pending line that was previously edited in-place or has a non-superseding edit audit
+      const restoreExtra = await api(
+        baseUrl,
+        `/api/orders/${order.orderId}/items/${extra.id}/restore`,
+        {
+          method: 'PATCH',
+          headers: ownerAuth,
+        },
+      );
+      assertEqualOrThrow(
+        restoreExtra.status,
+        200,
+        'ordinary eligible cancellation can still be restored',
+      );
+      assertEqualOrThrow(
+        itemStatus(extra.id),
+        'pending',
+        'restored line returns to pending',
+      );
     }
+
     {
       const order = seedOrder(db, 'QTY-SAME', 'pending', 2);
       const response = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
@@ -250,19 +688,60 @@ async function main() {
       );
     }
 
-    console.log('\n─── Replacement ───');
+    console.log('\n─── Replacement (Pending vs Started) ───');
     {
-      const order = seedOrder(db, 'REPLACE', 'preparing', 2, 2);
+      // Pending replacement: restores original stock, cancels original as superseded, deducts replacement
+      const pendingOrder = seedOrder(db, 'REPLACE-PENDING', 'pending', 2, 2);
+      const prodEditBefore = stockOfProduct('prod-edit');
+      const prodOtherBefore = stockOfProduct('prod-other');
+      const pendingResp = await edit(
+        pendingOrder.orderId,
+        pendingOrder.itemId,
+        { replacement: { product_id: 'prod-other', quantity: 2 } },
+        ownerAuth,
+      );
+      assertEqualOrThrow(pendingResp.status, 200, 'owner can replace a pending item');
+      assertEqualOrThrow(
+        itemStatus(pendingOrder.itemId),
+        'cancelled',
+        'pending replaced line is cancelled as superseded',
+      );
+      assertEqualOrThrow(
+        stockOfProduct('prod-edit'),
+        prodEditBefore + 2,
+        'pending replacement restores original item stock',
+      );
+      assertEqualOrThrow(
+        stockOfProduct('prod-other'),
+        prodOtherBefore - 2,
+        'pending replacement deducts replacement item stock',
+      );
+
+      // Started replacement: voids original WITHOUT restoring stock, preserves waste, creates and deducts replacement as pending
+      const order = seedOrder(db, 'REPLACE-STARTED', 'preparing', 2, 2);
       const bill = seedBill(db, order.orderId, 200, 0, 'unpaid');
-      const stockBefore = stockOf(db);
+      const startedProdEditBefore = stockOfProduct('prod-edit');
+      const startedProdOtherBefore = stockOfProduct('prod-other');
       const response = await edit(
         order.orderId,
         order.itemId,
         { replacement: { product_id: 'prod-other', quantity: 2 } },
         ownerAuth,
       );
-      assertEqualOrThrow(response.status, 200, 'owner can replace an item');
-      assertEqualOrThrow(itemStatus(order.itemId), 'cancelled', 'the replaced line is cancelled');
+      assertEqualOrThrow(response.status, 200, 'owner can replace a started item');
+      assertEqualOrThrow(
+        itemStatus(order.itemId),
+        'voided',
+        'started replaced line is voided (not cancelled)',
+      );
+      const hydratedOld = (response.data.order.items as any[]).find(
+        (line) => line.id === order.itemId,
+      );
+      assertEqualOrThrow(
+        hydratedOld?.superseded,
+        true,
+        'started voided replaced line is flagged superseded',
+      );
       const fresh = db
         .prepare('SELECT * FROM order_items WHERE order_id = ? AND id != ?')
         .get(order.orderId, order.itemId) as any;
@@ -277,11 +756,55 @@ async function main() {
         'the replacement goes to the kitchen as pending',
       );
       assertEqualOrThrow(orderTotal(order.orderId), 300, 'order total uses the replacement price');
-      assertEqualOrThrow(stockOf(db), stockBefore + 2, 'the replaced item stock is restored');
+      assertEqualOrThrow(
+        stockOfProduct('prod-edit'),
+        startedProdEditBefore,
+        'started replacement does NOT restore original item stock (preserves waste)',
+      );
+      assertEqualOrThrow(
+        stockOfProduct('prod-other'),
+        startedProdOtherBefore - 2,
+        'started replacement deducts replacement item stock',
+      );
+      const audit = db
+        .prepare("SELECT * FROM order_audit_log WHERE order_item_id = ? AND action = 'item_edited'")
+        .get(order.itemId) as any;
+      const details = JSON.parse(audit.details_json);
+      assertEqualOrThrow(
+        details.wasted_quantity,
+        2,
+        'started replacement records wasted_quantity in edit audit',
+      );
+      assertEqualOrThrow(
+        details.superseded,
+        true,
+        'started replacement records superseded: true in edit audit',
+      );
       assertEqualOrThrow(
         (db.prepare('SELECT total FROM bills WHERE id = ?').get(bill.id) as any).total,
         300,
         'the bill is re-synced',
+      );
+
+      // Verify bill print preview excludes cancelled/voided/superseded lines and matches totals
+      const printPreview = await api(baseUrl, '/api/printers/print-bill', {
+        method: 'POST',
+        body: { billId: bill.id, preview: true },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(printPreview.status, 200, 'bill print preview succeeds after edit');
+      const receiptText = String(printPreview.data?.text || '');
+      assertOrThrow(
+        receiptText.includes('Other item'),
+        'bill receipt text includes the active replacement item',
+      );
+      assertOrThrow(
+        !receiptText.includes('Edit item'),
+        'bill receipt text excludes the voided/superseded original item',
+      );
+      assertOrThrow(
+        receiptText.includes('300'),
+        'bill receipt text includes the updated 300 total',
       );
     }
 
@@ -300,8 +823,9 @@ async function main() {
       assertEqualOrThrow(updated.balance, 100, 'the balance accounts for what was collected');
     }
     {
-      const order = seedOrder(db, 'PARTIAL-LOW', 'pending', 3);
+      const order = seedOrder(db, 'PARTIAL-LOW', 'pending', 3, 3);
       seedBill(db, order.orderId, 300, 250, 'partial');
+      const stockBefore = stockOf(db);
       const response = await edit(order.orderId, order.itemId, { quantity: 1 }, ownerAuth);
       assertEqualOrThrow(
         response.status,
@@ -309,6 +833,11 @@ async function main() {
         'an edit that drops the total below the collected amount is refused',
       );
       assertEqualOrThrow(itemStatus(order.itemId), 'pending', 'the refused edit rolls back');
+      assertEqualOrThrow(
+        stockOf(db),
+        stockBefore,
+        'refused edit rolls back inventory changes completely',
+      );
       assertEqualOrThrow(
         orderTotal(order.orderId),
         300,
@@ -320,6 +849,88 @@ async function main() {
       seedBill(db, order.orderId, 200, 200, 'paid');
       const response = await edit(order.orderId, order.itemId, { quantity: 1 }, ownerAuth);
       assertEqualOrThrow(response.status, 409, 'a fully paid order cannot be edited');
+    }
+
+    console.log('\n─── Durable Attempt Storage (order-item-edit-attempt) ───');
+    {
+      const {
+        clearOrderItemEditAttempt,
+        isUnresolvedOrderItemEditFailure,
+        newOrderItemEditAttempt,
+        persistOrderItemEditAttempt,
+        readOrderItemEditAttempt,
+      } = require('../frontend/src/lib/order-item-edit-attempt');
+
+      const store = new Map<string, string>();
+      (globalThis as any).window = {
+        localStorage: {
+          getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+          setItem: (k: string, v: string) => store.set(k, v),
+          removeItem: (k: string) => store.delete(k),
+        },
+      };
+
+      const snapshot = newOrderItemEditAttempt({
+        mode: 'quantity',
+        path: '/orders/10/items/20/edit',
+        orderId: 10,
+        itemId: 20,
+        body: { expected_edit_version: 4, quantity: 3 },
+        actorId: 'owner-edit',
+        tenantId: 1,
+      });
+      persistOrderItemEditAttempt(snapshot);
+      const readBack = readOrderItemEditAttempt(1, 'owner-edit', 10, 20);
+      assertEqualOrThrow(
+        readBack?.idempotencyKey,
+        snapshot.idempotencyKey,
+        'persisted attempt reads back with matching idempotencyKey',
+      );
+      assertEqualOrThrow(
+        readBack?.body.expected_edit_version,
+        4,
+        'persisted attempt preserves expected_edit_version',
+      );
+
+      let overwriteThrew = false;
+      try {
+        persistOrderItemEditAttempt(
+          newOrderItemEditAttempt({
+            mode: 'quantity',
+            path: '/orders/10/items/20/edit',
+            orderId: 10,
+            itemId: 20,
+            body: { expected_edit_version: 4, quantity: 5 },
+            actorId: 'owner-edit',
+            tenantId: 1,
+          }),
+        );
+      } catch {
+        overwriteThrew = true;
+      }
+      assertOrThrow(overwriteThrew, 'persisting into an occupied attempt slot throws');
+
+      assertOrThrow(
+        isUnresolvedOrderItemEditFailure(new Error('Network Error')),
+        'network error is classified as unresolved',
+      );
+      assertOrThrow(
+        isUnresolvedOrderItemEditFailure({ response: { status: 503 } }),
+        '5xx error is classified as unresolved',
+      );
+      assertOrThrow(
+        !isUnresolvedOrderItemEditFailure({ response: { status: 409 } }),
+        '409 conflict is classified as resolved',
+      );
+
+      const cleared = clearOrderItemEditAttempt(1, 'owner-edit', 10, 20, snapshot.idempotencyKey);
+      assertOrThrow(cleared, 'clearOrderItemEditAttempt clears matching key');
+      assertEqualOrThrow(
+        readOrderItemEditAttempt(1, 'owner-edit', 10, 20),
+        null,
+        'attempt slot is empty after clear',
+      );
+      delete (globalThis as any).window;
     }
   } finally {
     server.close();

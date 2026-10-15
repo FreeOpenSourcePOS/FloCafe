@@ -8391,14 +8391,20 @@ export function parseItemJson(item: any): any {
   };
 }
 
-/** Resolves selected addons for a batch of order_items rows from order_item_addons. */
+/** Resolves selected addons and item audit metadata for a batch of order_items rows. */
 export function attachEffectiveAddons<T extends { id: number }>(
   dbInstance: Database.Database,
   items: T[],
-): (T & { addons: { id: string | null; name: string; price: number; quantity: number }[] })[] {
+): (T & {
+  addons: { id: string | null; name: string; price: number; quantity: number }[];
+  edit_version: number;
+  superseded?: boolean;
+})[] {
   if (items.length === 0)
     return items as (T & {
       addons: { id: string | null; name: string; price: number; quantity: number }[];
+      edit_version: number;
+      superseded?: boolean;
     })[];
 
   const ids = items.map((item) => item.id);
@@ -8423,7 +8429,51 @@ export function attachEffectiveAddons<T extends { id: number }>(
     byItem.set(row.order_item_id, list);
   }
 
-  return items.map((item) => ({ ...item, addons: byItem.get(item.id) || [] }));
+  const editVersionByItem = new Map<number, number>();
+  const supersededItemIds = new Set<number>();
+  try {
+    const auditRows = dbInstance
+      .prepare(
+        `SELECT id, order_item_id, action, details_json FROM order_audit_log WHERE order_item_id IN (${placeholders}) ORDER BY id`,
+      )
+      .all(...ids) as {
+      id: number;
+      order_item_id: number | string | null;
+      action: string;
+      details_json: string | null;
+    }[];
+    for (const audit of auditRows) {
+      const itemId = Number(audit.order_item_id);
+      if (!Number.isFinite(itemId)) continue;
+      const prev = editVersionByItem.get(itemId) ?? 0;
+      if (audit.id > prev) editVersionByItem.set(itemId, audit.id);
+      if (audit.action === 'item_edited' && audit.details_json) {
+        try {
+          const details = JSON.parse(audit.details_json) as { superseded?: unknown } | null;
+          if (details?.superseded === true) {
+            supersededItemIds.add(itemId);
+          }
+        } catch {
+          // Ignore malformed audit details_json.
+        }
+      }
+    }
+  } catch {
+    // Partial test schemas without order_audit_log default to edit_version 0.
+  }
+
+  return items.map((item) => {
+    const itemId = Number(item.id);
+    const status = (item as { status?: string }).status;
+    const isSuperseded =
+      supersededItemIds.has(itemId) && (status === 'cancelled' || status === 'voided');
+    return {
+      ...item,
+      addons: byItem.get(item.id) || [],
+      edit_version: editVersionByItem.get(itemId) ?? 0,
+      ...(isSuperseded ? { superseded: true } : {}),
+    };
+  });
 }
 
 /** Parse JSON text columns on bill/order rows returned from SQLite. */

@@ -47,6 +47,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { parseDbTimestamp } from '@/lib/utils';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 import {
   orderStatusBadge,
   paymentStatusBadge,
@@ -157,10 +158,10 @@ function OrderDetailContent({
   const [showPrintActivity, setShowPrintActivity] = useState(false);
 
   const activeItems = (order.items || []).filter(
-    (i) => !['cancelled', 'voided', 'void_adjustment'].includes(i.status),
+    (i) => !isTerminalItemStatus(i.status),
   );
   const inactiveItems = (order.items || []).filter(
-    (i) => ['cancelled', 'voided'].includes(i.status) && !i.superseded,
+    (i) => ['cancelled', 'voided', 'refunded'].includes(i.status) && !i.superseded,
   );
 
   const bill = order.bill;

@@ -3294,7 +3294,7 @@ router.patch(
 
         const updatedRow = db
           .prepare('SELECT * FROM order_items WHERE id = ?')
-          .get(req.params.itemId) as any;
+          .get(req.params.itemId) as Record<string, unknown>;
         return {
           ...updatedRow,
           edit_version: getOrderItemEditVersion(

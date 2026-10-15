@@ -126,7 +126,11 @@ async function main() {
     VALUES ('prod-other', 'cat-edit', 'Other item', 150, 'none', 1, 2, ?, ?)`).run(now(), now());
 
   const { createSupply, getSupply } = require('../main/services/supplies');
-  const { saveRecipe, buildRecipeSnapshot, applyRecipeSnapshot } = require('../main/services/recipes');
+  const {
+    saveRecipe,
+    buildRecipeSnapshot,
+    applyRecipeSnapshot,
+  } = require('../main/services/recipes');
   const { adjustProductStock } = require('../main/services/inventory');
 
   const ownerAuth = seedUser(db, 'owner-edit', 'owner', '5678');
@@ -176,9 +180,7 @@ async function main() {
         body && typeof body === 'object' && !('expected_edit_version' in body)
           ? { expected_edit_version: 0, ...body }
           : body,
-      headers: idempotencyKey
-        ? { ...headers, 'Idempotency-Key': idempotencyKey }
-        : headers,
+      headers: idempotencyKey ? { ...headers, 'Idempotency-Key': idempotencyKey } : headers,
     });
   const itemStatus = (id: any) =>
     (db.prepare('SELECT status FROM order_items WHERE id = ?').get(id) as any).status;
@@ -457,7 +459,9 @@ async function main() {
       );
     }
 
-    console.log('\n─── Started Quantity Decrease (In-Place, No Stock Restore, Preserves Snapshots & Waste) ───');
+    console.log(
+      '\n─── Started Quantity Decrease (In-Place, No Stock Restore, Preserves Snapshots & Waste) ───',
+    );
     {
       const order = seedOrder(db, 'QTY-DOWN-PREP', 'preparing', 3, 3);
       const snap3 = buildRecipeSnapshot(db, 'prod-edit', 3);
@@ -470,11 +474,18 @@ async function main() {
       db.prepare(
         `INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
          VALUES (?, ?, 'owner-edit', 'item_discount_applied', ?, ?)`,
-      ).run(order.orderId, order.itemId, JSON.stringify({ discount_type: 'percentage', discount_value: 10 }), now());
+      ).run(
+        order.orderId,
+        order.itemId,
+        JSON.stringify({ discount_type: 'percentage', discount_value: 10 }),
+        now(),
+      );
       const initialEditVersion = Number(
         (
           db
-            .prepare('SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?')
+            .prepare(
+              'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+            )
             .get(order.orderId, order.itemId) as any
         ).v,
       );
@@ -496,9 +507,7 @@ async function main() {
         referenceId: String(order.itemId),
         actorUserId: 'owner-edit',
       });
-      db.prepare('UPDATE orders SET subtotal = 324, total = 324 WHERE id = ?').run(
-        order.orderId,
-      );
+      db.prepare('UPDATE orders SET subtotal = 324, total = 324 WHERE id = ?').run(order.orderId);
 
       const prodStockBefore = stockOf(db);
       const addonStockBefore = stockOfAddon('addon-edit');
@@ -629,7 +638,11 @@ async function main() {
           headers: ownerAuth,
         },
       );
-      assertEqualOrThrow(cancelExtra.status, 200, 'ordinary cancellation of pending extra line succeeds');
+      assertEqualOrThrow(
+        cancelExtra.status,
+        200,
+        'ordinary cancellation of pending extra line succeeds',
+      );
       const cancelledExtraHydrated = (cancelExtra.data.order.items as any[]).find(
         (line) => line.id === extra.id,
       );
@@ -652,11 +665,7 @@ async function main() {
         200,
         'ordinary eligible cancellation can still be restored',
       );
-      assertEqualOrThrow(
-        itemStatus(extra.id),
-        'pending',
-        'restored line returns to pending',
-      );
+      assertEqualOrThrow(itemStatus(extra.id), 'pending', 'restored line returns to pending');
     }
 
     {

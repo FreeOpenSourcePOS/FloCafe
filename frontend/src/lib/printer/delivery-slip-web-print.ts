@@ -31,18 +31,23 @@ export interface DeliverySlipWebPrintOptions {
   payment?: NonNullable<DeliverySlipPrintData['payment']>;
 }
 
-function translatorFor(lang: Language): ((key: string) => string) {
+function translatorFor(lang: Language): (key: string) => string {
   const locale = LANGUAGES[lang]?.locale ?? 'en';
   const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-function slipNoteHtml(raw: string | null | undefined, label: string, tr: (key: string) => string): string {
+function slipNoteHtml(
+  raw: string | null | undefined,
+  label: string,
+  tr: (key: string) => string,
+): string {
   const { text, truncatedChars: truncated } = clampDeliverySlipText((raw ?? '').trim());
   if (!text && truncated <= 0) return '';
-  const marker = truncated > 0
-    ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
-    : '';
+  const marker =
+    truncated > 0
+      ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
+      : '';
   const noteHtml = text
     ? `<p style="margin:2px 0;">${escapeHtml(label)}: ${escapeHtml(text)}</p>`
     : '';
@@ -67,11 +72,15 @@ export function generateDeliverySlipHtml(
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
   const activeItems = (items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
-  const itemRows = activeItems.map((item) => `
+  const itemRows = activeItems
+    .map(
+      (item) => `
     <div style="margin:${padding} 0;font-weight:bold;">${escapeHtml(`${item.quantity}x ${formatItemHeading(item.product_name, item.variant_selection)}`)}</div>
     ${(item.addons ?? []).map((addon) => `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : ''}</div>`).join('')}
     ${item.special_instructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${escapeHtml(item.special_instructions)}</div>` : ''}
-  `).join('');
+  `,
+    )
+    .join('');
 
   const payment = opts.payment;
   const isPaid = payment?.status === 'paid';
@@ -81,13 +90,14 @@ export function generateDeliverySlipHtml(
       ? tr('print.deliverySlip.multiplePaymentMethods')
       : sanitizeDeliverySlipPaymentMethod(payment.method)
     : '';
-  const paymentMethod = method.toLowerCase() === 'cash'
-    ? tr('pos.methodCash')
-    : method.toLowerCase() === 'card'
-      ? tr('pos.methodCard')
-      : ['wallet', 'loyalty', 'loyalty wallet'].includes(method.toLowerCase())
-        ? tr('pos.methodWallet')
-        : method;
+  const paymentMethod =
+    method.toLowerCase() === 'cash'
+      ? tr('pos.methodCash')
+      : method.toLowerCase() === 'card'
+        ? tr('pos.methodCard')
+        : ['wallet', 'loyalty', 'loyalty wallet'].includes(method.toLowerCase())
+          ? tr('pos.methodWallet')
+          : method;
   const paymentHtml = !payment
     ? ''
     : isPaid

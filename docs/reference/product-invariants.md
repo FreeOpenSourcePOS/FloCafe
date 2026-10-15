@@ -47,7 +47,7 @@ did what, not from hiding data between staff who already share a till and a kitc
    (`user_id`, `created_by`). This serves the audit trail, not access gating.
 
 **Enforced by:** `main/routes/orders.ts` (order list, `GET /:id`, item append, status update, item
-cancel/void and restore), `main/routes/printers.ts` (`print-kot`). None of these compare
+cancel/void, edit, and restore), `main/routes/printers.ts` (`print-kot`). None of these compare
 `order.user_id`, or an item's creator, against the requesting user.
 
 **How to verify:** both commands must return nothing.
@@ -297,7 +297,8 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
 1. **Negative stock is allowed and never blocks order taking.** A rush of orders before a morning
    delivery is logged still goes through the POS. Negative balances are flagged in the UI for
    physical count reconciliation. There is no clamp and no 409.
-2. **Depletion happens at order creation and at item append**, when `recipe_snapshot`, an immutable
+2. **Depletion happens when a pending line is inserted** (order creation, item append, or an item
+   edit that adds a replacement or incremental pending line), when `recipe_snapshot`, an immutable
    JSON copy of the scaled recipe components, is written to `order_items`. The scale is
    `ingredient quantity x ordered quantity x portion / yield_quantity`, where the portion is the
    ordered variant's `recipe_multiplier`: 1 is one base recipe portion, 0.5 half, 2 double. Parent
@@ -307,8 +308,10 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    pending item or an order restores exactly what the snapshot recorded, even if the recipe or the
    variant's portion was edited since. Cancelling a half-portion sale therefore returns half of
    every ingredient even after the variant was switched to double.
-4. **Void after preparation is physical waste.** Items voided while in progress, ready, or
-   completed restore neither supplies nor product stock. Only a `pending` cancel restores.
+4. **Void or reduction after preparation is physical waste.** Items voided while in progress,
+   ready, or completed - and in-progress lines reduced or replaced by an item edit - restore
+   neither supplies nor product stock. Only a `pending` cancel (including a `pending` line
+   superseded by an item edit) restores.
 5. **Refunds never restore supplies**, matching product inventory behaviour.
 6. **Product stock tracking and recipe depletion are independent** and may both be active on the
    same product. A variant scales them with two different fields: `recipe_multiplier` scales the
@@ -328,9 +331,10 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
-creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
-only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
-`pending`; a `voided` item is never restored. The portion comes from
+creation, item append, item cancel, item edit, and item restore paths in `main/routes/orders.ts`.
+Restore acts only on a non-superseded `cancelled` item, re-deducts its inventory and recipe
+components, and returns it to `pending`; a `voided` or superseded item is never restored. The
+portion comes from
 `resolveOrderItemVariant()` in `main/services/product-variants.ts`, the same server-side resolution
 that prices the line, and `buildRecipeSnapshot()` refuses a non-positive or non-finite portion
 before depletion. The migration gives existing variants a default portion of 1 in
@@ -340,6 +344,7 @@ before depletion. The migration gives existing variants a default portion of 1 i
 
 ```sh
 npm run test:recipe-order-lifecycle   # deplete, restore, void-no-restore, snapshot immutability
+npm run test:order-item-edit          # pending vs started item edits, waste, superseded restore rejection
 npm run test:supplies-service         # negative stock, ledger, pagination
 npm run test:product-variants-orders  # half / whole / double portions across create, append, void
 ```

@@ -145,7 +145,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     const foundProd = products.find((p) => p.id === rep.product_id);
     if (!foundProd) return null;
     const foundVariant = rep.variant_id
-      ? foundProd.variants?.find((v) => v.id === rep.variant_id) ?? null
+      ? (foundProd.variants?.find((v) => v.id === rep.variant_id) ?? null)
       : null;
     return {
       product: foundProd,
@@ -184,9 +184,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     reasonValid &&
     (lockedAttempt !== null ||
       (quantityValid &&
-        (mode === 'quantity'
-          ? parsedQuantity !== Number(item.quantity)
-          : !!effectiveReplacement)));
+        (mode === 'quantity' ? parsedQuantity !== Number(item.quantity) : !!effectiveReplacement)));
 
   const handleClose = () => {
     if (inFlightRef.current || saving) return;
@@ -237,7 +235,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
             replacement: {
               product_id: effectiveReplacement!.product.id,
               quantity: parsedQuantity,
-              ...(effectiveReplacement!.variant?.id ? { variant_id: effectiveReplacement!.variant.id } : {}),
+              ...(effectiveReplacement!.variant?.id
+                ? { variant_id: effectiveReplacement!.variant.id }
+                : {}),
               addons: effectiveReplacement!.addons.map((a) => ({
                 id: a.id,
                 name: a.name,
@@ -401,7 +401,8 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
 
             {isStarted && (
               <p className="text-xs text-muted-foreground bg-muted p-2 rounded-md">
-                Preparation has started in kitchen. Swapping products is disabled; only quantity reductions or voids are allowed.
+                Preparation has started in kitchen. Swapping products is disabled; only quantity
+                reductions or voids are allowed.
               </p>
             )}
 
@@ -416,7 +417,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
                     <p className="text-xs text-muted-foreground">
                       {fmt(
                         Number(
-                          effectiveReplacement.variant?.price ?? effectiveReplacement.product.price ?? 0,
+                          effectiveReplacement.variant?.price ??
+                            effectiveReplacement.product.price ??
+                            0,
                         ),
                       )}
                     </p>

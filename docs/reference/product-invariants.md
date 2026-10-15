@@ -300,7 +300,9 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    edit that adds a replacement or incremental pending line), when `recipe_snapshot`, a
    JSON copy of the scaled recipe components, is written to `order_items`. The copy is rewritten
    in place - scaled to the remaining quantity - when a started line's quantity decreases, so a
-   later cancel restores only the units the line still holds and wasted units stay out of stock. The scale is
+   later cancel restores only the units the line still holds and wasted units stay out of stock. Pending
+   quantity reductions scale the original line's historical recipe snapshot and inventory deduction
+   onto the new pending line rather than re-evaluating modified catalog recipes. The scale is
    `ingredient quantity x ordered quantity x portion / yield_quantity`, where the portion is the
    ordered variant's `recipe_multiplier`: 1 is one base recipe portion, 0.5 half, 2 double. Parent
    sales without a variant use a portion of 1, and the portion is scaled from the resolved catalog
@@ -310,8 +312,8 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    even if the recipe or the variant's portion was edited since. Cancelling a half-portion sale
    therefore returns half of every ingredient even after the variant was switched to double.
 4. **Void or reduction after preparation is physical waste.** Items voided while in progress,
-   ready, or completed - and in-progress lines reduced or replaced by an item edit - restore
-   neither supplies nor product stock. Only a `pending` cancel (including a `pending` line
+   ready, or completed - and in-progress lines reduced by an item edit (replacing started lines
+   is disallowed) - restore neither supplies nor product stock. Only a `pending` cancel (including a `pending` line
    superseded by an item edit) restores.
 5. **Refunds never restore supplies**, matching product inventory behaviour.
 6. **Product stock tracking and recipe depletion are independent** and may both be active on the

@@ -896,12 +896,7 @@ function insertOrderItems(
     const recipeSnapshot =
       context.preserveSelections && item.recipe_snapshot !== undefined
         ? (item.recipe_snapshot as ReturnType<typeof buildRecipeSnapshot>)
-        : buildRecipeSnapshot(
-            db,
-            product.id,
-            quantity,
-            variant?.recipe_multiplier ?? 1,
-          );
+        : buildRecipeSnapshot(db, product.id, quantity, variant?.recipe_multiplier ?? 1);
     const insertItemResult = insertItem.run(
       orderId,
       product.id,

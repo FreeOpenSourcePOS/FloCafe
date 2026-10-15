@@ -911,7 +911,6 @@ async function main() {
     console.log('\n─── Replacement (Pending vs Started) ───');
     {
       // Pending replacement: restores original stock, cancels original as superseded, deducts replacement
-      // Pending replacement: restores original stock, cancels original as superseded, deducts replacement
       const pendingOrder = seedOrder(db, 'REPLACE-PENDING', 'pending', 2, 2);
       const pendingBill = seedBill(db, pendingOrder.orderId, 200, 0, 'unpaid');
       const prodEditBefore = stockOfProduct('prod-edit');
@@ -953,11 +952,7 @@ async function main() {
         { replacement: { product_id: 'prod-other', quantity: 2 } },
         ownerAuth,
       );
-      assertEqualOrThrow(
-        response.status,
-        400,
-        'replacing a started item is rejected with 400',
-      );
+      assertEqualOrThrow(response.status, 400, 'replacing a started item is rejected with 400');
       assertEqualOrThrow(
         response.data.error,
         'Cannot replace an item once kitchen preparation has started; reduce quantity or void instead',
@@ -988,7 +983,11 @@ async function main() {
         { quantity: 2 },
         ownerAuth,
       );
-      assertEqualOrThrow(shiftResp.status, 200, 'pending reduction succeeds under catalog recipe shift');
+      assertEqualOrThrow(
+        shiftResp.status,
+        200,
+        'pending reduction succeeds under catalog recipe shift',
+      );
       assertEqualOrThrow(
         stockOfSupply(beans.id),
         supplyBeforeShift + 10,
@@ -998,7 +997,9 @@ async function main() {
       db.prepare('UPDATE recipe_items SET quantity = 10 WHERE supply_id = ?').run(beans.id);
 
       const noRecipeOrder = seedOrder(db, 'NO-RECIPE-PENDING', 'pending', 3, 3);
-      db.prepare('UPDATE order_items SET recipe_snapshot = NULL WHERE id = ?').run(noRecipeOrder.itemId);
+      db.prepare('UPDATE order_items SET recipe_snapshot = NULL WHERE id = ?').run(
+        noRecipeOrder.itemId,
+      );
       const supplyBeforeNoRecipe = stockOfSupply(beans.id);
       const noRecipeResp = await edit(
         noRecipeOrder.orderId,
@@ -1006,7 +1007,11 @@ async function main() {
         { quantity: 2 },
         ownerAuth,
       );
-      assertEqualOrThrow(noRecipeResp.status, 200, 'pending reduction succeeds when line had no recipe snapshot');
+      assertEqualOrThrow(
+        noRecipeResp.status,
+        200,
+        'pending reduction succeeds when line had no recipe snapshot',
+      );
       assertEqualOrThrow(
         stockOfSupply(beans.id),
         supplyBeforeNoRecipe,

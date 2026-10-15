@@ -1,18 +1,3 @@
-/**
- * Regression coverage for order-write and item-cancel rate limiting (#1073).
- *
- * Verifies:
- * - 61+ legitimate authenticated local/private order writes and item cancels succeed
- * - IPv4/IPv6 loopback, RFC 1918 private, Tailscale CGNAT, and public IP classification
- * - FLO_ORDER_WRITE_RATE_LIMIT_MAX positive integer parsing and fallback to 60/min
- * - Unauthenticated requests are never bypassed even from private/loopback sockets
- * - Spoofed X-Forwarded-For / Forwarded headers or trust-proxy req.ip overrides are ignored
- * - Public traffic is throttled with the JSON error envelope { error: "Too many requests, please try again later." }
- * - orderWriteRateLimit and orderItemCancelRateLimit remain independent buckets
- * - Manager/owner PIN attempt limits remain enforced on local/private traffic
- *
- * Run: node tests/run-electron-node-test.cjs tests/order-write-rate-limits.test.ts
- */
 const Module = require('module');
 const originalLoad = Module._load;
 const fs = require('fs');
@@ -109,7 +94,7 @@ function seedPreparingOrderWithItem(db: any, suffix: string) {
 }
 
 async function main() {
-  console.log('Order-write and item-cancel rate limits (#1073)');
+  console.log('Order-write and item-cancel rate limits');
   console.log('='.repeat(60));
   resetCounters();
   resetPinRateLimitForTests();
@@ -172,6 +157,7 @@ async function main() {
 
   try {
     console.log('\n1. FLO_ORDER_WRITE_RATE_LIMIT_MAX configuration parsing');
+    delete process.env.FLO_ORDER_WRITE_RATE_LIMIT_MAX;
     assertEqualOrThrow(
       resolveOrderWriteRateLimitMax(undefined),
       60,

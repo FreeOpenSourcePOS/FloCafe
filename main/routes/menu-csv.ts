@@ -794,7 +794,9 @@ router.post(
           if (r.tags) {
             const arr = r.tags
               .split(',')
-              .map((t: string) => t.trim())
+              // quote-v1 round-trips stored tags verbatim; trimming would strip
+              // the restored formula-safety whitespace and break reversibility.
+              .map((t: string) => (encoding.mode === 'quote-v1' ? t : t.trim()))
               .filter(Boolean);
             if (arr.length) tagsJson = JSON.stringify(arr);
           }

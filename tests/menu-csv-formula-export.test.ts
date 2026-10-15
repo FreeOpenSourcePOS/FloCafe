@@ -23,6 +23,7 @@ const {
   seedOwnerUser,
   seedCategory,
   seedProduct,
+  api,
   assert,
   assertIncludes,
   assertEqual,
@@ -145,6 +146,26 @@ async function main() {
           (row!.match(/,/g) || []).length,
           12,
           `the leading-${label} tag did not shift the surrounding columns`,
+        );
+      }
+
+      // Re-importing the quote-v1 export must restore each tag byte-for-byte:
+      // decodeQuoteV1Field puts the safety whitespace back, and the importer
+      // must not trim it away again (regression: "\t=1+1" stored as "=1+1").
+      const reimport = await api(baseUrl, '/api/menu/csv/import/products', {
+        method: 'POST',
+        body: { csv },
+        headers: authHeader,
+      });
+      assertEqual(reimport.status, 200, 'quote-v1 product export re-imports');
+      assertEqual(reimport.data.failed, 0, 'whitespace-trigger rows re-import without failures');
+      for (const [label, tag] of whitespaceTriggers) {
+        const id = `prod-ws-${whitespaceTriggers.findIndex((t) => t[0] === label)}`;
+        const stored = db.prepare('SELECT tags FROM products WHERE id = ?').get(id) as any;
+        assertEqual(
+          stored.tags,
+          JSON.stringify([tag]),
+          `the leading-${label} formula tag survives the quote-v1 round trip unchanged`,
         );
       }
     }

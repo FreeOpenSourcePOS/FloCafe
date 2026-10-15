@@ -172,10 +172,7 @@ test.describe('Customer display pairing and clipboard safety', () => {
 
       // Revoking a different device ('Secondary Display') leaves Lobby TV's visible pairing link intact
       // and does not disconnect the active Lobby TV display.
-      const secondaryRow = page
-        .locator('li')
-        .filter({ hasText: 'Secondary Display' })
-        .first();
+      const secondaryRow = page.locator('li').filter({ hasText: 'Secondary Display' }).first();
       await expect(secondaryRow).toBeVisible();
       await secondaryRow.getByRole('button', { name: 'Revoke', exact: true }).click();
       await expect(page.getByText('Display revoked', { exact: true })).toBeVisible();
@@ -278,7 +275,9 @@ test.describe('Customer display pairing and clipboard safety', () => {
     // 1. Missing navigator.clipboard (plain LAN HTTP)
     await copyDisplayUrlButton.click();
     await expect(page.getByText('Failed to save', { exact: true }).first()).toBeVisible();
-    await page.evaluate(() => document.querySelectorAll('[role="status"]').forEach((n) => n.remove()));
+    await page.evaluate(() =>
+      document.querySelectorAll('[role="status"]').forEach((n) => n.remove()),
+    );
 
     await copyPairingUrlButton.click();
     await expect(

@@ -78,8 +78,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname?.startsWith('/customer-display/');
 
   useEffect(() => {
-    // Standalone KDS and Server App pages manage their own auth sessions;
-    // skip loading shared POS auth store to avoid clearing their tokens.
+    // Standalone KDS, Server App, and paired customer display pages manage their own
+    // auth sessions; skip loading shared POS auth store to avoid clearing their tokens.
     if (isStandalonePath) return;
     loadFromStorage();
   }, [isStandalonePath, loadFromStorage]);

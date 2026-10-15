@@ -1606,7 +1606,11 @@ async function mockDisplayOrders(
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true }),
+        body: JSON.stringify({
+          statuses: ['pending', 'preparing', 'ready'],
+          refresh_seconds: 3,
+          show_updated: true,
+        }),
       }),
   );
   await page.route(
@@ -1639,7 +1643,8 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.setViewportSize({ width: 1280, height: 720 });
     await loginAsManager(page);
     const orders = displayOrders(100, 100);
-    const longReceiptNumber = 'INV-2026-NORTH-REGION-COUNTER-04-VERY-LONG-RECEIPT-00000123456789012345678901234567890';
+    const longReceiptNumber =
+      'INV-2026-NORTH-REGION-COUNTER-04-VERY-LONG-RECEIPT-00000123456789012345678901234567890';
     orders[0].bill.bill_number = longReceiptNumber;
     orders[1].bill.bill_number = '';
     await mockDisplayOrders(page, orders);
@@ -1663,16 +1668,18 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       await page.waitForFunction(() => {
         const board = document.querySelector('[data-testid="customer-display-preparing-scroll"]');
         if (!board) return false;
-        const visibleRows = [...board.querySelectorAll('[data-testid="customer-display-order-row"]')]
-          .filter((row) => getComputedStyle(row).visibility === 'visible');
+        const visibleRows = [
+          ...board.querySelectorAll('[data-testid="customer-display-order-row"]'),
+        ].filter((row) => getComputedStyle(row).visibility === 'visible');
         return visibleRows.length < 100;
       });
 
       const layout = await preparing.evaluate((element) => ({
         clientWidth: element.clientWidth,
         scrollWidth: element.scrollWidth,
-        visibleRows: [...element.querySelectorAll('[data-testid="customer-display-order-row"]')]
-          .filter((row) => getComputedStyle(row).visibility === 'visible').length,
+        visibleRows: [
+          ...element.querySelectorAll('[data-testid="customer-display-order-row"]'),
+        ].filter((row) => getComputedStyle(row).visibility === 'visible').length,
       }));
       expect(layout.scrollWidth, 'the TV board has no horizontal overflow').toBeLessThanOrEqual(
         layout.clientWidth,
@@ -1685,9 +1692,10 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
       }));
-      expect(documentWidths.scrollWidth, 'the document has no horizontal overflow').toBeLessThanOrEqual(
-        documentWidths.clientWidth,
-      );
+      expect(
+        documentWidths.scrollWidth,
+        'the document has no horizontal overflow',
+      ).toBeLessThanOrEqual(documentWidths.clientWidth);
       await page.screenshot({ path: viewport.screenshot });
     }
 
@@ -1718,9 +1726,10 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       'the first ordinary ready page is initially shown',
     ).toBeVisible();
     const firstOrdinaryPage = await readReadyIds();
-    expect(firstOrdinaryPage.length, 'the ready column starts with one of several pages').toBeLessThan(
-      50,
-    );
+    expect(
+      firstOrdinaryPage.length,
+      'the ready column starts with one of several pages',
+    ).toBeLessThan(50);
     const pinned = {
       header: await elementTop(page.locator('header'), 'display header'),
       heading: await elementTop(
@@ -1733,8 +1742,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     const initialUpdatedText = (await updatedAt.textContent()) ?? '';
     await page.clock.runFor(1);
     const updatedFeed = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
+      (response) => new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
     );
 
     const newReadyOrders = [
@@ -1776,7 +1784,11 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       ready.locator('[data-order-id="display-ready-new-1"]:visible'),
       'the first rotation prioritizes newly ready orders',
     ).toBeVisible();
-    expectPinned(await elementTop(page.locator('header'), 'display header'), pinned.header, 'display header');
+    expectPinned(
+      await elementTop(page.locator('header'), 'display header'),
+      pinned.header,
+      'display header',
+    );
     expectPinned(
       await elementTop(page.getByRole('heading', { name: 'READY FOR PICKUP' }), 'ready heading'),
       pinned.heading,
@@ -1784,8 +1796,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     );
 
     const nextFeedUpdate = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
+      (response) => new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
     );
     feed.replace([...displayOrders(20, 50), ...newReadyOrders]);
     await page.clock.runFor(3000);
@@ -1798,7 +1809,11 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       secondOrdinaryPage.every((id) => id?.startsWith('display-ready-')),
       'the next rotation returns to older eligible orders during arrivals',
     ).toBe(true);
-    expectPinned(await elementTop(page.locator('header'), 'display header'), pinned.header, 'display header');
+    expectPinned(
+      await elementTop(page.locator('header'), 'display header'),
+      pinned.header,
+      'display header',
+    );
     expectPinned(
       await elementTop(page.getByRole('heading', { name: 'READY FOR PICKUP' }), 'ready heading'),
       pinned.heading,
@@ -1826,7 +1841,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       board
         .locator('[data-order-id]:visible')
         .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
-    await expect(preparing.locator('[data-order-id^="display-preparing-"]:visible').first()).toBeVisible();
+    await expect(
+      preparing.locator('[data-order-id^="display-preparing-"]:visible').first(),
+    ).toBeVisible();
     await expect(ready.locator('[data-order-id^="display-ready-"]:visible').first()).toBeVisible();
     const firstPreparingPage = await readIds(preparing);
     const readyPage = await readIds(ready);
@@ -1883,7 +1900,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await expect.poll(readIds).not.toEqual(currentPage);
   });
 
-  test('orders removed from the eligible feed leave the board on the next poll', async ({ page }) => {
+  test('orders removed from the eligible feed leave the board on the next poll', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.clock.install();
@@ -1898,7 +1917,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await expect(ready.locator('[data-order-id^="display-ready-"]:visible')).toHaveCount(0);
   });
 
-  test('a delayed response longer than the poll interval still updates the board', async ({ page }) => {
+  test('a delayed response longer than the poll interval still updates the board', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     let delayOrders = false;
@@ -1984,9 +2005,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     const ready = page.getByTestId('customer-display-ready-scroll');
     await expect(preparing.locator('[data-order-id="display-preparing-12"]:visible')).toBeVisible();
     await expect(ready.locator('[data-order-id="display-ready-12"]:visible')).toBeVisible();
-    await expect(
-      preparing.locator('[data-order-id^="display-preparing-"]:visible'),
-    ).toHaveCount(12);
+    await expect(preparing.locator('[data-order-id^="display-preparing-"]:visible')).toHaveCount(
+      12,
+    );
     await expect(ready.locator('[data-order-id^="display-ready-"]:visible')).toHaveCount(12);
 
     const widths = await page.evaluate(() => ({
@@ -2025,12 +2046,18 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     );
     await page.reload();
     await expect(page.getByText('Loading orders…'), 'the loading state renders').toBeVisible();
-    await expect(page.locator('header'), 'the business header stays visible while loading').toBeVisible();
+    await expect(
+      page.locator('header'),
+      'the business header stays visible while loading',
+    ).toBeVisible();
     await expect(
       page.getByText('No orders currently being prepared'),
       'the empty preparing state renders',
     ).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('No orders are ready yet'), 'the empty ready state renders').toBeVisible();
+    await expect(
+      page.getByText('No orders are ready yet'),
+      'the empty ready state renders',
+    ).toBeVisible();
     const emptyBoardHeight = await page
       .getByTestId('customer-display-preparing-scroll')
       .evaluate((element) => element.clientHeight);

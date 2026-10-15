@@ -143,19 +143,16 @@ function OrderBoardSection({
   const probeRowsRef = useRef(new Map<string, HTMLDivElement>());
   const priorityCallbackRef = useRef(onPriorityOrdersShown);
 
-  const orderById = useMemo(() => new Map(orders.map((order) => [getOrderId(order), order])), [orders]);
+  const orderById = useMemo(
+    () => new Map(orders.map((order) => [getOrderId(order), order])),
+    [orders],
+  );
   const priorityOrders = useMemo(
-    () =>
-      isReady
-        ? orders.filter((order) => newlyReadyOrderIds.has(getOrderId(order)))
-        : [],
+    () => (isReady ? orders.filter((order) => newlyReadyOrderIds.has(getOrderId(order))) : []),
     [isReady, newlyReadyOrderIds, orders],
   );
   const ordinaryOrders = useMemo(
-    () =>
-      isReady
-        ? orders.filter((order) => !newlyReadyOrderIds.has(getOrderId(order)))
-        : orders,
+    () => (isReady ? orders.filter((order) => !newlyReadyOrderIds.has(getOrderId(order))) : orders),
     [isReady, newlyReadyOrderIds, orders],
   );
   const areOrdersMeasured = useMemo(
@@ -172,7 +169,12 @@ function OrderBoardSection({
     () =>
       combinedPages.length <= 1 || priorityOrders.length === 0
         ? []
-        : paginateOrders(priorityOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+        : paginateOrders(
+            priorityOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
     [
       combinedPages.length,
       metrics.availableHeight,
@@ -185,7 +187,12 @@ function OrderBoardSection({
     () =>
       combinedPages.length <= 1 || priorityOrders.length === 0
         ? combinedPages
-        : paginateOrders(ordinaryOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+        : paginateOrders(
+            ordinaryOrders,
+            metrics.availableHeight,
+            metrics.rowHeights,
+            metrics.rowGap,
+          ),
     [
       combinedPages,
       metrics.availableHeight,
@@ -271,7 +278,9 @@ function OrderBoardSection({
     const style = window.getComputedStyle(list);
     const availableHeight = Math.max(
       0,
-      list.clientHeight - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom),
+      list.clientHeight -
+        Number.parseFloat(style.paddingTop) -
+        Number.parseFloat(style.paddingBottom),
     );
     const measuredRowGap = Number.parseFloat(window.getComputedStyle(probes).rowGap);
     const rowGap = Number.isFinite(measuredRowGap) ? measuredRowGap : ORDER_ROW_GAP_FALLBACK;
@@ -426,7 +435,9 @@ function OrderBoardSection({
   }, [hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
 
   const visibleOrders = isPagedLayout
-    ? activePage.orderIds.map((id) => orderById.get(id)).filter((order): order is BoardOrder => !!order)
+    ? activePage.orderIds
+        .map((id) => orderById.get(id))
+        .filter((order): order is BoardOrder => !!order)
     : orders;
   const dataTestId = isReady
     ? 'customer-display-ready-scroll'
@@ -439,8 +450,12 @@ function OrderBoardSection({
       <div
         className={`shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
       >
-        <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">{title}</h2>
-        <p className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}>
+        <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">
+          {title}
+        </h2>
+        <p
+          className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}
+        >
           {hint}
         </p>
       </div>
@@ -456,11 +471,7 @@ function OrderBoardSection({
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
             {visibleOrders.map((order) => (
-              <OrderBoardRow
-                key={getOrderId(order)}
-                accent={accent}
-                order={order}
-              />
+              <OrderBoardRow key={getOrderId(order)} accent={accent} order={order} />
             ))}
           </div>
         )}
@@ -583,7 +594,8 @@ export default function CustomerDisplayPage() {
         setError(false);
         setLastUpdated(new Date());
       } catch {
-        if (session === feedSessionRef.current && request === feedRequestRef.current) setError(true);
+        if (session === feedSessionRef.current && request === feedRequestRef.current)
+          setError(true);
       } finally {
         if (
           feedInFlightRef.current?.session === session &&
@@ -591,7 +603,8 @@ export default function CustomerDisplayPage() {
         ) {
           feedInFlightRef.current = null;
         }
-        if (session === feedSessionRef.current && request === feedRequestRef.current) setLoading(false);
+        if (session === feedSessionRef.current && request === feedRequestRef.current)
+          setLoading(false);
       }
     },
     [acceptOrders],
@@ -622,7 +635,8 @@ export default function CustomerDisplayPage() {
         setError(false);
         setLastUpdated(new Date());
       } catch {
-        if (session === feedSessionRef.current && request === feedRequestRef.current) setError(true);
+        if (session === feedSessionRef.current && request === feedRequestRef.current)
+          setError(true);
       } finally {
         if (
           feedInFlightRef.current?.session === session &&
@@ -630,7 +644,8 @@ export default function CustomerDisplayPage() {
         ) {
           feedInFlightRef.current = null;
         }
-        if (session === feedSessionRef.current && request === feedRequestRef.current) setLoading(false);
+        if (session === feedSessionRef.current && request === feedRequestRef.current)
+          setLoading(false);
       }
     },
     [acceptOrders],
@@ -682,9 +697,7 @@ export default function CustomerDisplayPage() {
 
     const session = ++feedSessionRef.current;
     const refresh = () =>
-      pairedToken
-        ? fetchPairedFeed(pairedToken, session)
-        : fetchOrders(session);
+      pairedToken ? fetchPairedFeed(pairedToken, session) : fetchOrders(session);
     const initial = setTimeout(refresh, 0);
     const interval = setInterval(refresh, config.refresh_seconds * 1000);
     return () => {
@@ -737,7 +750,9 @@ export default function CustomerDisplayPage() {
           <div className="break-all text-[clamp(1.875rem,1.5vw,3.75rem)] font-bold tracking-tight">
             {pairedToken ? businessName : currentTenant?.business_name}
           </div>
-          <div className="mt-1 text-[clamp(1rem,0.8vw,2rem)] text-slate-400">{t('orderStatus')}</div>
+          <div className="mt-1 text-[clamp(1rem,0.8vw,2rem)] text-slate-400">
+            {t('orderStatus')}
+          </div>
         </div>
         <div className="max-w-[50%] shrink-0 text-end text-[clamp(0.75rem,0.65vw,1.5rem)] text-slate-500">
           {error

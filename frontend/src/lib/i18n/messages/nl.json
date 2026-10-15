@@ -219,6 +219,7 @@
     "loadingOrders": "Bestellingen laden…",
     "connecting": "Verbinden…",
     "connectionProblem": "Verbindingsprobleem — opnieuw proberen…",
+    "staleData": "Verbinding verbroken. De laatst beschikbare bestellingen worden weergegeven.",
     "updatedAt": "Bijgewerkt {time}",
     "settingsTitle": "Klantscherm",
     "settingsHint": "Kies welke bestellingen op het statusbord voor klanten verschijnen.",

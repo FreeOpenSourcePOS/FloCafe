@@ -219,6 +219,7 @@
     "loadingOrders": "주문을 불러오는 중…",
     "connecting": "연결 중…",
     "connectionProblem": "연결 문제 — 다시 시도하는 중…",
+    "staleData": "연결이 끊겼습니다. 마지막으로 확인한 주문을 표시합니다.",
     "updatedAt": "업데이트됨 {time}",
     "settingsTitle": "고객용 디스플레이",
     "settingsHint": "고객용 주문 상태 보드에 표시할 주문을 선택하세요.",

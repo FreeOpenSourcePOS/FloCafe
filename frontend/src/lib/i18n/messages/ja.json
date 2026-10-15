@@ -219,6 +219,7 @@
     "loadingOrders": "注文を読み込み中…",
     "connecting": "接続中…",
     "connectionProblem": "接続に問題があります — 再試行中…",
+    "staleData": "接続が切れました。最後に取得できた注文を表示しています。",
     "updatedAt": "更新 {time}",
     "settingsTitle": "カスタマーディスプレイ",
     "settingsHint": "お客様向けの注文状況ボードに表示する注文を選択します。",

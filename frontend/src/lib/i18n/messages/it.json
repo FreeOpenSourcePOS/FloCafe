@@ -219,6 +219,7 @@
     "loadingOrders": "Caricamento ordini…",
     "connecting": "Connessione in corso…",
     "connectionProblem": "Problema di connessione — nuovo tentativo…",
+    "staleData": "Connessione persa. Sono mostrati gli ultimi ordini disponibili.",
     "updatedAt": "Aggiornato {time}",
     "settingsTitle": "Display clienti",
     "settingsHint": "Scegli quali ordini mostrare sulla bacheca di stato degli ordini per i clienti.",

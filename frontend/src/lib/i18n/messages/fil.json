@@ -219,6 +219,7 @@
     "loadingOrders": "Nilo-load ang mga order…",
     "connecting": "Kumokonekta…",
     "connectionProblem": "May problema sa koneksyon — sinusubukang muli…",
+    "staleData": "Nawala ang koneksyon. Ipinapakita ang mga huling order na available.",
     "updatedAt": "Na-update {time}",
     "settingsTitle": "Display ng customer",
     "settingsHint": "Piliin kung aling mga order ang lalabas sa status board ng order para sa mga customer.",

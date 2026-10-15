@@ -219,6 +219,7 @@
     "loadingOrders": "Memuat pesanan…",
     "connecting": "Menyambungkan…",
     "connectionProblem": "Masalah koneksi — mencoba lagi…",
+    "staleData": "Koneksi terputus. Menampilkan pesanan terakhir yang tersedia.",
     "updatedAt": "Diperbarui {time}",
     "settingsTitle": "Layar pelanggan",
     "settingsHint": "Pilih pesanan yang tampil di papan status pesanan untuk pelanggan.",

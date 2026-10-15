@@ -219,6 +219,7 @@
     "loadingOrders": "Chargement des commandes…",
     "connecting": "Connexion…",
     "connectionProblem": "Problème de connexion — nouvelle tentative…",
+    "staleData": "Connexion perdue. Affichage des dernières commandes disponibles.",
     "updatedAt": "Mis à jour {time}",
     "settingsTitle": "Écran client",
     "settingsHint": "Choisissez les commandes affichées sur le tableau d'état des commandes destiné aux clients.",

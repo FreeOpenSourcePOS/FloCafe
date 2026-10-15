@@ -219,6 +219,7 @@
     "loadingOrders": "Bestellungen werden geladen…",
     "connecting": "Verbindung wird hergestellt…",
     "connectionProblem": "Verbindungsproblem — neuer Versuch…",
+    "staleData": "Verbindung unterbrochen. Die zuletzt verfügbaren Bestellungen werden angezeigt.",
     "updatedAt": "Aktualisiert {time}",
     "settingsTitle": "Kundenanzeige",
     "settingsHint": "Legen Sie fest, welche Bestellungen auf der kundenseitigen Statusanzeige erscheinen.",

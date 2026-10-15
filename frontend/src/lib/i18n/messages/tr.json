@@ -219,6 +219,7 @@
     "loadingOrders": "Siparişler yükleniyor…",
     "connecting": "Bağlanıyor…",
     "connectionProblem": "Bağlantı sorunu — yeniden deneniyor…",
+    "staleData": "Bağlantı kesildi. Son kullanılabilir siparişler gösteriliyor.",
     "updatedAt": "Güncellendi {time}",
     "settingsTitle": "Müşteri ekranı",
     "settingsHint": "Müşteri sipariş durumu panosunda hangi siparişlerin görüneceğini seçin.",

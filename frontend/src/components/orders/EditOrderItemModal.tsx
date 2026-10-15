@@ -78,9 +78,6 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   const actorId = user ? String(user.id) : null;
   const tenantId = currentTenant?.id ?? null;
 
-  const [refreshedItem, setRefreshedItem] = useState<OrderItem | null>(null);
-  const currentItem = refreshedItem && refreshedItem.id === item.id ? refreshedItem : item;
-
   const [attemptState, setAttemptState] = useState<AttemptState>(() =>
     readInitialAttemptState(tenantId, actorId, orderId, item.id),
   );
@@ -91,9 +88,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   );
   const [quantity, setQuantity] = useState(() =>
     String(
-      lockedAttempt?.body.quantity ??
-        lockedAttempt?.body.replacement?.quantity ??
-        currentItem.quantity,
+      lockedAttempt?.body.quantity ?? lockedAttempt?.body.replacement?.quantity ?? item.quantity,
     ),
   );
   const [products, setProducts] = useState<Product[]>([]);
@@ -143,7 +138,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     (lockedAttempt !== null ||
       (quantityValid &&
         (mode === 'quantity'
-          ? parsedQuantity !== Number(currentItem.quantity)
+          ? parsedQuantity !== Number(item.quantity)
           : !!effectiveSelected && (variants.length === 0 || !!variantId))));
 
   const handleClose = () => {
@@ -156,11 +151,6 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
       const { data } = await api.get(`/orders/${orderId}`);
       const refreshedOrder = (data?.order ?? data) as Order | undefined;
       if (refreshedOrder && typeof refreshedOrder === 'object' && 'id' in refreshedOrder) {
-        const latestItem = refreshedOrder.items?.find((entry) => entry.id === currentItem.id);
-        if (latestItem) {
-          setRefreshedItem(latestItem);
-          setQuantity(String(latestItem.quantity));
-        }
         onSaved(refreshedOrder);
       }
     } catch {
@@ -184,10 +174,10 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
 
     const buildBody = (): OrderItemEditAttemptBody => {
       const expectedEditVersion =
-        typeof currentItem.edit_version === 'number' &&
-        Number.isSafeInteger(currentItem.edit_version) &&
-        currentItem.edit_version >= 0
-          ? currentItem.edit_version
+        typeof item.edit_version === 'number' &&
+        Number.isSafeInteger(item.edit_version) &&
+        item.edit_version >= 0
+          ? item.edit_version
           : 0;
       return mode === 'quantity'
         ? { expected_edit_version: expectedEditVersion, quantity: parsedQuantity }
@@ -202,9 +192,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     };
 
     try {
-      const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, currentItem.id);
+      const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, item.id);
       const committedOrder = await withOrderItemEditAttemptLock(scopedKey, async () => {
-        const existing = readOrderItemEditAttempt(tenantId, actorId, orderId, currentItem.id);
+        const existing = readOrderItemEditAttempt(tenantId, actorId, orderId, item.id);
         let snapshot: OrderItemEditAttemptSnapshot;
 
         if (existing) {
@@ -221,9 +211,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
         } else {
           snapshot = newOrderItemEditAttempt({
             mode,
-            path: `/orders/${orderId}/items/${currentItem.id}/edit`,
+            path: `/orders/${orderId}/items/${item.id}/edit`,
             orderId,
-            itemId: currentItem.id,
+            itemId: item.id,
             body: buildBody(),
             actorId,
             tenantId,
@@ -299,7 +289,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     }
   };
 
-  const heading = formatItemHeading(currentItem.product_name, currentItem.variant_selection);
+  const heading = formatItemHeading(item.product_name, item.variant_selection);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">

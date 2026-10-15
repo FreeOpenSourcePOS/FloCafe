@@ -533,40 +533,42 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
       </div>
 
       {customizingProduct && (
-        <AddonModal
-          product={customizingProduct}
-          currency={currentTenant?.currency || 'USD'}
-          country={currentTenant?.country}
-          initialQuantity={parsedQuantity > 0 ? parsedQuantity : 1}
-          initialVariant={
-            effectiveReplacement?.product.id === customizingProduct.id
-              ? effectiveReplacement.variant
-              : null
-          }
-          initialAddons={
-            effectiveReplacement?.product.id === customizingProduct.id
-              ? effectiveReplacement.addons
-              : []
-          }
-          initialInstructions={
-            effectiveReplacement?.product.id === customizingProduct.id
-              ? effectiveReplacement.instructions
-              : ''
-          }
-          mode="edit"
-          onAdd={(prod, qty, addons, instructions, variant) => {
-            setReplacementConfig({
-              product: prod,
-              quantity: qty,
-              variant,
-              addons,
-              instructions,
-            });
-            setQuantity(String(qty));
-            setCustomizingProduct(null);
-          }}
-          onClose={() => setCustomizingProduct(null)}
-        />
+        <div className="relative z-[70]">
+          <AddonModal
+            product={customizingProduct}
+            currency={currentTenant?.currency || 'USD'}
+            country={currentTenant?.country}
+            initialQuantity={parsedQuantity > 0 ? parsedQuantity : 1}
+            initialVariant={
+              effectiveReplacement?.product.id === customizingProduct.id
+                ? effectiveReplacement.variant
+                : null
+            }
+            initialAddons={
+              effectiveReplacement?.product.id === customizingProduct.id
+                ? effectiveReplacement.addons
+                : []
+            }
+            initialInstructions={
+              effectiveReplacement?.product.id === customizingProduct.id
+                ? effectiveReplacement.instructions
+                : ''
+            }
+            mode="edit"
+            onAdd={(prod, qty, addons, instructions, variant) => {
+              setReplacementConfig({
+                product: prod,
+                quantity: qty,
+                variant,
+                addons,
+                instructions,
+              });
+              setQuantity(String(qty));
+              setCustomizingProduct(null);
+            }}
+            onClose={() => setCustomizingProduct(null)}
+          />
+        </div>
       )}
     </>
   );

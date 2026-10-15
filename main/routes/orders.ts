@@ -4449,15 +4449,15 @@ router.patch(
                 ),
               }));
               const heldRecipeSnapshot = parseRecipeSnapshot(oldItem.recipe_snapshot);
-              if (heldRecipeSnapshot) {
-                newItem.recipe_snapshot = {
-                  ...heldRecipeSnapshot,
-                  components: heldRecipeSnapshot.components.map((component) => ({
-                    ...component,
-                    quantity: Number((component.quantity * heldRatio).toFixed(6)),
-                  })),
-                };
-              }
+              newItem.recipe_snapshot = heldRecipeSnapshot
+                ? {
+                    ...heldRecipeSnapshot,
+                    components: heldRecipeSnapshot.components.map((component) => ({
+                      ...component,
+                      quantity: Number((component.quantity * heldRatio).toFixed(6)),
+                    })),
+                  }
+                : null;
               const oldTarget = orderItemInventoryTarget(db, oldItem);
               newItem.inventory_deducted_quantity = Number(
                 (Number(oldItem.inventory_deducted_quantity || 0) * heldRatio).toFixed(6),

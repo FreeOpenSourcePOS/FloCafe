@@ -997,6 +997,30 @@ async function main() {
       // Restore recipe back to 10 for subsequent tests
       db.prepare('UPDATE recipe_items SET quantity = 10 WHERE supply_id = ?').run(beans.id);
 
+      const noRecipeOrder = seedOrder(db, 'NO-RECIPE-PENDING', 'pending', 3, 3);
+      db.prepare('UPDATE order_items SET recipe_snapshot = NULL WHERE id = ?').run(noRecipeOrder.itemId);
+      const supplyBeforeNoRecipe = stockOfSupply(beans.id);
+      const noRecipeResp = await edit(
+        noRecipeOrder.orderId,
+        noRecipeOrder.itemId,
+        { quantity: 2 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(noRecipeResp.status, 200, 'pending reduction succeeds when line had no recipe snapshot');
+      assertEqualOrThrow(
+        stockOfSupply(beans.id),
+        supplyBeforeNoRecipe,
+        'reducing a line with no recipe snapshot does not deplete catalog recipe supplies',
+      );
+      const noRecipeNewItem = db
+        .prepare('SELECT recipe_snapshot FROM order_items WHERE order_id = ? AND status = ?')
+        .get(noRecipeOrder.orderId, 'pending') as any;
+      assertEqualOrThrow(
+        noRecipeNewItem?.recipe_snapshot,
+        null,
+        'new pending line keeps null recipe snapshot',
+      );
+
       // Verify bill print preview excludes cancelled/voided/superseded lines and matches totals
       const printPreview = await api(baseUrl, '/api/printers/print-bill', {
         method: 'POST',

@@ -129,9 +129,9 @@ test.describe('orders master/detail is the default layout', () => {
     });
     expect(cancelled.ok()).toBeTruthy();
 
-    await expect(
-      page.getByText('This order is no longer in the current list.'),
-    ).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('This order is no longer in the current list.')).toBeVisible({
+      timeout: 15000,
+    });
     await expect(
       page.getByTestId('orders-detail-panel').getByText(`#${order.order_number}`),
     ).toBeVisible();
@@ -147,9 +147,7 @@ test.describe('orders master/detail is the default layout', () => {
     await expect(
       page.getByTestId('orders-detail-panel').getByText(`#${order.order_number}`),
     ).toBeVisible();
-    await expect(
-      page.getByText('This order is no longer in the current list.'),
-    ).toBeHidden();
+    await expect(page.getByText('This order is no longer in the current list.')).toBeHidden();
   });
 
   test('ignores an older order search response after a newer filter request completes', async ({

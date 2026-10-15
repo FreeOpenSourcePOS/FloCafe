@@ -437,18 +437,12 @@ export default function OrdersPage() {
             ...(cursor !== undefined ? { before_id: cursor } : {}),
           },
         });
-        if (
-          fetchId !== ordersFetchIdRef.current ||
-          requestFilterKey !== ordersFilterKeyRef.current
-        )
+        if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
           return true;
         orders.push(...(data.orders || []));
         nextCursor = data.nextCursor ?? null;
       }
-      if (
-        fetchId !== ordersFetchIdRef.current ||
-        requestFilterKey !== ordersFilterKeyRef.current
-      )
+      if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
         return true;
       const selectedId = selectedOrderIdRef.current;
       if (
@@ -503,17 +497,11 @@ export default function OrdersPage() {
       });
       return true;
     } catch {
-      if (
-        fetchId === ordersFetchIdRef.current &&
-        requestFilterKey === ordersFilterKeyRef.current
-      )
+      if (fetchId === ordersFetchIdRef.current && requestFilterKey === ordersFilterKeyRef.current)
         toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
-      if (
-        fetchId === ordersFetchIdRef.current &&
-        requestFilterKey === ordersFilterKeyRef.current
-      ) {
+      if (fetchId === ordersFetchIdRef.current && requestFilterKey === ordersFilterKeyRef.current) {
         if (cursor === undefined) {
           ordersRefreshInProgressRef.current = false;
           setLoading(false);
@@ -1690,7 +1678,10 @@ export default function OrdersPage() {
 
           {/* Detail pane — fills the remaining row width on desktop, full width with back nav below md. */}
           <div
-            className={cn(selectedOrderId !== null ? 'flex' : 'hidden md:flex', 'w-full md:flex-1 min-w-0')}
+            className={cn(
+              selectedOrderId !== null ? 'flex' : 'hidden md:flex',
+              'w-full md:flex-1 min-w-0',
+            )}
           >
             <OrderDetailPanel
               order={selectedOrder ?? null}
@@ -1823,22 +1814,25 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
-      {tabFilter !== 'held' && ordersLayout !== 'split' && !loading && nextOrdersCursor !== null && (
-        <div className="shrink-0 text-center py-3 border-t border-border">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchOrders(nextOrdersCursor)}
-            disabled={loadingMoreOrders}
-          >
-            {loadingMoreOrders ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              tCommon('loadMore')
-            )}
-          </Button>
-        </div>
-      )}
+      {tabFilter !== 'held' &&
+        ordersLayout !== 'split' &&
+        !loading &&
+        nextOrdersCursor !== null && (
+          <div className="shrink-0 text-center py-3 border-t border-border">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchOrders(nextOrdersCursor)}
+              disabled={loadingMoreOrders}
+            >
+              {loadingMoreOrders ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                tCommon('loadMore')
+              )}
+            </Button>
+          </div>
+        )}
 
       {/* Payment Modal */}
       {paymentBill && (

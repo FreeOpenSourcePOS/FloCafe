@@ -15,10 +15,16 @@ export interface ProductVariant {
   is_active: number;
 }
 
-const VARIANT_COLUMNS = 'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, recipe_multiplier, is_active';
+const VARIANT_COLUMNS =
+  'id, product_id, name, sku, price, online_price, track_inventory, inventory_product_id, inventory_deduction_quantity, recipe_multiplier, is_active';
 
-export function loadProductVariant(db: ReturnType<typeof getDatabase>, variantId: string): ProductVariant | undefined {
-  return db.prepare(`SELECT ${VARIANT_COLUMNS} FROM product_variants WHERE id = ?`).get(variantId) as ProductVariant | undefined;
+export function loadProductVariant(
+  db: ReturnType<typeof getDatabase>,
+  variantId: string,
+): ProductVariant | undefined {
+  return db
+    .prepare(`SELECT ${VARIANT_COLUMNS} FROM product_variants WHERE id = ?`)
+    .get(variantId) as ProductVariant | undefined;
 }
 
 /**
@@ -32,6 +38,7 @@ export function resolveOrderItemVariant(
   product: { id: string; name?: string },
   item: { variant_id?: unknown },
   isOnlineOrder: boolean,
+  options?: { allowInactive?: boolean },
 ): ProductVariant | null {
   const supplied = item.variant_id;
   if (supplied !== undefined && supplied !== null && typeof supplied !== 'string') {
@@ -39,9 +46,14 @@ export function resolveOrderItemVariant(
   }
   const variantId = typeof supplied === 'string' ? supplied.trim() : '';
   if (!variantId) {
-    const hasVariants = db.prepare('SELECT 1 FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1').get(product.id);
+    const hasVariants = db
+      .prepare('SELECT 1 FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1')
+      .get(product.id);
     if (hasVariants) {
-      throw Object.assign(new Error(`A variant must be selected for ${product.name || product.id}`), { statusCode: 400 });
+      throw Object.assign(
+        new Error(`A variant must be selected for ${product.name || product.id}`),
+        { statusCode: 400 },
+      );
     }
     return null;
   }
@@ -51,10 +63,15 @@ export function resolveOrderItemVariant(
     throw Object.assign(new Error(`Variant ${variantId} was not found`), { statusCode: 400 });
   }
   if (variant.product_id !== product.id) {
-    throw Object.assign(new Error(`Variant "${variant.name}" is not an option for ${product.name || product.id}`), { statusCode: 400 });
+    throw Object.assign(
+      new Error(`Variant "${variant.name}" is not an option for ${product.name || product.id}`),
+      { statusCode: 400 },
+    );
   }
-  if (Number(variant.is_active) !== 1) {
-    throw Object.assign(new Error(`Variant "${variant.name}" is not available`), { statusCode: 400 });
+  if (Number(variant.is_active) !== 1 && !options?.allowInactive) {
+    throw Object.assign(new Error(`Variant "${variant.name}" is not available`), {
+      statusCode: 400,
+    });
   }
   return variant;
 }

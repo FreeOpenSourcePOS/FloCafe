@@ -785,7 +785,11 @@ function insertOrderItems(
 
     // Validate quantity and price
     validateProductQuantity(product, quantity);
-    const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder);
+    const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder, {
+      // A quantity edit keeps the stored selection even if the merchant has
+      // since disabled the variant; the line was valid when it was sold.
+      allowInactive: !!context.preserveUnitPrice,
+    });
     const unitPrice = context.preserveUnitPrice
       ? Number(item.unit_price)
       : variant
@@ -4196,10 +4200,12 @@ router.patch(
         const oldAddons = db
           .prepare('SELECT * FROM order_item_addons WHERE order_item_id = ? ORDER BY id')
           .all(oldItem.id) as {
+          id: number;
           addon_id: string | null;
           addon_name: string;
           price: number;
           quantity: number;
+          inventory_deducted_quantity: number;
         }[];
 
         const oldQuantity = Number(oldItem.quantity);
@@ -4254,9 +4260,19 @@ router.patch(
             ? JSON.stringify(taxResult.tax_snapshot)
             : null;
 
+          // The dropped units are waste that stays out of stock, so the line's
+          // held deduction, add-on snapshot, and recipe snapshot shrink to the
+          // remaining quantity. A later cancel restores exactly what the line
+          // still holds instead of the original deduction (regression: wasted
+          // stock returning to available when a back-to-pending line is edited).
+          const heldRatio = newQuantity / oldQuantity;
+          const heldRecipeSnapshot = parseRecipeSnapshot(oldItem.recipe_snapshot);
+
           db.prepare(`
             UPDATE order_items
             SET quantity = ?,
+                inventory_deducted_quantity = ?,
+                recipe_snapshot = ?,
                 subtotal = ?,
                 tax_amount = ?,
                 tax_breakdown = ?,
@@ -4268,6 +4284,16 @@ router.patch(
             WHERE id = ?
           `).run(
             newQuantity,
+            Number((Number(oldItem.inventory_deducted_quantity) * heldRatio).toFixed(6)),
+            heldRecipeSnapshot
+              ? JSON.stringify({
+                  ...heldRecipeSnapshot,
+                  components: heldRecipeSnapshot.components.map((component) => ({
+                    ...component,
+                    quantity: Number((component.quantity * heldRatio).toFixed(6)),
+                  })),
+                })
+              : oldItem.recipe_snapshot,
             itemSubtotal,
             taxResult.tax_amount,
             JSON.stringify(taxResult.tax_breakdown),
@@ -4278,6 +4304,15 @@ router.patch(
             now(),
             oldItem.id,
           );
+
+          for (const addon of oldAddons) {
+            db.prepare(
+              'UPDATE order_item_addons SET inventory_deducted_quantity = ? WHERE id = ?',
+            ).run(
+              Number((Number(addon.inventory_deducted_quantity || 0) * heldRatio).toFixed(6)),
+              addon.id,
+            );
+          }
 
           superseded = false;
           wastedQuantity = Number((oldQuantity - newQuantity).toFixed(6));
@@ -4324,20 +4359,36 @@ router.patch(
 
           try {
             validateItemNotes(db, newItem.special_instructions);
-            const resolved = resolveItemAddons(
-              db,
-              newItem.product_id,
-              newItem.addons,
-              newItem.quantity,
-            );
-            if (preserveUnitPrice && Array.isArray(resolved)) {
-              const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
-              for (const addon of resolved) {
-                const original = originalPrice.get(addon.id);
-                if (original !== undefined) addon.price = original;
+            if (hasQuantity && newQuantity < oldQuantity) {
+              // A reduction needs no extra units, so the stored selections stay
+              // authoritative even when the catalog has since disabled the sold
+              // variant or add-on; their held stock scales with the line.
+              const heldRatio = newQuantity / oldQuantity;
+              newItem.addons = oldAddons.map((addon) => ({
+                id: addon.addon_id ?? undefined,
+                name: addon.addon_name,
+                price: addon.price,
+                quantity: addon.quantity,
+                inventory_deducted_quantity: Number(
+                  (Number(addon.inventory_deducted_quantity || 0) * heldRatio).toFixed(6),
+                ),
+              }));
+            } else {
+              const resolved = resolveItemAddons(
+                db,
+                newItem.product_id,
+                newItem.addons,
+                newItem.quantity,
+              );
+              if (preserveUnitPrice && Array.isArray(resolved)) {
+                const originalPrice = new Map(oldAddons.map((a) => [a.addon_id, a.price]));
+                for (const addon of resolved) {
+                  const original = originalPrice.get(addon.id);
+                  if (original !== undefined) addon.price = original;
+                }
               }
+              newItem.addons = resolved;
             }
-            newItem.addons = resolved;
           } catch (err: unknown) {
             throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid item'), {
               statusCode: 400,

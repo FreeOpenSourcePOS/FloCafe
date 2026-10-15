@@ -86,6 +86,36 @@ interface CancelModal {
   reason: string;
   freeTable: boolean;
   overridePin: string;
+  requiresPin?: boolean;
+}
+
+function orderHasCollectedPayment(order: Order): boolean {
+  const bills =
+    order.bills && order.bills.length > 0 ? order.bills : order.bill ? [order.bill] : [];
+  return bills.some((candidate) => {
+    const status = String(candidate.payment_status || '');
+    const paidAmount = Number(candidate.paid_amount || 0);
+    const total = Number(candidate.total || 0);
+    const detailsCount = Array.isArray(candidate.payment_details)
+      ? candidate.payment_details.length
+      : 0;
+    return (
+      (paidAmount > 0 && status !== 'refunded') ||
+      status === 'partial' ||
+      status === 'partially_refunded' ||
+      (status === 'paid' && (total > 0 || detailsCount > 0))
+    );
+  });
+}
+
+function orderRequiresCancelPin(order: Order): boolean {
+  return (
+    order.status !== 'pending' ||
+    Boolean(
+      order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status)),
+    ) ||
+    orderHasCollectedPayment(order)
+  );
 }
 
 interface VoidItemModal {
@@ -1420,12 +1450,22 @@ export default function OrdersPage() {
         override_pin: cancelModal.overridePin || undefined,
       });
       toast.success(tOrders('orderCancelled'));
+      setCancelModal(null);
       fetchOrders(undefined, { refreshLoadedPages: true });
-    } catch {
+    } catch (error) {
+      const err = error as { response?: { data?: { error?: string } }; message?: string };
+      const message =
+        typeof err?.response?.data?.error === 'string'
+          ? err.response.data.error
+          : typeof err?.message === 'string'
+            ? err.message
+            : '';
+      if (/PIN/i.test(message)) {
+        setCancelModal((prev) => (prev ? { ...prev, requiresPin: true } : prev));
+      }
       toast.error(tOrders('cancelOrderFailed'));
     } finally {
       setCancellingOrderId(null);
-      setCancelModal(null);
     }
   };
 
@@ -1943,10 +1983,7 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {(cancelModal.order.status !== 'pending' ||
-                cancelModal.order.items?.some((i) =>
-                  ['preparing', 'ready', 'served', 'completed'].includes(i.status),
-                )) && (
+              {(cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order)) && (
                 <div>
                   <label
                     htmlFor="overridePin"

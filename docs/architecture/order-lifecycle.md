@@ -166,7 +166,8 @@ enabled, excluding the share funded by wallet points.
 ## Order status
 
 `PATCH /api/orders/:id/status` advances the order through preparation, service, and terminal
-statuses. Its allowed transitions, no-op rule, and cancellation approval requirements are in the
+statuses inside a single transaction. Its allowed transitions, terminal completion and cancellation
+safeguards, `override_pin` approval rules, pending-only restock rule, and audit fields are in the
 [API reference](../reference/api.md#orders). Kitchen item status is a separate surface
 (`/api/order-items`); see [order-item status](../reference/api.md#order-item-status).
 

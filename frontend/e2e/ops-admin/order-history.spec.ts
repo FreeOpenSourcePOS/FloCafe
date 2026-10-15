@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 import { E2E_BASE_URL } from '../helpers/urls';
 import { login, placeOrderAndPayCash, addToCart, ownerAuth, money, fmt } from './helpers';
 
@@ -17,6 +17,24 @@ const RUN = Date.now().toString(36).slice(-4);
 let settled: Array<{ order_number: string; total: number; subtotal: number; customer?: string }>;
 let open: { order_number: string };
 let customerName: string;
+
+async function settleOrderViaBill(
+  request: APIRequestContext,
+  headers: Record<string, string>,
+  orderId: number,
+) {
+  const billRes = await request.post(`${E2E_BASE_URL}/api/bills/generate`, {
+    headers,
+    data: { order_id: orderId },
+  });
+  expect(billRes.ok()).toBeTruthy();
+  const { bill } = (await billRes.json()) as { bill: { id: number; total: number } };
+  const payRes = await request.post(`${E2E_BASE_URL}/api/bills/${bill.id}/payment`, {
+    headers,
+    data: { method: 'cash', amount: bill.total },
+  });
+  expect(payRes.ok()).toBeTruthy();
+}
 
 test.describe('@ci-tier2 operations admin - order history', () => {
   test.beforeAll(async ({ request }) => {
@@ -40,13 +58,11 @@ test.describe('@ci-tier2 operations admin - order history', () => {
         },
       });
       expect(res.status()).toBe(201);
-      const { order } = (await res.json()) as { order: { id: number; order_number: string; total: number; subtotal: number } };
+      const { order } = (await res.json()) as {
+        order: { id: number; order_number: string; total: number; subtotal: number };
+      };
       // Settle it the same way the POS does, so it lands in history as completed.
-      const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${order.id}/status`, {
-        headers: ownerAuth(),
-        data: { status: 'completed' },
-      });
-      expect(completed.ok()).toBeTruthy();
+      await settleOrderViaBill(request, ownerAuth(), order.id);
       settled.push(order);
     }
 
@@ -55,8 +71,12 @@ test.describe('@ci-tier2 operations admin - order history', () => {
       headers: ownerAuth(),
       data: { type: 'delivery', items: [{ product_id: 'e2e-product', quantity: 1 }] },
     });
-    const { order: delivery } = (await withCustomer.json()) as { order: { id: number; order_number: string; total: number; subtotal: number } };
-    const customers = (await (await request.get(`${E2E_BASE_URL}/api/customers`, { headers: ownerAuth() })).json()) as { data: Array<{ name: string; id: string }> };
+    const { order: delivery } = (await withCustomer.json()) as {
+      order: { id: number; order_number: string; total: number; subtotal: number };
+    };
+    const customers = (await (
+      await request.get(`${E2E_BASE_URL}/api/customers`, { headers: ownerAuth() })
+    ).json()) as { data: Array<{ name: string; id: string }> };
     const attached = await request.patch(`${E2E_BASE_URL}/api/orders/${delivery.id}/customer`, {
       headers: ownerAuth(),
       data: { customer_id: customers.data.find((c) => c.name === customerName)!.id },
@@ -65,11 +85,7 @@ test.describe('@ci-tier2 operations admin - order history', () => {
 
     // Settle it too, so every entry in `settled` really is a settled sale and
     // the Completed filter is being asked a fair question.
-    const completedDelivery = await request.patch(`${E2E_BASE_URL}/api/orders/${delivery.id}/status`, {
-      headers: ownerAuth(),
-      data: { status: 'completed' },
-    });
-    expect(completedDelivery.ok()).toBeTruthy();
+    await settleOrderViaBill(request, ownerAuth(), delivery.id);
     settled.push({ ...delivery, customer: customerName });
 
     const openRes = await request.post(`${E2E_BASE_URL}/api/orders`, {
@@ -128,53 +144,82 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     await page.goto(`${E2E_BASE_URL}/orders`);
 
     // "All" is the default and includes the order still awaiting payment.
-    await expect(page.getByRole('button').filter({ hasText: `#${open.order_number}` }).first()).toBeVisible();
+    await expect(
+      page
+        .getByRole('button')
+        .filter({ hasText: `#${open.order_number}` })
+        .first(),
+    ).toBeVisible();
 
     // The Active pill and the status dropdown both apply, so the pill has to be
     // widened before the dropdown can mean "settled sales".
     await page.getByRole('button', { name: 'All', exact: true }).first().click();
-    await page.locator('select').filter({ has: page.locator('option[value="completed"]') }).selectOption('completed');
+    await page
+      .locator('select')
+      .filter({ has: page.locator('option[value="completed"]') })
+      .selectOption('completed');
     await page.waitForTimeout(1200);
 
-    await expect(page.getByRole('button').filter({ hasText: `#${open.order_number}` })).toHaveCount(0);
+    await expect(page.getByRole('button').filter({ hasText: `#${open.order_number}` })).toHaveCount(
+      0,
+    );
     for (const sale of settled) {
-      await expect(page.getByRole('button').filter({ hasText: `#${sale.order_number}` }).first()).toBeVisible();
+      await expect(
+        page
+          .getByRole('button')
+          .filter({ hasText: `#${sale.order_number}` })
+          .first(),
+      ).toBeVisible();
     }
   });
 
-  test('FINDING: the Active pill and the Completed dropdown contradict each other', async ({ page, request }) => {
+  test('FINDING: the Active pill and the Completed dropdown contradict each other', async ({
+    page,
+    request,
+  }) => {
     // The pill and the status dropdown are applied together, and "Active" counts
     // a completed order as inactive once its items are served. So leaving the
     // pill alone while asking for Completed hides precisely the settled sales
     // the operator is trying to find, with nothing on screen to explain it.
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     const created = await request.post(`${E2E_BASE_URL}/api/orders`, {
       headers,
       data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
     });
     const { order } = (await created.json()) as { order: { id: number; order_number: string } };
-    const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${order.id}/status`, {
-      headers,
-      data: { status: 'completed' },
-    });
-    expect(completed.ok()).toBeTruthy();
+    await settleOrderViaBill(request, headers, order.id);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
 
     // Asked for Completed while the Active pill is still selected: not listed.
-    await page.locator('select').filter({ has: page.locator('option[value="completed"]') }).selectOption('completed');
+    await page
+      .locator('select')
+      .filter({ has: page.locator('option[value="completed"]') })
+      .selectOption('completed');
     await page.waitForTimeout(1200);
-    await expect(page.getByRole('button').filter({ hasText: `#${order.order_number}` })).toHaveCount(0);
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${order.order_number}` }),
+    ).toHaveCount(0);
 
     // The very same order appears the moment the pill is widened.
     await page.getByRole('button', { name: 'All', exact: true }).first().click();
     await page.waitForTimeout(1200);
-    await expect(page.getByRole('button').filter({ hasText: `#${order.order_number}` }).first()).toBeVisible();
+    await expect(
+      page
+        .getByRole('button')
+        .filter({ hasText: `#${order.order_number}` })
+        .first(),
+    ).toBeVisible();
   });
 
-  test('FINDING: search only sees the orders already loaded, and older sales are unreachable', async ({ page, request }) => {
+  test('FINDING: search only sees the orders already loaded, and older sales are unreachable', async ({
+    page,
+    request,
+  }) => {
     // Filling past the page size is rate limited, so this scenario legitimately
     // takes longer than the default budget.
     test.setTimeout(240_000);
@@ -185,14 +230,20 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     // newest 50 cannot be found, and the screen says "No orders found" for an
     // order that genuinely exists.
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     // Push a known order out of the loaded window by creating more than a
     // page's worth after it, so this holds whatever else the database holds.
-    const target = ((await (await request.post(`${E2E_BASE_URL}/api/orders`, {
-      headers,
-      data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
-    })).json()) as { order: { order_number: string } }).order;
+    const target = (
+      (await (
+        await request.post(`${E2E_BASE_URL}/api/orders`, {
+          headers,
+          data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
+        })
+      ).json()) as { order: { order_number: string } }
+    ).order;
 
     // The order write route is rate limited, so a burst this size has to wait
     // its turn rather than fail the scenario on a 429.
@@ -209,38 +260,57 @@ test.describe('@ci-tier2 operations admin - order history', () => {
           data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 1 }] },
         });
       }
-      expect(res.ok(), `filler order ${i + 1}/${FILLER} must be created (got ${res.status()})`).toBeTruthy();
+      expect(
+        res.ok(),
+        `filler order ${i + 1}/${FILLER} must be created (got ${res.status()})`,
+      ).toBeTruthy();
     }
 
     // The backend holds it, and its own listing can still reach it.
     const listed = await request.get(`${E2E_BASE_URL}/api/orders?per_page=200`, { headers });
     const { orders } = (await listed.json()) as { orders: Array<{ order_number: string }> };
-    expect(orders.some((o) => o.order_number === target.order_number), 'the order must exist in the store').toBeTruthy();
+    expect(
+      orders.some((o) => o.order_number === target.order_number),
+      'the order must exist in the store',
+    ).toBeTruthy();
 
     // The screen, however, cannot find it.
     await page.goto(`${E2E_BASE_URL}/orders`);
     await page.getByRole('button', { name: 'All', exact: true }).first().click();
-    await page.getByPlaceholder('Search by order number, name, or phone…').fill(target.order_number);
+    await page
+      .getByPlaceholder('Search by order number, name, or phone…')
+      .fill(target.order_number);
     await page.waitForTimeout(2000);
 
-    await expect(page.getByRole('button').filter({ hasText: `#${target.order_number}` })).toHaveCount(0);
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${target.order_number}` }),
+    ).toHaveCount(0);
     await expect(page.getByText(/No orders found/i)).toBeVisible();
 
     // And there is no control that would let the operator widen the window.
-    await expect(page.getByRole('button').filter({ hasText: /Load more|Next page|Show more/i })).toHaveCount(0);
+    await expect(
+      page.getByRole('button').filter({ hasText: /Load more|Next page|Show more/i }),
+    ).toHaveCount(0);
   });
 
   test('the type filter separates takeaway from delivery', async ({ page, request }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     // Provisioned here rather than reused from beforeAll, because the search
     // scenario above deliberately fills the list past its loaded page size and
     // would otherwise push these out of the window this screen fetches.
-    const made = async (type: string) => ((await (await request.post(`${E2E_BASE_URL}/api/orders`, {
-      headers,
-      data: { type, items: [{ product_id: 'e2e-product', quantity: 1 }] },
-    })).json()) as { order: { order_number: string } }).order;
+    const made = async (type: string) =>
+      (
+        (await (
+          await request.post(`${E2E_BASE_URL}/api/orders`, {
+            headers,
+            data: { type, items: [{ product_id: 'e2e-product', quantity: 1 }] },
+          })
+        ).json()) as { order: { order_number: string } }
+      ).order;
 
     const delivery = await made('delivery');
     const takeaway = await made('takeaway');
@@ -248,12 +318,22 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     await page.goto(`${E2E_BASE_URL}/orders`);
     await page.getByRole('button', { name: 'All', exact: true }).first().click();
 
-    await page.locator('select').filter({ has: page.locator('option[value="delivery"]') }).selectOption('delivery');
+    await page
+      .locator('select')
+      .filter({ has: page.locator('option[value="delivery"]') })
+      .selectOption('delivery');
     await page.waitForTimeout(1200);
 
     // The delivery order is listed and the takeaway one is not.
-    await expect(page.getByRole('button').filter({ hasText: `#${delivery.order_number}` }).first()).toBeVisible();
-    await expect(page.getByRole('button').filter({ hasText: `#${takeaway.order_number}` })).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('button')
+        .filter({ hasText: `#${delivery.order_number}` })
+        .first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${takeaway.order_number}` }),
+    ).toHaveCount(0);
 
     // And everything still listed really is a delivery.
     const rows = page.getByRole('button').filter({ hasText: /ORD-/ });
@@ -264,7 +344,9 @@ test.describe('@ci-tier2 operations admin - order history', () => {
 
   test('a historical order opens showing exactly what was sold', async ({ page, request }) => {
     await login(page, 'owner');
-    const headers = await (async () => ({ Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}` }))();
+    const headers = await (async () => ({
+      Authorization: `Bearer ${await page.evaluate(() => localStorage.getItem('token'))}`,
+    }))();
 
     // Provisioned here for the same reason as the type-filter scenario: the
     // search scenario fills the list past the window this screen fetches.
@@ -273,27 +355,37 @@ test.describe('@ci-tier2 operations admin - order history', () => {
       data: { type: 'takeaway', items: [{ product_id: 'e2e-product', quantity: 2 }] },
     });
     expect(created.status()).toBe(201);
-    const sale = ((await created.json()) as { order: { id: number; order_number: string; subtotal: number; total: number } }).order;
-    const completed = await request.patch(`${E2E_BASE_URL}/api/orders/${sale.id}/status`, {
-      headers,
-      data: { status: 'completed' },
-    });
-    expect(completed.ok()).toBeTruthy();
+    const sale = (
+      (await created.json()) as {
+        order: { id: number; order_number: string; subtotal: number; total: number };
+      }
+    ).order;
+    await settleOrderViaBill(request, headers, sale.id);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
     await page.getByRole('button', { name: 'All', exact: true }).first().click();
 
-    await page.locator('select').filter({ has: page.locator('option[value="completed"]') }).selectOption('completed');
+    await page
+      .locator('select')
+      .filter({ has: page.locator('option[value="completed"]') })
+      .selectOption('completed');
     await page.waitForTimeout(1000);
 
     // The two-quantity sale: 2 x 60.00 net, 7% tax on top.
     expect(sale.subtotal).toBe(120);
-    await page.getByRole('button').filter({ hasText: `#${sale.order_number}` }).first().click();
+    await page
+      .getByRole('button')
+      .filter({ hasText: `#${sale.order_number}` })
+      .first()
+      .click();
     await expect(page.getByText(`#${sale.order_number}`).nth(1)).toBeVisible();
 
     const detail = await page.locator('body').innerText();
     expect(money(detail.match(/Subtotal\s*฿([\d,]+\.\d{2})/)?.[1] ?? '')).toBe(sale.subtotal);
-    expect(money(detail.match(/Tax\s*฿([\d,]+\.\d{2})/)?.[1] ?? '')).toBeCloseTo(sale.total - sale.subtotal, 2);
+    expect(money(detail.match(/Tax\s*฿([\d,]+\.\d{2})/)?.[1] ?? '')).toBeCloseTo(
+      sale.total - sale.subtotal,
+      2,
+    );
     expect(money(detail.match(/Total\s*฿([\d,]+\.\d{2})/)?.[1] ?? '')).toBeCloseTo(sale.total, 2);
 
     // The line itself, and the gross of it.
@@ -313,10 +405,16 @@ test.describe('@ci-tier2 operations admin - order history', () => {
     const orderNumber = await placeOrderAndPayCash(page);
 
     await page.goto(`${E2E_BASE_URL}/orders`);
-    await page.locator('select').filter({ has: page.locator('option[value="completed"]') }).selectOption('completed');
+    await page
+      .locator('select')
+      .filter({ has: page.locator('option[value="completed"]') })
+      .selectOption('completed');
     await page.waitForTimeout(1200);
 
-    const row = page.getByRole('button').filter({ hasText: `#${orderNumber}` }).first();
+    const row = page
+      .getByRole('button')
+      .filter({ hasText: `#${orderNumber}` })
+      .first();
     await expect(row).toBeVisible();
     await expect(row).toContainText('Completed');
   });

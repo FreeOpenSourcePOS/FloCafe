@@ -247,7 +247,7 @@ Router: `main/routes/tables.ts`. Full path: `/api/tables`.
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `number`, `name`, `capacity`, `floor`, `section`, `position_x`, `position_y`, `kitchen_station_id` | - |
 | `POST` | `/:id/deactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | Soft-deactivates the table rather than deleting it. |
 | `POST` | `/:id/reactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
-| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | - |
+| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | `{ order, sourceTable, targetTable }`. `400` when `target_table_id` is missing, matches `id`, or names an inactive table; `404` when either table or the active order is not found; `409` when the destination table has an active or held order or is `reserved`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `status`, `reservation_customer_id` | Body `status`, plus `reservation_customer_id` for reservation state. |
 
 ### Kitchen stations

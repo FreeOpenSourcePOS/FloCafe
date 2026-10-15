@@ -1670,20 +1670,22 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       await page.setViewportSize(viewport);
       await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
       await page.waitForFunction(() => {
-        return [
-          'customer-display-preparing-scroll',
-          'customer-display-ready-scroll',
-        ].every((testId) => {
-          const board = document.querySelector(`[data-testid="${testId}"]`);
-          if (!board) return false;
-          const visibleRows = [
-            ...board.querySelectorAll('[data-testid="customer-display-order-row"]'),
-          ].filter((row) => getComputedStyle(row).visibility === 'visible');
-          return visibleRows.length > 0 && visibleRows.length < 100;
-        });
+        return ['customer-display-preparing-scroll', 'customer-display-ready-scroll'].every(
+          (testId) => {
+            const board = document.querySelector(`[data-testid="${testId}"]`);
+            if (!board) return false;
+            const visibleRows = [
+              ...board.querySelectorAll('[data-testid="customer-display-order-row"]'),
+            ].filter((row) => getComputedStyle(row).visibility === 'visible');
+            return visibleRows.length > 0 && visibleRows.length < 100;
+          },
+        );
       });
 
-      for (const [name, board] of [['preparing', preparing], ['ready', ready]] as const) {
+      for (const [name, board] of [
+        ['preparing', preparing],
+        ['ready', ready],
+      ] as const) {
         const layout = await board.evaluate((element) => {
           const boardBounds = element.getBoundingClientRect();
           const style = getComputedStyle(element);
@@ -1978,9 +1980,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         );
 
         await routePage.goto(
-          isPaired
-            ? `${BASE}/customer-display/#token=${displayToken}`
-            : `${BASE}/customer-display`,
+          isPaired ? `${BASE}/customer-display/#token=${displayToken}` : `${BASE}/customer-display`,
         );
         const preparing = routePage.getByTestId('customer-display-preparing-scroll');
         const firstOrder = preparing.locator('[data-order-id="display-preparing-1"]:visible');
@@ -2004,7 +2004,9 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
           preparing.locator('[data-order-id="display-preparing-2"]:visible'),
           'a later poll recovers after the stalled request is aborted',
         ).toBeVisible();
-        await expect(staleMessage, 'the successful recovery clears the stale warning').toHaveCount(0);
+        await expect(staleMessage, 'the successful recovery clears the stale warning').toHaveCount(
+          0,
+        );
       } finally {
         releaseHeldResponse();
         if (requestCount === 2) await heldRequestFinished;

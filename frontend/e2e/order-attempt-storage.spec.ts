@@ -503,6 +503,7 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     const orderRequests = trackOrderRequests(page);
     const paymentRequests = trackPaymentRequests(page);
     const billIds: Array<string | number> = [];
+    const billResponses: Array<Promise<void>> = [];
     const captures: Array<Record<string, unknown>> = [];
     await page.route('**/api/diagnostics/capture', async (route) => {
       captures.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -512,18 +513,22 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
         body: JSON.stringify({ captured: true }),
       });
     });
-    page.on('response', async (response) => {
+    page.on('response', (response) => {
       if (
         response.request().method() !== 'POST' ||
         new URL(response.url()).pathname !== '/api/bills/generate'
       )
         return;
-      try {
-        const body = await response.json();
-        if (body?.bill?.id) billIds.push(body.bill.id as string | number);
-      } catch {
-        /* ignore empty error responses */
-      }
+      billResponses.push(
+        (async () => {
+          try {
+            const body = await response.json();
+            if (body?.bill?.id) billIds.push(body.bill.id as string | number);
+          } catch {
+            /* ignore empty error responses */
+          }
+        })(),
+      );
     });
 
     await loginAndOpenPos(page);
@@ -531,8 +536,15 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    const generatedBillResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/bills/generate',
+    );
     await page.getByRole('button', { name: /Confirm Payment/ }).click();
 
+    await generatedBillResponse;
+    await Promise.all(billResponses);
     await expect(page.getByRole('status')).toContainText(
       'The order was created, but checkout stopped before payment started.',
     );
@@ -558,6 +570,7 @@ test('prepaid: losing the bill retry snapshot stops payment and reuses the origi
     await page.getByRole('button', { name: 'Cash', exact: true }).click();
     await page.getByRole('button', { name: /Confirm Payment/ }).click();
     await expect(page.getByText(/Order #.+ paid!/)).toBeVisible({ timeout: 30000 });
+    await Promise.all(billResponses);
 
     expect(
       orderRequests,

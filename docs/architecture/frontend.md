@@ -211,9 +211,9 @@ Route gating lives in `AuthGuard`:
   aggregates several permissions. Adding a route means adding it to one of those three; a route in
   none of them is behind authentication and nothing else.
 - `PUBLIC_PATHS` holds the unauthenticated surfaces: `/kds`, `/kds-standalone`,
-  `/server-standalone`, `/auth/login`, `/auth/register`, `/auth/recover`, and `/setup`. The
-  standalone KDS and Server App pages run their own session and skip the shared auth store, so
-  loading it there would clear their token.
+  `/server-standalone`, `/customer-display`, `/auth/login`, `/auth/register`, `/auth/recover`, and
+  `/setup`. The standalone KDS, Server App, and paired customer display pages run their own session
+  and skip the shared auth store, so loading it there would clear their token.
 - Once a user and tenant are resolved, the guard refreshes the auth context on window focus, every
   30 seconds, and on `flo:authorization-denied`.
 

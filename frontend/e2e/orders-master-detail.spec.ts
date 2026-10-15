@@ -149,7 +149,7 @@ test.describe('orders master/detail is the default layout', () => {
 
       await expect(page.getByText(chargeName, { exact: true })).toBeVisible();
 
-      const printAction = page.getByTitle('Print');
+      const printAction = page.getByRole('button', { name: 'Print', exact: true });
       await expect(printAction).toBeVisible();
       await printAction.click();
       await expect(page.getByRole('heading', { name: 'Print Receipt' })).toBeVisible();

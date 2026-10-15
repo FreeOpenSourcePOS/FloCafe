@@ -835,6 +835,67 @@ async function main() {
         .all(active[0].id) as any[];
       assertEqualOrThrow(newAddons.length, 1, 'the stored add-on selection is preserved');
       assertEqualOrThrow(newAddons[0].addon_id, 'addon-edit', 'the add-on id survives');
+
+      // Conformance: only reductions preserve stored selections; a quantity
+      // increase still re-validates them against the current catalog.
+      const increase = await edit(order.orderId, active[0].id, { quantity: 3 }, ownerAuth);
+      assertEqualOrThrow(
+        increase.status,
+        400,
+        'a quantity increase re-validates the disabled selections and is rejected',
+      );
+    }
+
+    console.log('\n─── Reduction of a pre-variant line once the product gains variants ───');
+    {
+      // A line sold before the product had variants carries variant_id null;
+      // a later reduction must not demand a selection the line never had.
+      db.prepare(
+        `INSERT INTO product_variants (id, product_id, name, price, track_inventory, is_active, created_at, updated_at)
+         VALUES ('var-late', 'prod-edit', 'Regular', 100, 0, 1, ?, ?)`,
+      ).run(now(), now());
+      const order = seedOrder(db, 'LATE-VARIANT', 'pending', 2, 2);
+      const reduced = await edit(order.orderId, order.itemId, { quantity: 1 }, ownerAuth);
+      assertEqualOrThrow(
+        reduced.status,
+        200,
+        'reducing a pre-variant line succeeds after the product gains variants',
+      );
+      const active = db
+        .prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'pending'")
+        .all(order.orderId) as any[];
+      assertEqualOrThrow(active.length, 1, 'the replacement line exists');
+      assertEqualOrThrow(active[0].quantity, 1, 'the reduced quantity is applied');
+      assertEqualOrThrow(active[0].variant_id, null, 'the stored null selection is preserved');
+      // Remove the variant again so later cases see the original variantless product.
+      db.prepare("DELETE FROM product_variants WHERE id = 'var-late'").run();
+    }
+
+    console.log('\n─── Reduction carries the stored variant_selection snapshot verbatim ───');
+    {
+      // Renaming the variant after the sale must not rewrite the selection the
+      // line was sold with.
+      const order = seedOrder(db, 'SNAP-KEEP', 'pending', 3, 3);
+      db.prepare(
+        'UPDATE order_items SET variant_id = ?, variant_selection = ?, unit_price = 150 WHERE id = ?',
+      ).run('var-edit', JSON.stringify({ id: 'var-edit', name: 'Large' }), order.itemId);
+      db.prepare("UPDATE product_variants SET name = 'Huge' WHERE id = 'var-edit'").run();
+      const reduced = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
+      assertEqualOrThrow(
+        reduced.status,
+        200,
+        'reduction of a line with a stored variant succeeds',
+      );
+      const active = db
+        .prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'pending'")
+        .all(order.orderId) as any[];
+      assertEqualOrThrow(active.length, 1, 'the replacement line exists');
+      const selection = JSON.parse(active[0].variant_selection);
+      assertEqualOrThrow(
+        selection.name,
+        'Large',
+        'the carried variant_selection snapshot survives the reduction unchanged',
+      );
     }
 
     console.log('\n─── Superseded lines ───');

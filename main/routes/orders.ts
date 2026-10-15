@@ -751,6 +751,8 @@ function insertOrderItems(
     actorUserId: string;
     initialStatus?: string;
     preserveUnitPrice?: boolean;
+    /** Quantity reductions keep the stored variant/add-on selections verbatim. */
+    preserveSelections?: boolean;
   },
 ): (number | bigint)[] {
   const { tenantInfo, customer, isOnlineOrder, actorUserId } = context;
@@ -786,9 +788,12 @@ function insertOrderItems(
     // Validate quantity and price
     validateProductQuantity(product, quantity);
     const variant = resolveOrderItemVariant(db, product, item, isOnlineOrder, {
-      // A quantity edit keeps the stored selection even if the merchant has
-      // since disabled the variant; the line was valid when it was sold.
-      allowInactive: !!context.preserveUnitPrice,
+      // A quantity reduction keeps the stored selection even if the merchant
+      // has since disabled the variant or added variants the line never had;
+      // the line was valid when it was sold. Increases and replacements
+      // re-validate against the current catalog.
+      allowInactive: !!context.preserveSelections,
+      allowUnselected: !!context.preserveSelections,
     });
     const unitPrice = context.preserveUnitPrice
       ? Number(item.unit_price)
@@ -859,7 +864,11 @@ function insertOrderItems(
       taxResult.tax_type,
       itemDiscount,
       itemTotal,
-      variant ? variantSelectionSnapshot(variant) : JSON.stringify(item.variant_selection || null),
+      context.preserveSelections && item.variant_selection !== undefined
+        ? JSON.stringify(item.variant_selection ?? null)
+        : variant
+          ? variantSelectionSnapshot(variant)
+          : JSON.stringify(item.variant_selection || null),
       JSON.stringify(item.modifier_selection || null),
       item.special_instructions || null,
       recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
@@ -4319,6 +4328,7 @@ router.patch(
         } else {
           let newItem: OrderItemInput;
           const preserveUnitPrice = hasQuantity;
+          const preserveStoredSelections = hasQuantity && newQuantity < oldQuantity;
           if (hasQuantity) {
             const lineQuantity = isStartedQuantityIncrease
               ? Number((newQuantity - oldQuantity).toFixed(6))
@@ -4359,7 +4369,7 @@ router.patch(
 
           try {
             validateItemNotes(db, newItem.special_instructions);
-            if (hasQuantity && newQuantity < oldQuantity) {
+            if (preserveStoredSelections) {
               // A reduction needs no extra units, so the stored selections stay
               // authoritative even when the catalog has since disabled the sold
               // variant or add-on; their held stock scales with the line.
@@ -4423,6 +4433,7 @@ router.patch(
             actorUserId: actorId,
             initialStatus: 'pending',
             preserveUnitPrice,
+            preserveSelections: preserveStoredSelections,
           });
           newItemId = insertedId;
           if (

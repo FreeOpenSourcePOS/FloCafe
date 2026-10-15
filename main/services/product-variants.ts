@@ -38,7 +38,7 @@ export function resolveOrderItemVariant(
   product: { id: string; name?: string },
   item: { variant_id?: unknown },
   isOnlineOrder: boolean,
-  options?: { allowInactive?: boolean },
+  options?: { allowInactive?: boolean; allowUnselected?: boolean },
 ): ProductVariant | null {
   const supplied = item.variant_id;
   if (supplied !== undefined && supplied !== null && typeof supplied !== 'string') {
@@ -49,7 +49,7 @@ export function resolveOrderItemVariant(
     const hasVariants = db
       .prepare('SELECT 1 FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1')
       .get(product.id);
-    if (hasVariants) {
+    if (hasVariants && !options?.allowUnselected) {
       throw Object.assign(
         new Error(`A variant must be selected for ${product.name || product.id}`),
         { statusCode: 400 },

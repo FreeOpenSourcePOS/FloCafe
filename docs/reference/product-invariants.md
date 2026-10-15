@@ -297,8 +297,10 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    delivery is logged still goes through the POS. Negative balances are flagged in the UI for
    physical count reconciliation. There is no clamp and no 409.
 2. **Depletion happens when a pending line is inserted** (order creation, item append, or an item
-   edit that adds a replacement or incremental pending line), when `recipe_snapshot`, an immutable
-   JSON copy of the scaled recipe components, is written to `order_items`. The scale is
+   edit that adds a replacement or incremental pending line), when `recipe_snapshot`, a
+   JSON copy of the scaled recipe components, is written to `order_items`. The copy is rewritten
+   in place - scaled to the remaining quantity - when a started line's quantity decreases, so a
+   later cancel restores only the units the line still holds and wasted units stay out of stock. The scale is
    `ingredient quantity x ordered quantity x portion / yield_quantity`, where the portion is the
    ordered variant's `recipe_multiplier`: 1 is one base recipe portion, 0.5 half, 2 double. Parent
    sales without a variant use a portion of 1, and the portion is scaled from the resolved catalog

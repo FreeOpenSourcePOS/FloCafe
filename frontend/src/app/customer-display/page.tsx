@@ -158,16 +158,44 @@ function OrderBoardSection({
         : orders,
     [isReady, newlyReadyOrderIds, orders],
   );
+  const areOrdersMeasured = useMemo(
+    () =>
+      metrics.availableHeight > 0 &&
+      orders.every((order) => metrics.rowHeights.has(getOrderId(order))),
+    [metrics.availableHeight, metrics.rowHeights, orders],
+  );
+  const combinedPages = useMemo(
+    () => paginateOrders(orders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+    [metrics.availableHeight, metrics.rowGap, metrics.rowHeights, orders],
+  );
   const priorityPages = useMemo(
-    () => paginateOrders(priorityOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
-    [metrics.availableHeight, metrics.rowGap, metrics.rowHeights, priorityOrders],
+    () =>
+      combinedPages.length <= 1 || priorityOrders.length === 0
+        ? []
+        : paginateOrders(priorityOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+    [
+      combinedPages.length,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+      priorityOrders,
+    ],
   );
   const ordinaryPages = useMemo(
-    () => paginateOrders(ordinaryOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
-    [metrics.availableHeight, metrics.rowGap, metrics.rowHeights, ordinaryOrders],
+    () =>
+      combinedPages.length <= 1 || priorityOrders.length === 0
+        ? combinedPages
+        : paginateOrders(ordinaryOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+    [
+      combinedPages,
+      metrics.availableHeight,
+      metrics.rowGap,
+      metrics.rowHeights,
+      ordinaryOrders,
+      priorityOrders.length,
+    ],
   );
-  const hasMultiplePages =
-    isPagedLayout && priorityPages.length + ordinaryPages.length > 1;
+  const hasMultiplePages = isPagedLayout && combinedPages.length > 1;
   const priorityPagesRef = useRef(priorityPages);
   const ordinaryPagesRef = useRef(ordinaryPages);
 
@@ -178,9 +206,61 @@ function OrderBoardSection({
   }, [onPriorityOrdersShown, ordinaryPages, priorityPages]);
 
   const updateActivePage = useCallback((nextPage: OrderBoardPage) => {
+    const current = activePageRef.current;
+    if (
+      current.group === nextPage.group &&
+      getPageKey(current.orderIds) === getPageKey(nextPage.orderIds)
+    ) {
+      return;
+    }
     activePageRef.current = nextPage;
     setActivePage(nextPage);
   }, []);
+
+  const selectNextPage = useCallback(
+    (currentPriorityPages: BoardOrder[][], currentOrdinaryPages: BoardOrder[][]) => {
+      const active = activePageRef.current;
+      const activeKey = getPageKey(active.orderIds);
+      const hasAlternateOrdinaryPage = currentOrdinaryPages.some(
+        (page) => getPageKey(page.map(getOrderId)) !== activeKey,
+      );
+      let selectedGroup: OrderGroup | null = null;
+      if (active.group === 'priority' && hasAlternateOrdinaryPage) {
+        selectedGroup = 'ordinary';
+      } else if (currentPriorityPages.length > 0) {
+        selectedGroup = 'priority';
+      } else if (currentOrdinaryPages.length > 0) {
+        selectedGroup = 'ordinary';
+      }
+      if (!selectedGroup) return;
+
+      let selectedPage: BoardOrder[] | undefined;
+      if (selectedGroup === 'priority') {
+        selectedPage = currentPriorityPages[0];
+      } else {
+        const cursor = ordinaryPageCursorRef.current % currentOrdinaryPages.length;
+        let selectedIndex = cursor;
+        for (let offset = 0; offset < currentOrdinaryPages.length; offset += 1) {
+          const candidateIndex = (cursor + offset) % currentOrdinaryPages.length;
+          const candidateKey = getPageKey(currentOrdinaryPages[candidateIndex].map(getOrderId));
+          if (candidateKey !== activeKey || currentOrdinaryPages.length === 1) {
+            selectedIndex = candidateIndex;
+            break;
+          }
+        }
+        selectedPage = currentOrdinaryPages[selectedIndex];
+        ordinaryPageCursorRef.current = (selectedIndex + 1) % currentOrdinaryPages.length;
+      }
+
+      if (!selectedPage) return;
+      const orderIds = selectedPage.map(getOrderId);
+      updateActivePage({ orderIds, group: selectedGroup });
+      if (selectedGroup === 'priority') {
+        priorityCallbackRef.current(orderIds);
+      }
+    },
+    [updateActivePage],
+  );
 
   const measureRows = useCallback(() => {
     if (!isPagedLayout || !isPageVisible) return;
@@ -250,12 +330,47 @@ function OrderBoardSection({
 
   useLayoutEffect(() => {
     const active = activePageRef.current;
-    const eligibleIds = orders.map(getOrderId);
-    const eligible = new Set(eligibleIds);
+    const eligible = new Set(orders.map(getOrderId));
     const retainedIds = active.orderIds.filter((id) => eligible.has(id));
 
     if (!isPagedLayout) {
-      if (active.orderIds.join('\u001f') !== retainedIds.join('\u001f')) {
+      if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
+        updateActivePage({ ...active, orderIds: retainedIds });
+      }
+      return;
+    }
+
+    if (orders.length === 0) {
+      updateActivePage({ orderIds: [], group: 'ordinary' });
+      ordinaryPageCursorRef.current = 0;
+      return;
+    }
+
+    if (!areOrdersMeasured) {
+      if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
+        updateActivePage({ ...active, orderIds: retainedIds });
+      }
+      return;
+    }
+
+    if (combinedPages.length === 1) {
+      const orderIds = combinedPages[0].map(getOrderId);
+      updateActivePage({
+        orderIds,
+        group: 'ordinary',
+      });
+      ordinaryPageCursorRef.current = 0;
+      if (priorityOrders.length > 0) {
+        priorityCallbackRef.current(priorityOrders.map(getOrderId));
+      }
+      return;
+    }
+
+    if (
+      retainedIds.length > 0 &&
+      orderIdsFit(retainedIds, metrics.availableHeight, metrics.rowHeights, metrics.rowGap)
+    ) {
+      if (getPageKey(active.orderIds) !== getPageKey(retainedIds)) {
         updateActivePage({ ...active, orderIds: retainedIds });
       }
       return;
@@ -265,34 +380,17 @@ function OrderBoardSection({
       ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
       ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
     ];
-    if (allPages.length === 1) {
-      updateActivePage({
-        orderIds: allPages[0].page.map(getOrderId),
-        group: allPages[0].group,
-      });
-      ordinaryPageCursorRef.current = 0;
-      if (allPages[0].group === 'priority') {
-        priorityCallbackRef.current(allPages[0].page.map(getOrderId));
-      }
-      return;
-    }
-
-    if (
-      retainedIds.length > 0 &&
-      orderIdsFit(retainedIds, metrics.availableHeight, metrics.rowHeights, metrics.rowGap)
-    ) {
-      if (active.orderIds.join('\u001f') !== retainedIds.join('\u001f')) {
-        updateActivePage({ ...active, orderIds: retainedIds });
-      }
-      return;
-    }
 
     if (retainedIds.length > 0) {
-      const currentPage = allPages.find(({ page }) => page.some((order) => getOrderId(order) === retainedIds[0]));
+      const currentPage = allPages.find(({ page }) =>
+        page.some((order) => getOrderId(order) === retainedIds[0]),
+      );
       if (currentPage) {
         const orderIds = currentPage.page.map(getOrderId);
         updateActivePage({ orderIds, group: currentPage.group });
-        if (currentPage.group === 'ordinary') {
+        if (currentPage.group === 'priority') {
+          priorityCallbackRef.current(orderIds);
+        } else {
           const pageIndex = ordinaryPages.findIndex(
             (page) => getPageKey(page.map(getOrderId)) === getPageKey(orderIds),
           );
@@ -302,28 +400,19 @@ function OrderBoardSection({
       }
     }
 
-    if (orders.length === 0) {
-      updateActivePage({ orderIds: [], group: 'ordinary' });
-      return;
-    }
-
-    const initial = allPages[0];
-    if (!initial) return;
-    const orderIds = initial.page.map(getOrderId);
-    updateActivePage({ orderIds, group: initial.group });
-    if (initial.group === 'priority') {
-      priorityCallbackRef.current(orderIds);
-    } else {
-      ordinaryPageCursorRef.current = ordinaryPages.length > 1 ? 1 : 0;
-    }
+    selectNextPage(priorityPages, ordinaryPages);
   }, [
+    areOrdersMeasured,
+    combinedPages,
     isPagedLayout,
     metrics.availableHeight,
     metrics.rowGap,
     metrics.rowHeights,
     orders,
     ordinaryPages,
+    priorityOrders,
     priorityPages,
+    selectNextPage,
     updateActivePage,
   ]);
 
@@ -331,45 +420,10 @@ function OrderBoardSection({
     if (!isPagedLayout || !isPageVisible || !hasMultiplePages) return;
     const interval = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
-      const active = activePageRef.current;
-      const currentPriorityPages = priorityPagesRef.current;
-      const currentOrdinaryPages = ordinaryPagesRef.current;
-      let selectedGroup: OrderGroup | null = null;
-      if (active.group === 'priority' && currentOrdinaryPages.length > 0) {
-        selectedGroup = 'ordinary';
-      } else if (currentPriorityPages.length > 0) {
-        selectedGroup = 'priority';
-      } else if (currentOrdinaryPages.length > 0) {
-        selectedGroup = 'ordinary';
-      }
-      if (!selectedGroup) return;
-
-      let selectedPage: BoardOrder[] | undefined;
-      if (selectedGroup === 'priority') {
-        selectedPage = currentPriorityPages[0];
-      } else {
-        const cursor = ordinaryPageCursorRef.current % currentOrdinaryPages.length;
-        const activeKey = getPageKey(active.orderIds);
-        let selectedIndex = cursor;
-        for (let offset = 0; offset < currentOrdinaryPages.length; offset += 1) {
-          const candidateIndex = (cursor + offset) % currentOrdinaryPages.length;
-          const candidateKey = getPageKey(currentOrdinaryPages[candidateIndex].map(getOrderId));
-          if (candidateKey !== activeKey || currentOrdinaryPages.length === 1) {
-            selectedIndex = candidateIndex;
-            break;
-          }
-        }
-        selectedPage = currentOrdinaryPages[selectedIndex];
-        ordinaryPageCursorRef.current = (selectedIndex + 1) % currentOrdinaryPages.length;
-      }
-
-      if (!selectedPage) return;
-      const orderIds = selectedPage.map(getOrderId);
-      updateActivePage({ orderIds, group: selectedGroup });
-      if (selectedGroup === 'priority') priorityCallbackRef.current(orderIds);
+      selectNextPage(priorityPagesRef.current, ordinaryPagesRef.current);
     }, ORDER_PAGE_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [hasMultiplePages, isPagedLayout, isPageVisible, updateActivePage]);
+  }, [hasMultiplePages, isPagedLayout, isPageVisible, selectNextPage]);
 
   const visibleOrders = isPagedLayout
     ? activePage.orderIds.map((id) => orderById.get(id)).filter((order): order is BoardOrder => !!order)

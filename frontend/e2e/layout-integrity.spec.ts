@@ -1817,7 +1817,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
     await page.clock.install();
-    await mockDisplayOrders(page, displayOrders(30, 2));
+    const feed = await mockDisplayOrders(page, displayOrders(30, 2));
     await page.goto(`${BASE}/customer-display`);
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
@@ -1836,6 +1836,14 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
     await page.clock.runFor(10_000);
     await expect.poll(() => readIds(preparing)).not.toEqual(firstPreparingPage);
     expect(await readIds(ready), 'the single ready page does not rotate').toEqual(readyPage);
+
+    feed.replace(displayOrders(30, 3));
+    await page.clock.runFor(3000);
+    await expect
+      .poll(() => readIds(ready), {
+        message: 'a newly ready order that fits on the single ready page is shown on poll',
+      })
+      .toEqual(['display-ready-1', 'display-ready-2', 'display-ready-3']);
   });
 
   test('rotation pauses while the page is hidden and resumes on a fresh ten-second interval', async ({

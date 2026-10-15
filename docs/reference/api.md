@@ -109,9 +109,15 @@ credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
 create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable
 with `FLO_AUTH_RATE_LIMIT_MAX`.
 
-Per-resource limiters named in the tables below (for example the order read and write limiters) are
-`express-rate-limit` instances declared in their own route file. They apply to every caller
-including LAN addresses.
+Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
+their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
+In [`main/routes/orders.ts`](../../main/routes/orders.ts), `orderWriteRateLimit` and
+`orderItemCancelRateLimit` remain separate 60-requests-per-minute buckets (configurable via
+`FLO_ORDER_WRITE_RATE_LIMIT_MAX` when set to a positive integer) and exempt authenticated callers
+connecting from private, loopback, or Tailscale socket addresses (`isAllowedPrivateIp` on
+`req.socket.remoteAddress`, ignoring caller-supplied forwarding headers), while still rate-limiting
+public or unauthenticated traffic and returning `{ error: "Too many requests, please try again later." }`
+on `429`.
 
 ## Main API (`:3001`)
 
@@ -247,7 +253,7 @@ Router: `main/routes/tables.ts`. Full path: `/api/tables`.
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `number`, `name`, `capacity`, `floor`, `section`, `position_x`, `position_y`, `kitchen_station_id` | - |
 | `POST` | `/:id/deactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | Soft-deactivates the table rather than deleting it. |
 | `POST` | `/:id/reactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
-| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | - |
+| `POST` | `/:id/move-order` | `ROLE_ACCESS.sales` | path: `id`; body: `target_table_id`, `order_id` | `{ order, sourceTable, targetTable }`. `400` when `target_table_id` is missing, matches `id`, or names an inactive table; `404` when either table or the active order is not found; `409` when the destination table has an active or held order or is `reserved`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `status`, `reservation_customer_id` | Body `status`, plus `reservation_customer_id` for reservation state. |
 
 ### Kitchen stations
@@ -276,7 +282,7 @@ and settlement - is in [Order lifecycle](../architecture/order-lifecycle.md).
 | `GET` | `/:id` | `orders.read` (default roles: `ROLE_ACCESS.sales`) + order read limiter | path: `id` | `{ ...order, items, table }`. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`, `delivery_address`, `expected_payment_method`, `expected_payment_method_id`, `delivery_note`; header: `Idempotency-Key` | `201` with the created order. Repeating the same request body with an `Idempotency-Key` returns its stored response; reusing the key with a different body returns `409`. `expected_payment_method` and `delivery_note` are stored only for `type: 'delivery'`: without an id, the method keeps its legacy string/sentinel resolution (`unknown` by default, `pending`, `cash`, `card`, or an active custom method name), and is never recorded as a payment; `400` for any other method or a note over 200 characters. A custom method whose name matches a built-in or sentinel needs its id to be identified as custom. An optional `expected_payment_method_id` must be a positive safe integer naming an **active** configured method; the server stores its canonical name and requires any supplied non-empty name to match case-insensitively. Invalid, unknown, or inactive ids return `400`. The id is a historical marker, not a foreign key, so renaming or deleting the method later never rewrites an order; only `orders.expected_payment_method_id` decides that the stored name prints literally on a delivery slip. Non-delivery orders persist both expected-method fields as `null`. An item's `variant_id` is required when the product has active variants, and `400` when it names an unknown, foreign, or inactive variant; `unit_price` is never taken from the client. |
 | `POST` | `/:id/items` | `ROLE_ACCESS.sales` + order write limiter | path: `id`; body: `items`, `special_instructions`; header: `Idempotency-Key` | Appends items and returns the recomputed order. Honours `Idempotency-Key`. Items resolve a `variant_id` under the same rules as order creation, priced with `variant.online_price` when the order carries an `online_platform`. |
-| `PATCH` | `/:id/status` | `ROLE_ACCESS.orderStatus` + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. |
+| `PATCH` | `/:id/status` | `orders.status.update` (default roles: `ROLE_ACCESS.orderStatus`) + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table`, `approver_id`, `manager_id` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. See the status safeguard rules below. |
 | `PATCH` | `/:id/customer` | `ROLE_ACCESS.ownerManager` + order write limiter | path: `id`; body: `customer_id` | - |
 | `PATCH` | `/:id/convert-to-takeaway` | `ROLE_ACCESS.sales` + order write limiter | path: `id` | - |
 | `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin` | - |
@@ -289,6 +295,32 @@ header. A validation rejection with a registered failure point includes `reason_
 `classification`, `outcome`, and `correlation_id` alongside `error`; `display_code` may also be
 present. A valid supplied UUID is returned as the correlation id, otherwise the server generates
 one. Failures without a registered tuple may retain the `{ error }` response.
+
+`PATCH /:id/status` evaluates order, bill/payment, and kitchen state inside the transaction:
+
+- Ordinary `completed` transitions require every payable bill for the order to be settled (`paid` with
+  zero unpaid balance) and billed totals (accounting for `round_off`) to cover `order.total`. An
+  unbilled positive-total order is not considered paid. When
+  `require_kitchen_delivered_before_settlement` is enabled (`kds_enabled` not `false` and
+  `billing_type` not `prepaid`), any item still in `pending`, `preparing`, or `ready` also blocks
+  ordinary completion.
+- When unsettled payment or the applicable kitchen-delivery requirement blocks `completed`, an
+  explicit `override_pin` from an active `owner` or `manager` holding `orders.status.update` (plus
+  `payments.take` when overriding unsettled payment) is required (`400` when missing, `403` when
+  invalid or unauthorized, `429` after 5 failed attempts). Being logged in as an owner or manager
+  does not bypass `override_pin`. Overriding completion never marks bills paid, erases balances, or
+  creates payment records.
+- `cancelled` transitions require an explicit `override_pin` from an active `owner` or `manager`
+  holding `orders.status.update` and `orders.item.cancel` whenever the order has advanced past
+  `pending`, any item is in `preparing`, `ready`, `served`, or `completed`, or any bill holds
+  recorded collected funds. Cancellation preserves bill payment and refund records (refunds remain a
+  separate operation via `/api/refunds`) and restores product, variant, add-on, and recipe stock
+  only for items still in `pending` status.
+- When `approver_id` (or `manager_id`) is supplied on an overridden transition, PIN verification is
+  restricted to that active user. Every overridden `status_changed` audit log entry records
+  `actor_user_id`, `approved_by`, `overridden_safeguards`, `bill_ids`, `outstanding_amount`,
+  `outstanding_amounts`, and `collected_amount` (plus `undelivered_items` when overriding kitchen
+  delivery), and never records the PIN.
 
 Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
 (deferred, not immediate) transaction rather than from the JWT claim, and re-run every policy check
@@ -371,8 +403,12 @@ Router: `main/routes/expenses.ts`. Full path: `/api/expenses`. Reads need `expen
 creation, voiding, and replacement need `expenses.manage` **and** `expenses.view`, while payment and
 reversal mutations need `expenses.pay` and `expenses.reverse` (alongside `expenses.view`, plus
 `cash.movements.manage` for cash methods) so an actor can always read back the row they touched.
-Amounts are integer minor units in the expense's own `currency_code`; no endpoint converts currencies
-or assumes a minor-unit factor.
+Amounts are positive safe-integer minor units in the expense's own `currency_code`; no endpoint
+converts currencies or assumes a minor-unit factor. Active incurred totals per currency (after
+subtracting the replaced source on replacement) and returned aggregate totals must fit within
+`Number.MAX_SAFE_INTEGER`, or the operation fails with `422 amount_range_exceeded`; legacy rows with
+an out-of-range stored amount project `amount_minor` and `due_minor` as `null` so list, detail, and
+recovery mutations stay usable without rounding.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
@@ -518,15 +554,17 @@ Router: `main/routes/print-templates.ts`. Full path: `/api/print-templates`.
 
 Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 
+Category, product, and add-on exports include `flo_csv_encoding=quote-v1` for reversible formula protection; see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity) for marked, unmarked legacy, and unsupported encoding rules.
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/template/:type` | `ROLE_ACCESS.ownerManager` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
-| `GET` | `/export/categories` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `categories-export.csv`. |
-| `GET` | `/export/products` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `products-export.csv`. |
-| `GET` | `/export/addons` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `addons-export.csv`. |
-| `POST` | `/import/categories` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. Per-row validation errors are reported in the response. |
-| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
-| `POST` | `/import/addons` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
+| `GET` | `/template/:type` | `catalog.import-export` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
+| `GET` | `/export/categories` | `catalog.import-export` | none | `text/csv` attachment `categories-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/products` | `catalog.import-export` | none | `text/csv` attachment `products-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/addons` | `catalog.import-export` | none | `text/csv` attachment `addons-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `POST` | `/import/categories` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows, preserves unmarked category names, and reports per-row validation errors in the response. |
+| `POST` | `/import/products` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Decodes `quote-v1` rows and ID-proven legacy product fields. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
+| `POST` | `/import/addons` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows and ID-proven legacy add-on fields, and reports counts plus per-row `errors`. |
 
 ### Settings
 

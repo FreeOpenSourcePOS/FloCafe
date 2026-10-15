@@ -153,7 +153,7 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     if (orderId) {
       await page.request.patch(`${BASE}/api/orders/${orderId}/status`, {
         headers: authHeaders,
-        data: { status: 'completed' },
+        data: { status: 'cancelled' },
       });
     }
     if (tableId) {

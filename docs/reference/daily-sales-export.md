@@ -15,7 +15,7 @@ day as a single XLSX workbook or a two-file CSV pair.
 |-------|------|----------------|
 | Dataset builder | `main/services/daily-sales-export.ts` | Single source of truth for all accounting: `buildDailySalesExportDataset`, `dailySalesSummaryMetricRows`, `DAILY_SALES_ITEM_COLUMNS`. |
 | Serializers | `main/services/daily-sales-export-files.ts` | Encode only - no accounting math. `serializeDailySalesExportXlsx`, `serializeDailySalesExportCsv`, `dailySalesExportFilename`. |
-| Shared CSV helper | `main/lib/csv.ts` | `toCsvRow` with CWE-1236 formula neutralization (leading quote on `= + - @` non-numerics). Also used by `main/routes/menu-csv.ts`. |
+| Shared CSV helper | `main/lib/csv.ts` | `toCsvRow` with CWE-1236 formula neutralization (leading quote on `= + - @` non-numerics); `main/routes/menu-csv.ts` wraps it via `toQuoteV1CsvRow` (see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity)). |
 | Endpoint | `main/routes/reports.ts` | Validation, serialization, headers, error mapping (400 / 401 / 403 / 409 / 500). |
 | Frontend | `frontend/src/app/(dashboard)/dashboard/page.tsx` | Blob download only; two buttons shown when `periodMode === 'day'`. |
 

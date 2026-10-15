@@ -61,9 +61,27 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
+const ORDER_WRITE_RATE_LIMIT_ERROR = {
+  error: 'Too many requests, please try again later.',
+};
+
+export function resolveOrderWriteRateLimitMax(
+  rawLimit = process.env.FLO_ORDER_WRITE_RATE_LIMIT_MAX,
+): number {
+  const configured = Number.parseInt(rawLimit || '', 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : 60;
+}
+
+export function shouldSkipOrderWriteRateLimit(req: Request): boolean {
+  const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+  if (!userId) return false;
+  return isAllowedPrivateIp(req.socket?.remoteAddress || '');
+}
+
 const orderReadRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
   limit: 120,
@@ -72,18 +90,22 @@ const orderReadRateLimit = expressRateLimit({
 });
 const orderWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: () => resolveOrderWriteRateLimitMax(),
   standardHeaders: true,
   legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
+  skip: shouldSkipOrderWriteRateLimit,
 });
 // Kept as its own bucket rather than folded into orderWriteRateLimit: this limit
 // had its own counter when the route lived in the registrar, and sharing a
 // counter would let unrelated order writes exhaust the item-void budget.
 const orderItemCancelRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: () => resolveOrderWriteRateLimitMax(),
   standardHeaders: true,
   legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
+  skip: shouldSkipOrderWriteRateLimit,
 });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;
@@ -242,6 +264,15 @@ export function checkPinRateLimit(key: string): boolean {
   if (entry.count >= PIN_MAX_ATTEMPTS) return false;
   entry.count++;
   return true;
+}
+
+function isPinRateLimited(key: string): boolean {
+  const entry = pinAttempts.get(key);
+  if (!entry || Date.now() > entry.resetAt) {
+    pinAttempts.delete(key);
+    return false;
+  }
+  return entry.count >= PIN_MAX_ATTEMPTS;
 }
 
 export function resetPinRateLimitForTests(): void {
@@ -2087,8 +2118,8 @@ router.patch(
           );
         }
 
-        // Cancellation authorization is based on the same transaction-local
-        // order and item snapshot that will be mutated below.
+        // Evaluate item progress, kitchen delivery policy, and bill/payment state
+        // inside the authoritative transaction.
         const hasItemsInProgress =
           db
             .prepare(`
@@ -2099,40 +2130,224 @@ router.patch(
             .get(req.params.id) !== undefined;
         const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
         const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
-        const requiresOverride =
-          (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+
+        const tenantCurrency = getTenantCurrency();
+        const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+        const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
+        const roundCurrency = (amount: number): number =>
+          fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
+
+        const billRows = db
+          .prepare(`
+            SELECT b.*,
+                   COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
+            FROM bills b
+            WHERE b.order_id = ?
+            ORDER BY b.id ASC
+          `)
+          .all(req.params.id) as Array<{
+          id: string;
+          total?: number | null;
+          round_off?: number | null;
+          paid_amount?: number | null;
+          refunded_cents?: number | null;
+          balance?: number | null;
+          payment_details?: unknown;
+          payment_status?: string | null;
+        }>;
+
+        const evaluatedBills = billRows.map((b) => {
+          const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
+          const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
+          const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
+          const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
+          const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
+          const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
+          const storedBalanceMinor = Math.max(
+            0,
+            Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
+          );
+          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+          if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
+            try {
+              const parsed = JSON.parse(b.payment_details);
+              if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+            } catch {
+              parsedPaymentDetails = [];
+            }
+          } else if (Array.isArray(b.payment_details)) {
+            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
+          }
+          const detailsPaidMinor = parsedPaymentDetails.reduce(
+            (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+            0,
+          );
+          const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+          const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
+          const paymentStatus = String(b.payment_status || '');
+          const effectiveCollectedMinor = Math.max(
+            netCollectedMinor,
+            paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
+          );
+          const hasCollectedFunds =
+            effectiveCollectedMinor > 0 ||
+            (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
+            paymentStatus === 'partial' ||
+            paymentStatus === 'partially_refunded' ||
+            (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
+          const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
+          const unpaidBalanceMinor = isPayable
+            ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
+            : 0;
+          const isSettled =
+            !isPayable ||
+            (paymentStatus === 'paid' &&
+              unpaidBalanceMinor === 0 &&
+              recordedPaidMinor >= totalMinor);
+          return {
+            id: b.id,
+            paymentStatus,
+            totalMinor,
+            unroundedTotalMinor,
+            recordedPaidMinor,
+            effectiveCollectedMinor,
+            hasCollectedFunds,
+            isPayable,
+            unpaidBalanceMinor,
+            isSettled,
+          };
+        });
+
+        const orderTotalMinor = Math.max(
+          0,
+          Math.round(Number(currentOrder.total || 0) * minorFactor),
+        );
+        const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
+        const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
+        const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
+        const payableBills = evaluatedBills.filter((b) => b.isPayable);
+        const billedCoverageMinor = evaluatedBills.reduce(
+          (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
+          0,
+        );
+        const unbilledMinor =
+          payableBills.length === 0
+            ? orderTotalMinor
+            : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
+        const totalOutstandingMinor =
+          payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
+        const totalCollectedMinor = evaluatedBills.reduce(
+          (sum, b) => sum + b.effectiveCollectedMinor,
+          0,
+        );
+
+        const paymentBlocksCompletion =
+          status === 'completed' &&
+          (totalOutstandingMinor > 0 ||
+            (orderTotalMinor > 0 && payableBills.length === 0) ||
+            payableBills.some((b) => !b.isSettled));
+
+        const requireKitchenDelivered = db
+          .prepare(
+            "SELECT value FROM settings WHERE key = 'require_kitchen_delivered_before_settlement'",
+          )
+          .get() as { value: string } | undefined;
+        const kdsEnabled = db
+          .prepare("SELECT value FROM settings WHERE key = 'kds_enabled'")
+          .get() as { value: string } | undefined;
+        const billingType = db
+          .prepare("SELECT value FROM settings WHERE key = 'billing_type'")
+          .get() as { value: string } | undefined;
+        const kitchenPolicyApplies =
+          requireKitchenDelivered?.value === 'true' &&
+          kdsEnabled?.value !== 'false' &&
+          billingType?.value !== 'prepaid';
+        const undeliveredKitchenItems =
+          status === 'completed' && kitchenPolicyApplies
+            ? (db
+                .prepare(`
+                  SELECT product_name FROM order_items
+                  WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
+                `)
+                .all(req.params.id) as { product_name: string }[])
+            : [];
+        const kitchenBlocksCompletion =
+          status === 'completed' && undeliveredKitchenItems.length > 0;
+
+        const orderInProgressForCancel = currentStatusIndex > 0 || hasItemsInProgress;
+        const hasCollectedFundsOnOrder = evaluatedBills.some((b) => b.hasCollectedFunds);
+        const requiresCancelOverride =
+          status === 'cancelled' && (orderInProgressForCancel || hasCollectedFundsOnOrder);
+        const requiresCompleteOverride =
+          status === 'completed' && (paymentBlocksCompletion || kitchenBlocksCompletion);
+        const requiresOverride = requiresCancelOverride || requiresCompleteOverride;
+
+        const overriddenSafeguards: string[] = [];
+        if (status === 'completed') {
+          if (paymentBlocksCompletion) overriddenSafeguards.push('unsettled_payment');
+          if (kitchenBlocksCompletion) overriddenSafeguards.push('kitchen_undelivered');
+        } else if (status === 'cancelled') {
+          if (orderInProgressForCancel) overriddenSafeguards.push('order_in_progress');
+          if (hasCollectedFundsOnOrder) overriddenSafeguards.push('collected_funds');
+        }
 
         let approvedByUserId: string | undefined;
         if (requiresOverride) {
-          if (!override_pin) {
-            throw Object.assign(new Error('Manager PIN required to cancel order in progress'), {
-              statusCode: 400,
-            });
+          if (!override_pin || typeof override_pin !== 'string') {
+            let missingPinMessage = 'Manager PIN required to cancel order in progress';
+            if (status === 'cancelled' && hasCollectedFundsOnOrder && !orderInProgressForCancel) {
+              missingPinMessage = 'Manager PIN required to cancel order with collected payment';
+            } else if (status === 'completed') {
+              if (paymentBlocksCompletion && kitchenBlocksCompletion) {
+                missingPinMessage =
+                  'Manager PIN required to complete unpaid order with undelivered kitchen items';
+              } else if (paymentBlocksCompletion) {
+                missingPinMessage = 'Manager PIN required to complete unpaid order';
+              } else {
+                missingPinMessage =
+                  'Manager PIN required to complete order with undelivered kitchen items';
+              }
+            }
+            throw Object.assign(new Error(missingPinMessage), { statusCode: 400 });
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-          // Rate-limit cancellation attempts per client.
-          const rateLimitKey = `pin:${clientIp}:order-cancel`;
-          if (!checkPinRateLimit(rateLimitKey)) {
+          const rateLimitKey =
+            status === 'cancelled'
+              ? `pin:${clientIp}:order-cancel`
+              : `pin:${clientIp}:order-complete`;
+          if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
             });
           }
 
-          const user = (
-            db
-              .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-              .all() as any[]
-          ).find(
+          type PinApproverCandidate = { id: string; role: string; pin_hash: string };
+          const explicitApproverId = req.body.approver_id || req.body.manager_id;
+          const candidateUsers = explicitApproverId
+            ? (db
+                .prepare(
+                  'SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                )
+                .all(explicitApproverId) as PinApproverCandidate[])
+            : (db
+                .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
+                .all() as PinApproverCandidate[]);
+
+          const user = candidateUsers.find(
             (candidate) =>
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-              hasPermission(candidate.id, 'orders.item.cancel') &&
+              hasPermission(candidate.id, 'orders.status.update') &&
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
+              (!paymentBlocksCompletion || hasPermission(candidate.id, 'payments.take')) &&
               verifyPin(candidate.pin_hash, override_pin),
           );
 
           if (!user) {
+            checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
+          pinAttempts.delete(rateLimitKey);
           approvedByUserId = user.id;
         }
 
@@ -2172,11 +2387,11 @@ router.patch(
             break;
 
           case 'cancelled': {
-            // Select only items eligible for restocking (exclude already cancelled, voided, or accounting adjustments)
+            // Restore stock only for items still pending; prepared/in-progress items use void/waste semantics.
             const eligibleItems = db
               .prepare(`
             SELECT * FROM order_items
-            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+            WHERE order_id = ? AND status = 'pending'
           `)
               .all(req.params.id) as any[];
 
@@ -2237,7 +2452,23 @@ router.patch(
           details: {
             from: currentOrder.status,
             to: status,
-            ...(approvedByUserId && { approved_by: approvedByUserId }),
+            ...(approvedByUserId && {
+              actor_user_id: authUser.userId,
+              approved_by: approvedByUserId,
+              overridden_safeguards: overriddenSafeguards,
+              bill_ids: evaluatedBills.map((b) => b.id),
+              outstanding_amount: roundCurrency(totalOutstandingMinor / minorFactor),
+              outstanding_amounts: evaluatedBills.map((b) => ({
+                bill_id: b.id,
+                outstanding_amount: roundCurrency(b.unpaidBalanceMinor / minorFactor),
+                collected_amount: roundCurrency(b.effectiveCollectedMinor / minorFactor),
+              })),
+              collected_amount: roundCurrency(totalCollectedMinor / minorFactor),
+              ...(kitchenBlocksCompletion
+                ? { undelivered_items: undeliveredKitchenItems.map((i) => i.product_name) }
+                : {}),
+            }),
+            ...(status === 'cancelled' && reason ? { reason } : {}),
           },
         });
 

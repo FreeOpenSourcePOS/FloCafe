@@ -10,14 +10,26 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-recipe-lifecycle-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
-  api, assertEqual, assert, getResults, resetCounters, closeDatabase,
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedManagerUser,
+  seedCategory,
+  seedProduct,
+  seedTable,
+  api,
+  assertEqual,
+  assert,
+  getResults,
+  resetCounters,
+  closeDatabase,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
 const { createSupply, getSupply, softDeleteSupply } = require('../main/services/supplies');
@@ -28,7 +40,8 @@ function stockOf(db: any, id: string): number {
 }
 
 function movementCount(db: any, supplyId: string, type: string): number {
-  return db.prepare('SELECT COUNT(*) AS c FROM supply_movements WHERE supply_id = ? AND movement_type = ?')
+  return db
+    .prepare('SELECT COUNT(*) AS c FROM supply_movements WHERE supply_id = ? AND movement_type = ?')
     .get(supplyId, type).c;
 }
 
@@ -42,15 +55,29 @@ async function main() {
   seedManagerUser(db);
   seedCategory(db, 'cat-rec', 'Recipes');
 
-  seedProduct(db, 'prod-latte', 'cat-rec', 'Latte', 250, { track_inventory: false, stock_quantity: 0 });
-  seedProduct(db, 'prod-water', 'cat-rec', 'Water', 50, { track_inventory: false, stock_quantity: 0 });
+  seedProduct(db, 'prod-latte', 'cat-rec', 'Latte', 250, {
+    track_inventory: false,
+    stock_quantity: 0,
+  });
+  seedProduct(db, 'prod-water', 'cat-rec', 'Water', 50, {
+    track_inventory: false,
+    stock_quantity: 0,
+  });
   seedTable(db, 'tbl-rec-1', 1, 4);
 
   const beans = createSupply(db, {
-    name: 'Beans', baseUnit: 'g', stockQuantity: 1000, lowStockThreshold: 100, actorUserId: userId,
+    name: 'Beans',
+    baseUnit: 'g',
+    stockQuantity: 1000,
+    lowStockThreshold: 100,
+    actorUserId: userId,
   });
   const milkS = createSupply(db, {
-    name: 'Milk', baseUnit: 'ml', stockQuantity: 5000, lowStockThreshold: 500, actorUserId: userId,
+    name: 'Milk',
+    baseUnit: 'ml',
+    stockQuantity: 5000,
+    lowStockThreshold: 500,
+    actorUserId: userId,
   });
 
   saveRecipe(db, {
@@ -64,10 +91,26 @@ async function main() {
 
   const snap2 = buildRecipeSnapshot(db, 'prod-latte', 2);
   assert(snap2 !== null, 'snapshot built for active recipe');
-  assertEqual(snap2!.components.find((c: any) => c.supply_id === beans.id)!.quantity, 36, 'snapshot scales linearly (2 x 18 g)');
-  assertEqual(snap2!.components.find((c: any) => c.supply_id === milkS.id)!.quantity, 400, 'snapshot scales milk (2 x 200 ml)');
-  assertEqual(buildRecipeSnapshot(db, 'prod-water', 1), null, 'product without recipe yields null snapshot');
-  assertEqual(buildRecipeSnapshot(db, 'prod-latte', 0), null, 'non-positive order quantity yields null snapshot');
+  assertEqual(
+    snap2!.components.find((c: any) => c.supply_id === beans.id)!.quantity,
+    36,
+    'snapshot scales linearly (2 x 18 g)',
+  );
+  assertEqual(
+    snap2!.components.find((c: any) => c.supply_id === milkS.id)!.quantity,
+    400,
+    'snapshot scales milk (2 x 200 ml)',
+  );
+  assertEqual(
+    buildRecipeSnapshot(db, 'prod-water', 1),
+    null,
+    'product without recipe yields null snapshot',
+  );
+  assertEqual(
+    buildRecipeSnapshot(db, 'prod-latte', 0),
+    null,
+    'non-positive order quantity yields null snapshot',
+  );
 
   const { orderRoutes } = require('../main/routes/orders');
   const { orderItemRoutes } = require('../main/routes/order-items');
@@ -90,7 +133,11 @@ async function main() {
         ],
       },
     });
-    assertEqual(snakeCaseRecipe.status, 200, 'recipe API accepts documented snake_case supply_id payloads');
+    assertEqual(
+      snakeCaseRecipe.status,
+      200,
+      'recipe API accepts documented snake_case supply_id payloads',
+    );
 
     console.log('\n--- 1. Deplete at order creation ---');
     const beansBefore = stockOf(db, beans.id);
@@ -113,9 +160,14 @@ async function main() {
 
     assertEqual(stockOf(db, beans.id), beansBefore - 54, 'beans depleted by 3 x 18 g');
     assertEqual(stockOf(db, milkS.id), milkBefore - 600, 'milk depleted by 3 x 200 ml');
-    assertEqual(movementCount(db, beans.id, 'recipe_depletion'), 1, 'one recipe_depletion movement for beans');
+    assertEqual(
+      movementCount(db, beans.id, 'recipe_depletion'),
+      1,
+      'one recipe_depletion movement for beans',
+    );
 
-    const item1 = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND product_id = 'prod-latte' LIMIT 1")
+    const item1 = db
+      .prepare("SELECT * FROM order_items WHERE order_id = ? AND product_id = 'prod-latte' LIMIT 1")
       .get(order1.data.order.id);
     const parsedSnap = JSON.parse(item1.recipe_snapshot);
     assertEqual(parsedSnap.product_id, 'prod-latte', 'recipe_snapshot stores product id');
@@ -130,27 +182,47 @@ async function main() {
     const beansMid = stockOf(db, beans.id);
     const milkMid = stockOf(db, milkS.id);
 
-    const cancelRes = await api(baseUrl, `/api/orders/${order1.data.order.id}/items/${item1.id}/cancel`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: {},
-    });
+    const cancelRes = await api(
+      baseUrl,
+      `/api/orders/${order1.data.order.id}/items/${item1.id}/cancel`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: {},
+      },
+    );
     assertEqual(cancelRes.status, 200, 'pending item cancel succeeds');
-    assertEqual(db.prepare('SELECT status FROM orders WHERE id = ?').get(order1.data.order.id).status, 'pending', 'order stays active with remaining item');
+    assertEqual(
+      db.prepare('SELECT status FROM orders WHERE id = ?').get(order1.data.order.id).status,
+      'pending',
+      'order stays active with remaining item',
+    );
     assertEqual(stockOf(db, beans.id), beansMid + 54, 'beans restored on pending cancel');
     assertEqual(stockOf(db, milkS.id), milkMid + 600, 'milk restored on pending cancel');
-    assertEqual(movementCount(db, beans.id, 'recipe_restore'), 1, 'one recipe_restore movement for beans');
+    assertEqual(
+      movementCount(db, beans.id, 'recipe_restore'),
+      1,
+      'one recipe_restore movement for beans',
+    );
 
     console.log('\n--- 3. Item restore re-depletes ---');
     const beansPostCancel = stockOf(db, beans.id);
-    const restoreRes = await api(baseUrl, `/api/orders/${order1.data.order.id}/items/${item1.id}/restore`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: {},
-    });
+    const restoreRes = await api(
+      baseUrl,
+      `/api/orders/${order1.data.order.id}/items/${item1.id}/restore`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: {},
+      },
+    );
     assertEqual(restoreRes.status, 200, 'item restore succeeds');
     assertEqual(stockOf(db, beans.id), beansPostCancel - 54, 'beans re-depleted on restore');
-    assertEqual(movementCount(db, beans.id, 'recipe_depletion'), 2, 'second recipe_depletion recorded');
+    assertEqual(
+      movementCount(db, beans.id, 'recipe_depletion'),
+      2,
+      'second recipe_depletion recorded',
+    );
 
     console.log('\n--- 4. Whole-order cancel restores ---');
     const beansBeforeCancel = stockOf(db, beans.id);
@@ -184,7 +256,11 @@ async function main() {
     const order3 = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: authHeader,
-      body: { type: 'dine_in', table_id: 'tbl-rec-1', items: [{ product_id: 'prod-latte', quantity: 1 }] },
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-rec-1',
+        items: [{ product_id: 'prod-latte', quantity: 1 }],
+      },
     });
     const item3Id = order3.data.order.items[0].id;
     const beansBeforeVoid = stockOf(db, beans.id);
@@ -194,11 +270,15 @@ async function main() {
       headers: authHeader,
       body: { status: 'preparing' },
     });
-    const voidRes = await api(baseUrl, `/api/orders/${order3.data.order.id}/items/${item3Id}/cancel`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: { override_pin: '1234' },
-    });
+    const voidRes = await api(
+      baseUrl,
+      `/api/orders/${order3.data.order.id}/items/${item3Id}/cancel`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: { override_pin: '1234' },
+      },
+    );
     assertEqual(voidRes.status, 200, 'void of in-prep item succeeds');
     assertEqual(stockOf(db, beans.id), beansBeforeVoid, 'void does NOT restore bean stock');
 
@@ -209,7 +289,45 @@ async function main() {
       body: { status: 'cancelled', override_pin: '1234' },
     });
     assertEqual(cancel3.status, 200, 'order with only voided item cancels');
-    assertEqual(stockOf(db, beans.id), beansBeforeOrder3Cancel, 'whole-order cancel skips voided item supplies');
+    assertEqual(
+      stockOf(db, beans.id),
+      beansBeforeOrder3Cancel,
+      'whole-order cancel skips voided item supplies',
+    );
+
+    const mixedRecipeOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-latte', quantity: 1 },
+          { product_id: 'prod-latte', quantity: 2 },
+        ],
+      },
+    });
+    assertEqual(mixedRecipeOrder.status, 201, 'mixed recipe order created');
+    const beansAfterMixedCreate = stockOf(db, beans.id);
+    await api(baseUrl, `/api/order-items/${mixedRecipeOrder.data.order.items[0].id}/status`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'preparing' },
+    });
+    const cancelMixedRecipe = await api(
+      baseUrl,
+      `/api/orders/${mixedRecipeOrder.data.order.id}/status`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: { status: 'cancelled', override_pin: '1234' },
+      },
+    );
+    assertEqual(cancelMixedRecipe.status, 200, 'mixed recipe order cancels with manager PIN');
+    assertEqual(
+      stockOf(db, beans.id),
+      beansAfterMixedCreate + 36,
+      'whole-order cancel restores recipe stock only for the pending item (2 x 18 g) and skips the preparing item (1 x 18 g)',
+    );
 
     console.log('\n--- 7. Inactive recipe skips depletion ---');
     saveRecipe(db, {
@@ -226,7 +344,9 @@ async function main() {
     });
     assertEqual(order4.status, 201, 'order with inactive recipe created');
     assertEqual(stockOf(db, beans.id), beansInactive, 'inactive recipe does not deplete');
-    const item4 = db.prepare('SELECT recipe_snapshot FROM order_items WHERE order_id = ? LIMIT 1').get(order4.data.order.id);
+    const item4 = db
+      .prepare('SELECT recipe_snapshot FROM order_items WHERE order_id = ? LIMIT 1')
+      .get(order4.data.order.id);
     assertEqual(item4.recipe_snapshot, null, 'inactive recipe stores null snapshot');
 
     console.log('\n--- 8. Yield scaling ---');
@@ -242,10 +362,17 @@ async function main() {
       body: { type: 'takeaway', items: [{ product_id: 'prod-latte', quantity: 2 }] },
     });
     assertEqual(order5.status, 201, 'order with scaled yield recipe created');
-    assertEqual(stockOf(db, beans.id), beansYield - 36, 'yield scales depletion (72 g per 4 -> 36 g for 2)');
+    assertEqual(
+      stockOf(db, beans.id),
+      beansYield - 36,
+      'yield scales depletion (72 g per 4 -> 36 g for 2)',
+    );
 
     console.log('\n--- 9. Product inventory independent of supplies ---');
-    seedProduct(db, 'prod-track-both', 'cat-rec', 'Tracked', 100, { track_inventory: true, stock_quantity: 10 });
+    seedProduct(db, 'prod-track-both', 'cat-rec', 'Tracked', 100, {
+      track_inventory: true,
+      stock_quantity: 10,
+    });
     saveRecipe(db, {
       productId: 'prod-track-both',
       yieldQuantity: 1,
@@ -258,9 +385,14 @@ async function main() {
       body: { type: 'takeaway', items: [{ product_id: 'prod-track-both', quantity: 1 }] },
     });
     assertEqual(order6.status, 201, 'tracked product with recipe created');
-    assertEqual(stockOf(db, beans.id), beansBoth - 10, 'supplies depleted for tracked product with recipe');
     assertEqual(
-      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-both').stock_quantity,
+      stockOf(db, beans.id),
+      beansBoth - 10,
+      'supplies depleted for tracked product with recipe',
+    );
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-both')
+        .stock_quantity,
       9,
       'product stock also deducted (10 -> 9)',
     );
@@ -283,14 +415,19 @@ async function main() {
       yieldQuantity: 1,
       items: [{ supplyId: beans.id, quantity: 30, unit: 'g' }],
     });
-    const item7 = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND product_id = 'prod-latte' LIMIT 1")
+    const item7 = db
+      .prepare("SELECT * FROM order_items WHERE order_id = ? AND product_id = 'prod-latte' LIMIT 1")
       .get(order7.data.order.id);
     const beansBeforeSnapshotCancel = stockOf(db, beans.id);
-    const cancel7 = await api(baseUrl, `/api/orders/${order7.data.order.id}/items/${item7.id}/cancel`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: {},
-    });
+    const cancel7 = await api(
+      baseUrl,
+      `/api/orders/${order7.data.order.id}/items/${item7.id}/cancel`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: {},
+      },
+    );
     assertEqual(cancel7.status, 200, 'item cancel after recipe edit succeeds');
     assertEqual(
       stockOf(db, beans.id),
@@ -300,9 +437,15 @@ async function main() {
 
     console.log('\n--- 11. Historical restore survives supply soft delete ---');
     const historicalSupply = createSupply(db, {
-      name: 'Historical beans', baseUnit: 'g', stockQuantity: 100, actorUserId: userId,
+      name: 'Historical beans',
+      baseUnit: 'g',
+      stockQuantity: 100,
+      actorUserId: userId,
     });
-    seedProduct(db, 'prod-soft-delete', 'cat-rec', 'Soft-delete restore', 100, { track_inventory: false, stock_quantity: 0 });
+    seedProduct(db, 'prod-soft-delete', 'cat-rec', 'Soft-delete restore', 100, {
+      track_inventory: false,
+      stock_quantity: 0,
+    });
     saveRecipe(db, {
       productId: 'prod-soft-delete',
       items: [{ supplyId: historicalSupply.id, quantity: 18, unit: 'g' }],
@@ -316,21 +459,29 @@ async function main() {
     const historicalItem = historicalOrder.data.order.items[0];
     deleteRecipe(db, 'prod-soft-delete');
     softDeleteSupply(db, historicalSupply.id);
-    const historicalCancel = await api(baseUrl, `/api/orders/${historicalOrder.data.order.id}/items/${historicalItem.id}/cancel`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: {},
-    });
+    const historicalCancel = await api(
+      baseUrl,
+      `/api/orders/${historicalOrder.data.order.id}/items/${historicalItem.id}/cancel`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+        body: {},
+      },
+    );
     assertEqual(historicalCancel.status, 200, 'cancel restores from a soft-deleted supply');
     assertEqual(
-      db.prepare('SELECT stock_quantity FROM supplies WHERE id = ?').get(historicalSupply.id).stock_quantity,
+      db.prepare('SELECT stock_quantity FROM supplies WHERE id = ?').get(historicalSupply.id)
+        .stock_quantity,
       100,
       'soft-deleted supply stock is restored from historical snapshot',
     );
 
     console.log('\n--- 12. Variant portions scale the same recipe ---');
     const syrup = createSupply(db, {
-      name: 'Syrup', baseUnit: 'ml', stockQuantity: 1000, actorUserId: userId,
+      name: 'Syrup',
+      baseUnit: 'ml',
+      stockQuantity: 1000,
+      actorUserId: userId,
     });
     saveRecipe(db, {
       productId: 'prod-latte',
@@ -344,11 +495,31 @@ async function main() {
     const component = (snapshot: any, supplyId: string) =>
       snapshot.components.find((entry: any) => entry.supply_id === supplyId)!.quantity;
     const halfPortion = buildRecipeSnapshot(db, 'prod-latte', 2, 0.5)!;
-    assertEqual(component(halfPortion, beans.id), 18, 'a half portion of two servings depletes half the beans');
-    assertEqual(component(halfPortion, syrup.id), 400, 'a half portion converts litres to base ml before scaling');
-    assertEqual(component(buildRecipeSnapshot(db, 'prod-latte', 2)!, beans.id), 36, 'the default portion is one');
-    assertEqual(component(buildRecipeSnapshot(db, 'prod-latte', 2, 2)!, beans.id), 72, 'a double portion doubles the base recipe');
-    assertEqual(buildRecipeSnapshot(db, 'prod-water', 1, 2), null, 'a portion has no effect without an active recipe');
+    assertEqual(
+      component(halfPortion, beans.id),
+      18,
+      'a half portion of two servings depletes half the beans',
+    );
+    assertEqual(
+      component(halfPortion, syrup.id),
+      400,
+      'a half portion converts litres to base ml before scaling',
+    );
+    assertEqual(
+      component(buildRecipeSnapshot(db, 'prod-latte', 2)!, beans.id),
+      36,
+      'the default portion is one',
+    );
+    assertEqual(
+      component(buildRecipeSnapshot(db, 'prod-latte', 2, 2)!, beans.id),
+      72,
+      'a double portion doubles the base recipe',
+    );
+    assertEqual(
+      buildRecipeSnapshot(db, 'prod-water', 1, 2),
+      null,
+      'a portion has no effect without an active recipe',
+    );
     assertEqual(
       buildRecipeSnapshot(db, 'prod-water', 1, 0),
       null,

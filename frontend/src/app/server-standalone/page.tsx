@@ -94,7 +94,11 @@ function createApi(): AxiosInstance {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401) localStorage.removeItem(TOKEN_KEY);
+      const sentAuth = error.config?.headers?.Authorization;
+      const currentToken = localStorage.getItem(TOKEN_KEY);
+      if (error.response?.status === 401 && currentToken && sentAuth === `Bearer ${currentToken}`) {
+        localStorage.removeItem(TOKEN_KEY);
+      }
       return Promise.reject(error);
     },
   );
@@ -143,15 +147,27 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
+type SendSnapshot = {
+  tableId: string;
+  tableName: string | undefined;
+  orderId: number | null;
+  orderCustomer: Order['customer'] | null;
+  existingItemIds: Set<number>;
+  draftLines: DraftLine[];
+  customerName: string;
+  customerPhone: string;
+  orderNotes: string;
+};
+
 function sendAttemptSignature(
-  scopeId: string,
+  tableId: string,
   draft: DraftLine[],
   customerName: string,
   customerPhone: string,
   orderNotes: string,
 ): string {
   const items = draft.map((line) => `${line.id}:${line.quantity}`).join('|');
-  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}|${orderNotes.trim()}`;
+  return `${tableId}|${items}|${customerName.trim()}|${customerPhone.trim()}|${orderNotes.trim()}`;
 }
 
 export default function ServerStandalonePage() {
@@ -183,6 +199,7 @@ export default function ServerStandalonePage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [tablesLoaded, setTablesLoaded] = useState(false);
   const [selectedTableId, setSelectedTableId] = useState<string>('');
+  const [orderLoadedTableId, setOrderLoadedTableId] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([]);
@@ -205,23 +222,39 @@ export default function ServerStandalonePage() {
   const [sending, setSending] = useState(false);
   // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
   const sendInFlightRef = useRef(false);
-  // Nonce for the in-flight send attempt, paired with a signature of what defines it (draft/customer/order).
-  // Reused only while retrying that exact same attempt; a content change or a success both rotate it.
-  const sendAttemptRef = useRef<{ signature: string; nonce: string } | null>(null);
+  // Nonce and frozen target snapshot for the pending send attempt, paired with a signature of what defines it.
+  // Reused while retrying that exact same attempt so a lost create response cannot switch to append on retry.
+  const sendAttemptRef = useRef<{
+    signature: string;
+    nonce: string;
+    snapshot: SendSnapshot;
+  } | null>(null);
+  const sendSeqRef = useRef(0);
+  const addonModalSendSeqRef = useRef(0);
+  const editingDraftSendSeqRef = useRef(0);
+  const selectedTableIdRef = useRef('');
+  const orderLoadedTableIdRef = useRef('');
+  const orderLookupFailedRef = useRef(false);
+  const orderLoadSeqRef = useRef(0);
 
-  async function loadAll() {
+  async function loadAll(options?: { allowWhileSending?: boolean }) {
     if (!api) return;
+    if (sendInFlightRef.current && !options?.allowWhileSending) return;
     const [categoriesRes, productsRes, tablesRes] = await Promise.all([
       api.get('/api/categories', { params: { active: 'true' } }),
       api.get('/api/products', { params: { active: 'true' } }),
       api.get('/api/tables', { params: { active: 'true' } }),
     ]);
+    if (sendInFlightRef.current && !options?.allowWhileSending) return;
     setCategories(categoriesRes.data.categories || []);
     setProducts(productsRes.data.products || []);
     const loadedTables = tablesRes.data.tables || [];
     setTables(loadedTables);
     setTablesLoaded(true);
-    if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
+    if (!selectedTableIdRef.current && loadedTables[0]) {
+      selectedTableIdRef.current = loadedTables[0].id;
+      setSelectedTableId(loadedTables[0].id);
+    }
   }
 
   function cancelPendingCustomerLookup() {
@@ -229,28 +262,66 @@ export default function ServerStandalonePage() {
     phoneAbortRef.current?.abort();
   }
 
-  async function loadOrder(tableId: string) {
+  async function loadOrder(tableId: string, options?: { allowWhileSending?: boolean }) {
     if (!api || !tableId) return;
-    cancelPendingCustomerLookup();
-    const res = await api.get('/api/orders', {
-      params: {
-        table_id: tableId,
-        type: 'dine_in',
-        status: 'pending,preparing,ready',
-        per_page: 1,
-      },
-    });
-    const order = res.data.orders?.[0] || null;
-    setCurrentOrder(order);
-    if (order?.customer) {
-      setCustomerName(order.customer.name || '');
-      setCustomerPhone(order.customer.phone || '');
-    } else {
-      setCustomerName('');
-      setCustomerPhone('');
+    if (sendInFlightRef.current && !options?.allowWhileSending) return;
+    const loadSeq = ++orderLoadSeqRef.current;
+    orderLookupFailedRef.current = false;
+    if (!options?.allowWhileSending) {
+      orderLoadedTableIdRef.current = '';
+      setOrderLoadedTableId('');
     }
-    setCustomerMatch(null);
-    setCustomerSearched(false);
+    cancelPendingCustomerLookup();
+    try {
+      const res = await api.get('/api/orders', {
+        params: {
+          table_id: tableId,
+          type: 'dine_in',
+          status: 'pending,preparing,ready',
+          per_page: 1,
+        },
+      });
+      if (
+        (sendInFlightRef.current && !options?.allowWhileSending) ||
+        loadSeq !== orderLoadSeqRef.current ||
+        selectedTableIdRef.current !== tableId
+      ) {
+        return;
+      }
+      const order = res.data.orders?.[0] || null;
+      setCurrentOrder(order);
+      const pendingAttempt =
+        sendAttemptRef.current?.snapshot.tableId === tableId
+          ? sendAttemptRef.current.snapshot
+          : null;
+      if (pendingAttempt) {
+        setCustomerName(pendingAttempt.customerName);
+        setCustomerPhone(pendingAttempt.customerPhone);
+      } else if (order?.customer) {
+        setCustomerName(order.customer.name || '');
+        setCustomerPhone(order.customer.phone || '');
+      } else {
+        setCustomerName('');
+        setCustomerPhone('');
+      }
+      setCustomerMatch(null);
+      setCustomerSearched(false);
+      orderLoadedTableIdRef.current = tableId;
+      setOrderLoadedTableId(tableId);
+    } catch (error) {
+      if (
+        !options?.allowWhileSending &&
+        !sendInFlightRef.current &&
+        loadSeq === orderLoadSeqRef.current &&
+        selectedTableIdRef.current === tableId
+      ) {
+        setCurrentOrder(null);
+        orderLoadedTableIdRef.current = '';
+        setOrderLoadedTableId('');
+        orderLookupFailedRef.current = true;
+      }
+      throw error;
+    }
   }
 
   useEffect(() => {
@@ -285,13 +356,16 @@ export default function ServerStandalonePage() {
       api.get('/api/tables', { params: { active: 'true' } }),
     ])
       .then(([categoriesRes, productsRes, tablesRes]) => {
-        if (cancelled) return;
+        if (cancelled || sendInFlightRef.current) return;
         setCategories(categoriesRes.data.categories || []);
         setProducts(productsRes.data.products || []);
         const loadedTables = tablesRes.data.tables || [];
         setTables(loadedTables);
         setTablesLoaded(true);
-        if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
+        if (!selectedTableIdRef.current && loadedTables[0]) {
+          selectedTableIdRef.current = loadedTables[0].id;
+          setSelectedTableId(loadedTables[0].id);
+        }
       })
       .catch(() => toast.error(t('couldNotLoadData')));
     return () => {
@@ -302,21 +376,39 @@ export default function ServerStandalonePage() {
   useEffect(() => {
     if (!selectedTableId || !user || !api) return;
     let cancelled = false;
+    const loadSeq = ++orderLoadSeqRef.current;
+    const targetTableId = selectedTableId;
+    orderLookupFailedRef.current = false;
+    orderLoadedTableIdRef.current = '';
     cancelPendingCustomerLookup();
     api
       .get('/api/orders', {
         params: {
-          table_id: selectedTableId,
+          table_id: targetTableId,
           type: 'dine_in',
           status: 'pending,preparing,ready',
           per_page: 1,
         },
       })
       .then((res) => {
-        if (cancelled) return;
+        if (
+          cancelled ||
+          sendInFlightRef.current ||
+          loadSeq !== orderLoadSeqRef.current ||
+          selectedTableIdRef.current !== targetTableId
+        ) {
+          return;
+        }
         const order = res.data.orders?.[0] || null;
         setCurrentOrder(order);
-        if (order?.customer) {
+        const pendingAttempt =
+          sendAttemptRef.current?.snapshot.tableId === targetTableId
+            ? sendAttemptRef.current.snapshot
+            : null;
+        if (pendingAttempt) {
+          setCustomerName(pendingAttempt.customerName);
+          setCustomerPhone(pendingAttempt.customerPhone);
+        } else if (order?.customer) {
           setCustomerName(order.customer.name || '');
           setCustomerPhone(order.customer.phone || '');
         } else {
@@ -325,9 +417,21 @@ export default function ServerStandalonePage() {
         }
         setCustomerMatch(null);
         setCustomerSearched(false);
+        orderLoadedTableIdRef.current = targetTableId;
+        setOrderLoadedTableId(targetTableId);
       })
       .catch(() => {
-        if (!cancelled) setCurrentOrder(null);
+        if (
+          !cancelled &&
+          !sendInFlightRef.current &&
+          loadSeq === orderLoadSeqRef.current &&
+          selectedTableIdRef.current === targetTableId
+        ) {
+          setCurrentOrder(null);
+          orderLoadedTableIdRef.current = '';
+          setOrderLoadedTableId('');
+          orderLookupFailedRef.current = true;
+        }
       });
     return () => {
       cancelled = true;
@@ -342,6 +446,7 @@ export default function ServerStandalonePage() {
   }, []);
 
   function searchCustomerByPhone(rawPhone: string) {
+    if (sendInFlightRef.current) return;
     clearTimeout(phoneDebounceRef.current);
     phoneAbortRef.current?.abort();
     const digits = rawPhone.replace(/\D/g, '');
@@ -351,7 +456,7 @@ export default function ServerStandalonePage() {
       return;
     }
     phoneDebounceRef.current = setTimeout(async () => {
-      if (!api) return;
+      if (!api || sendInFlightRef.current) return;
       const controller = new AbortController();
       phoneAbortRef.current = controller;
       try {
@@ -361,6 +466,7 @@ export default function ServerStandalonePage() {
           params: { phone: lookupPhone },
           signal: controller.signal,
         });
+        if (controller.signal.aborted || sendInFlightRef.current) return;
         if (data.found && data.customer) {
           setCustomerMatch({ id: data.customer.id, name: data.customer.name });
           setCustomerName(data.customer.name || '');
@@ -369,7 +475,7 @@ export default function ServerStandalonePage() {
         }
         setCustomerSearched(true);
       } catch {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || sendInFlightRef.current) return;
         setCustomerMatch(null);
         setCustomerSearched(true);
       }
@@ -377,11 +483,72 @@ export default function ServerStandalonePage() {
   }
 
   function handleCustomerPhoneChange(value: string) {
+    if (sendInFlightRef.current) return;
     setCustomerPhone(value);
     setCustomerMatch(null);
     setCustomerSearched(false);
     setCustomerName('');
     searchCustomerByPhone(value);
+  }
+
+  function handleCustomerNameChange(value: string) {
+    if (sendInFlightRef.current || customerMatch) return;
+    setCustomerName(value);
+  }
+
+  function handleOrderNotesChange(value: string) {
+    if (sendInFlightRef.current) return;
+    setOrderNotes(value.slice(0, 200));
+  }
+
+  function selectTable(tableId: string) {
+    if (sendInFlightRef.current) return;
+    if (tableId === selectedTableIdRef.current) {
+      if (orderLookupFailedRef.current) {
+        loadOrder(tableId).catch(() => toast.error(t('couldNotLoadData')));
+      }
+      return;
+    }
+    selectedTableIdRef.current = tableId;
+    orderLookupFailedRef.current = false;
+    orderLoadedTableIdRef.current = '';
+    setOrderLoadedTableId('');
+    orderLoadSeqRef.current += 1;
+    cancelPendingCustomerLookup();
+    setCurrentOrder(null);
+    const pendingAttempt =
+      sendAttemptRef.current?.snapshot.tableId === tableId ? sendAttemptRef.current.snapshot : null;
+    setCustomerName(pendingAttempt?.customerName ?? '');
+    setCustomerPhone(pendingAttempt?.customerPhone ?? '');
+    setCustomerMatch(null);
+    setCustomerSearched(false);
+    setSelectedTableId(tableId);
+  }
+
+  function handleRefresh() {
+    if (sendInFlightRef.current) return;
+    const tableId = selectedTableIdRef.current;
+    Promise.all([loadAll(), tableId ? loadOrder(tableId) : Promise.resolve()]).catch(() =>
+      toast.error(t('refreshFailed')),
+    );
+  }
+
+  function openAddonModal(
+    product: Product,
+    quantity: number,
+    variant: ProductVariant | null = null,
+  ) {
+    if (sendInFlightRef.current) return;
+    addonModalSendSeqRef.current = sendSeqRef.current;
+    setAddonModalQuantity(quantity);
+    setAddonModalVariant(variant);
+    setAddonModalProduct(product);
+  }
+
+  function openEditDraftModal(line: DraftLine) {
+    if (sendInFlightRef.current) return;
+    editingDraftSendSeqRef.current = sendSeqRef.current;
+    setEditingDraftLine(line);
   }
 
   async function handleLogin(event: FormEvent) {
@@ -418,6 +585,7 @@ export default function ServerStandalonePage() {
     specialInstructions: string,
     variant: ProductVariant | null = null,
   ) {
+    if (sendInFlightRef.current) return;
     setDraft((lines) => {
       const lineId = generateCartItemId(
         product.id,
@@ -452,6 +620,7 @@ export default function ServerStandalonePage() {
     specialInstructions: string,
     variant: ProductVariant | null = null,
   ) {
+    if (sendInFlightRef.current) return;
     setDraft((lines) => {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
@@ -501,10 +670,12 @@ export default function ServerStandalonePage() {
   }
 
   function removeDraftLine(lineId: string) {
+    if (sendInFlightRef.current) return;
     setDraft((lines) => lines.filter((line) => line.id !== lineId));
   }
 
   function changeQty(lineId: string, delta: number) {
+    if (sendInFlightRef.current) return;
     setDraft((lines) =>
       lines
         .map((line) => (line.id === lineId ? { ...line, quantity: line.quantity + delta } : line))
@@ -512,10 +683,13 @@ export default function ServerStandalonePage() {
     );
   }
 
-  async function ensureCustomer(): Promise<string | null> {
+  async function ensureCustomer(
+    submittedName: string,
+    submittedPhone: string,
+  ): Promise<string | null> {
     if (!api) return null;
-    const name = customerName.trim();
-    const rawPhone = customerPhone.trim();
+    const name = submittedName.trim();
+    const rawPhone = submittedPhone.trim();
     if (!name && !rawPhone) return null;
     let normalizedPhone: string | undefined = undefined;
     if (rawPhone) {
@@ -609,35 +783,63 @@ export default function ServerStandalonePage() {
   }
 
   async function sendDraft() {
-    if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
+    if (
+      !api ||
+      !selectedTableId ||
+      orderLoadedTableIdRef.current !== selectedTableId ||
+      draft.length === 0 ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+    const snapshotTable = tables.find((table) => table.id === selectedTableId) || null;
+    const candidateSnapshot: SendSnapshot = {
+      tableId: selectedTableId,
+      tableName: snapshotTable ? snapshotTable.name || snapshotTable.number : undefined,
+      orderId: currentOrder?.id ?? null,
+      orderCustomer: currentOrder?.customer ?? null,
+      existingItemIds: new Set((currentOrder?.items || []).map((item) => item.id)),
+      draftLines: draft.map((line) => ({
+        ...line,
+        addons: line.addons.map((addon) => ({ ...addon })),
+      })),
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim(),
+      orderNotes,
+    };
     // Nonce first via the LAN-safe helper: anything thrown after the
     // sending flag is set sticks the UI on Sending... forever.
     const signature = sendAttemptSignature(
-      selectedTableId,
-      draft,
-      customerName,
-      customerPhone,
-      orderNotes,
+      candidateSnapshot.tableId,
+      candidateSnapshot.draftLines,
+      candidateSnapshot.customerName,
+      candidateSnapshot.customerPhone,
+      candidateSnapshot.orderNotes,
     );
     if (sendAttemptRef.current?.signature !== signature) {
       sendAttemptRef.current = {
         signature,
         nonce: createPaymentIdempotencyKey(),
+        snapshot: candidateSnapshot,
       };
     }
-    const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
+    const { nonce, snapshot } = sendAttemptRef.current;
+    const idempotencyKey = `server-app-${snapshot.tableId}-${nonce}`;
+    sendSeqRef.current += 1;
+    orderLoadSeqRef.current += 1;
+    cancelPendingCustomerLookup();
     sendInFlightRef.current = true;
     setSending(true);
     try {
-      const customerId = await ensureCustomer();
-      const items = draft.map((line) => cartItemToOrderItem(line));
-      const specialInstructions = orderNotes.trim() || undefined;
+      const customerId = await ensureCustomer(snapshot.customerName, snapshot.customerPhone);
+      const items = snapshot.draftLines.map((line) => cartItemToOrderItem(line));
+      const specialInstructions = snapshot.orderNotes.trim() || undefined;
       let orderId: number;
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
-      if (currentOrder?.id) {
+      if (snapshot.orderId) {
         const { data } = await api.post(
-          `/api/orders/${currentOrder.id}/items`,
+          `/api/orders/${snapshot.orderId}/items`,
           { items, special_instructions: specialInstructions },
           {
             headers: { 'Idempotency-Key': idempotencyKey },
@@ -646,13 +848,14 @@ export default function ServerStandalonePage() {
         orderId = data.order.id;
         rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
-        const existingIds = new Set((currentOrder.items || []).map((item) => item.id));
-        newItems = (data.order.items || []).filter((item: OrderItem) => !existingIds.has(item.id));
+        newItems = (data.order.items || []).filter(
+          (item: OrderItem) => !snapshot.existingItemIds.has(item.id),
+        );
       } else {
         const { data } = await api.post(
           '/api/orders',
           {
-            table_id: selectedTableId,
+            table_id: snapshot.tableId,
             customer_id: customerId,
             type: 'dine_in',
             special_instructions: specialInstructions,
@@ -664,20 +867,37 @@ export default function ServerStandalonePage() {
         rawOrder = data.order;
         newItems = data.order.items || [];
       }
-      sendAttemptRef.current = null;
-      setDraft([]);
-      setOrderNotes('');
+      if (sendAttemptRef.current?.signature === signature) {
+        sendAttemptRef.current = null;
+      }
+      const submittedQtyById = new Map(snapshot.draftLines.map((line) => [line.id, line.quantity]));
+      setDraft((currentLines) =>
+        currentLines.flatMap((line) => {
+          const ackedQty = submittedQtyById.get(line.id);
+          if (ackedQty === undefined) return [line];
+          const remainingQuantity = line.quantity - ackedQty;
+          return remainingQuantity > 0 ? [{ ...line, quantity: remainingQuantity }] : [];
+        }),
+      );
+      setOrderNotes((currentNotes) => (currentNotes === snapshot.orderNotes ? '' : currentNotes));
+      if (selectedTableIdRef.current === snapshot.tableId) {
+        setCurrentOrder(rawOrder as unknown as Order);
+        orderLoadedTableIdRef.current = snapshot.tableId;
+        setOrderLoadedTableId(snapshot.tableId);
+      }
       setMobileCartOpen(false);
-      await Promise.all([loadAll(), loadOrder(selectedTableId)]);
+      await Promise.all([
+        loadAll({ allowWhileSending: true }),
+        loadOrder(snapshot.tableId, { allowWhileSending: true }),
+      ]).catch(() => {});
       toast.success(t('orderSent'));
       // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
-      const trimmedCustomerName = customerName.trim();
       const enrichedOrder = {
         ...rawOrder,
-        table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
+        table: snapshot.tableName ? { name: snapshot.tableName } : undefined,
         customer:
-          currentOrder?.customer ||
-          (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
+          snapshot.orderCustomer ||
+          (snapshot.customerName ? { name: snapshot.customerName } : undefined),
       };
       // Backgrounded so an unreachable printer can't block Send; sequenced (not concurrent)
       // since KOT and bill can share a default printer and race its socket connection.
@@ -788,14 +1008,18 @@ export default function ServerStandalonePage() {
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input
           value={customerPhone}
+          disabled={sending}
           onChange={(event) => handleCustomerPhoneChange(event.target.value)}
           dir="ltr"
           placeholder={t('phonePlaceholder')}
-          className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+          className="h-10 rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none disabled:opacity-50"
         />
         <input
           value={customerName}
-          onChange={customerMatch ? undefined : (event) => setCustomerName(event.target.value)}
+          disabled={sending}
+          onChange={
+            customerMatch ? undefined : (event) => handleCustomerNameChange(event.target.value)
+          }
           readOnly={!!customerMatch}
           placeholder={
             customerSearched
@@ -804,7 +1028,7 @@ export default function ServerStandalonePage() {
                 : t('customerNamePlaceholder')
               : t('customerNamePlaceholder')
           }
-          className={`h-10 rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none ${customerMatch ? 'border-border bg-muted' : 'border-border bg-background'}`}
+          className={`h-10 rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none disabled:opacity-50 ${customerMatch ? 'border-border bg-muted' : 'border-border bg-background'}`}
         />
       </div>
       {customerSearched && (
@@ -868,9 +1092,10 @@ export default function ServerStandalonePage() {
                     )}
                   </div>
                   <button
+                    disabled={sending}
                     onClick={() => removeDraftLine(line.id)}
                     aria-label={tCommon('removeItem')}
-                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-red-500"
+                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-red-500 disabled:opacity-50"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -878,8 +1103,9 @@ export default function ServerStandalonePage() {
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <button
+                      disabled={sending}
                       onClick={() => changeQty(line.id, -1)}
-                      className="rounded-md border border-border bg-card p-1"
+                      className="rounded-md border border-border bg-card p-1 disabled:opacity-50"
                     >
                       <Minus size={14} />
                     </button>
@@ -887,15 +1113,17 @@ export default function ServerStandalonePage() {
                       <Ltr>{line.quantity}</Ltr>
                     </span>
                     <button
+                      disabled={sending}
                       onClick={() => changeQty(line.id, 1)}
-                      className="rounded-md border border-border bg-card p-1"
+                      className="rounded-md border border-border bg-card p-1 disabled:opacity-50"
                     >
                       <Plus size={14} />
                     </button>
                   </div>
                   <button
-                    onClick={() => setEditingDraftLine(line)}
-                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                    disabled={sending}
+                    onClick={() => openEditDraftModal(line)}
+                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
                   >
                     <SquarePen size={12} />
                     {tCommon('edit')}
@@ -911,11 +1139,12 @@ export default function ServerStandalonePage() {
         <div className="mt-3">
           <textarea
             value={orderNotes}
-            onChange={(event) => setOrderNotes(event.target.value.slice(0, 200))}
+            disabled={sending}
+            onChange={(event) => handleOrderNotesChange(event.target.value)}
             placeholder={tPos('orderNotesPlaceholder')}
             rows={2}
             maxLength={200}
-            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none"
+            className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-brand focus:outline-none disabled:opacity-50"
           />
           <p className="mt-0.5 text-end text-xs text-muted-foreground">
             <Ltr>{orderNotes.length}/200</Ltr>
@@ -931,7 +1160,12 @@ export default function ServerStandalonePage() {
       </div>
       <button
         onClick={sendDraft}
-        disabled={!selectedTableId || draft.length === 0 || sending}
+        disabled={
+          !selectedTableId ||
+          orderLoadedTableId !== selectedTableId ||
+          draft.length === 0 ||
+          sending
+        }
         className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50"
       >
         <Send size={17} />
@@ -958,9 +1192,10 @@ export default function ServerStandalonePage() {
             </p>
           </div>
           <button
-            onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))}
+            disabled={sending}
+            onClick={handleRefresh}
             aria-label={tSettings('refresh')}
-            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border p-2 text-muted-foreground disabled:opacity-50"
           >
             <RefreshCw size={17} />
           </button>
@@ -993,8 +1228,9 @@ export default function ServerStandalonePage() {
                 return (
                   <button
                     key={table.id}
-                    onClick={() => setSelectedTableId(table.id)}
-                    className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
+                    disabled={sending}
+                    onClick={() => selectTable(table.id)}
+                    className={`min-h-14 rounded-lg border px-2 py-2 text-start disabled:opacity-50 ${selected ? 'border-brand bg-brand/10' : 'border-border bg-card'}`}
                   >
                     <span className="block truncate text-sm font-semibold">
                       {table.name || table.number}
@@ -1017,21 +1253,23 @@ export default function ServerStandalonePage() {
               search={query}
               setSearch={setQuery}
               currency={regional?.currency || ''}
+              disabled={sending}
               onProductClick={(product, quantity) => {
+                if (sendInFlightRef.current) return;
                 if (productNeedsCustomizer(product)) {
-                  setAddonModalQuantity(quantity);
-                  setAddonModalVariant(null);
-                  setAddonModalProduct(product);
+                  openAddonModal(product, quantity, null);
                 } else addDraftLine(product, quantity, [], '');
               }}
               onScannedVariant={(product, variant, quantity) => {
+                if (sendInFlightRef.current) return;
                 if (scannedVariantNeedsCustomizer(product, variant)) {
-                  setAddonModalQuantity(quantity);
-                  setAddonModalVariant(variant);
-                  setAddonModalProduct(product);
+                  openAddonModal(product, quantity, variant);
                 } else addDraftLine(product, quantity, [], '', variant);
               }}
-              onScaledProduct={(product, quantity) => addDraftLine(product, quantity, [], '')}
+              onScaledProduct={(product, quantity) => {
+                if (sendInFlightRef.current) return;
+                addDraftLine(product, quantity, [], '');
+              }}
               cartQuantities={draftQuantities}
               formatPrice={(amount) => money(amount, regional)}
               showImages={true}
@@ -1072,9 +1310,12 @@ export default function ServerStandalonePage() {
           country={regional?.country}
           initialQuantity={addonModalQuantity}
           initialVariant={addonModalVariant}
-          onAdd={(addedProduct, quantity, addons, instructions, variant) =>
-            addDraftLine(addedProduct, quantity, addons, instructions, variant)
-          }
+          onAdd={(addedProduct, quantity, addons, instructions, variant) => {
+            if (sendInFlightRef.current || addonModalSendSeqRef.current !== sendSeqRef.current) {
+              return;
+            }
+            addDraftLine(addedProduct, quantity, addons, instructions, variant);
+          }}
           onClose={() => {
             setAddonModalProduct(null);
             setAddonModalQuantity(1);
@@ -1093,9 +1334,12 @@ export default function ServerStandalonePage() {
           initialAddons={editingDraftLine.addons}
           initialInstructions={editingDraftLine.special_instructions}
           initialVariant={editingDraftLine.variant}
-          onAdd={(_editedProduct, quantity, addons, instructions, variant) =>
-            updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant)
-          }
+          onAdd={(_editedProduct, quantity, addons, instructions, variant) => {
+            if (sendInFlightRef.current || editingDraftSendSeqRef.current !== sendSeqRef.current) {
+              return;
+            }
+            updateDraftLine(editingDraftLine.id, quantity, addons, instructions, variant);
+          }}
           onClose={() => setEditingDraftLine(null)}
         />
       )}

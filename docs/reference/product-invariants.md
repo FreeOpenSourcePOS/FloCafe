@@ -98,9 +98,8 @@ npm run test:authorization-permissions
 ```
 
 A static audit test in the same suite rejects any newly introduced `requireRole(...)` runtime gate
-under `main/routes/`; the remaining direct role checks in the codebase are reviewed context policy
-(refund approver identity, the override-PIN holder for item cancel/void, the last-active-owner and
-staff-target rule, and KDS station/category scope), each documented where it lives.
+under `main/routes/`; the remaining direct role checks in the codebase are reviewed context policy,
+documented in [authentication and authorization](../architecture/authentication-and-authorization.md#configurable-permissions).
 
 **Change policy:** the two protected permissions, and the precedence order overrides resolve in,
 are structural — changing either needs an explicit product decision, because either one can create
@@ -304,9 +303,9 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    sales without a variant use a portion of 1, and the portion is scaled from the resolved catalog
    variant, never from the order payload.
 3. **Restoration is keyed off the snapshot, never the current recipe or portion.** Cancelling a
-   pending item or an order restores exactly what the snapshot recorded, even if the recipe or the
-   variant's portion was edited since. Cancelling a half-portion sale therefore returns half of
-   every ingredient even after the variant was switched to double.
+   pending item (directly or by cancelling the order) restores exactly what the snapshot recorded,
+   even if the recipe or the variant's portion was edited since. Cancelling a half-portion sale
+   therefore returns half of every ingredient even after the variant was switched to double.
 4. **Void after preparation is physical waste.** Items voided while in progress, ready, or
    completed restore neither supplies nor product stock. Only a `pending` cancel restores.
 5. **Refunds never restore supplies**, matching product inventory behaviour.
@@ -328,7 +327,7 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
-creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
+creation, item append, order and item cancel, and item restore paths in `main/routes/orders.ts`. Restore acts
 only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
 `pending`; a `voided` item is never restored. The portion comes from
 `resolveOrderItemVariant()` in `main/services/product-variants.ts`, the same server-side resolution
@@ -418,3 +417,47 @@ address that looks complete is worse than one holding a marked one.
 product migration because store-local overrides live in sparse tables. It would also have to
 address `customers.view`, which is the wider exposure. Raise it as its own issue rather than
 narrowing one print route.
+
+---
+
+## Catalog CSV encoding and legacy apostrophe ambiguity
+
+**Rule:** Catalog CSV exports (`categories`, `products`, and `addons`) carry a `flo_csv_encoding`
+column set to `quote-v1`. Under `quote-v1`, an original leading apostrophe (`'`) on a non-numeric
+field is doubled before `toCsvRow` applies spreadsheet formula protection (prefixing `'` onto
+non-numeric values starting with `=`, `+`, `-`, `@`, or leading whitespace before those
+characters).
+
+1. **Marked imports (`flo_csv_encoding=quote-v1`).** The importer removes the single apostrophe
+   added by `quote-v1` encoding (either from doubling an original leading `'` or from formula
+   protection), making repeated export and import cycles lossless across formula-leading values,
+   leading whitespace before formula triggers, and genuine leading apostrophes.
+2. **Unmarked legacy imports (missing or empty `flo_csv_encoding`).** The `quote-v1` decoding rule
+   is never applied to unmarked rows. On product or add-on rows carrying a stable ID that matches an
+   existing record, a leading apostrophe is removed only when comparison with that exact existing
+   record's stored value proves the apostrophe was added by formula protection. All other unmarked
+   values - including category-only rows without proof of identity, rows without a matching ID, and
+   existing records whose stored values already begin with `'` - are preserved as-is.
+3. **Unsupported markers.** Any non-empty `flo_csv_encoding` value other than `quote-v1` is rejected
+   as a per-row import validation error.
+
+**Reason:** Pre-`quote-v1` exports prefixed formula-triggering strings with `'` without escaping
+genuine leading apostrophes, making `'=foo` in an unmarked file ambiguous between an escaped formula
+and a literal apostrophe. Stripping leading apostrophes unconditionally on unmarked files would
+corrupt genuine apostrophes, while leaving new exports unmarked would mutate formula-leading names
+and spawn duplicate categories and add-ons on round-trip imports.
+
+**Enforced by:** `toQuoteV1CsvRow()`, `encodeQuoteV1Field()`, `decodeQuoteV1Field()`, and
+`decodeLegacyProvenField()` in [`main/lib/csv.ts`](../../main/lib/csv.ts), and the export and import
+handlers in [`main/routes/menu-csv.ts`](../../main/routes/menu-csv.ts). Other CSV exporters continue
+using `toCsvRow()` directly.
+
+**How to verify:**
+
+```sh
+npm run test:issue-248-csv
+```
+
+**Change policy:** changing the `quote-v1` encoding rules or stripping unmarked apostrophes without
+existing-record proof requires an explicit product decision, because either change can silently
+rename catalog items or create duplicate categories and add-ons during CSV imports.

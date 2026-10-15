@@ -10,7 +10,12 @@
  */
 import { createHash, randomUUID } from 'crypto';
 import {
-  getDatabase, getSettingValue, localDateInTimezone, now, tenantBusinessDayStartTime, withTxn,
+  getDatabase,
+  getSettingValue,
+  localDateInTimezone,
+  now,
+  tenantBusinessDayStartTime,
+  withTxn,
 } from '../db';
 import { resolveRegionalSnapshot } from '../countries';
 import { getOpenSession, type CashSessionRow } from './shift-session-gate';
@@ -22,7 +27,12 @@ export type ExpensePaymentMethod = 'cash' | 'card' | 'bank_transfer' | 'other';
 export type ExpenseStatus = 'active' | 'voided' | 'replaced';
 export type ExpenseStatusFilter = ExpenseStatus | 'all';
 
-export const EXPENSE_STATUS_FILTERS = ['active', 'voided', 'replaced', 'all'] as const satisfies readonly ExpenseStatusFilter[];
+export const EXPENSE_STATUS_FILTERS = [
+  'active',
+  'voided',
+  'replaced',
+  'all',
+] as const satisfies readonly ExpenseStatusFilter[];
 
 export const EXPENSE_LIST_DEFAULT_LIMIT = 50;
 export const EXPENSE_LIST_MAX_LIMIT = 100;
@@ -66,7 +76,7 @@ export interface ExpenseRecord {
   description: string;
   payee: string | null;
   notes: string | null;
-  amount_minor: number;
+  amount_minor: number | null;
   currency_code: string;
   incurred_on: string;
   created_by: string;
@@ -77,7 +87,7 @@ export interface ExpenseRecord {
   void_reason: string | null;
   status: ExpenseStatus;
   paid_minor: number;
-  due_minor: number;
+  due_minor: number | null;
 }
 
 export interface ExpensePaymentRecord {
@@ -178,7 +188,10 @@ export function canonicalizeExpenseRequest(value: unknown): string {
   if (value && typeof value === 'object') {
     const entries = Object.keys(value as Record<string, unknown>)
       .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalizeExpenseRequest((value as Record<string, unknown>)[key])}`);
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${canonicalizeExpenseRequest((value as Record<string, unknown>)[key])}`,
+      );
     return `{${entries.join(',')}}`;
   }
   if (value === undefined) return 'undefined';
@@ -226,7 +239,11 @@ export function isValidBusinessDate(value: string): boolean {
   const [year, month, day] = value.split('-').map(Number);
   if (month < 1 || month > 12 || day < 1) return false;
   const parsed = new Date(Date.UTC(year, month - 1, day));
-  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+  return (
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  );
 }
 
 export function requireBusinessDate(value: unknown, field: string): string {
@@ -258,11 +275,47 @@ export function currentBusinessDate(): string {
   return localDateInTimezone(new Date(), regional.timezone, tenantBusinessDayStartTime());
 }
 
-function requireSafeTotal(value: number, label: string): number {
-  if (!Number.isSafeInteger(value)) {
-    throw new ExpenseServiceError(500, `${label} exceeds the supported amount range`);
+const MAX_SAFE_TOTAL = BigInt(Number.MAX_SAFE_INTEGER);
+const MIN_SAFE_TOTAL = BigInt(Number.MIN_SAFE_INTEGER);
+
+function unsupportedAmountRange(label: string): ExpenseServiceError {
+  return new ExpenseServiceError(
+    422,
+    `${label} exceeds the supported amount range`,
+    'amount_range_exceeded',
+  );
+}
+
+function isSqliteIntegerOverflow(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  return /integer overflow/i.test(String((error as { message?: unknown }).message || ''));
+}
+
+function runAggregateQuery<T>(query: () => T, label: string): T {
+  try {
+    return query();
+  } catch (error) {
+    if (isSqliteIntegerOverflow(error)) throw unsupportedAmountRange(label);
+    throw error;
   }
-  return value;
+}
+
+function toBigIntTotal(value: bigint | number, label: string): bigint {
+  if (typeof value === 'bigint') return value;
+  if (!Number.isSafeInteger(value)) throw unsupportedAmountRange(label);
+  return BigInt(value);
+}
+
+function isSafeTotal(value: bigint): boolean {
+  return value >= MIN_SAFE_TOTAL && value <= MAX_SAFE_TOTAL;
+}
+
+function requireSafeTotal(value: bigint | number, label: string): number {
+  const total = toBigIntTotal(value, label);
+  if (!isSafeTotal(total)) {
+    throw unsupportedAmountRange(label);
+  }
+  return Number(total);
 }
 
 // ── Cursors ──────────────────────────────────────────────────────────────────
@@ -291,106 +344,146 @@ export function listExpenseCategories(
   db: ExpenseDb,
   filters: { includeInactive?: boolean } = {},
 ): { categories: ExpenseCategoryRecord[]; truncated: boolean } {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT * FROM expense_categories
     ${filters.includeInactive ? '' : 'WHERE is_active = 1'}
     ORDER BY is_active DESC, name COLLATE NOCASE, id
     LIMIT ?
-  `).all(EXPENSE_CATEGORY_LIST_LIMIT + 1) as ExpenseCategoryRecord[];
+  `)
+    .all(EXPENSE_CATEGORY_LIST_LIMIT + 1) as ExpenseCategoryRecord[];
   const truncated = rows.length > EXPENSE_CATEGORY_LIST_LIMIT;
   return { categories: truncated ? rows.slice(0, EXPENSE_CATEGORY_LIST_LIMIT) : rows, truncated };
 }
 
 export function getExpenseCategory(db: ExpenseDb, id: string): ExpenseCategoryRecord {
-  const row = db.prepare('SELECT * FROM expense_categories WHERE id = ?').get(id) as ExpenseCategoryRecord | undefined;
+  const row = db.prepare('SELECT * FROM expense_categories WHERE id = ?').get(id) as
+    | ExpenseCategoryRecord
+    | undefined;
   if (!row) throw new ExpenseServiceError(404, 'Expense category not found');
   return row;
 }
 
 function isCategoryNameConflict(error: unknown): boolean {
-  return typeof error === 'object' && error !== null
-    && String((error as { code?: unknown }).code || '').includes('CONSTRAINT')
-    && String((error as { message?: unknown }).message || '').includes('expense_categories.name_key');
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    String((error as { code?: unknown }).code || '').includes('CONSTRAINT') &&
+    String((error as { message?: unknown }).message || '').includes('expense_categories.name_key')
+  );
 }
 
 export function createExpenseCategory(
   db: ExpenseDb,
-  input: { name?: unknown; is_active?: unknown; actorUserId: string; idempotencyKey?: string | null },
+  input: {
+    name?: unknown;
+    is_active?: unknown;
+    actorUserId: string;
+    idempotencyKey?: string | null;
+  },
 ): MutationOutcome<{ category: ExpenseCategoryRecord }> {
   const { name, nameKey } = normalizeCategoryName(input.name);
-  const isActive = input.is_active === undefined ? true : requireBoolean(input.is_active, 'is_active');
+  const isActive =
+    input.is_active === undefined ? true : requireBoolean(input.is_active, 'is_active');
   const id = `expcat_${randomUUID()}`;
 
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'create_expense_category',
-      resourceId: '',
-      fields: { name: nameKey, is_active: isActive ? 1 : 0 },
-    },
-    () => {
-      const timestamp = now();
-      try {
-        db.prepare(`
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'create_expense_category',
+        resourceId: '',
+        fields: { name: nameKey, is_active: isActive ? 1 : 0 },
+      },
+      () => {
+        const timestamp = now();
+        try {
+          db.prepare(`
           INSERT INTO expense_categories (id, name, name_key, is_active, created_by, updated_by, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, name, nameKey, isActive ? 1 : 0, input.actorUserId, input.actorUserId, timestamp, timestamp);
-      } catch (error) {
-        if (isCategoryNameConflict(error)) throw conflict('An expense category with this name already exists', 'category_name_taken');
-        throw error;
-      }
-      return { status: 201, body: { category: getExpenseCategory(db, id) } };
-    },
-  ));
+        `).run(
+            id,
+            name,
+            nameKey,
+            isActive ? 1 : 0,
+            input.actorUserId,
+            input.actorUserId,
+            timestamp,
+            timestamp,
+          );
+        } catch (error) {
+          if (isCategoryNameConflict(error))
+            throw conflict(
+              'An expense category with this name already exists',
+              'category_name_taken',
+            );
+          throw error;
+        }
+        return { status: 201, body: { category: getExpenseCategory(db, id) } };
+      },
+    ),
+  );
 }
 
 export function updateExpenseCategory(
   db: ExpenseDb,
   id: string,
-  input: { name?: unknown; is_active?: unknown; actorUserId: string; idempotencyKey?: string | null },
+  input: {
+    name?: unknown;
+    is_active?: unknown;
+    actorUserId: string;
+    idempotencyKey?: string | null;
+  },
 ): MutationOutcome<{ category: ExpenseCategoryRecord }> {
   if (input.name === undefined && input.is_active === undefined) {
     throw badRequest('name or is_active is required');
   }
   const namePatch = input.name === undefined ? null : normalizeCategoryName(input.name);
-  const isActivePatch = input.is_active === undefined ? null : requireBoolean(input.is_active, 'is_active');
+  const isActivePatch =
+    input.is_active === undefined ? null : requireBoolean(input.is_active, 'is_active');
 
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'update_expense_category',
-      resourceId: id,
-      fields: {
-        name: namePatch ? namePatch.nameKey : null,
-        is_active: isActivePatch === null ? null : (isActivePatch ? 1 : 0),
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'update_expense_category',
+        resourceId: id,
+        fields: {
+          name: namePatch ? namePatch.nameKey : null,
+          is_active: isActivePatch === null ? null : isActivePatch ? 1 : 0,
+        },
       },
-    },
-    () => {
-      const category = getExpenseCategory(db, id);
-      const nextName = namePatch ? namePatch.name : category.name;
-      const nextActive = isActivePatch === null ? category.is_active : (isActivePatch ? 1 : 0);
-      try {
-        if (namePatch) {
-          db.prepare(`
+      () => {
+        const category = getExpenseCategory(db, id);
+        const nextName = namePatch ? namePatch.name : category.name;
+        const nextActive = isActivePatch === null ? category.is_active : isActivePatch ? 1 : 0;
+        try {
+          if (namePatch) {
+            db.prepare(`
             UPDATE expense_categories SET name = ?, name_key = ?, is_active = ?, updated_by = ?, updated_at = ?
             WHERE id = ?
           `).run(nextName, namePatch.nameKey, nextActive, input.actorUserId, now(), id);
-        } else {
-          db.prepare(`
+          } else {
+            db.prepare(`
             UPDATE expense_categories SET is_active = ?, updated_by = ?, updated_at = ? WHERE id = ?
           `).run(nextActive, input.actorUserId, now(), id);
+          }
+        } catch (error) {
+          if (isCategoryNameConflict(error))
+            throw conflict(
+              'An expense category with this name already exists',
+              'category_name_taken',
+            );
+          throw error;
         }
-      } catch (error) {
-        if (isCategoryNameConflict(error)) throw conflict('An expense category with this name already exists', 'category_name_taken');
-        throw error;
-      }
-      return { status: 200, body: { category: getExpenseCategory(db, id) } };
-    },
-  ));
+        return { status: 200, body: { category: getExpenseCategory(db, id) } };
+      },
+    ),
+  );
 }
 
 // ── Expense reads ────────────────────────────────────────────────────────────
@@ -408,9 +501,21 @@ const EXPENSE_PROJECTION = `
   ), 0) AS net_paid_minor
 `;
 
-function projectExpenseRow(row: ExpenseRecord & { net_paid_minor: number }): ExpenseRecord {
-  const paidMinor = requireSafeTotal(Number(row.net_paid_minor), 'Expense paid total');
-  const amountMinor = Number(row.amount_minor);
+interface RawExpenseRow extends Omit<ExpenseRecord, 'amount_minor' | 'paid_minor' | 'due_minor'> {
+  amount_minor: bigint | number;
+  net_paid_minor: bigint | number;
+}
+
+function projectExpenseRow(row: RawExpenseRow): ExpenseRecord {
+  const amountRaw = toBigIntTotal(row.amount_minor, 'Expense amount');
+  const paidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
+  const paidMinor = requireSafeTotal(paidRaw, 'Expense paid total');
+  const dueRaw = amountRaw - paidRaw;
+  const amountMinor = isSafeTotal(amountRaw) ? requireSafeTotal(amountRaw, 'Expense amount') : null;
+  const dueMinor =
+    amountMinor !== null && isSafeTotal(dueRaw)
+      ? requireSafeTotal(dueRaw, 'Expense due total')
+      : null;
   return {
     id: row.id,
     category_id: row.category_id,
@@ -429,7 +534,7 @@ function projectExpenseRow(row: ExpenseRecord & { net_paid_minor: number }): Exp
     void_reason: row.void_reason,
     status: row.status,
     paid_minor: paidMinor,
-    due_minor: requireSafeTotal(amountMinor - paidMinor, 'Expense due total'),
+    due_minor: dueMinor,
   };
 }
 
@@ -448,8 +553,12 @@ interface ExpenseFilterSql {
 function buildExpenseFilterSql(filters: ExpenseListFilters): ExpenseFilterSql {
   const conditions: string[] = [];
   const params: (string | number)[] = [];
-  const from = filters.from === undefined || filters.from === null ? null : requireBusinessDate(filters.from, 'from');
-  const to = filters.to === undefined || filters.to === null ? null : requireBusinessDate(filters.to, 'to');
+  const from =
+    filters.from === undefined || filters.from === null
+      ? null
+      : requireBusinessDate(filters.from, 'from');
+  const to =
+    filters.to === undefined || filters.to === null ? null : requireBusinessDate(filters.to, 'to');
   if (from && to && from > to) throw badRequest('from must not be after to');
   if (from) {
     conditions.push('e.incurred_on >= ?');
@@ -475,10 +584,13 @@ function buildExpenseFilterSql(filters: ExpenseListFilters): ExpenseFilterSql {
   }
   if (status === 'active') conditions.push('e.voided_at IS NULL');
   else if (status === 'voided') {
-    conditions.push('e.voided_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)');
-  }
-  else if (status === 'replaced') {
-    conditions.push('e.voided_at IS NOT NULL AND EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)');
+    conditions.push(
+      'e.voided_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)',
+    );
+  } else if (status === 'replaced') {
+    conditions.push(
+      'e.voided_at IS NOT NULL AND EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id)',
+    );
   }
   return {
     whereSql: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '',
@@ -487,10 +599,14 @@ function buildExpenseFilterSql(filters: ExpenseListFilters): ExpenseFilterSql {
   };
 }
 
-export function normalizeExpenseLimit(value: unknown, fallback = EXPENSE_LIST_DEFAULT_LIMIT): number {
+export function normalizeExpenseLimit(
+  value: unknown,
+  fallback = EXPENSE_LIST_DEFAULT_LIMIT,
+): number {
   if (value === undefined || value === null || value === '') return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) throw badRequest('limit must be a positive integer');
+  if (!Number.isInteger(parsed) || parsed <= 0)
+    throw badRequest('limit must be a positive integer');
   return Math.min(parsed, EXPENSE_LIST_MAX_LIMIT);
 }
 
@@ -503,18 +619,21 @@ export function listExpenses(
   const cursor = filters.cursor ? decodeCursor(String(filters.cursor), 2) : null;
   if (cursor && !isValidBusinessDate(cursor[0])) throw badRequest('cursor is invalid');
   const cursorSql = cursor ? `${whereSql ? 'AND' : 'WHERE'} (e.incurred_on, e.id) < (?, ?)` : '';
-  const rows = db.prepare(`
-    SELECT ${EXPENSE_PROJECTION}
-    FROM expenses e
-    ${whereSql}
-    ${cursorSql}
-    ORDER BY e.incurred_on DESC, e.id DESC
-    LIMIT ?
-  `).all(
-    ...params,
-    ...(cursor ? [cursor[0], cursor[1]] : []),
-    limit + 1,
-  ) as (ExpenseRecord & { net_paid_minor: number })[];
+  const rows = runAggregateQuery(
+    () =>
+      db
+        .prepare(`
+      SELECT ${EXPENSE_PROJECTION}
+      FROM expenses e
+      ${whereSql}
+      ${cursorSql}
+      ORDER BY e.incurred_on DESC, e.id DESC
+      LIMIT ?
+    `)
+        .safeIntegers(true)
+        .all(...params, ...(cursor ? [cursor[0], cursor[1]] : []), limit + 1) as RawExpenseRow[],
+    'Expense paid total',
+  );
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page[page.length - 1];
@@ -526,9 +645,14 @@ export function listExpenses(
 }
 
 export function getExpense(db: ExpenseDb, id: string): ExpenseRecord {
-  const row = db.prepare(`SELECT ${EXPENSE_PROJECTION} FROM expenses e WHERE e.id = ?`).get(id) as
-    | (ExpenseRecord & { net_paid_minor: number })
-    | undefined;
+  const row = runAggregateQuery(
+    () =>
+      db
+        .prepare(`SELECT ${EXPENSE_PROJECTION} FROM expenses e WHERE e.id = ?`)
+        .safeIntegers(true)
+        .get(id) as RawExpenseRow | undefined,
+    'Expense paid total',
+  );
   if (!row) throw new ExpenseServiceError(404, 'Expense not found');
   return projectExpenseRow(row);
 }
@@ -542,12 +666,17 @@ export function listExpensePayments(
   const limit = normalizeExpenseLimit(options.limit);
   const cursor = options.cursor ? decodeCursor(String(options.cursor), 2) : null;
   if (cursor && !DB_TIMESTAMP_PATTERN.test(cursor[0])) throw badRequest('cursor is invalid');
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT * FROM expense_payments p
     ${cursor ? 'WHERE p.expense_id = ? AND (p.created_at, p.id) < (?, ?)' : 'WHERE p.expense_id = ?'}
     ORDER BY p.created_at DESC, p.id DESC
     LIMIT ?
-  `).all(...(cursor ? [expenseId, cursor[0], cursor[1]] : [expenseId]), limit + 1) as ExpensePaymentRecord[];
+  `)
+    .all(
+      ...(cursor ? [expenseId, cursor[0], cursor[1]] : [expenseId]),
+      limit + 1,
+    ) as ExpensePaymentRecord[];
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page[page.length - 1];
@@ -561,28 +690,39 @@ interface ExpenseAggregateRow {
   currency_code: string;
   category_id?: string;
   category_name?: string;
-  expense_count: number;
-  incurred_minor: number;
-  net_paid_minor: number;
+  expense_count: bigint | number;
+  incurred_minor: bigint | number;
+  net_paid_minor: bigint | number;
 }
 
-function aggregateExpenses(db: ExpenseDb, filter: ExpenseFilterSql, grouped: boolean): ExpenseAggregateRow[] {
-  return db.prepare(`
-    SELECT
-      e.currency_code AS currency_code,
-      ${grouped ? 'e.category_id AS category_id, MAX(COALESCE(c.name, e.category_name)) AS category_name,' : ''}
-      COUNT(*) AS expense_count,
-      COALESCE(SUM(e.amount_minor), 0) AS incurred_minor,
-      COALESCE(SUM(COALESCE((
-        SELECT SUM(CASE WHEN p.reversal_of IS NULL THEN p.amount_minor ELSE -p.amount_minor END)
-        FROM expense_payments p WHERE p.expense_id = e.id
-      ), 0)), 0) AS net_paid_minor
-    FROM expenses e
-    LEFT JOIN expense_categories c ON c.id = e.category_id
-    ${filter.whereSql}
-    GROUP BY e.currency_code${grouped ? ', e.category_id' : ''}
-    ORDER BY e.currency_code${grouped ? ', MAX(COALESCE(c.name, e.category_name)) COLLATE NOCASE' : ''}
-  `).all(...filter.params) as ExpenseAggregateRow[];
+function aggregateExpenses(
+  db: ExpenseDb,
+  filter: ExpenseFilterSql,
+  grouped: boolean,
+): ExpenseAggregateRow[] {
+  return runAggregateQuery(
+    () =>
+      db
+        .prepare(`
+      SELECT
+        e.currency_code AS currency_code,
+        ${grouped ? 'e.category_id AS category_id, MAX(COALESCE(c.name, e.category_name)) AS category_name,' : ''}
+        COUNT(*) AS expense_count,
+        COALESCE(SUM(e.amount_minor), 0) AS incurred_minor,
+        COALESCE(SUM(COALESCE((
+          SELECT SUM(CASE WHEN p.reversal_of IS NULL THEN p.amount_minor ELSE -p.amount_minor END)
+          FROM expense_payments p WHERE p.expense_id = e.id
+        ), 0)), 0) AS net_paid_minor
+      FROM expenses e
+      LEFT JOIN expense_categories c ON c.id = e.category_id
+      ${filter.whereSql}
+      GROUP BY e.currency_code${grouped ? ', e.category_id' : ''}
+      ORDER BY e.currency_code${grouped ? ', MAX(COALESCE(c.name, e.category_name)) COLLATE NOCASE' : ''}
+    `)
+        .safeIntegers(true)
+        .all(...filter.params) as ExpenseAggregateRow[],
+    'Expense incurred total',
+  );
 }
 
 /**
@@ -592,27 +732,33 @@ function aggregateExpenses(db: ExpenseDb, filter: ExpenseFilterSql, grouped: boo
 export function summarizeExpenses(db: ExpenseDb, filters: ExpenseListFilters = {}): ExpenseSummary {
   const filter = buildExpenseFilterSql({ ...filters, status: 'active' });
   const groups = aggregateExpenses(db, filter, true).map((row) => {
-    const incurredMinor = requireSafeTotal(Number(row.incurred_minor), 'Expense incurred total');
-    const netPaidMinor = requireSafeTotal(Number(row.net_paid_minor), 'Expense paid total');
+    const expenseCount = requireSafeTotal(row.expense_count, 'Expense count');
+    const incurredRaw = toBigIntTotal(row.incurred_minor, 'Expense incurred total');
+    const netPaidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
+    const incurredMinor = requireSafeTotal(incurredRaw, 'Expense incurred total');
+    const netPaidMinor = requireSafeTotal(netPaidRaw, 'Expense paid total');
     return {
       currency_code: row.currency_code,
       category_id: String(row.category_id),
       category_name: String(row.category_name),
-      expense_count: Number(row.expense_count),
+      expense_count: expenseCount,
       incurred_minor: incurredMinor,
       net_paid_minor: netPaidMinor,
-      due_minor: requireSafeTotal(incurredMinor - netPaidMinor, 'Expense due total'),
+      due_minor: requireSafeTotal(incurredRaw - netPaidRaw, 'Expense due total'),
     };
   });
   const totals = aggregateExpenses(db, filter, false).map((row) => {
-    const incurredMinor = requireSafeTotal(Number(row.incurred_minor), 'Expense incurred total');
-    const netPaidMinor = requireSafeTotal(Number(row.net_paid_minor), 'Expense paid total');
+    const expenseCount = requireSafeTotal(row.expense_count, 'Expense count');
+    const incurredRaw = toBigIntTotal(row.incurred_minor, 'Expense incurred total');
+    const netPaidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
+    const incurredMinor = requireSafeTotal(incurredRaw, 'Expense incurred total');
+    const netPaidMinor = requireSafeTotal(netPaidRaw, 'Expense paid total');
     return {
       currency_code: row.currency_code,
-      expense_count: Number(row.expense_count),
+      expense_count: expenseCount,
       incurred_minor: incurredMinor,
       net_paid_minor: netPaidMinor,
-      due_minor: requireSafeTotal(incurredMinor - netPaidMinor, 'Expense due total'),
+      due_minor: requireSafeTotal(incurredRaw - netPaidRaw, 'Expense due total'),
     };
   });
   return {
@@ -639,28 +785,44 @@ export function summarizeExpenses(db: ExpenseDb, filters: ExpenseListFilters = {
  */
 function runExpenseMutation<T>(
   db: ExpenseDb,
-  input: { actorUserId: string; idempotencyKey: string | null; operation: string; resourceId: string; fields: Record<string, unknown> },
+  input: {
+    actorUserId: string;
+    idempotencyKey: string | null;
+    operation: string;
+    resourceId: string;
+    fields: Record<string, unknown>;
+  },
   work: () => { status: number; body: T },
 ): MutationOutcome<T> {
   const key = input.idempotencyKey;
   const requestHash = (body: T) => {
     const currency = (body as { expense?: ExpenseRecord }).expense?.currency_code;
-    const fields = input.fields.currency_code === null && currency
-      ? { ...input.fields, currency_code: currency }
-      : input.fields;
+    const fields =
+      input.fields.currency_code === null && currency
+        ? { ...input.fields, currency_code: currency }
+        : input.fields;
     return expenseRequestHash(input.operation, input.resourceId, fields);
   };
   if (key) {
-    const existing = db.prepare(`
+    const existing = db
+      .prepare(`
       SELECT operation, resource_id, request_hash, response_json
       FROM expense_mutations WHERE actor_user_id = ? AND idempotency_key = ?
-    `).get(input.actorUserId, key) as
+    `)
+      .get(input.actorUserId, key) as
       | { operation: string; resource_id: string; request_hash: string; response_json: string }
       | undefined;
     if (existing) {
       const stored = JSON.parse(existing.response_json) as { status: number; body: T };
-      if (existing.operation !== input.operation || existing.resource_id !== input.resourceId || existing.request_hash !== requestHash(stored.body)) {
-        throw conflict('Idempotency-Key was already used for a different expense request', 'idempotency_conflict');
+      if (
+        existing.operation !== input.operation ||
+        existing.resource_id !== input.resourceId ||
+        existing.request_hash !== requestHash(stored.body)
+      ) {
+        throw conflict(
+          'Idempotency-Key was already used for a different expense request',
+          'idempotency_conflict',
+        );
       }
       return { status: stored.status, body: stored.body, replayed: true };
     }
@@ -692,7 +854,8 @@ function requireActiveCategory(db: ExpenseDb, categoryId: string): ExpenseCatego
 /** The store currency at creation time; expenses never carry a foreign snapshot. */
 function resolveExpenseCurrency(currencyCode: unknown): string {
   const storeCurrency = tenantRegionalSnapshot().currency;
-  if (currencyCode === undefined || currencyCode === null || currencyCode === '') return storeCurrency;
+  if (currencyCode === undefined || currencyCode === null || currencyCode === '')
+    return storeCurrency;
   const requested = requireCurrencyCode(currencyCode);
   if (requested !== storeCurrency) {
     throw badRequest(`currency_code must match the store currency (${storeCurrency})`);
@@ -762,26 +925,114 @@ function insertExpense(
 
 /** Net paid across the immutable ledger: payments minus their reversals. */
 function netPaidMinor(db: ExpenseDb, expenseId: string): number {
-  const row = db.prepare(`
-    SELECT COALESCE(SUM(CASE WHEN reversal_of IS NULL THEN amount_minor ELSE -amount_minor END), 0) AS net_paid
-    FROM expense_payments WHERE expense_id = ?
-  `).get(expenseId) as { net_paid: number };
-  return requireSafeTotal(Number(row.net_paid), 'Expense paid total');
+  const row = runAggregateQuery(
+    () =>
+      db
+        .prepare(`
+      SELECT COALESCE(SUM(CASE WHEN reversal_of IS NULL THEN amount_minor ELSE -amount_minor END), 0) AS net_paid
+      FROM expense_payments WHERE expense_id = ?
+    `)
+        .safeIntegers(true)
+        .get(expenseId) as { net_paid: bigint | number },
+    'Expense paid total',
+  );
+  return requireSafeTotal(row.net_paid, 'Expense paid total');
 }
 
 /** Only an open (not voided, not replaced) expense may change its ledger. */
 function requireActiveExpense(db: ExpenseDb, id: string): ExpenseRecord {
   const expense = getExpense(db, id);
-  if (expense.status === 'replaced') throw conflict('Expense was already replaced', 'expense_replaced');
+  if (expense.status === 'replaced')
+    throw conflict('Expense was already replaced', 'expense_replaced');
   if (expense.voided_at) throw conflict('Expense is already voided', 'expense_voided');
   return expense;
 }
 
-function requireUnpaidOpenExpense(db: ExpenseDb, id: string): void {
-  requireActiveExpense(db, id);
+interface ActiveExpenseAmountRow {
+  id: string;
+  amount_minor: bigint;
+  currency_code: string;
+}
+
+function requireUnpaidOpenExpense(db: ExpenseDb, id: string): ActiveExpenseAmountRow {
+  const row = db
+    .prepare(`
+    SELECT
+      e.id,
+      e.amount_minor,
+      e.currency_code,
+      e.voided_at,
+      CASE
+        WHEN e.voided_at IS NULL THEN 'active'
+        WHEN EXISTS (SELECT 1 FROM expenses r WHERE r.replaces_expense_id = e.id) THEN 'replaced'
+        ELSE 'voided'
+      END AS status
+    FROM expenses e
+    WHERE e.id = ?
+  `)
+    .safeIntegers(true)
+    .get(id) as
+    | (ActiveExpenseAmountRow & { voided_at: string | null; status: ExpenseStatus })
+    | undefined;
+  if (!row) throw new ExpenseServiceError(404, 'Expense not found');
+  if (row.status === 'replaced') throw conflict('Expense was already replaced', 'expense_replaced');
+  if (row.voided_at) throw conflict('Expense is already voided', 'expense_voided');
   if (netPaidMinor(db, id) !== 0) {
-    throw conflict('Expense has recorded payments; reverse them before voiding or replacing', 'expense_has_payments');
+    throw conflict(
+      'Expense has recorded payments; reverse them before voiding or replacing',
+      'expense_has_payments',
+    );
   }
+  return {
+    id: row.id,
+    amount_minor: toBigIntTotal(row.amount_minor, 'Expense amount'),
+    currency_code: row.currency_code,
+  };
+}
+
+function ensureSupportedActiveCurrencyTotal(
+  db: ExpenseDb,
+  currencyCode: string,
+  amountMinor: number,
+  replaced?: ActiveExpenseAmountRow,
+): void {
+  const replacedMinor =
+    replaced && replaced.currency_code === currencyCode ? replaced.amount_minor : 0n;
+  let currentActiveMinor: bigint;
+  try {
+    const row = db
+      .prepare(`
+      SELECT COALESCE(SUM(amount_minor), 0) AS incurred_minor
+      FROM expenses
+      WHERE voided_at IS NULL AND currency_code = ?
+    `)
+      .safeIntegers(true)
+      .get(currencyCode) as { incurred_minor: bigint | number };
+    currentActiveMinor =
+      toBigIntTotal(row.incurred_minor, 'Expense incurred total') - replacedMinor;
+  } catch (error) {
+    if (isSqliteIntegerOverflow(error) && replaced && replaced.currency_code === currencyCode) {
+      const row = runAggregateQuery(
+        () =>
+          db
+            .prepare(`
+          SELECT COALESCE(SUM(amount_minor), 0) AS incurred_minor
+          FROM expenses
+          WHERE voided_at IS NULL AND currency_code = ? AND id != ?
+        `)
+            .safeIntegers(true)
+            .get(currencyCode, replaced.id) as { incurred_minor: bigint | number },
+        'Expense incurred total',
+      );
+      currentActiveMinor = toBigIntTotal(row.incurred_minor, 'Expense incurred total');
+    } else if (isSqliteIntegerOverflow(error)) {
+      throw unsupportedAmountRange('Expense incurred total');
+    } else {
+      throw error;
+    }
+  }
+  const nextActiveMinor = currentActiveMinor + BigInt(amountMinor);
+  requireSafeTotal(nextActiveMinor, 'Expense incurred total');
 }
 
 function requireReason(value: unknown): string {
@@ -789,16 +1040,18 @@ function requireReason(value: unknown): string {
 }
 
 function expenseMutationFields(input: ExpenseWriteFields): Record<string, unknown> {
-  const normalizeText = (value: unknown) => typeof value === 'string' ? value.trim() : value;
+  const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : value);
   const normalizeOptionalText = (value: unknown) => {
     if (value === undefined || value === null) return null;
     const normalized = normalizeText(value);
     return normalized === '' ? null : normalized;
   };
-  const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
-  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
-    ? null
-    : rawCurrency;
+  const rawCurrency =
+    typeof input.currency_code === 'string'
+      ? input.currency_code.trim().toUpperCase()
+      : input.currency_code;
+  const canonicalCurrency =
+    rawCurrency === undefined || rawCurrency === null || rawCurrency === '' ? null : rawCurrency;
   return {
     category_id: normalizeText(input.category_id),
     description: normalizeText(input.description),
@@ -818,21 +1071,24 @@ export function createExpense(
   if (input.replaces_expense_id !== undefined && input.replaces_expense_id !== null) {
     throw badRequest('replaces_expense_id can only be set by the replace operation');
   }
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'create_expense',
-      resourceId: '',
-      fields: expenseMutationFields(input),
-    },
-    () => {
-      const fields = validateExpenseFields(db, input);
-      const id = insertExpense(db, fields, input.actorUserId, null);
-      return { status: 201, body: { expense: getExpense(db, id) } };
-    },
-  ));
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'create_expense',
+        resourceId: '',
+        fields: expenseMutationFields(input),
+      },
+      () => {
+        const fields = validateExpenseFields(db, input);
+        ensureSupportedActiveCurrencyTotal(db, fields.currencyCode, fields.amountMinor);
+        const id = insertExpense(db, fields, input.actorUserId, null);
+        return { status: 201, body: { expense: getExpense(db, id) } };
+      },
+    ),
+  );
 }
 
 /** Keeps the original expense row, values and audit trail; only adds void metadata. */
@@ -842,49 +1098,63 @@ export function voidExpense(
   input: { reason?: unknown; actorUserId: string; idempotencyKey?: string | null },
 ): MutationOutcome<{ expense: ExpenseRecord }> {
   const reason = requireReason(input.reason);
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'void_expense',
-      resourceId: id,
-      fields: { reason },
-    },
-    () => {
-      requireUnpaidOpenExpense(db, id);
-      db.prepare('UPDATE expenses SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?')
-        .run(now(), input.actorUserId, reason, id);
-      return { status: 200, body: { expense: getExpense(db, id) } };
-    },
-  ));
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'void_expense',
+        resourceId: id,
+        fields: { reason },
+      },
+      () => {
+        requireUnpaidOpenExpense(db, id);
+        db.prepare(
+          'UPDATE expenses SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?',
+        ).run(now(), input.actorUserId, reason, id);
+        return { status: 200, body: { expense: getExpense(db, id) } };
+      },
+    ),
+  );
 }
 
 /** Voids the source and creates the linked replacement in one transaction. */
 export function replaceExpense(
   db: ExpenseDb,
   id: string,
-  input: ExpenseWriteFields & { reason?: unknown; actorUserId: string; idempotencyKey?: string | null },
+  input: ExpenseWriteFields & {
+    reason?: unknown;
+    actorUserId: string;
+    idempotencyKey?: string | null;
+  },
 ): MutationOutcome<{ expense: ExpenseRecord; replaced_expense_id: string }> {
   const reason = requireReason(input.reason);
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'replace_expense',
-      resourceId: id,
-      fields: { reason, ...expenseMutationFields(input) },
-    },
-    () => {
-      requireUnpaidOpenExpense(db, id);
-      const fields = validateExpenseFields(db, input);
-      const replacementId = insertExpense(db, fields, input.actorUserId, id);
-      db.prepare('UPDATE expenses SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?')
-        .run(now(), input.actorUserId, reason, id);
-      return { status: 201, body: { expense: getExpense(db, replacementId), replaced_expense_id: id } };
-    },
-  ));
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'replace_expense',
+        resourceId: id,
+        fields: { reason, ...expenseMutationFields(input) },
+      },
+      () => {
+        const source = requireUnpaidOpenExpense(db, id);
+        const fields = validateExpenseFields(db, input);
+        ensureSupportedActiveCurrencyTotal(db, fields.currencyCode, fields.amountMinor, source);
+        const replacementId = insertExpense(db, fields, input.actorUserId, id);
+        db.prepare(
+          'UPDATE expenses SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ?',
+        ).run(now(), input.actorUserId, reason, id);
+        return {
+          status: 201,
+          body: { expense: getExpense(db, replacementId), replaced_expense_id: id },
+        };
+      },
+    ),
+  );
 }
 
 // ── Payment and reversal writes ──────────────────────────────────────────────
@@ -899,8 +1169,13 @@ export function normalizeExpensePaymentMethod(value: unknown): ExpensePaymentMet
 }
 
 /** The committed ledger entry for one expense/payment pair, or a 404. */
-export function getExpensePayment(db: ExpenseDb, expenseId: string, paymentId: string): ExpensePaymentRecord {
-  const row = db.prepare('SELECT * FROM expense_payments WHERE id = ? AND expense_id = ?')
+export function getExpensePayment(
+  db: ExpenseDb,
+  expenseId: string,
+  paymentId: string,
+): ExpensePaymentRecord {
+  const row = db
+    .prepare('SELECT * FROM expense_payments WHERE id = ? AND expense_id = ?')
     .get(paymentId, expenseId) as ExpensePaymentRecord | undefined;
   if (!row) throw new ExpenseServiceError(404, 'Expense payment not found');
   return row;
@@ -921,7 +1196,10 @@ function requireExpectedCurrency(value: unknown, expected: string): void {
 function requireOpenSessionForCashEntry(db: ExpenseDb): CashSessionRow {
   const session = getOpenSession(db);
   if (!session) {
-    throw conflict('No open cash session: open a shift before moving drawer money for an expense', 'cash_session_required');
+    throw conflict(
+      'No open cash session: open a shift before moving drawer money for an expense',
+      'cash_session_required',
+    );
   }
   return session;
 }
@@ -930,7 +1208,10 @@ function requireOpenSessionForCashEntry(db: ExpenseDb): CashSessionRow {
 function requireStoreCurrency(expense: ExpenseRecord): void {
   const storeCurrency = tenantRegionalSnapshot().currency;
   if (expense.currency_code !== storeCurrency) {
-    throw conflict(`Expense settlements require the expense currency to match the store currency (${storeCurrency})`, 'currency_mismatch');
+    throw conflict(
+      `Expense settlements require the expense currency to match the store currency (${storeCurrency})`,
+      'currency_mismatch',
+    );
   }
 }
 
@@ -946,15 +1227,25 @@ interface ExpensePaymentWriteFields {
   currency_code?: unknown;
 }
 
-function paymentMutationFields(input: ExpensePaymentWriteFields, expenseCurrency: string): Record<string, unknown> {
-  const rawCurrency = typeof input.currency_code === 'string' ? input.currency_code.trim().toUpperCase() : input.currency_code;
-  const canonicalCurrency = rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
-    ? expenseCurrency
-    : rawCurrency;
+function paymentMutationFields(
+  input: ExpensePaymentWriteFields,
+  expenseCurrency: string,
+): Record<string, unknown> {
+  const rawCurrency =
+    typeof input.currency_code === 'string'
+      ? input.currency_code.trim().toUpperCase()
+      : input.currency_code;
+  const canonicalCurrency =
+    rawCurrency === undefined || rawCurrency === null || rawCurrency === ''
+      ? expenseCurrency
+      : rawCurrency;
   return {
     amount_minor: input.amount_minor,
     method: input.method,
-    reference: typeof input.reference === 'string' ? input.reference.trim() || null : input.reference ?? null,
+    reference:
+      typeof input.reference === 'string'
+        ? input.reference.trim() || null
+        : (input.reference ?? null),
     currency_code: canonicalCurrency,
   };
 }
@@ -979,32 +1270,50 @@ export function recordExpensePayment(
       () => {
         requireActiveExpense(db, expenseId);
         const amountMinor = requirePositiveMinorUnits(input.amount_minor, 'amount_minor');
-      const method = normalizeExpensePaymentMethod(input.method);
-      const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
-      requireStoreCurrency(expense);
-      requireExpectedCurrency(input.currency_code, expense.currency_code);
-      if (amountMinor > expense.due_minor) throw conflict('Payment exceeds the amount due', 'expense_overpaid');
-      const businessDate = currentBusinessDate();
-      let cashMovementId: number | null = null;
-      if (method === 'cash') {
-        const session = requireOpenSessionForCashEntry(db);
-        cashMovementId = insertCashDrawerMovement(db, {
-          businessDate,
-          movementType: 'pay_out',
-          amountCents: amountMinor,
-          reason: expensePaymentReason('Expense payment', expense),
-          createdBy: input.actorUserId,
-          cashSessionId: session.id,
-        });
-      }
-      const id = `exppay_${randomUUID()}`;
-      db.prepare(`
+        const method = normalizeExpensePaymentMethod(input.method);
+        const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
+        requireStoreCurrency(expense);
+        requireExpectedCurrency(input.currency_code, expense.currency_code);
+        if (expense.due_minor === null || amountMinor > expense.due_minor)
+          throw conflict('Payment exceeds the amount due', 'expense_overpaid');
+        const businessDate = currentBusinessDate();
+        let cashMovementId: number | null = null;
+        if (method === 'cash') {
+          const session = requireOpenSessionForCashEntry(db);
+          cashMovementId = insertCashDrawerMovement(db, {
+            businessDate,
+            movementType: 'pay_out',
+            amountCents: amountMinor,
+            reason: expensePaymentReason('Expense payment', expense),
+            createdBy: input.actorUserId,
+            cashSessionId: session.id,
+          });
+        }
+        const id = `exppay_${randomUUID()}`;
+        db.prepare(`
         INSERT INTO expense_payments (
           id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
         ) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)
-      `).run(id, expenseId, amountMinor, method, businessDate, reference, cashMovementId, input.actorUserId, now());
-      return { status: 201, body: { expense: getExpense(db, expenseId), payment: getExpensePayment(db, expenseId, id) } };
-    });
+      `).run(
+          id,
+          expenseId,
+          amountMinor,
+          method,
+          businessDate,
+          reference,
+          cashMovementId,
+          input.actorUserId,
+          now(),
+        );
+        return {
+          status: 201,
+          body: {
+            expense: getExpense(db, expenseId),
+            payment: getExpensePayment(db, expenseId, id),
+          },
+        };
+      },
+    );
   });
 }
 
@@ -1020,45 +1329,67 @@ export function reverseExpensePayment(
   input: { reason?: unknown; actorUserId: string; idempotencyKey?: string | null },
 ): MutationOutcome<{ expense: ExpenseRecord; payment: ExpensePaymentRecord }> {
   const reason = requireReason(input.reason);
-  return withTxn(() => runExpenseMutation(
-    db,
-    {
-      actorUserId: input.actorUserId,
-      idempotencyKey: input.idempotencyKey ?? null,
-      operation: 'reverse_expense_payment',
-      resourceId: paymentId,
-      fields: { reason },
-    },
-    () => {
-      const expense = requireActiveExpense(db, expenseId);
-      const payment = getExpensePayment(db, expenseId, paymentId);
-      if (payment.reversal_of !== null) throw conflict('A reversal entry cannot be reversed', 'reversal_not_reversible');
-      if (db.prepare('SELECT id FROM expense_payments WHERE reversal_of = ? LIMIT 1').get(paymentId)) {
-        throw conflict('This payment has already been reversed', 'payment_already_reversed');
-      }
-      requireStoreCurrency(expense);
-      const businessDate = currentBusinessDate();
-      let cashMovementId: number | null = null;
-      if (payment.method === 'cash') {
-        const session = requireOpenSessionForCashEntry(db);
-        cashMovementId = insertCashDrawerMovement(db, {
-          businessDate,
-          movementType: 'pay_in',
-          amountCents: payment.amount_minor,
-          reason: expensePaymentReason('Expense payment reversal', expense),
-          createdBy: input.actorUserId,
-          cashSessionId: session.id,
-        });
-      }
-      const id = `exppay_${randomUUID()}`;
-      db.prepare(`
+  return withTxn(() =>
+    runExpenseMutation(
+      db,
+      {
+        actorUserId: input.actorUserId,
+        idempotencyKey: input.idempotencyKey ?? null,
+        operation: 'reverse_expense_payment',
+        resourceId: paymentId,
+        fields: { reason },
+      },
+      () => {
+        const expense = requireActiveExpense(db, expenseId);
+        const payment = getExpensePayment(db, expenseId, paymentId);
+        if (payment.reversal_of !== null)
+          throw conflict('A reversal entry cannot be reversed', 'reversal_not_reversible');
+        if (
+          db.prepare('SELECT id FROM expense_payments WHERE reversal_of = ? LIMIT 1').get(paymentId)
+        ) {
+          throw conflict('This payment has already been reversed', 'payment_already_reversed');
+        }
+        requireStoreCurrency(expense);
+        const businessDate = currentBusinessDate();
+        let cashMovementId: number | null = null;
+        if (payment.method === 'cash') {
+          const session = requireOpenSessionForCashEntry(db);
+          cashMovementId = insertCashDrawerMovement(db, {
+            businessDate,
+            movementType: 'pay_in',
+            amountCents: payment.amount_minor,
+            reason: expensePaymentReason('Expense payment reversal', expense),
+            createdBy: input.actorUserId,
+            cashSessionId: session.id,
+          });
+        }
+        const id = `exppay_${randomUUID()}`;
+        db.prepare(`
         INSERT INTO expense_payments (
           id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-      `).run(id, expenseId, payment.amount_minor, payment.method, businessDate, paymentId, reason, cashMovementId, input.actorUserId, now());
-      return { status: 201, body: { expense: getExpense(db, expenseId), payment: getExpensePayment(db, expenseId, id) } };
-    },
-  ));
+      `).run(
+          id,
+          expenseId,
+          payment.amount_minor,
+          payment.method,
+          businessDate,
+          paymentId,
+          reason,
+          cashMovementId,
+          input.actorUserId,
+          now(),
+        );
+        return {
+          status: 201,
+          body: {
+            expense: getExpense(db, expenseId),
+            payment: getExpensePayment(db, expenseId, id),
+          },
+        };
+      },
+    ),
+  );
 }
 
 // ── Context ──────────────────────────────────────────────────────────────────

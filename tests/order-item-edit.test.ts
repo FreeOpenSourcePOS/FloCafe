@@ -815,6 +815,201 @@ async function main() {
         receiptText.includes('300'),
         'bill receipt text includes the updated 300 total',
       );
+      // Regression: historical bill copy with a refunded item retains the refunded sale line
+      // while excluding the negative void_adjustment row so printed items match the bill total
+      const refundOrder = seedOrder(db, 'REFUND-PRINT', 'served', 1, 1);
+      db.prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, inventory_deducted_quantity, created_at, updated_at)
+         VALUES (?, 'prod-other', 'Other item', 150, 1, 150, 0, 150, 'refunded', 1, ?, ?)`,
+      ).run(refundOrder.orderId, now(), now());
+      db.prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, inventory_deducted_quantity, created_at, updated_at)
+         VALUES (?, 'prod-other', 'Refund: Other item', -150, 1, -150, 0, -150, 'void_adjustment', 0, ?, ?)`,
+      ).run(refundOrder.orderId, now(), now());
+      db.prepare('UPDATE orders SET subtotal = 250, total = 250 WHERE id = ?').run(
+        refundOrder.orderId,
+      );
+      const refundBill = seedBill(db, refundOrder.orderId, 250, 250, 'partially_refunded');
+      const refundPrintPreview = await api(baseUrl, '/api/printers/print-bill', {
+        method: 'POST',
+        body: { billId: refundBill.id, preview: true },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(refundPrintPreview.status, 200, 'refunded bill print preview succeeds');
+      const refundReceiptText = String(refundPrintPreview.data?.text || '');
+      assertOrThrow(
+        refundReceiptText.includes('Edit item') && refundReceiptText.includes('Other item'),
+        'historical bill copy includes both original sale lines including the refunded item',
+      );
+      assertOrThrow(
+        !refundReceiptText.includes('Refund: Other item'),
+        'historical bill copy excludes the negative void_adjustment row',
+      );
+    }
+
+    console.log('\n─── Pending Stockout Reduction & Repeated Edit Discounts ───');
+    {
+      // Regression: pending line of qty 3 that consumed the last 3 tracked add-ons can be reduced to 2
+      const order = seedOrder(db, 'PENDING-STOCKOUT', 'pending', 3, 3);
+      const savedAddonStock = stockOfAddon('addon-edit');
+      db.prepare(`UPDATE addons SET stock_quantity = 0 WHERE id = 'addon-edit'`).run();
+      db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+         VALUES (?, 'addon-edit', 'Extra Shot', 20, 1, 3, ?)`,
+      ).run(order.itemId, now());
+      db.prepare(`UPDATE order_items SET subtotal = 360, total = 360 WHERE id = ?`).run(
+        order.itemId,
+      );
+      db.prepare(`UPDATE orders SET subtotal = 360, total = 360 WHERE id = ?`).run(order.orderId);
+
+      const reduceAtStockout = await edit(
+        order.orderId,
+        order.itemId,
+        { expected_edit_version: 0, quantity: 2 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(
+        reduceAtStockout.status,
+        200,
+        'pending reduction from 3 to 2 succeeds even when add-on stock was 0 before edit',
+      );
+      assertEqualOrThrow(
+        stockOfAddon('addon-edit'),
+        1,
+        'restoring 3 and deducting 2 leaves 1 add-on in stock',
+      );
+      db.prepare(`UPDATE addons SET stock_quantity = ? WHERE id = 'addon-edit'`).run(
+        savedAddonStock,
+      );
+
+      // Regression: repeated pending edits on a fixed-amount discounted line preserve the fixed discount
+      const fixedDiscOrder = seedOrder(db, 'FIXED-DISC-CHAIN', 'pending', 3, 3);
+      db.prepare(
+        `UPDATE order_items SET discount_amount = 30, subtotal = 270, total = 270 WHERE id = ?`,
+      ).run(fixedDiscOrder.itemId);
+      db.prepare(`UPDATE orders SET subtotal = 270, total = 270 WHERE id = ?`).run(
+        fixedDiscOrder.orderId,
+      );
+      db.prepare(
+        `INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
+         VALUES (?, ?, 'owner-edit', 'item_discount_applied', ?, ?)`,
+      ).run(
+        fixedDiscOrder.orderId,
+        fixedDiscOrder.itemId,
+        JSON.stringify({ discount_type: 'amount', discount_value: 30 }),
+        now(),
+      );
+      const fixedV1 = Number(
+        (
+          db
+            .prepare(
+              'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+            )
+            .get(fixedDiscOrder.orderId, fixedDiscOrder.itemId) as any
+        ).v,
+      );
+      const editFixed1 = await edit(
+        fixedDiscOrder.orderId,
+        fixedDiscOrder.itemId,
+        { expected_edit_version: fixedV1, quantity: 2 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(
+        editFixed1.status,
+        200,
+        'first pending edit on fixed-discount line succeeds',
+      );
+      const intermediateFixed = (editFixed1.data.order.items as any[]).find(
+        (line) => line.status === 'pending',
+      );
+      assertEqualOrThrow(
+        Number(intermediateFixed.discount_amount),
+        30,
+        'first pending edit preserves fixed discount of 30',
+      );
+      const editFixed2 = await edit(
+        fixedDiscOrder.orderId,
+        intermediateFixed.id,
+        { expected_edit_version: intermediateFixed.edit_version, quantity: 1 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(
+        editFixed2.status,
+        200,
+        'second pending edit on fixed-discount line succeeds',
+      );
+      const finalFixed = (editFixed2.data.order.items as any[]).find(
+        (line) => line.status === 'pending',
+      );
+      assertEqualOrThrow(
+        Number(finalFixed.discount_amount),
+        30,
+        'second pending edit still preserves fixed discount of 30 instead of scaling to 15',
+      );
+
+      // Regression: percentage discount carried onto generated pending line is preserved on later started increase
+      const pctDiscOrder = seedOrder(db, 'PCT-DISC-CHAIN', 'pending', 2, 2);
+      db.prepare(
+        `UPDATE order_items SET discount_amount = 20, subtotal = 180, total = 180 WHERE id = ?`,
+      ).run(pctDiscOrder.itemId);
+      db.prepare(`UPDATE orders SET subtotal = 180, total = 180 WHERE id = ?`).run(
+        pctDiscOrder.orderId,
+      );
+      db.prepare(
+        `INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
+         VALUES (?, ?, 'owner-edit', 'item_discount_applied', ?, ?)`,
+      ).run(
+        pctDiscOrder.orderId,
+        pctDiscOrder.itemId,
+        JSON.stringify({ discount_type: 'percentage', discount_value: 10 }),
+        now(),
+      );
+      const pctV1 = Number(
+        (
+          db
+            .prepare(
+              'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+            )
+            .get(pctDiscOrder.orderId, pctDiscOrder.itemId) as any
+        ).v,
+      );
+      const editPct1 = await edit(
+        pctDiscOrder.orderId,
+        pctDiscOrder.itemId,
+        { expected_edit_version: pctV1, quantity: 3 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(editPct1.status, 200, 'pending edit on percentage-discount line succeeds');
+      const generatedPctLine = (editPct1.data.order.items as any[]).find(
+        (line) => line.status === 'pending',
+      );
+      assertEqualOrThrow(
+        Number(generatedPctLine.discount_amount),
+        30,
+        'generated pending line has 10% discount (30 on 300)',
+      );
+      db.prepare(`UPDATE order_items SET status = 'preparing' WHERE id = ?`).run(
+        generatedPctLine.id,
+      );
+      const editPct2 = await edit(
+        pctDiscOrder.orderId,
+        generatedPctLine.id,
+        { expected_edit_version: generatedPctLine.edit_version, quantity: 5 },
+        ownerAuth,
+      );
+      assertEqualOrThrow(
+        editPct2.status,
+        200,
+        'started increase on generated percentage-discount line succeeds',
+      );
+      const extraPctLine = (editPct2.data.order.items as any[]).find(
+        (line) => line.status === 'pending' && line.id !== generatedPctLine.id,
+      );
+      assertEqualOrThrow(
+        Number(extraPctLine?.discount_amount),
+        20,
+        'extra line from started increase preserves 10% discount (20 on 200)',
+      );
     }
 
     console.log('\n─── Collected payments ───');

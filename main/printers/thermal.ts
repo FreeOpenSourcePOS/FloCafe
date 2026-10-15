@@ -33,7 +33,7 @@ import { correlationId, type FloErrorCode } from '../errors';
 import { cloudSync } from '../services/cloud-sync';
 import { printLabel } from '../print/print-labels.generated';
 import { receiptChargeLines } from '../../shared/charges';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -2356,7 +2356,7 @@ function renderEscposLineTemplateV1(
 
   if (order.items) {
     for (const item of order.items) {
-      if (isTerminalItemStatus(item.status)) continue;
+      if (isExcludedFromBillReceipt(item.status)) continue;
       pushFinancialLines(
         pluginItemRows(
           item,

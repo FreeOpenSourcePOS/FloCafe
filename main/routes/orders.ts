@@ -3631,6 +3631,38 @@ function buildOrderItemEditRequestHash(params: {
   return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
 }
 
+function getAppliedItemDiscountDetails(
+  db: ReturnType<typeof getDatabase>,
+  itemId: string | number,
+): { discount_type: 'percentage' | 'amount'; discount_value: number; approved_by?: string } | null {
+  const auditRow = db
+    .prepare(
+      `SELECT details_json FROM order_audit_log WHERE order_item_id = ? AND action = 'item_discount_applied' ORDER BY id DESC LIMIT 1`,
+    )
+    .get(itemId) as { details_json: string | null } | undefined;
+  if (!auditRow?.details_json) return null;
+  try {
+    const details = JSON.parse(auditRow.details_json) as {
+      discount_type?: string;
+      discount_value?: number;
+      approved_by?: string;
+    } | null;
+    if (
+      (details?.discount_type === 'percentage' || details?.discount_type === 'amount') &&
+      typeof details.discount_value === 'number'
+    ) {
+      return {
+        discount_type: details.discount_type,
+        discount_value: details.discount_value,
+        ...(typeof details.approved_by === 'string' ? { approved_by: details.approved_by } : {}),
+      };
+    }
+  } catch {
+    // Fall back to proportional scaling.
+  }
+  return null;
+}
+
 function resolveEditedItemDiscountAmount(
   db: ReturnType<typeof getDatabase>,
   oldItem: OrderItemRow,
@@ -3642,30 +3674,16 @@ function resolveEditedItemDiscountAmount(
 ): number {
   const existingDiscount = Number(oldItem.discount_amount || 0);
   if (existingDiscount <= 0) return 0;
-  const auditRow = db
-    .prepare(
-      `SELECT details_json FROM order_audit_log WHERE order_item_id = ? AND action = 'item_discount_applied' ORDER BY id DESC LIMIT 1`,
-    )
-    .get(oldItem.id) as { details_json: string | null } | undefined;
-  if (auditRow?.details_json) {
-    try {
-      const details = JSON.parse(auditRow.details_json) as {
-        discount_type?: string;
-        discount_value?: number;
-      } | null;
-      if (details?.discount_type === 'percentage' && typeof details.discount_value === 'number') {
-        return Math.min(
-          itemBaseTotal,
-          Number(((itemBaseTotal * details.discount_value) / 100).toFixed(decimals)),
-        );
-      }
-      if (details?.discount_type === 'amount' && typeof details.discount_value === 'number') {
-        if (extraLineOnly) return 0;
-        return Math.min(itemBaseTotal, Number(details.discount_value.toFixed(decimals)));
-      }
-    } catch {
-      // Fall back to proportional scaling.
-    }
+  const details = getAppliedItemDiscountDetails(db, oldItem.id);
+  if (details?.discount_type === 'percentage') {
+    return Math.min(
+      itemBaseTotal,
+      Number(((itemBaseTotal * details.discount_value) / 100).toFixed(decimals)),
+    );
+  }
+  if (details?.discount_type === 'amount') {
+    if (extraLineOnly) return 0;
+    return Math.min(itemBaseTotal, Number(details.discount_value.toFixed(decimals)));
   }
   if (extraLineOnly) return 0;
   const scaled =
@@ -4290,6 +4308,20 @@ router.patch(
             newItem = { ...replacement };
           }
 
+          if (isStartedQuantityIncrease) {
+            superseded = false;
+          } else if (isPendingLine) {
+            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason);
+            superseded = true;
+          } else {
+            // Started replacement: void original line without restoring stock.
+            db.prepare(
+              "UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?",
+            ).run(now(), now(), oldItem.id);
+            superseded = true;
+            wastedQuantity = oldQuantity;
+          }
+
           try {
             validateItemNotes(db, newItem.special_instructions);
             const resolved = resolveItemAddons(
@@ -4312,6 +4344,9 @@ router.patch(
             });
           }
 
+          const carriedDiscountDetails = preserveUnitPrice
+            ? getAppliedItemDiscountDetails(db, oldItem.id)
+            : null;
           if (preserveUnitPrice) {
             const addonPerUnitTotal = (newItem.addons || []).reduce(
               (sum, addon) => sum + Number(addon?.price || 0) * Number(addon?.quantity || 1),
@@ -4330,20 +4365,6 @@ router.patch(
             );
           }
 
-          if (isStartedQuantityIncrease) {
-            superseded = false;
-          } else if (isPendingLine) {
-            cancelOrderItemAndRestoreStock(db, oldItem, actorId, reason);
-            superseded = true;
-          } else {
-            // Started replacement: void original line without restoring stock.
-            db.prepare(
-              "UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?",
-            ).run(now(), now(), oldItem.id);
-            superseded = true;
-            wastedQuantity = oldQuantity;
-          }
-
           const [insertedId] = insertOrderItems(db, orderId, [newItem], {
             tenantInfo,
             customer,
@@ -4353,6 +4374,19 @@ router.patch(
             preserveUnitPrice,
           });
           newItemId = insertedId;
+          if (
+            carriedDiscountDetails &&
+            Number(newItem.discount_amount || 0) > 0 &&
+            (!isStartedQuantityIncrease || carriedDiscountDetails.discount_type === 'percentage')
+          ) {
+            recordOrderAudit(db, {
+              orderId,
+              orderItemId: String(insertedId),
+              actorUserId: actorId,
+              action: 'item_discount_applied',
+              details: carriedDiscountDetails,
+            });
+          }
         }
 
         const orderTotals = calculateOrderTotals(db, orderId);

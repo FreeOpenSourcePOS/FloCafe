@@ -27,7 +27,7 @@ import { resolveTaxComponents } from './tax-components';
 import { shouldShowCustomerNumber } from '@print/document';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 import { formatItemHeading } from './item-heading';
-import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
 /** Business contact facts and visibility flags for one bill print run. */
 export interface BillBusinessOptions {
@@ -157,7 +157,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
     customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
       ? `${customerCountryCode} ${customerPhone}`
       : customerPhone;
-  const items = (order?.items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
+  const items = (order?.items ?? []).filter((item) => !isExcludedFromBillReceipt(item?.status));
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
 

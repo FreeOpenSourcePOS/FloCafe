@@ -7135,6 +7135,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 114,
+    name: 'add_order_audit_log_item_index',
+    up: () => {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_order_audit_log_item ON order_audit_log(order_item_id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

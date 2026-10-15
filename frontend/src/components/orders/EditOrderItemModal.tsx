@@ -212,7 +212,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           return data.order as Order;
         } catch (error) {
           const status = (error as { response?: { status?: unknown } })?.response?.status;
-          if (!isUnresolvedOrderItemEditFailure(error) && status !== 401 && status !== 403) {
+          if (!isUnresolvedOrderItemEditFailure(error) && status !== 401) {
             if (
               clearOrderItemEditAttempt(
                 snapshot.tenantId,

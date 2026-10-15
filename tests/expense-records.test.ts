@@ -2275,8 +2275,8 @@ function runServiceChecks(db: any): void {
     'replaced oversized legacy row returns null due_minor instead of a rounded number',
   );
 
-  // Direct void of an oversized legacy row (> Number.MAX_SAFE_INTEGER) succeeds without rounding
   const int64VoidRowId = 'exp_legacy_omr_int64_void_target';
+  const int64PaymentId = 'exppay_legacy_omr_int64_payment';
   reopenedDb
     .prepare(`
     INSERT INTO expenses (
@@ -2284,11 +2284,80 @@ function runServiceChecks(db: any): void {
     ) VALUES (?, ?, 'Aggregate Bounds Primary', 'Oversized legacy row to void', ?, 'OMR', ?, ?, ?)
   `)
     .run(int64VoidRowId, boundsCat1, sqliteInt64Max, today, actor, now());
+  reopenedDb
+    .prepare(`
+    INSERT INTO expense_payments (
+      id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
+    ) VALUES (?, ?, 250, 'card', ?, NULL, NULL, 'LEGACY-REF', NULL, ?, ?)
+  `)
+    .run(int64PaymentId, int64VoidRowId, today, actor, now());
   expectError(
     () => service.summarizeExpenses(reopenedDb, { currencyCode: 'OMR' }),
     422,
     'active oversized legacy row causes OMR summary to fail with 422 before voiding',
     'amount_range_exceeded',
+  );
+  const activeOversizedFetched = service.getExpense(reopenedDb, int64VoidRowId);
+  assertEqualOrThrow(
+    activeOversizedFetched.status,
+    'active',
+    'active oversized legacy row remains readable via getExpense',
+  );
+  assertEqualOrThrow(
+    activeOversizedFetched.amount_minor,
+    null,
+    'active oversized legacy row projects null amount_minor instead of throwing 422',
+  );
+  assertEqualOrThrow(
+    activeOversizedFetched.paid_minor,
+    250,
+    'active oversized legacy row projects paid_minor while active',
+  );
+  assertEqualOrThrow(
+    activeOversizedFetched.due_minor,
+    null,
+    'active oversized legacy row projects null due_minor while active',
+  );
+  assertOrThrow(
+    service
+      .listExpenses(reopenedDb, { currencyCode: 'OMR', status: 'active' })
+      .expenses.some(
+        (row: any) =>
+          row.id === int64VoidRowId && row.amount_minor === null && row.due_minor === null,
+      ),
+    'listExpenses remains usable when an active oversized legacy row is on the page',
+  );
+  expectError(
+    () =>
+      service.recordExpensePayment(reopenedDb, int64VoidRowId, {
+        amount_minor: 100,
+        method: 'card',
+        actorUserId: actor,
+        idempotencyKey: 'pay-omr-int64-active-rejected',
+      }),
+    409,
+    'new payment on an active oversized legacy row is rejected with 409 when due_minor is null',
+    'expense_overpaid',
+  );
+  const reversedOversizedPayment = service.reverseExpensePayment(
+    reopenedDb,
+    int64VoidRowId,
+    int64PaymentId,
+    {
+      reason: 'Reverse legacy payment before voiding oversized row',
+      actorUserId: actor,
+      idempotencyKey: 'reverse-omr-int64-legacy-payment',
+    },
+  );
+  assertEqualOrThrow(
+    reversedOversizedPayment.status,
+    201,
+    'reversing a payment on an active oversized legacy row succeeds',
+  );
+  assertEqualOrThrow(
+    reversedOversizedPayment.body.expense.paid_minor,
+    0,
+    'reversing the payment brings paid_minor on the active oversized row to 0',
   );
   const recoveredInt64ByVoid = service.voidExpense(reopenedDb, int64VoidRowId, {
     reason: 'Void oversized legacy row directly',

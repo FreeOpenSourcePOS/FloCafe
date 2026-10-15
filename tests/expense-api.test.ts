@@ -913,13 +913,53 @@ async function main(): Promise<number> {
     'HTTP summary reflects voided legacy row',
   );
 
-  // Direct HTTP void of an oversized row whose own amount_minor exceeds Number.MAX_SAFE_INTEGER
   const legacyOversizedSingleId = 'exp_legacy_http_single_int64_max';
+  const legacyOversizedPaymentId = 'exppay_legacy_http_single_int64_max';
   db.prepare(`
     INSERT INTO expenses (
       id, category_id, category_name, description, amount_minor, currency_code, incurred_on, created_by, created_at
     ) VALUES (?, ?, 'Utilities', 'Legacy single oversized row', ?, 'INR', ?, 'mgr-test-001', ?)
   `).run(legacyOversizedSingleId, utilitiesCategoryId, BigInt('9223372036854775807'), today, now());
+  db.prepare(`
+    INSERT INTO expense_payments (
+      id, expense_id, amount_minor, method, business_date, reversal_of, reason, reference, cash_movement_id, created_by, created_at
+    ) VALUES (?, ?, 300, 'card', ?, NULL, NULL, 'HTTP-LEGACY-REF', NULL, 'mgr-test-001', ?)
+  `).run(legacyOversizedPaymentId, legacyOversizedSingleId, today, now());
+
+  const listWithActiveSingleOversized = await request(app).get('/api/expenses').set(manager);
+  assertEqualOrThrow(
+    listWithActiveSingleOversized.status,
+    200,
+    'HTTP list remains 200 when an active oversized row (> Number.MAX_SAFE_INTEGER) is on the page',
+  );
+  const detailActiveSingleOversized = await request(app)
+    .get(`/api/expenses/${legacyOversizedSingleId}`)
+    .set(manager);
+  assertEqualOrThrow(
+    detailActiveSingleOversized.status,
+    200,
+    'HTTP detail remains 200 on an active oversized row (> Number.MAX_SAFE_INTEGER)',
+  );
+  assertEqualOrThrow(
+    detailActiveSingleOversized.body.expense.amount_minor,
+    null,
+    'HTTP detail on active oversized row returns null amount_minor',
+  );
+  assertEqualOrThrow(
+    detailActiveSingleOversized.body.expense.due_minor,
+    null,
+    'HTTP detail on active oversized row returns null due_minor',
+  );
+  const reverseOversizedSingleHttp = await request(app)
+    .post(`/api/expenses/${legacyOversizedSingleId}/payments/${legacyOversizedPaymentId}/reverse`)
+    .set(manager)
+    .set('Idempotency-Key', 'api-reverse-legacy-single-int64-max')
+    .send({ reason: 'Reverse payment before voiding oversized row' });
+  assertEqualOrThrow(
+    reverseOversizedSingleHttp.status,
+    201,
+    'HTTP payment reversal on an active oversized row succeeds',
+  );
 
   const voidOversizedSingleHttp = await request(app)
     .post(`/api/expenses/${legacyOversizedSingleId}/void`)

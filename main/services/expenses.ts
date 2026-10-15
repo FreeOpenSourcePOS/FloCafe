@@ -511,15 +511,13 @@ function projectExpenseRow(row: RawExpenseRow): ExpenseRecord {
   const paidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
   const paidMinor = requireSafeTotal(paidRaw, 'Expense paid total');
   const dueRaw = amountRaw - paidRaw;
-  const allowOversizedInactive = row.voided_at !== null;
-  const amountMinor =
-    allowOversizedInactive && !isSafeTotal(amountRaw)
-      ? null
-      : requireSafeTotal(amountRaw, 'Expense amount');
+  const amountMinor = isSafeTotal(amountRaw)
+    ? requireSafeTotal(amountRaw, 'Expense amount')
+    : null;
   const dueMinor =
-    allowOversizedInactive && !isSafeTotal(dueRaw)
-      ? null
-      : requireSafeTotal(dueRaw, 'Expense due total');
+    amountMinor !== null && isSafeTotal(dueRaw)
+      ? requireSafeTotal(dueRaw, 'Expense due total')
+      : null;
   return {
     id: row.id,
     category_id: row.category_id,

@@ -408,16 +408,7 @@ test.describe('Table Move UI Live Validation', () => {
       await captureScreenshot(page, '08-occupied-table-disabled.png', testInfo);
 
       // Destination changed to reserved after initial modal read must be rejected with 409
-      const customerRes = await request.post(`${BASE}/api/customers`, {
-        headers: authHeaders,
-        data: {
-          name: `Reserved Guest ${runId}`,
-          phone: `+6681${String(runId).slice(-7)}`,
-          country_code: 'TH',
-        },
-      });
-      expect(customerRes.ok()).toBeTruthy();
-      const reservedCustomer = (await customerRes.json()).customer;
+      const reservedCustomer = { id: 'e2e-customer', name: 'E2E Guest' };
 
       const reserveT1Res = await request.patch(`${BASE}/api/tables/${table1.id}/status`, {
         headers: authHeaders,
@@ -450,6 +441,12 @@ test.describe('Table Move UI Live Validation', () => {
         confirmReservedMoveBtn.click(),
       ]);
       expect(reservedMoveResponse.status()).toBe(409);
+      await expect(page.locator('text=Target table is reserved')).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(
+        page.locator('text=Destination table already has an active order'),
+      ).not.toBeVisible();
       await expect(guardModal).toBeVisible();
 
       const checkTablesReserved = await (
@@ -512,6 +509,12 @@ test.describe('Table Move UI Live Validation', () => {
       }
       for (const tbl of [table1, table2, table3, table4]) {
         if (tbl.id) {
+          await request
+            .patch(`${BASE}/api/tables/${tbl.id}/status`, {
+              headers: authHeaders,
+              data: { status: 'available' },
+            })
+            .catch(() => {});
           await request
             .post(`${BASE}/api/tables/${tbl.id}/deactivate`, { headers: authHeaders })
             .catch(() => {});

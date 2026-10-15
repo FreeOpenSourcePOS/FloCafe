@@ -2258,6 +2258,117 @@ function runServiceChecks(db: any): void {
     500,
     'OMR summary succeeds with exact replacement amount after recovering from int64 overflow',
   );
+  const replacedInt64Source = service.getExpense(reopenedDb, int64OverflowRowId);
+  assertEqualOrThrow(
+    replacedInt64Source.status,
+    'replaced',
+    'replaced oversized legacy row remains readable as replaced',
+  );
+  assertEqualOrThrow(
+    replacedInt64Source.amount_minor,
+    null,
+    'replaced oversized legacy row returns null amount_minor instead of a rounded number',
+  );
+  assertEqualOrThrow(
+    replacedInt64Source.due_minor,
+    null,
+    'replaced oversized legacy row returns null due_minor instead of a rounded number',
+  );
+
+  // Direct void of an oversized legacy row (> Number.MAX_SAFE_INTEGER) succeeds without rounding
+  const int64VoidRowId = 'exp_legacy_omr_int64_void_target';
+  reopenedDb
+    .prepare(`
+    INSERT INTO expenses (
+      id, category_id, category_name, description, amount_minor, currency_code, incurred_on, created_by, created_at
+    ) VALUES (?, ?, 'Aggregate Bounds Primary', 'Oversized legacy row to void', ?, 'OMR', ?, ?, ?)
+  `)
+    .run(int64VoidRowId, boundsCat1, sqliteInt64Max, today, actor, now());
+  expectError(
+    () => service.summarizeExpenses(reopenedDb, { currencyCode: 'OMR' }),
+    422,
+    'active oversized legacy row causes OMR summary to fail with 422 before voiding',
+    'amount_range_exceeded',
+  );
+  const recoveredInt64ByVoid = service.voidExpense(reopenedDb, int64VoidRowId, {
+    reason: 'Void oversized legacy row directly',
+    actorUserId: actor,
+    idempotencyKey: 'void-omr-int64-direct',
+  });
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.status,
+    200,
+    'voiding an oversized legacy row directly succeeds with 200',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.status,
+    'voided',
+    'oversized legacy row is marked voided',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.void_reason,
+    'Void oversized legacy row directly',
+    'voided oversized row records void reason',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.voided_by,
+    actor,
+    'voided oversized row records actor',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.amount_minor,
+    null,
+    'voided oversized row returns null amount_minor instead of a precision-losing rounded number',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.due_minor,
+    null,
+    'voided oversized row returns null due_minor instead of a precision-losing rounded number',
+  );
+  assertEqualOrThrow(
+    recoveredInt64ByVoid.body.expense.paid_minor,
+    0,
+    'voided oversized row reports 0 paid_minor',
+  );
+  const recoveredInt64VoidReplay = service.voidExpense(reopenedDb, int64VoidRowId, {
+    reason: 'Void oversized legacy row directly',
+    actorUserId: actor,
+    idempotencyKey: 'void-omr-int64-direct',
+  });
+  assertEqualOrThrow(
+    recoveredInt64VoidReplay.replayed,
+    true,
+    'voiding an oversized legacy row replays idempotently',
+  );
+  assertEqualOrThrow(
+    recoveredInt64VoidReplay.body.expense.amount_minor,
+    null,
+    'replayed void of oversized legacy row preserves null amount_minor without rounding',
+  );
+  const persistedOversizedRow = reopenedDb
+    .prepare('SELECT amount_minor, voided_at FROM expenses WHERE id = ?')
+    .safeIntegers(true)
+    .get(int64VoidRowId) as { amount_minor: bigint; voided_at: string | null };
+  assertEqualOrThrow(
+    persistedOversizedRow.amount_minor,
+    sqliteInt64Max,
+    'voiding an oversized legacy row preserves the exact 64-bit integer in SQLite',
+  );
+  assertOrThrow(
+    persistedOversizedRow.voided_at !== null,
+    'voiding an oversized legacy row commits voided_at in SQLite',
+  );
+  assertOrThrow(
+    service
+      .listExpenses(reopenedDb, { currencyCode: 'OMR', status: 'voided' })
+      .expenses.some((row: any) => row.id === int64VoidRowId && row.amount_minor === null),
+    'voided oversized row remains readable in status=voided history without rounding',
+  );
+  assertEqualOrThrow(
+    service.summarizeExpenses(reopenedDb, { currencyCode: 'OMR' }).totals[0].incurred_minor,
+    500,
+    'OMR summary succeeds again after voiding the oversized legacy row directly',
+  );
 
   // ── Expense workflows leave sales, stock, and drawer rows untouched ──
   assertEqualOrThrow(

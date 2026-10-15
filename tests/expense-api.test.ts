@@ -913,6 +913,48 @@ async function main(): Promise<number> {
     'HTTP summary reflects voided legacy row',
   );
 
+  // Direct HTTP void of an oversized row whose own amount_minor exceeds Number.MAX_SAFE_INTEGER
+  const legacyOversizedSingleId = 'exp_legacy_http_single_int64_max';
+  db.prepare(`
+    INSERT INTO expenses (
+      id, category_id, category_name, description, amount_minor, currency_code, incurred_on, created_by, created_at
+    ) VALUES (?, ?, 'Utilities', 'Legacy single oversized row', ?, 'INR', ?, 'mgr-test-001', ?)
+  `).run(legacyOversizedSingleId, utilitiesCategoryId, BigInt('9223372036854775807'), today, now());
+
+  const voidOversizedSingleHttp = await request(app)
+    .post(`/api/expenses/${legacyOversizedSingleId}/void`)
+    .set(manager)
+    .set('Idempotency-Key', 'api-void-legacy-single-int64-max')
+    .send({ reason: 'Void corrupt oversized row' });
+  assertEqualOrThrow(
+    voidOversizedSingleHttp.status,
+    200,
+    'HTTP void of an oversized row (> Number.MAX_SAFE_INTEGER) succeeds',
+  );
+  assertEqualOrThrow(
+    voidOversizedSingleHttp.body.expense.status,
+    'voided',
+    'HTTP void marks the oversized row voided',
+  );
+  assertEqualOrThrow(
+    voidOversizedSingleHttp.body.expense.amount_minor,
+    null,
+    'HTTP void of oversized row returns null amount_minor instead of a rounded number',
+  );
+  assertEqualOrThrow(
+    voidOversizedSingleHttp.body.expense.due_minor,
+    null,
+    'HTTP void of oversized row returns null due_minor instead of a rounded number',
+  );
+  const summaryAfterSingleOversizedVoid = await request(app)
+    .get('/api/expenses/summary')
+    .set(manager);
+  assertEqualOrThrow(
+    summaryAfterSingleOversizedVoid.status,
+    200,
+    'HTTP summary returns 200 after voiding single oversized row',
+  );
+
   const results = getResults();
   console.log(`\nExpense API: ${results.passed}/${results.total} checks passed`);
   if (results.failed > 0) {

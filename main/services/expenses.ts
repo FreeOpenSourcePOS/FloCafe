@@ -76,7 +76,7 @@ export interface ExpenseRecord {
   description: string;
   payee: string | null;
   notes: string | null;
-  amount_minor: number;
+  amount_minor: number | null;
   currency_code: string;
   incurred_on: string;
   created_by: string;
@@ -87,7 +87,7 @@ export interface ExpenseRecord {
   void_reason: string | null;
   status: ExpenseStatus;
   paid_minor: number;
-  due_minor: number;
+  due_minor: number | null;
 }
 
 export interface ExpensePaymentRecord {
@@ -306,9 +306,13 @@ function toBigIntTotal(value: bigint | number, label: string): bigint {
   return BigInt(value);
 }
 
+function isSafeTotal(value: bigint): boolean {
+  return value >= MIN_SAFE_TOTAL && value <= MAX_SAFE_TOTAL;
+}
+
 function requireSafeTotal(value: bigint | number, label: string): number {
   const total = toBigIntTotal(value, label);
-  if (total < MIN_SAFE_TOTAL || total > MAX_SAFE_TOTAL) {
+  if (!isSafeTotal(total)) {
     throw unsupportedAmountRange(label);
   }
   return Number(total);
@@ -505,8 +509,17 @@ interface RawExpenseRow extends Omit<ExpenseRecord, 'amount_minor' | 'paid_minor
 function projectExpenseRow(row: RawExpenseRow): ExpenseRecord {
   const amountRaw = toBigIntTotal(row.amount_minor, 'Expense amount');
   const paidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
-  const amountMinor = requireSafeTotal(amountRaw, 'Expense amount');
   const paidMinor = requireSafeTotal(paidRaw, 'Expense paid total');
+  const dueRaw = amountRaw - paidRaw;
+  const allowOversizedInactive = row.voided_at !== null;
+  const amountMinor =
+    allowOversizedInactive && !isSafeTotal(amountRaw)
+      ? null
+      : requireSafeTotal(amountRaw, 'Expense amount');
+  const dueMinor =
+    allowOversizedInactive && !isSafeTotal(dueRaw)
+      ? null
+      : requireSafeTotal(dueRaw, 'Expense due total');
   return {
     id: row.id,
     category_id: row.category_id,
@@ -525,7 +538,7 @@ function projectExpenseRow(row: RawExpenseRow): ExpenseRecord {
     void_reason: row.void_reason,
     status: row.status,
     paid_minor: paidMinor,
-    due_minor: requireSafeTotal(amountRaw - paidRaw, 'Expense due total'),
+    due_minor: dueMinor,
   };
 }
 
@@ -1265,7 +1278,7 @@ export function recordExpensePayment(
         const reference = optionalTrimmedText(input.reference, 'reference', REFERENCE_LIMIT);
         requireStoreCurrency(expense);
         requireExpectedCurrency(input.currency_code, expense.currency_code);
-        if (amountMinor > expense.due_minor)
+        if (expense.due_minor === null || amountMinor > expense.due_minor)
           throw conflict('Payment exceeds the amount due', 'expense_overpaid');
         const businessDate = currentBusinessDate();
         let cashMovementId: number | null = null;

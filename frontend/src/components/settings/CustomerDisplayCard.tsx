@@ -81,12 +81,17 @@ function PairedDisplays() {
     }
   }
 
-  function copyLink() {
+  async function copyLink() {
     if (!pairingLink) return;
-    navigator.clipboard.writeText(pairingLink.url).then(
-      () => toast.success(t('urlCopied')),
-      () => toast.error(t('pairFailed')),
-    );
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(pairingLink.url);
+      toast.success(t('urlCopied'));
+    } catch {
+      toast.error(t('pairFailed'));
+    }
   }
 
   return (
@@ -226,11 +231,16 @@ export function CustomerDisplayCard() {
     }
   }
 
-  function copyUrl() {
-    navigator.clipboard.writeText(displayUrl).then(
-      () => toast.success(t('urlCopied')),
-      () => toast.error(tCommon('failedToSave')),
-    );
+  async function copyUrl() {
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') {
+        throw new Error('Clipboard unavailable');
+      }
+      await navigator.clipboard.writeText(displayUrl);
+      toast.success(t('urlCopied'));
+    } catch {
+      toast.error(tCommon('failedToSave'));
+    }
   }
 
   return (

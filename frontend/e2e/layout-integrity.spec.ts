@@ -300,6 +300,131 @@ test('sidebar theme toggle button does not clip horizontally or vertically acros
   }
 });
 
+test('sidebar renders one localized primary navigation landmark wrapping nav links and excluding non-navigation controls across desktop, collapsed, keyboard, RTL, and mobile states (#1097)', async ({
+  page,
+}) => {
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill(E2E_PASSWORD);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  try {
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+
+    const sidebar = page.locator('[data-slot="sidebar"]');
+    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+
+    // Desktop expanded (LTR): exactly one navigation landmark with localized label
+    await expect(page.getByRole('navigation')).toHaveCount(1);
+    const primaryNav = page.getByRole('navigation', { name: 'Menu', exact: true });
+    await expect(primaryNav).toBeVisible();
+    expect(await primaryNav.evaluate((el) => el.tagName)).toBe('NAV');
+
+    const expectedLinks = [
+      'POS',
+      'Dashboard',
+      'Orders',
+      'Products',
+      'Inventory',
+      'Expenses',
+      'Customers',
+      'Staff',
+      'Settings',
+    ];
+    for (const label of expectedLinks) {
+      await expect(
+        primaryNav.getByRole('link', { name: label, exact: true }),
+        `desktop expanded nav contains link "${label}"`,
+      ).toBeVisible();
+    }
+
+    // Header brand link, theme toggle, user profile menu, and resize rail stay outside <nav>
+    await expect(primaryNav.locator('[data-sidebar="header"]')).toHaveCount(0);
+    await expect(primaryNav.locator('[data-sidebar="footer"]')).toHaveCount(0);
+    await expect(primaryNav.getByTestId('sidebar-theme-toggle')).toHaveCount(0);
+    await expect(primaryNav.locator('[data-slot="dropdown-menu-trigger"]')).toHaveCount(0);
+    await expect(primaryNav.locator('[data-sidebar="rail"]')).toHaveCount(0);
+
+    const profileTrigger = page.locator(
+      '[data-sidebar="footer"] button[data-sidebar="menu-button"][data-slot="dropdown-menu-trigger"]',
+    );
+    await expect(profileTrigger).toBeVisible();
+    await profileTrigger.click();
+    await expect(page.getByRole('menuitem', { name: 'Support' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Logout' })).toBeVisible();
+    await expect(primaryNav.getByRole('menuitem')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // Keyboard traversal and activation inside primary <nav>
+    const posLink = primaryNav.getByRole('link', { name: 'POS', exact: true });
+    const dashboardLink = primaryNav.getByRole('link', { name: 'Dashboard', exact: true });
+    await posLink.focus();
+    await expect(posLink).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dashboardLink).toBeFocused();
+
+    // Collapsed icon rail preserves the single landmark and keyboard focusability
+    await page.keyboard.press('Control+b');
+    await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+    await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
+    await expect(page.getByRole('navigation')).toHaveCount(1);
+    await expect(primaryNav).toBeVisible();
+    const ordersLink = primaryNav.getByRole('link', { name: 'Orders', exact: true });
+    await ordersLink.focus();
+    await expect(ordersLink).toBeFocused();
+
+    await page.keyboard.press('Control+b');
+    await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+
+    // RTL (Persian): landmark label localizes and stays on the inline-start (right) edge
+    await setLanguage(page, 'fa');
+    await page.goto(`${BASE}/orders`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('navigation')).toHaveCount(1);
+    const rtlNav = page.getByRole('navigation', { name: 'منو', exact: true });
+    await expect(rtlNav).toBeVisible();
+    await expect(rtlNav.getByRole('link', { name: 'صندوق فروش', exact: true })).toBeVisible();
+    await expect(rtlNav.getByRole('link', { name: 'سفارش‌ها', exact: true })).toBeVisible();
+    await expect(rtlNav.getByTestId('sidebar-theme-toggle')).toHaveCount(0);
+    const rtlBox = await rtlNav.boundingBox();
+    const viewportWidth = page.viewportSize()?.width ?? 1280;
+    expect(rtlBox, 'RTL nav has bounding box').not.toBeNull();
+    expect(
+      rtlBox!.x + rtlBox!.width,
+      'RTL nav sits on the right side of the viewport',
+    ).toBeGreaterThan(viewportWidth - 25);
+
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/orders`);
+
+    // Mobile drawer: landmark mounts inside the mobile sheet when opened and closes on link navigation
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+
+    const openMobileButton = page.getByRole('button', { name: 'Open navigation' });
+    await expect(openMobileButton).toBeVisible();
+    await openMobileButton.click();
+
+    await expect(page.getByRole('navigation')).toHaveCount(1);
+    const mobileNav = page
+      .locator('[data-slot="sidebar"][data-mobile="true"]')
+      .getByRole('navigation', { name: 'Menu', exact: true });
+    await expect(mobileNav).toBeVisible();
+    await expect(mobileNav.getByRole('link', { name: 'POS', exact: true })).toBeVisible();
+    await expect(mobileNav.getByTestId('sidebar-theme-toggle')).toHaveCount(0);
+    await expect(mobileNav.locator('[data-slot="dropdown-menu-trigger"]')).toHaveCount(0);
+
+    await mobileNav.getByRole('link', { name: 'POS', exact: true }).click();
+    await page.waitForURL(/\/pos/, { timeout: 20000 });
+    await expect(page.locator('[data-slot="sidebar"][data-mobile="true"]')).toHaveCount(0);
+  } finally {
+    await page.setViewportSize({ width: 1280, height: 720 }).catch(() => {});
+    await setLanguage(page, 'en').catch(() => {});
+  }
+});
+
 /**
  * Scroll assertions for the POS and Orders control surfaces.
  *

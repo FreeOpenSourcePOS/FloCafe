@@ -37,6 +37,7 @@ const PUBLIC_PATHS = [
   '/kds',
   '/kds-standalone',
   '/server-standalone',
+  '/customer-display',
   '/auth/login',
   '/auth/register',
   '/auth/recover',
@@ -71,11 +72,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname?.startsWith(p + '/'));
   const isSetupPath = pathname === '/setup' || pathname?.startsWith('/setup/');
   const isStandalonePath =
-    pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
+    pathname?.startsWith('/kds') ||
+    pathname?.startsWith('/server-standalone') ||
+    pathname === '/customer-display' ||
+    pathname?.startsWith('/customer-display/');
 
   useEffect(() => {
-    // Standalone KDS and Server App pages manage their own auth sessions;
-    // skip loading shared POS auth store to avoid clearing their tokens.
+    // Standalone KDS, Server App, and paired customer display pages manage their own
+    // auth sessions; skip loading shared POS auth store to avoid clearing their tokens.
     if (isStandalonePath) return;
     loadFromStorage();
   }, [isStandalonePath, loadFromStorage]);

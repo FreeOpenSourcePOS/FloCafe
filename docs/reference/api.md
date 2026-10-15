@@ -528,15 +528,17 @@ Router: `main/routes/print-templates.ts`. Full path: `/api/print-templates`.
 
 Router: `main/routes/menu-csv.ts`. Full path: `/api/menu-csv`.
 
+Category, product, and add-on exports include `flo_csv_encoding=quote-v1` for reversible formula protection; see [product invariants](product-invariants.md#catalog-csv-encoding-and-legacy-apostrophe-ambiguity) for marked, unmarked legacy, and unsupported encoding rules.
+
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/template/:type` | `ROLE_ACCESS.ownerManager` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
-| `GET` | `/export/categories` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `categories-export.csv`. |
-| `GET` | `/export/products` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `products-export.csv`. |
-| `GET` | `/export/addons` | `ROLE_ACCESS.ownerManager` | none | `text/csv` attachment `addons-export.csv`. |
-| `POST` | `/import/categories` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. Per-row validation errors are reported in the response. |
-| `POST` | `/import/products` | `ROLE_ACCESS.ownerManager` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
-| `POST` | `/import/addons` | `ROLE_ACCESS.ownerManager` | body: `csv` | - |
+| `GET` | `/template/:type` | `catalog.import-export` | path: `type` | CSV header template for `categories`, `products`, or `addons`. |
+| `GET` | `/export/categories` | `catalog.import-export` | none | `text/csv` attachment `categories-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/products` | `catalog.import-export` | none | `text/csv` attachment `products-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `GET` | `/export/addons` | `catalog.import-export` | none | `text/csv` attachment `addons-export.csv` with `flo_csv_encoding=quote-v1`. |
+| `POST` | `/import/categories` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows, preserves unmarked category names, and reports per-row validation errors in the response. |
+| `POST` | `/import/products` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. A supplied `id` matching a non-deleted product updates it; a missing or unrecognized `id` creates a product with a generated id unless the name and category already exist, in which case the row is skipped. Decodes `quote-v1` rows and ID-proven legacy product fields. Returns `created`, `updated`, `reactivated`, `skipped`, and `failed` counts plus per-row `errors`. |
+| `POST` | `/import/addons` | `catalog.import-export` | body: `csv` | Body `csv` is the raw file text. Decodes `quote-v1` rows and ID-proven legacy add-on fields, and reports counts plus per-row `errors`. |
 
 ### Settings
 

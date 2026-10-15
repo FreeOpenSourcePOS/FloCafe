@@ -591,9 +591,11 @@ test.describe('owner live order item edit and superseded cancellation handling',
     expect(capturedRequests[1].key).toBe(capturedRequests[0].key);
     expect(capturedRequests[1].body).toEqual(capturedRequests[0].body);
 
-    // Modal closes after commit and the superseded line leaves no voided-items
-    // toggle, so the Restore control inside that list never renders
+    // Modal closes after commit; anchor on the refetched order (the new 2x
+    // line) so the superseded line's absence from the voided-items toggle is
+    // asserted against post-refresh state, not the stale pre-edit order
     await expect(qtyInput).toBeHidden();
+    await expect(page.getByText('2x', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /voided item/i })).toHaveCount(0);
   });
 });

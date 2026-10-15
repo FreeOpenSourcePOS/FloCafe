@@ -28,13 +28,100 @@ interface PairedDisplay {
   last_seen_at: string | null;
 }
 
-function PairedDisplays() {
+interface PosNetworkInfo {
+  ip_url: string;
+  mdns_url: string;
+  ips_data: { url: string }[];
+}
+
+interface PairingAddresses {
+  primary: string | null;
+  other: string[];
+}
+
+type NetworkInfoStatus = 'loading' | 'ready' | 'error';
+
+interface PairedDisplaysProps {
+  networkInfoStatus: NetworkInfoStatus;
+  primaryOrigin: string | null;
+  otherOrigins: string[];
+  localPreviewOrigin: string | null;
+  selectedOrigin: string;
+  onSelectOrigin: (origin: string) => void;
+  onRetryNetworkInfo: () => void;
+}
+
+function getHttpOrigin(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isPosNetworkInfo(value: unknown): value is PosNetworkInfo {
+  if (!value || typeof value !== 'object') return false;
+  const info = value as Record<string, unknown>;
+  return (
+    getHttpOrigin(info.ip_url) !== null &&
+    getHttpOrigin(info.mdns_url) !== null &&
+    Array.isArray(info.ips_data) &&
+    info.ips_data.every(
+      (entry) => !!entry && typeof entry === 'object' && getHttpOrigin(entry.url) !== null,
+    )
+  );
+}
+
+function getNetworkOrigin(value: string): string | null {
+  const origin = getHttpOrigin(value);
+  if (!origin) return null;
+  const hostname = new URL(origin).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '::1' ||
+    hostname.startsWith('127.')
+  ) {
+    return null;
+  }
+  return origin;
+}
+
+function getPairingAddresses(info: PosNetworkInfo): PairingAddresses {
+  const localOrigins = info.ips_data
+    .map(({ url }) => getNetworkOrigin(url))
+    .filter((origin): origin is string => origin !== null);
+  const primary = getNetworkOrigin(info.ip_url) ?? localOrigins[0] ?? null;
+  if (!primary) return { primary: null, other: [] };
+
+  const other = [
+    ...new Set([...localOrigins, getNetworkOrigin(info.mdns_url)].filter(Boolean)),
+  ].filter((origin): origin is string => origin !== null && origin !== primary);
+  return { primary, other };
+}
+
+function PairedDisplays({
+  networkInfoStatus,
+  primaryOrigin,
+  otherOrigins,
+  localPreviewOrigin,
+  selectedOrigin,
+  onSelectOrigin,
+  onRetryNetworkInfo,
+}: PairedDisplaysProps) {
   const t = useTranslations('customerDisplay');
   const { formatDateTime } = useFormatDate();
+  const tSettings = useTranslations('settings');
   const [displays, setDisplays] = useState<PairedDisplay[]>([]);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
-  const [pairingLink, setPairingLink] = useState<{ id: string; url: string } | null>(null);
+  const [pairingLink, setPairingLink] = useState<{ id: string; token: string; url: string } | null>(
+    null,
+  );
+  const tCommon = useTranslations('common');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -48,7 +135,20 @@ function PairedDisplays() {
     return () => controller.abort();
   }, []);
 
+  function selectPairingAddress(origin: string) {
+    onSelectOrigin(origin);
+    setPairingLink((current) =>
+      current
+        ? {
+            ...current,
+            url: `${origin}${CUSTOMER_DISPLAY_PATH}#token=${encodeURIComponent(current.token)}`,
+          }
+        : current,
+    );
+  }
+
   async function pair() {
+    if (!selectedOrigin || networkInfoStatus === 'loading') return;
     setBusy(true);
     try {
       const { data } = await api.post('/settings/customer-display/tokens', { label });
@@ -59,7 +159,8 @@ function PairedDisplays() {
       ]);
       setPairingLink({
         id: data.id,
-        url: `${window.location.origin}${CUSTOMER_DISPLAY_PATH}#token=${data.token}`,
+        token: data.token,
+        url: `${selectedOrigin}${CUSTOMER_DISPLAY_PATH}#token=${encodeURIComponent(data.token)}`,
       });
       setLabel('');
     } catch (error) {
@@ -99,7 +200,7 @@ function PairedDisplays() {
       <h3 className="font-semibold text-foreground">{t('pairedTitle')}</h3>
       <p className="text-sm text-muted-foreground mb-4">{t('pairedHint')}</p>
 
-      <div className="flex flex-wrap items-end gap-2 mb-4">
+      <div className="mb-4">
         <div>
           <label
             htmlFor="customer-display-pair-label"
@@ -117,15 +218,103 @@ function PairedDisplays() {
             className="w-56 rounded-lg border border-border bg-background px-3 py-2 text-sm"
           />
         </div>
-        <button
-          type="button"
-          onClick={pair}
-          disabled={busy || label.trim().length === 0}
-          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
-        >
-          {t('pairCreate')}
-        </button>
       </div>
+
+      {networkInfoStatus === 'error' && (
+        <div
+          role="alert"
+          className="mb-3 flex flex-wrap items-center gap-2 text-sm text-destructive"
+        >
+          <span>{t('networkInfoLoadFailed')}</span>
+          <button type="button" onClick={onRetryNetworkInfo} className="underline">
+            {tSettings('retry')}
+          </button>
+        </div>
+      )}
+      {networkInfoStatus === 'ready' && !primaryOrigin && (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          {t('lanPairingUnavailable')}
+        </p>
+      )}
+
+      <fieldset className="mb-4 space-y-2">
+        <legend className="mb-2 text-sm font-medium text-foreground">{t('urlLabel')}</legend>
+        {networkInfoStatus === 'loading' && (
+          <p className="text-sm text-muted-foreground">{tCommon('loading')}</p>
+        )}
+        {primaryOrigin && (
+          <label className="flex items-start gap-2 text-sm text-foreground">
+            <input
+              type="radio"
+              name="customer-display-pairing-address"
+              checked={selectedOrigin === primaryOrigin}
+              onChange={() => selectPairingAddress(primaryOrigin)}
+              disabled={busy}
+              className="mt-1"
+            />
+            <span className="min-w-0">
+              <span className="block font-medium">{t('primaryLanAddress')}</span>
+              <code dir="ltr" className="block break-all text-xs text-muted-foreground">
+                {primaryOrigin}
+              </code>
+            </span>
+          </label>
+        )}
+        {(otherOrigins.length > 0 || localPreviewOrigin) && (
+          <details open={!primaryOrigin} className="rounded-lg border border-border px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              {t('otherAddresses')}
+            </summary>
+            <div className="mt-2 space-y-2">
+              {otherOrigins.map((origin) => (
+                <label key={origin} className="flex items-start gap-2 text-sm text-foreground">
+                  <input
+                    type="radio"
+                    name="customer-display-pairing-address"
+                    checked={selectedOrigin === origin}
+                    onChange={() => selectPairingAddress(origin)}
+                    disabled={busy}
+                    className="mt-1"
+                  />
+                  <code dir="ltr" className="break-all text-xs text-muted-foreground">
+                    {origin}
+                  </code>
+                </label>
+              ))}
+              {localPreviewOrigin &&
+                ![primaryOrigin, ...otherOrigins].includes(localPreviewOrigin) && (
+                  <label className="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                      type="radio"
+                      name="customer-display-pairing-address"
+                      checked={selectedOrigin === localPreviewOrigin}
+                      onChange={() => selectPairingAddress(localPreviewOrigin)}
+                      disabled={busy}
+                      className="mt-1"
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium">{t('localPreviewAddress')}</span>
+                      <code dir="ltr" className="block break-all text-xs text-muted-foreground">
+                        {localPreviewOrigin}
+                      </code>
+                    </span>
+                  </label>
+                )}
+            </div>
+          </details>
+        )}
+      </fieldset>
+
+      <button
+        type="button"
+        onClick={pair}
+        disabled={
+          busy || networkInfoStatus === 'loading' || !selectedOrigin || label.trim().length === 0
+        }
+        className="mb-4 px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
+      >
+        {t('pairCreate')}
+      </button>
 
       {pairingLink && (
         <div className="mb-4 rounded-lg border border-border bg-muted p-3">
@@ -183,10 +372,15 @@ export function CustomerDisplayCard() {
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
   const [saved, setSaved] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
   const [saving, setSaving] = useState(false);
-  const displayUrl =
-    typeof window === 'undefined'
-      ? CUSTOMER_DISPLAY_PATH
-      : `${window.location.origin}${CUSTOMER_DISPLAY_PATH}`;
+  const [networkInfoAttempt, setNetworkInfoAttempt] = useState(0);
+  const [networkInfoStatus, setNetworkInfoStatus] = useState<NetworkInfoStatus>('loading');
+  const [networkAddresses, setNetworkAddresses] = useState<PairingAddresses | null>(null);
+  const [selectedOrigin, setSelectedOrigin] = useState('');
+  const localPreviewOrigin =
+    typeof window === 'undefined' ? null : getHttpOrigin(window.location.origin);
+  const primaryOrigin = networkAddresses?.primary ?? null;
+  const otherOrigins = networkAddresses?.other ?? [];
+  const displayUrl = selectedOrigin ? `${selectedOrigin}${CUSTOMER_DISPLAY_PATH}` : '';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -201,7 +395,36 @@ export function CustomerDisplayCard() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .get('/pos-info', { signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        if (!isPosNetworkInfo(data)) throw new Error('invalid response');
+        const addresses = getPairingAddresses(data);
+        setNetworkAddresses(addresses);
+        setNetworkInfoStatus('ready');
+        const availableOrigins = [addresses.primary, ...addresses.other, localPreviewOrigin];
+        setSelectedOrigin((current) =>
+          current && availableOrigins.includes(current) ? current : addresses.primary || '',
+        );
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setNetworkAddresses(null);
+        setNetworkInfoStatus('error');
+        setSelectedOrigin((current) => (current === localPreviewOrigin ? current : ''));
+      });
+    return () => controller.abort();
+  }, [networkInfoAttempt, localPreviewOrigin]);
+
   const dirty = JSON.stringify(config) !== JSON.stringify(saved);
+
+  function retryNetworkInfo() {
+    setNetworkInfoStatus('loading');
+    setNetworkInfoAttempt((attempt) => attempt + 1);
+  }
 
   function toggleStatus(status: CustomerDisplayStatus) {
     setConfig((prev) => {
@@ -258,18 +481,20 @@ export function CustomerDisplayCard() {
             dir="ltr"
             className="flex-1 min-w-0 truncate rounded-lg border border-border bg-muted px-3 py-2 text-sm"
           >
-            {displayUrl}
+            {displayUrl || (networkInfoStatus === 'loading' ? tCommon('loading') : '')}
           </code>
           <button
             type="button"
             onClick={copyUrl}
+            disabled={!displayUrl}
             className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted"
           >
             <Copy size={16} />
             {t('copyUrl')}
           </button>
           <a
-            href={CUSTOMER_DISPLAY_PATH}
+            href={displayUrl || undefined}
+            aria-disabled={!displayUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted"
@@ -341,7 +566,15 @@ export function CustomerDisplayCard() {
           {saving ? tCommon('saving') : tCommon('save')}
         </button>
       </div>
-      <PairedDisplays />
+      <PairedDisplays
+        networkInfoStatus={networkInfoStatus}
+        primaryOrigin={primaryOrigin}
+        otherOrigins={otherOrigins}
+        localPreviewOrigin={localPreviewOrigin}
+        selectedOrigin={selectedOrigin}
+        onSelectOrigin={setSelectedOrigin}
+        onRetryNetworkInfo={retryNetworkInfo}
+      />
     </div>
   );
 }

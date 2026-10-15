@@ -484,7 +484,6 @@ export default function ServerStandalonePage() {
 
   function handleCustomerPhoneChange(value: string) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setCustomerPhone(value);
     setCustomerMatch(null);
     setCustomerSearched(false);
@@ -494,13 +493,11 @@ export default function ServerStandalonePage() {
 
   function handleCustomerNameChange(value: string) {
     if (sendInFlightRef.current || customerMatch) return;
-    sendAttemptRef.current = null;
     setCustomerName(value);
   }
 
   function handleOrderNotesChange(value: string) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setOrderNotes(value.slice(0, 200));
   }
 
@@ -589,7 +586,6 @@ export default function ServerStandalonePage() {
     variant: ProductVariant | null = null,
   ) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setDraft((lines) => {
       const lineId = generateCartItemId(
         product.id,
@@ -625,7 +621,6 @@ export default function ServerStandalonePage() {
     variant: ProductVariant | null = null,
   ) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setDraft((lines) => {
       const target = lines.find((line) => line.id === lineId);
       if (!target) return lines;
@@ -676,13 +671,11 @@ export default function ServerStandalonePage() {
 
   function removeDraftLine(lineId: string) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setDraft((lines) => lines.filter((line) => line.id !== lineId));
   }
 
   function changeQty(lineId: string, delta: number) {
     if (sendInFlightRef.current) return;
-    sendAttemptRef.current = null;
     setDraft((lines) =>
       lines
         .map((line) => (line.id === lineId ? { ...line, quantity: line.quantity + delta } : line))

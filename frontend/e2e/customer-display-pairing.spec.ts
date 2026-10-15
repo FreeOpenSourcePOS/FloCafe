@@ -212,47 +212,81 @@ test.describe('Customer display pairing and clipboard safety', () => {
     }
   });
 
-  test('guards both customer-display copy actions when navigator.clipboard is missing, throws synchronously, or rejects', async ({
-    page,
-  }) => {
-    const pageErrors: Error[] = [];
-    page.on('pageerror', (err) => pageErrors.push(err));
+  for (const mode of ['missing', 'sync-throw', 'async-reject'] as const) {
+    test(`guards both customer-display copy actions when navigator.clipboard mode is ${mode}`, async ({
+      page,
+    }) => {
+      const pageErrors: Error[] = [];
+      page.on('pageerror', (err) => pageErrors.push(err));
 
-    // Simulate plain LAN HTTP where navigator.clipboard is undefined before the settings page loads.
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: undefined,
-        configurable: true,
-      });
-    });
+      await page.addInitScript((clipboardMode) => {
+        if (clipboardMode === 'missing') {
+          Object.defineProperty(navigator, 'clipboard', {
+            value: undefined,
+            configurable: true,
+          });
+          return;
+        }
+        if (clipboardMode === 'sync-throw') {
+          Object.defineProperty(navigator, 'clipboard', {
+            value: {
+              writeText() {
+                throw new DOMException('Synchronous clipboard failure', 'NotAllowedError');
+              },
+            },
+            configurable: true,
+          });
+          return;
+        }
+        Object.defineProperty(navigator, 'clipboard', {
+          value: {
+            writeText() {
+              return Promise.reject(
+                new DOMException('Async clipboard rejection', 'NotAllowedError'),
+              );
+            },
+          },
+          configurable: true,
+        });
+      }, mode);
 
-    await openKdsSettingsTab(page);
+      await openKdsSettingsTab(page);
 
-    const card = page
-      .locator('div.bg-card')
-      .filter({ has: page.getByRole('heading', { name: 'Customer display', exact: true }) })
-      .first();
+      const card = page
+        .locator('div.bg-card')
+        .filter({ has: page.getByRole('heading', { name: 'Customer display', exact: true }) })
+        .first();
 
-    // Pair a display so both the static Display address copy action and the one-time pairing link copy action are present.
-    await card.locator('#customer-display-pair-label').fill('LAN HTTP TV');
-    await card.getByRole('button', { name: 'Pair display', exact: true }).click();
-    await expect(card.getByText('Open this link on the display', { exact: true })).toBeVisible();
+      // Pair a display so both the static Display address copy action and the one-time pairing link copy action are present.
+      await card.locator('#customer-display-pair-label').fill(`LAN HTTP TV (${mode})`);
+      await card.getByRole('button', { name: 'Pair display', exact: true }).click();
+      await expect(card.getByText('Open this link on the display', { exact: true })).toBeVisible();
 
-    const codeElements = card.locator('code');
-    await expect(codeElements).toHaveCount(2);
-    const displayUrlCode = codeElements.nth(0);
-    const pairingUrlCode = codeElements.nth(1);
-    const expectedDisplayUrl = (await displayUrlCode.innerText()).trim();
-    const expectedPairingUrl = (await pairingUrlCode.innerText()).trim();
-    expect(expectedDisplayUrl).toContain('/customer-display/');
-    expect(expectedPairingUrl).toMatch(/\/customer-display\/#token=cdt_[0-9a-f]{64}$/);
+      const codeElements = card.locator('code');
+      await expect(codeElements).toHaveCount(2);
+      const displayUrlCode = codeElements.nth(0);
+      const pairingUrlCode = codeElements.nth(1);
+      const expectedDisplayUrl = (await displayUrlCode.innerText()).trim();
+      const expectedPairingUrl = (await pairingUrlCode.innerText()).trim();
+      expect(expectedDisplayUrl).toContain('/customer-display/');
+      expect(expectedPairingUrl).toMatch(/\/customer-display\/#token=cdt_[0-9a-f]{64}$/);
 
-    const copyButtons = card.getByRole('button', { name: 'Copy address', exact: true });
-    await expect(copyButtons).toHaveCount(2);
-    const copyDisplayUrlButton = copyButtons.nth(0);
-    const copyPairingUrlButton = copyButtons.nth(1);
+      const copyButtons = card.getByRole('button', { name: 'Copy address', exact: true });
+      await expect(copyButtons).toHaveCount(2);
+      const copyDisplayUrlButton = copyButtons.nth(0);
+      const copyPairingUrlButton = copyButtons.nth(1);
 
-    async function assertBothLinksRemainSelectable() {
+      const displayCopyErrorToast = page.getByText('Failed to save', { exact: true });
+      const pairingCopyErrorToast = page.getByText('Could not pair the display', { exact: true });
+
+      await expect(displayCopyErrorToast).toHaveCount(0);
+      await copyDisplayUrlButton.click();
+      await expect(displayCopyErrorToast).toBeVisible();
+
+      await expect(pairingCopyErrorToast).toHaveCount(0);
+      await copyPairingUrlButton.click();
+      await expect(pairingCopyErrorToast).toBeVisible();
+
       await expect(displayUrlCode).toBeVisible();
       await expect(pairingUrlCode).toBeVisible();
       const selected = await page.evaluate(() => {
@@ -270,64 +304,7 @@ test.describe('Customer display pairing and clipboard safety', () => {
         });
       });
       expect(selected).toEqual([expectedDisplayUrl, expectedPairingUrl]);
-    }
-
-    // 1. Missing navigator.clipboard (plain LAN HTTP)
-    await copyDisplayUrlButton.click();
-    await expect(page.getByText('Failed to save', { exact: true }).first()).toBeVisible();
-    await page.evaluate(() =>
-      document.querySelectorAll('[role="status"]').forEach((n) => n.remove()),
-    );
-
-    await copyPairingUrlButton.click();
-    await expect(
-      page.getByText('Could not pair the display', { exact: true }).first(),
-    ).toBeVisible();
-    await assertBothLinksRemainSelectable();
-    expect(pageErrors).toHaveLength(0);
-
-    // 2. Synchronous exception from navigator.clipboard.writeText
-    await page.evaluate(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: {
-          writeText() {
-            throw new DOMException('Synchronous clipboard failure', 'NotAllowedError');
-          },
-        },
-        configurable: true,
-      });
+      expect(pageErrors).toHaveLength(0);
     });
-
-    await copyDisplayUrlButton.click();
-    await expect(page.getByText('Failed to save', { exact: true }).first()).toBeVisible();
-
-    await copyPairingUrlButton.click();
-    await expect(
-      page.getByText('Could not pair the display', { exact: true }).first(),
-    ).toBeVisible();
-    await assertBothLinksRemainSelectable();
-    expect(pageErrors).toHaveLength(0);
-
-    // 3. Rejected promise from navigator.clipboard.writeText
-    await page.evaluate(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: {
-          writeText() {
-            return Promise.reject(new DOMException('Async clipboard rejection', 'NotAllowedError'));
-          },
-        },
-        configurable: true,
-      });
-    });
-
-    await copyDisplayUrlButton.click();
-    await expect(page.getByText('Failed to save', { exact: true }).first()).toBeVisible();
-
-    await copyPairingUrlButton.click();
-    await expect(
-      page.getByText('Could not pair the display', { exact: true }).first(),
-    ).toBeVisible();
-    await assertBothLinksRemainSelectable();
-    expect(pageErrors).toHaveLength(0);
-  });
+  }
 });

@@ -179,6 +179,7 @@ interface Props {
   showImages?: boolean;
   gridClassName?: string;
   searchPlaceholder?: string;
+  disabled?: boolean;
 }
 
 export default function ProductGrid({
@@ -197,6 +198,7 @@ export default function ProductGrid({
   showImages,
   gridClassName,
   searchPlaceholder,
+  disabled = false,
 }: Props) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const cart = useCartStore();
@@ -259,7 +261,7 @@ export default function ProductGrid({
               ) {
                 return;
               }
-              if (e.key !== 'Enter') return;
+              if (e.key !== 'Enter' || disabled) return;
               // Typed or pasted barcode, or multiplier search (e.g. 3*latte)
               const trimmed = search.trim();
               if (!trimmed) return;
@@ -358,12 +360,14 @@ export default function ProductGrid({
                 key={product.id}
                 data-testid="pos-product-card"
                 type="button"
+                disabled={disabled}
                 onClick={() => {
+                  if (disabled) return;
                   const quantity = parsedSearch?.quantity ?? 1;
                   if (!validateSelectionQuantity(product, quantity)) return;
                   onProductClick(product, quantity);
                 }}
-                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {!!product.track_inventory && (
                   <>

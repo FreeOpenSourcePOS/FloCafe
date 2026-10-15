@@ -460,7 +460,7 @@ async function main() {
     }
 
     console.log(
-      '\n─── Started Quantity Decrease (In-Place, No Stock Restore, Preserves Snapshots & Waste) ───',
+      '\n─── Started Quantity Decrease (In-Place, No Stock Movement, Waste Stays Out) ───',
     );
     {
       const order = seedOrder(db, 'QTY-DOWN-PREP', 'preparing', 3, 3);
@@ -541,13 +541,13 @@ async function main() {
       assertEqualOrThrow(allLines[0].quantity, 2, 'billable quantity is updated to 2');
       assertEqualOrThrow(
         Number(allLines[0].inventory_deducted_quantity),
-        3,
-        'already-consumed inventory_deducted_quantity (3) is preserved on the line',
+        2,
+        'the line keeps holding only the 2 remaining units; the wasted unit stays out of stock',
       );
       assertEqualOrThrow(
         allLines[0].recipe_snapshot,
-        recipeSnapJson,
-        'already-consumed recipe_snapshot is preserved on the line',
+        JSON.stringify(buildRecipeSnapshot(db, 'prod-edit', 2)),
+        'the recipe snapshot shrinks to the 2 remaining units',
       );
       assertEqualOrThrow(
         Number(allLines[0].discount_amount),
@@ -574,8 +574,8 @@ async function main() {
       );
       assertEqualOrThrow(
         Number(addonRow.inventory_deducted_quantity),
-        3,
-        'already-consumed add-on inventory_deducted_quantity (3) is preserved',
+        2,
+        'the add-on held stock shrinks to the 2 remaining units',
       );
       assertEqualOrThrow(
         stockOf(db),
@@ -681,6 +681,160 @@ async function main() {
         ownerAuth,
       );
       assertEqualOrThrow(both.status, 400, 'quantity and replacement together are rejected');
+    }
+
+    console.log('\n─── Started decrease: later pending edit cannot resell wasted stock ───');
+    {
+      // Regression (Greptile P1): after a started 3 -> 2 wastes one unit,
+      // moving the line back to pending and reducing 2 -> 1 must restore only
+      // what the line still holds - never the wasted unit.
+      const order = seedOrder(db, 'WASTE-KEEP', 'preparing', 3, 3);
+      const snap3 = buildRecipeSnapshot(db, 'prod-edit', 3);
+      db.prepare('UPDATE order_items SET recipe_snapshot = ? WHERE id = ?').run(
+        JSON.stringify(snap3),
+        order.itemId,
+      );
+      applyRecipeSnapshot(db, snap3, {
+        direction: 'deplete',
+        actorUserId: 'owner-edit',
+        referenceId: String(order.itemId),
+      });
+      db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+         VALUES (?, 'addon-edit', 'Extra Shot', 20, 1, 3, ?)`,
+      ).run(order.itemId, now());
+      adjustProductStock(db, {
+        productId: null,
+        addonId: 'addon-edit',
+        quantityDelta: -3,
+        movementType: 'sale',
+        referenceType: 'order_item',
+        referenceId: String(order.itemId),
+        actorUserId: 'owner-edit',
+      });
+      db.prepare('UPDATE order_items SET subtotal = 300, total = 300 WHERE id = ?').run(
+        order.itemId,
+      );
+      db.prepare('UPDATE orders SET subtotal = 300, total = 300 WHERE id = ?').run(order.orderId);
+      seedBill(db, order.orderId, 300, 0, 'unpaid');
+
+      const stock0 = stockOf(db);
+      const addon0 = stockOfAddon('addon-edit');
+      const supply0 = stockOfSupply(beans.id);
+
+      const startedDown = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
+      assertEqualOrThrow(startedDown.status, 200, 'owner can reduce a started quantity');
+      assertEqualOrThrow(itemStatus(order.itemId), 'preparing', 'the started line stays as it is');
+      assertEqualOrThrow(stockOf(db), stock0, 'a started decrease moves no product stock');
+      assertEqualOrThrow(
+        stockOfAddon('addon-edit'),
+        addon0,
+        'a started decrease moves no add-on stock',
+      );
+      assertEqualOrThrow(
+        stockOfSupply(beans.id),
+        supply0,
+        'a started decrease moves no recipe stock',
+      );
+      const heldItem = db
+        .prepare('SELECT inventory_deducted_quantity FROM order_items WHERE id = ?')
+        .get(order.itemId) as any;
+      assertEqualOrThrow(
+        Number(heldItem.inventory_deducted_quantity),
+        2,
+        'the line keeps holding only the 2 remaining units',
+      );
+
+      // KDS sends the line back to the kitchen queue.
+      db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?").run(
+        now(),
+        order.itemId,
+      );
+
+      const pendingDown = await edit(
+        order.orderId,
+        order.itemId,
+        {
+          expected_edit_version: Number(
+            (
+              db
+                .prepare(
+                  'SELECT COALESCE(MAX(id), 0) AS v FROM order_audit_log WHERE order_id = ? AND order_item_id = ?',
+                )
+                .get(order.orderId, order.itemId) as any
+            ).v,
+          ),
+          quantity: 1,
+        },
+        ownerAuth,
+      );
+      assertEqualOrThrow(pendingDown.status, 200, 'owner can reduce the back-to-pending line');
+      assertEqualOrThrow(
+        stockOf(db),
+        stock0 + 1,
+        'net +1: restore the 2 held units, deduct the 1-unit line - the wasted unit stays out',
+      );
+      assertEqualOrThrow(stockOfAddon('addon-edit'), addon0 + 1, 'add-on waste stays out of stock');
+      assertEqualOrThrow(
+        stockOfSupply(beans.id),
+        supply0 + 10,
+        'recipe waste stays out of stock (restores 20g, re-depletes 10g)',
+      );
+    }
+
+    console.log('\n─── Pending reduction keeps disabled variant and add-on selections ───');
+    {
+      // Regression (Greptile P2): disabling the sold variant or add-on must
+      // not block reducing a pending line - no extra units are needed, so the
+      // stored selections remain authoritative.
+      db.prepare(
+        `INSERT INTO product_variants (id, product_id, name, price, track_inventory, is_active, created_at, updated_at)
+         VALUES ('var-edit', 'prod-edit', 'Large', 150, 0, 1, ?, ?)`,
+      ).run(now(), now());
+      const order = seedOrder(db, 'DISABLED-SEL', 'pending', 3, 3);
+      db.prepare(
+        'UPDATE order_items SET variant_id = ?, unit_price = 150, subtotal = 450, total = 450 WHERE id = ?',
+      ).run('var-edit', order.itemId);
+      db.prepare('UPDATE orders SET subtotal = 450, total = 450 WHERE id = ?').run(order.orderId);
+      db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, inventory_deducted_quantity, created_at)
+         VALUES (?, 'addon-edit', 'Extra Shot', 20, 1, 3, ?)`,
+      ).run(order.itemId, now());
+      adjustProductStock(db, {
+        productId: null,
+        addonId: 'addon-edit',
+        quantityDelta: -3,
+        movementType: 'sale',
+        referenceType: 'order_item',
+        referenceId: String(order.itemId),
+        actorUserId: 'owner-edit',
+      });
+      seedBill(db, order.orderId, 450, 0, 'unpaid');
+
+      db.prepare("UPDATE product_variants SET is_active = 0 WHERE id = 'var-edit'").run();
+      db.prepare("UPDATE addons SET is_active = 0 WHERE id = 'addon-edit'").run();
+
+      const reduced = await edit(order.orderId, order.itemId, { quantity: 2 }, ownerAuth);
+      assertEqualOrThrow(
+        reduced.status,
+        200,
+        'a reduction succeeds even when the stored selections are disabled',
+      );
+      const active = db
+        .prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'pending'")
+        .all(order.orderId) as any[];
+      assertEqualOrThrow(active.length, 1, 'the replacement line is the only pending line');
+      assertEqualOrThrow(active[0].quantity, 2, 'the reduced quantity is applied');
+      assertEqualOrThrow(
+        active[0].variant_id,
+        'var-edit',
+        'the stored variant selection is preserved',
+      );
+      const newAddons = db
+        .prepare('SELECT * FROM order_item_addons WHERE order_item_id = ?')
+        .all(active[0].id) as any[];
+      assertEqualOrThrow(newAddons.length, 1, 'the stored add-on selection is preserved');
+      assertEqualOrThrow(newAddons[0].addon_id, 'addon-edit', 'the add-on id survives');
     }
 
     console.log('\n─── Superseded lines ───');

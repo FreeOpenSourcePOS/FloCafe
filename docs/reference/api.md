@@ -374,7 +374,9 @@ reversal mutations need `expenses.pay` and `expenses.reverse` (alongside `expens
 Amounts are positive safe-integer minor units in the expense's own `currency_code`; no endpoint
 converts currencies or assumes a minor-unit factor. Active incurred totals per currency (after
 subtracting the replaced source on replacement) and returned aggregate totals must fit within
-`Number.MAX_SAFE_INTEGER`, or the operation fails with `422 amount_range_exceeded`.
+`Number.MAX_SAFE_INTEGER`, or the operation fails with `422 amount_range_exceeded`; legacy rows with
+an out-of-range stored amount project `amount_minor` and `due_minor` as `null` so list, detail, and
+recovery mutations stay usable without rounding.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |

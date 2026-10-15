@@ -511,9 +511,7 @@ function projectExpenseRow(row: RawExpenseRow): ExpenseRecord {
   const paidRaw = toBigIntTotal(row.net_paid_minor, 'Expense paid total');
   const paidMinor = requireSafeTotal(paidRaw, 'Expense paid total');
   const dueRaw = amountRaw - paidRaw;
-  const amountMinor = isSafeTotal(amountRaw)
-    ? requireSafeTotal(amountRaw, 'Expense amount')
-    : null;
+  const amountMinor = isSafeTotal(amountRaw) ? requireSafeTotal(amountRaw, 'Expense amount') : null;
   const dueMinor =
     amountMinor !== null && isSafeTotal(dueRaw)
       ? requireSafeTotal(dueRaw, 'Expense due total')

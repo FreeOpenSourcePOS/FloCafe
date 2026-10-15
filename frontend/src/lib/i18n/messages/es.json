@@ -219,6 +219,7 @@
     "loadingOrders": "Cargando pedidos…",
     "connecting": "Conectando…",
     "connectionProblem": "Problema de conexión — reintentando…",
+    "staleData": "Se perdió la conexión. Se muestran los últimos pedidos disponibles.",
     "updatedAt": "Actualizado {time}",
     "settingsTitle": "Pantalla de clientes",
     "settingsHint": "Elija qué pedidos aparecen en el tablero de estado de pedidos para clientes.",

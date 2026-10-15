@@ -219,6 +219,7 @@
     "loadingOrders": "正在加载订单…",
     "connecting": "正在连接…",
     "connectionProblem": "连接出现问题——正在重试…",
+    "staleData": "连接已中断。正在显示最近可用的订单。",
     "updatedAt": "更新于 {time}",
     "settingsTitle": "顾客显示屏",
     "settingsHint": "选择哪些订单显示在面向顾客的订单状态看板上。",

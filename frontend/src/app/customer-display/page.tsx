@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
@@ -21,6 +21,422 @@ import {
   readStoredDisplayToken,
 } from '@/lib/customer-display-token';
 
+type OrderGroup = 'priority' | 'ordinary';
+
+interface OrderBoardPage {
+  orderIds: string[];
+  group: OrderGroup;
+}
+
+interface OrderBoardSectionProps {
+  accent: 'blue' | 'emerald';
+  emptyMessage: string;
+  hint: string;
+  isReady: boolean;
+  newlyReadyOrderIds: ReadonlySet<string>;
+  onPriorityOrdersShown: (orderIds: string[]) => void;
+  orders: BoardOrder[];
+  title: string;
+}
+
+const ORDER_PAGE_INTERVAL_MS = 10_000;
+const ORDER_ROW_GAP_FALLBACK = 12;
+const ORDER_ROW_HEIGHT_FALLBACK = 72;
+
+function getOrderId(order: BoardOrder): string {
+  return String(order.id);
+}
+
+function getPageKey(orderIds: string[]): string {
+  return orderIds.join('\u001f');
+}
+
+function paginateOrders(
+  orders: BoardOrder[],
+  availableHeight: number,
+  rowHeights: ReadonlyMap<string, number>,
+  rowGap: number,
+): BoardOrder[][] {
+  if (orders.length === 0) return [];
+  if (availableHeight <= 0) return [orders];
+
+  const pages: BoardOrder[][] = [];
+  let page: BoardOrder[] = [];
+  let usedHeight = 0;
+
+  for (const order of orders) {
+    const rowHeight = rowHeights.get(getOrderId(order)) ?? ORDER_ROW_HEIGHT_FALLBACK;
+    const nextHeight = rowHeight + (page.length > 0 ? rowGap : 0);
+    if (page.length > 0 && usedHeight + nextHeight > availableHeight) {
+      pages.push(page);
+      page = [];
+      usedHeight = 0;
+    }
+    if (page.length > 0) usedHeight += rowGap;
+    page.push(order);
+    usedHeight += rowHeight;
+  }
+
+  if (page.length > 0) pages.push(page);
+  return pages;
+}
+
+function orderIdsFit(
+  orderIds: string[],
+  availableHeight: number,
+  rowHeights: ReadonlyMap<string, number>,
+  rowGap: number,
+): boolean {
+  if (availableHeight <= 0) return true;
+  const height = orderIds.reduce(
+    (total, id) => total + (rowHeights.get(id) ?? ORDER_ROW_HEIGHT_FALLBACK),
+    Math.max(0, orderIds.length - 1) * rowGap,
+  );
+  return height <= availableHeight + 1;
+}
+
+function OrderBoardRow({
+  accent,
+  measureRef,
+  order,
+}: {
+  accent: 'blue' | 'emerald';
+  measureRef?: (node: HTMLDivElement | null) => void;
+  order: BoardOrder;
+}) {
+  return (
+    <div
+      ref={measureRef}
+      data-testid="customer-display-order-row"
+      data-order-id={getOrderId(order)}
+      className={`min-w-0 rounded-2xl border bg-slate-900/80 px-4 py-3 text-center md:px-6 md:py-4 ${accent === 'blue' ? 'border-blue-900/60' : 'border-emerald-900/60'}`}
+    >
+      <span className="block min-w-0 break-all text-[clamp(1.875rem,1.5vw,3.75rem)] font-black leading-tight">
+        {order.number}
+      </span>
+    </div>
+  );
+}
+
+function OrderBoardSection({
+  accent,
+  emptyMessage,
+  hint,
+  isReady,
+  newlyReadyOrderIds,
+  onPriorityOrdersShown,
+  orders,
+  title,
+}: OrderBoardSectionProps) {
+  const [isPagedLayout, setIsPagedLayout] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(true);
+  const [metrics, setMetrics] = useState<{
+    availableHeight: number;
+    rowHeights: Map<string, number>;
+    rowGap: number;
+  }>({ availableHeight: 0, rowHeights: new Map(), rowGap: ORDER_ROW_GAP_FALLBACK });
+  const [activePage, setActivePage] = useState<OrderBoardPage>({ orderIds: [], group: 'ordinary' });
+  const activePageRef = useRef(activePage);
+  const ordinaryPageCursorRef = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const probeContainerRef = useRef<HTMLDivElement>(null);
+  const probeRowsRef = useRef(new Map<string, HTMLDivElement>());
+  const priorityCallbackRef = useRef(onPriorityOrdersShown);
+
+  const orderById = useMemo(() => new Map(orders.map((order) => [getOrderId(order), order])), [orders]);
+  const priorityOrders = useMemo(
+    () =>
+      isReady
+        ? orders.filter((order) => newlyReadyOrderIds.has(getOrderId(order)))
+        : [],
+    [isReady, newlyReadyOrderIds, orders],
+  );
+  const ordinaryOrders = useMemo(
+    () =>
+      isReady
+        ? orders.filter((order) => !newlyReadyOrderIds.has(getOrderId(order)))
+        : orders,
+    [isReady, newlyReadyOrderIds, orders],
+  );
+  const priorityPages = useMemo(
+    () => paginateOrders(priorityOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+    [metrics.availableHeight, metrics.rowGap, metrics.rowHeights, priorityOrders],
+  );
+  const ordinaryPages = useMemo(
+    () => paginateOrders(ordinaryOrders, metrics.availableHeight, metrics.rowHeights, metrics.rowGap),
+    [metrics.availableHeight, metrics.rowGap, metrics.rowHeights, ordinaryOrders],
+  );
+  const hasMultiplePages =
+    isPagedLayout && priorityPages.length + ordinaryPages.length > 1;
+  const priorityPagesRef = useRef(priorityPages);
+  const ordinaryPagesRef = useRef(ordinaryPages);
+
+  useLayoutEffect(() => {
+    priorityCallbackRef.current = onPriorityOrdersShown;
+    priorityPagesRef.current = priorityPages;
+    ordinaryPagesRef.current = ordinaryPages;
+  }, [onPriorityOrdersShown, ordinaryPages, priorityPages]);
+
+  const updateActivePage = useCallback((nextPage: OrderBoardPage) => {
+    activePageRef.current = nextPage;
+    setActivePage(nextPage);
+  }, []);
+
+  const measureRows = useCallback(() => {
+    if (!isPagedLayout || !isPageVisible) return;
+    const list = listRef.current;
+    const probes = probeContainerRef.current;
+    if (!list || !probes) return;
+
+    const style = window.getComputedStyle(list);
+    const availableHeight = Math.max(
+      0,
+      list.clientHeight - Number.parseFloat(style.paddingTop) - Number.parseFloat(style.paddingBottom),
+    );
+    const measuredRowGap = Number.parseFloat(window.getComputedStyle(probes).rowGap);
+    const rowGap = Number.isFinite(measuredRowGap) ? measuredRowGap : ORDER_ROW_GAP_FALLBACK;
+    const rowHeights = new Map(
+      [...probeRowsRef.current].map(([id, row]) => [id, row.getBoundingClientRect().height]),
+    );
+    setMetrics((current) => {
+      const sameHeights =
+        current.rowHeights.size === rowHeights.size &&
+        [...rowHeights].every(([id, height]) => {
+          const previousHeight = current.rowHeights.get(id);
+          return previousHeight !== undefined && Math.abs(previousHeight - height) < 0.5;
+        });
+      if (
+        Math.abs(current.availableHeight - availableHeight) < 0.5 &&
+        Math.abs(current.rowGap - rowGap) < 0.5 &&
+        sameHeights
+      ) {
+        return current;
+      }
+      return { availableHeight, rowHeights, rowGap };
+    });
+  }, [isPagedLayout, isPageVisible]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const updateLayout = () => setIsPagedLayout(media.matches);
+    updateLayout();
+    media.addEventListener('change', updateLayout);
+    return () => media.removeEventListener('change', updateLayout);
+  }, []);
+
+  useEffect(() => {
+    const updateVisibility = () => setIsPageVisible(document.visibilityState === 'visible');
+    updateVisibility();
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (!isPagedLayout || !isPageVisible) return;
+    const list = listRef.current;
+    const probes = probeContainerRef.current;
+    if (!list || !probes) return;
+
+    const observer = new ResizeObserver(measureRows);
+    observer.observe(list);
+    observer.observe(probes);
+    measureRows();
+    return () => observer.disconnect();
+  }, [isPagedLayout, isPageVisible, measureRows]);
+
+  useLayoutEffect(() => {
+    measureRows();
+  }, [measureRows, orders]);
+
+  useLayoutEffect(() => {
+    const active = activePageRef.current;
+    const eligibleIds = orders.map(getOrderId);
+    const eligible = new Set(eligibleIds);
+    const retainedIds = active.orderIds.filter((id) => eligible.has(id));
+
+    if (!isPagedLayout) {
+      if (active.orderIds.join('\u001f') !== retainedIds.join('\u001f')) {
+        updateActivePage({ ...active, orderIds: retainedIds });
+      }
+      return;
+    }
+
+    const allPages = [
+      ...priorityPages.map((page) => ({ page, group: 'priority' as const })),
+      ...ordinaryPages.map((page) => ({ page, group: 'ordinary' as const })),
+    ];
+    if (allPages.length === 1) {
+      updateActivePage({
+        orderIds: allPages[0].page.map(getOrderId),
+        group: allPages[0].group,
+      });
+      ordinaryPageCursorRef.current = 0;
+      if (allPages[0].group === 'priority') {
+        priorityCallbackRef.current(allPages[0].page.map(getOrderId));
+      }
+      return;
+    }
+
+    if (
+      retainedIds.length > 0 &&
+      orderIdsFit(retainedIds, metrics.availableHeight, metrics.rowHeights, metrics.rowGap)
+    ) {
+      if (active.orderIds.join('\u001f') !== retainedIds.join('\u001f')) {
+        updateActivePage({ ...active, orderIds: retainedIds });
+      }
+      return;
+    }
+
+    if (retainedIds.length > 0) {
+      const currentPage = allPages.find(({ page }) => page.some((order) => getOrderId(order) === retainedIds[0]));
+      if (currentPage) {
+        const orderIds = currentPage.page.map(getOrderId);
+        updateActivePage({ orderIds, group: currentPage.group });
+        if (currentPage.group === 'ordinary') {
+          const pageIndex = ordinaryPages.findIndex(
+            (page) => getPageKey(page.map(getOrderId)) === getPageKey(orderIds),
+          );
+          ordinaryPageCursorRef.current = (pageIndex + 1) % ordinaryPages.length;
+        }
+        return;
+      }
+    }
+
+    if (orders.length === 0) {
+      updateActivePage({ orderIds: [], group: 'ordinary' });
+      return;
+    }
+
+    const initial = allPages[0];
+    if (!initial) return;
+    const orderIds = initial.page.map(getOrderId);
+    updateActivePage({ orderIds, group: initial.group });
+    if (initial.group === 'priority') {
+      priorityCallbackRef.current(orderIds);
+    } else {
+      ordinaryPageCursorRef.current = ordinaryPages.length > 1 ? 1 : 0;
+    }
+  }, [
+    isPagedLayout,
+    metrics.availableHeight,
+    metrics.rowGap,
+    metrics.rowHeights,
+    orders,
+    ordinaryPages,
+    priorityPages,
+    updateActivePage,
+  ]);
+
+  useEffect(() => {
+    if (!isPagedLayout || !isPageVisible || !hasMultiplePages) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      const active = activePageRef.current;
+      const currentPriorityPages = priorityPagesRef.current;
+      const currentOrdinaryPages = ordinaryPagesRef.current;
+      let selectedGroup: OrderGroup | null = null;
+      if (active.group === 'priority' && currentOrdinaryPages.length > 0) {
+        selectedGroup = 'ordinary';
+      } else if (currentPriorityPages.length > 0) {
+        selectedGroup = 'priority';
+      } else if (currentOrdinaryPages.length > 0) {
+        selectedGroup = 'ordinary';
+      }
+      if (!selectedGroup) return;
+
+      let selectedPage: BoardOrder[] | undefined;
+      if (selectedGroup === 'priority') {
+        selectedPage = currentPriorityPages[0];
+      } else {
+        const cursor = ordinaryPageCursorRef.current % currentOrdinaryPages.length;
+        const activeKey = getPageKey(active.orderIds);
+        let selectedIndex = cursor;
+        for (let offset = 0; offset < currentOrdinaryPages.length; offset += 1) {
+          const candidateIndex = (cursor + offset) % currentOrdinaryPages.length;
+          const candidateKey = getPageKey(currentOrdinaryPages[candidateIndex].map(getOrderId));
+          if (candidateKey !== activeKey || currentOrdinaryPages.length === 1) {
+            selectedIndex = candidateIndex;
+            break;
+          }
+        }
+        selectedPage = currentOrdinaryPages[selectedIndex];
+        ordinaryPageCursorRef.current = (selectedIndex + 1) % currentOrdinaryPages.length;
+      }
+
+      if (!selectedPage) return;
+      const orderIds = selectedPage.map(getOrderId);
+      updateActivePage({ orderIds, group: selectedGroup });
+      if (selectedGroup === 'priority') priorityCallbackRef.current(orderIds);
+    }, ORDER_PAGE_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [hasMultiplePages, isPagedLayout, isPageVisible, updateActivePage]);
+
+  const visibleOrders = isPagedLayout
+    ? activePage.orderIds.map((id) => orderById.get(id)).filter((order): order is BoardOrder => !!order)
+    : orders;
+  const dataTestId = isReady
+    ? 'customer-display-ready-scroll'
+    : 'customer-display-preparing-scroll';
+
+  return (
+    <section
+      className={`flex min-w-0 flex-col overflow-hidden rounded-3xl border ${accent === 'blue' ? 'border-blue-900/70 bg-blue-950/60' : 'border-emerald-900/70 bg-emerald-950/60'}`}
+    >
+      <div
+        className={`shrink-0 border-b px-5 py-4 md:px-6 md:py-5 ${accent === 'blue' ? 'border-blue-800/60 bg-blue-900/50' : 'border-emerald-800/60 bg-emerald-900/50'}`}
+      >
+        <h2 className="text-[clamp(1.875rem,1.5vw,3.75rem)] font-extrabold uppercase tracking-wide">{title}</h2>
+        <p className={`mt-1 text-[clamp(1rem,0.8vw,2rem)] ${accent === 'blue' ? 'text-blue-200/70' : 'text-emerald-200/70'}`}>
+          {hint}
+        </p>
+      </div>
+      <div
+        ref={listRef}
+        data-testid={dataTestId}
+        className="relative min-w-0 p-4 md:min-h-0 md:flex-1 md:overflow-hidden md:p-6"
+      >
+        {visibleOrders.length === 0 ? (
+          <div className="py-8 text-center text-lg text-slate-500 md:flex md:h-full md:items-center md:justify-center">
+            {emptyMessage}
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-col gap-3">
+            {visibleOrders.map((order) => (
+              <OrderBoardRow
+                key={getOrderId(order)}
+                accent={accent}
+                order={order}
+              />
+            ))}
+          </div>
+        )}
+        {isPagedLayout && (
+          <div
+            ref={probeContainerRef}
+            aria-hidden="true"
+            className="pointer-events-none invisible absolute inset-x-4 top-4 flex min-w-0 flex-col gap-3 md:inset-x-6 md:top-6"
+          >
+            {orders.map((order) => {
+              const id = getOrderId(order);
+              return (
+                <OrderBoardRow
+                  key={id}
+                  accent={accent}
+                  measureRef={(node) => {
+                    if (node) probeRowsRef.current.set(id, node);
+                    else probeRowsRef.current.delete(id);
+                  }}
+                  order={order}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function toBoardOrder(order: Order): BoardOrder {
   return {
     id: order.id,
@@ -35,7 +451,10 @@ export default function CustomerDisplayPage() {
   const tc = useTranslations('common');
   const { formatTime } = useFormatDate();
   const { user, currentTenant, loading: authLoading, loadFromStorage } = useAuthStore();
+  const userId = user?.id ?? null;
+  const tenantId = currentTenant?.id ?? null;
   const [orders, setOrders] = useState<BoardOrder[]>([]);
+  const [newlyReadyOrderIds, setNewlyReadyOrderIds] = useState<Set<string>>(new Set());
   const [pairedToken, setPairedToken] = useState<string | null | undefined>(undefined);
   const [unpaired, setUnpaired] = useState(false);
   const [businessName, setBusinessName] = useState('');
@@ -43,9 +462,132 @@ export default function CustomerDisplayPage() {
   const [error, setError] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [config, setConfig] = useState<CustomerDisplayConfig>(CUSTOMER_DISPLAY_DEFAULTS);
+  const feedSessionRef = useRef(0);
+  const feedRequestRef = useRef(0);
+  const feedInFlightRef = useRef<{ session: number; request: number } | null>(null);
+  const previousReadyOrderIdsRef = useRef<Set<string> | null>(null);
+  const readyTrackingContextRef = useRef<{
+    pairedToken: string | null;
+    userId: number | null;
+    tenantId: number | null;
+  } | null>(null);
+  const configRef = useRef(config);
+  useLayoutEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  const acceptOrders = useCallback((nextOrders: BoardOrder[]) => {
+    const nextReadyIds = new Set(
+      nextOrders.filter((order) => order.status === 'ready').map(getOrderId),
+    );
+    const previousReadyIds = previousReadyOrderIdsRef.current;
+    if (previousReadyIds) {
+      setNewlyReadyOrderIds((current) => {
+        const next = new Set([...current].filter((id) => nextReadyIds.has(id)));
+        for (const id of nextReadyIds) {
+          if (!previousReadyIds.has(id)) next.add(id);
+        }
+        return next;
+      });
+    } else {
+      setNewlyReadyOrderIds(new Set());
+    }
+    previousReadyOrderIdsRef.current = nextReadyIds;
+    setOrders(nextOrders);
+  }, []);
+
+  const fetchPairedFeed = useCallback(
+    async (token: string, session: number) => {
+      if (feedInFlightRef.current?.session === session) return;
+      const request = ++feedRequestRef.current;
+      feedInFlightRef.current = { session, request };
+      try {
+        const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (response.status === 401) {
+          if (session !== feedSessionRef.current) return;
+          feedSessionRef.current += 1;
+          feedRequestRef.current += 1;
+          feedInFlightRef.current = null;
+          previousReadyOrderIdsRef.current = null;
+          setNewlyReadyOrderIds(new Set());
+          clearStoredDisplayToken();
+          setOrders([]);
+          setLastUpdated(null);
+          setError(false);
+          setUnpaired(true);
+          return;
+        }
+        const feed: unknown = await response.json();
+        if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
+        if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+        setConfig(feed.config);
+        setBusinessName(feed.business_name);
+        acceptOrders(feed.orders);
+        setError(false);
+        setLastUpdated(new Date());
+      } catch {
+        if (session === feedSessionRef.current && request === feedRequestRef.current) setError(true);
+      } finally {
+        if (
+          feedInFlightRef.current?.session === session &&
+          feedInFlightRef.current.request === request
+        ) {
+          feedInFlightRef.current = null;
+        }
+        if (session === feedSessionRef.current && request === feedRequestRef.current) setLoading(false);
+      }
+    },
+    [acceptOrders],
+  );
+
+  const fetchOrders = useCallback(
+    async (session: number) => {
+      if (feedInFlightRef.current?.session === session) return;
+      const request = ++feedRequestRef.current;
+      feedInFlightRef.current = { session, request };
+      try {
+        const { data: latestConfig } = await api
+          .get('/settings/customer-display')
+          .catch(() => ({ data: null }));
+        const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
+        const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
+        const { data } = await api.get('/orders', { params: { per_page: 50 } });
+        if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+        const nextOrders = (data.orders || [])
+          .filter((order: Order) => (activeConfig.statuses as string[]).includes(order.status))
+          .sort((a: Order, b: Order) => a.created_at.localeCompare(b.created_at))
+          .map(toBoardOrder);
+        if (validConfig) {
+          configRef.current = validConfig;
+          setConfig(validConfig);
+        }
+        acceptOrders(nextOrders);
+        setError(false);
+        setLastUpdated(new Date());
+      } catch {
+        if (session === feedSessionRef.current && request === feedRequestRef.current) setError(true);
+      } finally {
+        if (
+          feedInFlightRef.current?.session === session &&
+          feedInFlightRef.current.request === request
+        ) {
+          feedInFlightRef.current = null;
+        }
+        if (session === feedSessionRef.current && request === feedRequestRef.current) setLoading(false);
+      }
+    },
+    [acceptOrders],
+  );
+
+  const markPriorityOrdersShown = useCallback((orderIds: string[]) => {
+    const shown = new Set(orderIds);
+    setNewlyReadyOrderIds((current) => new Set([...current].filter((id) => !shown.has(id))));
+  }, []);
 
   useEffect(() => {
-    // The token lives in the URL fragment or localStorage, which only exist in the browser.
     const resolve = setTimeout(() => {
       const token = consumeDisplayTokenFromUrl() ?? readStoredDisplayToken();
       setPairedToken(token);
@@ -60,65 +602,51 @@ export default function CustomerDisplayPage() {
     }
   }, [pairedToken, authLoading, user, router]);
 
-  const fetchPairedFeed = async (token: string) => {
-    try {
-      const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
-      if (response.status === 401) {
-        clearStoredDisplayToken();
-        setUnpaired(true);
-        return;
-      }
-      const feed: unknown = await response.json();
-      if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
-      setConfig(feed.config);
-      setBusinessName(feed.business_name);
-      setOrders(feed.orders);
-      setError(false);
-      setLastUpdated(new Date());
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchOrders = async () => {
-    try {
-      const { data: latestConfig } = await api
-        .get('/settings/customer-display')
-        .catch(() => ({ data: null }));
-      const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
-      const activeConfig: CustomerDisplayConfig = validConfig ?? config;
-      if (validConfig) setConfig(validConfig);
-      const { data } = await api.get('/orders', { params: { per_page: 50 } });
-      const nextOrders = (data.orders || [])
-        .filter((order: Order) => (activeConfig.statuses as string[]).includes(order.status))
-        .sort((a: Order, b: Order) => a.created_at.localeCompare(b.created_at))
-        .map(toBoardOrder);
-      setOrders(nextOrders);
-      setError(false);
-      setLastUpdated(new Date());
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (pairedToken === undefined || unpaired) return;
-    if (pairedToken === null && (!user || !currentTenant)) return;
-    const refresh = () => (pairedToken ? fetchPairedFeed(pairedToken) : fetchOrders());
+    if (pairedToken === null && (userId === null || tenantId === null)) {
+      readyTrackingContextRef.current = null;
+      previousReadyOrderIdsRef.current = null;
+      return;
+    }
+
+    const readyTrackingContext = {
+      pairedToken,
+      userId,
+      tenantId,
+    };
+    const previousContext = readyTrackingContextRef.current;
+    if (
+      !previousContext ||
+      previousContext.pairedToken !== readyTrackingContext.pairedToken ||
+      previousContext.userId !== readyTrackingContext.userId ||
+      previousContext.tenantId !== readyTrackingContext.tenantId
+    ) {
+      previousReadyOrderIdsRef.current = null;
+      readyTrackingContextRef.current = readyTrackingContext;
+    }
+
+    const session = ++feedSessionRef.current;
+    const refresh = () =>
+      pairedToken
+        ? fetchPairedFeed(pairedToken, session)
+        : fetchOrders(session);
     const initial = setTimeout(refresh, 0);
     const interval = setInterval(refresh, config.refresh_seconds * 1000);
     return () => {
       clearTimeout(initial);
       clearInterval(interval);
+      if (feedSessionRef.current === session) feedSessionRef.current += 1;
     };
-  }, [pairedToken, unpaired, user, currentTenant, config.refresh_seconds]);
+  }, [
+    pairedToken,
+    unpaired,
+    userId,
+    tenantId,
+    config.refresh_seconds,
+    fetchOrders,
+    fetchPairedFeed,
+  ]);
 
   const preparing = useMemo(
     () => orders.filter((order) => order.status === 'pending' || order.status === 'preparing'),
@@ -149,17 +677,19 @@ export default function CustomerDisplayPage() {
   }
 
   return (
-    <main className="flex h-screen min-h-0 flex-col bg-slate-950 text-white p-6 md:p-10 select-none">
-      <header className="max-w-7xl mx-auto flex shrink-0 items-end justify-between gap-4 mb-8">
-        <div>
-          <div className="text-2xl md:text-3xl font-bold tracking-tight">
+    <main className="flex h-screen min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-4 text-white md:p-10 select-none">
+      <header className="mx-auto mb-5 flex w-full shrink-0 min-w-0 items-end justify-between gap-4 md:mb-8">
+        <div className="min-w-0">
+          <div className="break-all text-[clamp(1.875rem,1.5vw,3.75rem)] font-bold tracking-tight">
             {pairedToken ? businessName : currentTenant?.business_name}
           </div>
-          <div className="text-slate-400 mt-1 text-sm md:text-base">{t('orderStatus')}</div>
+          <div className="mt-1 text-[clamp(1rem,0.8vw,2rem)] text-slate-400">{t('orderStatus')}</div>
         </div>
-        <div className="text-end text-xs text-slate-500">
+        <div className="max-w-[50%] shrink-0 text-end text-[clamp(0.75rem,0.65vw,1.5rem)] text-slate-500">
           {error
-            ? t('connectionProblem')
+            ? lastUpdated
+              ? t('staleData')
+              : t('connectionProblem')
             : lastUpdated
               ? config.show_updated
                 ? t('updatedAt', { time: formatTime(lastUpdated, { second: '2-digit' }) })
@@ -169,77 +699,36 @@ export default function CustomerDisplayPage() {
       </header>
 
       {loading ? (
-        <div className="max-w-7xl mx-auto text-center text-slate-400 py-20">
+        <div className="mx-auto max-w-7xl py-20 text-center text-slate-400">
           {t('loadingOrders')}
         </div>
       ) : (
         <div
-          className={`max-w-7xl mx-auto grid flex-1 min-h-0 grid-cols-1 ${showPreparing && showReady ? 'md:grid-cols-2' : ''} gap-6 overflow-y-auto md:overflow-hidden`}
+          className={`mx-auto grid w-full min-w-0 flex-1 min-h-0 grid-cols-1 gap-4 overflow-x-hidden overflow-y-auto ${showPreparing && showReady ? 'md:grid-cols-2' : ''} md:gap-6 md:overflow-hidden`}
         >
           {showPreparing && (
-            <section className="rounded-3xl bg-blue-950/60 border border-blue-900/70 overflow-hidden flex flex-col md:min-h-0">
-              <div className="px-6 py-5 bg-blue-900/50 border-b border-blue-800/60 shrink-0">
-                <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide uppercase">
-                  {t('preparingTitle')}
-                </h1>
-                <p className="text-blue-200/70 mt-1">{t('preparingHint')}</p>
-              </div>
-              <div
-                data-testid="customer-display-preparing-scroll"
-                className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4 md:flex-1 md:min-h-0 md:overflow-y-auto"
-              >
-                {preparing.length === 0 ? (
-                  <div className="col-span-full py-12 text-center text-slate-500 text-lg">
-                    {t('noPreparing')}
-                  </div>
-                ) : (
-                  preparing.map((order) => (
-                    <div
-                      key={order.id}
-                      className="rounded-2xl bg-slate-900/80 border border-blue-900/60 p-5 text-center"
-                    >
-                      <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
-                        {t('orderLabel')}
-                      </div>
-                      <div className="text-3xl md:text-4xl font-black">{order.number}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+            <OrderBoardSection
+              accent="blue"
+              emptyMessage={t('noPreparing')}
+              hint={t('preparingHint')}
+              isReady={false}
+              newlyReadyOrderIds={newlyReadyOrderIds}
+              onPriorityOrdersShown={markPriorityOrdersShown}
+              orders={preparing}
+              title={t('preparingTitle')}
+            />
           )}
-
           {showReady && (
-            <section className="rounded-3xl bg-emerald-950/60 border border-emerald-900/70 overflow-hidden flex flex-col md:min-h-0">
-              <div className="px-6 py-5 bg-emerald-900/50 border-b border-emerald-800/60 shrink-0">
-                <h1 className="text-2xl md:text-3xl font-extrabold tracking-wide uppercase">
-                  {t('readyTitle')}
-                </h1>
-                <p className="text-emerald-200/70 mt-1">{t('readyHint')}</p>
-              </div>
-              <div
-                data-testid="customer-display-ready-scroll"
-                className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4 md:flex-1 md:min-h-0 md:overflow-y-auto"
-              >
-                {ready.length === 0 ? (
-                  <div className="col-span-full py-12 text-center text-slate-500 text-lg">
-                    {t('noReady')}
-                  </div>
-                ) : (
-                  ready.map((order) => (
-                    <div
-                      key={order.id}
-                      className="rounded-2xl bg-slate-900/80 border border-emerald-900/60 p-5 text-center"
-                    >
-                      <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">
-                        {t('orderLabel')}
-                      </div>
-                      <div className="text-3xl md:text-4xl font-black">{order.number}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+            <OrderBoardSection
+              accent="emerald"
+              emptyMessage={t('noReady')}
+              hint={t('readyHint')}
+              isReady
+              newlyReadyOrderIds={newlyReadyOrderIds}
+              onPriorityOrdersShown={markPriorityOrdersShown}
+              orders={ready}
+              title={t('readyTitle')}
+            />
           )}
         </div>
       )}

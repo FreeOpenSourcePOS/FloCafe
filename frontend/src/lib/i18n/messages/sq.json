@@ -219,6 +219,7 @@
     "loadingOrders": "Po ngarkohen porositë…",
     "connecting": "Po lidhet…",
     "connectionProblem": "Problem me lidhjen — po provohet përsëri…",
+    "staleData": "Lidhja u ndërpre. Po shfaqen porositë e fundit të disponueshme.",
     "updatedAt": "Përditësuar {time}",
     "settingsTitle": "Ekrani i klientit",
     "settingsHint": "Zgjidhni cilat porosi shfaqen në tabelën e statusit të porosive për klientët.",

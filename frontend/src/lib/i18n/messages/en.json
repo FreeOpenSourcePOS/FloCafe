@@ -219,6 +219,7 @@
     "loadingOrders": "Loading orders…",
     "connecting": "Connecting…",
     "connectionProblem": "Connection problem — retrying…",
+    "staleData": "Connection lost. Showing the last available orders.",
     "updatedAt": "Updated {time}",
     "settingsTitle": "Customer display",
     "settingsHint": "Choose which orders appear on the customer-facing order status board.",

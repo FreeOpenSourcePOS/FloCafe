@@ -1560,9 +1560,8 @@ test.describe('layout fixtures only delete what they created', () => {
 
 /**
  * The customer-facing order display polls /api/orders every three seconds. The
- * specs below serve that one endpoint from an in-memory list so the number of
- * tiles per section is exact and can change between polls; the rest of the
- * page keeps its real auth, tenant and theme wiring.
+ * specs below serve a controlled in-memory list while retaining the real auth,
+ * tenant and theme wiring.
  */
 interface DisplayOrder {
   id: string;
@@ -1598,146 +1597,376 @@ function displayOrders(preparingCount: number, readyCount: number): DisplayOrder
 async function mockDisplayOrders(
   page: Page,
   orders: DisplayOrder[],
-): Promise<{ replace: (next: DisplayOrder[]) => void }> {
+): Promise<{ replace: (next: DisplayOrder[]) => void; setUnavailable: (value: boolean) => void }> {
   let current = orders;
+  let unavailable = false;
   await page.route(
-    (url) => url.pathname === '/api/orders',
+    (url) => url.pathname === '/api/settings/customer-display',
     (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ orders: current }),
+        body: JSON.stringify({ statuses: ['pending', 'preparing', 'ready'], refresh_seconds: 3, show_updated: true }),
       }),
+  );
+  await page.route(
+    (url) => url.pathname === '/api/orders',
+    (route) => {
+      if (unavailable) {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ orders: current }),
+      });
+    },
   );
   return {
     replace: (next) => {
       current = next;
     },
+    setUnavailable: (value) => {
+      unavailable = value;
+    },
   };
 }
 
-test.describe('customer display keeps its headers visible over independently scrolling tile lists', () => {
-  test('the header and both section headings stay visible while the tile lists scroll', async ({
+test.describe('customer display wraps full receipt numbers and pages on TV', () => {
+  test('the board fits readable rows at 720p, 1080p and 4K without clipping identifiers', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await loginAsManager(page);
+    const orders = displayOrders(100, 100);
+    const longReceiptNumber = 'INV-2026-NORTH-REGION-COUNTER-04-VERY-LONG-RECEIPT-00000123456789012345678901234567890';
+    orders[0].bill.bill_number = longReceiptNumber;
+    orders[1].bill.bill_number = '';
+    await mockDisplayOrders(page, orders);
+    await page.goto(`${BASE}/customer-display`);
+
+    const preparing = page.getByTestId('customer-display-preparing-scroll');
+    const receiptRow = preparing.locator('[data-order-id="display-preparing-1"]:visible');
+    await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
+    await expect(
+      preparing.locator('[data-order-id="display-preparing-2"]:visible'),
+      'an order without a bill number uses its full order-number fallback',
+    ).toHaveText('P2');
+
+    for (const viewport of [
+      { width: 1280, height: 720, screenshot: '/tmp/flo-customer-display-720p.png' },
+      { width: 1920, height: 1080, screenshot: '/tmp/flo-customer-display-1080p.png' },
+      { width: 3840, height: 2160, screenshot: '/tmp/flo-customer-display-4k.png' },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(receiptRow.locator('span')).toHaveText(longReceiptNumber);
+      await page.waitForFunction(() => {
+        const board = document.querySelector('[data-testid="customer-display-preparing-scroll"]');
+        if (!board) return false;
+        const visibleRows = [...board.querySelectorAll('[data-testid="customer-display-order-row"]')]
+          .filter((row) => getComputedStyle(row).visibility === 'visible');
+        return visibleRows.length < 100;
+      });
+
+      const layout = await preparing.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        visibleRows: [...element.querySelectorAll('[data-testid="customer-display-order-row"]')]
+          .filter((row) => getComputedStyle(row).visibility === 'visible').length,
+      }));
+      expect(layout.scrollWidth, 'the TV board has no horizontal overflow').toBeLessThanOrEqual(
+        layout.clientWidth,
+      );
+      expect(layout.visibleRows, 'the board shows a page instead of a long scroll').toBeGreaterThan(
+        0,
+      );
+      expect(layout.visibleRows).toBeLessThan(100);
+      const documentWidths = await page.evaluate(() => ({
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+      }));
+      expect(documentWidths.scrollWidth, 'the document has no horizontal overflow').toBeLessThanOrEqual(
+        documentWidths.clientWidth,
+      );
+      await page.screenshot({ path: viewport.screenshot });
+    }
+
+    const wrappedRow = await receiptRow.boundingBox();
+    expect(wrappedRow, 'the long receipt row has bounds').not.toBeNull();
+    expect(wrappedRow!.height, 'the full receipt number wraps onto multiple lines').toBeGreaterThan(
+      72,
+    );
+    await expect(page.locator('header'), 'the business header stays visible').toBeVisible();
+  });
+
+  test('polling keeps the ten-second page interval and alternates new ready orders with older pages', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
-    await mockDisplayOrders(page, displayOrders(24, 30));
+    await page.clock.install();
+    const feed = await mockDisplayOrders(page, displayOrders(20, 50));
+    await page.goto(`${BASE}/customer-display`);
+
+    const ready = page.getByTestId('customer-display-ready-scroll');
+    const readReadyIds = () =>
+      ready
+        .locator('[data-order-id^="display-ready-"]:visible')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
+    await expect(
+      ready.locator('[data-order-id="display-ready-1"]:visible'),
+      'the first ordinary ready page is initially shown',
+    ).toBeVisible();
+    const firstOrdinaryPage = await readReadyIds();
+    expect(firstOrdinaryPage.length, 'the ready column starts with one of several pages').toBeLessThan(
+      50,
+    );
+    const pinned = {
+      header: await elementTop(page.locator('header'), 'display header'),
+      heading: await elementTop(
+        page.getByRole('heading', { name: 'READY FOR PICKUP' }),
+        'ready heading',
+      ),
+    };
+    const updatedAt = page.getByText(/^Updated /);
+    await expect(updatedAt).toBeVisible();
+    const initialUpdatedText = (await updatedAt.textContent()) ?? '';
+    await page.clock.runFor(1);
+    const updatedFeed = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
+    );
+
+    const newReadyOrders = [
+      {
+        id: 'display-ready-new-1',
+        order_number: 'NEW-1',
+        bill: { bill_number: 'PRIORITY-NEW-1' },
+        status: 'ready' as const,
+        created_at: new Date(Date.UTC(2026, 0, 3, 0, 0, 1)).toISOString(),
+      },
+      {
+        id: 'display-ready-new-2',
+        order_number: 'NEW-2',
+        bill: { bill_number: 'PRIORITY-NEW-2' },
+        status: 'ready' as const,
+        created_at: new Date(Date.UTC(2026, 0, 3, 0, 0, 2)).toISOString(),
+      },
+    ];
+    feed.replace([...displayOrders(20, 50), newReadyOrders[0]]);
+    await page.clock.runFor(3000);
+    await updatedFeed;
+    await page.clock.runFor(0);
+    expect(
+      await updatedAt.textContent(),
+      'the changed feed is accepted before the current page expires',
+    ).not.toBe(initialUpdatedText);
+    expect(
+      await ready.locator('[data-order-id="display-ready-new-1"]:visible').count(),
+      'a newly ready order waits for the current page interval',
+    ).toBe(0);
+    await page.clock.runFor(6900);
+    expect(
+      await ready.locator('[data-order-id="display-ready-new-1"]:visible').count(),
+      'the current page remains visible until its interval expires',
+    ).toBe(0);
+
+    await page.clock.runFor(300);
+    await expect(
+      ready.locator('[data-order-id="display-ready-new-1"]:visible'),
+      'the first rotation prioritizes newly ready orders',
+    ).toBeVisible();
+    expectPinned(await elementTop(page.locator('header'), 'display header'), pinned.header, 'display header');
+    expectPinned(
+      await elementTop(page.getByRole('heading', { name: 'READY FOR PICKUP' }), 'ready heading'),
+      pinned.heading,
+      'ready heading',
+    );
+
+    const nextFeedUpdate = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/orders' && response.status() === 200,
+    );
+    feed.replace([...displayOrders(20, 50), ...newReadyOrders]);
+    await page.clock.runFor(3000);
+    await nextFeedUpdate;
+    await page.clock.runFor(0);
+    await page.clock.runFor(7000);
+    await expect.poll(readReadyIds).not.toEqual(firstOrdinaryPage);
+    const secondOrdinaryPage = await readReadyIds();
+    expect(
+      secondOrdinaryPage.every((id) => id?.startsWith('display-ready-')),
+      'the next rotation returns to older eligible orders during arrivals',
+    ).toBe(true);
+    expectPinned(await elementTop(page.locator('header'), 'display header'), pinned.header, 'display header');
+    expectPinned(
+      await elementTop(page.getByRole('heading', { name: 'READY FOR PICKUP' }), 'ready heading'),
+      pinned.heading,
+      'ready heading',
+    );
+
+    await page.clock.runFor(20_000);
+    const laterOrdinaryPage = await readReadyIds();
+    expect(
+      laterOrdinaryPage.every((id) => id?.startsWith('display-ready-')),
+      'continued arrivals keep older eligible orders in the rotation',
+    ).toBe(true);
+  });
+
+  test('each column pages independently when only one has multiple pages', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+    await page.clock.install();
+    await mockDisplayOrders(page, displayOrders(30, 2));
     await page.goto(`${BASE}/customer-display`);
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     const ready = page.getByTestId('customer-display-ready-scroll');
-    await expect(
-      preparing.getByText('10024', { exact: true }),
-      'the preparing tiles render',
-    ).toBeVisible();
-    await expect(ready.getByText('20030', { exact: true }), 'the ready tiles render').toBeVisible();
+    const readIds = (board: typeof preparing) =>
+      board
+        .locator('[data-order-id]:visible')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
+    await expect(preparing.locator('[data-order-id^="display-preparing-"]:visible').first()).toBeVisible();
+    await expect(ready.locator('[data-order-id^="display-ready-"]:visible').first()).toBeVisible();
+    const firstPreparingPage = await readIds(preparing);
+    const readyPage = await readIds(ready);
+    expect(firstPreparingPage.length, 'preparing has multiple pages').toBeLessThan(30);
+    expect(readyPage).toEqual(['display-ready-1', 'display-ready-2']);
 
-    const header = page.locator('header');
-    const preparingHeading = page.getByRole('heading', { name: 'PREPARING' });
-    const readyHeading = page.getByRole('heading', { name: 'READY FOR PICKUP' });
-    const pinned = {
-      header: await elementTop(header, 'display header'),
-      preparingHeading: await elementTop(preparingHeading, 'preparing heading'),
-      readyHeading: await elementTop(readyHeading, 'ready heading'),
-    };
-
-    const preparingScrolled = await scrollToEnd(preparing);
-    expect(
-      preparingScrolled.scrollTop,
-      'the preparing tile list owns its own scroll',
-    ).toBeGreaterThan(0);
-    expectPinned(await elementTop(header, 'display header'), pinned.header, 'display header');
-    expectPinned(
-      await elementTop(preparingHeading, 'preparing heading'),
-      pinned.preparingHeading,
-      'preparing heading',
-    );
-    expectPinned(
-      await elementTop(readyHeading, 'ready heading'),
-      pinned.readyHeading,
-      'ready heading',
-    );
-    expect(
-      await ready.evaluate((element) => element.scrollTop),
-      'scrolling the preparing tiles leaves the ready tiles in place',
-    ).toBe(0);
-
-    const preparingBox = await preparing.boundingBox();
-    const lastPreparing = await preparing.getByText('10024', { exact: true }).boundingBox();
-    expect(preparingBox).not.toBeNull();
-    expect(lastPreparing, 'the last preparing tile has bounds').not.toBeNull();
-    expect(
-      lastPreparing!.y + lastPreparing!.height,
-      'the last preparing tile is reachable',
-    ).toBeLessThanOrEqual(preparingBox!.y + preparingBox!.height + 1);
-
-    const readyScrolled = await scrollToEnd(ready);
-    expect(readyScrolled.scrollTop, 'the ready tile list owns its own scroll').toBeGreaterThan(0);
-    expect(
-      await preparing.evaluate((element) => element.scrollTop),
-      'scrolling the ready tiles leaves the preparing tiles in place',
-    ).toBe(preparingScrolled.scrollTop);
-    expectPinned(await elementTop(header, 'display header'), pinned.header, 'display header');
-    expectPinned(
-      await elementTop(readyHeading, 'ready heading'),
-      pinned.readyHeading,
-      'ready heading',
-    );
-
-    const readyBox = await ready.boundingBox();
-    const lastReady = await ready.getByText('20030', { exact: true }).boundingBox();
-    expect(readyBox).not.toBeNull();
-    expect(lastReady, 'the last ready tile has bounds').not.toBeNull();
-    expect(
-      lastReady!.y + lastReady!.height,
-      'the last ready tile is reachable',
-    ).toBeLessThanOrEqual(readyBox!.y + readyBox!.height + 1);
+    await page.clock.runFor(10_000);
+    await expect.poll(() => readIds(preparing)).not.toEqual(firstPreparingPage);
+    expect(await readIds(ready), 'the single ready page does not rotate').toEqual(readyPage);
   });
 
-  test('the polling refresh keeps the scrolled tile list where the guest left it', async ({
+  test('rotation pauses while the page is hidden and resumes on a fresh ten-second interval', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsManager(page);
-    const feed = await mockDisplayOrders(page, displayOrders(20, 4));
+    await page.clock.install();
+    await mockDisplayOrders(page, displayOrders(30, 0));
+    await page.goto(`${BASE}/customer-display`);
+
+    const preparing = page.getByTestId('customer-display-preparing-scroll');
+    const readIds = () =>
+      preparing
+        .locator('[data-order-id]:visible')
+        .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
+    await expect(preparing.locator('[data-order-id="display-preparing-1"]:visible')).toBeVisible();
+    const currentPage = await readIds();
+    expect(currentPage.length).toBeGreaterThan(0);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.clock.runFor(0);
+    await page.clock.runFor(20_000);
+    expect(await readIds(), 'hidden time does not advance the board').toEqual(currentPage);
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.clock.runFor(0);
+    await page.clock.runFor(9500);
+    expect(await readIds(), 'resuming starts a fresh page interval').toEqual(currentPage);
+    await page.clock.runFor(700);
+    await expect.poll(readIds).not.toEqual(currentPage);
+  });
+
+  test('orders removed from the eligible feed leave the board on the next poll', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+    await page.clock.install();
+    const feed = await mockDisplayOrders(page, displayOrders(4, 8));
+    await page.goto(`${BASE}/customer-display`);
+
+    const ready = page.getByTestId('customer-display-ready-scroll');
+    await expect(ready.locator('[data-order-id="display-ready-1"]:visible')).toBeVisible();
+    feed.replace(displayOrders(4, 0));
+    await page.clock.runFor(3000);
+    await expect(page.getByText('No orders are ready yet')).toBeVisible();
+    await expect(ready.locator('[data-order-id^="display-ready-"]:visible')).toHaveCount(0);
+  });
+
+  test('a delayed response longer than the poll interval still updates the board', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+    let delayOrders = false;
+    let delayedRequestCount = 0;
+    let inFlightDelayedRequests = 0;
+    await page.route(
+      (url) => url.pathname === '/api/settings/customer-display',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            statuses: ['pending', 'preparing', 'ready'],
+            refresh_seconds: 3,
+            show_updated: true,
+          }),
+        }),
+    );
+    await page.route(
+      (url) => url.pathname === '/api/orders',
+      async (route) => {
+        let orders = displayOrders(1, 0);
+        if (delayOrders) {
+          delayedRequestCount += 1;
+          inFlightDelayedRequests += 1;
+          orders = displayOrders(2, 0);
+          await new Promise((resolve) => setTimeout(resolve, 4000));
+          inFlightDelayedRequests -= 1;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ orders }),
+        });
+      },
+    );
     await page.goto(`${BASE}/customer-display`);
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     await expect(
-      preparing.getByText('10020', { exact: true }),
-      'the preparing tiles render',
+      preparing.locator('[data-order-id="display-preparing-1"]:visible'),
+      'the initial response populates the board before the delayed poll',
     ).toBeVisible();
-    const scrolled = await scrollToEnd(preparing);
-    expect(scrolled.scrollTop, 'the preparing tile list is scrolled').toBeGreaterThan(0);
-    const headerBefore = await elementTop(page.locator('header'), 'display header');
-
-    // The next poll adds one preparing tile and one ready tile.
-    feed.replace(displayOrders(21, 5));
+    await page.waitForTimeout(500);
+    delayOrders = true;
+    await expect.poll(() => delayedRequestCount, { timeout: 5000 }).toBe(1);
+    await page.waitForTimeout(3200);
+    expect(delayedRequestCount, 'the next poll tick skips while a request is pending').toBe(1);
+    expect(inFlightDelayedRequests, 'only one delayed request is in flight').toBe(1);
     await expect(
-      preparing.getByText('10021', { exact: true }),
-      'the poll renders the new order',
-    ).toBeVisible({ timeout: 15000 });
-    await expect(
-      page.getByTestId('customer-display-ready-scroll').getByText('20005', { exact: true }),
-      'the poll renders the new ready order',
-    ).toBeVisible();
-
-    const after = await preparing.evaluate((element) => element.scrollTop);
-    expect(
-      Math.abs(after - scrolled.scrollTop),
-      'the refresh does not jump the scrolled list',
-    ).toBeLessThanOrEqual(1);
-    expectPinned(
-      await elementTop(page.locator('header'), 'display header'),
-      headerBefore,
-      'display header',
-    );
+      preparing.locator('[data-order-id="display-preparing-2"]:visible'),
+      'the slow response is accepted after a later poll tick was skipped',
+    ).toBeVisible({ timeout: 2000 });
+    expect(inFlightDelayedRequests).toBe(0);
   });
 
-  test('a narrow viewport uses one reachable content flow instead of two tile windows', async ({
+  test('a network failure retains the last successful rows and reports stale data', async ({
     page,
   }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAsManager(page);
+    const feed = await mockDisplayOrders(page, displayOrders(3, 2));
+    await page.goto(`${BASE}/customer-display`);
+
+    const preparing = page.getByTestId('customer-display-preparing-scroll');
+    const firstOrder = preparing.locator('[data-order-id="display-preparing-1"]:visible');
+    await expect(firstOrder, 'the successful response displays the current order').toBeVisible();
+    feed.setUnavailable(true);
+    await expect(
+      page.getByText('Connection lost. Showing the last available orders.'),
+      'the network failure is reported as stale data',
+    ).toBeVisible({ timeout: 10000 });
+    await expect(firstOrder, 'the last successful rows remain visible').toBeVisible();
+  });
+
+  test('a narrow viewport keeps all rows in one reachable content flow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await loginAsManager(page);
     await mockDisplayOrders(page, displayOrders(12, 12));
@@ -1745,46 +1974,29 @@ test.describe('customer display keeps its headers visible over independently scr
 
     const preparing = page.getByTestId('customer-display-preparing-scroll');
     const ready = page.getByTestId('customer-display-ready-scroll');
+    await expect(preparing.locator('[data-order-id="display-preparing-12"]:visible')).toBeVisible();
+    await expect(ready.locator('[data-order-id="display-ready-12"]:visible')).toBeVisible();
     await expect(
-      preparing.getByText('10012', { exact: true }),
-      'the preparing tiles render',
-    ).toBeVisible();
-    await expect(ready.getByText('20012', { exact: true }), 'the ready tiles render').toBeVisible();
+      preparing.locator('[data-order-id^="display-preparing-"]:visible'),
+    ).toHaveCount(12);
+    await expect(ready.locator('[data-order-id^="display-ready-"]:visible')).toHaveCount(12);
 
-    const preparingMetrics = await preparing.evaluate((element) => ({
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight,
+    const widths = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
     }));
-    const readyMetrics = await ready.evaluate((element) => ({
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight,
-    }));
-    expect(
-      preparingMetrics.scrollHeight,
-      'the preparing tiles are not squeezed into one column window',
-    ).toBeLessThanOrEqual(preparingMetrics.clientHeight + 1);
-    expect(
-      readyMetrics.scrollHeight,
-      'the ready tiles are not squeezed into one column window',
-    ).toBeLessThanOrEqual(readyMetrics.clientHeight + 1);
-
-    const viewport = page.viewportSize();
-    expect(viewport, 'viewport is set').not.toBeNull();
-    const lastReady = ready.getByText('20012', { exact: true });
+    expect(widths.scrollWidth, 'the mobile flow has no horizontal overflow').toBeLessThanOrEqual(
+      widths.clientWidth,
+    );
+    const lastReady = ready.locator('[data-order-id="display-ready-12"]:visible');
     await lastReady.scrollIntoViewIfNeeded();
     const lastReadyBox = await lastReady.boundingBox();
-    expect(lastReadyBox, 'the last ready tile has bounds').not.toBeNull();
-    expect(lastReadyBox!.y, 'the last ready tile is not above the viewport').toBeGreaterThanOrEqual(
-      -1,
-    );
-    expect(
-      lastReadyBox!.y + lastReadyBox!.height,
-      'the last ready tile is reachable in the single flow',
-    ).toBeLessThanOrEqual(viewport!.height + 1);
-    await expect(page.locator('header'), 'the business header stays reachable').toBeVisible();
+    expect(lastReadyBox, 'the last mobile row has bounds').not.toBeNull();
+    expect(lastReadyBox!.y + lastReadyBox!.height).toBeLessThanOrEqual(844 + 1);
+    await expect(page.locator('header'), 'the business header stays visible').toBeVisible();
   });
 
-  test('the display keeps its chrome through loading, empty and connection-error states', async ({
+  test('the display keeps its chrome through loading, empty and stale-feed states', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -1792,7 +2004,6 @@ test.describe('customer display keeps its headers visible over independently scr
     await page.goto(`${BASE}/customer-display`);
     await expect(page.getByTestId('customer-display-preparing-scroll')).toBeVisible();
 
-    // Loading: the first answer is held back, so the loading branch is visible.
     await page.route(
       (url) => url.pathname === '/api/orders',
       async (route) => {
@@ -1806,33 +2017,24 @@ test.describe('customer display keeps its headers visible over independently scr
     );
     await page.reload();
     await expect(page.getByText('Loading orders…'), 'the loading state renders').toBeVisible();
-    await expect(
-      page.locator('header'),
-      'the business header stays visible while loading',
-    ).toBeVisible();
-
-    // Empty: both sections explain themselves without collapsing the page.
+    await expect(page.locator('header'), 'the business header stays visible while loading').toBeVisible();
     await expect(
       page.getByText('No orders currently being prepared'),
       'the empty preparing state renders',
     ).toBeVisible({ timeout: 15000 });
-    await expect(
-      page.getByText('No orders are ready yet'),
-      'the empty ready state renders',
-    ).toBeVisible();
-    const emptyTileHeight = await page
+    await expect(page.getByText('No orders are ready yet'), 'the empty ready state renders').toBeVisible();
+    const emptyBoardHeight = await page
       .getByTestId('customer-display-preparing-scroll')
       .evaluate((element) => element.clientHeight);
-    expect(emptyTileHeight, 'the empty tile area still occupies usable space').toBeGreaterThan(0);
+    expect(emptyBoardHeight, 'the empty board still occupies usable space').toBeGreaterThan(0);
 
-    // Connection error: the header reports the retry while the sections stay put.
     await page.route(
       (url) => url.pathname === '/api/orders',
       (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }),
     );
     await expect(
-      page.getByText('Connection problem — retrying…'),
-      'the connection error is reported',
+      page.getByText('Connection lost. Showing the last available orders.'),
+      'the stale-data state is reported after a successful empty response',
     ).toBeVisible({ timeout: 15000 });
     await expect(
       page.getByText('No orders currently being prepared'),

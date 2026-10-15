@@ -219,6 +219,7 @@
     "loadingOrders": "Đang tải đơn hàng…",
     "connecting": "Đang kết nối…",
     "connectionProblem": "Sự cố kết nối — đang thử lại…",
+    "staleData": "Mất kết nối. Đang hiển thị các đơn hàng gần nhất hiện có.",
     "updatedAt": "Đã cập nhật {time}",
     "settingsTitle": "Màn hình khách hàng",
     "settingsHint": "Chọn các đơn hàng hiển thị trên bảng trạng thái đơn hàng dành cho khách.",

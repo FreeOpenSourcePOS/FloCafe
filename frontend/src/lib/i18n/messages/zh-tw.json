@@ -219,6 +219,7 @@
     "loadingOrders": "正在載入訂單…",
     "connecting": "連線中…",
     "connectionProblem": "連線發生問題——重試中…",
+    "staleData": "連線已中斷。正在顯示最近可用的訂單。",
     "updatedAt": "更新於 {time}",
     "settingsTitle": "顧客顯示螢幕",
     "settingsHint": "選擇哪些訂單顯示在面向顧客的訂單狀態看板上。",

@@ -54,7 +54,7 @@ import type { ResolvedPrintLanguages } from '@print/types';
 import { getLogoRasterBands } from '@print/image-raster';
 import { concatBytes, encodeGsV0Band } from '@print/raster';
 import { formatItemHeading } from './item-heading';
-import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
 export interface ReceiptOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -1505,7 +1505,9 @@ export function buildDetailedReceiptBytes(
   const taxIdLabel = getCountryByCode(tenant.country)?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
-  const activeItems = (order?.items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
+  const activeItems = (order?.items ?? []).filter(
+    (item) => !isExcludedFromBillReceipt(item?.status),
+  );
   const col4Layout = resolveCol4Widths(
     cols,
     activeItems.map((item) => ({

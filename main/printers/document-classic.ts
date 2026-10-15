@@ -67,7 +67,7 @@ import {
   type ThermalLayoutContext,
 } from '../../shared/print';
 import { receiptChargeLines } from '../../shared/charges';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 
 // Direction facts (registry-derived, no language unions).
 
@@ -123,7 +123,7 @@ export function buildBillPrintData(
   isReprint: boolean,
 ): PrintData {
   const items = (Array.isArray(order?.items) ? order.items : []).filter(
-    (item: { status?: string | null }) => !isTerminalItemStatus(item?.status),
+    (item: { status?: string | null }) => !isExcludedFromBillReceipt(item?.status),
   );
   return {
     isReprint,

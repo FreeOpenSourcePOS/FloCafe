@@ -64,6 +64,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   const actorId = user ? String(user.id) : null;
   const tenantId = currentTenant?.id ?? null;
 
+  const [refreshedItem, setRefreshedItem] = useState<OrderItem | null>(null);
+  const currentItem = refreshedItem && refreshedItem.id === item.id ? refreshedItem : item;
+
   const [attemptState, setAttemptState] = useState<AttemptState>(() =>
     readInitialAttemptState(tenantId, actorId, orderId, item.id),
   );
@@ -74,7 +77,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   );
   const [quantity, setQuantity] = useState(() =>
     String(
-      lockedAttempt?.body.quantity ?? lockedAttempt?.body.replacement?.quantity ?? item.quantity,
+      lockedAttempt?.body.quantity ??
+        lockedAttempt?.body.replacement?.quantity ??
+        currentItem.quantity,
     ),
   );
   const [products, setProducts] = useState<Product[]>([]);
@@ -97,7 +102,13 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
   const matches = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return products
-      .filter((product) => (product.addon_groups ?? []).every((group) => group.is_active === false))
+      .filter((product) =>
+        (product.addon_groups ?? []).every(
+          (group) =>
+            group.is_active === false ||
+            (!group.is_required && Number(group.min_selection ?? 0) <= 0),
+        ),
+      )
       .filter((product) => !needle || product.name.toLowerCase().includes(needle))
       .slice(0, 30);
   }, [products, search]);
@@ -118,7 +129,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     (lockedAttempt !== null ||
       (quantityValid &&
         (mode === 'quantity'
-          ? parsedQuantity !== Number(item.quantity)
+          ? parsedQuantity !== Number(currentItem.quantity)
           : !!effectiveSelected && (variants.length === 0 || !!variantId))));
 
   const handleClose = () => {
@@ -138,9 +149,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
     let persisted = lockedAttempt !== null;
 
     try {
-      const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, item.id);
+      const scopedKey = orderItemEditAttemptStorageKey(tenantId, actorId, orderId, currentItem.id);
       const committedOrder = await withOrderItemEditAttemptLock(scopedKey, async () => {
-        const existing = readOrderItemEditAttempt(tenantId, actorId, orderId, item.id);
+        const existing = readOrderItemEditAttempt(tenantId, actorId, orderId, currentItem.id);
         let snapshot: OrderItemEditAttemptSnapshot;
 
         if (existing) {
@@ -149,10 +160,10 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           setAttemptState({ attempt: snapshot, storageBlocked: false });
         } else {
           const expectedEditVersion =
-            typeof item.edit_version === 'number' &&
-            Number.isSafeInteger(item.edit_version) &&
-            item.edit_version >= 0
-              ? item.edit_version
+            typeof currentItem.edit_version === 'number' &&
+            Number.isSafeInteger(currentItem.edit_version) &&
+            currentItem.edit_version >= 0
+              ? currentItem.edit_version
               : 0;
           const body: OrderItemEditAttemptBody =
             mode === 'quantity'
@@ -171,9 +182,9 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
 
           snapshot = newOrderItemEditAttempt({
             mode,
-            path: `/orders/${orderId}/items/${item.id}/edit`,
+            path: `/orders/${orderId}/items/${currentItem.id}/edit`,
             orderId,
-            itemId: item.id,
+            itemId: currentItem.id,
             body,
             actorId,
             tenantId,
@@ -229,16 +240,37 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           current.attempt ? current : { attempt: null, storageBlocked: true },
         );
       }
+      const status = (error as { response?: { status?: unknown } })?.response?.status;
       const message = (error as { response?: { data?: { error?: string } } })?.response?.data
         ?.error;
       toast.error(message || tOrders('editItemFailed'));
+      if (status === 409) {
+        try {
+          const { data } = await api.get(`/orders/${orderId}`);
+          const refreshedOrder = (data?.order ?? data) as Order | undefined;
+          if (refreshedOrder && typeof refreshedOrder === 'object' && 'id' in refreshedOrder) {
+            const latestItem = refreshedOrder.items?.find((entry) => entry.id === currentItem.id);
+            if (latestItem) {
+              setRefreshedItem(latestItem);
+              setQuantity(String(latestItem.quantity));
+            }
+            onSaved(refreshedOrder);
+          }
+        } catch {
+          // Best-effort refresh before closing the conflicted modal.
+        }
+        inFlightRef.current = false;
+        setSaving(false);
+        onClose();
+        return;
+      }
     } finally {
       inFlightRef.current = false;
       setSaving(false);
     }
   };
 
-  const heading = formatItemHeading(item.product_name, item.variant_selection);
+  const heading = formatItemHeading(currentItem.product_name, currentItem.variant_selection);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">

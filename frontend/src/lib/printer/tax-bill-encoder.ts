@@ -35,7 +35,7 @@ import {
   selectThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
-import { isTerminalItemStatus } from '../../../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../../../shared/order-item-status';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 32 cols) or 80 mm (3.5", 42 cols). Default: 58 */
@@ -457,7 +457,7 @@ export function buildTaxBillBytes(
   ).newline();
   enc.rule({ style: 'single' });
 
-  const items = (order?.items ?? []).filter((item) => !isTerminalItemStatus(item?.status));
+  const items = (order?.items ?? []).filter((item) => !isExcludedFromBillReceipt(item?.status));
   for (const item of items) {
     const line = formatItemHeading(item.product_name, item.variant_selection);
     const amount = formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos);

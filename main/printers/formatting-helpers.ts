@@ -25,7 +25,7 @@ import {
   type RasterSemanticUnit,
 } from '../../shared/print/raster';
 import { isGeneratedPrintLanguage } from '../print/print-labels.generated';
-import { isTerminalItemStatus } from '../../shared/order-item-status';
+import { isExcludedFromBillReceipt } from '../../shared/order-item-status';
 import type { PrinterCutMode } from './profiles';
 
 export type { PrintWarning };
@@ -83,7 +83,7 @@ export function itemAmountWidth(
 ): number {
   let width = 10;
   for (const item of order?.items ?? []) {
-    if (isTerminalItemStatus(item.status)) continue;
+    if (isExcludedFromBillReceipt(item.status)) continue;
     width = Math.max(
       width,
       displayCellWidth(

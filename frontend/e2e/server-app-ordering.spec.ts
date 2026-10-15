@@ -184,7 +184,10 @@ test.describe('Server App tableside ordering', () => {
       await route.continue();
     });
 
-    const kotPrintPayloads: Array<{ orderId: number; items: Array<{ id: number; quantity: number }> }> = [];
+    const kotPrintPayloads: Array<{
+      orderId: number;
+      items: Array<{ id: number; quantity: number }>;
+    }> = [];
     let releaseKotPrint!: () => void;
     const kotPrintGate = new Promise<void>((resolve) => {
       releaseKotPrint = resolve;

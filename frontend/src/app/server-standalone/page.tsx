@@ -96,11 +96,7 @@ function createApi(): AxiosInstance {
     (error) => {
       const sentAuth = error.config?.headers?.Authorization;
       const currentToken = localStorage.getItem(TOKEN_KEY);
-      if (
-        error.response?.status === 401 &&
-        currentToken &&
-        sentAuth === `Bearer ${currentToken}`
-      ) {
+      if (error.response?.status === 401 && currentToken && sentAuth === `Bearer ${currentToken}`) {
         localStorage.removeItem(TOKEN_KEY);
       }
       return Promise.reject(error);
@@ -788,9 +784,7 @@ export default function ServerStandalonePage() {
       if (sendAttemptRef.current?.signature === signature) {
         sendAttemptRef.current = null;
       }
-      const submittedQtyById = new Map(
-        snapshot.draftLines.map((line) => [line.id, line.quantity]),
-      );
+      const submittedQtyById = new Map(snapshot.draftLines.map((line) => [line.id, line.quantity]));
       setDraft((currentLines) =>
         currentLines.flatMap((line) => {
           const ackedQty = submittedQtyById.get(line.id);
@@ -799,9 +793,7 @@ export default function ServerStandalonePage() {
           return remainingQuantity > 0 ? [{ ...line, quantity: remainingQuantity }] : [];
         }),
       );
-      setOrderNotes((currentNotes) =>
-        currentNotes === snapshot.orderNotes ? '' : currentNotes,
-      );
+      setOrderNotes((currentNotes) => (currentNotes === snapshot.orderNotes ? '' : currentNotes));
       if (selectedTableIdRef.current === snapshot.tableId) {
         setCurrentOrder(rawOrder as unknown as Order);
       }
@@ -937,7 +929,9 @@ export default function ServerStandalonePage() {
         <input
           value={customerName}
           disabled={sending}
-          onChange={customerMatch ? undefined : (event) => handleCustomerNameChange(event.target.value)}
+          onChange={
+            customerMatch ? undefined : (event) => handleCustomerNameChange(event.target.value)
+          }
           readOnly={!!customerMatch}
           placeholder={
             customerSearched

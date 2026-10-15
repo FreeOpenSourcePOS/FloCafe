@@ -755,6 +755,8 @@
     "walkInCustomer": "Khách vãng lai",
     "whatsappFailed": "Không thể mở WhatsApp",
     "selectOrderPlaceholder": "Chọn một đơn hàng ở bên trái để xem chi tiết.",
+    "orderNotInCurrentList": "Đơn hàng này không còn trong danh sách hiện tại.",
+    "orderMissing": "Đơn hàng này không còn tồn tại hoặc không khả dụng.",
     "itemCount": "{count, plural, one {# món} other {# món}}"
   },
   "pos": {

@@ -427,8 +427,11 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
 
       assert.deepEqual(
         orderRequests,
-        [{ per_page: 50 }, { per_page: 50, before_id: 55 }],
-        'clicking Load More fetches the next page using nextOrdersCursor without a search query',
+        [
+          { per_page: 15, view: 'active' },
+          { per_page: 15, view: 'all', before_id: 55 },
+        ],
+        'clicking Load More fetches the next filtered page using nextOrdersCursor',
       );
 
       const page2Tree = renderPage(OrdersPage);

@@ -755,6 +755,8 @@
     "walkInCustomer": "بغیر بکنگ گاہک",
     "whatsappFailed": "WhatsApp نہیں کھل سکا",
     "selectOrderPlaceholder": "تفصیلات دیکھنے کے لیے بائیں طرف سے آرڈر منتخب کریں۔",
+    "orderNotInCurrentList": "یہ آرڈر اب موجودہ فہرست میں نہیں ہے۔",
+    "orderMissing": "یہ آرڈر اب موجود نہیں یا دستیاب نہیں ہے۔",
     "itemCount": "{count, plural, one {1 آئٹم} other {# آئٹم}}"
   },
   "pos": {

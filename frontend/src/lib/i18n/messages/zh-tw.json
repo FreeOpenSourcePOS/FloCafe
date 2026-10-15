@@ -755,6 +755,8 @@
     "walkInCustomer": "散客",
     "whatsappFailed": "開啟 WhatsApp 失敗",
     "selectOrderPlaceholder": "請在左側選擇一筆訂單以檢視詳情。",
+    "orderNotInCurrentList": "此訂單已不在目前清單中。",
+    "orderMissing": "此訂單已不存在或無法使用。",
     "itemCount": "{count, plural, other {# 件}}"
   },
   "pos": {

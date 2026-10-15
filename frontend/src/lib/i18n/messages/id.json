@@ -755,6 +755,8 @@
     "walkInCustomer": "Pelanggan Datang Langsung",
     "whatsappFailed": "Gagal membuka WhatsApp",
     "selectOrderPlaceholder": "Pilih pesanan di kiri untuk melihat detail.",
+    "orderNotInCurrentList": "Pesanan ini tidak lagi ada dalam daftar saat ini.",
+    "orderMissing": "Pesanan ini sudah tidak ada atau tidak tersedia.",
     "itemCount": "{count, plural, one {1 item} other {# item}}"
   },
   "pos": {

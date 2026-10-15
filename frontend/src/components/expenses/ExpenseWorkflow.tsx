@@ -147,7 +147,9 @@ export default function ExpenseWorkflow({
   const fmtMinor = (amountMinor: number | null) =>
     amountMinor === null
       ? tCommon('notAvailable')
-      : fmt(amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code));
+      : fmt(
+          amountMinor / getCurrencyMinorUnitFactor(record?.currency_code ?? context.currency_code),
+        );
 
   /** Replacing copies the source values into the fresh form. */
   const openReplace = () => {
@@ -1044,9 +1046,7 @@ export default function ExpenseWorkflow({
                   <Button
                     type="button"
                     onClick={openPayment}
-                    disabled={
-                      busy || locked || record.status !== 'active' || !record.due_minor
-                    }
+                    disabled={busy || locked || record.status !== 'active' || !record.due_minor}
                     data-testid="expense-record-payment"
                   >
                     {t('paymentTitle')}

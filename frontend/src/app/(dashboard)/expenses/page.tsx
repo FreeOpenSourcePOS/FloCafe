@@ -52,16 +52,21 @@ export default function ExpensesPage() {
   const [filters, setFilters] = useState<Filters | null>(null);
   // Rows carry the filter identity they were fetched for, so a filter change
   // renders as loading instead of showing rows that no longer match.
-  const [page, setPage] = useState<{ key: string; rows: ExpenseRecord[]; cursor: string | null }>(
-    { key: '', rows: [], cursor: null },
-  );
+  const [page, setPage] = useState<{ key: string; rows: ExpenseRecord[]; cursor: string | null }>({
+    key: '',
+    rows: [],
+    cursor: null,
+  });
   const [summary, setSummary] = useState<{ key: string; data: ExpenseSummary } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [workflow, setWorkflow] = useState<{ mode: 'create' | 'detail'; expense: ExpenseRecord | null } | null>(null);
+  const [workflow, setWorkflow] = useState<{
+    mode: 'create' | 'detail';
+    expense: ExpenseRecord | null;
+  } | null>(null);
 
   // Every filter change starts a new request identity, so a slower earlier
   // response can never replace the rows the operator is looking at now.
@@ -97,7 +102,9 @@ export default function ExpensesPage() {
         setContext(nextContext);
         setCategories(categoriesResponse.data.categories ?? []);
         const range = defaultRange(nextContext.business_date);
-        setFilters((current) => current ?? { ...range, categoryId: '', status: 'active', currency: '' });
+        setFilters(
+          (current) => current ?? { ...range, categoryId: '', status: 'active', currency: '' },
+        );
       })
       .catch((error) => {
         if (!active) return;
@@ -106,14 +113,23 @@ export default function ExpensesPage() {
           void refreshAuthContext();
         }
         setLoadError(t('loadFailed'));
-        setFilters((current) => current ?? { from: '', to: '', categoryId: '', status: 'active', currency: '' });
+        setFilters(
+          (current) =>
+            current ?? { from: '', to: '', categoryId: '', status: 'active', currency: '' },
+        );
       })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [refreshAuthContext, t]);
 
   useEffect(() => {
-    const handleFocus = () => { void refreshContext(); };
+    const handleFocus = () => {
+      void refreshContext();
+    };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [refreshContext]);
@@ -139,7 +155,8 @@ export default function ExpensesPage() {
       ...(filters.currency ? { currency: filters.currency } : {}),
     };
 
-    api.get('/expenses', { params: { ...params, limit: LIST_PAGE_SIZE }, signal: controller.signal })
+    api
+      .get('/expenses', { params: { ...params, limit: LIST_PAGE_SIZE }, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
         setPage({ key: pageKey, rows: data.expenses ?? [], cursor: data.nextCursor ?? null });
@@ -147,7 +164,11 @@ export default function ExpensesPage() {
       })
       .catch((error: unknown) => {
         if (seq !== requestSeq.current) return;
-        if (error instanceof Error && (error.name === 'CanceledError' || error.name === 'AbortError')) return;
+        if (
+          error instanceof Error &&
+          (error.name === 'CanceledError' || error.name === 'AbortError')
+        )
+          return;
         if ((error as { response?: { status?: number } })?.response?.status === 403) {
           setDenied(true);
           void refreshAuthContext();
@@ -155,12 +176,15 @@ export default function ExpensesPage() {
         setLoadError(t('loadFailed'));
       });
 
-    api.get('/expenses/summary', { params: summaryParams, signal: controller.signal })
+    api
+      .get('/expenses/summary', { params: summaryParams, signal: controller.signal })
       .then(({ data }) => {
         if (seq !== requestSeq.current) return;
         setSummary({ key: pageKey, data: data as ExpenseSummary });
       })
-      .catch(() => { /* the list surfaces the failure; the summary is supplementary */ });
+      .catch(() => {
+        /* the list surfaces the failure; the summary is supplementary */
+      });
 
     return () => controller.abort();
   }, [filters, refreshAuthContext, refreshKey, t]);
@@ -208,14 +232,22 @@ export default function ExpensesPage() {
 
   if (denied) {
     return (
-      <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col items-center justify-center gap-2" data-testid="expenses-page">
-        <p className="text-lg font-semibold" data-testid="expenses-denied">{t('permissionDenied')}</p>
+      <div
+        className="dashboard-scroll-shell flex h-full min-h-0 flex-col items-center justify-center gap-2"
+        data-testid="expenses-page"
+      >
+        <p className="text-lg font-semibold" data-testid="expenses-denied">
+          {t('permissionDenied')}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col" data-testid="expenses-page">
+    <div
+      className="dashboard-scroll-shell flex h-full min-h-0 flex-col"
+      data-testid="expenses-page"
+    >
       <div className="mb-4 flex shrink-0 items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">{tNav('expenses')}</h1>
         {tenantCan(currentTenant, 'expenses.manage') && (
@@ -234,7 +266,12 @@ export default function ExpensesPage() {
 
       <div className="mb-3 flex shrink-0 flex-wrap items-end gap-3" data-testid="expense-filters">
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="expense-filter-from">{t('from')}</label>
+          <label
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+            htmlFor="expense-filter-from"
+          >
+            {t('from')}
+          </label>
           <input
             id="expense-filter-from"
             type="date"
@@ -245,7 +282,12 @@ export default function ExpensesPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="expense-filter-to">{t('to')}</label>
+          <label
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+            htmlFor="expense-filter-to"
+          >
+            {t('to')}
+          </label>
           <input
             id="expense-filter-to"
             type="date"
@@ -256,7 +298,12 @@ export default function ExpensesPage() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="expense-filter-category">{t('category')}</label>
+          <label
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+            htmlFor="expense-filter-category"
+          >
+            {t('category')}
+          </label>
           <select
             id="expense-filter-category"
             data-testid="expense-filter-category"
@@ -266,17 +313,26 @@ export default function ExpensesPage() {
           >
             <option value="">{t('category')}</option>
             {categories.map((category) => (
-              <option key={category.id} value={category.id}>{category.name}</option>
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="expense-filter-status">{t('status')}</label>
+          <label
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+            htmlFor="expense-filter-status"
+          >
+            {t('status')}
+          </label>
           <select
             id="expense-filter-status"
             data-testid="expense-filter-status"
             value={filters?.status ?? 'active'}
-            onChange={(event) => updateFilter({ status: event.target.value as ExpenseStatusFilter })}
+            onChange={(event) =>
+              updateFilter({ status: event.target.value as ExpenseStatusFilter })
+            }
             className="rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
           >
             <option value="active">{tCommon('active')}</option>
@@ -286,7 +342,12 @@ export default function ExpensesPage() {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="expense-filter-currency">{t('currency')}</label>
+          <label
+            className="mb-1 block text-xs font-medium text-muted-foreground"
+            htmlFor="expense-filter-currency"
+          >
+            {t('currency')}
+          </label>
           <select
             id="expense-filter-currency"
             data-testid="expense-filter-currency"
@@ -296,7 +357,9 @@ export default function ExpensesPage() {
           >
             <option value="">{t('allCurrencies')}</option>
             {currencyOptions.map((code) => (
-              <option key={code} value={code}>{code}</option>
+              <option key={code} value={code}>
+                {code}
+              </option>
             ))}
           </select>
         </div>
@@ -305,60 +368,115 @@ export default function ExpensesPage() {
       <div className="mb-3 shrink-0 space-y-2" data-testid="expense-summary">
         {(currentSummary?.totals ?? []).map((total) => (
           <div key={total.currency_code} className="flex flex-wrap gap-3">
-            <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-incurred">
-              <p className="text-xs text-muted-foreground">{t('incurred')} · {total.currency_code}</p>
-              <p className="text-lg font-bold">{fmtMinor(total.incurred_minor, total.currency_code)}</p>
+            <div
+              className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3"
+              data-testid="expense-summary-incurred"
+            >
+              <p className="text-xs text-muted-foreground">
+                {t('incurred')} · {total.currency_code}
+              </p>
+              <p className="text-lg font-bold">
+                {fmtMinor(total.incurred_minor, total.currency_code)}
+              </p>
             </div>
-            <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-paid">
+            <div
+              className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3"
+              data-testid="expense-summary-paid"
+            >
               <p className="text-xs text-muted-foreground">{t('paidToDate')}</p>
-              <p className="text-lg font-bold">{fmtMinor(total.net_paid_minor, total.currency_code)}</p>
+              <p className="text-lg font-bold">
+                {fmtMinor(total.net_paid_minor, total.currency_code)}
+              </p>
             </div>
-            <div className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3" data-testid="expense-summary-due">
+            <div
+              className="min-w-40 flex-1 rounded-xl border border-border bg-card p-3"
+              data-testid="expense-summary-due"
+            >
               <p className="text-xs text-muted-foreground">{t('due')}</p>
               <p className="text-lg font-bold">{fmtMinor(total.due_minor, total.currency_code)}</p>
             </div>
           </div>
         ))}
-        <p className="text-xs text-muted-foreground" data-testid="expense-summary-basis">{t('summaryBasis')}</p>
+        <p className="text-xs text-muted-foreground" data-testid="expense-summary-basis">
+          {t('summaryBasis')}
+        </p>
         {(currentSummary?.groups ?? []).length > 0 && (
-          <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" data-testid="expense-summary-groups">
+          <ul
+            className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+            data-testid="expense-summary-groups"
+          >
             {currentSummary?.groups.map((group) => (
               <li key={`${group.currency_code}-${group.category_id}`}>
-                {group.category_name} · {fmtMinor(group.due_minor, group.currency_code)} {group.currency_code}
+                {group.category_name} · {fmtMinor(group.due_minor, group.currency_code)}{' '}
+                {group.currency_code}
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card" data-testid="expenses-list-scroll">
+      <div
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card"
+        data-testid="expenses-list-scroll"
+      >
         <table className="w-full">
           <thead className="sticky top-0 bg-muted">
             <tr>
-              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">{t('incurred')}</th>
-              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">{t('description')}</th>
-              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">{t('payee')}</th>
-              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">{tCommon('amount')}</th>
-              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">{t('netPaid')}</th>
-              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">{t('due')}</th>
-              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">{t('status')}</th>
-              <th className="p-3 text-center text-xs font-medium uppercase text-muted-foreground">{t('openDetail')}</th>
+              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">
+                {t('incurred')}
+              </th>
+              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">
+                {t('description')}
+              </th>
+              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">
+                {t('payee')}
+              </th>
+              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">
+                {tCommon('amount')}
+              </th>
+              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">
+                {t('netPaid')}
+              </th>
+              <th className="p-3 text-end text-xs font-medium uppercase text-muted-foreground">
+                {t('due')}
+              </th>
+              <th className="p-3 text-start text-xs font-medium uppercase text-muted-foreground">
+                {t('status')}
+              </th>
+              <th className="p-3 text-center text-xs font-medium uppercase text-muted-foreground">
+                {t('openDetail')}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {expenses.map((expense) => (
-              <tr key={expense.id} className="hover:bg-muted" data-testid="expense-row" data-expense-id={expense.id}>
+              <tr
+                key={expense.id}
+                className="hover:bg-muted"
+                data-testid="expense-row"
+                data-expense-id={expense.id}
+              >
                 <td className="whitespace-nowrap p-3 text-sm">{expense.incurred_on}</td>
                 <td className="p-3 text-sm">
                   <p className="font-medium text-foreground">{expense.description}</p>
                   <p className="text-xs text-muted-foreground">{expense.category_name}</p>
                 </td>
                 <td className="p-3 text-sm text-muted-foreground">{expense.payee || '—'}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm">{fmtMinor(expense.amount_minor, expense.currency_code)}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm">{fmtMinor(expense.paid_minor, expense.currency_code)}</td>
-                <td className="whitespace-nowrap p-3 text-end text-sm font-medium">{fmtMinor(expense.due_minor, expense.currency_code)}</td>
+                <td className="whitespace-nowrap p-3 text-end text-sm">
+                  {fmtMinor(expense.amount_minor, expense.currency_code)}
+                </td>
+                <td className="whitespace-nowrap p-3 text-end text-sm">
+                  {fmtMinor(expense.paid_minor, expense.currency_code)}
+                </td>
+                <td className="whitespace-nowrap p-3 text-end text-sm font-medium">
+                  {fmtMinor(expense.due_minor, expense.currency_code)}
+                </td>
                 <td className="p-3 text-sm">
-                  {expense.status === 'active' ? tCommon('active') : expense.status === 'voided' ? t('statusVoided') : t('statusReplaced')}
+                  {expense.status === 'active'
+                    ? tCommon('active')
+                    : expense.status === 'voided'
+                      ? t('statusVoided')
+                      : t('statusReplaced')}
                 </td>
                 <td className="p-3 text-center">
                   <Button
@@ -378,17 +496,32 @@ export default function ExpensesPage() {
           </tbody>
         </table>
 
-        {(loading || stale) && <p className="py-10 text-center text-sm text-muted-foreground">{tCommon('loading')}</p>}
+        {(loading || stale) && (
+          <p className="py-10 text-center text-sm text-muted-foreground">{tCommon('loading')}</p>
+        )}
         {!loading && !stale && expenses.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground" data-testid="expenses-empty">
+          <div
+            className="flex flex-col items-center gap-2 py-10 text-muted-foreground"
+            data-testid="expenses-empty"
+          >
             <SearchX size={20} />
             <p className="text-sm">{t('empty')}</p>
           </div>
         )}
-        {loadError && <p className="py-3 text-center text-sm text-red-600" role="alert">{loadError}</p>}
+        {loadError && (
+          <p className="py-3 text-center text-sm text-red-600" role="alert">
+            {loadError}
+          </p>
+        )}
         {nextCursor && (
           <div className="p-3 text-center">
-            <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} data-testid="expenses-load-more">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadMore}
+              disabled={loadingMore}
+              data-testid="expenses-load-more"
+            >
               {tCommon('loadMore')}
             </Button>
           </div>

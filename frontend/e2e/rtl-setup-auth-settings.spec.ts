@@ -244,12 +244,13 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     // 1. Store tab in Persian (RTL)
     await page.goto(`${BASE}/settings?tab=store`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    await expect(page.locator('nav')).toBeVisible();
+    const settingsNav = page.locator('[data-slot="tabs"] nav');
+    await expect(settingsNav).toBeVisible();
 
     // The Settings left nav mirrors to the inline-end in RTL: radix Tabs must
     // follow the document direction instead of forcing dir="ltr" (Refs #241).
     await expect(page.locator('[data-slot="tabs"]')).toHaveAttribute('dir', 'rtl');
-    const settingsNavBox = await page.locator('nav').boundingBox();
+    const settingsNavBox = await settingsNav.boundingBox();
     expect(settingsNavBox, 'settings nav must have a bounding box').not.toBeNull();
     expect(settingsNavBox!.x, 'settings nav must sit on the right side in RTL').toBeGreaterThan(
       (page.viewportSize()?.width ?? 0) / 2

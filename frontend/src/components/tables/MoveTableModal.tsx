@@ -97,12 +97,16 @@ export default function MoveTableModal({
       onSuccess(data);
       onClose();
     } catch (error: unknown) {
-      const status = (error as { response?: { status?: number } })?.response?.status;
+      const response = (error as { response?: { status?: number; data?: { error?: string } } })
+        ?.response;
+      const status = response?.status;
+      const serverError = response?.data?.error;
       const errorMsg =
         status === 409
-          ? t('targetTableOccupied')
-          : (error as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-            t('tableMoveFailed');
+          ? serverError && /reserved|held/i.test(serverError)
+            ? serverError
+            : t('targetTableOccupied')
+          : serverError || t('tableMoveFailed');
       toast.error(errorMsg);
     } finally {
       setMoving(false);

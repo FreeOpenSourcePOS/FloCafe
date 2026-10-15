@@ -405,7 +405,7 @@ export default function OrdersPage() {
       const search = currentFilters.search.trim();
       const requestParams = {
         per_page: ORDERS_PAGE_SIZE,
-        view: tabFilterRef.current === 'unpaid' ? 'unpaid' : tabFilterRef.current,
+        view: tabFilterRef.current,
         ...(search ? { search } : {}),
         ...(currentFilters.table ? { table_id: currentFilters.table } : {}),
         ...(currentFilters.type ? { type: currentFilters.type } : {}),
@@ -1443,6 +1443,19 @@ export default function OrdersPage() {
     }
   };
 
+  const renderLoadMoreButton = (cursor: number) => (
+    <div className="shrink-0 text-center py-3 border-t border-border">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => fetchOrders(cursor)}
+        disabled={loadingMoreOrders}
+      >
+        {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
+      </Button>
+    </div>
+  );
+
   // Every layout anchors its content to the page height so the title, status
   // tabs and filters stay on screen while the order content scrolls below them.
   return (
@@ -1657,22 +1670,7 @@ export default function OrdersPage() {
                 {tOrders('empty')}
               </div>
             )}
-            {!loading && nextOrdersCursor !== null && (
-              <div className="shrink-0 text-center py-3 border-t border-border">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fetchOrders(nextOrdersCursor)}
-                  disabled={loadingMoreOrders}
-                >
-                  {loadingMoreOrders ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    tCommon('loadMore')
-                  )}
-                </Button>
-              </div>
-            )}
+            {!loading && nextOrdersCursor !== null && renderLoadMoreButton(nextOrdersCursor)}
           </div>
 
           {/* Detail pane — fills the remaining row width on desktop, full width with back nav below md. */}
@@ -1816,22 +1814,8 @@ export default function OrdersPage() {
       {tabFilter !== 'held' &&
         ordersLayout !== 'split' &&
         !loading &&
-        nextOrdersCursor !== null && (
-          <div className="shrink-0 text-center py-3 border-t border-border">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchOrders(nextOrdersCursor)}
-              disabled={loadingMoreOrders}
-            >
-              {loadingMoreOrders ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                tCommon('loadMore')
-              )}
-            </Button>
-          </div>
-        )}
+        nextOrdersCursor !== null &&
+        renderLoadMoreButton(nextOrdersCursor)}
 
       {/* Payment Modal */}
       {paymentBill && (

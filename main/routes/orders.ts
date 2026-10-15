@@ -62,9 +62,27 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
+import { isAllowedPrivateIp } from '../middleware/security';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 const router = Router();
+const ORDER_WRITE_RATE_LIMIT_ERROR = {
+  error: 'Too many requests, please try again later.',
+};
+
+export function resolveOrderWriteRateLimitMax(
+  rawLimit = process.env.FLO_ORDER_WRITE_RATE_LIMIT_MAX,
+): number {
+  const configured = Number.parseInt(rawLimit || '', 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : 60;
+}
+
+export function shouldSkipOrderWriteRateLimit(req: Request): boolean {
+  const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+  if (!userId) return false;
+  return isAllowedPrivateIp(req.socket?.remoteAddress || '');
+}
+
 const orderReadRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
   limit: 120,
@@ -73,18 +91,22 @@ const orderReadRateLimit = expressRateLimit({
 });
 const orderWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: () => resolveOrderWriteRateLimitMax(),
   standardHeaders: true,
   legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
+  skip: shouldSkipOrderWriteRateLimit,
 });
 // Kept as its own bucket rather than folded into orderWriteRateLimit: this limit
 // had its own counter when the route lived in the registrar, and sharing a
 // counter would let unrelated order writes exhaust the item-void budget.
 const orderItemCancelRateLimit = expressRateLimit({
   windowMs: 60 * 1000,
-  limit: 60,
+  limit: () => resolveOrderWriteRateLimitMax(),
   standardHeaders: true,
   legacyHeaders: false,
+  message: ORDER_WRITE_RATE_LIMIT_ERROR,
+  skip: shouldSkipOrderWriteRateLimit,
 });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;

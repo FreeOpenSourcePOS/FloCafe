@@ -98,9 +98,8 @@ npm run test:authorization-permissions
 ```
 
 A static audit test in the same suite rejects any newly introduced `requireRole(...)` runtime gate
-under `main/routes/`; the remaining direct role checks in the codebase are reviewed context policy
-(refund approver identity, the override-PIN holder for item cancel/void, the last-active-owner and
-staff-target rule, and KDS station/category scope), each documented where it lives.
+under `main/routes/`; the remaining direct role checks in the codebase are reviewed context policy,
+documented in [authentication and authorization](../architecture/authentication-and-authorization.md#configurable-permissions).
 
 **Change policy:** the two protected permissions, and the precedence order overrides resolve in,
 are structural — changing either needs an explicit product decision, because either one can create
@@ -304,9 +303,9 @@ tables (`supplies`, `supply_movements`) with a signed ledger, separate from prod
    sales without a variant use a portion of 1, and the portion is scaled from the resolved catalog
    variant, never from the order payload.
 3. **Restoration is keyed off the snapshot, never the current recipe or portion.** Cancelling a
-   pending item or an order restores exactly what the snapshot recorded, even if the recipe or the
-   variant's portion was edited since. Cancelling a half-portion sale therefore returns half of
-   every ingredient even after the variant was switched to double.
+   pending item (directly or by cancelling the order) restores exactly what the snapshot recorded,
+   even if the recipe or the variant's portion was edited since. Cancelling a half-portion sale
+   therefore returns half of every ingredient even after the variant was switched to double.
 4. **Void after preparation is physical waste.** Items voided while in progress, ready, or
    completed restore neither supplies nor product stock. Only a `pending` cancel restores.
 5. **Refunds never restore supplies**, matching product inventory behaviour.
@@ -328,7 +327,7 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
-creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
+creation, item append, order and item cancel, and item restore paths in `main/routes/orders.ts`. Restore acts
 only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
 `pending`; a `voided` item is never restored. The portion comes from
 `resolveOrderItemVariant()` in `main/services/product-variants.ts`, the same server-side resolution

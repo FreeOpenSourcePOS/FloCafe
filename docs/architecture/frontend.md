@@ -467,11 +467,15 @@ and whether the last-updated time is shown. The same settings card shows the dis
 and open actions. Strings come from the `customerDisplay` message namespace.
 
 An owner or manager can also pair a standalone device (a TV or tablet browser) from the same card.
-Pairing creates a token and shows a `/customer-display/#token=...` link once. The board moves the
-token from the URL fragment into `localStorage` and polls `GET /api/customer-display/feed` with it
-instead of using a staff session, so it needs no login and can read nothing but order numbers and
-statuses. When the feed answers `401` (the token was revoked), the board clears the stored token and
-shows an unpaired screen.
+The card loads the POS server's LAN addresses and uses the selected address for both the display URL
+and pairing link. The primary LAN address is selected first; other network interfaces, mDNS, and a
+clearly labelled local preview can be selected before pairing. Switching addresses updates the
+one-time link without creating another token. If no LAN address is available, the card says so and
+offers only the local preview; if address lookup fails, it shows an error and retry action. The board
+moves the token from the URL fragment into `localStorage` and polls
+`GET /api/customer-display/feed` with it instead of using a staff session, so it needs no login and
+can read nothing but order numbers and statuses. When the feed answers `401` (the token was
+revoked), the board clears the stored token and shows an unpaired screen.
 
 ## Tech stack
 

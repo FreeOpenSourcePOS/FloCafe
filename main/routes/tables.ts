@@ -577,10 +577,26 @@ router.post(
         const targetHeldOrder = db
           .prepare('SELECT id FROM held_orders WHERE table_id = ?')
           .get(target_table_id);
-        if (targetHeldOrder || targetTable.status === 'held') {
+        const currentTargetTable = db
+          .prepare('SELECT * FROM tables WHERE id = ?')
+          .get(target_table_id) as { is_active?: number | boolean; status?: string } | undefined;
+        if (!currentTargetTable) {
+          throw Object.assign(new Error('Target table not found'), { status: 404 });
+        }
+        if (!currentTargetTable.is_active) {
+          throw Object.assign(new Error('Target table is not active'), { status: 400 });
+        }
+        if (
+          targetHeldOrder ||
+          targetTable.status === 'held' ||
+          currentTargetTable.status === 'held'
+        ) {
           const error: any = new Error('Target table has a held order');
           error.status = 409;
           throw error;
+        }
+        if (targetTable.status === 'reserved' || currentTargetTable.status === 'reserved') {
+          throw Object.assign(new Error('Target table is reserved'), { status: 409 });
         }
 
         const nowStr = now();

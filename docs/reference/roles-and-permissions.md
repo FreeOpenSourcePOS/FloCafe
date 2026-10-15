@@ -49,16 +49,16 @@ delegated away.
 
 The owner-only `/api/authorization` API backs this page:
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/authorization/catalog` | The stable permission catalog and the role identities. |
-| `GET` | `/api/authorization/roles` | Every role's effective permissions, overrides, and revision. |
-| `PUT` | `/api/authorization/roles/:role` | Atomically replace one role's override set. |
-| `GET` | `/api/authorization/users` | The staff list this editor's per-user picker uses. |
-| `GET` | `/api/authorization/users/:userId` | One user's effective permissions, overrides, and revision. |
-| `PUT` | `/api/authorization/users/:userId` | Atomically replace one user's override set. |
-| `DELETE` | `/api/authorization/users/:userId/overrides` | Clear every override for a user, restoring inheritance. |
-| `GET` | `/api/authorization/audit` | Newest-first change history: actor, target, permission, before/after effect. |
+| Method   | Endpoint                                     | Purpose                                                                      |
+| -------- | -------------------------------------------- | ---------------------------------------------------------------------------- |
+| `GET`    | `/api/authorization/catalog`                 | The stable permission catalog and the role identities.                       |
+| `GET`    | `/api/authorization/roles`                   | Every role's effective permissions, overrides, and revision.                 |
+| `PUT`    | `/api/authorization/roles/:role`             | Atomically replace one role's override set.                                  |
+| `GET`    | `/api/authorization/users`                   | The staff list this editor's per-user picker uses.                           |
+| `GET`    | `/api/authorization/users/:userId`           | One user's effective permissions, overrides, and revision.                   |
+| `PUT`    | `/api/authorization/users/:userId`           | Atomically replace one user's override set.                                  |
+| `DELETE` | `/api/authorization/users/:userId/overrides` | Clear every override for a user, restoring inheritance.                      |
+| `GET`    | `/api/authorization/audit`                   | Newest-first change history: actor, target, permission, before/after effect. |
 
 Every `PUT`/`DELETE` body must carry the last-seen `revision` string; a stale revision — another
 owner saved first — returns `409` with the current state, rather than silently overwriting it.
@@ -77,64 +77,64 @@ which is also exactly what every existing installation resolves to immediately a
 this feature. A check means the role reaches the capability by default. A dash means it does not.
 An owner can flip any configurable cell for a role, or for one user, from the in-app editor.
 
-| Area | Capability | Owner | Manager | Cashier | Server | Chef |
-| --- | --- | :---: | :---: | :---: | :---: | :---: |
-| Orders | Use the POS terminal | ✓ | ✓ | ✓ | — | — |
-| Reports | View the owner dashboard | ✓ | — | — | — | — |
-| Orders | View and create orders | ✓ | ✓ | ✓ | ✓ | — |
-| Orders | Update order status | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Orders | Change order customers and discounts | ✓ | ✓ | — | — | — |
-| Orders | Cancel pending order items | ✓ | ✓ | — | — | — |
-| Orders | Void in-progress order items (manager PIN may be required) | ✓ | ✓ | — | — | — |
-| Orders | Restore cancelled order items | ✓ | ✓ | — | — | — |
-| Orders | Edit quantity or replace order items | ✓ | — | — | — | — |
-| Orders | Create and manage held orders | ✓ | ✓ | ✓ | ✓ | — |
-| Payments | View bills, take payments, and print receipts | ✓ | ✓ | ✓ | — | — |
-| Payments | Apply bill discounts and mark bills printed | ✓ | ✓ | — | — | — |
-| Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Payments | Manage payment methods | ✓ | ✓ | — | — | — |
-| Payments | View expenses and balances | ✓ | ✓ | — | — | — |
-| Payments | Create and correct expense records | ✓ | ✓ | — | — | — |
-| Payments | Record expense payments | ✓ | ✓ | — | — | — |
-| Payments | Reverse expense payments | ✓ | ✓ | — | — | — |
-| Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
-| Payments | Open a cash shift | ✓ | ✓ | ✓ | — | — |
-| Payments | Close own cash shift (owner/manager can close any) | ✓ | ✓ | ✓ | — | — |
-| Customers | View, search, and create customers | ✓ | ✓ | ✓ | ✓ | — |
-| Customers | Edit customers | ✓ | ✓ | ✓ | — | — |
-| Customers | Repair customer phone records | ✓ | ✓ | — | — | — |
-| Customers | Clean up customer records | ✓ | — | — | — | — |
-| Menu | Manage products, categories, and addons | ✓ | ✓ | — | — | — |
-| Menu | Import and export menu data | ✓ | ✓ | — | — | — |
-| Menu | Manage supplies and recipes | ✓ | ✓ | — | — | — |
-| Orders | Manage tables | ✓ | ✓ | — | — | — |
-| Orders | Move orders between tables | ✓ | ✓ | ✓ | ✓ | — |
-| Kitchen | Use the kitchen display system | ✓ | ✓ | — | — | ✓ |
-| Kitchen | Pair a kitchen display | ✓ | ✓ | — | — | — |
-| Kitchen | Manage kitchen stations and assignments | ✓ | ✓ | — | — | — |
-| Reports | View sales and operations reports | ✓ | ✓ | — | — | — |
-| Reports | View financial figures (revenue, refunds, payment mix) | ✓ | — | — | — | — |
-| Staff | View and manage staff accounts | ✓ | ✓ | — | — | — |
-| Staff | Manage owner and manager accounts and roles | ✓ | — | — | — | — |
-| Staff | Manage cashier, server, and chef accounts | ✓ | ✓ | — | — | — |
-| Staff | Manage role and user permissions | ✓ | — | — | — | — |
-| Settings | View store and operational settings | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Settings | Change store and operational settings | ✓ | ✓ | — | — | — |
-| Settings | View and test tax packs | ✓ | ✓ | — | — | — |
-| Settings | Install, activate, and manage tax packs | ✓ | — | — | — | — |
-| Settings | Change tax configuration | ✓ | ✓ | — | — | — |
-| Settings | View print templates | ✓ | ✓ | — | — | — |
-| Settings | Manage print templates | ✓ | — | — | — | — |
-| Settings | Manage printers | ✓ | ✓ | — | — | — |
-| Integrations | Use WhatsApp messaging | ✓ | ✓ | ✓ | — | — |
-| Integrations | Configure WhatsApp | ✓ | ✓ | — | — | — |
-| Integrations | Manage cloud settings | ✓ | ✓ | — | — | — |
-| Integrations | Manage Google Drive backups | ✓ | — | — | — | — |
-| Integrations | Manage cloud account and data controls | ✓ | — | — | — | — |
-| System | Use database tools and backups | ✓ | — | — | — | — |
-| System | Manage mobile access (FloAdmin sync and device pairing) | ✓ | — | — | — | — |
-| Orders | Use the standalone Server App | ✓ | ✓ | — | ✓ | — |
-| Support | Contact support and view diagnostics | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Area         | Capability                                                 | Owner | Manager | Cashier | Server | Chef |
+| ------------ | ---------------------------------------------------------- | :---: | :-----: | :-----: | :----: | :--: |
+| Orders       | Use the POS terminal                                       |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Reports      | View the owner dashboard                                   |   ✓   |    —    |    —    |   —    |  —   |
+| Orders       | View and create orders                                     |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
+| Orders       | Update order status                                        |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
+| Orders       | Change order customers and discounts                       |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Cancel pending order items                                 |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Void in-progress order items (manager PIN may be required) |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Restore cancelled order items                              |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Edit quantity or replace order items                       |   ✓   |    —    |    —    |   —    |  —   |
+| Orders       | Create and manage held orders                              |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
+| Payments     | View bills, take payments, and print receipts              |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Payments     | Apply bill discounts and mark bills printed                |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | View payment methods                                       |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
+| Payments     | Manage payment methods                                     |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | View expenses and balances                                 |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | Create and correct expense records                         |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | Record expense payments                                    |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | Reverse expense payments                                   |   ✓   |    ✓    |    —    |   —    |  —   |
+| Payments     | Print bills and kitchen tickets                            |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Payments     | Open a cash shift                                          |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Payments     | Close own cash shift (owner/manager can close any)         |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Customers    | View, search, and create customers                         |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
+| Customers    | Edit customers                                             |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Customers    | Repair customer phone records                              |   ✓   |    ✓    |    —    |   —    |  —   |
+| Customers    | Clean up customer records                                  |   ✓   |    —    |    —    |   —    |  —   |
+| Menu         | Manage products, categories, and addons                    |   ✓   |    ✓    |    —    |   —    |  —   |
+| Menu         | Import and export menu data                                |   ✓   |    ✓    |    —    |   —    |  —   |
+| Menu         | Manage supplies and recipes                                |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Manage tables                                              |   ✓   |    ✓    |    —    |   —    |  —   |
+| Orders       | Move orders between tables                                 |   ✓   |    ✓    |    ✓    |   ✓    |  —   |
+| Kitchen      | Use the kitchen display system                             |   ✓   |    ✓    |    —    |   —    |  ✓   |
+| Kitchen      | Pair a kitchen display                                     |   ✓   |    ✓    |    —    |   —    |  —   |
+| Kitchen      | Manage kitchen stations and assignments                    |   ✓   |    ✓    |    —    |   —    |  —   |
+| Reports      | View sales and operations reports                          |   ✓   |    ✓    |    —    |   —    |  —   |
+| Reports      | View financial figures (revenue, refunds, payment mix)     |   ✓   |    —    |    —    |   —    |  —   |
+| Staff        | View and manage staff accounts                             |   ✓   |    ✓    |    —    |   —    |  —   |
+| Staff        | Manage owner and manager accounts and roles                |   ✓   |    —    |    —    |   —    |  —   |
+| Staff        | Manage cashier, server, and chef accounts                  |   ✓   |    ✓    |    —    |   —    |  —   |
+| Staff        | Manage role and user permissions                           |   ✓   |    —    |    —    |   —    |  —   |
+| Settings     | View store and operational settings                        |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
+| Settings     | Change store and operational settings                      |   ✓   |    ✓    |    —    |   —    |  —   |
+| Settings     | View and test tax packs                                    |   ✓   |    ✓    |    —    |   —    |  —   |
+| Settings     | Install, activate, and manage tax packs                    |   ✓   |    —    |    —    |   —    |  —   |
+| Settings     | Change tax configuration                                   |   ✓   |    ✓    |    —    |   —    |  —   |
+| Settings     | View print templates                                       |   ✓   |    ✓    |    —    |   —    |  —   |
+| Settings     | Manage print templates                                     |   ✓   |    —    |    —    |   —    |  —   |
+| Settings     | Manage printers                                            |   ✓   |    ✓    |    —    |   —    |  —   |
+| Integrations | Use WhatsApp messaging                                     |   ✓   |    ✓    |    ✓    |   —    |  —   |
+| Integrations | Configure WhatsApp                                         |   ✓   |    ✓    |    —    |   —    |  —   |
+| Integrations | Manage cloud settings                                      |   ✓   |    ✓    |    —    |   —    |  —   |
+| Integrations | Manage Google Drive backups                                |   ✓   |    —    |    —    |   —    |  —   |
+| Integrations | Manage cloud account and data controls                     |   ✓   |    —    |    —    |   —    |  —   |
+| System       | Use database tools and backups                             |   ✓   |    —    |    —    |   —    |  —   |
+| System       | Manage mobile access (FloAdmin sync and device pairing)    |   ✓   |    —    |    —    |   —    |  —   |
+| Orders       | Use the standalone Server App                              |   ✓   |    ✓    |    —    |   ✓    |  —   |
+| Support      | Contact support and view diagnostics                       |   ✓   |    ✓    |    ✓    |   ✓    |  ✓   |
 
 `authorization.manage` and `staff.privileged.manage` (the last two Staff rows a non-owner will
 never see change) are protected and not shown as editable in the table above; every other row is

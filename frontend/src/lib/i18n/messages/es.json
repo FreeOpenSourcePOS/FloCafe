@@ -771,6 +771,8 @@
     "walkInCustomer": "Cliente de paso",
     "whatsappFailed": "No se pudo abrir WhatsApp",
     "selectOrderPlaceholder": "Selecciona un pedido a la izquierda para ver los detalles.",
+    "orderNotInCurrentList": "Este pedido ya no está en la lista actual.",
+    "orderMissing": "Este pedido ya no existe o no está disponible.",
     "itemCount": "{count, plural, one {1 ítem} other {# ítems}}"
   },
   "pos": {

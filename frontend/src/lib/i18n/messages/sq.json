@@ -771,6 +771,8 @@
     "walkInCustomer": "Klient pa rezervim",
     "whatsappFailed": "Hapja e WhatsApp dështoi",
     "selectOrderPlaceholder": "Zgjidhni një porosi në të majtë për të parë detajet.",
+    "orderNotInCurrentList": "Kjo porosi nuk është më në listën aktuale.",
+    "orderMissing": "Kjo porosi nuk ekziston më ose nuk është e disponueshme.",
     "itemCount": "{count, plural, one {1 artikull} other {# artikuj}}"
   },
   "pos": {

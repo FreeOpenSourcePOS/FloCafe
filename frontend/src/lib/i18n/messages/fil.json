@@ -771,6 +771,8 @@
     "walkInCustomer": "Walk-in na Kustomer",
     "whatsappFailed": "Nabigong open WhatsApp",
     "selectOrderPlaceholder": "Pumili ng order sa kaliwa upang makita ang detalye.",
+    "orderNotInCurrentList": "Wala na ang order na ito sa kasalukuyang listahan.",
+    "orderMissing": "Wala na o hindi na available ang order na ito.",
     "itemCount": "{count, plural, one {1 item} other {# na item}}"
   },
   "pos": {

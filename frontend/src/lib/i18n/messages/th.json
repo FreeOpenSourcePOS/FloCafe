@@ -771,6 +771,8 @@
     "walkInCustomer": "ลูกค้าไม่นัด",
     "whatsappFailed": "เปิด WhatsApp ไม่สำเร็จ",
     "selectOrderPlaceholder": "เลือกคำสั่งซื้อทางซ้ายเพื่อดูรายละเอียด",
+    "orderNotInCurrentList": "คำสั่งซื้อนี้ไม่อยู่ในรายการปัจจุบันแล้ว",
+    "orderMissing": "คำสั่งซื้อนี้ไม่มีอยู่แล้วหรือไม่พร้อมใช้งาน",
     "itemCount": "{count, plural, one {# รายการ} other {# รายการ}}"
   },
   "pos": {

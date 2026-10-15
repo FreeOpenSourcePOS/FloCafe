@@ -771,6 +771,8 @@
     "walkInCustomer": "Giriş Müşterisi",
     "whatsappFailed": "WhatsApp gönderimi başarısız",
     "selectOrderPlaceholder": "Ayrıntıları görmek için soldan bir sipariş seçin.",
+    "orderNotInCurrentList": "Bu sipariş artık mevcut listede değil.",
+    "orderMissing": "Bu sipariş artık yok veya kullanılamıyor.",
     "itemCount": "{count, plural, one {1 ürün} other {# ürün}}"
   },
   "pos": {

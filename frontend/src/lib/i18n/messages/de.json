@@ -771,6 +771,8 @@
     "walkInCustomer": "Laufkunde",
     "whatsappFailed": "WhatsApp konnte nicht geöffnet werden",
     "selectOrderPlaceholder": "Wählen Sie links eine Bestellung aus, um Details anzuzeigen.",
+    "orderNotInCurrentList": "Diese Bestellung ist nicht mehr in der aktuellen Liste.",
+    "orderMissing": "Diese Bestellung existiert nicht mehr oder ist nicht verfügbar.",
     "itemCount": "{count, plural, one {1 Artikel} other {# Artikel}}"
   },
   "pos": {

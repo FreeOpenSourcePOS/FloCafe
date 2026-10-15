@@ -771,6 +771,8 @@
     "walkInCustomer": "방문 고객",
     "whatsappFailed": "WhatsApp을 열지 못했습니다",
     "selectOrderPlaceholder": "상세 정보를 보려면 왼쪽에서 주문을 선택하세요.",
+    "orderNotInCurrentList": "이 주문은 더 이상 현재 목록에 없습니다.",
+    "orderMissing": "이 주문은 삭제되었거나 더 이상 사용할 수 없습니다.",
     "itemCount": "{count, plural, other {#개}}"
   },
   "pos": {

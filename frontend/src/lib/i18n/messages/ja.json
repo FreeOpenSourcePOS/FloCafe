@@ -771,6 +771,8 @@
     "walkInCustomer": "ウォークイン顧客",
     "whatsappFailed": "WhatsAppを開けませんでした",
     "selectOrderPlaceholder": "詳細を表示するには、左側の注文を選択してください。",
+    "orderNotInCurrentList": "この注文は現在の一覧に表示されていません。",
+    "orderMissing": "この注文は削除されたか、利用できなくなりました。",
     "itemCount": "{count, plural, other {#点}}"
   },
   "pos": {

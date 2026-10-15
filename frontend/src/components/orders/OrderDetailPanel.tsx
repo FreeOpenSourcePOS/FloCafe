@@ -60,6 +60,8 @@ import {
  * reimplements billing, checkout, cancel or refund behaviour. */
 export interface OrderDetailPanelProps {
   order: Order | null;
+  orderNotInCurrentList?: boolean;
+  orderMissing?: boolean;
   now: number;
   canCancelItems: boolean;
   canEditItems?: boolean;
@@ -902,15 +904,16 @@ function OrderDetailContent({
   );
 }
 
-/** Right pane of the Orders master/detail layout. Renders a placeholder until an
- * order is selected; `order` is null when the selection no longer matches the
- * filtered order list. */
+/** Right pane of the Orders master/detail layout. */
 export function OrderDetailPanel({ onBack, ...props }: OrderDetailPanelProps) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div
+      data-testid="orders-detail-panel"
+      className="flex flex-col flex-1 w-full min-w-0 h-full min-h-0"
+    >
       {onBack && (
         <button
           type="button"
@@ -921,12 +924,19 @@ export function OrderDetailPanel({ onBack, ...props }: OrderDetailPanelProps) {
           {tCommon('back')}
         </button>
       )}
+      {props.order && props.orderNotInCurrentList && (
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-100">
+          {tOrders('orderNotInCurrentList')}
+        </div>
+      )}
       {props.order ? (
         <OrderDetailContent {...props} order={props.order} />
       ) : (
         <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-center p-6 text-muted-foreground bg-card rounded-xl border border-dashed border-border">
           <ClipboardList size={40} className="opacity-40" />
-          <p className="text-sm">{tOrders('selectOrderPlaceholder')}</p>
+          <p className="text-sm">
+            {props.orderMissing ? tOrders('orderMissing') : tOrders('selectOrderPlaceholder')}
+          </p>
         </div>
       )}
     </div>

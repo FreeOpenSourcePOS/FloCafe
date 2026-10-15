@@ -771,6 +771,8 @@
     "walkInCustomer": "مشتری حضوری",
     "whatsappFailed": "باز کردن واتساپ انجام نشد",
     "selectOrderPlaceholder": "برای مشاهده جزئیات، یک سفارش را از سمت چپ انتخاب کنید.",
+    "orderNotInCurrentList": "این سفارش دیگر در فهرست فعلی نیست.",
+    "orderMissing": "این سفارش دیگر وجود ندارد یا در دسترس نیست.",
     "itemCount": "{count, plural, one {۱ کالا} other {# کالا}}"
   },
   "pos": {

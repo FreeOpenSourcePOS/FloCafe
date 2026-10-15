@@ -95,6 +95,269 @@ test.describe('orders master/detail is the default layout', () => {
     await expect(page.getByRole('button', { name: /Checkout|Take Payment/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add Item' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Link Customer' })).toBeVisible();
+    const detailPane = page
+      .getByRole('button', { name: /Checkout|Take Payment/ })
+      .locator('xpath=ancestor::div[contains(@class, "md:flex-1")]');
+    const paneBounds = await detailPane.boundingBox();
+    const panelBounds = await page.getByTestId('orders-detail-panel').boundingBox();
+    expect(paneBounds).not.toBeNull();
+    expect(panelBounds).not.toBeNull();
+    expect(Math.abs(panelBounds!.x - paneBounds!.x)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(panelBounds!.x + panelBounds!.width - (paneBounds!.x + paneBounds!.width)),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  test('keeps a selected order open when a live update removes it from the current view', async ({
+    page,
+  }) => {
+    const order = await createTakeaway(page, 'Live filter selection check');
+    await login(page);
+    await page.goto(`${BASE}/orders`);
+    await page.getByRole('button', { name: 'Unpaid' }).click();
+
+    const masterRow = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(masterRow).toBeVisible();
+    await masterRow.click();
+    await expect(page.getByText('E2E Coffee')).toBeVisible();
+
+    const token = await page.evaluate(() => localStorage.getItem('token'));
+    expect(token).toBeTruthy();
+    const cancelled = await page.request.patch(`${BASE}/api/orders/${order.id}/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { status: 'cancelled' },
+    });
+    expect(cancelled.ok()).toBeTruthy();
+
+    await expect(page.getByText('This order is no longer in the current list.')).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(
+      page.getByTestId('orders-detail-panel').getByText(`#${order.order_number}`),
+    ).toBeVisible();
+
+    await page.getByRole('button', { name: 'Active' }).click();
+    await expect(page.getByText(PLACEHOLDER)).toBeVisible();
+    await expect(page.getByText('E2E Coffee')).toBeHidden();
+
+    await page.getByRole('button', { name: 'All' }).click();
+    const cancelledOrder = page.getByRole('button').filter({ hasText: `#${order.order_number}` });
+    await expect(cancelledOrder).toBeVisible();
+    await cancelledOrder.click();
+    await expect(
+      page.getByTestId('orders-detail-panel').getByText(`#${order.order_number}`),
+    ).toBeVisible();
+    await expect(page.getByText('This order is no longer in the current list.')).toBeHidden();
+  });
+
+  test('ignores an older order search response after a newer filter request completes', async ({
+    page,
+  }) => {
+    const slowOrder = await createTakeaway(page, 'Older filter response fixture');
+    const fastOrder = await createTakeaway(page, 'Newer filter response fixture');
+    await login(page);
+    await page.goto(`${BASE}/orders`);
+
+    let releaseSlowResponse!: () => void;
+    let markSlowRequestStarted!: () => void;
+    const slowResponseGate = new Promise<void>((resolve) => {
+      releaseSlowResponse = resolve;
+    });
+    const slowRequestStarted = new Promise<void>((resolve) => {
+      markSlowRequestStarted = resolve;
+    });
+    await page.route(`${BASE}/api/orders?*`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('search') === slowOrder.order_number) {
+        const response = await route.fetch();
+        markSlowRequestStarted();
+        await slowResponseGate;
+        await route.fulfill({ response });
+        return;
+      }
+      await route.continue();
+    });
+
+    try {
+      const search = page.getByPlaceholder('Search by order number, name, or phone…');
+      await search.fill(slowOrder.order_number);
+      await slowRequestStarted;
+      await search.fill(fastOrder.order_number);
+
+      const fastRow = page.getByRole('button').filter({ hasText: `#${fastOrder.order_number}` });
+      const slowRow = page.getByRole('button').filter({ hasText: `#${slowOrder.order_number}` });
+      await expect(fastRow).toBeVisible();
+      releaseSlowResponse();
+      await expect(slowRow).toBeHidden();
+      await expect(fastRow).toBeVisible();
+    } finally {
+      releaseSlowResponse();
+      await page.unroute(`${BASE}/api/orders?*`);
+    }
+  });
+
+  test('loads older matches inside the master pane without closing the selected detail', async ({
+    page,
+  }) => {
+    const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const orders: Array<{ id: number; order_number: string }> = [];
+    for (let index = 0; index < 16; index += 1) {
+      const response = await page.request.post(`${BASE}/api/orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+          type: 'takeaway',
+          special_instructions: `Orders page fixture ${index}`,
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(response.status()).toBe(201);
+      const { order } = (await response.json()) as { order: { id: number; order_number: string } };
+      orders.push(order);
+    }
+
+    await login(page);
+    await page.goto(`${BASE}/orders`);
+    const selectedRow = page.getByRole('button').filter({ hasText: `#${orders[15].order_number}` });
+    await expect(selectedRow).toBeVisible();
+    await selectedRow.click();
+
+    const masterPane = page.getByTestId('orders-master-pane');
+    await masterPane.getByRole('button', { name: 'Load more' }).click();
+    await expect(
+      page.getByRole('button').filter({ hasText: `#${orders[0].order_number}` }),
+    ).toBeVisible();
+    await expect(page.getByText('E2E Coffee')).toBeVisible();
+  });
+
+  test('Load more restores a displaced selection and ignores its late detail response', async ({
+    page,
+  }) => {
+    const headers = {
+      Authorization: `Bearer ${getE2eToken('e2e-manager', 'manager@flo.local', 'manager')}`,
+    };
+    const orders: Array<{ id: number; order_number: string }> = [];
+    for (let index = 0; index < 15; index += 1) {
+      const response = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          special_instructions: `Live pagination race ${index}`,
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(response.status()).toBe(201);
+      const { order } = (await response.json()) as { order: { id: number; order_number: string } };
+      orders.push(order);
+    }
+
+    const selected = orders[0];
+    await login(page);
+    await page.goto(`${BASE}/orders`);
+    const selectedRow = page.getByRole('button').filter({ hasText: `#${selected.order_number}` });
+    await expect(selectedRow).toBeVisible();
+    await selectedRow.click();
+
+    const detail = page.getByTestId('orders-detail-panel');
+    await expect(detail).toContainText(`#${selected.order_number}`);
+    await expect(detail.getByText('Pending', { exact: true })).toBeVisible();
+
+    let releaseLookup!: () => void;
+    let markLookupStarted!: () => void;
+    let finishLookup!: () => void;
+    const lookupGate = new Promise<void>((resolve) => {
+      releaseLookup = resolve;
+    });
+    const lookupStarted = new Promise<void>((resolve) => {
+      markLookupStarted = resolve;
+    });
+    const lookupFinished = new Promise<void>((resolve) => {
+      finishLookup = resolve;
+    });
+    let heldLookups = 0;
+
+    await page.route('**/api/orders/*', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() !== 'GET' || url.pathname !== `/api/orders/${selected.id}`) {
+        await route.continue();
+        return;
+      }
+
+      try {
+        const response = await route.fetch();
+        const body = (await response.json()) as { order: { status: string } };
+        expect(body.order.status).toBe('pending');
+        heldLookups += 1;
+        markLookupStarted();
+        await lookupGate;
+        await route.fulfill({ response, body: JSON.stringify(body) });
+      } finally {
+        finishLookup();
+      }
+    });
+
+    try {
+      const newOrder = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          special_instructions: 'New order displaces the selected row',
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      expect(newOrder.status()).toBe(201);
+
+      const outsideListNotice = page.getByText('This order is no longer in the current list.');
+      await expect(outsideListNotice).toBeVisible({ timeout: 20000 });
+      await lookupStarted;
+
+      const refreshedPage = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === '/api/orders' &&
+          !url.searchParams.has('before_id')
+        );
+      });
+      const statusResponse = await page.request.patch(`${BASE}/api/orders/${selected.id}/status`, {
+        headers,
+        data: { status: 'preparing' },
+      });
+      expect(statusResponse.ok()).toBeTruthy();
+      await refreshedPage;
+
+      await page
+        .getByTestId('orders-master-pane')
+        .getByRole('button', { name: 'Load more' })
+        .click();
+      await expect(selectedRow).toBeVisible();
+      await expect(detail.getByText('Preparing', { exact: true })).toBeVisible();
+      await expect(outsideListNotice).toBeHidden();
+
+      const lateLookupResponse = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' && url.pathname === `/api/orders/${selected.id}`
+        );
+      });
+      releaseLookup();
+      await lookupFinished;
+      const staleResponse = await lateLookupResponse;
+      await staleResponse.finished();
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      await expect(detail.getByText('Preparing', { exact: true })).toBeVisible();
+      await expect(outsideListNotice).toBeHidden();
+      expect(heldLookups).toBe(1);
+    } finally {
+      releaseLookup();
+      if (heldLookups > 0) await lookupFinished;
+      await page.unroute('**/api/orders/*');
+    }
   });
 
   test('the detail pane carries applied charges and the pre-bill print action', async ({

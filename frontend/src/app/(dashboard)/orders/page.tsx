@@ -65,6 +65,7 @@ import { useOrdersLayoutPreference } from '@/hooks/useOrdersLayout';
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
+const ORDERS_PAGE_SIZE = 15;
 
 const tabLabelKey: Record<FilterType, OrdersKey> = {
   all: 'all',
@@ -179,8 +180,20 @@ export default function OrdersPage() {
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
-  const searchRef = useRef(filters.search);
-  const previousSearchRef = useRef(filters.search);
+  const ordersFiltersRef = useRef(filters);
+  ordersFiltersRef.current = filters;
+  const tabFilterRef = useRef(tabFilter);
+  tabFilterRef.current = tabFilter;
+  const ordersFilterKey = JSON.stringify([
+    tabFilter,
+    filters.search,
+    filters.table,
+    filters.type,
+    filters.status,
+  ]);
+  const ordersFilterKeyRef = useRef(ordersFilterKey);
+  ordersFilterKeyRef.current = ordersFilterKey;
+  const previousOrdersFilterKeyRef = useRef(ordersFilterKey);
   const ordersFetchIdRef = useRef(0);
   const ordersRefreshInProgressRef = useRef(false);
   const ordersLoadMoreInProgressRef = useRef(false);
@@ -286,9 +299,14 @@ export default function OrdersPage() {
       : (discountModal?.value ?? 0);
   const fmt = useFormatCurrency();
   const { layout: ordersLayout } = useOrdersLayoutPreference();
-  // Selected order id survives refetches; it resolves against the filtered list
-  // so a selection that disappears degrades to the placeholder instead of throwing.
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const selectedOrderIdRef = useRef<number | null>(selectedOrderId);
+  selectedOrderIdRef.current = selectedOrderId;
+  const [selectedOrderSnapshot, setSelectedOrderSnapshot] = useState<Order | null>(null);
+  const [selectedOrderNotInCurrentList, setSelectedOrderNotInCurrentList] = useState(false);
+  const [selectedOrderMissing, setSelectedOrderMissing] = useState(false);
+  const selectedOrderLookupIdRef = useRef(0);
+  const selectedOrderLookupInProgressRef = useRef<number | null>(null);
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canEditItems = tenantCan(currentTenant, 'orders.item.edit');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
@@ -328,6 +346,46 @@ export default function OrdersPage() {
     }
   };
 
+  const refreshSelectedOrder = (orderId: number) => {
+    if (selectedOrderLookupInProgressRef.current === orderId) return;
+    const lookupId = ++selectedOrderLookupIdRef.current;
+    const lookupFilterKey = ordersFilterKeyRef.current;
+    selectedOrderLookupInProgressRef.current = orderId;
+    api
+      .get(`/orders/${orderId}`)
+      .then(({ data }) => {
+        if (
+          lookupId !== selectedOrderLookupIdRef.current ||
+          selectedOrderIdRef.current !== orderId ||
+          ordersFilterKeyRef.current !== lookupFilterKey
+        )
+          return;
+        selectedOrderLookupIdRef.current++;
+        selectedOrderLookupInProgressRef.current = null;
+        setSelectedOrderSnapshot(data.order || null);
+        setSelectedOrderMissing(!data.order);
+        setSelectedOrderNotInCurrentList(!!data.order);
+      })
+      .catch((error) => {
+        if (
+          lookupId !== selectedOrderLookupIdRef.current ||
+          selectedOrderIdRef.current !== orderId ||
+          ordersFilterKeyRef.current !== lookupFilterKey
+        )
+          return;
+        if ((error as { response?: { status?: number } })?.response?.status === 404) {
+          setSelectedOrderSnapshot(null);
+          setSelectedOrderMissing(true);
+          setSelectedOrderNotInCurrentList(false);
+        }
+      })
+      .finally(() => {
+        if (selectedOrderLookupIdRef.current === lookupId) {
+          selectedOrderLookupInProgressRef.current = null;
+        }
+      });
+  };
+
   const fetchOrders = async (
     cursor?: number,
     {
@@ -335,6 +393,7 @@ export default function OrdersPage() {
       refreshLoadedPages = false,
     }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
   ): Promise<boolean> => {
+    if (tabFilterRef.current === 'held') return true;
     if (
       cursor === undefined &&
       (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)
@@ -369,6 +428,7 @@ export default function OrdersPage() {
       ordersRefreshPendingRef.current = false;
     }
     const fetchId = ++ordersFetchIdRef.current;
+    const requestFilterKey = ordersFilterKeyRef.current;
     setLoadingMoreOrders(true);
     if (cursor === undefined) {
       ordersRefreshInProgressRef.current = true;
@@ -376,19 +436,31 @@ export default function OrdersPage() {
       ordersLoadMoreInProgressRef.current = true;
     }
     try {
-      const search = searchRef.current.trim();
+      const currentFilters = ordersFiltersRef.current;
+      const search = currentFilters.search.trim();
+      const requestParams = {
+        per_page: ORDERS_PAGE_SIZE,
+        view: tabFilterRef.current,
+        ...(search ? { search } : {}),
+        ...(currentFilters.table ? { table_id: currentFilters.table } : {}),
+        ...(currentFilters.type ? { type: currentFilters.type } : {}),
+        ...(currentFilters.status ? { status: currentFilters.status } : {}),
+      };
       const orders: Order[] = [];
       let nextCursor: number | null = null;
       if (refreshLoadedPages) {
         const refreshed = await fetchLoadedOrderPages(async (pageCursor) => {
           const { data } = await api.get('/orders', {
             params: {
-              per_page: 50,
-              ...(search ? { search } : {}),
+              ...requestParams,
               ...(pageCursor !== undefined ? { before_id: pageCursor } : {}),
             },
           });
-          if (fetchId !== ordersFetchIdRef.current) return { orders: [], nextCursor: null };
+          if (
+            fetchId !== ordersFetchIdRef.current ||
+            requestFilterKey !== ordersFilterKeyRef.current
+          )
+            return { orders: [], nextCursor: null };
           return { orders: (data.orders || []) as Order[], nextCursor: data.nextCursor ?? null };
         }, loadedOrdersPageCountRef.current);
         orders.push(...refreshed.orders);
@@ -396,20 +468,39 @@ export default function OrdersPage() {
       } else {
         const { data } = await api.get('/orders', {
           params: {
-            per_page: 50,
-            ...(search ? { search } : {}),
+            ...requestParams,
             ...(cursor !== undefined ? { before_id: cursor } : {}),
           },
         });
-        if (fetchId !== ordersFetchIdRef.current) return true;
+        if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
+          return true;
         orders.push(...(data.orders || []));
         nextCursor = data.nextCursor ?? null;
       }
-      if (fetchId !== ordersFetchIdRef.current) return true;
+      if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
+        return true;
+      const selectedId = selectedOrderIdRef.current;
+      if (selectedId !== null) {
+        const refreshedSelection = orders.find((order) => order.id === selectedId);
+        if (refreshedSelection) {
+          selectedOrderLookupIdRef.current++;
+          selectedOrderLookupInProgressRef.current = null;
+          setSelectedOrderSnapshot(refreshedSelection);
+          setSelectedOrderNotInCurrentList(false);
+          setSelectedOrderMissing(false);
+        } else if (
+          cursor === undefined &&
+          (refreshLoadedPages || !hasLoadedOlderOrdersRef.current)
+        ) {
+          setSelectedOrderNotInCurrentList(true);
+          setSelectedOrderMissing(false);
+          refreshSelectedOrder(selectedId);
+        }
+      }
       if (refreshLoadedPages) {
         setOrders(orders);
-        loadedOrdersPageCountRef.current = Math.max(1, Math.ceil(orders.length / 50));
-        hasLoadedOlderOrdersRef.current = orders.length > 50;
+        loadedOrdersPageCountRef.current = Math.max(1, Math.ceil(orders.length / ORDERS_PAGE_SIZE));
+        hasLoadedOlderOrdersRef.current = orders.length > ORDERS_PAGE_SIZE;
         setNextOrdersCursor(nextCursor);
       } else if (cursor === undefined) {
         if (hasLoadedOlderOrdersRef.current) {
@@ -440,10 +531,11 @@ export default function OrdersPage() {
       });
       return true;
     } catch {
-      if (fetchId === ordersFetchIdRef.current) toast.error(tOrders('loadOrdersFailed'));
+      if (fetchId === ordersFetchIdRef.current && requestFilterKey === ordersFilterKeyRef.current)
+        toast.error(tOrders('loadOrdersFailed'));
       return false;
     } finally {
-      if (fetchId === ordersFetchIdRef.current) {
+      if (fetchId === ordersFetchIdRef.current && requestFilterKey === ordersFilterKeyRef.current) {
         if (cursor === undefined) {
           ordersRefreshInProgressRef.current = false;
           setLoading(false);
@@ -465,9 +557,8 @@ export default function OrdersPage() {
   };
 
   useEffect(() => {
-    searchRef.current = filters.search;
-    if (previousSearchRef.current === filters.search) return;
-    previousSearchRef.current = filters.search;
+    if (previousOrdersFilterKeyRef.current === ordersFilterKey) return;
+    previousOrdersFilterKeyRef.current = ordersFilterKey;
     ordersFetchIdRef.current++;
     ordersRefreshInProgressRef.current = false;
     ordersLoadMoreInProgressRef.current = false;
@@ -475,14 +566,22 @@ export default function OrdersPage() {
     ordersRefreshLoadedPagesPendingRef.current = false;
     hasLoadedOlderOrdersRef.current = false;
     loadedOrdersPageCountRef.current = 1;
+    selectedOrderIdRef.current = null;
+    selectedOrderLookupIdRef.current++;
+    selectedOrderLookupInProgressRef.current = null;
+    setSelectedOrderId(null);
+    setSelectedOrderSnapshot(null);
+    setSelectedOrderNotInCurrentList(false);
+    setSelectedOrderMissing(false);
     setOrders([]);
     setNextOrdersCursor(null);
-    setLoading(true);
+    setLoading(tabFilter !== 'held');
     setLoadingMoreOrders(false);
-    const timeout = setTimeout(() => fetchOrders(undefined, { rateLimitedRefresh: true }), 300);
+    if (tabFilter === 'held') return;
+    const timeout = setTimeout(() => fetchOrders(), 300);
     return () => clearTimeout(timeout);
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search]);
+  }, [ordersFilterKey]);
 
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
@@ -696,13 +795,6 @@ export default function OrdersPage() {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
-  const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | null => {
-    if (order.status === 'cancelled') return null;
-    if (order.bill?.payment_status === 'paid') return 'paid';
-    if (order.bill?.payment_status === 'partial') return 'partial';
-    return 'unpaid';
-  };
-
   const handleCreateNewOrderForCustomer = async (order: Order) => {
     if (!order.customer) return;
 
@@ -765,50 +857,32 @@ export default function OrdersPage() {
     }
   };
 
-  // Completed prepaid orders remain active while unserved kitchen items exist (when KDS enabled).
-  const isOrderActive = (order: Order) => {
-    if (order.status === 'cancelled') return false;
-    if (order.status === 'completed') {
-      return (
-        kdsEnabled === true &&
-        (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status))
-      );
-    }
-    return true;
-  };
-
-  const filteredOrders = orders.filter((order) => {
-    // Tab filter
-    if (tabFilter === 'active' && !isOrderActive(order)) return false;
-    // Filter unpaid orders using resolved payment status since bills are generated at checkout.
-    if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || ''))
-      return false;
-
-    // Filter by table
-    if (filters.table && String(order.table_id) !== filters.table) {
-      return false;
-    }
-    // Filter by type
-    if (filters.type && order.type !== filters.type) {
-      return false;
-    }
-    // Filter by status
-    if (filters.status === 'active' && !isOrderActive(order)) {
-      return false;
-    }
-    if (filters.status === 'completed' && order.status !== 'completed') {
-      return false;
-    }
-    if (filters.status === 'cancelled' && order.status !== 'cancelled') {
-      return false;
-    }
-    return true;
-  });
-
   const selectedOrder =
     selectedOrderId == null
       ? undefined
-      : filteredOrders.find((order) => order.id === selectedOrderId);
+      : selectedOrderSnapshot?.id === selectedOrderId
+        ? selectedOrderSnapshot
+        : undefined;
+
+  const handleSelectOrder = (orderId: number) => {
+    selectedOrderLookupIdRef.current++;
+    selectedOrderLookupInProgressRef.current = null;
+    selectedOrderIdRef.current = orderId;
+    setSelectedOrderId(orderId);
+    setSelectedOrderSnapshot(orders.find((order) => order.id === orderId) ?? null);
+    setSelectedOrderNotInCurrentList(false);
+    setSelectedOrderMissing(false);
+  };
+
+  const handleBackFromOrder = () => {
+    selectedOrderLookupIdRef.current++;
+    selectedOrderLookupInProgressRef.current = null;
+    selectedOrderIdRef.current = null;
+    setSelectedOrderId(null);
+    setSelectedOrderSnapshot(null);
+    setSelectedOrderNotInCurrentList(false);
+    setSelectedOrderMissing(false);
+  };
 
   const handleCheckout = async (orderId: number) => {
     setGeneratingBill(orderId);
@@ -1414,6 +1488,19 @@ export default function OrdersPage() {
     }
   };
 
+  const renderLoadMoreButton = (cursor: number) => (
+    <div className="shrink-0 text-center py-3 border-t border-border">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => fetchOrders(cursor)}
+        disabled={loadingMoreOrders}
+      >
+        {loadingMoreOrders ? <Loader2 size={14} className="animate-spin" /> : tCommon('loadMore')}
+      </Button>
+    </div>
+  );
+
   // Every layout anchors its content to the page height so the title, status
   // tabs and filters stay on screen while the order content scrolls below them.
   return (
@@ -1602,7 +1689,7 @@ export default function OrdersPage() {
         <div className="flex items-center justify-center py-24">
           <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : filteredOrders.length === 0 ? (
+      ) : orders.length === 0 && !(ordersLayout === 'split' && selectedOrderId !== null) ? (
         <div className="flex items-center justify-center py-24 text-gray-400">
           <p>{tOrders('empty')}</p>
         </div>
@@ -1610,26 +1697,39 @@ export default function OrdersPage() {
         <div className="flex-1 min-h-0 flex gap-4">
           {/* Master pane — a fixed reading column on desktop, full width below md. */}
           <div
+            data-testid="orders-master-pane"
             className={cn(
-              selectedOrder ? 'hidden md:flex' : 'flex',
+              selectedOrderId !== null ? 'hidden md:flex' : 'flex',
               'w-full md:w-[360px] lg:w-[400px] xl:w-[440px] min-w-0 flex-col rounded-xl border border-border bg-card overflow-hidden',
             )}
           >
-            <OrdersMasterList
-              orders={filteredOrders}
-              selectedOrderId={selectedOrderId}
-              onSelect={setSelectedOrderId}
-              now={now}
-            />
+            {orders.length > 0 ? (
+              <OrdersMasterList
+                orders={orders}
+                selectedOrderId={selectedOrderId}
+                onSelect={handleSelectOrder}
+                now={now}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-4 text-sm text-gray-400">
+                {tOrders('empty')}
+              </div>
+            )}
+            {!loading && nextOrdersCursor !== null && renderLoadMoreButton(nextOrdersCursor)}
           </div>
 
           {/* Detail pane — fills the remaining row width on desktop, full width with back nav below md. */}
           <div
-            className={cn(selectedOrder ? 'flex' : 'hidden md:flex', 'w-full md:flex-1 min-w-0')}
+            className={cn(
+              selectedOrderId !== null ? 'flex' : 'hidden md:flex',
+              'w-full md:flex-1 min-w-0',
+            )}
           >
             <OrderDetailPanel
               order={selectedOrder ?? null}
-              onBack={() => setSelectedOrderId(null)}
+              onBack={handleBackFromOrder}
+              orderNotInCurrentList={selectedOrderNotInCurrentList}
+              orderMissing={selectedOrderMissing}
               now={now}
               canCancelItems={canCancelItems}
               canEditItems={canEditItems}
@@ -1695,7 +1795,7 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
-          {filteredOrders.map((order) => (
+          {orders.map((order) => (
             <OrderCard
               key={order.id}
               order={order}
@@ -1760,22 +1860,11 @@ export default function OrdersPage() {
           ))}
         </div>
       )}
-      {tabFilter !== 'held' && !loading && nextOrdersCursor !== null && (
-        <div className="shrink-0 text-center py-3 border-t border-border">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchOrders(nextOrdersCursor)}
-            disabled={loadingMoreOrders}
-          >
-            {loadingMoreOrders ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              tCommon('loadMore')
-            )}
-          </Button>
-        </div>
-      )}
+      {tabFilter !== 'held' &&
+        ordersLayout !== 'split' &&
+        !loading &&
+        nextOrdersCursor !== null &&
+        renderLoadMoreButton(nextOrdersCursor)}
 
       {/* Payment Modal */}
       {paymentBill && (

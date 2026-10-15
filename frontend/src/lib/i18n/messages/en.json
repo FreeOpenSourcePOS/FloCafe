@@ -771,6 +771,8 @@
     "walkInCustomer": "Walk-in Customer",
     "whatsappFailed": "Failed to open WhatsApp",
     "selectOrderPlaceholder": "Select an order on the left to view details.",
+    "orderNotInCurrentList": "This order is no longer in the current list.",
+    "orderMissing": "This order no longer exists or is unavailable.",
     "itemCount": "{count, plural, one {1 item} other {# items}}"
   },
   "pos": {

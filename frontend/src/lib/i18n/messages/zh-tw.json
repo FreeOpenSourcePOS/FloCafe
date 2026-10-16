@@ -1129,7 +1129,6 @@
     "createWithPhone": "使用電話建立客戶: {phone}",
     "createWithName": "建立名為 {name} 的客戶",
     "splitItemsIntoChecks": "將商品拆分為多張帳單",
-    "splitCheckAvailabilityLoading": "正在檢查拆單可用性...",
     "splitCheckAvailabilityFailed": "無法檢查拆單可用性。",
     "splitCheckPermissionRequired": "您沒有拆單權限。",
     "splitCheckResolvePaymentFirst": "拆分前請先完成或結清目前付款。",

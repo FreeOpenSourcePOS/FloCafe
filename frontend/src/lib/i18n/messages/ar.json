@@ -1129,7 +1129,6 @@
     "createWithPhone": "إنشاء عميل برقم الهاتف: {phone}",
     "createWithName": "إنشاء عميل باسم: {name}",
     "splitItemsIntoChecks": "تقسيم الأصناف إلى طلبات دفع",
-    "splitCheckAvailabilityLoading": "جارٍ التحقق من توفر تقسيم طلبات الدفع...",
     "splitCheckAvailabilityFailed": "تعذّر التحقق من توفر تقسيم طلبات الدفع.",
     "splitCheckPermissionRequired": "ليست لديك صلاحية تقسيم طلبات الدفع.",
     "splitCheckResolvePaymentFirst": "أنهِ الدفع الحالي أو احسمه قبل التقسيم.",

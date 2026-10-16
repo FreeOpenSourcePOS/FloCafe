@@ -310,6 +310,12 @@ export default function CartPanel({
                         name: tables.find((t) => t.id === cart.tableId)?.name || cart.tableId,
                       })
                     : t('selectTable')}
+                  <span
+                    aria-hidden="true"
+                    className="hidden sm:inline-flex ms-1 px-1 py-0.2 rounded border border-current text-[10px] font-mono opacity-80"
+                  >
+                    F2
+                  </span>
                 </button>
               )}
             <div className="flex flex-1 min-w-[160px] items-center justify-between rounded-lg border border-border bg-card px-3 py-2">

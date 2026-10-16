@@ -1129,7 +1129,6 @@
     "createWithPhone": "Create customer with phone: {phone}",
     "createWithName": "Create customer named: {name}",
     "splitItemsIntoChecks": "Split items into checks",
-    "splitCheckAvailabilityLoading": "Checking split-check availability...",
     "splitCheckAvailabilityFailed": "Could not check split-check availability.",
     "splitCheckPermissionRequired": "You do not have permission to split checks.",
     "splitCheckResolvePaymentFirst": "Finish or resolve the current payment before splitting.",

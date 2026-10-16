@@ -1129,7 +1129,6 @@
     "createWithPhone": "फ़ोन के साथ ग्राहक बनाएं: {phone}",
     "createWithName": "नाम का ग्राहक बनाएं: {name}",
     "splitItemsIntoChecks": "आइटम को कई बिलों में बाँटें",
-    "splitCheckAvailabilityLoading": "बिल विभाजन की उपलब्धता जाँची जा रही है...",
     "splitCheckAvailabilityFailed": "बिल विभाजन की उपलब्धता जाँची नहीं जा सकी।",
     "splitCheckPermissionRequired": "आपको बिल बाँटने की अनुमति नहीं है।",
     "splitCheckResolvePaymentFirst": "बाँटने से पहले वर्तमान भुगतान पूरा या हल करें।",

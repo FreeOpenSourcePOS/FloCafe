@@ -1129,7 +1129,6 @@
     "createWithPhone": "Kunde mit Telefonnummer erstellen: {phone}",
     "createWithName": "Kunde mit Namen erstellen: {name}",
     "splitItemsIntoChecks": "Artikel auf Rechnungen aufteilen",
-    "splitCheckAvailabilityLoading": "Verfügbarkeit des Rechnungssplittings wird geprüft...",
     "splitCheckAvailabilityFailed": "Verfügbarkeit des Rechnungssplittings konnte nicht geprüft werden.",
     "splitCheckPermissionRequired": "Sie haben keine Berechtigung, Rechnungen aufzuteilen.",
     "splitCheckResolvePaymentFirst": "Beenden oder klären Sie die laufende Zahlung, bevor Sie aufteilen.",

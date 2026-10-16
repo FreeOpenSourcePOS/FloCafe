@@ -1129,7 +1129,6 @@
     "createWithPhone": "Crea cliente con telefono: {phone}",
     "createWithName": "Crea cliente con nome: {name}",
     "splitItemsIntoChecks": "Suddividi gli articoli in più conti",
-    "splitCheckAvailabilityLoading": "Verifica della disponibilità della suddivisione del conto...",
     "splitCheckAvailabilityFailed": "Impossibile verificare la disponibilità della suddivisione del conto.",
     "splitCheckPermissionRequired": "Non hai il permesso di suddividere i conti.",
     "splitCheckResolvePaymentFirst": "Completa o risolvi il pagamento corrente prima di suddividere.",

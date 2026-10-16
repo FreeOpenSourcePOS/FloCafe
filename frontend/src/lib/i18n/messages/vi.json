@@ -1129,7 +1129,6 @@
     "createWithPhone": "Tạo khách hàng với số điện thoại: {phone}",
     "createWithName": "Tạo khách hàng có tên: {name}",
     "splitItemsIntoChecks": "Chia món thành nhiều hóa đơn",
-    "splitCheckAvailabilityLoading": "Đang kiểm tra khả năng chia hóa đơn...",
     "splitCheckAvailabilityFailed": "Không kiểm tra được khả năng chia hóa đơn.",
     "splitCheckPermissionRequired": "Bạn không có quyền chia hóa đơn.",
     "splitCheckResolvePaymentFirst": "Hoàn tất hoặc giải quyết khoản thanh toán hiện tại trước khi chia.",

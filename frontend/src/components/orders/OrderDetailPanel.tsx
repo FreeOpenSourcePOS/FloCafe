@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -105,7 +105,6 @@ export interface OrderDetailPanelProps {
   onDeleteItem?: (orderId: number, itemId: number) => void;
   onVoidItem?: (orderId: number, itemId: number, productName: string) => void;
   onRestoreItem?: (orderId: number, itemId: number) => void;
-  onPendingItemEditIdsChanged?: (itemIds: number[]) => void;
   onItemEditResolved?: (orderId: number) => Promise<boolean> | void;
 }
 
@@ -149,7 +148,6 @@ function OrderDetailContent({
   onDeleteItem,
   onVoidItem,
   onRestoreItem,
-  onPendingItemEditIdsChanged,
   onItemEditResolved,
 }: OrderDetailPanelProps & { order: Order }) {
   const tOrders = useTranslations('orders');
@@ -164,18 +162,6 @@ function OrderDetailContent({
   const [showVoidedItems, setShowVoidedItems] = useState(false);
   const [showPrintActivity, setShowPrintActivity] = useState(false);
   const [pendingResolveIds, setPendingResolveIds] = useState<number[]>([]);
-  const handlePendingIdsChanged = useCallback(
-    (itemIds: number[]) => {
-      setPendingResolveIds((prev) => {
-        if (prev.length === itemIds.length && prev.every((id, idx) => id === itemIds[idx])) {
-          return prev;
-        }
-        return itemIds;
-      });
-      onPendingItemEditIdsChanged?.(itemIds);
-    },
-    [onPendingItemEditIdsChanged],
-  );
   const itemEditBlocked = (itemId: number) => pendingResolveIds.includes(itemId);
 
   const activeItems = (order.items || []).filter((i) => !isTerminalItemStatus(i.status));
@@ -569,10 +555,11 @@ function OrderDetailContent({
         <div className="px-4 py-3 space-y-2">
           <PendingOrderItemEdits
             orderId={order.id}
+            items={order.items}
             // Recovery is permission- and identity-gated; a paid or terminal order
             // still allows the same-key replay to be resolved.
             canEditItems={canEditItems}
-            onPendingItemsChanged={handlePendingIdsChanged}
+            onPendingItemsChanged={setPendingResolveIds}
             onItemEditResolved={onItemEditResolved}
           />
           {activeItems.map((item: OrderItem) => {

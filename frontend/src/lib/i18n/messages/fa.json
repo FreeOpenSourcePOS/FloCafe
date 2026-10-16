@@ -1129,7 +1129,6 @@
     "createWithPhone": "ایجاد مشتری با شماره تلفن: {phone}",
     "createWithName": "ایجاد مشتری با نام: {name}",
     "splitItemsIntoChecks": "تقسیم کالاها به چند صورتحساب",
-    "splitCheckAvailabilityLoading": "در حال بررسی دسترس‌پذیری تقسیم صورتحساب...",
     "splitCheckAvailabilityFailed": "دسترس‌پذیری تقسیم صورتحساب بررسی نشد.",
     "splitCheckPermissionRequired": "مجوز تقسیم صورتحساب را ندارید.",
     "splitCheckResolvePaymentFirst": "پیش از تقسیم، پرداخت جاری را کامل یا مشخص کنید.",

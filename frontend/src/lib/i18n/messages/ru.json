@@ -1129,7 +1129,6 @@
     "createWithPhone": "Создать клиента с телефоном: {phone}",
     "createWithName": "Создать клиента с именем: {name}",
     "splitItemsIntoChecks": "Разделить позиции на несколько счетов",
-    "splitCheckAvailabilityLoading": "Проверка доступности разделения счета...",
     "splitCheckAvailabilityFailed": "Не удалось проверить доступность разделения счета.",
     "splitCheckPermissionRequired": "У вас нет разрешения на разделение счетов.",
     "splitCheckResolvePaymentFirst": "Завершите или уточните результат текущей оплаты перед разделением.",

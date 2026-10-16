@@ -1129,7 +1129,6 @@
     "createWithPhone": "電話番号で顧客を作成: {phone}",
     "createWithName": "名前で顧客を作成: {name}",
     "splitItemsIntoChecks": "商品を複数の伝票に分ける",
-    "splitCheckAvailabilityLoading": "伝票分割の利用可否を確認しています...",
     "splitCheckAvailabilityFailed": "伝票分割の利用可否を確認できませんでした。",
     "splitCheckPermissionRequired": "伝票を分割する権限がありません。",
     "splitCheckResolvePaymentFirst": "分割する前に、現在の支払いを完了または解決してください。",

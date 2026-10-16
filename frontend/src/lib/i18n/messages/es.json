@@ -1129,7 +1129,6 @@
     "createWithPhone": "Crear cliente con teléfono: {phone}",
     "createWithName": "Crear cliente llamado: {name}",
     "splitItemsIntoChecks": "Dividir ítems en cuentas",
-    "splitCheckAvailabilityLoading": "Verificando disponibilidad de división de cuenta...",
     "splitCheckAvailabilityFailed": "No se pudo verificar la disponibilidad de división de cuenta.",
     "splitCheckPermissionRequired": "No tiene permiso para dividir cuentas.",
     "splitCheckResolvePaymentFirst": "Termine o resuelva el pago actual antes de dividir.",

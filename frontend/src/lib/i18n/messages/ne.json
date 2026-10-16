@@ -1129,7 +1129,6 @@
     "createWithPhone": "फोनबाट नयाँ ग्राहक बनाउनुहोस्: {phone}",
     "createWithName": "नामको नयाँ ग्राहक बनाउनुहोस्: {name}",
     "splitItemsIntoChecks": "वस्तुहरू धेरै बिलमा विभाजन गर्नुहोस्",
-    "splitCheckAvailabilityLoading": "बिल विभाजनको उपलब्धता जाँचिँदैछ...",
     "splitCheckAvailabilityFailed": "बिल विभाजनको उपलब्धता जाँच गर्न सकिएन।",
     "splitCheckPermissionRequired": "तपाईंसँग बिल विभाजनको अनुमति छैन।",
     "splitCheckResolvePaymentFirst": "विभाजन गर्नुअघि चालु भुक्तानी पूरा वा समाधान गर्नुहोस्।",

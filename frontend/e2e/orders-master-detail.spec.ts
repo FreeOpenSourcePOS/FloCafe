@@ -1221,6 +1221,8 @@ test.describe('owner live order item edit and superseded cancellation handling',
       await expect(rejectionNotice).toContainText('edit version conflict');
       const refreshWarning = page.getByTestId('pending-item-edit-refresh-failed');
       await expect(refreshWarning).toBeVisible();
+      await expect(refreshWarning).toHaveText(/Failed to load order/);
+      await expect(refreshWarning).not.toContainText('confirmed');
 
       const remainingAttempts = await page.evaluate(() => {
         const storage = window.localStorage;
@@ -1585,6 +1587,9 @@ test.describe('owner live order item edit and superseded cancellation handling',
 
     const resolveBtn = page.getByRole('button', { name: 'Resolve pending edit' }).first();
     await expect(resolveBtn).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('pending-order-item-edits').first()).toContainText(
+      'Pending item edit (E2E Coffee)',
+    );
 
     // Mock GET order refresh to fail
     let failGet = true;
@@ -1600,6 +1605,7 @@ test.describe('owner live order item edit and superseded cancellation handling',
     // The refresh warning and retry button appear
     const refreshWarning = page.getByTestId('pending-item-edit-refresh-failed');
     await expect(refreshWarning).toBeVisible({ timeout: 15000 });
+    await expect(refreshWarning).toContainText('The edit was confirmed');
     const retryBtn = page.getByTestId('retry-refresh-button');
     await expect(retryBtn).toBeVisible();
 

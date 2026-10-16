@@ -1129,7 +1129,6 @@
     "createWithPhone": "فون کے ساتھ گاہک بنائیں: {phone}",
     "createWithName": "نام کا گاہک بنائیں: {name}",
     "splitItemsIntoChecks": "آئٹمز کو کئی بلز میں تقسیم کریں",
-    "splitCheckAvailabilityLoading": "بل کی تقسیم کی دستیابی چیک ہو رہی ہے...",
     "splitCheckAvailabilityFailed": "بل کی تقسیم کی دستیابی چیک نہیں ہو سکی۔",
     "splitCheckPermissionRequired": "آپ کو بل تقسیم کرنے کی اجازت نہیں۔",
     "splitCheckResolvePaymentFirst": "تقسیم کرنے سے پہلے موجودہ ادائیگی مکمل یا حل کریں۔",

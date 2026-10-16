@@ -1129,7 +1129,6 @@
     "createWithPhone": "Buat pelanggan dengan telepon: {phone}",
     "createWithName": "Buat pelanggan bernama: {name}",
     "splitItemsIntoChecks": "Bagi item menjadi beberapa tagihan",
-    "splitCheckAvailabilityLoading": "Memeriksa ketersediaan pembagian tagihan...",
     "splitCheckAvailabilityFailed": "Ketersediaan pembagian tagihan tidak dapat diperiksa.",
     "splitCheckPermissionRequired": "Anda tidak memiliki izin untuk membagi tagihan.",
     "splitCheckResolvePaymentFirst": "Selesaikan atau tuntaskan pembayaran berjalan sebelum membagi.",

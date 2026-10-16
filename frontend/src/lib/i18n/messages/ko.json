@@ -1129,7 +1129,6 @@
     "createWithPhone": "전화번호로 고객 생성: {phone}",
     "createWithName": "이름으로 고객 생성: {name}",
     "splitItemsIntoChecks": "상품을 여러 계산서로 나누기",
-    "splitCheckAvailabilityLoading": "계산서 분할 가능 여부 확인 중...",
     "splitCheckAvailabilityFailed": "계산서 분할 가능 여부를 확인하지 못했습니다.",
     "splitCheckPermissionRequired": "계산서를 분할할 권한이 없습니다.",
     "splitCheckResolvePaymentFirst": "분할하기 전에 현재 결제를 완료하거나 확인하세요.",

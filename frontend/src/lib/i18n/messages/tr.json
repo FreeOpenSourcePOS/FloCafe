@@ -1129,7 +1129,6 @@
     "createWithPhone": "Telefon ile müşteri oluştur: {phone}",
     "createWithName": "İsim ile müşteri oluştur: {name}",
     "splitItemsIntoChecks": "Ürünleri birden fazla hesaba böl",
-    "splitCheckAvailabilityLoading": "Hesap bölme uygunluğu kontrol ediliyor...",
     "splitCheckAvailabilityFailed": "Hesap bölme uygunluğu kontrol edilemedi.",
     "splitCheckPermissionRequired": "Hesap bölme izniniz yok.",
     "splitCheckResolvePaymentFirst": "Bölmeden önce mevcut ödemeyi tamamlayın veya netleştirin.",

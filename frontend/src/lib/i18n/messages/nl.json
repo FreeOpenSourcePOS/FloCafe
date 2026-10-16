@@ -1129,7 +1129,6 @@
     "createWithPhone": "Klant aanmaken met telefoon: {phone}",
     "createWithName": "Klant aanmaken met naam: {name}",
     "splitItemsIntoChecks": "Artikelen verdelen over rekeningen",
-    "splitCheckAvailabilityLoading": "Beschikbaarheid van rekeningverdeling controleren...",
     "splitCheckAvailabilityFailed": "Beschikbaarheid van rekeningverdeling kon niet worden gecontroleerd.",
     "splitCheckPermissionRequired": "Je hebt geen toestemming om rekeningen te verdelen.",
     "splitCheckResolvePaymentFirst": "Voltooi of regel de lopende betaling voordat je verdeelt.",

@@ -18,10 +18,12 @@ import {
 } from '@/lib/order-item-edit-attempt';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
-import type { Order } from '@/lib/types';
+import type { Order, OrderItem } from '@/lib/types';
 
 interface Props {
   orderId: number;
+  /** Order lines (including superseded ones) used to name the pending item. */
+  items?: OrderItem[];
   /** Same orders.item.edit gate the edit modal and inline edit controls use. */
   canEditItems: boolean;
   /** Called with item IDs that must show no competing edit control while unresolved. */
@@ -46,11 +48,13 @@ type InlineIssue = { messageKey: InlineIssueKey; message?: string } | null;
  */
 export default function PendingOrderItemEdits({
   orderId,
+  items,
   canEditItems,
   onPendingItemsChanged,
   onItemEditResolved,
 }: Props) {
   const tOrders = useTranslations('orders');
+  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tSettings = useTranslations('settings');
   const { user, currentTenant } = useAuthStore();
@@ -67,15 +71,19 @@ export default function PendingOrderItemEdits({
     }
   };
 
-  const [attempts, setAttempts] = useState<OrderItemEditAttemptSnapshot[]>(
-    () => scanInitial().attempts,
-  );
-  const [hasUnreadableRecords, setHasUnreadableRecords] = useState(() => scanInitial().unreadable);
+  const [initialScan] = useState(scanInitial);
+  const [attempts, setAttempts] = useState<OrderItemEditAttemptSnapshot[]>(initialScan.attempts);
+  const [hasUnreadableRecords, setHasUnreadableRecords] = useState(initialScan.unreadable);
   const [resolvingItemId, setResolvingItemId] = useState<number | null>(null);
   const [issues, setIssues] = useState<Record<number, InlineIssue>>({});
-  const [refreshErrors, setRefreshErrors] = useState<Record<number, number>>({});
+  const [refreshErrors, setRefreshErrors] = useState<
+    Record<number, { orderId: number; confirmed: boolean }>
+  >({});
   const [rejectionNotices, setRejectionNotices] = useState<Record<number, string>>({});
   const [storageErrors, setStorageErrors] = useState<Record<number, boolean>>({});
+
+  const itemLabel = (itemId: number) =>
+    items?.find((item) => item.id === itemId)?.product_name ?? `#${itemId}`;
 
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
@@ -146,7 +154,7 @@ export default function PendingOrderItemEdits({
     };
   }, []);
 
-  const retryRefresh = async (itemId: number, targetOrderId: number) => {
+  const retryRefresh = async (itemId: number, targetOrderId: number, confirmed: boolean) => {
     if (!onItemEditResolved) return;
     let refreshed = false;
     try {
@@ -159,7 +167,7 @@ export default function PendingOrderItemEdits({
     setRefreshErrors((prev) => {
       const next = { ...prev };
       if (refreshed) delete next[itemId];
-      else next[itemId] = targetOrderId;
+      else next[itemId] = { orderId: targetOrderId, confirmed };
       return next;
     });
   };
@@ -270,7 +278,7 @@ export default function PendingOrderItemEdits({
           attempt.idempotencyKey,
         );
         outcomeHandled = true;
-        await retryRefresh(attempt.itemId, attempt.orderId);
+        await retryRefresh(attempt.itemId, attempt.orderId, false);
         if (!mountedRef.current) return;
         if (!cleared) {
           setStorageErrors((prev) => ({ ...prev, [attempt.itemId]: true }));
@@ -279,7 +287,7 @@ export default function PendingOrderItemEdits({
           ?.response?.data?.error ?? undefined) as string | undefined;
         setRejectionNotices((prev) => ({
           ...prev,
-          [attempt.itemId]: backendMessage || tOrders('pendingItemEditHint'),
+          [attempt.itemId]: backendMessage || tOrders('editItemFailed'),
         }));
         rescan();
         return;
@@ -317,7 +325,7 @@ export default function PendingOrderItemEdits({
         attempt.idempotencyKey,
       );
       outcomeHandled = true;
-      await retryRefresh(attempt.itemId, attempt.orderId);
+      await retryRefresh(attempt.itemId, attempt.orderId, true);
       if (!mountedRef.current) return;
       if (!cleared) {
         setStorageErrors((prev) => ({
@@ -368,7 +376,7 @@ export default function PendingOrderItemEdits({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-foreground">
-                  {tOrders('pendingItemEdit')} #{attempt.itemId}
+                  {tOrders('pendingItemEdit')} ({itemLabel(attempt.itemId)})
                 </p>
                 <p className="text-xs text-muted-foreground">{tOrders('pendingItemEditHint')}</p>
               </div>
@@ -404,7 +412,7 @@ export default function PendingOrderItemEdits({
         );
       })}
 
-      {Object.entries(refreshErrors).map(([itemIdStr, targetOrderId]) => {
+      {Object.entries(refreshErrors).map(([itemIdStr, refreshError]) => {
         const itemId = Number(itemIdStr);
         return (
           <div
@@ -412,13 +420,19 @@ export default function PendingOrderItemEdits({
             className="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300"
             data-testid="pending-item-edit-refresh-failed"
           >
-            <span>{tOrders('pendingItemEditRefreshFailed')}</span>
+            <span>
+              {refreshError.confirmed
+                ? tOrders('pendingItemEditRefreshFailed')
+                : tPos('loadOrderFailed')}
+            </span>
             <Button
               type="button"
               size="sm"
               variant="outline"
               data-testid="retry-refresh-button"
-              onClick={() => void retryRefresh(itemId, targetOrderId)}
+              onClick={() =>
+                void retryRefresh(itemId, refreshError.orderId, refreshError.confirmed)
+              }
             >
               {tSettings('retry')}
             </Button>
@@ -435,7 +449,7 @@ export default function PendingOrderItemEdits({
             data-testid="pending-item-edit-rejection"
           >
             <span>
-              {tOrders('pendingItemEdit')} #{itemId}: {message}
+              {tOrders('pendingItemEdit')} ({itemLabel(itemId)}): {message}
             </span>
             <Button
               type="button"

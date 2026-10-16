@@ -2133,11 +2133,6 @@ export default function PaymentModal({
             </>
           ) : (
             <>
-              {splitSettingState === 'loading' && (
-                <p className="text-xs text-muted-foreground" data-testid="split-check-section">
-                  {t('splitCheckAvailabilityLoading')}
-                </p>
-              )}
               {splitSettingState === 'error' && (
                 <div className="w-full space-y-1" data-testid="split-check-section">
                   <p className="text-xs text-amber-600 dark:text-amber-400">

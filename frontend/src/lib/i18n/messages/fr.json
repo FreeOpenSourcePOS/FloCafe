@@ -1129,7 +1129,6 @@
     "createWithPhone": "Créer le client avec le téléphone : {phone}",
     "createWithName": "Créer le client nommé : {name}",
     "splitItemsIntoChecks": "Répartir les articles sur des tickets",
-    "splitCheckAvailabilityLoading": "Vérification de la disponibilité de la répartition...",
     "splitCheckAvailabilityFailed": "Impossible de vérifier la disponibilité de la répartition.",
     "splitCheckPermissionRequired": "Vous n’avez pas la permission de répartir les tickets.",
     "splitCheckResolvePaymentFirst": "Terminez ou réglez le paiement en cours avant de répartir.",

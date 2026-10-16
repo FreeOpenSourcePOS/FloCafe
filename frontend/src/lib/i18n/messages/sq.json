@@ -1129,7 +1129,6 @@
     "createWithPhone": "Krijo klient me telefon: {phone}",
     "createWithName": "Krijo klient me emrin: {name}",
     "splitItemsIntoChecks": "Ndaj artikujt në fatura të veçanta",
-    "splitCheckAvailabilityLoading": "Po verifikohet disponueshmëria e ndarjes së faturës...",
     "splitCheckAvailabilityFailed": "Disponueshmëria e ndarjes së faturës nuk mund të verifikohej.",
     "splitCheckPermissionRequired": "Nuk ke leje për të ndarë fatura.",
     "splitCheckResolvePaymentFirst": "Përfundo ose zgjidh pagesën aktuale përpara se ta ndash.",

@@ -1129,7 +1129,6 @@
     "createWithPhone": "ফোন নম্বর সহ গ্রাহক তৈরি করুন: {phone}",
     "createWithName": "নামের গ্রাহক তৈরি করুন: {name}",
     "splitItemsIntoChecks": "আইটেমগুলো একাধিক বিলে ভাগ করুন",
-    "splitCheckAvailabilityLoading": "বিল ভাগ করার প্রাপ্যতা পরীক্ষা করা হচ্ছে...",
     "splitCheckAvailabilityFailed": "বিল ভাগ করার প্রাপ্যতা পরীক্ষা করা যায়নি।",
     "splitCheckPermissionRequired": "আপনার বিল ভাগ করার অনুমতি নেই।",
     "splitCheckResolvePaymentFirst": "ভাগ করার আগে বর্তমান পেমেন্ট সম্পন্ন বা মীমাংসা করুন।",

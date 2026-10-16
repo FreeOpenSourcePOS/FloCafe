@@ -117,14 +117,16 @@ that already committed is a no-op refresh, not a second mutation.
 Clearing is compare-and-clear: a 2xx for the saved request, or a definitive current-route rejection
 (400/404/409/422), clears the record only if storage still holds the same idempotency key.
 Transport timeouts and 5xx, authentication/permission/rate-limit
-responses (401/403/429), and failed local clears all preserve the record and surface their distinct
-messages inline: the 403/429 classes cannot establish whether an earlier request committed, so no
+responses (401/403/429), and failed local clears all preserve the record and surface an inline
+message (sign-in for 401, rate limit for 429, the generic hint plus any server message otherwise):
+the 403/429 classes cannot establish whether an earlier request committed, so no
 automatic retry timer runs for them. A confirmed edit whose order refresh failed is reported as a
 refresh failure, not an edit failure, and the cleared attempt is not re-created.
 
 The Orders page owns the data result: after a resolved edit it refetches the current order and
 the already-loaded list pages through its existing fetch/refresh routines. A failed detail refresh after
-either confirmation or definitive rejection leaves a visible refresh warning with a retry action.
+either confirmation or definitive rejection leaves a visible refresh warning with a retry action; only
+the confirmed case says the edit was confirmed.
 Scoped native custom events
 (`flo.orders.item-edit.attempt.changed`) refresh mounted notices in the current tab after the edit
 modal persists or resolves an attempt, and the browser `storage` event covers other tabs.
@@ -135,7 +137,7 @@ order or table context without installing the returned order from the previous i
 
 The POS payment modal derives split-check availability through explicit states rather than a boolean
 that silently hid the control. The feature setting (`split_checks_enabled`) lookup reports loading,
-ready, and failed states: while unknown the modal says availability is being checked, on failure it
+ready, and failed states: while loading the section stays hidden, on failure it
 replaces the section with an error and a retry action, and a `settings.view` denial explains the
 account cannot check availability. Only a successfully read `false` removes the section.
 

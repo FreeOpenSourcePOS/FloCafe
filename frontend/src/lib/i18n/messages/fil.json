@@ -1129,7 +1129,6 @@
     "createWithPhone": "Lumikha ng customer gamit ang telepono: {phone}",
     "createWithName": "Lumikha ng customer na pinangalanang: {name}",
     "splitItemsIntoChecks": "Hatiin ang mga item sa maraming check",
-    "splitCheckAvailabilityLoading": "Tinitingnan ang availability ng paghahati ng check...",
     "splitCheckAvailabilityFailed": "Hindi matiyak ang availability ng paghahati ng check.",
     "splitCheckPermissionRequired": "Wala kang pahintulutan maghati ng check.",
     "splitCheckResolvePaymentFirst": "Tapusin o lutasin muna ang kasalukuyang bayad bago maghati.",

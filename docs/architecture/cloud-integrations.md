@@ -75,11 +75,17 @@ it degrades to `dev` rather than throwing.
 ## PostHog
 
 Optional product analytics and error tracking, next to the anonymous collector. The client sends
-when both `posthog_project_token` and `posthog_host` settings are present. Migration
-`seed_posthog_settings` inserts them, using the EU Cloud public capture host
-`https://eu.i.posthog.com`. A later migration updates those rows to change the project or the host.
-Environment variables do not configure the client. A host that is not `http` or `https`, or that
-includes credentials, is ignored, and the client sends nothing.
+only when a project token and a host resolve. `readPostHogConfig()` in
+`main/services/posthog-config.ts` takes the token from `FLO_POSTHOG_DEV_TOKEN` (development only),
+then the `posthog_project_token` setting, then `posthog_project_token` in
+`dist/main/build-identity.json`; the host comes from the `posthog_host` setting, then
+`posthog_host` in `build-identity.json`. Migration `seed_posthog_settings` inserts only the host, the
+EU Cloud public capture host `https://eu.i.posthog.com`; no database is seeded with a token.
+`scripts/copy-runtime-assets.cjs` writes the build-time `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST`
+into `build-identity.json`, and only the release and Mac App Store workflows set them, so local
+builds and forks carry no token. No environment variable configures the client at runtime other than
+the development overrides below. A host that is not `http` or `https`, or that includes credentials,
+is ignored, and the client sends nothing.
 
 **Only released builds count.** `postHogEnvironment()` in `main/services/posthog-config.ts`
 decides, and only for an Electron main process (`process.type === 'browser'`); test suites run as
@@ -95,7 +101,7 @@ plain Node and never connect, even when they stub `app.isPackaged`.
 `FLO_OFFICIAL_RELEASE=1`, which only the release and Mac App Store workflows set. Every event and
 the person carry `environment` and `release_channel` (`stable` or `beta`). In development,
 `FLO_POSTHOG_DEV_TOKEN` (and optionally `FLO_POSTHOG_DEV_HOST`) sends to a separate project
-instead of the seeded one. The client also sends nothing when `CI` is set, when
+instead of the release one. The client also sends nothing when `CI` is set, when
 `FLO_MATRIX_OFFLINE` is `1`, or when the e2e harness is running (`E2E_TASK_LOCAL_PORTS`).
 
 In the PostHog project, **Settings → Project → Filter out internal and test users** should exclude
@@ -114,7 +120,7 @@ PostHog does not use it.
 | Id | Value | Lifetime |
 | --- | --- | --- |
 | Account (person) | `acct_` + 16 hex of SHA-256 over the lower-cased store email | Same for every terminal and every reinstall that uses that email |
-| Device | `inst_` + 16 hex of SHA-256 over the OS machine id (`IOPlatformUUID`, `MachineGuid`, `/etc/machine-id`), or over a random `posthog_install_seed` when the OS returns none | Same across reinstalls and database resets on one machine |
+| Device | `inst_` + 16 hex of SHA-256 over `posthog_install_seed`, a random UUID generated once and stored in settings | Same for the life of the database; a new database gets a new device id |
 | Per launch | `anon_` + a random UUID | One app launch |
 
 While telemetry is on, the account is the person once a store email exists; before setup, events
@@ -125,8 +131,8 @@ in `posthog_account_ref`, so editing the store email does not split the person; 
 it again from the current email. Every event carries `install_ref` (the device hash) and
 `store_ref` (the account hash). While telemetry is off, nothing links to either: exceptions use the
 per-launch id with `$process_person_profile` set to `false`. Stopping cloud services or requesting
-cloud deletion turns telemetry off and rotates `telemetry_anon_id`, but the device id comes from the
-machine and does not rotate, so a later opt-in on the same machine links to the same device again.
+cloud deletion turns telemetry off and rotates `telemetry_anon_id`, but `posthog_install_seed` does
+not rotate, so a later opt-in on the same database links to the same device again.
 
 Only the main process identifies the account, on launch and when the email or store settings change.
 The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
@@ -143,8 +149,8 @@ KDS, and customer display do not.
 add-on, so a person is never a staff member. The renderer tags events with `staff_role` (the
 signed-in role) and `staff_ref` (the first 16 hex characters of SHA-256 over the distinct id and the
 user id), and drops both on logout; logout never changes the distinct id. One email shared by
-several branches is one account; terminals are told apart by `install_ref`. Cloned machines that
-share an OS machine id share a device id.
+several branches is one account; terminals are told apart by `install_ref`. A database restored
+onto another terminal brings its seed, so both terminals share a device id.
 
 **Usage follows `telemetry_enabled`.** While it is `true`:
 

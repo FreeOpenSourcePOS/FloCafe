@@ -1,14 +1,12 @@
 /**
  * PostHog identities. A person is the customer account (a hash of the store email), so every
  * terminal and every reinstall with the same email is one person. Each device has an
- * `install_ref` derived from the OS machine id, stable across reinstalls; it is the anonymous id
- * until the account is known and is then aliased into the account. With telemetry off nothing
+ * `install_ref` derived from a random seed stored in this database; it is the anonymous id until
+ * the account is known and is then aliased into the account. With telemetry off nothing
  * links to either: events use a random id per launch.
  */
 
-import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import * as fs from 'fs';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
 
 const INSTALL_SEED_SETTING = 'posthog_install_seed';
@@ -22,57 +20,9 @@ function ref(namespace: string, value: string): string {
   return createHash('sha256').update(`flocafe-${namespace}:${value}`).digest('hex').slice(0, 16);
 }
 
-/** Extracts the OS machine id from the output each platform's source produces. */
-export function parseMachineId(platform: NodeJS.Platform, output: string): string | null {
-  const match =
-    platform === 'darwin'
-      ? /"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]{16,})"/.exec(output)
-      : platform === 'win32'
-        ? /MachineGuid\s+REG_SZ\s+([0-9A-Fa-f-]{16,})/.exec(output)
-        : /^([0-9A-Fa-f]{32})\s*$/.exec(output.trim());
-  const id = match?.[1]?.toLowerCase() ?? null;
-  return id && !/^[0-]+$/.test(id) ? id : null;
-}
-
-function readMachineId(): string | null {
-  try {
-    if (process.platform === 'darwin') {
-      const output = execFileSync('/usr/sbin/ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'], {
-        encoding: 'utf8',
-        timeout: 2_000,
-      });
-      return parseMachineId('darwin', output);
-    }
-    if (process.platform === 'win32') {
-      const output = execFileSync(
-        'reg',
-        ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid', '/reg:64'],
-        { encoding: 'utf8', timeout: 2_000, windowsHide: true },
-      );
-      return parseMachineId('win32', output);
-    }
-    for (const file of ['/etc/machine-id', '/var/lib/dbus/machine-id']) {
-      try {
-        const id = parseMachineId(process.platform, fs.readFileSync(file, 'utf8'));
-        if (id) return id;
-      } catch {
-        // Try the next source.
-      }
-    }
-  } catch {
-    // Sandboxed or unsupported: fall back to a stored seed.
-  }
-  return null;
-}
-
-/** The device: a hash of the machine id, or of a stored random seed when the OS gives none. */
+/** The device: a hash of a random seed generated once and kept in this database. */
 export function readInstallRef(): string {
   if (cachedInstallRef) return cachedInstallRef;
-  const machineId = readMachineId();
-  if (machineId) {
-    cachedInstallRef = ref('install', machineId);
-    return cachedInstallRef;
-  }
   let seed = getSettingValue(INSTALL_SEED_SETTING);
   if (!seed) {
     seed = randomUUID();

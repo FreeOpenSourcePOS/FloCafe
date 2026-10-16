@@ -7148,11 +7148,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 115,
     name: 'seed_posthog_settings',
     up: () => {
-      // A later migration updates these rows. INSERT OR IGNORE only fills a database that lacks them.
-      insertSettingIfMissing(
-        'posthog_project_token',
-        'phc_oQZWkdonPzTrDdgfYhNzjjAqWkRHjYWTdjHr2meQCTwB',
-      );
+      // The project token ships in build-identity.json from release builds, never in the database.
       insertSettingIfMissing('posthog_host', 'https://eu.i.posthog.com');
     },
   },

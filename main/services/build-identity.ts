@@ -6,6 +6,8 @@ type BuildIdentity = {
   build_id: string;
   source_commit: string | null;
   official_release?: boolean;
+  posthog_project_token?: string | null;
+  posthog_host?: string | null;
 };
 
 export function resolveBuildIdentity(metadata: unknown, packaged: boolean): string {
@@ -35,6 +37,28 @@ export function resolveOfficialRelease(metadata: unknown, packaged: boolean): bo
 
 function readMetadata(): unknown {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'build-identity.json'), 'utf8'));
+}
+
+export interface BuildPostHogSettings {
+  token?: string;
+  host?: string;
+}
+
+/** The PostHog project a release workflow stamped into the build, if any. */
+export function resolveBuildPostHogSettings(metadata: unknown): BuildPostHogSettings {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
+  const value = metadata as Partial<BuildIdentity>;
+  const text = (field: unknown) =>
+    typeof field === 'string' && field.trim() ? field.trim() : undefined;
+  return { token: text(value.posthog_project_token), host: text(value.posthog_host) };
+}
+
+export function readBuildPostHogSettings(): BuildPostHogSettings {
+  try {
+    return resolveBuildPostHogSettings(readMetadata());
+  } catch {
+    return {};
+  }
 }
 
 export function isOfficialReleaseBuild(): boolean {

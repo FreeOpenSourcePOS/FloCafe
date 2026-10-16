@@ -78,8 +78,10 @@ not a skipped channel.
 
 The release build steps and the Mac App Store lane set `FLO_OFFICIAL_RELEASE=1`, which marks the
 build as an official release in `build-identity.json`. Those builds are the only source of
-`production` analytics. A developer can opt any run in with `FLO_POSTHOG_DEV=1`; its events are
-tagged `development`. See [PostHog](../architecture/cloud-integrations.md#posthog).
+`production` analytics. The same steps pass the `POSTHOG_PROJECT_TOKEN` secret (or repository
+variable) and the optional `POSTHOG_HOST` variable, which `scripts/copy-runtime-assets.cjs` writes
+into `build-identity.json`. Without a token the release ships with PostHog inactive. A developer can
+opt any run in with `FLO_POSTHOG_DEV=1`; its events are tagged `development`. See [PostHog](../architecture/cloud-integrations.md#posthog).
 
 Each Linux, macOS, and Windows build step runs `npm run sourcemaps:posthog`
 (`scripts/posthog-sourcemaps.cjs`) between the builds and `electron-builder`. When the

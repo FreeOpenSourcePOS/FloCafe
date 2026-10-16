@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
-import type { PostHog } from 'posthog-js';
+import type { CaptureResult, PostHog } from 'posthog-js';
 import { scrubPostHogEvent, scrubPathname, type ScrubbableEvent } from '@shared/posthog-scrub';
 import { createScreenViewThrottle, screenKey } from '@shared/posthog-screen-views';
 import { setPostHogClient } from '@/lib/posthog-client';
@@ -107,12 +107,13 @@ async function bootPostHog() {
       isIdentifiedID: bootstrap.identified === true,
     },
     capture_exceptions: { capture_unhandled_errors: true, capture_unhandled_rejections: true },
-    before_send: (event) =>
-      scrubPostHogEvent(withCurrentIdentity(event as unknown as ScrubbableEvent), {
+    before_send: (event: CaptureResult | null): CaptureResult | null =>
+      event &&
+      (scrubPostHogEvent(withCurrentIdentity(event as unknown as ScrubbableEvent), {
         telemetryEnabled: consent.telemetry,
         allowExceptions: consent.diagnostics,
         defaultCapturePoint: 'renderer-autocapture',
-      }) as unknown as typeof event,
+      }) as unknown as CaptureResult | null),
   });
   client = posthog;
   applyBootstrap(bootstrap);

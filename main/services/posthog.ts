@@ -1,8 +1,8 @@
 /**
  * PostHog beside the existing collector. Identities live in posthog-identity.ts: the person is the
- * customer account, `install_ref` is the device. The client sends nothing until the
- * posthog_project_token and posthog_host settings are both set, and only from official releases
- * or an opted-in development run.
+ * customer account, `install_ref` is the device. The client sends nothing until a project token
+ * and host resolve (see posthog-config.ts), and only from official releases or an opted-in
+ * development run.
  */
 
 import type { NextFunction, Request, Response } from 'express';

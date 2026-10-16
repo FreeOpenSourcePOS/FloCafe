@@ -1,7 +1,7 @@
-/** PostHog project configuration. Absent settings mean the client sends nothing. */
+/** PostHog project configuration. Without a token the client sends nothing. */
 
 import { getSettingValue } from '../db';
-import { isOfficialReleaseBuild } from './build-identity';
+import { isOfficialReleaseBuild, readBuildPostHogSettings } from './build-identity';
 
 export const POSTHOG_PROJECT_TOKEN_SETTING = 'posthog_project_token';
 export const POSTHOG_HOST_SETTING = 'posthog_host';
@@ -50,18 +50,19 @@ export function postHogNetworkSuppressed(): boolean {
 }
 
 /**
- * Reads the settings rows. In development, FLO_POSTHOG_DEV_TOKEN (and optionally
- * FLO_POSTHOG_DEV_HOST) points at a separate project so test data never reaches production.
- * No other environment variable configures the client.
+ * The token comes from FLO_POSTHOG_DEV_TOKEN in development (a separate project, so test data
+ * never reaches production), then the settings row, then the release build's build-identity.json.
+ * The host follows the same order. No other environment variable configures the client at runtime.
  */
 export function readPostHogConfig(): PostHogConfig | null {
   try {
-    const token = getSettingValue(POSTHOG_PROJECT_TOKEN_SETTING) ?? '';
-    const host = getSettingValue(POSTHOG_HOST_SETTING) ?? '';
+    const build = readBuildPostHogSettings();
+    const host = getSettingValue(POSTHOG_HOST_SETTING)?.trim() || build.host || '';
     const devToken = process.env.FLO_POSTHOG_DEV_TOKEN?.trim();
     if (devToken && postHogEnvironment() === 'development') {
       return parsePostHogConfig(devToken, process.env.FLO_POSTHOG_DEV_HOST?.trim() || host);
     }
+    const token = getSettingValue(POSTHOG_PROJECT_TOKEN_SETTING)?.trim() || build.token || '';
     return parsePostHogConfig(token, host);
   } catch {
     return null;

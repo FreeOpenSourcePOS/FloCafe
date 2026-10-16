@@ -385,6 +385,8 @@ jobs:
           node scripts/assert-release-artifact-names.cjs release
         env:
           FLO_OFFICIAL_RELEASE: '1'
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN || vars.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
           POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST }}
@@ -597,6 +599,8 @@ jobs:
           node scripts/assert-release-artifact-names.cjs release
         env:
           FLO_OFFICIAL_RELEASE: '1'
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN || vars.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
           POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST }}
@@ -746,6 +750,8 @@ jobs:
           node scripts/assert-release-artifact-names.cjs release
         env:
           FLO_OFFICIAL_RELEASE: '1'
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN || vars.POSTHOG_PROJECT_TOKEN }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
           POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST }}

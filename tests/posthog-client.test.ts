@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -98,11 +99,13 @@ const {
   syncPostHogIdentity,
 } = require('../main/services/posthog');
 const { buildCspHeader } = require('../main/csp');
-const { resolveOfficialRelease } = require('../main/services/build-identity');
+const {
+  resolveBuildPostHogSettings,
+  resolveOfficialRelease,
+} = require('../main/services/build-identity');
 const { readPostHogConfig } = require('../main/services/posthog-config');
 const {
   accountRefForEmail,
-  parseMachineId,
   readInstallRef,
   resolvePostHogIdentity,
 } = require('../main/services/posthog-identity');
@@ -115,7 +118,7 @@ const {
   stackFrameLines,
 } = require('../shared/posthog-scrub');
 
-const SEEDED_POSTHOG_TOKEN = 'phc_oQZWkdonPzTrDdgfYhNzjjAqWkRHjYWTdjHr2meQCTwB';
+const RELEASE_POSTHOG_TOKEN = 'phc_release_build';
 const SEEDED_POSTHOG_HOST = 'https://eu.i.posthog.com';
 const priorCi = process.env.CI;
 const priorMatrixOffline = process.env.FLO_MATRIX_OFFLINE;
@@ -180,24 +183,20 @@ async function main() {
 
   const on = { telemetryEnabled: true, allowExceptions: true };
 
-  assert.equal(
-    parseMachineId('darwin', '  "IOPlatformUUID" = "A1B2C3D4-0000-1111-2222-333344445555"'),
-    'a1b2c3d4-0000-1111-2222-333344445555',
+  assert.deepEqual(
+    resolveBuildPostHogSettings({
+      schema_version: 1,
+      posthog_project_token: ' phc_release ',
+      posthog_host: 'https://eu.i.posthog.com',
+    }),
+    { token: 'phc_release', host: 'https://eu.i.posthog.com' },
   );
-  assert.equal(
-    parseMachineId('win32', '    MachineGuid    REG_SZ    5b1c7e2a-1111-2222-3333-444455556666'),
-    '5b1c7e2a-1111-2222-3333-444455556666',
+  assert.deepEqual(
+    resolveBuildPostHogSettings({ schema_version: 1, posthog_project_token: null }),
+    { token: undefined, host: undefined },
+    'a build without the release secret carries no token',
   );
-  assert.equal(
-    parseMachineId('linux', 'f3c4b2a19d8e47f6a5b4c3d2e1f00123\n'),
-    'f3c4b2a19d8e47f6a5b4c3d2e1f00123',
-  );
-  assert.equal(
-    parseMachineId('linux', '00000000000000000000000000000000'),
-    null,
-    'blank ids are ignored',
-  );
-  assert.equal(parseMachineId('darwin', 'nothing here'), null);
+  assert.deepEqual(resolveBuildPostHogSettings(null), {});
   assert.equal(accountRefForEmail('Owner@Shop.com'), accountRefForEmail(' owner@shop.com '));
   assert.notEqual(accountRefForEmail('a@shop.com'), accountRefForEmail('b@shop.com'));
   assert.equal(accountRefForEmail('not an email'), undefined);
@@ -555,14 +554,14 @@ async function main() {
   });
 
   initDatabase();
-  assert.equal(readSetting('posthog_project_token'), SEEDED_POSTHOG_TOKEN);
+  assert.equal(readSetting('posthog_project_token'), null, 'no token is seeded');
   assert.equal(readSetting('posthog_host'), SEEDED_POSTHOG_HOST);
-  deleteSetting('posthog_project_token');
+  assert.equal(readPostHogConfig(), null, 'a fresh database without a release token sends nothing');
   deleteSetting('posthog_host');
   getDatabase().pragma('user_version = 114');
   closeDatabase();
   initDatabase();
-  assert.equal(readSetting('posthog_project_token'), SEEDED_POSTHOG_TOKEN);
+  assert.equal(readSetting('posthog_project_token'), null);
   assert.equal(readSetting('posthog_host'), SEEDED_POSTHOG_HOST);
   setSetting('posthog_project_token', 'phc_keep');
   setSetting('posthog_host', 'https://example.test');
@@ -579,8 +578,63 @@ async function main() {
     'https://example.test',
     'an existing host survives the seed',
   );
-  setSetting('posthog_project_token', SEEDED_POSTHOG_TOKEN);
+  deleteSetting('posthog_project_token');
   setSetting('posthog_host', SEEDED_POSTHOG_HOST);
+
+  const nodeFs = require('fs') as { readFileSync: (...args: unknown[]) => unknown };
+  const originalReadFileSync = nodeFs.readFileSync;
+  const withBuildIdentity = <T>(metadata: Record<string, unknown>, run: () => T): T => {
+    nodeFs.readFileSync = function (file: unknown, ...rest: unknown[]) {
+      if (typeof file === 'string' && path.basename(file) === 'build-identity.json') {
+        return JSON.stringify(metadata);
+      }
+      return originalReadFileSync(file, ...rest);
+    };
+    try {
+      return run();
+    } finally {
+      nodeFs.readFileSync = originalReadFileSync;
+    }
+  };
+  const releaseBuild = {
+    schema_version: 1,
+    posthog_project_token: RELEASE_POSTHOG_TOKEN,
+    posthog_host: 'https://us.i.posthog.com',
+  };
+  assert.deepEqual(
+    withBuildIdentity(releaseBuild, () => readPostHogConfig()),
+    { token: RELEASE_POSTHOG_TOKEN, host: SEEDED_POSTHOG_HOST },
+    'the release build supplies the token; the settings host wins',
+  );
+  deleteSetting('posthog_host');
+  assert.deepEqual(
+    withBuildIdentity(releaseBuild, () => readPostHogConfig()),
+    { token: RELEASE_POSTHOG_TOKEN, host: 'https://us.i.posthog.com' },
+    'the build host fills a missing settings host',
+  );
+  setSetting('posthog_host', SEEDED_POSTHOG_HOST);
+  setSetting('posthog_project_token', 'phc_settings');
+  assert.equal(
+    withBuildIdentity(releaseBuild, () => readPostHogConfig())?.token,
+    'phc_settings',
+    'a settings token overrides the build token',
+  );
+  setSetting('posthog_project_token', RELEASE_POSTHOG_TOKEN);
+
+  assert.equal(readSetting('posthog_install_seed'), null);
+  const installRef = readInstallRef();
+  const installSeed = readSetting('posthog_install_seed');
+  assert.match(
+    installSeed ?? '',
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+  );
+  assert.equal(
+    installRef,
+    createHash('sha256').update(`flocafe-install:${installSeed}`).digest('hex').slice(0, 16),
+    'the device id is derived from the stored random seed',
+  );
+  assert.equal(readInstallRef(), installRef);
+  assert.equal(readSetting('posthog_install_seed'), installSeed, 'the seed is generated once');
 
   setSetting('telemetry_enabled', 'true');
   setSetting('diagnostics_consent', 'true');
@@ -646,7 +700,7 @@ async function main() {
       false,
       `${name} does not allow the capture host`,
     );
-    assert.equal(header.includes(SEEDED_POSTHOG_TOKEN), false);
+    assert.equal(header.includes(RELEASE_POSTHOG_TOKEN), false);
   }
   delete process.env.CI;
   delete process.env.FLO_MATRIX_OFFLINE;

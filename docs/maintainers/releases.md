@@ -74,6 +74,27 @@ The Snap Store credential check is at runtime rather than in an `if:` condition,
 Actions does not allow `secrets` in `if:` expressions. A missing credential is a release failure,
 not a skipped channel.
 
+## PostHog release builds
+
+The release build steps and the Mac App Store lane set `FLO_OFFICIAL_RELEASE=1`, which marks the
+build as an official release in `build-identity.json`. Those builds are the only source of
+`production` analytics. A developer can opt any run in with `FLO_POSTHOG_DEV=1`; its events are
+tagged `development`. See [PostHog](../architecture/cloud-integrations.md#posthog).
+
+Each Linux, macOS, and Windows build step runs `npm run sourcemaps:posthog`
+(`scripts/posthog-sourcemaps.cjs`) between the builds and `electron-builder`. When the
+`POSTHOG_CLI_API_KEY` secret and the `POSTHOG_CLI_PROJECT_ID` variable are both set, the renderer
+export is built with browser source maps, and the script injects chunk ids into `frontend/out` and
+`dist`, uploads their maps as release `flocafe` at the `package.json` version, and deletes the
+`.js.map` files so they do not ship. `POSTHOG_CLI_HOST` defaults to `https://eu.posthog.com`.
+
+Without the key or the project id, the step prints a skip notice and the build is unchanged. An
+upload failure is a warning, not a release failure; the maps are still deleted. The key needs the
+`error tracking write` and `organization read` scopes.
+
+To check a release, open a served chunk in the packaged app and look for a `//# chunkId=` comment,
+then confirm the symbol sets under Error tracking settings in PostHog.
+
 ## Artifact naming
 
 Every published release must carry this exact inventory.

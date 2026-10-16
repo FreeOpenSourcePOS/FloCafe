@@ -36,6 +36,7 @@ import {
   resolveEffectivePermissions,
 } from '../services/authorization';
 import { serializeOperationFailure } from '../lib/operation-failure';
+import { capturePostHogUsage, syncPostHogIdentity } from '../services/posthog';
 
 const router = Router();
 
@@ -947,6 +948,12 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     } catch (error) {
       console.warn('[Auth] Cloud registration profile refresh deferred after setup:', error);
     }
+    syncPostHogIdentity();
+    capturePostHogUsage('setup_completed', {
+      setup_profile: normalizedSetupProfile,
+      service_model: normalizedServiceModel,
+      business_type,
+    });
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE, jti: randomUUID() },

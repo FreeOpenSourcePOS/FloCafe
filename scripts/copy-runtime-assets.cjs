@@ -32,9 +32,13 @@ fs.copyFileSync(
   path.join(__dirname, '../dist/main/baileys-loader.cjs'),
 );
 
+// Only the release workflows set FLO_OFFICIAL_RELEASE=1; product analytics counts no other build.
 fs.writeFileSync(
   path.join(root, 'dist/main/build-identity.json'),
-  JSON.stringify(buildIdentity()),
+  JSON.stringify({
+    ...buildIdentity(),
+    official_release: process.env.FLO_OFFICIAL_RELEASE === '1',
+  }),
   'utf8',
 );
 

@@ -623,7 +623,10 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 `diagnostics_consent` and `diagnostics_transmission_enabled` are owner/manager-writable Boolean
 settings. Their delivery gates and consent synchronization are described in [store-attributed
 diagnostics](../architecture/cloud-integrations.md#store-attributed-diagnostics), including how
-`telemetry_enabled` affects anonymous diagnostic delivery.
+`telemetry_enabled` affects anonymous diagnostic delivery. PostHog usage events and the installation
+email follow the same setting; PostHog exceptions follow diagnostics transmission even when
+telemetry is off. See
+[PostHog](../architecture/cloud-integrations.md#posthog).
 
 ### Tax packs
 

@@ -5,6 +5,7 @@ type BuildIdentity = {
   schema_version: 1;
   build_id: string;
   source_commit: string | null;
+  official_release?: boolean;
 };
 
 export function resolveBuildIdentity(metadata: unknown, packaged: boolean): string {
@@ -26,12 +27,29 @@ function packagedRuntime(): boolean {
   }
 }
 
+/** A packaged release-workflow build. Local packages and CI test packages are not. */
+export function resolveOfficialRelease(metadata: unknown, packaged: boolean): boolean {
+  if (!packaged || !metadata || typeof metadata !== 'object') return false;
+  return (metadata as Partial<BuildIdentity>).official_release === true;
+}
+
+function readMetadata(): unknown {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'build-identity.json'), 'utf8'));
+}
+
+export function isOfficialReleaseBuild(): boolean {
+  try {
+    return resolveOfficialRelease(readMetadata(), packagedRuntime());
+  } catch {
+    return false;
+  }
+}
+
 export function getBuildIdentity(): string {
   const packaged = packagedRuntime();
   if (!packaged) return 'dev';
   try {
-    const metadataPath = path.join(__dirname, '..', 'build-identity.json');
-    return resolveBuildIdentity(JSON.parse(fs.readFileSync(metadataPath, 'utf8')), true);
+    return resolveBuildIdentity(readMetadata(), true);
   } catch {
     return 'unknown';
   }

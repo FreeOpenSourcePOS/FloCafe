@@ -177,8 +177,33 @@ async function sendEventImpl(
   }
 }
 
+/** PostHog receives the same usage events; required lazily because posthog.ts imports this module. */
+function mirrorToPostHog(eventType: string, payload?: Record<string, unknown>): void {
+  try {
+    const { capturePostHogUsage } = require('./posthog') as typeof import('./posthog');
+    if (eventType === 'daily_ping') {
+      const { readDailyUsageSummary } = require('./posthog') as typeof import('./posthog');
+      capturePostHogUsage('daily_ping', { ...readDailyUsageSummary(), ...(payload ?? {}) });
+    } else if (eventType === 'app_launch' || eventType === 'feature_used') {
+      capturePostHogUsage(eventType, payload);
+    }
+  } catch {
+    // PostHog is optional and never disrupts the collector.
+  }
+}
+
+function checkMilestones(): void {
+  if (matrixOffline() || telemetryStopping) return;
+  try {
+    (require('./posthog') as typeof import('./posthog')).checkPostHogMilestones();
+  } catch {
+    // PostHog is optional.
+  }
+}
+
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
   if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
+  if (eventType !== 'daily_ping') mirrorToPostHog(eventType, payload);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
@@ -361,7 +386,9 @@ function maybeSendDailyPing(): void {
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
   const operation = sendEvent('daily_ping').then((sent) => {
-    if (sent) upsertTelemetryLastPing();
+    if (!sent) return;
+    upsertTelemetryLastPing();
+    mirrorToPostHog('daily_ping');
   });
   trackTelemetry(operation);
 }
@@ -377,7 +404,11 @@ export const telemetry = {
     if (matrixOffline()) return;
     void sendEvent('app_launch');
     maybeSendDailyPing();
-    dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);
+    checkMilestones();
+    dailyPingTimer = setInterval(() => {
+      maybeSendDailyPing();
+      checkMilestones();
+    }, DAILY_PING_INTERVAL_MS);
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;

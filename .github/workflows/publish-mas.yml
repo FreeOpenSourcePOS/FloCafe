@@ -108,6 +108,7 @@ jobs:
 
       - name: Publish to Mac App Store
         env:
+          FLO_OFFICIAL_RELEASE: '1'
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}

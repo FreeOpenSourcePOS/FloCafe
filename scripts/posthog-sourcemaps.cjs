@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 /**
- * Release step between the builds and electron-builder: injects PostHog chunk ids into the
- * renderer export and the compiled main process, uploads their source maps, and deletes the
- * maps so they do not ship. Without POSTHOG_CLI_API_KEY and POSTHOG_CLI_PROJECT_ID it does
- * nothing and exits 0. An upload failure warns and never fails the release.
+ * Injects PostHog chunk ids, uploads source maps and deletes them before packaging. Without the
+ * POSTHOG_CLI_* credentials it does nothing; an upload failure only warns.
  */
 
 const { spawnSync } = require('node:child_process');

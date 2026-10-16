@@ -32,10 +32,8 @@ export function parsePostHogConfig(token: string, host: string): PostHogConfig |
 export type PostHogEnvironment = 'production' | 'development';
 
 /**
- * Where events from this process belong, or null when it must not connect. Only release-workflow
- * builds are `production`. A developer opts in with FLO_POSTHOG_DEV=1 and gets `development`,
- * which every event carries so PostHog's internal-and-test filter can drop it. Test suites run as
- * plain Node (ELECTRON_RUN_AS_NODE), often with a stubbed isPackaged, and never connect.
+ * `production` for release builds, `development` with FLO_POSTHOG_DEV=1, else null (no connection).
+ * Test suites run as plain Node, so they never connect even with a stubbed isPackaged.
  */
 export function postHogEnvironment(): PostHogEnvironment | null {
   if (process.env.CI) return null;
@@ -51,10 +49,8 @@ export function postHogNetworkSuppressed(): boolean {
 }
 
 /**
- * The token comes from FLO_POSTHOG_DEV_TOKEN in development (a separate project, so test data
- * never reaches production), then the settings row, then the release build's build-identity.json.
- * The host follows the same order and defaults to EU Cloud. No other environment variable
- * configures the client at runtime.
+ * Token and host: FLO_POSTHOG_DEV_* in development, then the settings row, then
+ * build-identity.json; the host defaults to EU Cloud.
  */
 export function readPostHogConfig(): PostHogConfig | null {
   try {

@@ -1,6 +1,6 @@
 /**
- * Allowlist for everything FloCafe sends to PostHog. Usage events, pageviews, and the
- * installation email follow telemetry consent; exceptions follow diagnostics transmission.
+ * Allowlist for everything FloCafe sends to PostHog. Usage follows the sharing level, the email
+ * only the `full` level, and exceptions follow diagnostics transmission.
  */
 
 export const POSTHOG_CAPTURE_POINTS = [
@@ -23,6 +23,36 @@ export const POSTHOG_USAGE_EVENTS = [
 ] as const;
 
 export type PostHogUsageEvent = (typeof POSTHOG_USAGE_EVENTS)[number];
+
+/** Every property a usage event may carry. Anything else is dropped. */
+export const POSTHOG_USAGE_PROPERTY_KEYS = [
+  'feature',
+  'action',
+  'check_count',
+  'setup_profile',
+  'service_model',
+  'business_type',
+  'hours_since_setup',
+  'backfilled',
+  'country',
+  'currency',
+  'language',
+  'kds_enabled',
+  'orders_24h',
+  'orders_dine_in_24h',
+  'orders_takeaway_24h',
+  'orders_delivery_24h',
+  'orders_online_24h',
+  'orders_cancelled_24h',
+  'bills_paid_24h',
+  'staff_with_orders_24h',
+  'active_staff_count',
+  'products_count',
+  'tables_count',
+  'customers_count',
+  'printers_count',
+  'kitchen_stations_count',
+] as const;
 
 /** Store configuration kept on the person. None of it identifies a customer or an order. */
 export const POSTHOG_PERSON_KEYS = [
@@ -65,6 +95,8 @@ const PAGEVIEW_KEYS = new Set(['screen', 'settings_tab', 'repeat_views']);
 const CAPTURE_POINT_SET = new Set<string>(POSTHOG_CAPTURE_POINTS);
 const USAGE_EVENT_SET = new Set<string>(POSTHOG_USAGE_EVENTS);
 const PERSON_KEY_SET = new Set<string>(POSTHOG_PERSON_KEYS);
+const USAGE_PROPERTY_KEY_SET = new Set<string>(POSTHOG_USAGE_PROPERTY_KEYS);
+const ACCOUNT_KEYS = ['email', 'store_ref'] as const;
 
 const CONTEXT_KEYS = new Set<string>([
   ...POSTHOG_SUPER_KEYS,
@@ -105,12 +137,12 @@ const PROJECT_MARKERS = [
 
 const ERROR_NAME = /^[A-Za-z_$][A-Za-z0-9_$]{0,80}$/;
 const IDENTIFIER = /^[A-Za-z_$<][\w$.<>]{0,99}$/;
-const PROPERTY_KEY = /^[a-z][a-z0-9_]{0,40}$/;
 const CHUNK_ID = /^[\w-]{1,100}$/;
 const OPAQUE_REF = /^[0-9a-f]{16}$/;
 const OPAQUE_REF_KEYS = new Set(['store_ref', 'staff_ref', 'install_ref']);
 /** The only distinct ids FloCafe creates: account, device, and per-launch. */
 const FLO_DISTINCT_ID = /^(?:acct_[0-9a-f]{16}|inst_[0-9a-f]{16}|anon_[0-9a-f-]{36})$/;
+const ACCOUNT_DISTINCT_ID = /^acct_/;
 const EMAIL = /[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g;
 
 const MAX_FRAMES = 50;
@@ -123,8 +155,10 @@ export interface ScrubbableEvent {
 }
 
 export interface PostHogScrubOptions {
-  /** Usage events, pageviews, and person properties. Follows `telemetry_enabled`. */
+  /** Usage events, pageviews, and person properties: the `full` or `anonymous` level. */
   telemetryEnabled: boolean;
+  /** The email, `store_ref`, and account ids: the `full` level only. */
+  accountLinked: boolean;
   /** Exceptions. Follows diagnostics transmission. */
   allowExceptions: boolean;
 }
@@ -144,9 +178,8 @@ export function sanitizeErrorName(name: unknown, stack?: string): string {
 }
 
 /**
- * Keeps the shape of an error message and removes values that could belong to a person:
- * emails, URLs, digit runs such as phone or order numbers, and quoted text. Engine messages
- * such as "(reading 'name')" keep identifier-like quotes.
+ * Removes emails, URLs, digit runs and quoted text from an error message. Identifier-like
+ * quotes in engine messages, such as "(reading 'name')", are kept.
  */
 export function redactExceptionMessage(message: unknown): string {
   if (typeof message !== 'string') return '';
@@ -365,6 +398,20 @@ function withoutPersonOperators(event: ScrubbableEvent): ScrubbableEvent {
   return rest;
 }
 
+function withoutAccountKeys(properties: Record<string, unknown> | undefined): void {
+  if (!properties) return;
+  for (const key of ACCOUNT_KEYS) delete properties[key];
+  if (properties.$set && typeof properties.$set === 'object') {
+    for (const key of ACCOUNT_KEYS) delete (properties.$set as Record<string, unknown>)[key];
+  }
+}
+
+function sentByAccount(event: ScrubbableEvent): boolean {
+  return [event.distinctId, event.distinct_id, event.properties?.distinct_id].some(
+    (id) => typeof id === 'string' && ACCOUNT_DISTINCT_ID.test(id),
+  );
+}
+
 function scrubIdentify(event: ScrubbableEvent, telemetryEnabled: boolean): ScrubbableEvent {
   const source = event.properties ?? {};
   const properties: Record<string, unknown> = {};
@@ -385,9 +432,9 @@ function scrubIdentify(event: ScrubbableEvent, telemetryEnabled: boolean): Scrub
 function scrubUsage(event: ScrubbableEvent): ScrubbableEvent {
   const source = event.properties ?? {};
   const properties = contextProperties(source);
-  for (const [key, value] of Object.entries(source)) {
-    if (!PROPERTY_KEY.test(key) || key in properties) continue;
-    const plain = plainValue(value);
+  for (const key of USAGE_PROPERTY_KEY_SET) {
+    if (key in properties) continue;
+    const plain = plainValue(source[key]);
     if (plain !== undefined) properties[key] = plain;
   }
   return { ...withoutPersonOperators(event), properties };
@@ -447,6 +494,18 @@ export function scrubPostHogEvent(
   options: PostHogScrubOptions & { defaultCapturePoint?: PostHogCapturePoint },
 ): ScrubbableEvent | null {
   if (!event || typeof event.event !== 'string') return null;
+  const named = event as ScrubbableEvent & { event: string };
+  if (options.accountLinked) return scrubAllowed(named, options);
+  if (named.event === '$create_alias' || sentByAccount(named)) return null;
+  const scrubbed = scrubAllowed(named, options);
+  withoutAccountKeys(scrubbed?.properties);
+  return scrubbed;
+}
+
+function scrubAllowed(
+  event: ScrubbableEvent & { event: string },
+  options: PostHogScrubOptions & { defaultCapturePoint?: PostHogCapturePoint },
+): ScrubbableEvent | null {
   if (event.event === '$create_alias') {
     if (!options.telemetryEnabled) return null;
     const source = event.properties ?? {};

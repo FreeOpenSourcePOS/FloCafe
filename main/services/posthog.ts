@@ -1,8 +1,6 @@
 /**
- * PostHog beside the existing collector. Identities live in posthog-identity.ts: the person is the
- * customer account, `install_ref` is the device. The client sends nothing until a project token
- * and host resolve (see posthog-config.ts), and only from official releases or an opted-in
- * development run.
+ * PostHog beside the existing collector. Usage follows the sharing level in posthog-identity.ts;
+ * nothing is sent without a project token (posthog-config.ts) or outside official releases.
  */
 
 import type { NextFunction, Request, Response } from 'express';
@@ -12,7 +10,6 @@ import {
   now,
   upsertSettings,
   isDiagnosticsTransmissionEnabled,
-  isTelemetryEnabled,
 } from '../db';
 import { postHogEnvironment, postHogNetworkSuppressed, readPostHogConfig } from './posthog-config';
 import { readCountryProvenance } from './country-provenance';
@@ -20,6 +17,8 @@ import { getInstallSource, getRunMode } from './telemetry';
 import {
   markAliased,
   pendingAlias,
+  productAnalyticsChoicePending,
+  readProductAnalyticsLevel,
   resolvePostHogIdentity,
   type PostHogIdentity,
 } from './posthog-identity';
@@ -75,6 +74,7 @@ export interface PostHogBootstrapReady {
   token: string;
   host: string;
   telemetryEnabled: boolean;
+  accountLinked: boolean;
   diagnosticsEnabled: boolean;
   superProperties: SuperProperties;
 }
@@ -94,11 +94,15 @@ function appVersion(): string {
   return (require('../../package.json') as { version: string }).version;
 }
 
-function identity(): PostHogIdentity {
-  return resolvePostHogIdentity(isTelemetryEnabled());
+function usageEnabled(): boolean {
+  return readProductAnalyticsLevel() !== 'off';
 }
 
-/** Release, channel, and while telemetry is on the device and the account (`store_ref`). */
+function identity(): PostHogIdentity {
+  return resolvePostHogIdentity(readProductAnalyticsLevel());
+}
+
+/** Release and channel, plus the device and, at the `full` level, the account (`store_ref`). */
 export function readSuperProperties(current: PostHogIdentity = identity()): SuperProperties {
   return {
     app_version: appVersion(),
@@ -149,10 +153,11 @@ function readStoreProperties(): Record<string, string | boolean> {
   return properties;
 }
 
-/** Person properties while telemetry is on: the installation email and store configuration. */
+/** Store configuration on the person, and the installation email at the `full` level only. */
 export function readPersonProperties(): Record<string, string | boolean> | undefined {
-  if (!isTelemetryEnabled()) return undefined;
-  const email = readInstallationEmail();
+  const level = readProductAnalyticsLevel();
+  if (level === 'off') return undefined;
+  const email = level === 'full' ? readInstallationEmail() : undefined;
   return {
     ...readStoreProperties(),
     ...readSuperProperties(),
@@ -221,7 +226,8 @@ function createClient(token: string, host: string): PostHogClient {
     flushInterval: 0,
     before_send: (event: ScrubbableEvent | null) =>
       scrubPostHogEvent(event, {
-        telemetryEnabled: isTelemetryEnabled(),
+        telemetryEnabled: readProductAnalyticsLevel() !== 'off',
+        accountLinked: readProductAnalyticsLevel() === 'full',
         allowExceptions: isDiagnosticsTransmissionEnabled(),
       }),
   });
@@ -231,7 +237,7 @@ function activeClient(): PostHogClient | null {
   if (postHogNetworkSuppressed()) return null;
   const config = readPostHogConfig();
   if (!config) return null;
-  if (!isTelemetryEnabled() && !isDiagnosticsTransmissionEnabled()) return null;
+  if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) return null;
   const key = `${config.host}\n${config.token}`;
   if (client && clientKey === key) return client;
   const previous = client;
@@ -241,40 +247,58 @@ function activeClient(): PostHogClient | null {
   return client;
 }
 
+/** The sharing level for Settings and the one-time question, asked only where PostHog can send. */
+export function readProductAnalyticsChoice() {
+  return {
+    level: readProductAnalyticsLevel(),
+    choice_pending:
+      productAnalyticsChoicePending() &&
+      !postHogNetworkSuppressed() &&
+      readPostHogConfig() !== null,
+    email: readInstallationEmail() ?? null,
+    diagnostics_enabled: isDiagnosticsTransmissionEnabled(),
+  };
+}
+
 export function readPostHogBootstrap(): PostHogBootstrap | PostHogBootstrapReady {
   if (postHogNetworkSuppressed()) return { enabled: false };
   const config = readPostHogConfig();
   if (!config) return { enabled: false };
-  const telemetryEnabled = isTelemetryEnabled();
+  const level = readProductAnalyticsLevel();
+  const telemetryEnabled = level !== 'off';
   const diagnosticsEnabled = isDiagnosticsTransmissionEnabled();
   if (!telemetryEnabled && !diagnosticsEnabled) return { enabled: false };
-  const current = resolvePostHogIdentity(telemetryEnabled);
+  const current = resolvePostHogIdentity(level);
   return {
     enabled: true,
     distinctId: current.distinctId,
-    identified: current.identified,
+    // At `anonymous` main has created the device person, so renderer events join it.
+    identified: current.identified || level === 'anonymous',
     token: config.token,
     host: config.host,
     telemetryEnabled,
+    accountLinked: level === 'full',
     diagnosticsEnabled,
     superProperties: readSuperProperties(current),
   };
 }
 
-/** Pins the account person and folds this device into it. Safe to call when PostHog is not configured. */
+/**
+ * Updates the person for the current level: the account with the device folded into it, or the
+ * anonymous device. Safe to call when PostHog is not configured.
+ */
 export function syncPostHogIdentity(): void {
   try {
     if (!readPostHogConfig()) return;
-    if (!isTelemetryEnabled() && !isDiagnosticsTransmissionEnabled()) {
+    if (!usageEnabled() && !isDiagnosticsTransmissionEnabled()) {
       void stopPostHog();
       return;
     }
-    if (!isTelemetryEnabled()) return;
+    if (!usageEnabled()) return;
     const current = activeClient();
     if (!current) return;
     const who = identity();
-    if (!who.identified) return;
-    const device = pendingAlias(who);
+    const device = who.identified ? pendingAlias(who) : null;
     if (device) {
       current.alias({ distinctId: who.distinctId, alias: device });
       markAliased(who);
@@ -282,7 +306,7 @@ export function syncPostHogIdentity(): void {
     const person = readPersonProperties();
     current.capture({
       distinctId: who.distinctId,
-      event: '$identify',
+      event: who.identified ? '$identify' : '$set',
       properties: person ? { $set: person } : {},
     });
   } catch {
@@ -290,13 +314,13 @@ export function syncPostHogIdentity(): void {
   }
 }
 
-/** Mirrors a usage event the collector also receives. Dropped unless telemetry is on. */
+/** Mirrors a usage event the collector also receives. Dropped at the `off` level. */
 export function capturePostHogUsage(
   event: PostHogUsageEvent,
   properties?: Record<string, unknown>,
 ): void {
   try {
-    if (!isTelemetryEnabled()) return;
+    if (!usageEnabled()) return;
     const current = activeClient();
     if (!current) return;
     const who = identity();
@@ -332,14 +356,12 @@ function hoursBetween(from: string | undefined, to: string): number | undefined 
 }
 
 /**
- * Activation milestones, each sent once per installation: how long after setup the store
- * rang up its first order and took its first payment. Read from the database, never from the
- * order or payment path. A milestone that happened before this installation started checking
- * (an upgraded store) is tagged `backfilled` so it stays out of live activation funnels.
+ * First order and first payment, once per installation, read from the database. Milestones older
+ * than this check (upgraded stores) are tagged `backfilled` to keep them out of live funnels.
  */
 export function checkPostHogMilestones(): void {
   try {
-    if (!isTelemetryEnabled() || !activeClient()) return;
+    if (!usageEnabled() || !activeClient()) return;
     const db = getDatabase();
     let since = getSettingValue(MILESTONES_SINCE_SETTING);
     if (!since) {
@@ -375,7 +397,7 @@ export function checkPostHogMilestones(): void {
  */
 export function maybeSendPostHogDailyPing(nowMs: number = Date.now()): void {
   try {
-    if (!isTelemetryEnabled() || !activeClient()) return;
+    if (!usageEnabled() || !activeClient()) return;
     const last = dbTimeMs(getSettingValue(DAILY_PING_SETTING));
     if (Number.isFinite(last) && nowMs - last < DAILY_PING_MIN_GAP_MS) return;
     capturePostHogUsage('daily_ping', readDailyUsageSummary());

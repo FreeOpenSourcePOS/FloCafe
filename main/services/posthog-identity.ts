@@ -1,20 +1,19 @@
 /**
- * PostHog identities. A person is the customer account (a hash of the store email), so every
- * terminal and every reinstall with the same email is one person. Each device has an
- * `install_ref` derived from a random seed stored in this database; it is the anonymous id until
- * the account is known and is then aliased into the account. With telemetry off nothing
- * links to either: events use a random id per launch.
+ * PostHog identities per sharing level: `full` is the account (a hash of the store email),
+ * `anonymous` is the device (a hash of a stored random seed), `off` is a random id per launch.
  */
 
 import { createHash, randomUUID } from 'crypto';
-import { getDatabase, getSettingValue, upsertSettings } from '../db';
+import { getDatabase, getSettingValue, isTelemetryEnabled, upsertSettings } from '../db';
+
+export const PRODUCT_ANALYTICS_LEVEL_SETTING = 'product_analytics_level';
+export const PRODUCT_ANALYTICS_LEVELS = ['full', 'anonymous', 'off'] as const;
+export type ProductAnalyticsLevel = (typeof PRODUCT_ANALYTICS_LEVELS)[number];
 
 const INSTALL_SEED_SETTING = 'posthog_install_seed';
 const ACCOUNT_REF_SETTING = 'posthog_account_ref';
 const ALIASED_SETTING = 'posthog_aliased';
 const LAUNCH_ID = randomUUID();
-
-let cachedInstallRef: string | null = null;
 
 function ref(namespace: string, value: string): string {
   return createHash('sha256').update(`flocafe-${namespace}:${value}`).digest('hex').slice(0, 16);
@@ -22,14 +21,12 @@ function ref(namespace: string, value: string): string {
 
 /** The device: a hash of a random seed generated once and kept in this database. */
 export function readInstallRef(): string {
-  if (cachedInstallRef) return cachedInstallRef;
   let seed = getSettingValue(INSTALL_SEED_SETTING);
   if (!seed) {
     seed = randomUUID();
     upsertSettings({ [INSTALL_SEED_SETTING]: seed });
   }
-  cachedInstallRef = ref('install', seed);
-  return cachedInstallRef;
+  return ref('install', seed);
 }
 
 function normalizedEmail(value: unknown): string | undefined {
@@ -67,10 +64,37 @@ export interface PostHogIdentity {
   accountRef?: string;
 }
 
-export function resolvePostHogIdentity(telemetryEnabled: boolean): PostHogIdentity {
-  if (!telemetryEnabled) return { distinctId: `anon_${LAUNCH_ID}`, identified: false };
+export function parseProductAnalyticsLevel(value: unknown): ProductAnalyticsLevel | null {
+  return PRODUCT_ANALYTICS_LEVELS.includes(value as ProductAnalyticsLevel)
+    ? (value as ProductAnalyticsLevel)
+    : null;
+}
+
+function onboarded(): boolean {
+  return getSettingValue('onboarding_completed') === 'true';
+}
+
+/** Telemetry off wins. An onboarded store that has not chosen yet shares anonymously. */
+export function readProductAnalyticsLevel(): ProductAnalyticsLevel {
+  if (!isTelemetryEnabled()) return 'off';
+  const stored = parseProductAnalyticsLevel(getSettingValue(PRODUCT_ANALYTICS_LEVEL_SETTING));
+  if (stored === 'full') return 'full';
+  return stored || onboarded() ? 'anonymous' : 'off';
+}
+
+/** The owner still has to answer the one-time sharing question. */
+export function productAnalyticsChoicePending(): boolean {
+  return (
+    isTelemetryEnabled() &&
+    onboarded() &&
+    !parseProductAnalyticsLevel(getSettingValue(PRODUCT_ANALYTICS_LEVEL_SETTING))
+  );
+}
+
+export function resolvePostHogIdentity(level: ProductAnalyticsLevel): PostHogIdentity {
+  if (level === 'off') return { distinctId: `anon_${LAUNCH_ID}`, identified: false };
   const installRef = readInstallRef();
-  const accountRef = readAccountRef();
+  const accountRef = level === 'full' ? readAccountRef() : undefined;
   return accountRef
     ? { distinctId: `acct_${accountRef}`, identified: true, installRef, accountRef }
     : { distinctId: `inst_${installRef}`, identified: false, installRef };

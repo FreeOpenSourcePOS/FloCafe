@@ -1,7 +1,6 @@
 /**
- * Screen-level pageview throttle. A cashier flips between POS and Orders hundreds of times a
- * day; one pageview per screen per window keeps adoption and frequency (via `repeatViews`)
- * while staying inside the free event allowance.
+ * One pageview per screen per window; skipped views are counted in `repeatViews`, so cashiers
+ * switching screens all day stay inside the free event allowance.
  */
 
 export const SCREEN_VIEW_WINDOW_MS = 30 * 60_000;

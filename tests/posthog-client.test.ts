@@ -94,6 +94,7 @@ const {
   postHogApiFailureMiddleware,
   readDailyUsageSummary,
   readPostHogBootstrap,
+  readProductAnalyticsChoice,
   readSuperProperties,
   stopPostHog,
   syncPostHogIdentity,
@@ -106,13 +107,16 @@ const {
 const { DEFAULT_POSTHOG_HOST, readPostHogConfig } = require('../main/services/posthog-config');
 const {
   accountRefForEmail,
+  productAnalyticsChoicePending,
   readInstallRef,
+  readProductAnalyticsLevel,
   resolvePostHogIdentity,
 } = require('../main/services/posthog-identity');
 const { SHUTDOWN_TIMEOUT_MS } = require('../main/shutdown');
 const { createScreenViewThrottle, screenKey } = require('../shared/posthog-screen-views');
 const { cliEnv, shellArgs, sourceMapsConfigured } = require('../scripts/posthog-sourcemaps.cjs');
 const {
+  POSTHOG_USAGE_PROPERTY_KEYS,
   redactExceptionMessage,
   scrubPostHogEvent,
   stackFrameLines,
@@ -180,7 +184,7 @@ async function main() {
   delete process.env.FLO_MATRIX_OFFLINE;
   delete process.env.E2E_TASK_LOCAL_PORTS;
 
-  const on = { telemetryEnabled: true, allowExceptions: true };
+  const on = { telemetryEnabled: true, accountLinked: true, allowExceptions: true };
 
   assert.deepEqual(
     resolveBuildPostHogSettings({
@@ -203,7 +207,7 @@ async function main() {
   const alias = (properties: Record<string, unknown>, telemetryEnabled = true) =>
     scrubPostHogEvent(
       { event: '$create_alias', properties },
-      { telemetryEnabled, allowExceptions: true },
+      { telemetryEnabled, accountLinked: telemetryEnabled, allowExceptions: true },
     );
   const goodAlias = {
     distinct_id: 'acct_0123456789abcdef',
@@ -270,7 +274,7 @@ async function main() {
         $exception_list: [{ type: 'TypeError' }],
       },
     },
-    { telemetryEnabled: false, allowExceptions: true },
+    { telemetryEnabled: false, accountLinked: false, allowExceptions: true },
   );
   for (const key of ['install_ref', 'store_ref', 'staff_ref']) {
     assert.equal(key in (linkedWhileOff?.properties ?? {}), false, `telemetry off drops ${key}`);
@@ -414,6 +418,7 @@ async function main() {
       { event: '$exception', properties: { capture_point: 'uncaughtException' } },
       {
         telemetryEnabled: true,
+        accountLinked: true,
         allowExceptions: false,
       },
     ),
@@ -467,6 +472,7 @@ async function main() {
       { event: '$pageview', properties: { $pathname: '/pos' } },
       {
         telemetryEnabled: false,
+        accountLinked: false,
         allowExceptions: true,
       },
     ),
@@ -494,11 +500,63 @@ async function main() {
     on,
   );
   assert.deepEqual(usage.properties, { orders_24h: 42, kds_enabled: true, service_model: 'qsr' });
+  const unlisted = scrubPostHogEvent(
+    {
+      event: 'feature_used',
+      properties: { feature: 'split_checks', customer_name: 'Ada', order_id: 1234 },
+    },
+    on,
+  );
+  assert.deepEqual(unlisted?.properties, { feature: 'split_checks' }, 'unlisted keys are dropped');
+
+  const anonymous = { telemetryEnabled: true, accountLinked: false, allowExceptions: true };
+  const anonymousIdentify = scrubPostHogEvent(
+    {
+      event: '$set',
+      properties: {
+        distinct_id: 'inst_fedcba9876543210',
+        $set: { email: 'a@b.c', country: 'AR', store_ref: '0123456789abcdef' },
+      },
+    },
+    anonymous,
+  );
+  assert.deepEqual(anonymousIdentify?.properties?.$set, { country: 'AR' }, 'no email or store_ref');
+  assert.equal(
+    scrubPostHogEvent(
+      { event: 'feature_used', properties: { distinct_id: 'acct_0123456789abcdef' } },
+      anonymous,
+    ),
+    null,
+    'an account id is dropped below the full level',
+  );
+  assert.equal(
+    scrubPostHogEvent({ event: '$create_alias', properties: goodAlias }, anonymous),
+    null,
+    'only the full level aliases',
+  );
+  const anonymousUsage = scrubPostHogEvent(
+    {
+      event: 'feature_used',
+      properties: {
+        distinct_id: 'inst_fedcba9876543210',
+        store_ref: '0123456789abcdef',
+        install_ref: 'fedcba9876543210',
+        feature: 'split_checks',
+      },
+    },
+    anonymous,
+  );
+  assert.deepEqual(anonymousUsage?.properties, {
+    distinct_id: 'inst_fedcba9876543210',
+    install_ref: 'fedcba9876543210',
+    feature: 'split_checks',
+  });
   assert.equal(
     scrubPostHogEvent(
       { event: 'feature_used', properties: {} },
       {
         telemetryEnabled: false,
+        accountLinked: false,
         allowExceptions: true,
       },
     ),
@@ -508,7 +566,7 @@ async function main() {
 
   const identified = scrubPostHogEvent(
     { event: '$identify', properties: { $set: { email: 'a@b.c', name: 'A', plan: 'secret' } } },
-    { telemetryEnabled: false, allowExceptions: true },
+    { telemetryEnabled: false, accountLinked: false, allowExceptions: true },
   );
   assert.deepEqual(identified, { event: '$identify', properties: {} });
   const named = scrubPostHogEvent(
@@ -516,7 +574,7 @@ async function main() {
       event: '$identify',
       properties: { $set: { email: 'a@b.c', name: 'A', country: 'AR', plan: 'secret' } },
     },
-    { telemetryEnabled: true, allowExceptions: false },
+    { telemetryEnabled: true, accountLinked: true, allowExceptions: false },
   );
   assert.deepEqual(named, {
     event: '$identify',
@@ -616,17 +674,48 @@ async function main() {
   );
   assert.equal(readInstallRef(), installRef);
   assert.equal(readSetting('posthog_install_seed'), installSeed, 'the seed is generated once');
+  deleteSetting('posthog_install_seed');
+  assert.notEqual(readInstallRef(), installRef, 'a replaced database gets its own device id');
+  setSetting('posthog_install_seed', installSeed ?? '');
 
   setSetting('telemetry_enabled', 'true');
+  setSetting('product_analytics_level', 'full');
   setSetting('diagnostics_consent', 'true');
   setSetting('diagnostics_transmission_enabled', 'true');
   setSetting('telemetry_anon_id', 'anon-install');
-  const preSetup = resolvePostHogIdentity(true);
+  const preSetup = resolvePostHogIdentity('full');
   assert.match(preSetup.distinctId, /^inst_[0-9a-f]{16}$/, 'before setup the device is anonymous');
   assert.equal(preSetup.identified, false);
-  assert.equal(resolvePostHogIdentity(false).installRef, undefined);
+  assert.equal(resolvePostHogIdentity('off').installRef, undefined);
   insertUser('owner-1', 'Owner One', 'owner@example.com');
   insertUser('cashier-2', 'Cashier Two', 'cashier@example.com');
+
+  deleteSetting('product_analytics_level');
+  assert.equal(readProductAnalyticsLevel(), 'off', 'before setup nothing is shared');
+  assert.equal(productAnalyticsChoicePending(), false);
+  setSetting('onboarding_completed', 'true');
+  assert.equal(readProductAnalyticsLevel(), 'anonymous', 'an upgraded store shares anonymously');
+  assert.equal(productAnalyticsChoicePending(), true, 'and the owner is asked once');
+  assert.equal(
+    readProductAnalyticsChoice().choice_pending,
+    false,
+    'the question is only asked where PostHog can send',
+  );
+  const anonymousDevice = resolvePostHogIdentity('anonymous');
+  assert.match(anonymousDevice.distinctId, /^inst_[0-9a-f]{16}$/);
+  assert.equal(anonymousDevice.accountRef, undefined, 'anonymous never derives the account');
+  assert.equal(readSetting('posthog_account_ref'), null);
+  setSetting('product_analytics_level', 'off');
+  assert.equal(
+    readProductAnalyticsLevel(),
+    'anonymous',
+    'telemetry back on is anonymous, not full',
+  );
+  assert.equal(productAnalyticsChoicePending(), false);
+  setSetting('telemetry_enabled', 'false');
+  setSetting('product_analytics_level', 'full');
+  assert.equal(readProductAnalyticsLevel(), 'off', 'telemetry off always wins');
+  setSetting('telemetry_enabled', 'true');
 
   delete process.env.CI;
   delete process.env.FLO_MATRIX_OFFLINE;
@@ -772,6 +861,52 @@ async function main() {
   assert.equal(summary.active_staff_count, 2);
   assert.equal(summary.service_model, 'qsr');
   assert.equal(summary.staff_with_orders_24h, 0);
+  for (const key of Object.keys(summary)) {
+    assert.ok(
+      (POSTHOG_USAGE_PROPERTY_KEYS as readonly string[]).includes(key),
+      `daily_ping key ${key} is on the usage allowlist`,
+    );
+  }
+
+  setSetting('product_analytics_level', 'anonymous');
+  const beforeAnonymous = latest().events.length;
+  syncPostHogIdentity();
+  capturePostHogUsage('feature_used', { feature: 'split_checks', action: 'enabled' });
+  const anonymousEvents = latest().events.slice(beforeAnonymous);
+  assert.deepEqual(
+    anonymousEvents.map((event) => [event.event, event.distinctId]),
+    [
+      ['$set', device],
+      ['feature_used', device],
+    ],
+    'anonymous events belong to the device',
+  );
+  const anonymousPerson = anonymousEvents[0].properties?.$set as Record<string, unknown>;
+  assert.equal('email' in anonymousPerson, false, 'anonymous never sends the email');
+  assert.equal('store_ref' in anonymousPerson, false);
+  assert.equal(anonymousPerson.service_model, 'qsr', 'store configuration is still shared');
+  assert.equal('store_ref' in (anonymousEvents[1].properties ?? {}), false);
+  assert.equal(anonymousEvents[1].properties?.install_ref, device.slice('inst_'.length));
+  assert.equal(latest().aliases.length, 1, 'anonymous adds no alias');
+  const anonymousBootstrap = readPostHogBootstrap();
+  assert.equal(anonymousBootstrap.distinctId, device);
+  assert.equal(anonymousBootstrap.accountLinked, false);
+  assert.equal(anonymousBootstrap.identified, true, 'renderer events join the device person');
+  assert.equal(anonymousBootstrap.superProperties.store_ref, undefined);
+  deleteSetting('product_analytics_level');
+  assert.deepEqual(
+    readProductAnalyticsChoice(),
+    {
+      level: 'anonymous',
+      choice_pending: true,
+      email: 'owner@example.com',
+      diagnostics_enabled: true,
+    },
+    'a configured release asks the owner once',
+  );
+  setSetting('product_analytics_level', 'full');
+  assert.equal(readProductAnalyticsChoice().choice_pending, false);
+  assert.equal(readPostHogBootstrap().accountLinked, true);
 
   setSetting('cloud_store_id', 'store-42');
   const storeRef = readSuperProperties().store_ref;

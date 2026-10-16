@@ -28,7 +28,11 @@ import {
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { syncPostHogIdentity } from '../services/posthog';
+import { readProductAnalyticsChoice, syncPostHogIdentity } from '../services/posthog';
+import {
+  PRODUCT_ANALYTICS_LEVEL_SETTING,
+  parseProductAnalyticsLevel,
+} from '../services/posthog-identity';
 import {
   getCountryByCode,
   getCurrencyFractionDigits,
@@ -676,6 +680,46 @@ router.put('/kds', requirePermission('settings.manage'), (req: Request, res: Res
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ─── Product analytics sharing level (must come BEFORE /:key wildcard) ──────
+
+router.get(
+  '/product-analytics',
+  requirePermission('settings.manage'),
+  (_req: Request, res: Response) => {
+    try {
+      res.json(readProductAnalyticsChoice());
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// `off` also stops the anonymous collector; the other levels keep it on.
+router.put(
+  '/product-analytics',
+  requirePermission('settings.manage'),
+  (req: Request, res: Response) => {
+    try {
+      const level = parseProductAnalyticsLevel(req.body?.level);
+      if (!level) {
+        return res.status(400).json({ error: 'level must be "full", "anonymous" or "off"' });
+      }
+      const telemetry = level === 'off' ? 'false' : 'true';
+      upsertSettings(getDatabase(), {
+        [PRODUCT_ANALYTICS_LEVEL_SETTING]: level,
+        telemetry_enabled: telemetry,
+        anonymous_data_consent: telemetry,
+      });
+      syncPostHogIdentity();
+      res.json(readProductAnalyticsChoice());
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 // ─── Customer display settings (must come BEFORE /:key wildcard) ────────────
 

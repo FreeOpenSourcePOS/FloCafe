@@ -54,6 +54,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
+import type { ProductAnalyticsLevel } from '@/components/analytics/ProductAnalyticsDialog';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { normalizeOptionalPhone } from '@/lib/phone';
@@ -356,6 +357,7 @@ export default function SettingsPage() {
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod } = usePrinterStore();
   const t = useTranslations('settings');
+  const tAnalytics = useTranslations('productAnalytics');
   const tCommon = useTranslations('common');
   const tRestore = useTranslations('restore');
   const tUpdate = useTranslations('update');
@@ -1629,8 +1631,8 @@ export default function SettingsPage() {
     }
   };
 
-  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
-  const [savingTelemetry, setSavingTelemetry] = useState(false);
+  const [analyticsLevel, setAnalyticsLevel] = useState<ProductAnalyticsLevel>('off');
+  const [savingAnalytics, setSavingAnalytics] = useState(false);
 
   const [diagnosticsConsent, setDiagnosticsConsent] = useState(true);
   const [savingDiagnosticsConsent, setSavingDiagnosticsConsent] = useState(false);
@@ -2648,13 +2650,15 @@ export default function SettingsPage() {
       }
       if (tab === 'privacy') {
         setCloudPrivacyHydrated(false);
-        const [telemetryResponse, diagnosticsResponse] = await Promise.all([
+        const [analyticsResponse, telemetryResponse, diagnosticsResponse] = await Promise.all([
+          get('/settings/product-analytics').catch(() => null),
           get('/settings/telemetry_enabled').catch(() => null),
           get('/settings/diagnostics_consent').catch(() => null),
         ]);
         if (!active()) return;
-        setTelemetryEnabled(
-          telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false,
+        setAnalyticsLevel(
+          analyticsResponse?.data?.level ??
+            (telemetryResponse?.data.setting?.value === 'true' ? 'anonymous' : 'off'),
         );
         setDiagnosticsConsent(
           diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true,
@@ -2961,17 +2965,17 @@ export default function SettingsPage() {
     }
   };
 
-  const saveTelemetry = async (enabled: boolean) => {
-    const previous = telemetryEnabled;
-    setTelemetryEnabled(enabled);
-    setSavingTelemetry(true);
+  const saveAnalyticsLevel = async (level: ProductAnalyticsLevel) => {
+    const previous = analyticsLevel;
+    setAnalyticsLevel(level);
+    setSavingAnalytics(true);
     try {
-      await api.put('/settings/telemetry_enabled', { value: enabled ? 'true' : 'false' });
+      await api.put('/settings/product-analytics', { level });
     } catch {
-      setTelemetryEnabled(previous);
+      setAnalyticsLevel(previous);
       toast.error(t('saveFailed'));
     } finally {
-      setSavingTelemetry(false);
+      setSavingAnalytics(false);
     }
   };
 
@@ -5420,17 +5424,34 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={telemetryEnabled}
-                    disabled={savingTelemetry}
-                    onChange={(e) => saveTelemetry(e.target.checked)}
-                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
-                  />
-                  <span className="text-sm text-foreground">{t('anonymousTelemetry')}</span>
-                </label>
-                <p className="text-xs text-muted-foreground">{t('anonymousTelemetryHint')}</p>
+                <fieldset className="space-y-2" data-testid="product-analytics-level">
+                  <legend className="text-sm font-medium text-foreground">
+                    {tAnalytics('settingsLabel')}
+                  </legend>
+                  {(['full', 'anonymous', 'off'] as const).map((level) => (
+                    <label key={level} className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="product-analytics-level"
+                        value={level}
+                        checked={analyticsLevel === level}
+                        disabled={savingAnalytics}
+                        onChange={() => void saveAnalyticsLevel(level)}
+                        className="mt-0.5 border-gray-300 dark:border-border text-brand focus:ring-brand"
+                      />
+                      <span className="text-sm text-foreground">
+                        {tAnalytics(
+                          level === 'full'
+                            ? 'levelFull'
+                            : level === 'anonymous'
+                              ? 'levelAnonymous'
+                              : 'levelOff',
+                        )}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+                <p className="text-xs text-muted-foreground">{tAnalytics('settingsHint')}</p>
 
                 <div className="border-t border-border pt-4">
                   <label className="flex items-center gap-3 cursor-pointer">
@@ -5499,7 +5520,7 @@ export default function SettingsPage() {
                             cloud_orders_enabled: !!data.cloud_orders_enabled,
                             cloud_last_sync: data.cloud_last_sync || null,
                           }));
-                          setTelemetryEnabled(false);
+                          setAnalyticsLevel('off');
                           setDiagnosticsConsent(false);
                           await fetchCloudAccount();
                           notifyCloudAccountStatusChanged();

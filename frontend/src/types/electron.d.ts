@@ -70,6 +70,7 @@ export interface ElectronAPI {
         token: string;
         host: string;
         telemetryEnabled: boolean;
+        accountLinked: boolean;
         diagnosticsEnabled: boolean;
         superProperties: Record<string, string>;
       }

@@ -111,8 +111,36 @@ filter on all new insights** turned on.
 Every event passes through `scrubPostHogEvent` in `shared/posthog-scrub.ts`, in the main process
 (`posthog-node`) and in the renderer (`posthog-js`). It is an allowlist: an event name, property, or
 person property it does not list is dropped. Every event carries `app_version`, `platform`,
-`run_mode`, `install_source`, `environment`, and `release_channel`; `install_ref` and `store_ref`
-are added while telemetry is on (see **Identities** below).
+`run_mode`, `install_source`, `environment`, and `release_channel`; `install_ref` is added at the
+`anonymous` and `full` levels, and `store_ref` at `full` only (see **Sharing levels** below).
+
+**Sharing levels** (`product_analytics_level`, read by `readProductAnalyticsLevel()` in
+`main/services/posthog-identity.ts`).
+
+| Level | Distinct id | Person properties | Links |
+| --- | --- | --- | --- |
+| `full` | Account (`acct_`) | Store email and store configuration | `install_ref`, `store_ref`, `staff_ref`; the device is aliased into the account |
+| `anonymous` | Device (`inst_`) | Store configuration only, never the email | `install_ref`, `staff_ref` |
+| `off` | Per launch (`anon_`) | None | None; only exceptions, when diagnostics transmission is on |
+
+`telemetry_enabled` set to anything but `true` means `off`. Otherwise a stored `full` is `full`,
+any other stored value is `anonymous`, and a store with no stored level is `anonymous` once
+`onboarding_completed` is `true` and `off` before setup. `PUT /api/settings/product-analytics`
+(`settings.manage`) stores the level and writes `telemetry_enabled` and `anonymous_data_consent`
+(`false` for `off`, `true` otherwise), so the anonymous collector follows the same choice.
+`product_analytics_level` is restore-protected like `telemetry_enabled`. The scrubber's
+`accountLinked` option is on only at `full`; below it the scrubber drops `$create_alias`, any event
+on an `acct_` id, and `email` and `store_ref` wherever they appear.
+
+Setup asks for the level with two equal options, "Link my email" (`full`) and "Keep it anonymous"
+(`anonymous`), plus "Don't share usage data" (`off`); none is preselected and setup cannot
+continue without one. A setup request without a level stores none. An onboarded store with
+telemetry on and no stored level, such as one upgraded from a release without PostHog, shares
+anonymously and shows `ProductAnalyticsDialog` once to users with `settings.manage`. The dialog
+opens outside POS and KDS, only when `readProductAnalyticsChoice()` reports `choice_pending` (a
+configured client that can send), and offers the same two options with the error-report switch.
+Closing it without an answer asks again on the next launch. Settings → Privacy offers all three
+levels.
 
 **Identities** (`main/services/posthog-identity.ts`). The collector keeps `telemetry_anon_id`;
 PostHog does not use it.
@@ -123,26 +151,25 @@ PostHog does not use it.
 | Device | `inst_` + 16 hex of SHA-256 over `posthog_install_seed`, a random UUID generated once and stored in settings | Same for the life of the database; a new database gets a new device id |
 | Per launch | `anon_` + a random UUID | One app launch |
 
-While telemetry is on, the account is the person once a store email exists; before setup, events
-use the device id, which stays anonymous. When the account becomes known, main sends one
-`$create_alias` that folds the device into the account (`posthog_aliased` records the pair), so the
-pre-setup events of that device join the account. The first account key a database derives is kept
-in `posthog_account_ref`, so editing the store email does not split the person; a reinstall derives
-it again from the current email. Every event carries `install_ref` (the device hash) and
-`store_ref` (the account hash). While telemetry is off, nothing links to either: exceptions use the
-per-launch id with `$process_person_profile` set to `false`. Stopping cloud services or requesting
-cloud deletion turns telemetry off and rotates `telemetry_anon_id`, but `posthog_install_seed` does
-not rotate, so a later opt-in on the same database links to the same device again.
+At `full`, the account is the person once a store email exists. Main sends one `$create_alias`
+that folds the device into the account (`posthog_aliased` records the pair), so events the device
+sent at `anonymous` join the account. The first account key a database derives is kept in
+`posthog_account_ref`, so editing the store email does not split the person; a reinstall derives it
+again from the current email. At `anonymous`, main sets store configuration on the device person
+with a `$set` event and never derives the account key. Moving from `full` to `anonymous` stops new
+links; events already linked stay linked. At `off`, exceptions use the per-launch id with
+`$process_person_profile` set to `false`. Stopping cloud services or requesting cloud deletion
+turns telemetry off and rotates `telemetry_anon_id`, but `posthog_install_seed` does not rotate, so
+a later opt-in on the same database links to the same device again.
 
-Only the main process identifies the account, on launch and when the email or store settings change.
+Only the main process sets the person, on launch and when the level, email or store settings change.
 The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
 init disables persistence and bootstraps that id, so the SDK cannot mint another one. Main checks
 consent and the id on every send; the renderer re-reads both every 30 seconds and on focus and
-stamps the current id on each event, so a consent change takes effect without a reload. When
-telemetry and diagnostics were both off at load, the same check starts PostHog once either is
-turned on. With
-telemetry off, renderer events move to the per-launch id and the scrubber drops `install_ref`,
-`store_ref`, and `staff_ref`. Only the Electron main window loads PostHog; the Server App,
+stamps the current id on each event, so a level change takes effect without a reload. When usage
+and diagnostics were both off at load, the same check starts PostHog once either is turned on, and
+the current screen is recorded then. At `off`, renderer events move to the per-launch id and the
+scrubber drops `install_ref`, `store_ref`, and `staff_ref`; below `full` it drops `store_ref`. Only the Electron main window loads PostHog; the Server App,
 KDS, and customer display do not.
 
 **Staff are dimensions, not persons.** Many staff share one terminal, and group analytics is a paid
@@ -152,12 +179,14 @@ user id), and drops both on logout; logout never changes the distinct id. One em
 several branches is one account; terminals are told apart by `install_ref`. A database restored
 onto another terminal brings its seed, so both terminals share a device id.
 
-**Usage follows `telemetry_enabled`.** While it is `true`:
+**Usage follows the sharing level.** At `anonymous` and `full`:
 
-- Person properties are the store email and store configuration (`country`, `currency`,
-  `language`, `service_model`, `kds_enabled`). The email is `settings.email`, the store email cloud
-  registration also sends, or the email of the earliest `users` row when that setting is empty. No
-  name is sent.
+- Person properties are store configuration (`country`, `currency`, `language`, `service_model`,
+  `kds_enabled`), plus the store email at `full`. The email is `settings.email`, the store email
+  cloud registration also sends, or the email of the earliest `users` row when that setting is
+  empty. No name is sent.
+- A usage event keeps only the properties in `POSTHOG_USAGE_PROPERTY_KEYS`; any other property is
+  dropped.
 - `app_launch` and `feature_used` mirror the collector events. `daily_ping` runs on the
   collector's hourly check but does not depend on the collector: it is sent at most once every 24
   hours (`posthog_last_daily_ping_at`) with counts for the last 24 hours (orders by type, including
@@ -172,7 +201,7 @@ onto another terminal brings its seed, so both terminals share a device id.
   `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on
   Settings. No other query value, hash, or title is sent.
 
-While it is not `true`, nothing is identified and no usage event or pageview is sent. Autocapture, heatmaps, dead clicks, performance events, session replay,
+At `off`, nothing is identified and no usage event or pageview is sent. Autocapture, heatmaps, dead clicks, performance events, session replay,
 surveys, and feature-flag requests are off. `disable_external_dependency_loading` stops the renderer
 SDK from loading remote scripts.
 
@@ -183,9 +212,9 @@ stored follows the project's IP data capture setting.
 **Exceptions follow diagnostics transmission.** `isDiagnosticsTransmissionEnabled()` is the existing
 "Sending diagnostics automatically" check: `diagnostics_consent` is on unless it is the string
 `false`, and `diagnostics_transmission_enabled` must be the string `true`. A scrubbed exception is
-sent when that check is on, including when usage telemetry is off. When the check is off, the
-exception stays on the machine. The client itself is disabled only when telemetry is off and
-diagnostics transmission is also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
+sent when that check is on, at every sharing level. When the check is off, the
+exception stays on the machine. The client itself is disabled only at `off` with diagnostics
+transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
 both checks.
 
 | Capture point | Source |

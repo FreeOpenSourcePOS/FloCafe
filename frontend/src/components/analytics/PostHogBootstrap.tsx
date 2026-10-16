@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import type { CaptureResult, PostHog } from 'posthog-js';
 import { scrubPostHogEvent, scrubPathname, type ScrubbableEvent } from '@shared/posthog-scrub';
@@ -14,13 +14,9 @@ let client: PostHog | null = null;
 const CONSENT_REFRESH_MS = 30_000;
 const LINKED_KEYS = ['install_ref', 'store_ref', 'staff_ref'] as const;
 
-/**
- * Consent and identity as main last reported them. Main checks both on every send; the renderer
- * re-reads them on an interval and on focus, so a consent change (Settings or cloud consent sync)
- * takes effect without a reload: with telemetry off, renderer events move to main's per-launch id
- * and carry no device, store, or staff link.
- */
-const consent = { telemetry: false, diagnostics: false };
+/** Consent and identity as main last reported them, re-read on an interval and on focus. */
+const consent = { telemetry: false, account: false, diagnostics: false };
+let onUsageChange: ((enabled: boolean) => void) | null = null;
 const identity = { distinctId: '', identified: false };
 /** The signed-in staff member, so staff tags can be applied after a late boot or a consent change. */
 const staff: { userId?: number | string; role?: string } = {};
@@ -32,7 +28,9 @@ type Bootstrap = Awaited<
 function applyBootstrap(bootstrap: Bootstrap | undefined): void {
   const enabled = bootstrap?.enabled === true;
   consent.telemetry = enabled && bootstrap.telemetryEnabled === true;
+  consent.account = enabled && bootstrap.accountLinked === true;
   consent.diagnostics = enabled && bootstrap.diagnosticsEnabled === true;
+  onUsageChange?.(consent.telemetry);
   if (enabled) {
     identity.distinctId = bootstrap.distinctId;
     identity.identified = bootstrap.identified === true;
@@ -40,6 +38,7 @@ function applyBootstrap(bootstrap: Bootstrap | undefined): void {
   if (!client) return;
   if (enabled) client.register(bootstrap.superProperties);
   if (staff.role) client.register({ staff_role: staff.role });
+  if (!consent.account) client.unregister('store_ref');
   if (!consent.telemetry) {
     for (const key of LINKED_KEYS) client.unregister(key);
   } else if (staff.userId !== undefined) {
@@ -111,6 +110,7 @@ async function bootPostHog() {
       event &&
       (scrubPostHogEvent(withCurrentIdentity(event as unknown as ScrubbableEvent), {
         telemetryEnabled: consent.telemetry,
+        accountLinked: consent.account,
         allowExceptions: consent.diagnostics,
         defaultCapturePoint: 'renderer-autocapture',
       }) as unknown as CaptureResult | null),
@@ -164,6 +164,14 @@ export function PostHogBootstrap() {
   const staffVersion = useRef(0);
   const staffTagged = useRef<Promise<unknown>>(Promise.resolve());
   const staffKey = useRef('');
+  const [usageOn, setUsageOn] = useState(consent.telemetry);
+
+  useEffect(() => {
+    onUsageChange = setUsageOn;
+    return () => {
+      onUsageChange = null;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(refresh, CONSENT_REFRESH_MS);
@@ -209,7 +217,7 @@ export function PostHogBootstrap() {
         repeat_views: decision.repeatViews,
       });
     });
-  }, [pathname, tab]);
+  }, [pathname, tab, usageOn, userId, role]);
 
   return null;
 }

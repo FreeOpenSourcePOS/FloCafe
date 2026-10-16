@@ -5,6 +5,7 @@ import { isOfficialReleaseBuild, readBuildPostHogSettings } from './build-identi
 
 export const POSTHOG_PROJECT_TOKEN_SETTING = 'posthog_project_token';
 export const POSTHOG_HOST_SETTING = 'posthog_host';
+export const DEFAULT_POSTHOG_HOST = 'https://eu.i.posthog.com';
 
 export interface PostHogConfig {
   token: string;
@@ -52,12 +53,14 @@ export function postHogNetworkSuppressed(): boolean {
 /**
  * The token comes from FLO_POSTHOG_DEV_TOKEN in development (a separate project, so test data
  * never reaches production), then the settings row, then the release build's build-identity.json.
- * The host follows the same order. No other environment variable configures the client at runtime.
+ * The host follows the same order and defaults to EU Cloud. No other environment variable
+ * configures the client at runtime.
  */
 export function readPostHogConfig(): PostHogConfig | null {
   try {
     const build = readBuildPostHogSettings();
-    const host = getSettingValue(POSTHOG_HOST_SETTING)?.trim() || build.host || '';
+    const host =
+      getSettingValue(POSTHOG_HOST_SETTING)?.trim() || build.host || DEFAULT_POSTHOG_HOST;
     const devToken = process.env.FLO_POSTHOG_DEV_TOKEN?.trim();
     if (devToken && postHogEnvironment() === 'development') {
       return parsePostHogConfig(devToken, process.env.FLO_POSTHOG_DEV_HOST?.trim() || host);

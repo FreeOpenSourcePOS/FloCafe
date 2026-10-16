@@ -103,7 +103,7 @@ const {
   resolveBuildPostHogSettings,
   resolveOfficialRelease,
 } = require('../main/services/build-identity');
-const { readPostHogConfig } = require('../main/services/posthog-config');
+const { DEFAULT_POSTHOG_HOST, readPostHogConfig } = require('../main/services/posthog-config');
 const {
   accountRefForEmail,
   readInstallRef,
@@ -119,7 +119,6 @@ const {
 } = require('../shared/posthog-scrub');
 
 const RELEASE_POSTHOG_TOKEN = 'phc_release_build';
-const SEEDED_POSTHOG_HOST = 'https://eu.i.posthog.com';
 const priorCi = process.env.CI;
 const priorMatrixOffline = process.env.FLO_MATRIX_OFFLINE;
 const priorE2ePorts = process.env.E2E_TASK_LOCAL_PORTS;
@@ -555,31 +554,8 @@ async function main() {
 
   initDatabase();
   assert.equal(readSetting('posthog_project_token'), null, 'no token is seeded');
-  assert.equal(readSetting('posthog_host'), SEEDED_POSTHOG_HOST);
+  assert.equal(readSetting('posthog_host'), null, 'no host is seeded');
   assert.equal(readPostHogConfig(), null, 'a fresh database without a release token sends nothing');
-  deleteSetting('posthog_host');
-  getDatabase().pragma('user_version = 114');
-  closeDatabase();
-  initDatabase();
-  assert.equal(readSetting('posthog_project_token'), null);
-  assert.equal(readSetting('posthog_host'), SEEDED_POSTHOG_HOST);
-  setSetting('posthog_project_token', 'phc_keep');
-  setSetting('posthog_host', 'https://example.test');
-  getDatabase().pragma('user_version = 114');
-  closeDatabase();
-  initDatabase();
-  assert.equal(
-    readSetting('posthog_project_token'),
-    'phc_keep',
-    'an existing token survives the seed',
-  );
-  assert.equal(
-    readSetting('posthog_host'),
-    'https://example.test',
-    'an existing host survives the seed',
-  );
-  deleteSetting('posthog_project_token');
-  setSetting('posthog_host', SEEDED_POSTHOG_HOST);
 
   const nodeFs = require('fs') as { readFileSync: (...args: unknown[]) => unknown };
   const originalReadFileSync = nodeFs.readFileSync;
@@ -603,16 +579,21 @@ async function main() {
   };
   assert.deepEqual(
     withBuildIdentity(releaseBuild, () => readPostHogConfig()),
-    { token: RELEASE_POSTHOG_TOKEN, host: SEEDED_POSTHOG_HOST },
-    'the release build supplies the token; the settings host wins',
+    { token: RELEASE_POSTHOG_TOKEN, host: 'https://us.i.posthog.com' },
+    'the release build supplies the token and host',
+  );
+  assert.deepEqual(
+    withBuildIdentity({ ...releaseBuild, posthog_host: null }, () => readPostHogConfig()),
+    { token: RELEASE_POSTHOG_TOKEN, host: DEFAULT_POSTHOG_HOST },
+    'a build without a host uses EU Cloud',
+  );
+  setSetting('posthog_host', 'https://example.test');
+  assert.equal(
+    withBuildIdentity(releaseBuild, () => readPostHogConfig())?.host,
+    'https://example.test',
+    'a settings host overrides the build host',
   );
   deleteSetting('posthog_host');
-  assert.deepEqual(
-    withBuildIdentity(releaseBuild, () => readPostHogConfig()),
-    { token: RELEASE_POSTHOG_TOKEN, host: 'https://us.i.posthog.com' },
-    'the build host fills a missing settings host',
-  );
-  setSetting('posthog_host', SEEDED_POSTHOG_HOST);
   setSetting('posthog_project_token', 'phc_settings');
   assert.equal(
     withBuildIdentity(releaseBuild, () => readPostHogConfig())?.token,
@@ -696,7 +677,7 @@ async function main() {
     assert.deepEqual(readPostHogBootstrap(), { enabled: false });
     const header = buildCspHeader({ get: () => 'localhost:3001' });
     assert.equal(
-      connectSources(header).some((source) => source === SEEDED_POSTHOG_HOST),
+      connectSources(header).some((source) => source === DEFAULT_POSTHOG_HOST),
       false,
       `${name} does not allow the capture host`,
     );
@@ -706,7 +687,7 @@ async function main() {
   delete process.env.FLO_MATRIX_OFFLINE;
   delete process.env.E2E_TASK_LOCAL_PORTS;
   assert.equal(
-    clients.some((client) => client.options.host === SEEDED_POSTHOG_HOST),
+    clients.some((client) => client.options.host === DEFAULT_POSTHOG_HOST),
     false,
     'capture checks never target the EU capture host',
   );
@@ -724,10 +705,8 @@ async function main() {
   delete process.env.POSTHOG_PROJECT_TOKEN;
   delete process.env.POSTHOG_HOST;
 
-  setSetting('posthog_project_token', 'phc_test');
-  syncPostHogIdentity();
-  assert.equal(clients.length, 0, 'a token without a host sends nothing');
   setSetting('posthog_host', 'not a url');
+  setSetting('posthog_project_token', 'phc_test');
   syncPostHogIdentity();
   assert.equal(clients.length, 0, 'an unparseable host sends nothing');
   deleteSetting('posthog_project_token');

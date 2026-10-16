@@ -7144,14 +7144,6 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
-  {
-    version: 115,
-    name: 'seed_posthog_settings',
-    up: () => {
-      // The project token ships in build-identity.json from release builds, never in the database.
-      insertSettingIfMissing('posthog_host', 'https://eu.i.posthog.com');
-    },
-  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

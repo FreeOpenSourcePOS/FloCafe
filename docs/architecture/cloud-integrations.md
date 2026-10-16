@@ -79,13 +79,13 @@ only when a project token and a host resolve. `readPostHogConfig()` in
 `main/services/posthog-config.ts` takes the token from `FLO_POSTHOG_DEV_TOKEN` (development only),
 then the `posthog_project_token` setting, then `posthog_project_token` in
 `dist/main/build-identity.json`; the host comes from the `posthog_host` setting, then
-`posthog_host` in `build-identity.json`. Migration `seed_posthog_settings` inserts only the host, the
-EU Cloud public capture host `https://eu.i.posthog.com`; no database is seeded with a token.
-`scripts/copy-runtime-assets.cjs` writes the build-time `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST`
-into `build-identity.json`, and only the release and Mac App Store workflows set them, so local
-builds and forks carry no token. No environment variable configures the client at runtime other than
-the development overrides below. A host that is not `http` or `https`, or that includes credentials,
-is ignored, and the client sends nothing.
+`posthog_host` in `build-identity.json`, then the EU Cloud public capture host
+`https://eu.i.posthog.com`. No migration seeds either setting. `scripts/copy-runtime-assets.cjs`
+writes the build-time `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST` into `build-identity.json`, and
+only the release and Mac App Store workflows set them, so local builds and forks carry no token. No
+environment variable configures the client at runtime other than the development overrides below.
+A host that is not `http` or `https`, or that includes credentials, is ignored, and the client sends
+nothing.
 
 **Only released builds count.** `postHogEnvironment()` in `main/services/posthog-config.ts`
 decides, and only for an Electron main process (`process.type === 'browser'`); test suites run as

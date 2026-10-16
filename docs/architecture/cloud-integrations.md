@@ -47,6 +47,10 @@ that flips the default uses `INSERT OR IGNORE`; an install that already ran the 
 
 **Offline behaviour.** Events are dropped, not queued. There is no telemetry outbox.
 
+The same `telemetry_enabled` switch also gates PostHog usage events and the installation email,
+described under PostHog below. The collector at `https://telemetry.flopos.com/collect` sends no name
+and no email.
+
 **Run mode and install source.** Every telemetry event and every FloAdmin registration carries two
 provenance fields, so a merchant install is distinguishable from a developer's local run. `run_mode`
 is `packaged` or `dev`, read from `app.isPackaged`. `install_source` is `github`, `ms_store`,
@@ -67,6 +71,169 @@ An unreadable or unrecognised `/etc/os-release` reports `linux_package`. That is
 placeholder for "unknown": the distribution could not be identified, so the format is not guessed and
 neither `deb` nor `rpm` is claimed. Detection is total - outside Electron, in unit tests and scripts,
 it degrades to `dev` rather than throwing.
+
+## PostHog
+
+Optional product analytics and error tracking, next to the anonymous collector. The client sends
+only when a project token and a host resolve. `readPostHogConfig()` in
+`main/services/posthog-config.ts` takes the token from `FLO_POSTHOG_DEV_TOKEN` (development only),
+then the `posthog_project_token` setting, then `posthog_project_token` in
+`dist/main/build-identity.json`; the host comes from the `posthog_host` setting, then
+`posthog_host` in `build-identity.json`, then the EU Cloud public capture host
+`https://eu.i.posthog.com`. No migration seeds either setting. `scripts/copy-runtime-assets.cjs`
+writes the build-time `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST` into `build-identity.json`, and
+only the release and Mac App Store workflows set them, so local builds and forks carry no token. No
+environment variable configures the client at runtime other than the development overrides below.
+A host that is not `http` or `https`, or that includes credentials, is ignored, and the client sends
+nothing.
+
+**Only released builds count.** `postHogEnvironment()` in `main/services/posthog-config.ts`
+decides, and only for an Electron main process (`process.type === 'browser'`); test suites run as
+plain Node and never connect, even when they stub `app.isPackaged`.
+
+| Run | Environment |
+| --- | --- |
+| Packaged build whose `dist/main/build-identity.json` has `official_release: true` | `production` |
+| Any Electron run with `FLO_POSTHOG_DEV=1` | `development` |
+| Anything else: `npm run dev`, local `release:*` packages, CI and matrix packages | none; no connection |
+
+`official_release` is written by `scripts/copy-runtime-assets.cjs` only when the build runs with
+`FLO_OFFICIAL_RELEASE=1`, which only the release and Mac App Store workflows set. Every event and
+the person carry `environment` and `release_channel` (`stable` or `beta`). In development,
+`FLO_POSTHOG_DEV_TOKEN` (and optionally `FLO_POSTHOG_DEV_HOST`) sends to a separate project
+instead of the release one. The client also sends nothing when `CI` is set, when
+`FLO_MATRIX_OFFLINE` is `1`, or when the e2e harness is running (`E2E_TASK_LOCAL_PORTS`).
+
+In the PostHog project, **Settings → Project → Filter out internal and test users** should exclude
+person property `environment` = `development` and the team's email domain, with **Enable this
+filter on all new insights** turned on.
+
+Every event passes through `scrubPostHogEvent` in `shared/posthog-scrub.ts`, in the main process
+(`posthog-node`) and in the renderer (`posthog-js`). It is an allowlist: an event name, property, or
+person property it does not list is dropped. Every event carries `app_version`, `platform`,
+`run_mode`, `install_source`, `environment`, and `release_channel`; `install_ref` is added at the
+`anonymous` and `full` levels, and `store_ref` at `full` only (see **Sharing levels** below).
+
+**Sharing levels** (`product_analytics_level`, read by `readProductAnalyticsLevel()` in
+`main/services/posthog-identity.ts`).
+
+| Level | Distinct id | Person properties | Links |
+| --- | --- | --- | --- |
+| `full` | Account (`acct_`) | Store email and store configuration | `install_ref`, `store_ref`, `staff_ref`; the device is aliased into the account |
+| `anonymous` | Device (`inst_`) | Store configuration only, never the email | `install_ref`, `staff_ref` |
+| `off` | Per launch (`anon_`) | None | None; only exceptions, when diagnostics transmission is on |
+
+`telemetry_enabled` set to anything but `true` means `off`. Otherwise a stored `full` is `full`,
+any other stored value is `anonymous`, and a store with no stored level is `anonymous` once
+`onboarding_completed` is `true` and `off` before setup. `PUT /api/settings/product-analytics`
+(`settings.manage`) stores the level and writes `telemetry_enabled` and `anonymous_data_consent`
+(`false` for `off`, `true` otherwise), so the anonymous collector follows the same choice.
+`product_analytics_level` is restore-protected like `telemetry_enabled`. The scrubber's
+`accountLinked` option is on only at `full`; below it the scrubber drops `$create_alias`, any event
+on an `acct_` id, and `email` and `store_ref` wherever they appear.
+
+Setup asks for the level with two equal options, "Link my email" (`full`) and "Keep it anonymous"
+(`anonymous`), plus "Don't share usage data" (`off`); none is preselected and setup cannot
+continue without one. A setup request without a level stores none. An onboarded store with
+telemetry on and no stored level, such as one upgraded from a release without PostHog, shares
+anonymously and shows `ProductAnalyticsDialog` once to users with `settings.manage`. The dialog
+opens outside POS and KDS, only when `readProductAnalyticsChoice()` reports `choice_pending` (a
+configured client that can send), and offers the same two options with the error-report switch.
+Closing it without an answer asks again on the next launch. Settings → Privacy offers all three
+levels.
+
+**Identities** (`main/services/posthog-identity.ts`). The collector keeps `telemetry_anon_id`;
+PostHog does not use it.
+
+| Id | Value | Lifetime |
+| --- | --- | --- |
+| Account (person) | `acct_` + 16 hex of SHA-256 over the lower-cased store email | Same for every terminal and every reinstall that uses that email |
+| Device | `inst_` + 16 hex of SHA-256 over `posthog_install_seed`, a random UUID generated once and stored in settings | Same for the life of the database; a new database gets a new device id |
+| Per launch | `anon_` + a random UUID | One app launch |
+
+At `full`, the account is the person once a store email exists. Main sends one `$create_alias`
+that folds the device into the account (`posthog_aliased` records the pair), so events the device
+sent at `anonymous` join the account. The first account key a database derives is kept in
+`posthog_account_ref`, so editing the store email does not split the person; a reinstall derives it
+again from the current email. At `anonymous`, main sets store configuration on the device person
+with a `$set` event and never derives the account key. Moving from `full` to `anonymous` stops new
+links; events already linked stay linked. At `off`, exceptions use the per-launch id with
+`$process_person_profile` set to `false`. Stopping cloud services or requesting cloud deletion
+turns telemetry off and rotates `telemetry_anon_id`, but `posthog_install_seed` does not rotate, so
+a later opt-in on the same database links to the same device again.
+
+Only the main process sets the person, on launch and when the level, email or store settings change.
+The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
+init disables persistence and bootstraps that id, so the SDK cannot mint another one. Main checks
+consent and the id on every send; the renderer re-reads both every 30 seconds and on focus and
+stamps the current id on each event, so a level change takes effect without a reload. When usage
+and diagnostics were both off at load, the same check starts PostHog once either is turned on, and
+the current screen is recorded then. At `off`, renderer events move to the per-launch id and the
+scrubber drops `install_ref`, `store_ref`, and `staff_ref`; below `full` it drops `store_ref`. Only the Electron main window loads PostHog; the Server App,
+KDS, and customer display do not.
+
+**Staff are dimensions, not persons.** Many staff share one terminal, and group analytics is a paid
+add-on, so a person is never a staff member. The renderer tags events with `staff_role` (the
+signed-in role) and `staff_ref` (the first 16 hex characters of SHA-256 over the distinct id and the
+user id), and drops both on logout; logout never changes the distinct id. One email shared by
+several branches is one account; terminals are told apart by `install_ref`. A database restored
+onto another terminal brings its seed, so both terminals share a device id.
+
+**Usage follows the sharing level.** At `anonymous` and `full`:
+
+- Person properties are store configuration (`country`, `currency`, `language`, `service_model`,
+  `kds_enabled`), plus the store email at `full`. The email is `settings.email`, the store email
+  cloud registration also sends, or the email of the earliest `users` row when that setting is
+  empty. No name is sent.
+- A usage event keeps only the properties in `POSTHOG_USAGE_PROPERTY_KEYS`; any other property is
+  dropped.
+- `app_launch` and `feature_used` mirror the collector events. `daily_ping` runs on the
+  collector's hourly check but does not depend on the collector: it is sent at most once every 24
+  hours (`posthog_last_daily_ping_at`) with counts for the last 24 hours (orders by type, including
+  `online`, cancelled orders, paid bills, staff who rang up an order) and totals (active staff,
+  products, tables, customers, printers, kitchen stations). `setup_completed` records the setup
+  profile, service model, and business type. `first_order_created` and `first_bill_paid` are sent
+  once per installation with `hours_since_setup`, read hourly from the database. A milestone older
+  than the first check on this installation (`posthog_milestones_since`), such as an upgraded
+  store's first order, carries `backfilled: true`.
+- The renderer sends at most one `$pageview` per screen per staff member every 30 minutes
+  (`shared/posthog-screen-views.ts`); views inside the window are folded into the next pageview's
+  `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on
+  Settings. No other query value, hash, or title is sent.
+
+At `off`, nothing is identified and no usage event or pageview is sent. Autocapture, heatmaps, dead clicks, performance events, session replay,
+surveys, and feature-flag requests are off. `disable_external_dependency_loading` stops the renderer
+SDK from loading remote scripts.
+
+GeoIP enrichment is on in both SDKs (`posthog-node` needs `disableGeoip: false`), so PostHog adds
+`$geoip_*` location properties from the store's public IP at ingestion. Whether the IP itself is
+stored follows the project's IP data capture setting.
+
+**Exceptions follow diagnostics transmission.** `isDiagnosticsTransmissionEnabled()` is the existing
+"Sending diagnostics automatically" check: `diagnostics_consent` is on unless it is the string
+`false`, and `diagnostics_transmission_enabled` must be the string `true`. A scrubbed exception is
+sent when that check is on, at every sharing level. When the check is off, the
+exception stays on the machine. The client itself is disabled only at `off` with diagnostics
+transmission also off. `sendAnonymousDiagnosticReport` is unchanged and still requires
+both checks.
+
+| Capture point | Source |
+| --- | --- |
+| `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts` |
+| `renderer-autocapture` | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off) |
+| `react-error-boundary` | `reportRendererError`, called by the dashboard and global error boundaries |
+| `api-5xx` | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status only |
+
+An exception keeps its type, a redacted first line of the message, the mechanism, and stack frames
+with a project-relative file (`_next/static/...` for the packaged renderer), line, column, function
+name, and chunk id. Message redaction replaces emails, URLs, quoted text, and digit runs. Request
+params, query, body, digest, log tail, and any order or customer field are dropped. Release builds upload source maps when PostHog credentials are configured; see
+[PostHog release builds](../maintainers/releases.md#posthog-release-builds).
+
+**Offline behaviour.** Sends are best-effort. A failed send is dropped; there is no PostHog outbox,
+and a send does not sit on the path between an order and a paid bill. Shutdown waits at most
+`POSTHOG_SHUTDOWN_TIMEOUT_MS` (2 s) for pending events, so an unreachable host cannot hold up the
+database close.
 
 ## Store-attributed diagnostics
 

@@ -177,8 +177,29 @@ async function sendEventImpl(
   }
 }
 
+/** PostHog receives the same usage events; required lazily because posthog.ts imports this module. */
+function mirrorToPostHog(eventType: string, payload?: Record<string, unknown>): void {
+  if (eventType !== 'app_launch' && eventType !== 'feature_used') return;
+  try {
+    (require('./posthog') as typeof import('./posthog')).capturePostHogUsage(eventType, payload);
+  } catch {
+    // PostHog is optional and never disrupts the collector.
+  }
+}
+
+/** PostHog's daily ping and milestones run on this timer but never wait on the collector. */
+function runPostHogDailyChecks(): void {
+  if (matrixOffline() || telemetryStopping) return;
+  try {
+    (require('./posthog') as typeof import('./posthog')).runPostHogDailyChecks();
+  } catch {
+    // PostHog is optional.
+  }
+}
+
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
   if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
+  mirrorToPostHog(eventType, payload);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
@@ -377,7 +398,11 @@ export const telemetry = {
     if (matrixOffline()) return;
     void sendEvent('app_launch');
     maybeSendDailyPing();
-    dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);
+    runPostHogDailyChecks();
+    dailyPingTimer = setInterval(() => {
+      maybeSendDailyPing();
+      runPostHogDailyChecks();
+    }, DAILY_PING_INTERVAL_MS);
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;

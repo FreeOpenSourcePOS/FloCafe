@@ -91,6 +91,7 @@ async function run(): Promise<void> {
       'getKdsInfo',
       'getLogTail',
       'getMasterPinStatus',
+      'getPostHogBootstrap',
       'getPrinters',
       'getSettings',
       'getStatus',
@@ -135,6 +136,7 @@ async function run(): Promise<void> {
   const call = (name: string, ...args: unknown[]) =>
     (exposedApi![name] as (...callArgs: unknown[]) => Promise<unknown>)(...args);
   await call('getSettings');
+  await call('getPostHogBootstrap');
   await call('setSetting', 'theme_mode', 'dark');
   await call('getKdsInfo');
   await call('openKdsWindow');
@@ -194,6 +196,7 @@ async function run(): Promise<void> {
 
   assert.deepEqual(calls, [
     { channel: 'get-settings', args: [] },
+    { channel: 'get-posthog-bootstrap', args: [] },
     { channel: 'set-setting', args: ['theme_mode', 'dark'] },
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },

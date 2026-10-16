@@ -61,6 +61,21 @@ export interface ElectronAPI {
     route?: string;
   }) => Promise<ElectronActionResult>;
 
+  getPostHogBootstrap?: () => Promise<
+    | { enabled: false }
+    | {
+        enabled: true;
+        distinctId: string;
+        identified: boolean;
+        token: string;
+        host: string;
+        telemetryEnabled: boolean;
+        accountLinked: boolean;
+        diagnosticsEnabled: boolean;
+        superProperties: Record<string, string>;
+      }
+  >;
+
   // Printers. Writing one goes through the permission-gated HTTP route.
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
   /** Renders print HTML to a PDF file the user picks in a native save dialog. */

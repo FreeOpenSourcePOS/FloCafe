@@ -585,6 +585,8 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `PUT` | `/discount` | `ROLE_ACCESS.ownerManager` | body: `discount_max_percentage`, `discount_max_amount`, `discount_mode`, `discount_requires_approval` | - |
 | `GET` | `/kds` | any authenticated role | none | KDS settings for the pre-login and display surfaces. Readable by any authenticated role. |
 | `PUT` | `/kds` | `ROLE_ACCESS.ownerManager` | body: `kds_default_view` | - |
+| `GET` | `/product-analytics` | `settings.manage` | none | `{ level, choice_pending, email, diagnostics_enabled }`: the PostHog sharing level (`full`, `anonymous` or `off`), whether the one-time question is due, the email `full` would link, and diagnostics transmission. |
+| `PUT` | `/product-analytics` | `settings.manage` | body: `level` | Stores the level and writes `telemetry_enabled` (`false` for `off`); `400` for any other value. Same response as `GET`. |
 | `GET` | `/customer-display` | `settings.view`, `orders.read`, or `orders.create` + settings read limiter | none | `{ statuses, refresh_seconds, show_updated }` for the order-status board; defaults when unset. |
 | `PUT` | `/customer-display` | `settings.manage` + settings write limiter | body: `statuses` (non-empty subset of `pending`, `preparing`, `ready`), `refresh_seconds` (integer 2-60), `show_updated` (boolean) | The stored config; `400` for any other shape. |
 | `GET` | `/customer-display/tokens` | `settings.manage` + settings read limiter | none | `{ tokens }`: `{ id, label, created_at, last_seen_at }` for each active paired display. Never includes the token or its hash. |
@@ -623,7 +625,10 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 `diagnostics_consent` and `diagnostics_transmission_enabled` are owner/manager-writable Boolean
 settings. Their delivery gates and consent synchronization are described in [store-attributed
 diagnostics](../architecture/cloud-integrations.md#store-attributed-diagnostics), including how
-`telemetry_enabled` affects anonymous diagnostic delivery.
+`telemetry_enabled` affects anonymous diagnostic delivery. PostHog usage follows the sharing level
+from `/product-analytics`, and the installation email is sent only at `full`; PostHog exceptions
+follow diagnostics transmission at every level. See
+[PostHog](../architecture/cloud-integrations.md#posthog).
 
 ### Tax packs
 

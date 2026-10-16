@@ -2713,6 +2713,7 @@ const RESTORE_PROTECTED_SETTING_KEYS = [
   'cloud_device_secret',
   'cloud_pos_hash',
   'telemetry_enabled',
+  'product_analytics_level',
   'diagnostics_consent',
   'diagnostics_transmission_enabled',
   'diagnostics_settings_explicit',

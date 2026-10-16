@@ -33,6 +33,7 @@ import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/ca
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
 import { telemetry } from './services/telemetry';
+import { capturePostHogException, startPostHog, stopPostHog } from './services/posthog';
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
@@ -1454,6 +1455,7 @@ async function initialize(): Promise<void> {
 
     cloudSync.start();
     telemetry.start();
+    startPostHog();
     googleDrive.start();
 
     console.log('[Flo] Starting KDS server on port 3002...');
@@ -1735,6 +1737,7 @@ const cleanupCoordinator = createShutdownCoordinator(
     { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
     { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
     { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
+    { name: 'posthog', run: () => stopPostHog(), blocksDatabase: true },
     { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
     { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
     { name: 'Bonjour', run: () => stopMdns() },
@@ -1794,6 +1797,7 @@ process.on('uncaughtException', (error) => {
       capture_point: 'fc.electron.main.uncaught',
       outcome: 'unknown',
     });
+    capturePostHogException('uncaughtException', error);
   }
 });
 
@@ -1805,5 +1809,6 @@ process.on('unhandledRejection', (reason) => {
       capture_point: 'fc.electron.main.unhandled_rejection',
       outcome: 'unknown',
     });
+    capturePostHogException('unhandledRejection', reason);
   }
 });

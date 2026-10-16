@@ -36,6 +36,11 @@ import {
   resolveEffectivePermissions,
 } from '../services/authorization';
 import { serializeOperationFailure } from '../lib/operation-failure';
+import { capturePostHogUsage, syncPostHogIdentity } from '../services/posthog';
+import {
+  PRODUCT_ANALYTICS_LEVEL_SETTING,
+  parseProductAnalyticsLevel,
+} from '../services/posthog-identity';
 
 const router = Router();
 
@@ -735,7 +740,11 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       cloud_server_url,
       email_product_updates,
       email_marketing,
+      product_analytics_level,
     } = req.body;
+    // Without a choice the store shares anonymously and the owner is asked after setup.
+    const analyticsLevel = parseProductAnalyticsLevel(product_analytics_level);
+    const telemetryChoice = analyticsLevel === 'off' ? 'false' : 'true';
     const email = normalizeEmail(req.body.email);
     // Regional settings come from signup, never from a fallback — see
     // docs/reference/product-invariants.md. There is no default country.
@@ -908,8 +917,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
           getSettingValue('country'),
           req.body.country_selected,
         ),
-        anonymous_data_consent: 'true',
-        telemetry_enabled: 'true',
+        anonymous_data_consent: telemetryChoice,
+        telemetry_enabled: telemetryChoice,
+        ...(analyticsLevel ? { [PRODUCT_ANALYTICS_LEVEL_SETTING]: analyticsLevel } : {}),
         telemetry_scope:
           'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
         split_checks_enabled: 'false',
@@ -947,6 +957,12 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     } catch (error) {
       console.warn('[Auth] Cloud registration profile refresh deferred after setup:', error);
     }
+    syncPostHogIdentity();
+    capturePostHogUsage('setup_completed', {
+      setup_profile: normalizedSetupProfile,
+      service_model: normalizedServiceModel,
+      business_type,
+    });
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE, jti: randomUUID() },

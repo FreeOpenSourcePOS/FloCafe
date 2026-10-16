@@ -132,7 +132,9 @@ Only the main process identifies the account, on launch and when the email or st
 The renderer does not call `posthog.init` until main returns the id over `get-posthog-bootstrap`;
 init disables persistence and bootstraps that id, so the SDK cannot mint another one. Main checks
 consent and the id on every send; the renderer re-reads both every 30 seconds and on focus and
-stamps the current id on each event, so a consent change takes effect without a reload. With
+stamps the current id on each event, so a consent change takes effect without a reload. When
+telemetry and diagnostics were both off at load, the same check starts PostHog once either is
+turned on. With
 telemetry off, renderer events move to the per-launch id and the scrubber drops `install_ref`,
 `store_ref`, and `staff_ref`. Only the Electron main window loads PostHog; the Server App,
 KDS, and customer display do not.
@@ -150,12 +152,15 @@ share an OS machine id share a device id.
   `language`, `service_model`, `kds_enabled`). The email is `settings.email`, the store email cloud
   registration also sends, or the email of the earliest `users` row when that setting is empty. No
   name is sent.
-- `app_launch` and `feature_used` mirror the collector events. `daily_ping` is sent after the
-  collector accepts its daily ping and adds counts for the last 24 hours (orders by type, cancelled
-  orders, paid bills, staff who rang up an order) and totals (active staff, products, tables,
-  customers, printers, kitchen stations). `setup_completed` records the setup profile, service
-  model, and business type. `first_order_created` and `first_bill_paid` are sent once per
-  installation with `hours_since_setup`, read hourly from the database.
+- `app_launch` and `feature_used` mirror the collector events. `daily_ping` runs on the
+  collector's hourly check but does not depend on the collector: it is sent at most once every 24
+  hours (`posthog_last_daily_ping_at`) with counts for the last 24 hours (orders by type, including
+  `online`, cancelled orders, paid bills, staff who rang up an order) and totals (active staff,
+  products, tables, customers, printers, kitchen stations). `setup_completed` records the setup
+  profile, service model, and business type. `first_order_created` and `first_bill_paid` are sent
+  once per installation with `hours_since_setup`, read hourly from the database. A milestone older
+  than the first check on this installation (`posthog_milestones_since`), such as an upgraded
+  store's first order, carries `backfilled: true`.
 - The renderer sends at most one `$pageview` per screen per staff member every 30 minutes
   (`shared/posthog-screen-views.ts`); views inside the window are folded into the next pageview's
   `repeat_views`. A screen is the route path with id-like segments removed, plus `settings_tab` on
@@ -180,9 +185,9 @@ both checks.
 | Capture point | Source |
 | --- | --- |
 | `uncaughtException`, `unhandledRejection` | Main process handlers in `main/index.ts` |
-| `renderer-autocapture` | Unhandled errors and rejections in the main window (bundled `posthog-js` extension) |
+| `renderer-autocapture` | Unhandled errors and rejections in the main window (bundled `posthog-js` extension, always loaded; the scrubber drops them while diagnostics is off) |
 | `react-error-boundary` | `reportRendererError`, called by the dashboard and global error boundaries |
-| `api-5xx` | A local API response with status 500 or higher: method, route pattern, and status only |
+| `api-5xx` | A local API response with status 500 or higher: method, route pattern (mount prefix included, also for errors from the global handler), and status only |
 
 An exception keeps its type, a redacted first line of the message, the mechanism, and stack frames
 with a project-relative file (`_next/static/...` for the packaged renderer), line, column, function

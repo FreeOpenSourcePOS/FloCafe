@@ -10,14 +10,46 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CLI = '@posthog/cli@0.18.9';
+const CLI = '@posthog/cli@latest';
 const RELEASE_NAME = 'flocafe';
 const DEFAULT_HOST = 'https://eu.posthog.com';
 const ROOT = path.resolve(__dirname, '..');
 const DIRECTORIES = ['frontend/out', 'dist'];
+// What npx and the CLI need to run. Release jobs also hold signing certificates and store
+// credentials, so nothing else is passed to a package fetched at build time.
+const CLI_ENV_KEYS = new Set([
+  'PATH',
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'SYSTEMROOT',
+  'COMSPEC',
+  'PATHEXT',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'NPM_CONFIG_CACHE',
+  'NPM_CONFIG_REGISTRY',
+]);
 
 function sourceMapsConfigured(env = process.env) {
   return Boolean(env.POSTHOG_CLI_API_KEY?.trim() && env.POSTHOG_CLI_PROJECT_ID?.trim());
+}
+
+function cliEnv(env = process.env) {
+  const next = {};
+  for (const [key, value] of Object.entries(env)) {
+    const upper = key.toUpperCase();
+    if (value !== undefined && (CLI_ENV_KEYS.has(upper) || upper.startsWith('POSTHOG_CLI_'))) {
+      next[key] = value;
+    }
+  }
+  next.POSTHOG_CLI_HOST = env.POSTHOG_CLI_HOST || DEFAULT_HOST;
+  return next;
 }
 
 function warn(message) {
@@ -58,7 +90,7 @@ function main() {
     );
     return;
   }
-  const env = { ...process.env, POSTHOG_CLI_HOST: process.env.POSTHOG_CLI_HOST || DEFAULT_HOST };
+  const env = cliEnv();
   const version = require(path.join(ROOT, 'package.json')).version;
   const release = ['--release-name', RELEASE_NAME, '--release-version', version];
   for (const relative of DIRECTORIES) {
@@ -77,4 +109,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { shellArgs, sourceMapsConfigured };
+module.exports = { cliEnv, shellArgs, sourceMapsConfigured };

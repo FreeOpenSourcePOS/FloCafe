@@ -87,6 +87,9 @@ Each Linux, macOS, and Windows build step runs `npm run sourcemaps:posthog`
 export is built with browser source maps, and the script injects chunk ids into `frontend/out` and
 `dist`, uploads their maps as release `flocafe` at the `package.json` version, and deletes the
 `.js.map` files so they do not ship. `POSTHOG_CLI_HOST` defaults to `https://eu.posthog.com`.
+The script runs `@posthog/cli@latest` through `npx`, so a release uses the newest published CLI.
+The CLI gets only `PATH`, home and temp directories, proxy and npm cache settings, and
+`POSTHOG_CLI_*`; signing certificates and store credentials in the job are not passed to it.
 
 Without the key or the project id, the step prints a skip notice and the build is unchanged. An
 upload failure is a warning, not a release failure; the maps are still deleted. The key needs the

@@ -84,10 +84,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const {
+  apiRoutePattern,
   capturePostHogApiFailure,
   capturePostHogException,
   capturePostHogUsage,
   checkPostHogMilestones,
+  maybeSendPostHogDailyPing,
+  postHogApiFailureMiddleware,
   readDailyUsageSummary,
   readPostHogBootstrap,
   readSuperProperties,
@@ -105,7 +108,7 @@ const {
 } = require('../main/services/posthog-identity');
 const { SHUTDOWN_TIMEOUT_MS } = require('../main/shutdown');
 const { createScreenViewThrottle, screenKey } = require('../shared/posthog-screen-views');
-const { shellArgs, sourceMapsConfigured } = require('../scripts/posthog-sourcemaps.cjs');
+const { cliEnv, shellArgs, sourceMapsConfigured } = require('../scripts/posthog-sourcemaps.cjs');
 const {
   redactExceptionMessage,
   scrubPostHogEvent,
@@ -236,6 +239,27 @@ async function main() {
     'Windows paths with spaces stay one argument',
   );
   assert.deepEqual(shellArgs(['--directory', '/a b/out'], 'darwin'), ['--directory', '/a b/out']);
+  assert.deepEqual(
+    cliEnv({
+      PATH: '/usr/bin',
+      Path: 'C:\\bin',
+      POSTHOG_CLI_API_KEY: 'phx_key',
+      POSTHOG_CLI_PROJECT_ID: '7',
+      POSTHOG_CLI_HOST: '',
+      CSC_LINK: 'cert',
+      CSC_KEY_PASSWORD: 'secret',
+      APPLE_API_KEY: '/key.p8',
+      GITHUB_TOKEN: 'ghs',
+    }),
+    {
+      PATH: '/usr/bin',
+      Path: 'C:\\bin',
+      POSTHOG_CLI_API_KEY: 'phx_key',
+      POSTHOG_CLI_PROJECT_ID: '7',
+      POSTHOG_CLI_HOST: 'https://eu.posthog.com',
+    },
+    'the CLI never sees signing or store credentials',
+  );
 
   const linkedWhileOff = scrubPostHogEvent(
     {
@@ -740,6 +764,31 @@ async function main() {
   assert.deepEqual(milestoneEvents(), ['first_order_created'], 'each milestone is sent once');
   assert.equal(typeof latest().events.at(-1).properties?.hours_since_setup, 'number');
   assert.equal(readDailyUsageSummary().staff_with_orders_24h, 1);
+  assert.equal('backfilled' in (latest().events.at(-1).properties ?? {}), false);
+  deleteSetting('posthog_milestones_sent');
+  getDatabase()
+    .prepare(
+      `INSERT INTO orders (order_number, type, status, user_id, created_at, updated_at)
+       VALUES ('M-0', 'online', 'completed', 'owner-1', '2020-01-01 00:00:00', '2020-01-01 00:00:00')`,
+    )
+    .run();
+  checkPostHogMilestones();
+  assert.equal(
+    latest().events.at(-1).properties?.backfilled,
+    true,
+    'a first order from before the upgrade is tagged backfilled',
+  );
+  getDatabase().prepare("DELETE FROM orders WHERE order_number = 'M-0'").run();
+
+  getDatabase().prepare("UPDATE orders SET type = 'online' WHERE order_number = 'M-1'").run();
+  const dailyPings = () => latest().events.filter((event) => event.event === 'daily_ping');
+  const pingsBefore = dailyPings().length;
+  maybeSendPostHogDailyPing();
+  maybeSendPostHogDailyPing();
+  assert.equal(dailyPings().length, pingsBefore + 1, 'one ping a day, without the collector');
+  assert.equal(dailyPings().at(-1)?.properties?.orders_online_24h, 1);
+  maybeSendPostHogDailyPing(Date.now() + 25 * 60 * 60_000);
+  assert.equal(dailyPings().length, pingsBefore + 2);
   getDatabase().prepare("DELETE FROM orders WHERE order_number = 'M-1'").run();
   assert.equal(JSON.stringify(summary).includes('@'), false);
 
@@ -766,6 +815,42 @@ async function main() {
   assert.equal(apiCaptured.message, 'POST /api/orders/:id/items');
   assert.equal(apiCaptured.properties?.capture_point, 'api-5xx');
   assert.equal(apiCaptured.properties?.http_status, 500);
+
+  assert.equal(apiRoutePattern('/api/orders/42/?q=Ada', '/:id'), '/api/orders/:id');
+  assert.equal(apiRoutePattern('/api/orders/42/items', '/:id/items'), '/api/orders/:id/items');
+  assert.equal(apiRoutePattern('/api/health', '/api/health'), '/api/health');
+  assert.equal(apiRoutePattern('/api/x', /x/), '<unmatched>');
+  const express = require('express');
+  const api = express();
+  api.use(postHogApiFailureMiddleware);
+  const orders = express.Router();
+  orders.put('/:id', (_req: unknown, _res: unknown, next: (error: Error) => void) =>
+    next(new Error('boom')),
+  );
+  orders.post('/:id', async () => {
+    throw new Error('boom');
+  });
+  api.use('/api/orders', orders);
+  api.use((_error: Error, _req: unknown, res: any, _next: unknown) => res.status(500).end());
+  const server = api.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const { port } = server.address();
+  try {
+    for (const method of ['PUT', 'POST']) {
+      await fetch(`http://127.0.0.1:${port}/api/orders/42?customer=Ada`, { method });
+      await new Promise((resolve) => setImmediate(resolve));
+      const routed = latest().exceptions.at(-1);
+      assert.equal(
+        routed.properties?.http_route,
+        '/api/orders/:id',
+        `${method} errors from the global handler keep the mount prefix`,
+      );
+      assert.equal(routed.properties?.http_method, method);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 
   setSetting('telemetry_enabled', 'false');
   const before = latest().events.length;

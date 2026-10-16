@@ -5,9 +5,11 @@
  * or an opted-in development run.
  */
 
+import type { NextFunction, Request, Response } from 'express';
 import {
   getDatabase,
   getSettingValue,
+  now,
   upsertSettings,
   isDiagnosticsTransmissionEnabled,
   isTelemetryEnabled,
@@ -181,6 +183,9 @@ export function readDailyUsageSummary(): Record<string, number | boolean | strin
     orders_delivery_24h: count(
       `SELECT COUNT(*) AS n FROM orders WHERE created_at >= ${day} AND type = 'delivery'`,
     ),
+    orders_online_24h: count(
+      `SELECT COUNT(*) AS n FROM orders WHERE created_at >= ${day} AND type = 'online'`,
+    ),
     orders_cancelled_24h: count(
       `SELECT COUNT(*) AS n FROM orders WHERE created_at >= ${day} AND status = 'cancelled'`,
     ),
@@ -306,16 +311,22 @@ export function capturePostHogUsage(
 }
 
 const MILESTONES_SETTING = 'posthog_milestones_sent';
+const MILESTONES_SINCE_SETTING = 'posthog_milestones_since';
+const DAILY_PING_SETTING = 'posthog_last_daily_ping_at';
+const DAILY_PING_MIN_GAP_MS = 24 * 60 * 60_000;
 
 const MILESTONES: Array<{ event: 'first_order_created' | 'first_bill_paid'; sql: string }> = [
   { event: 'first_order_created', sql: 'SELECT MIN(created_at) AS at FROM orders' },
   { event: 'first_bill_paid', sql: 'SELECT MIN(paid_at) AS at FROM bills' },
 ];
 
+function dbTimeMs(value: string | null | undefined): number {
+  return value ? Date.parse(`${value.replace(' ', 'T')}Z`) : NaN;
+}
+
 function hoursBetween(from: string | undefined, to: string): number | undefined {
-  if (!from) return undefined;
-  const start = Date.parse(`${from.replace(' ', 'T')}Z`);
-  const end = Date.parse(`${to.replace(' ', 'T')}Z`);
+  const start = dbTimeMs(from);
+  const end = dbTimeMs(to);
   if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return undefined;
   return Math.round(((end - start) / 3_600_000) * 10) / 10;
 }
@@ -323,12 +334,18 @@ function hoursBetween(from: string | undefined, to: string): number | undefined 
 /**
  * Activation milestones, each sent once per installation: how long after setup the store
  * rang up its first order and took its first payment. Read from the database, never from the
- * order or payment path.
+ * order or payment path. A milestone that happened before this installation started checking
+ * (an upgraded store) is tagged `backfilled` so it stays out of live activation funnels.
  */
 export function checkPostHogMilestones(): void {
   try {
     if (!isTelemetryEnabled() || !activeClient()) return;
     const db = getDatabase();
+    let since = getSettingValue(MILESTONES_SINCE_SETTING);
+    if (!since) {
+      since = now();
+      upsertSettings({ [MILESTONES_SINCE_SETTING]: since });
+    }
     const sent = new Set((getSettingValue(MILESTONES_SETTING) ?? '').split(',').filter(Boolean));
     const setupAt = (
       db.prepare('SELECT created_at AS at FROM users ORDER BY rowid ASC LIMIT 1').get() as
@@ -340,13 +357,38 @@ export function checkPostHogMilestones(): void {
       const at = (db.prepare(milestone.sql).get() as { at?: string | null } | undefined)?.at;
       if (!at) continue;
       const hours = hoursBetween(setupAt, at);
-      capturePostHogUsage(milestone.event, hours === undefined ? {} : { hours_since_setup: hours });
+      capturePostHogUsage(milestone.event, {
+        ...(hours === undefined ? {} : { hours_since_setup: hours }),
+        ...(dbTimeMs(at) < dbTimeMs(since) ? { backfilled: true } : {}),
+      });
       sent.add(milestone.event);
       upsertSettings({ [MILESTONES_SETTING]: [...sent].join(',') });
     }
   } catch {
     // Milestones are best-effort.
   }
+}
+
+/**
+ * The 24h usage summary, at most once a day and independent of the collector. Best effort:
+ * a ping the SDK cannot deliver is not resent.
+ */
+export function maybeSendPostHogDailyPing(nowMs: number = Date.now()): void {
+  try {
+    if (!isTelemetryEnabled() || !activeClient()) return;
+    const last = dbTimeMs(getSettingValue(DAILY_PING_SETTING));
+    if (Number.isFinite(last) && nowMs - last < DAILY_PING_MIN_GAP_MS) return;
+    capturePostHogUsage('daily_ping', readDailyUsageSummary());
+    upsertSettings({ [DAILY_PING_SETTING]: now() });
+  } catch {
+    // The daily ping is best-effort.
+  }
+}
+
+/** Runs from the telemetry service's hourly check. */
+export function runPostHogDailyChecks(): void {
+  maybeSendPostHogDailyPing();
+  checkPostHogMilestones();
 }
 
 export function startPostHog(): void {
@@ -404,6 +446,19 @@ export function capturePostHogException(
   }
 }
 
+/**
+ * The matched route pattern, such as `/api/orders/:id`. Express resets `baseUrl` once an error
+ * leaves its router, so the mount prefix is recovered from the request path instead.
+ */
+export function apiRoutePattern(originalUrl: string, routePath: unknown): string {
+  if (typeof routePath !== 'string' || /[*{(]/.test(routePath)) return '<unmatched>';
+  const pathSegments = originalUrl.split('?')[0].split('/').filter(Boolean);
+  const routeSegments = routePath.split('/').filter(Boolean);
+  if (routeSegments.length > pathSegments.length) return '<unmatched>';
+  const prefix = pathSegments.slice(0, pathSegments.length - routeSegments.length);
+  return `/${[...prefix, ...routeSegments].join('/')}`;
+}
+
 /** A 5xx from the local API, keyed by method and route pattern. No params, query, or body. */
 export function capturePostHogApiFailure(method: string, route: string, status: number): void {
   const error = new Error(`${method} ${route}`);
@@ -414,4 +469,16 @@ export function capturePostHogApiFailure(method: string, route: string, status: 
     http_route: route,
     http_status: status,
   });
+}
+
+/** Reports every 5xx the local API sends, including those from the global error handler. */
+export function postHogApiFailureMiddleware(req: Request, res: Response, next: NextFunction): void {
+  res.on('finish', () => {
+    if (res.statusCode < 500) return;
+    const route = req.route
+      ? apiRoutePattern(req.originalUrl, req.route.path)
+      : req.baseUrl || '<unmatched>';
+    capturePostHogApiFailure(req.method, route, res.statusCode);
+  });
+  next();
 }

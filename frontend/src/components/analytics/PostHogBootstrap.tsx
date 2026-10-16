@@ -22,8 +22,8 @@ const LINKED_KEYS = ['install_ref', 'store_ref', 'staff_ref'] as const;
  */
 const consent = { telemetry: false, diagnostics: false };
 const identity = { distinctId: '', identified: false };
-/** The signed-in staff member, so `staff_ref` can be restored when telemetry is turned back on. */
-const staff: { userId?: number | string } = {};
+/** The signed-in staff member, so staff tags can be applied after a late boot or a consent change. */
+const staff: { userId?: number | string; role?: string } = {};
 
 type Bootstrap = Awaited<
   ReturnType<NonNullable<NonNullable<Window['electronAPI']>['getPostHogBootstrap']>>
@@ -39,6 +39,7 @@ function applyBootstrap(bootstrap: Bootstrap | undefined): void {
   }
   if (!client) return;
   if (enabled) client.register(bootstrap.superProperties);
+  if (staff.role) client.register({ staff_role: staff.role });
   if (!consent.telemetry) {
     for (const key of LINKED_KEYS) client.unregister(key);
   } else if (staff.userId !== undefined) {
@@ -78,11 +79,11 @@ async function bootPostHog() {
     return null;
   }
   if (!bootstrap?.enabled) return null;
-  const diagnosticsEnabled = bootstrap.diagnosticsEnabled === true;
   applyBootstrap(bootstrap);
   const { default: posthog } = await import('posthog-js');
-  // Bundled so exception autocapture never loads a remote script the CSP would block.
-  if (diagnosticsEnabled) await import('posthog-js/dist/exception-autocapture');
+  // Bundled so exception autocapture never loads a remote script the CSP would block. It is always
+  // on so diagnostics can be enabled mid-session; before_send drops exceptions while it is off.
+  await import('posthog-js/dist/exception-autocapture');
   posthog.init(bootstrap.token, {
     api_host: bootstrap.host,
     person_profiles: 'identified_only',
@@ -105,9 +106,7 @@ async function bootPostHog() {
       distinctID: bootstrap.distinctId,
       isIdentifiedID: bootstrap.identified === true,
     },
-    capture_exceptions: diagnosticsEnabled
-      ? { capture_unhandled_errors: true, capture_unhandled_rejections: true }
-      : false,
+    capture_exceptions: { capture_unhandled_errors: true, capture_unhandled_rejections: true },
     before_send: (event) =>
       scrubPostHogEvent(withCurrentIdentity(event as unknown as ScrubbableEvent), {
         telemetryEnabled: consent.telemetry,
@@ -118,14 +117,25 @@ async function bootPostHog() {
   client = posthog;
   applyBootstrap(bootstrap);
   setPostHogClient(posthog);
-  window.setInterval(() => void refreshConsent(), CONSENT_REFRESH_MS);
-  window.addEventListener('focus', () => void refreshConsent());
   return posthog;
 }
 
+/** Boots once enabled. A disabled result is not kept, so a later consent change can still boot. */
 function postHog() {
-  boot ??= bootPostHog().catch(() => null);
+  boot ??= bootPostHog()
+    .catch(() => null)
+    .then((posthog) => {
+      if (!posthog) boot = null;
+      return posthog;
+    });
   return boot;
+}
+
+/** Re-reads consent, booting PostHog if it was off when the window loaded. */
+function refresh(): void {
+  void postHog().then((posthog) => {
+    if (posthog) void refreshConsent();
+  });
 }
 
 /** A per-installation hash of the user id: counts distinct staff without identifying anyone. */
@@ -155,10 +165,20 @@ export function PostHogBootstrap() {
   const staffKey = useRef('');
 
   useEffect(() => {
+    const timer = window.setInterval(refresh, CONSENT_REFRESH_MS);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+
+  useEffect(() => {
     const version = ++staffVersion.current;
+    staff.userId = role ? userId : undefined;
+    staff.role = userId !== undefined && role ? role : undefined;
     staffTagged.current = postHog().then(async (posthog) => {
       if (!posthog) return;
-      staff.userId = role ? userId : undefined;
       if (userId === undefined || !role) {
         staffKey.current = '';
         posthog.unregister('staff_role');

@@ -179,23 +179,19 @@ async function sendEventImpl(
 
 /** PostHog receives the same usage events; required lazily because posthog.ts imports this module. */
 function mirrorToPostHog(eventType: string, payload?: Record<string, unknown>): void {
+  if (eventType !== 'app_launch' && eventType !== 'feature_used') return;
   try {
-    const { capturePostHogUsage } = require('./posthog') as typeof import('./posthog');
-    if (eventType === 'daily_ping') {
-      const { readDailyUsageSummary } = require('./posthog') as typeof import('./posthog');
-      capturePostHogUsage('daily_ping', { ...readDailyUsageSummary(), ...(payload ?? {}) });
-    } else if (eventType === 'app_launch' || eventType === 'feature_used') {
-      capturePostHogUsage(eventType, payload);
-    }
+    (require('./posthog') as typeof import('./posthog')).capturePostHogUsage(eventType, payload);
   } catch {
     // PostHog is optional and never disrupts the collector.
   }
 }
 
-function checkMilestones(): void {
+/** PostHog's daily ping and milestones run on this timer but never wait on the collector. */
+function runPostHogDailyChecks(): void {
   if (matrixOffline() || telemetryStopping) return;
   try {
-    (require('./posthog') as typeof import('./posthog')).checkPostHogMilestones();
+    (require('./posthog') as typeof import('./posthog')).runPostHogDailyChecks();
   } catch {
     // PostHog is optional.
   }
@@ -203,7 +199,7 @@ function checkMilestones(): void {
 
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
   if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
-  if (eventType !== 'daily_ping') mirrorToPostHog(eventType, payload);
+  mirrorToPostHog(eventType, payload);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
@@ -386,9 +382,7 @@ function maybeSendDailyPing(): void {
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
   const operation = sendEvent('daily_ping').then((sent) => {
-    if (!sent) return;
-    upsertTelemetryLastPing();
-    mirrorToPostHog('daily_ping');
+    if (sent) upsertTelemetryLastPing();
   });
   trackTelemetry(operation);
 }
@@ -404,10 +398,10 @@ export const telemetry = {
     if (matrixOffline()) return;
     void sendEvent('app_launch');
     maybeSendDailyPing();
-    checkMilestones();
+    runPostHogDailyChecks();
     dailyPingTimer = setInterval(() => {
       maybeSendDailyPing();
-      checkMilestones();
+      runPostHogDailyChecks();
     }, DAILY_PING_INTERVAL_MS);
   },
   stop(): Promise<void> {

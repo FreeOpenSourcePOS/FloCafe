@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Ayrıntıları görmek için soldan bir sipariş seçin.",
     "orderNotInCurrentList": "Bu sipariş artık mevcut listede değil.",
     "orderMissing": "Bu sipariş artık yok veya kullanılamıyor.",
-    "itemCount": "{count, plural, one {1 ürün} other {# ürün}}"
+    "itemCount": "{count, plural, one {1 ürün} other {# ürün}}",
+    "editPreparationStartedHint": "Hazırlık başladı. Miktarı artırabilir veya azaltabilirsiniz. Ürünü değiştirmek kullanılamaz.",
+    "editWasteReasonLabel": "Fire sebebi (zorunlu)",
+    "editWasteReasonPlaceholder": "Mutfak fire sebebi",
+    "pendingItemEdit": "Bekleyen ürün düzenlemesi",
+    "pendingItemEditHint": "Önceki sonuç doğrulanmadı. Çözme, kaydedilen düzenlemeyi yeniden gönderir ve alınamadıysa tamamlar.",
+    "resolvePendingItemEdit": "Bekleyen düzenlemeyi çöz",
+    "resolvingPendingItemEdit": "Düzenleme çözülüyor...",
+    "pendingItemEditStorageError": "Kaydedilen düzenleme okunamadı veya güncellenemedi. Cihazda saklandı.",
+    "pendingItemEditAuthRequired": "Bu düzenlemeyi çözmek için özgün hesapla giriş yapın.",
+    "pendingItemEditRateLimited": "Çok fazla istek var. Bekleyin ve tekrar deneyin.",
+    "pendingItemEditRefreshFailed": "Düzenleme doğrulandı ancak siparişin güncel ayrıntıları yenilenemedi."
   },
   "pos": {
     "addCustomer": "Müşteri Ekle",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Sipariş verin veya ödeme ekranında nakit tahsil edin",
     "swapNameAndPhone": "Ad ve telefonu değiştir",
     "createWithPhone": "Telefon ile müşteri oluştur: {phone}",
-    "createWithName": "İsim ile müşteri oluştur: {name}"
+    "createWithName": "İsim ile müşteri oluştur: {name}",
+    "splitItemsIntoChecks": "Ürünleri birden fazla hesaba böl",
+    "splitCheckAvailabilityLoading": "Hesap bölme uygunluğu kontrol ediliyor...",
+    "splitCheckAvailabilityFailed": "Hesap bölme uygunluğu kontrol edilemedi.",
+    "splitCheckPermissionRequired": "Hesap bölme izniniz yok.",
+    "splitCheckResolvePaymentFirst": "Bölmeden önce mevcut ödemeyi tamamlayın veya netleştirin.",
+    "splitCheckBeforePaymentOnly": "Hesaplar ödeme kaydedilmeden önce bölünür.",
+    "splitCheckDineInOnly": "Yalnızca masada tüketim hesapları bölünebilir.",
+    "splitCheckWholeUnitsOnly": "Bölme işlemi tam ürün adetleri gerektirir.",
+    "splitCheckTwoUnitsRequired": "En az iki uygun ürün adedi gerekir.",
+    "splitCheckCheckAvailability": "Uygunluğu kontrol et",
+    "viewMore": "Daha fazla göster",
+    "viewLess": "Daha az göster",
+    "splitCheckSettingDenied": "Bu hesap hesap bölme uygunluğunu kontrol edemez."
   },
   "printTest": {
     "amt": "Tutar",

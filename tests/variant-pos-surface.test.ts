@@ -52,7 +52,9 @@ moduleApi._resolveFilename = function (
           ? path.resolve(ROOT, 'frontend/src', request.slice(2))
           : request.startsWith('@print/')
             ? path.resolve(ROOT, 'shared/print', request.slice('@print/'.length))
-            : (resolveFrontendPackage(request) ?? request);
+            : request.startsWith('@shared/')
+              ? path.resolve(ROOT, 'shared', request.slice('@shared/'.length))
+              : (resolveFrontendPackage(request) ?? request);
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 

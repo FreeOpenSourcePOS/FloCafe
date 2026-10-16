@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Seleziona un ordine a sinistra per visualizzare i dettagli.",
     "orderNotInCurrentList": "Questo ordine non è più nell’elenco corrente.",
     "orderMissing": "Questo ordine non esiste più o non è disponibile.",
-    "itemCount": "{count, plural, one {1 articolo} other {# articoli}}"
+    "itemCount": "{count, plural, one {1 articolo} other {# articoli}}",
+    "editPreparationStartedHint": "La preparazione è iniziata. Puoi aumentare o ridurre la quantità. La sostituzione del prodotto non è disponibile.",
+    "editWasteReasonLabel": "Motivo dello spreco (obbligatorio)",
+    "editWasteReasonPlaceholder": "Motivo dello spreco da cucina",
+    "pendingItemEdit": "Modifica articolo in sospeso",
+    "pendingItemEditHint": "Il risultato precedente non è stato confermato. La risoluzione reinvia la modifica salvata e può completarla se non è stata ricevuta.",
+    "resolvePendingItemEdit": "Risolvi la modifica in sospeso",
+    "resolvingPendingItemEdit": "Risoluzione della modifica...",
+    "pendingItemEditStorageError": "La modifica salvata non può essere letta o aggiornata. È stata conservata su questo dispositivo.",
+    "pendingItemEditAuthRequired": "Accedi con l'account originale per risolvere questa modifica.",
+    "pendingItemEditRateLimited": "Troppe richieste. Attendi, poi riprova a risolvere.",
+    "pendingItemEditRefreshFailed": "La modifica è stata confermata, ma non è stato possibile aggiornare i dettagli correnti dell'ordine."
   },
   "pos": {
     "addCustomer": "Aggiungi cliente",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Inviare l’ordine o incassare in contanti al pagamento",
     "swapNameAndPhone": "Inverti nome e telefono",
     "createWithPhone": "Crea cliente con telefono: {phone}",
-    "createWithName": "Crea cliente con nome: {name}"
+    "createWithName": "Crea cliente con nome: {name}",
+    "splitItemsIntoChecks": "Suddividi gli articoli in più conti",
+    "splitCheckAvailabilityLoading": "Verifica della disponibilità della suddivisione del conto...",
+    "splitCheckAvailabilityFailed": "Impossibile verificare la disponibilità della suddivisione del conto.",
+    "splitCheckPermissionRequired": "Non hai il permesso di suddividere i conti.",
+    "splitCheckResolvePaymentFirst": "Completa o risolvi il pagamento corrente prima di suddividere.",
+    "splitCheckBeforePaymentOnly": "I conti si suddividono prima che un pagamento venga registrato.",
+    "splitCheckDineInOnly": "Solo i conti per il consumo al tavolo possono essere suddivisi.",
+    "splitCheckWholeUnitsOnly": "La suddivisione richiede quantità intere degli articoli.",
+    "splitCheckTwoUnitsRequired": "Sono richieste almeno due unità di articoli idonei.",
+    "splitCheckCheckAvailability": "Verifica disponibilità",
+    "viewMore": "Vedi altro",
+    "viewLess": "Mostra meno",
+    "splitCheckSettingDenied": "Questo account non può verificare la disponibilità della suddivisione del conto."
   },
   "printTest": {
     "amt": "Importo",

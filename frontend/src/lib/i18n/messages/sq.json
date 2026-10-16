@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Zgjidhni një porosi në të majtë për të parë detajet.",
     "orderNotInCurrentList": "Kjo porosi nuk është më në listën aktuale.",
     "orderMissing": "Kjo porosi nuk ekziston më ose nuk është e disponueshme.",
-    "itemCount": "{count, plural, one {1 artikull} other {# artikuj}}"
+    "itemCount": "{count, plural, one {1 artikull} other {# artikuj}}",
+    "editPreparationStartedHint": "Përgatitja ka filluar. Mund të rritësh ose të zvogëlosh sasinë. Zëvendësimi i produktit nuk është i disponueshëm.",
+    "editWasteReasonLabel": "Arsyeja e humbjes (e detyrueshme)",
+    "editWasteReasonPlaceholder": "Arsyeja e humbjes nga kuzhina",
+    "pendingItemEdit": "Redaktim artikulli në pritje",
+    "pendingItemEditHint": "Rezulti i mëparshëm nuk u konfirmua. Zgjidhja dërgon përsëri redaktimin e ruajtur dhe mund ta përfundojë nëse nuk ishte pranuar.",
+    "resolvePendingItemEdit": "Zgjidh redaktimin në pritje",
+    "resolvingPendingItemEdit": "Po e zgjidh redaktimin...",
+    "pendingItemEditStorageError": "Redaktimi i ruajtur nuk mund të lexohej ose përditësohej. U mbajt në këtë pajisje.",
+    "pendingItemEditAuthRequired": "Hyr me llogarinë origjinale për ta zgjidhur këtë redaktim.",
+    "pendingItemEditRateLimited": "Shumë kërkesa. Prit, pastaj provo sërish.",
+    "pendingItemEditRefreshFailed": "Redaktimi u konfirmua, por detajet aktuale të porosisë nuk mund të përditësoheshin."
   },
   "pos": {
     "addCustomer": "Shto klient",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Vendos porosinë ose arkëto para në dorë te pagesa",
     "swapNameAndPhone": "Ndërro emrin dhe telefonin",
     "createWithPhone": "Krijo klient me telefon: {phone}",
-    "createWithName": "Krijo klient me emrin: {name}"
+    "createWithName": "Krijo klient me emrin: {name}",
+    "splitItemsIntoChecks": "Ndaj artikujt në fatura të veçanta",
+    "splitCheckAvailabilityLoading": "Po verifikohet disponueshmëria e ndarjes së faturës...",
+    "splitCheckAvailabilityFailed": "Disponueshmëria e ndarjes së faturës nuk mund të verifikohej.",
+    "splitCheckPermissionRequired": "Nuk ke leje për të ndarë fatura.",
+    "splitCheckResolvePaymentFirst": "Përfundo ose zgjidh pagesën aktuale përpara se ta ndash.",
+    "splitCheckBeforePaymentOnly": "Faturat ndahen përpara se të regjistrohet ndonjë pagesë.",
+    "splitCheckDineInOnly": "Vetëm faturat për konsum në vend mund të ndahen.",
+    "splitCheckWholeUnitsOnly": "Ndarja kërkon sasi të plota artikujsh.",
+    "splitCheckTwoUnitsRequired": "Kërkohen të paktën dy njësi artikujsh të përshtatshëm.",
+    "splitCheckCheckAvailability": "Kontrollo disponueshmërinë",
+    "viewMore": "Shfaq më shumë",
+    "viewLess": "Shfaq më pak",
+    "splitCheckSettingDenied": "Kjo llogari nuk mund të verifikojë disponueshmërinë e ndarjes së faturës."
   },
   "printTest": {
     "amt": "Shuma",

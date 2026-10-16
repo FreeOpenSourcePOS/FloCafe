@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "詳細を表示するには、左側の注文を選択してください。",
     "orderNotInCurrentList": "この注文は現在の一覧に表示されていません。",
     "orderMissing": "この注文は削除されたか、利用できなくなりました。",
-    "itemCount": "{count, plural, other {#点}}"
+    "itemCount": "{count, plural, other {#点}}",
+    "editPreparationStartedHint": "提供処理が開始されています。数量は増減できますが、商品の変更はできません。",
+    "editWasteReasonLabel": "ロス理由（必須）",
+    "editWasteReasonPlaceholder": "キッチンロスの理由",
+    "pendingItemEdit": "未完了の商品編集",
+    "pendingItemEditHint": "前回の結果は確認されていません。解決すると保存済みの編集を再送し、未受信の場合は完了させます。",
+    "resolvePendingItemEdit": "未完了の編集を解決",
+    "resolvingPendingItemEdit": "編集を解決しています...",
+    "pendingItemEditStorageError": "保存済みの編集を読み込めず、更新もできませんでした。この端末に保持されています。",
+    "pendingItemEditAuthRequired": "この編集を解決するには、元のアカウントでサインインしてください。",
+    "pendingItemEditRateLimited": "リクエストが多すぎます。しばらく待ってから、もう一度お試しください。",
+    "pendingItemEditRefreshFailed": "編集は確認されましたが、現在の注文内容を更新できませんでした。"
   },
   "pos": {
     "addCustomer": "顧客を追加",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "注文を確定、または会計で現金を受け取る",
     "swapNameAndPhone": "名前と電話番号を入れ替え",
     "createWithPhone": "電話番号で顧客を作成: {phone}",
-    "createWithName": "名前で顧客を作成: {name}"
+    "createWithName": "名前で顧客を作成: {name}",
+    "splitItemsIntoChecks": "商品を複数の伝票に分ける",
+    "splitCheckAvailabilityLoading": "伝票分割の利用可否を確認しています...",
+    "splitCheckAvailabilityFailed": "伝票分割の利用可否を確認できませんでした。",
+    "splitCheckPermissionRequired": "伝票を分割する権限がありません。",
+    "splitCheckResolvePaymentFirst": "分割する前に、現在の支払いを完了または解決してください。",
+    "splitCheckBeforePaymentOnly": "伝票の分割は支払いが記録される前に行えます。",
+    "splitCheckDineInOnly": "店内飲食の伝票のみ分割できます。",
+    "splitCheckWholeUnitsOnly": "分割には整数の数量が必要です。",
+    "splitCheckTwoUnitsRequired": "対象の商品が2個以上必要です。",
+    "splitCheckCheckAvailability": "利用可否を確認",
+    "viewMore": "さらに表示",
+    "viewLess": "表示を減らす",
+    "splitCheckSettingDenied": "このアカウントでは伝票分割の利用可否を確認できません。"
   },
   "printTest": {
     "amt": "金額",

@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Selecciona un pedido a la izquierda para ver los detalles.",
     "orderNotInCurrentList": "Este pedido ya no está en la lista actual.",
     "orderMissing": "Este pedido ya no existe o no está disponible.",
-    "itemCount": "{count, plural, one {1 ítem} other {# ítems}}"
+    "itemCount": "{count, plural, one {1 ítem} other {# ítems}}",
+    "editPreparationStartedHint": "La preparación ha comenzado. Puede aumentar o reducir la cantidad. El cambio de producto no está disponible.",
+    "editWasteReasonLabel": "Motivo del desperdicio (obligatorio)",
+    "editWasteReasonPlaceholder": "Motivo del desperdicio de cocina",
+    "pendingItemEdit": "Edición de ítem pendiente",
+    "pendingItemEditHint": "El resultado anterior no se confirmó. Resolver reintenta la edición guardada y puede completarla si no se recibió.",
+    "resolvePendingItemEdit": "Resolver edición pendiente",
+    "resolvingPendingItemEdit": "Resolviendo edición...",
+    "pendingItemEditStorageError": "La edición guardada no se pudo leer ni actualizar. Se conservó en este dispositivo.",
+    "pendingItemEditAuthRequired": "Inicie sesión con la cuenta original para resolver esta edición.",
+    "pendingItemEditRateLimited": "Demasiadas solicitudes. Espere e intente resolverlo de nuevo.",
+    "pendingItemEditRefreshFailed": "La edición se confirmó, pero no se pudieron actualizar los detalles actuales del pedido."
   },
   "pos": {
     "addCustomer": "Agregar Cliente",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Realizar el pedido o cobrar en efectivo al finalizar la compra",
     "swapNameAndPhone": "Intercambiar nombre y teléfono",
     "createWithPhone": "Crear cliente con teléfono: {phone}",
-    "createWithName": "Crear cliente llamado: {name}"
+    "createWithName": "Crear cliente llamado: {name}",
+    "splitItemsIntoChecks": "Dividir ítems en cuentas",
+    "splitCheckAvailabilityLoading": "Verificando disponibilidad de división de cuenta...",
+    "splitCheckAvailabilityFailed": "No se pudo verificar la disponibilidad de división de cuenta.",
+    "splitCheckPermissionRequired": "No tiene permiso para dividir cuentas.",
+    "splitCheckResolvePaymentFirst": "Termine o resuelva el pago actual antes de dividir.",
+    "splitCheckBeforePaymentOnly": "Las cuentas se dividen antes de registrar cualquier pago.",
+    "splitCheckDineInOnly": "Solo se pueden dividir cuentas para consumir en el local.",
+    "splitCheckWholeUnitsOnly": "La división requiere cantidades enteras de ítems.",
+    "splitCheckTwoUnitsRequired": "Se requieren al menos dos unidades de ítems elegibles.",
+    "splitCheckCheckAvailability": "Verificar disponibilidad",
+    "viewMore": "Ver más",
+    "viewLess": "Ver menos",
+    "splitCheckSettingDenied": "Esta cuenta no puede verificar la disponibilidad de división de cuenta."
   },
   "printTest": {
     "amt": "Total",

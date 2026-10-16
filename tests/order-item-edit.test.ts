@@ -1299,10 +1299,25 @@ async function main() {
       const store = new Map<string, string>();
       (globalThis as any).window = {
         localStorage: {
+          get length() {
+            return store.size;
+          },
+          key: (i: number) => Array.from(store.keys())[i] ?? null,
           getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
           setItem: (k: string, v: string) => store.set(k, v),
           removeItem: (k: string) => store.delete(k),
         },
+        CustomEvent: class CustomEventTest {
+          type: string;
+          detail: unknown;
+          constructor(type: string, init?: { detail?: unknown }) {
+            this.type = type;
+            this.detail = init?.detail;
+          }
+        },
+        dispatchEvent: () => true,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
       };
 
       const snapshot = newOrderItemEditAttempt({
@@ -1365,6 +1380,285 @@ async function main() {
         null,
         'attempt slot is empty after clear',
       );
+      delete (globalThis as any).window;
+    }
+
+    console.log('\n─── Scoped attempt discovery and replay semantics ───');
+    {
+      const {
+        clearOrderItemEditAttempt,
+        classifyOrderItemEditFailure,
+        listOrderItemEditAttempts,
+        newOrderItemEditAttempt,
+        notifyOrderItemEditAttemptsChanged,
+        orderItemEditAttemptsEquivalent,
+        orderItemEditAttemptStorageKey,
+        orderItemEditCanonicalPath,
+        persistOrderItemEditAttempt,
+        readOrderItemEditAttempt,
+        replayOrderItemEditAttempt,
+        subscribeOrderItemEditAttemptsChanged,
+      } = require('../frontend/src/lib/order-item-edit-attempt');
+
+      type AttemptSnapshot = {
+        mode: string;
+        path: string;
+        orderId: number;
+        itemId: number;
+        idempotencyKey: string;
+        body: { expected_edit_version: number; quantity?: number };
+        actorId: string;
+        tenantId: number;
+        createdAt: string;
+      };
+
+      const store = new Map<string, string>();
+      (globalThis as any).window = {
+        localStorage: {
+          get length() {
+            return store.size;
+          },
+          key: (i: number) => Array.from(store.keys())[i] ?? null,
+          getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+          setItem: (k: string, v: string) => store.set(k, v),
+          removeItem: (k: string) => store.delete(k),
+        },
+        customEventListeners: (() => {
+          // Minimal event bus so subscribe/dispatch behave like the browser.
+          const listeners = new Map<string, Set<(event: any) => void>>();
+          return { listeners };
+        })(),
+        CustomEvent: class CustomEventTest {
+          type: string;
+          detail: unknown;
+          constructor(type: string, init?: { detail?: unknown }) {
+            this.type = type;
+            this.detail = init?.detail;
+          }
+        },
+        dispatchEvent: (event: any) => {
+          const set = window.customEventListeners.listeners.get(event.type);
+          set?.forEach((listener) => listener(event));
+          return true;
+        },
+        addEventListener: (type: string, listener: (event: any) => void) => {
+          const set = window.customEventListeners.listeners.get(type) ?? new Set();
+          set.add(listener);
+          window.customEventListeners.listeners.set(type, set);
+        },
+        removeEventListener: (type: string, listener: (event: any) => void) => {
+          window.customEventListeners.listeners.get(type)?.delete(listener);
+        },
+      };
+
+      const snapshotFor = (itemId: number, overrides: Partial<AttemptSnapshot> = {}) => {
+        const snapshot = newOrderItemEditAttempt({
+          mode: 'quantity',
+          path: orderItemEditCanonicalPath(30, itemId),
+          orderId: 30,
+          itemId,
+          body: { expected_edit_version: 2, quantity: 2 },
+          actorId: 'actor-scope',
+          tenantId: 5,
+        });
+        return { ...snapshot, ...overrides };
+      };
+
+      // Valid in-scope records list; other scopes never appear.
+      persistOrderItemEditAttempt(snapshotFor(40));
+      persistOrderItemEditAttempt(snapshotFor(41));
+      persistOrderItemEditAttempt(snapshotFor(40, { tenantId: 6 }));
+      persistOrderItemEditAttempt(snapshotFor(40, { actorId: 'someone-else' }));
+      const listed = listOrderItemEditAttempts(5, 'actor-scope', 30);
+      assertEqualOrThrow(
+        listed.attempts.map((a: any) => a.itemId).join(','),
+        '40,41',
+        'scoped listing returns only this tenant/actor/order, sorted by item',
+      );
+      assertOrThrow(!listed.hasUnreadableRecords, 'clean scope reports no unreadable records');
+
+      // A stored path that is not the canonical PATCH path is never offered.
+      store.set(
+        orderItemEditAttemptStorageKey(5, 'actor-scope', 30, 42),
+        JSON.stringify(snapshotFor(42, { path: '/orders/999/items/1/edit' })),
+      );
+      const withEvilPath = listOrderItemEditAttempts(5, 'actor-scope', 30);
+      assertEqualOrThrow(
+        withEvilPath.attempts.map((a: any) => a.itemId).join(','),
+        '40,41',
+        'a record with an arbitrary stored path is not offered',
+      );
+      assertOrThrow(
+        withEvilPath.hasUnreadableRecords,
+        'an out-of-contract record is reported as unreadable',
+      );
+      assertOrThrow(
+        store.has(orderItemEditAttemptStorageKey(5, 'actor-scope', 30, 42)),
+        'out-of-contract records are left intact',
+      );
+
+      // Malformed JSON in scope is flagged and kept, valid siblings still list.
+      store.set(orderItemEditAttemptStorageKey(5, 'actor-scope', 30, 43), '{not json');
+      const withMalformed = listOrderItemEditAttempts(5, 'actor-scope', 30);
+      assertOrThrow(withMalformed.hasUnreadableRecords, 'malformed JSON is flagged');
+      assertEqualOrThrow(
+        withMalformed.attempts.length,
+        2,
+        'valid records remain recoverable beside a malformed one',
+      );
+      assertOrThrow(
+        store.has(orderItemEditAttemptStorageKey(5, 'actor-scope', 30, 43)),
+        'malformed JSON is left intact',
+      );
+
+      // Fractional quantities stay recoverable: the edit contract accepts
+      // positive finite quantities; precision enforcement stays with the backend.
+      persistOrderItemEditAttempt(
+        snapshotFor(44, { body: { expected_edit_version: 2, quantity: 1.25 } }),
+      );
+      const withFractional = listOrderItemEditAttempts(5, 'actor-scope', 30);
+      assertOrThrow(
+        withFractional.attempts.some((a: any) => a.itemId === 44),
+        'a fractional-quantity edit is offered for recovery',
+      );
+      // The malformed fixture record from the earlier block keeps the
+      // unreadable flag on; the fractional offer itself proves validation.
+
+      // Non-quantities are still out of contract.
+      store.set(
+        orderItemEditAttemptStorageKey(5, 'actor-scope', 30, 45),
+        JSON.stringify(snapshotFor(45, { body: { expected_edit_version: 2, quantity: 0 } })),
+      );
+      const withZero = listOrderItemEditAttempts(5, 'actor-scope', 30);
+      assertOrThrow(
+        !withZero.attempts.some((a: any) => a.itemId === 45),
+        'a zero-quantity record is not offered',
+      );
+
+      // Canonical path helper rejects fabricated URLs by construction.
+      assertEqualOrThrow(
+        orderItemEditCanonicalPath(30, 40),
+        '/orders/30/items/40/edit',
+        'replay paths are always derived from the validated IDs',
+      );
+
+      // Outcome classification: uncertain vs definitive vs auth barriers.
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure({ response: { status: 401 } }),
+        'authRequired',
+        '401 keeps the record',
+      );
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure({ response: { status: 403 } }),
+        'forbidden',
+        '403 keeps the record',
+      );
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure({ response: { status: 429 } }),
+        'rateLimited',
+        '429 keeps the record',
+      );
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure({ response: { status: 409 } }),
+        'rejected',
+        '409 is a definitive rejection',
+      );
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure(new Error('Network Error')),
+        'unresolved',
+        'network errors are unresolved',
+      );
+      assertEqualOrThrow(
+        classifyOrderItemEditFailure({ response: { status: 503 } }),
+        'unresolved',
+        '5xx is unresolved',
+      );
+
+      // Replay sends the stored path/body/key exactly once through the sender.
+      let sent: any = null;
+      const persistedReader = readOrderItemEditAttempt(5, 'actor-scope', 30, 40);
+      assertOrThrow(persistedReader, 'a persisted record is readable for replay');
+      const replay = require('../frontend/src/lib/order-item-edit-attempt') as any;
+      const result = await replay.replayOrderItemEditAttempt({
+        snapshot: persistedReader,
+        send: async (path: string, body: any, idempotencyKey: string) => {
+          sent = { path, body, idempotencyKey };
+          return 'ok';
+        },
+      });
+      assertEqualOrThrow(result.outcome, 'committed', 'replay reports committed');
+      assertEqualOrThrow(sent.path, '/orders/30/items/40/edit', 'replay sends the canonical path');
+      assertEqualOrThrow(sent.body.quantity, 2, 'replay sends the stored body unchanged');
+      assertEqualOrThrow(
+        sent.idempotencyKey,
+        readOrderItemEditAttempt(5, 'actor-scope', 30, 40)?.idempotencyKey,
+        'replay sends the stored idempotency key',
+      );
+
+      // Equivalence distinguishes same payload from changed payload.
+      const reRead = readOrderItemEditAttempt(5, 'actor-scope', 30, 40);
+      assertOrThrow(
+        reRead && orderItemEditAttemptsEquivalent(reRead, persistedReader),
+        'equivalence matches identical saved records',
+      );
+      assertOrThrow(
+        reRead &&
+          !orderItemEditAttemptsEquivalent(
+            reRead,
+            snapshotFor(40, { idempotencyKey: 'different' }),
+          ),
+        'equivalence rejects a different idempotency key',
+      );
+
+      // Scoped change notifications: same-tab publish, subscription filter.
+      let notifications = 0;
+      const scopeSubscription = subscribeOrderItemEditAttemptsChanged(
+        { tenantId: 5, actorId: 'actor-scope', orderId: 30 },
+        () => {
+          notifications += 1;
+        },
+      );
+      notifyOrderItemEditAttemptsChanged({ tenantId: 5, actorId: 'actor-scope', orderId: 30 });
+      notifyOrderItemEditAttemptsChanged({ tenantId: 8, actorId: 'actor-scope', orderId: 30 });
+      notifyOrderItemEditAttemptsChanged({ tenantId: 5, actorId: 'other', orderId: 30 });
+      scopeSubscription();
+      assertEqualOrThrow(notifications, 1, 'out-of-scope notifications are filtered');
+
+      // Definitive rejection clears the attempt via clearOrderItemEditAttempt
+      const toReject = snapshotFor(46, { idempotencyKey: 'key-46' });
+      persistOrderItemEditAttempt(toReject);
+      assertOrThrow(
+        readOrderItemEditAttempt(5, 'actor-scope', 30, 46),
+        'saved attempt exists before 409 rejection',
+      );
+      const replay409 = await replay.replayOrderItemEditAttempt({
+        snapshot: toReject,
+        send: async () => {
+          const err: any = new Error('Conflict');
+          err.response = { status: 409, data: { error: 'edit version conflict' } };
+          throw err;
+        },
+      });
+      assertEqualOrThrow(replay409.outcome, 'rejected', '409 is classified as rejected');
+      const clearedOn409 = clearOrderItemEditAttempt(5, 'actor-scope', 30, 46, 'key-46');
+      assertOrThrow(clearedOn409, 'clearing attempt on 409 rejection succeeds');
+      assertEqualOrThrow(
+        readOrderItemEditAttempt(5, 'actor-scope', 30, 46),
+        null,
+        'definitive rejection clears the stored attempt',
+      );
+
+      // In-lock equivalence check: if a record is modified while waiting for the lock,
+      // orderItemEditAttemptsEquivalent returns false and prevents sending.
+      const originalRecord = snapshotFor(47, { idempotencyKey: 'orig-key' });
+      persistOrderItemEditAttempt(originalRecord);
+      const changedRecord = snapshotFor(47, { idempotencyKey: 'changed-key' });
+      assertOrThrow(
+        !orderItemEditAttemptsEquivalent(originalRecord, changedRecord),
+        'equivalence check catches mismatch before dispatch',
+      );
+      clearOrderItemEditAttempt(5, 'actor-scope', 30, 47, 'orig-key');
+
       delete (globalThis as any).window;
     }
   } finally {

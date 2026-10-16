@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Выберите заказ слева, чтобы увидеть подробности.",
     "orderNotInCurrentList": "Этого заказа больше нет в текущем списке.",
     "orderMissing": "Этот заказ больше не существует или недоступен.",
-    "itemCount": "{count, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}"
+    "itemCount": "{count, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}",
+    "editPreparationStartedHint": "Приготовление начато. Количество можно увеличить или уменьшить. Замена продукта недоступна.",
+    "editWasteReasonLabel": "Причина списания (обязательно)",
+    "editWasteReasonPlaceholder": "Причина списания на кухне",
+    "pendingItemEdit": "Изменение позиции в ожидании",
+    "pendingItemEditHint": "Предыдущий результат не подтверждён. Разрешение повторно отправит сохранённую правку и может завершить её, если она не была получена.",
+    "resolvePendingItemEdit": "Разрешить ожидающее изменение",
+    "resolvingPendingItemEdit": "Разрешение изменения...",
+    "pendingItemEditStorageError": "Не удалось прочитать или обновить сохранённое изменение. Оно сохранено на этом устройстве.",
+    "pendingItemEditAuthRequired": "Для разрешения этого изменения войдите в исходную учётную запись.",
+    "pendingItemEditRateLimited": "Слишком много запросов. Подождите и повторите попытку.",
+    "pendingItemEditRefreshFailed": "Изменение подтверждено, но не удалось обновить текущие данные заказа."
   },
   "pos": {
     "addCustomer": "Добавить клиента",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Оформить заказ или принять оплату наличными при расчёте",
     "swapNameAndPhone": "Поменять имя и телефон",
     "createWithPhone": "Создать клиента с телефоном: {phone}",
-    "createWithName": "Создать клиента с именем: {name}"
+    "createWithName": "Создать клиента с именем: {name}",
+    "splitItemsIntoChecks": "Разделить позиции на несколько счетов",
+    "splitCheckAvailabilityLoading": "Проверка доступности разделения счета...",
+    "splitCheckAvailabilityFailed": "Не удалось проверить доступность разделения счета.",
+    "splitCheckPermissionRequired": "У вас нет разрешения на разделение счетов.",
+    "splitCheckResolvePaymentFirst": "Завершите или уточните результат текущей оплаты перед разделением.",
+    "splitCheckBeforePaymentOnly": "Счета разделяются до регистрации любой оплаты.",
+    "splitCheckDineInOnly": "Разделяются только счета для обслуживания в зале.",
+    "splitCheckWholeUnitsOnly": "Для разделения требуются целые количества позиций.",
+    "splitCheckTwoUnitsRequired": "Необходимо минимум две подходящие единицы позиций.",
+    "splitCheckCheckAvailability": "Проверить доступность",
+    "viewMore": "Показать ещё",
+    "viewLess": "Свернуть",
+    "splitCheckSettingDenied": "Эта учётная запись не может проверять доступность разделения счета."
   },
   "printTest": {
     "amt": "Сумма",

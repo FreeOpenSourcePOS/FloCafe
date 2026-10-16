@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "تفصیلات دیکھنے کے لیے بائیں طرف سے آرڈر منتخب کریں۔",
     "orderNotInCurrentList": "یہ آرڈر اب موجودہ فہرست میں نہیں ہے۔",
     "orderMissing": "یہ آرڈر اب موجود نہیں یا دستیاب نہیں ہے۔",
-    "itemCount": "{count, plural, one {1 آئٹم} other {# آئٹم}}"
+    "itemCount": "{count, plural, one {1 آئٹم} other {# آئٹم}}",
+    "editPreparationStartedHint": "تیاری شروع ہو چکی ہے۔ آپ مقدار بڑھا یا گھٹا سکتے ہیں۔ پروڈکٹ کی تبدیلی دستیاب نہیں۔",
+    "editWasteReasonLabel": "ضائع ہونے کی وجہ (لازمی)",
+    "editWasteReasonPlaceholder": "کچن میں ضائع ہونے کی وجہ",
+    "pendingItemEdit": "زیر التوا آئٹم ترمیم",
+    "pendingItemEditHint": "پچھلا نتیجہ تصدیق شدہ نہیں۔ حل کرنے سے محفوظ کردہ ترمیم دوبارہ بھیجی جائے گی اور اگر موصول نہیں ہوئی تو مکمل ہو سکتی ہے۔",
+    "resolvePendingItemEdit": "زیر التوا ترمیم حل کریں",
+    "resolvingPendingItemEdit": "ترمیم حل ہو رہی ہے...",
+    "pendingItemEditStorageError": "محفوظ کردہ ترمیم پڑھی یا اپ ڈیٹ نہیں جا سکی۔ اسے اس ڈیوائس پر رکھا گیا ہے۔",
+    "pendingItemEditAuthRequired": "اس ترمیم کو حل کرنے کے لیے اصل اکاؤنٹ سے سائن اِن کریں۔",
+    "pendingItemEditRateLimited": "بہت زیادہ درخواستیں۔ انتظار کریں پھر دوبارہ کوشش کریں۔",
+    "pendingItemEditRefreshFailed": "ترمیم کی تصدیق ہو گئی، مگر موجودہ آرڈر کی تفصیلات دوبارہ حاصل نہیں ہو سکتیں۔"
   },
   "pos": {
     "addCustomer": "گاہک شامل کریں",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "آرڈر دیں یا چیک آؤٹ پر نقد ادائیگی وصول کریں",
     "swapNameAndPhone": "نام اور فون تبدیل کریں",
     "createWithPhone": "فون کے ساتھ گاہک بنائیں: {phone}",
-    "createWithName": "نام کا گاہک بنائیں: {name}"
+    "createWithName": "نام کا گاہک بنائیں: {name}",
+    "splitItemsIntoChecks": "آئٹمز کو کئی بلز میں تقسیم کریں",
+    "splitCheckAvailabilityLoading": "بل کی تقسیم کی دستیابی چیک ہو رہی ہے...",
+    "splitCheckAvailabilityFailed": "بل کی تقسیم کی دستیابی چیک نہیں ہو سکی۔",
+    "splitCheckPermissionRequired": "آپ کو بل تقسیم کرنے کی اجازت نہیں۔",
+    "splitCheckResolvePaymentFirst": "تقسیم کرنے سے پہلے موجودہ ادائیگی مکمل یا حل کریں۔",
+    "splitCheckBeforePaymentOnly": "بلیں کسی ادائیگی کی ریکارڈنگ سے پہلے تقسیم ہوتی ہیں۔",
+    "splitCheckDineInOnly": "صرف ریستوران میں کھانے کے بل تقسیم ہو سکتے ہیں۔",
+    "splitCheckWholeUnitsOnly": "تقسیم کے لیے پورے آئٹم کی مقدار درکار ہے۔",
+    "splitCheckTwoUnitsRequired": "کم از کم دو اہل آئٹم یونٹس درکار ہیں۔",
+    "splitCheckCheckAvailability": "دستیابی چیک کریں",
+    "viewMore": "مزید دیکھیں",
+    "viewLess": "کم دکھائیں",
+    "splitCheckSettingDenied": "یہ اکاؤنٹ بل کی تقسیم کی دستیابی چیک نہیں کر سکتا۔"
   },
   "printTest": {
     "amt": "رقم",

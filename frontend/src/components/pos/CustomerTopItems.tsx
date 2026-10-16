@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
+import CollapsiblePosChoices from './CollapsiblePosChoices';
 import type { Product } from '@/lib/types';
 import {
   customerTopItemsView,
@@ -35,54 +36,109 @@ export default function CustomerTopItems({ products, onSelect }: Props) {
   useEffect(() => {
     if (customerId === null) return;
     const controller = new AbortController();
-    void fetchCustomerTopItems((url, config) => api.get(url, config), customerId, controller.signal, setResult);
+    void fetchCustomerTopItems(
+      (url, config) => api.get(url, config),
+      customerId,
+      controller.signal,
+      setResult,
+    );
     return () => controller.abort();
   }, [customerId]);
 
-  return <CustomerTopItemsList view={customerTopItemsView(customerId, result, products)} onSelect={onSelect} />;
+  return (
+    <CustomerTopItemsList
+      view={customerTopItemsView(customerId, result, products)}
+      customerId={customerId}
+      onSelect={onSelect}
+    />
+  );
 }
 
-export function CustomerTopItemsList({ view, onSelect }: { view: CustomerTopItemsView; onSelect: (product: Product) => void }) {
+export function CustomerTopItemsList({
+  view,
+  customerId,
+  onSelect,
+}: {
+  view: CustomerTopItemsView;
+  /** Active customer identity; expansion state resets with it (null included). */
+  customerId?: string | null;
+  onSelect: (product: Product) => void;
+}) {
   const t = useTranslations('pos');
   const formatNumber = useFormatNumber();
 
   if (view.kind === 'hidden') return null;
 
-  const status = view.kind === 'loading'
-    ? t('loadingEllipsis')
-    : view.kind === 'empty'
-      ? t('topItemsEmpty')
-      : view.kind === 'error'
-        ? t('topItemsLoadFailed')
-        : null;
+  // Expansion state resets with the customer context (including null).
+  const resetKey = customerId;
+  const status =
+    view.kind === 'loading'
+      ? t('loadingEllipsis')
+      : view.kind === 'empty'
+        ? t('topItemsEmpty')
+        : view.kind === 'error'
+          ? t('topItemsLoadFailed')
+          : null;
+
+  const label = (
+    <span className="inline-flex min-h-9 items-center gap-1 text-xs font-medium text-muted-foreground">
+      <History size={12} aria-hidden="true" />
+      {t('topItems')}
+    </span>
+  );
 
   return (
-    <div data-testid="customer-top-items" className="mt-1.5 flex min-w-0 items-center gap-1.5 overflow-x-auto">
-      <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
-        <History size={12} aria-hidden="true" />
-        {t('topItems')}
-      </span>
-      {status !== null && (
-        <span data-testid="customer-top-items-status" className="text-xs text-muted-foreground">{status}</span>
-      )}
-      {view.kind === 'items' && view.items.map((item) => {
-        const product = item.product;
-        return (
-          <button
-            key={item.product_id}
-            type="button"
-            data-testid="customer-top-item"
-            disabled={!product}
-            onClick={product ? () => onSelect(product) : undefined}
-            title={product ? item.product_name : t('topItemUnavailable')}
-            aria-label={product ? item.product_name : `${item.product_name} (${t('topItemUnavailable')})`}
-            className="inline-flex min-h-9 max-w-48 shrink-0 items-center gap-1 rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:border-brand/40 hover:bg-muted active:bg-muted touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 disabled:line-through disabled:hover:border-border disabled:hover:bg-card"
-          >
-            <span className="truncate">{item.product_name}</span>
-            <span className="shrink-0 tabular-nums text-muted-foreground">×{formatNumber(item.total_quantity)}</span>
-          </button>
-        );
-      })}
-    </div>
+    <CollapsiblePosChoices
+      data-testid="customer-top-items"
+      ariaLabel={t('topItems')}
+      resetKey={resetKey}
+      label={label}
+      choices={
+        status !== null
+          ? [
+              {
+                key: 'status',
+                node: (
+                  <span
+                    data-testid="customer-top-items-status"
+                    className="text-xs text-muted-foreground"
+                  >
+                    {status}
+                  </span>
+                ),
+              },
+            ]
+          : view.kind === 'items'
+            ? view.items.map((item) => {
+                const product = item.product;
+                const chipId = String(item.product_id);
+                return {
+                  key: chipId,
+                  node: (
+                    <button
+                      type="button"
+                      data-testid="customer-top-item"
+                      data-top-item-id={chipId}
+                      disabled={!product}
+                      onClick={product ? () => onSelect(product) : undefined}
+                      title={product ? item.product_name : t('topItemUnavailable')}
+                      aria-label={
+                        product
+                          ? item.product_name
+                          : `${item.product_name} (${t('topItemUnavailable')})`
+                      }
+                      className="inline-flex min-h-9 max-w-48 shrink-0 items-center gap-1 rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:border-brand/40 hover:bg-muted active:bg-muted touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-50 disabled:line-through disabled:hover:border-border disabled:hover:bg-card"
+                    >
+                      <span className="truncate">{item.product_name}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        ×{formatNumber(item.total_quantity)}
+                      </span>
+                    </button>
+                  ),
+                };
+              })
+            : []
+      }
+    />
   );
 }

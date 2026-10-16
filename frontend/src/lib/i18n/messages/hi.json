@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "विवरण देखने के लिए बाईं ओर से एक ऑर्डर चुनें।",
     "orderNotInCurrentList": "यह ऑर्डर अब मौजूदा सूची में नहीं है।",
     "orderMissing": "यह ऑर्डर अब मौजूद नहीं है या उपलब्ध नहीं है।",
-    "itemCount": "{count, plural, one {1 आइटम} other {# आइटम}}"
+    "itemCount": "{count, plural, one {1 आइटम} other {# आइटम}}",
+    "editPreparationStartedHint": "तैयारी शुरू हो चुकी है। आप मात्रा बढ़ा या घटा सकते हैं। उत्पाद बदलना उपलब्ध नहीं है।",
+    "editWasteReasonLabel": "बर्बादी का कारण (आवश्यक)",
+    "editWasteReasonPlaceholder": "रसोई बर्बादी का कारण",
+    "pendingItemEdit": "लंबित आइटम संपादन",
+    "pendingItemEditHint": "पिछला परिणाम पुष्टित नहीं था। हल करने से सहेजा गया संपादन दोबारा भेजा जाता है और यदि प्राप्त नहीं हुआ था तो पूरा हो सकता है।",
+    "resolvePendingItemEdit": "लंबित संपादन हल करें",
+    "resolvingPendingItemEdit": "संपादन हल हो रहा है...",
+    "pendingItemEditStorageError": "सहेजा गया संपादन पढ़ा या अपडेट नहीं जा सका। इसे इस डिवाइस पर रखा गया है।",
+    "pendingItemEditAuthRequired": "इस संपादन को हल करने के लिए मूल खाते से साइन इन करें।",
+    "pendingItemEditRateLimited": "बहुत अधिक अनुरोध। प्रतीक्षा करें, फिर फिर से प्रयास करें।",
+    "pendingItemEditRefreshFailed": "संपादन पुष्ट हुआ, पर वर्तमान ऑर्डर विवरण रीफ्रेश नहीं हो सके।"
   },
   "pos": {
     "addCustomer": "ग्राहक जोड़ें",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "ऑर्डर दें या चेकआउट पर नकद भुगतान लें",
     "swapNameAndPhone": "नाम और फ़ोन बदलें",
     "createWithPhone": "फ़ोन के साथ ग्राहक बनाएं: {phone}",
-    "createWithName": "नाम का ग्राहक बनाएं: {name}"
+    "createWithName": "नाम का ग्राहक बनाएं: {name}",
+    "splitItemsIntoChecks": "आइटम को कई बिलों में बाँटें",
+    "splitCheckAvailabilityLoading": "बिल विभाजन की उपलब्धता जाँची जा रही है...",
+    "splitCheckAvailabilityFailed": "बिल विभाजन की उपलब्धता जाँची नहीं जा सकी।",
+    "splitCheckPermissionRequired": "आपको बिल बाँटने की अनुमति नहीं है।",
+    "splitCheckResolvePaymentFirst": "बाँटने से पहले वर्तमान भुगतान पूरा या हल करें।",
+    "splitCheckBeforePaymentOnly": "बिल किसी भुगतान की रिकॉर्डिंग से पहले बाँटा जाता है।",
+    "splitCheckDineInOnly": "केवल व्यवस्था में खाने के बिल बाँटे जा सकते हैं।",
+    "splitCheckWholeUnitsOnly": "बाँटने के लिए पूर्ण आइटम मात्रा आवश्यक है।",
+    "splitCheckTwoUnitsRequired": "कम-से-कम दो योग्य आइटम इकाइयाँ आवश्यक हैं।",
+    "splitCheckCheckAvailability": "उपलब्धता जाँचें",
+    "viewMore": "और देखें",
+    "viewLess": "कम देखें",
+    "splitCheckSettingDenied": "यह खाता बिल विभाजन की उपलब्धता जाँच नहीं सकता।"
   },
   "printTest": {
     "amt": "राशि",

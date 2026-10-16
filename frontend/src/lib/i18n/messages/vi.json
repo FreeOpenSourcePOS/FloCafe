@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Chọn một đơn hàng ở bên trái để xem chi tiết.",
     "orderNotInCurrentList": "Đơn hàng này không còn trong danh sách hiện tại.",
     "orderMissing": "Đơn hàng này không còn tồn tại hoặc không khả dụng.",
-    "itemCount": "{count, plural, one {# món} other {# món}}"
+    "itemCount": "{count, plural, one {# món} other {# món}}",
+    "editPreparationStartedHint": "Đã bắt đầu chuẩn bị. Bạn có thể tăng hoặc giảm số lượng. Không thể thay đổi món.",
+    "editWasteReasonLabel": "Nguyên nhân lãng phí (bắt buộc)",
+    "editWasteReasonPlaceholder": "Nguyên nhân lãng phí từ bếp",
+    "pendingItemEdit": "Chỉnh sửa món đang chờ",
+    "pendingItemEditHint": "Kết quả trước đó chưa được xác nhận. Việc giải quyết sẽ gửi lại chỉnh sửa đã lưu và có thể hoàn thành nếu chưa nhận được.",
+    "resolvePendingItemEdit": "Giải quyết chỉnh sửa đang chờ",
+    "resolvingPendingItemEdit": "Đang giải quyết chỉnh sửa...",
+    "pendingItemEditStorageError": "Không đọc hoặc cập nhật được chỉnh sửa đã lưu. Đã được giữ lại trên thiết bị này.",
+    "pendingItemEditAuthRequired": "Đăng nhập bằng tài khoản gốc để giải quyết thay đổi này.",
+    "pendingItemEditRateLimited": "Quá nhiều yêu cầu. Vui lòng đợi rồi thử lại.",
+    "pendingItemEditRefreshFailed": "Chỉnh sửa đã được xác nhận nhưng không thể cập nhật chi tiết đơn hiện tại."
   },
   "pos": {
     "addCustomer": "Thêm khách hàng",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Đặt đơn hoặc nhận tiền mặt khi thanh toán",
     "swapNameAndPhone": "Đổi tên và số điện thoại",
     "createWithPhone": "Tạo khách hàng với số điện thoại: {phone}",
-    "createWithName": "Tạo khách hàng có tên: {name}"
+    "createWithName": "Tạo khách hàng có tên: {name}",
+    "splitItemsIntoChecks": "Chia món thành nhiều hóa đơn",
+    "splitCheckAvailabilityLoading": "Đang kiểm tra khả năng chia hóa đơn...",
+    "splitCheckAvailabilityFailed": "Không kiểm tra được khả năng chia hóa đơn.",
+    "splitCheckPermissionRequired": "Bạn không có quyền chia hóa đơn.",
+    "splitCheckResolvePaymentFirst": "Hoàn tất hoặc giải quyết khoản thanh toán hiện tại trước khi chia.",
+    "splitCheckBeforePaymentOnly": "Chỉ chia hóa đơn trước khi ghi nhận thanh toán nào.",
+    "splitCheckDineInOnly": "Chỉ hóa đơn dùng tại chỗ có thể chia.",
+    "splitCheckWholeUnitsOnly": "Chia hóa đơn yêu cầu số lượng món là số nguyên.",
+    "splitCheckTwoUnitsRequired": "Cần ít nhất hai đơn vị món đủ điều kiện.",
+    "splitCheckCheckAvailability": "Kiểm tra khả năng",
+    "viewMore": "Xem thêm",
+    "viewLess": "Thu gọn",
+    "splitCheckSettingDenied": "Tài khoản này không thể kiểm tra khả năng chia hóa đơn."
   },
   "printTest": {
     "amt": "Số tiền",

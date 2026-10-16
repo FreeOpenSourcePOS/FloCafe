@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "اختر طلبًا على اليسار لعرض التفاصيل.",
     "orderNotInCurrentList": "لم يعد هذا الطلب ضمن القائمة الحالية.",
     "orderMissing": "لم يعد هذا الطلب موجودًا أو غير متاح.",
-    "itemCount": "{count, plural, zero {لا توجد عناصر} one {عنصر واحد} two {عنصران} few {# عناصر} many {# عنصرًا} other {# عنصر}}"
+    "itemCount": "{count, plural, zero {لا توجد عناصر} one {عنصر واحد} two {عنصران} few {# عناصر} many {# عنصرًا} other {# عنصر}}",
+    "editPreparationStartedHint": "بدأ التحضير. يمكنك زيادة الكمية أو تقليلها. استبدال المنتج غير متاح.",
+    "editWasteReasonLabel": "سبب الهدر (مطلوب)",
+    "editWasteReasonPlaceholder": "سبب هدر المطبخ",
+    "pendingItemEdit": "تعديل صنف معلق",
+    "pendingItemEditHint": "لم يتم تأكيد النتيجة السابقة. إتمام الحل يعيد إرسال التعديل المحفوظ وقد يكمله إذا لم يكن قد وصل.",
+    "resolvePendingItemEdit": "إتمام التعديل المعلق",
+    "resolvingPendingItemEdit": "جارٍ إتمام التعديل...",
+    "pendingItemEditStorageError": "تعذّر قراءة التعديل المحفوظ أو تحديثه. تم الاحتفاظ به على هذا الجهاز.",
+    "pendingItemEditAuthRequired": "سجّل الدخول بالحساب الأصلي لإتمام هذا التعديل.",
+    "pendingItemEditRateLimited": "عدد كبير من الطلبات. انتظر ثم أعد المحاولة.",
+    "pendingItemEditRefreshFailed": "تم تأكيد التعديل، لكن تعذّر تحديث تفاصيل الطلب الحالية."
   },
   "pos": {
     "addCustomer": "إضافة عميل",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "تقديم الطلب أو تحصيل النقد عند الدفع",
     "swapNameAndPhone": "تبديل الاسم والهاتف",
     "createWithPhone": "إنشاء عميل برقم الهاتف: {phone}",
-    "createWithName": "إنشاء عميل باسم: {name}"
+    "createWithName": "إنشاء عميل باسم: {name}",
+    "splitItemsIntoChecks": "تقسيم الأصناف إلى طلبات دفع",
+    "splitCheckAvailabilityLoading": "جارٍ التحقق من توفر تقسيم طلبات الدفع...",
+    "splitCheckAvailabilityFailed": "تعذّر التحقق من توفر تقسيم طلبات الدفع.",
+    "splitCheckPermissionRequired": "ليست لديك صلاحية تقسيم طلبات الدفع.",
+    "splitCheckResolvePaymentFirst": "أنهِ الدفع الحالي أو احسمه قبل التقسيم.",
+    "splitCheckBeforePaymentOnly": "يتم تقسيم طلبات الدفع قبل تسجيل أي دفعة.",
+    "splitCheckDineInOnly": "يمكن تقسيم طلبات الدفع داخل المطعم فقط.",
+    "splitCheckWholeUnitsOnly": "التقسيم يتطلب كميات كاملة للأصناف.",
+    "splitCheckTwoUnitsRequired": "مطلوب وحدتان على الأقل من الأصناف المؤهلة.",
+    "splitCheckCheckAvailability": "التحقق من التوفر",
+    "viewMore": "عرض المزيد",
+    "viewLess": "عرض أقل",
+    "splitCheckSettingDenied": "لا يمكن لهذا الحساب التحقق من توفر تقسيم طلبات الدفع."
   },
   "printTest": {
     "amt": "المبلغ",

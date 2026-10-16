@@ -2574,3 +2574,197 @@ test('staff modals close on Escape, ignore non-Escape keys, restore trigger focu
     expect(await getListenerCount()).toBe(baselineListeners);
   }
 });
+
+/**
+ * Measured collapse rows and cart table placement (#1152).
+ *
+ * Categories and favorites collapse to one measured row with a toggle instead
+ * of horizontal scrolling, and the dine-in table control lives in the cart next
+ * to the Pax stepper rather than in the topbar.
+ */
+async function openPosAsManager(page: Page): Promise<void> {
+  await setLanguage(page, 'en');
+  await page.goto(`${BASE}/pos`);
+  await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+}
+
+test.describe('POS collapse rows and cart table control', () => {
+  test('an overflowing category row collapses to one measured row with a working toggle', async ({
+    page,
+    request,
+  }) => {
+    // Ten extra categories guarantee the row overflows at 1366px; they are the
+    // only entities this test creates and they are gone again afterwards.
+    const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const authHeaders = { Authorization: `Bearer ${token}` };
+    const createdIds: string[] = [];
+    try {
+      for (let index = 0; index < 10; index += 1) {
+        const response = await request.post(`${BASE}/api/categories`, {
+          headers: authHeaders,
+          data: { name: `E2E Split Row ${index}` },
+        });
+        expect(response.ok(), `fixture category ${index} created`).toBeTruthy();
+        createdIds.push((await response.json()).category.id as string);
+      }
+
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await loginAsManager(page);
+      await openPosAsManager(page);
+
+      const row = page.getByTestId('pos-category-row');
+      await expect(row).toBeVisible();
+
+      const box = await row.boundingBox();
+      expect(box, 'category row bounds').not.toBeNull();
+
+      const toggle = page.getByRole('button', { name: 'View more' });
+      await expect(toggle, 'overflowing categories offer the toggle').toBeVisible();
+      await toggle.click();
+      await expect(page.getByRole('button', { name: 'View less' })).toBeVisible();
+
+      // Expanded rows wrap and every category is reachable without the page or
+      // the grid scrolling sideways.
+      const expanded = await row.evaluate((element) => ({
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      }));
+      expect(
+        expanded.scrollWidth,
+        'expanded categories fit without horizontal scroll',
+      ).toBeLessThanOrEqual(expanded.clientWidth + 1);
+      expect(expanded.scrollHeight, 'expanded rows wrap onto several lines').toBeGreaterThan(
+        box!.height + 4,
+      );
+
+      await page.getByRole('button', { name: 'View less' }).click();
+      await expect(page.getByRole('button', { name: 'View more' })).toBeVisible();
+      const collapsedBox = await row.boundingBox();
+      expect(collapsedBox!.height, 'collapsed row returns to a single line').toBeLessThanOrEqual(
+        box!.height + 4,
+      );
+    } finally {
+      for (const categoryId of createdIds) {
+        await request.delete(`${BASE}/api/categories/${categoryId}`, { headers: authHeaders });
+      }
+    }
+  });
+
+  test('a long selected category and its toggle fit the collapsed row on mobile', async ({
+    page,
+    request,
+  }) => {
+    const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const authHeaders = { Authorization: `Bearer ${token}` };
+    const createdIds: string[] = [];
+    try {
+      for (let index = 0; index < 10; index += 1) {
+        const response = await request.post(`${BASE}/api/categories`, {
+          headers: authHeaders,
+          data: { name: `E2E Tail Row ${index} with a deliberately long category label` },
+        });
+        expect(response.ok(), `tail fixture category ${index} created`).toBeTruthy();
+        createdIds.push((await response.json()).category.id as string);
+      }
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await loginAsManager(page);
+      await openPosAsManager(page);
+
+      // Expand and pick the last category so it sits beyond any collapsed prefix.
+      const row = page.getByTestId('pos-category-row');
+      await page.getByRole('button', { name: 'View more' }).click();
+      const selected = row.getByRole('button', {
+        name: 'E2E Tail Row 9 with a deliberately long category label',
+      });
+      await selected.click();
+      await page.getByRole('button', { name: 'View less' }).click();
+
+      await expect(selected).toBeVisible();
+      const toggle = row.getByRole('button', { name: 'View more', exact: true });
+      await expect
+        .poll(async () => {
+          const bounds = await row.boundingBox();
+          const toggleBounds = await toggle.boundingBox();
+          const selectedBounds = await selected.boundingBox();
+          return Boolean(
+            bounds &&
+            toggleBounds &&
+            selectedBounds &&
+            toggleBounds.x >= bounds.x &&
+            toggleBounds.x + toggleBounds.width <= bounds.x + bounds.width + 1 &&
+            selectedBounds.x + selectedBounds.width <= bounds.x + bounds.width + 1,
+          );
+        }, 'the selected category and toggle are completely inside the row')
+        .toBe(true);
+      await toggle.click();
+      await expect(
+        row.getByRole('button', { name: 'E2E Tail Row 0 with a deliberately long category label' }),
+      ).toBeVisible();
+    } finally {
+      for (const categoryId of createdIds) {
+        await request.delete(`${BASE}/api/categories/${categoryId}`, { headers: authHeaders });
+      }
+    }
+  });
+
+  test('the dine-in table control moves into the cart beside Pax', async ({ page }) => {
+    const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const originalBusiness = await businessResponse.json();
+    try {
+      const switchUpdate = await page.request.put(`${BASE}/api/settings/business`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { ...originalBusiness, tables_required: true },
+      });
+      expect(switchUpdate.ok()).toBeTruthy();
+
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await loginAsManager(page);
+      const cart = page.getByTestId('cart-shell');
+      await expect(cart).toBeVisible();
+
+      await page.getByRole('button', { name: 'Dine in' }).first().click();
+      await expect(cart.getByRole('button', { name: /Select Table|Table / })).toBeVisible();
+    } finally {
+      await page.request.put(`${BASE}/api/settings/business`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: originalBusiness,
+      });
+    }
+  });
+
+  test('the cart table control opens the picker from the mobile drawer too', async ({ page }) => {
+    const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+    const businessResponse = await page.request.get(`${BASE}/api/settings/business`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(businessResponse.ok()).toBeTruthy();
+    const originalBusiness = await businessResponse.json();
+    try {
+      await page.request.put(`${BASE}/api/settings/business`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { ...originalBusiness, tables_required: true },
+      });
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await loginAsManager(page);
+      // The order-type controls live in the cart itself, so the drawer opens first.
+      await page.getByRole('button', { name: 'Cart' }).click();
+      const drawerCart = page.getByTestId('cart-shell').last();
+      await expect(drawerCart).toBeVisible();
+      await drawerCart.getByRole('button', { name: 'Dine in' }).first().click();
+      await expect(drawerCart.getByRole('button', { name: /Select Table|Table / })).toBeVisible();
+    } finally {
+      await page.request.put(`${BASE}/api/settings/business`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: originalBusiness,
+      });
+    }
+  });
+});

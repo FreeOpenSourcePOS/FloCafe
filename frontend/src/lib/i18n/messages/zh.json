@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "请在左侧选择一个订单以查看详情。",
     "orderNotInCurrentList": "此订单已不在当前列表中。",
     "orderMissing": "此订单已不存在或无法使用。",
-    "itemCount": "{count, plural, other {# 件}}"
+    "itemCount": "{count, plural, other {# 件}}",
+    "editPreparationStartedHint": "已开始制作。您可以增加或减少数量。无法更换商品。",
+    "editWasteReasonLabel": "损耗原因（必填）",
+    "editWasteReasonPlaceholder": "厨房损耗原因",
+    "pendingItemEdit": "待处理的商品修改",
+    "pendingItemEditHint": "上次结果未确认。解决将重新发送保存的修改，若未收到则可能将其完成。",
+    "resolvePendingItemEdit": "解决待处理修改",
+    "resolvingPendingItemEdit": "正在解决修改...",
+    "pendingItemEditStorageError": "无法读取或更新已保存的修改。该修改已保留在此设备上。",
+    "pendingItemEditAuthRequired": "请使用原账号登录以解决此修改。",
+    "pendingItemEditRateLimited": "请求过多。请稍候后再试。",
+    "pendingItemEditRefreshFailed": "修改已确认，但无法刷新当前订单详情。"
   },
   "pos": {
     "addCustomer": "添加顾客",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "下单或在结账时收取现金",
     "swapNameAndPhone": "交换姓名和电话",
     "createWithPhone": "使用电话创建客户: {phone}",
-    "createWithName": "创建名为 {name} 的客户"
+    "createWithName": "创建名为 {name} 的客户",
+    "splitItemsIntoChecks": "将商品拆分为多张账单",
+    "splitCheckAvailabilityLoading": "正在检查拆单可用性...",
+    "splitCheckAvailabilityFailed": "无法检查拆单可用性。",
+    "splitCheckPermissionRequired": "您没有拆单权限。",
+    "splitCheckResolvePaymentFirst": "拆分前请先完成或结清当前付款。",
+    "splitCheckBeforePaymentOnly": "账单只能在记录任何付款之前拆分。",
+    "splitCheckDineInOnly": "仅堂食账单可以拆分。",
+    "splitCheckWholeUnitsOnly": "拆分要求商品数量为整数。",
+    "splitCheckTwoUnitsRequired": "至少需要两件符合条件的商品。",
+    "splitCheckCheckAvailability": "检查可用性",
+    "viewMore": "查看更多",
+    "viewLess": "收起",
+    "splitCheckSettingDenied": "该账号无法检查拆单可用性。"
   },
   "printTest": {
     "amt": "金额",

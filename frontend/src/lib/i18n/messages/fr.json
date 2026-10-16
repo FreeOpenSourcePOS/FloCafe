@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Sélectionnez une commande à gauche pour afficher les détails.",
     "orderNotInCurrentList": "Cette commande ne figure plus dans la liste actuelle.",
     "orderMissing": "Cette commande n’existe plus ou n’est plus disponible.",
-    "itemCount": "{count, plural, one {1 article} other {# articles}}"
+    "itemCount": "{count, plural, one {1 article} other {# articles}}",
+    "editPreparationStartedHint": "La préparation a commencé. Vous pouvez augmenter ou réduire la quantité. Le remplacement du produit est indisponible.",
+    "editWasteReasonLabel": "Motif du gaspillage (obligatoire)",
+    "editWasteReasonPlaceholder": "Motif du gaspillage de cuisine",
+    "pendingItemEdit": "Modification d’article en attente",
+    "pendingItemEditHint": "Le résultat précédent n’a pas été confirmé. La résolution relance la modification enregistrée et peut la terminer si elle n’a pas été reçue.",
+    "resolvePendingItemEdit": "Résoudre la modification en attente",
+    "resolvingPendingItemEdit": "Résolution de la modification...",
+    "pendingItemEditStorageError": "La modification enregistrée n’a pas pu être lue ni mise à jour. Elle a été conservée sur cet appareil.",
+    "pendingItemEditAuthRequired": "Connectez-vous avec le compte d’origine pour résoudre cette modification.",
+    "pendingItemEditRateLimited": "Trop de requêtes. Patientez, puis réessayez de résoudre la modification.",
+    "pendingItemEditRefreshFailed": "La modification a été confirmée, mais les détails actuels de la commande n’ont pas pu être actualisés."
   },
   "pos": {
     "addCustomer": "Ajouter un client",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Passer la commande ou encaisser en espèces au paiement",
     "swapNameAndPhone": "Inverser nom et téléphone",
     "createWithPhone": "Créer le client avec le téléphone : {phone}",
-    "createWithName": "Créer le client nommé : {name}"
+    "createWithName": "Créer le client nommé : {name}",
+    "splitItemsIntoChecks": "Répartir les articles sur des tickets",
+    "splitCheckAvailabilityLoading": "Vérification de la disponibilité de la répartition...",
+    "splitCheckAvailabilityFailed": "Impossible de vérifier la disponibilité de la répartition.",
+    "splitCheckPermissionRequired": "Vous n’avez pas la permission de répartir les tickets.",
+    "splitCheckResolvePaymentFirst": "Terminez ou réglez le paiement en cours avant de répartir.",
+    "splitCheckBeforePaymentOnly": "La répartition se fait avant l’enregistrement de tout paiement.",
+    "splitCheckDineInOnly": "Seuls les tickets pris sur place peuvent être répartis.",
+    "splitCheckWholeUnitsOnly": "La répartition nécessite des quantités entières d’articles.",
+    "splitCheckTwoUnitsRequired": "Au moins deux unités d’articles éligibles sont requises.",
+    "splitCheckCheckAvailability": "Vérifier la disponibilité",
+    "viewMore": "Voir plus",
+    "viewLess": "Voir moins",
+    "splitCheckSettingDenied": "Ce compte ne peut pas vérifier la disponibilité de la répartition."
   },
   "printTest": {
     "amt": "Montant",

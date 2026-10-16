@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Pumili ng order sa kaliwa upang makita ang detalye.",
     "orderNotInCurrentList": "Wala na ang order na ito sa kasalukuyang listahan.",
     "orderMissing": "Wala na o hindi na available ang order na ito.",
-    "itemCount": "{count, plural, one {1 item} other {# na item}}"
+    "itemCount": "{count, plural, one {1 item} other {# na item}}",
+    "editPreparationStartedHint": "Nagsimula ang paghahanda. Maaari mong taasan o babaan ang dami. Hindi puwedeng palitan ang produkto.",
+    "editWasteReasonLabel": "Dahilan ng paglabas (kailangan)",
+    "editWasteReasonPlaceholder": "Dahilan ng paglabas mula sa kusina",
+    "pendingItemEdit": "Nakabinbing pag-edit ng item",
+    "pendingItemEditHint": "Hindi nakumpirma ang dating resulta. Ang paglutas ay muling ipapadala ang na-save na pag-edit at maaari itong matapos kung hindi natanggap.",
+    "resolvePendingItemEdit": "Lutasin ang nakabinbing pag-edit",
+    "resolvingPendingItemEdit": "Nilulutas ang pag-edit...",
+    "pendingItemEditStorageError": "Hindi nabasa o na-update ang na-save na pag-edit. Nakaingatan ito sa device na ito.",
+    "pendingItemEditAuthRequired": "Mag-sign in gamit ang orihinal na account para malutas ang pag-edit na ito.",
+    "pendingItemEditRateLimited": "Sobrang daming reQuest. Maghintay, pagkatapos ay subukan muli.",
+    "pendingItemEditRefreshFailed": "Nakumpirma ang pag-edit, ngunit hindi na-refresh ang kasalukuyang detalye ng order."
   },
   "pos": {
     "addCustomer": "Magdagdag ng Customer",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Ilagay ang order o tumanggap ng cash sa checkout",
     "swapNameAndPhone": "Pagpalitin ang Pangalan at Telepono",
     "createWithPhone": "Lumikha ng customer gamit ang telepono: {phone}",
-    "createWithName": "Lumikha ng customer na pinangalanang: {name}"
+    "createWithName": "Lumikha ng customer na pinangalanang: {name}",
+    "splitItemsIntoChecks": "Hatiin ang mga item sa maraming check",
+    "splitCheckAvailabilityLoading": "Tinitingnan ang availability ng paghahati ng check...",
+    "splitCheckAvailabilityFailed": "Hindi matiyak ang availability ng paghahati ng check.",
+    "splitCheckPermissionRequired": "Wala kang pahintulutan maghati ng check.",
+    "splitCheckResolvePaymentFirst": "Tapusin o lutasin muna ang kasalukuyang bayad bago maghati.",
+    "splitCheckBeforePaymentOnly": "Hinihati ang check bago makatala ng anumang bayad.",
+    "splitCheckDineInOnly": "Mga check lang para sa pagkain sa loob ang puwedeng hatiin.",
+    "splitCheckWholeUnitsOnly": "Ang paghahati ay nangangailangan ng buong bilang ng item.",
+    "splitCheckTwoUnitsRequired": "Kailangan ng hindi bababa sa dalawang puwedeng item na yunit.",
+    "splitCheckCheckAvailability": "Tingnan ang availability",
+    "viewMore": "Tingnan pa",
+    "viewLess": "Tingnan nang kaunti",
+    "splitCheckSettingDenied": "Hindi puwedeng tingnan ng account na ito ang availability ng paghahati ng check."
   },
   "printTest": {
     "amt": "Halaga",

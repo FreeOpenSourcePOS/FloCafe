@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Selecteer links een bestelling om de details te bekijken.",
     "orderNotInCurrentList": "Deze bestelling staat niet meer in de huidige lijst.",
     "orderMissing": "Deze bestelling bestaat niet meer of is niet beschikbaar.",
-    "itemCount": "{count, plural, one {1 artikel} other {# artikelen}}"
+    "itemCount": "{count, plural, one {1 artikel} other {# artikelen}}",
+    "editPreparationStartedHint": "De bereiding is gestart. Je kunt de hoeveelheid verhogen of verlagen. Het vervangen van het product is niet mogelijk.",
+    "editWasteReasonLabel": "Reden van verspilling (verplicht)",
+    "editWasteReasonPlaceholder": "Reden van keukenverspilling",
+    "pendingItemEdit": "Wachtende artikelwijziging",
+    "pendingItemEditHint": "Het eerdere resultaat is niet bevestigd. Het oplossen verzendt de opgeslagen wijziging opnieuw en kan deze afronden als die niet is ontvangen.",
+    "resolvePendingItemEdit": "Wachtende wijziging oplossen",
+    "resolvingPendingItemEdit": "Wijziging oplossen...",
+    "pendingItemEditStorageError": "De opgeslagen wijziging kon niet worden gelezen of bijgewerkt. Deze is bewaard op dit apparaat.",
+    "pendingItemEditAuthRequired": "Log in met het oorspronkelijke account om deze wijziging op te lossen.",
+    "pendingItemEditRateLimited": "Te veel aanvragen. Wacht even en probeer het opnieuw.",
+    "pendingItemEditRefreshFailed": "De wijziging is bevestigd, maar de huidige bestelgegevens konden niet worden vernieuwd."
   },
   "pos": {
     "addCustomer": "Klant toevoegen",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Bestelling plaatsen of contant afrekenen",
     "swapNameAndPhone": "Naam en telefoon wisselen",
     "createWithPhone": "Klant aanmaken met telefoon: {phone}",
-    "createWithName": "Klant aanmaken met naam: {name}"
+    "createWithName": "Klant aanmaken met naam: {name}",
+    "splitItemsIntoChecks": "Artikelen verdelen over rekeningen",
+    "splitCheckAvailabilityLoading": "Beschikbaarheid van rekeningverdeling controleren...",
+    "splitCheckAvailabilityFailed": "Beschikbaarheid van rekeningverdeling kon niet worden gecontroleerd.",
+    "splitCheckPermissionRequired": "Je hebt geen toestemming om rekeningen te verdelen.",
+    "splitCheckResolvePaymentFirst": "Voltooi of regel de lopende betaling voordat je verdeelt.",
+    "splitCheckBeforePaymentOnly": "Rekeningen worden verdeeld voordat er een betaling is geregistreerd.",
+    "splitCheckDineInOnly": "Alleen rekeningen voor gebruik ter plaatse kunnen worden verdeeld.",
+    "splitCheckWholeUnitsOnly": "Verdelen vereist hele artikelhoeveelheden.",
+    "splitCheckTwoUnitsRequired": "Er zijn minstens twee geschikte artikeleenheden nodig.",
+    "splitCheckCheckAvailability": "Beschikbaarheid controleren",
+    "viewMore": "Meer weergeven",
+    "viewLess": "Minder weergeven",
+    "splitCheckSettingDenied": "Dit account kan de beschikbaarheid van rekeningverdeling niet controleren."
   },
   "printTest": {
     "amt": "Bedrag",

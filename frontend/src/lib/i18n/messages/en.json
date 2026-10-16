@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Select an order on the left to view details.",
     "orderNotInCurrentList": "This order is no longer in the current list.",
     "orderMissing": "This order no longer exists or is unavailable.",
-    "itemCount": "{count, plural, one {1 item} other {# items}}"
+    "itemCount": "{count, plural, one {1 item} other {# items}}",
+    "editPreparationStartedHint": "Preparation has started. You can increase or reduce the quantity. Replacing the product is unavailable.",
+    "editWasteReasonLabel": "Waste reason (required)",
+    "editWasteReasonPlaceholder": "Reason for kitchen waste",
+    "pendingItemEdit": "Pending item edit",
+    "pendingItemEditHint": "The previous result was not confirmed. Resolving retries the saved edit and may finish it if it was not received.",
+    "resolvePendingItemEdit": "Resolve pending edit",
+    "resolvingPendingItemEdit": "Resolving edit...",
+    "pendingItemEditStorageError": "The saved edit could not be read or updated. It has been kept on this device.",
+    "pendingItemEditAuthRequired": "Sign in with the original account to resolve this edit.",
+    "pendingItemEditRateLimited": "Too many requests. Wait, then try resolving again.",
+    "pendingItemEditRefreshFailed": "The edit was confirmed, but current order details could not be refreshed."
   },
   "pos": {
     "addCustomer": "Add Customer",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Place order or tender cash at checkout",
     "swapNameAndPhone": "Swap Name & Phone",
     "createWithPhone": "Create customer with phone: {phone}",
-    "createWithName": "Create customer named: {name}"
+    "createWithName": "Create customer named: {name}",
+    "splitItemsIntoChecks": "Split items into checks",
+    "splitCheckAvailabilityLoading": "Checking split-check availability...",
+    "splitCheckAvailabilityFailed": "Could not check split-check availability.",
+    "splitCheckPermissionRequired": "You do not have permission to split checks.",
+    "splitCheckResolvePaymentFirst": "Finish or resolve the current payment before splitting.",
+    "splitCheckBeforePaymentOnly": "Split checks before any payment is recorded.",
+    "splitCheckDineInOnly": "Only dine-in checks can be split.",
+    "splitCheckWholeUnitsOnly": "Splitting requires whole item quantities.",
+    "splitCheckTwoUnitsRequired": "At least two eligible item units are required.",
+    "splitCheckCheckAvailability": "Check availability",
+    "viewMore": "View more",
+    "viewLess": "View less",
+    "splitCheckSettingDenied": "This account cannot check split-check availability."
   },
   "printTest": {
     "amt": "Amt",

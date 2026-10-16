@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Wählen Sie links eine Bestellung aus, um Details anzuzeigen.",
     "orderNotInCurrentList": "Diese Bestellung ist nicht mehr in der aktuellen Liste.",
     "orderMissing": "Diese Bestellung existiert nicht mehr oder ist nicht verfügbar.",
-    "itemCount": "{count, plural, one {1 Artikel} other {# Artikel}}"
+    "itemCount": "{count, plural, one {1 Artikel} other {# Artikel}}",
+    "editPreparationStartedHint": "Die Zubereitung hat begonnen. Sie können die Menge erhöhen oder verringern. Der Produktwechsel ist nicht verfügbar.",
+    "editWasteReasonLabel": "Verschwendungsgrund (erforderlich)",
+    "editWasteReasonPlaceholder": "Grund der Küchenverschwendung",
+    "pendingItemEdit": "Ausstehende Artikeländerung",
+    "pendingItemEditHint": "Das vorherige Ergebnis wurde nicht bestätigt. Das Auflösen wiederholt die gespeicherte Änderung und kann sie abschließen, falls sie nicht empfangen wurde.",
+    "resolvePendingItemEdit": "Ausstehende Änderung auflösen",
+    "resolvingPendingItemEdit": "Änderung wird aufgelöst...",
+    "pendingItemEditStorageError": "Die gespeicherte Änderung konnte nicht gelesen oder aktualisiert werden. Sie blieb auf diesem Gerät erhalten.",
+    "pendingItemEditAuthRequired": "Melden Sie sich mit dem ursprünglichen Konto an, um diese Änderung aufzulösen.",
+    "pendingItemEditRateLimited": "Zu viele Anfragen. Bitte warten und dann erneut versuchen.",
+    "pendingItemEditRefreshFailed": "Die Änderung wurde bestätigt, aber die aktuellen Bestelldetails konnten nicht aktualisiert werden."
   },
   "pos": {
     "addCustomer": "Kunde hinzufügen",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Bestellung aufgeben oder beim Bezahlen Bargeld kassieren",
     "swapNameAndPhone": "Name und Telefon tauschen",
     "createWithPhone": "Kunde mit Telefonnummer erstellen: {phone}",
-    "createWithName": "Kunde mit Namen erstellen: {name}"
+    "createWithName": "Kunde mit Namen erstellen: {name}",
+    "splitItemsIntoChecks": "Artikel auf Rechnungen aufteilen",
+    "splitCheckAvailabilityLoading": "Verfügbarkeit des Rechnungssplittings wird geprüft...",
+    "splitCheckAvailabilityFailed": "Verfügbarkeit des Rechnungssplittings konnte nicht geprüft werden.",
+    "splitCheckPermissionRequired": "Sie haben keine Berechtigung, Rechnungen aufzuteilen.",
+    "splitCheckResolvePaymentFirst": "Beenden oder klären Sie die laufende Zahlung, bevor Sie aufteilen.",
+    "splitCheckBeforePaymentOnly": "Rechnungen werden vor einer erfassten Zahlung aufgeteilt.",
+    "splitCheckDineInOnly": "Nur Rechnungen für Verzehr vor Ort können aufgeteilt werden.",
+    "splitCheckWholeUnitsOnly": "Das Aufteilen erfordert ganze Artikelstückmengen.",
+    "splitCheckTwoUnitsRequired": "Mindestens zwei geeignete Artikeleinheiten sind erforderlich.",
+    "splitCheckCheckAvailability": "Verfügbarkeit prüfen",
+    "viewMore": "Mehr anzeigen",
+    "viewLess": "Weniger anzeigen",
+    "splitCheckSettingDenied": "Dieses Konto kann die Verfügbarkeit des Rechnungssplittings nicht prüfen."
   },
   "printTest": {
     "amt": "Betrag",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   Wallet,
@@ -238,6 +238,14 @@ export default function PaymentModal({
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitCheckOrder, setSplitCheckOrder] = useState<Order | null>(null);
   const [openingSplitCheck, setOpeningSplitCheck] = useState(false);
+  /** Explicit availability state for the feature setting lookup. */
+  const [splitSettingState, setSplitSettingState] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
+  const [splitSettingDenied, setSplitSettingDenied] = useState(false);
+  /** Reason the fresh bill lookup refused to open the allocator. */
+  const [splitOpenReason, setSplitOpenReason] = useState<SplitReasonKey | null>(null);
+  const [splitCheckBill, setSplitCheckBill] = useState<Bill | null>(null);
   const [chargeStateUncertain, setChargeStateUncertain] = useState(false);
   const [showEqualShare, setShowEqualShare] = useState(false);
   // Session-only remaining payer count: reopening the dialog asks again rather
@@ -268,33 +276,69 @@ export default function PaymentModal({
     Number(bill.paid_amount || 0) === 0 &&
     bill.payment_status !== 'refunded' &&
     bill.payment_status !== 'partially_refunded';
+  const canReadBills = tenantCan(currentTenant, 'bills.read');
+  const canGenerateBill = tenantCan(currentTenant, 'bills.generate');
   const splitCheckItems = (bill.order?.items || []).filter(
     (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
   );
-  const hasDivisibleSplitCheckItems =
-    splitCheckItems.length > 0 &&
-    splitCheckItems.every(
-      (item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0,
-    ) &&
-    splitCheckItems.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
   // Split checks divide an untouched dine-in bill into separately payable
   // checks; the backend refuses anything else (POST /bills/:id/split-check).
-  // An untouched unpaid check is divisible, including the remainder of an
-  // earlier split: the bill projection limits the offer to its own items.
-  const canSplitCheck =
-    splitChecksEnabled &&
-    bill.payment_status === 'unpaid' &&
-    Number(bill.paid_amount || 0) === 0 &&
-    !bill.payment_details &&
-    tenantCan(currentTenant, 'bills.read') &&
-    (bill.split_group_id
-      ? !bill.order || (bill.order.type === 'dine_in' && hasDivisibleSplitCheckItems)
-      : hasDivisibleSplitCheckItems && bill.order?.type === 'dine_in');
+  // Reasons are deterministic and visible as text, so the section explains the
+  // state instead of silently hiding a usable control.
+  type SplitReasonKey =
+    | 'splitCheckPermissionRequired'
+    | 'splitCheckResolvePaymentFirst'
+    | 'splitCheckBeforePaymentOnly'
+    | 'splitCheckDineInOnly'
+    | 'splitCheckWholeUnitsOnly'
+    | 'splitCheckTwoUnitsRequired'
+    | 'splitCheckFailed';
+  type SplitEligibilityResult = { open: true } | { unknown: true } | { reason: SplitReasonKey };
+  const splitEligibility: SplitEligibilityResult = (() => {
+    // 1. Reading eligibility and generating an allocation are both configured
+    //    permissions; both are explained the same way.
+    if (!canReadBills || !canGenerateBill)
+      return { reason: 'splitCheckPermissionRequired' } as const;
+    // 2. An in-flight or unresolved payment operation must be resolved first.
+    if (attemptLocked || paymentOutcomeUnknown || processing) {
+      return { reason: 'splitCheckResolvePaymentFirst' } as const;
+    }
+    // 3. Only an untouched unpaid check is divisible.
+    if (
+      bill.payment_status !== 'unpaid' ||
+      Number(bill.paid_amount || 0) > 0 ||
+      Boolean(bill.payment_details)
+    ) {
+      return { reason: 'splitCheckBeforePaymentOnly' } as const;
+    }
+    // 4. The authoritative projection must be dine-in.
+    if (bill.order?.type !== undefined && bill.order?.type !== 'dine_in') {
+      return { reason: 'splitCheckDineInOnly' } as const;
+    }
+    // 5.-6. Eligible units are positive safe integers totalling at least two.
+    if (splitCheckItems.length > 0) {
+      if (
+        !splitCheckItems.every(
+          (item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0,
+        )
+      ) {
+        return { reason: 'splitCheckWholeUnitsOnly' } as const;
+      }
+      const units = splitCheckItems.reduce((total, item) => total + Number(item.quantity), 0);
+      if (units < 2) return { reason: 'splitCheckTwoUnitsRequired' } as const;
+    }
+    // 7. A projection without item lines is resolved by an explicit fresh
+    //    check, not a definite verdict.
+    if (splitCheckItems.length === 0) return { unknown: true } as const;
+    return { open: true } as const;
+  })();
   const canEditCharges =
     tenantCan(currentTenant, 'bills.discount.apply') &&
     canToggleCharges &&
     !processing &&
     !applyingDiscount &&
+    // A split lookup that would freeze the bill's totals excludes charge edits.
+    !openingSplitCheck &&
     !chargeStateUncertain &&
     !attemptLocked;
   const addableCharges = applicableCharges.filter(
@@ -306,7 +350,8 @@ export default function PaymentModal({
     chargeId: string,
     change: { waived?: boolean; applied?: boolean },
   ) => {
-    if (!canEditCharges || processing || applyingDiscount || updatingChargeId) return;
+    if (!canEditCharges || processing || applyingDiscount || updatingChargeId || openingSplitCheck)
+      return;
     setUpdatingChargeId(chargeId);
     setChargeStateUncertain(true);
     const operationId = createOperationReference();
@@ -476,12 +521,29 @@ export default function PaymentModal({
     }
   }
 
-  useEffect(() => {
+  const loadSplitCheckSetting = useCallback(() => {
+    setSplitSettingState('loading');
     api
       .get('/settings/split_checks_enabled')
-      .then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true'))
-      .catch(() => setSplitChecksEnabled(false));
+      .then((res) => {
+        setSplitChecksEnabled(res.data?.setting?.value === 'true');
+        setSplitSettingDenied(false);
+        setSplitSettingState('ready');
+      })
+      .catch((error) => {
+        // A failed lookup is not a disabled feature: it is a state the user can
+        // retry, and a denied `settings.view` is explained, not hidden.
+        const status = (error as { response?: { status?: unknown } })?.response?.status;
+        setSplitSettingDenied(status === 403);
+        setSplitChecksEnabled(false);
+        setSplitSettingState('error');
+      });
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => loadSplitCheckSetting(), 0);
+    return () => clearTimeout(timer);
+  }, [loadSplitCheckSetting]);
 
   useEffect(() => {
     const custId = bill.customer_id || cartCustomerId;
@@ -738,7 +800,14 @@ export default function PaymentModal({
   const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
-    if (applyingDiscount || processing || updatingChargeId || chargeStateUncertain || attemptLocked)
+    if (
+      applyingDiscount ||
+      processing ||
+      updatingChargeId ||
+      chargeStateUncertain ||
+      attemptLocked ||
+      openingSplitCheck
+    )
       return;
     const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
@@ -837,41 +906,102 @@ export default function PaymentModal({
     }
   };
 
+  const splitLookupIdRef = useRef(0);
+  // Any bill change (discount, charge, payment, parent refresh) invalidates an
+  // in-flight split lookup: an older response answering a stale snapshot must
+  // never open the allocator against frozen totals.
+  const splitLookupBillRef = useRef(bill);
+  useEffect(() => {
+    if (splitLookupBillRef.current === bill) return;
+    splitLookupBillRef.current = bill;
+    splitLookupIdRef.current += 1;
+    setOpeningSplitCheck(false);
+    setSplitOpenReason(null);
+  }, [bill]);
   const handleOpenSplitCheck = async () => {
-    if (openingSplitCheck || attemptLocked) return;
+    if (
+      openingSplitCheck ||
+      attemptLocked ||
+      applyingDiscount ||
+      updatingChargeId ||
+      chargeStateUncertain
+    )
+      return;
+    const lookupId = ++splitLookupIdRef.current;
     setOpeningSplitCheck(true);
+    setSplitOpenReason(null);
     try {
       // The bill endpoint answers with this check's own projection, so a
       // re-split never offers a paid sibling's quantities.
       const { data } = await api.get(`/bills/${bill.id}`);
-      let splitOrder = (data?.bill?.order ?? null) as Order | null;
-      if (!splitOrder?.items?.length && !bill.split_group_id) {
+      if (lookupId !== splitLookupIdRef.current) return;
+      const freshBill = (data?.bill ?? null) as Bill | null;
+      if (!freshBill) {
+        setSplitOpenReason('splitCheckFailed');
+        return;
+      }
+      let splitOrder = (freshBill.order ?? null) as Order | null;
+      if (!splitOrder?.items?.length && !freshBill.split_group_id) {
         const fallback = await api.get(`/orders/${bill.order_id}`);
+        if (lookupId !== splitLookupIdRef.current) return;
         splitOrder = (fallback.data?.order ?? null) as Order | null;
       }
+      if (lookupId !== splitLookupIdRef.current) return;
+
+      // Re-evaluate eligibility from the authoritative fresh result before
+      // opening anything; the button could only check a stale snapshot.
       const items = (splitOrder?.items || []).filter(
         (item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status),
       );
-      const hasDivisibleItems =
+      const untouchedUnpaid =
+        freshBill.payment_status === 'unpaid' &&
+        Number(freshBill.paid_amount || 0) === 0 &&
+        !freshBill.payment_details;
+      const wholeUnits = items.every(
+        (item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0,
+      );
+      const divisible =
         items.length > 0 &&
-        items.every(
-          (item) => Number.isSafeInteger(Number(item.quantity)) && Number(item.quantity) > 0,
-        ) &&
+        wholeUnits &&
         items.reduce((total, item) => total + Number(item.quantity), 0) >= 2;
-      if (splitOrder?.type !== 'dine_in' || !hasDivisibleItems) {
-        toast.error(t('splitCheckFailed'));
+      if (
+        !canReadBills ||
+        !canGenerateBill ||
+        !untouchedUnpaid ||
+        splitOrder?.type !== 'dine_in' ||
+        !divisible
+      ) {
+        setSplitOpenReason(
+          !canReadBills || !canGenerateBill
+            ? 'splitCheckPermissionRequired'
+            : !untouchedUnpaid
+              ? 'splitCheckBeforePaymentOnly'
+              : splitOrder?.type !== 'dine_in'
+                ? 'splitCheckDineInOnly'
+                : !wholeUnits
+                  ? 'splitCheckWholeUnitsOnly'
+                  : items.length > 0
+                    ? 'splitCheckTwoUnitsRequired'
+                    : 'splitCheckFailed',
+        );
         return;
       }
+
+      // The refreshed bill and its matching projection travel together, so the
+      // editor never mixes fresh items with an obsolete total or status.
+      setSplitCheckBill({ ...freshBill, order: splitOrder ?? (bill as Bill).order });
       setSplitCheckOrder(splitOrder);
     } catch {
-      toast.error(t('splitCheckFailed'));
+      if (splitLookupIdRef.current === lookupId) setSplitOpenReason('splitCheckFailed');
     } finally {
-      setOpeningSplitCheck(false);
+      if (splitLookupIdRef.current === lookupId) setOpeningSplitCheck(false);
     }
   };
 
   const handleSplitComplete = (bills: Bill[], departingBill: Bill | null) => {
     setSplitCheckOrder(null);
+    setSplitCheckBill(null);
+    setSplitOpenReason(null);
     if (onSplit) onSplit(departingBill ?? undefined);
     else onClose();
   };
@@ -1611,6 +1741,8 @@ export default function PaymentModal({
                         processing ||
                         applyingDiscount ||
                         attemptLocked ||
+                        openingSplitCheck ||
+                        Boolean(updatingChargeId) ||
                         discountValue === '' ||
                         isNaN(parseFloat(discountValue))
                       }
@@ -1626,7 +1758,13 @@ export default function PaymentModal({
                       <Button
                         variant="outline"
                         className="w-full"
-                        disabled={processing || applyingDiscount || attemptLocked}
+                        disabled={
+                          processing ||
+                          applyingDiscount ||
+                          attemptLocked ||
+                          openingSplitCheck ||
+                          Boolean(updatingChargeId)
+                        }
                         onClick={async () => {
                           if (
                             await confirm(t('removeDiscountConfirm'), {
@@ -1995,22 +2133,92 @@ export default function PaymentModal({
             </>
           ) : (
             <>
-              {canSplitCheck && (
-                <Button
-                  variant="outline"
-                  onClick={handleOpenSplitCheck}
-                  disabled={openingSplitCheck || processing || attemptLocked}
-                  className="w-full"
-                  size="lg"
-                >
-                  <Users size={16} className="me-2" />
-                  {t('splitCheck')}
-                </Button>
+              {splitSettingState === 'loading' && (
+                <p className="text-xs text-muted-foreground" data-testid="split-check-section">
+                  {t('splitCheckAvailabilityLoading')}
+                </p>
+              )}
+              {splitSettingState === 'error' && (
+                <div className="w-full space-y-1" data-testid="split-check-section">
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {splitSettingDenied
+                      ? t('splitCheckSettingDenied')
+                      : t('splitCheckAvailabilityFailed')}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={loadSplitCheckSetting}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {t('splitCheckCheckAvailability')}
+                  </Button>
+                </div>
+              )}
+              {splitSettingState === 'ready' && splitChecksEnabled && (
+                <div className="w-full space-y-1" data-testid="split-check-section">
+                  <p className="text-xs font-semibold text-foreground">
+                    {t('splitItemsIntoChecks')}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t('splitCheckHint')}</p>
+                  {'open' in splitEligibility ? (
+                    <Button
+                      variant="outline"
+                      onClick={handleOpenSplitCheck}
+                      disabled={
+                        openingSplitCheck ||
+                        processing ||
+                        attemptLocked ||
+                        applyingDiscount ||
+                        Boolean(updatingChargeId) ||
+                        chargeStateUncertain
+                      }
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Users size={16} className="me-2" />
+                      {t('splitCheck')}
+                    </Button>
+                  ) : 'unknown' in splitEligibility ? (
+                    <Button
+                      variant="outline"
+                      onClick={handleOpenSplitCheck}
+                      disabled={
+                        openingSplitCheck ||
+                        processing ||
+                        attemptLocked ||
+                        applyingDiscount ||
+                        Boolean(updatingChargeId) ||
+                        chargeStateUncertain
+                      }
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Users size={16} className="me-2" />
+                      {t('splitCheckCheckAvailability')}
+                    </Button>
+                  ) : (
+                    <div className="w-full space-y-1">
+                      <Button variant="outline" disabled className="w-full" size="lg">
+                        <Users size={16} className="me-2" />
+                        {t('splitCheck')}
+                      </Button>
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        {t(splitEligibility.reason)}
+                      </p>
+                    </div>
+                  )}
+                  {splitOpenReason && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{t(splitOpenReason)}</p>
+                  )}
+                </div>
               )}
               <Button
                 onClick={handlePay}
                 disabled={
                   processing ||
+                  openingSplitCheck ||
                   applyingDiscount ||
                   Boolean(updatingChargeId) ||
                   chargeStateUncertain ||
@@ -2033,7 +2241,7 @@ export default function PaymentModal({
       </div>
       {splitCheckOrder && (
         <SplitCheckModal
-          bill={bill}
+          bill={splitCheckBill ?? bill}
           order={splitCheckOrder}
           onClose={() => setSplitCheckOrder(null)}
           onSplit={handleSplitComplete}

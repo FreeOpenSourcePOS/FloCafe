@@ -90,6 +90,70 @@ Four things do not use it, and a new screen has to notice which kind it is:
 The other `axios` imports in the renderer are `axios.isAxiosError` for error shape, not a second
 client.
 
+### Durable manual item-edit recovery is re-sent only by staff action
+
+The Orders pages retry an item edit whose browser response was lost, but never automatically. The
+saved record lives in `localStorage` under one key per order item,
+[`flo.orders.item-edit.attempt.v1:<tenant>:<actor>:<order>:<item>`](../../frontend/src/lib/order-item-edit-attempt.ts).
+Enumeration
+([`listOrderItemEditAttempts`](../../frontend/src/lib/order-item-edit-attempt.ts)) reads only keys in
+that exact tenant/actor/order prefix and validates the snapshot it finds there: the key's item suffix,
+the stored tenant/actor/order/item IDs, the declared edit mode, and a body operation matching that
+mode. The stored `path` must equal the canonical `PATCH /orders/:orderId/items/:itemId/edit` path
+derived from those IDs, so a tampered record cannot redirect the replay at an arbitrary URL. Malformed
+or mismatched records inside the current scope are left intact, counted as unreadable, and never sent
+or cleared; they produce a translated storage warning. Records in other scopes are ignored.
+
+Mounted order surfaces lazily run that enumeration and render one shared
+[`PendingOrderItemEdits`](../../frontend/src/components/orders/PendingOrderItemEdits.tsx) notice above
+their item lists (both the card and the detail layouts, outside the active/inactive line filter, so
+history-hidden superseded lines still surface their unresolved attempt). The notice renders for saved
+records, storage warnings, or outstanding resolution notices. The browser sends nothing until staff click *Resolve pending
+edit*. Resolving re-reads the record under the attempt's Web Locks critical section, verifies the
+re-read still matches the offered operation, then replays the stored path, frozen body, and
+idempotency key through the axios client. Because the idempotency key is reused, a replay of an edit
+that already committed is a no-op refresh, not a second mutation.
+
+Clearing is compare-and-clear: a 2xx for the saved request, or a definitive current-route rejection
+(400/404/409/422), clears the record only if storage still holds the same idempotency key.
+Transport timeouts and 5xx, authentication/permission/rate-limit
+responses (401/403/429), and failed local clears all preserve the record and surface their distinct
+messages inline: the 403/429 classes cannot establish whether an earlier request committed, so no
+automatic retry timer runs for them. A confirmed edit whose order refresh failed is reported as a
+refresh failure, not an edit failure, and the cleansed attempt is not re-created.
+
+The Orders page owns the data result: after a resolved edit it refetches the current order and
+the already-loaded list pages through its existing fetch/refresh routines. A failed detail refresh after
+either confirmation or definitive rejection leaves a visible refresh warning with a retry action.
+Scoped native custom events
+(`flo.orders.item-edit.attempt.changed`) refresh mounted notices in the current tab after the edit
+modal persists or resolves an attempt, and the browser `storage` event covers other tabs.
+
+### Split-check availability is a state, not a hidden button
+
+The POS payment modal derives split-check availability through explicit states rather than a boolean
+that silently hid the control. The feature setting (`split_checks_enabled`) lookup reports loading,
+ready, and failed states: while unknown the modal says availability is being checked, on failure it
+replaces the section with an error and a retry action, and a `settings.view` denial explains the
+account cannot check availability. Only a successfully read `false` removes the section.
+
+Eligibility resolves in a fixed order so staff always see the same reason for the same bill:
+billing permissions, an unresolved payment or split in progress, anything other than an untouched
+unpaid bill, a non-dine-in order type, fractional item quantities, fewer than two whole eligible
+units, and finally an incomplete bill/order projection, which is reported as an availability unknown
+with a check action, never as "cannot split". Definitive reasons render as visible text beside the
+disabled action, so no reason depends on hovering.
+
+Opening the allocator is guarded, not assumed. The modal re-fetches the bill (`GET /bills/:id`,
+with the existing whole-order fallback only for an as-yet-unsplit bill) and re-evaluates payment
+status, permissions, order type, and units from the fresh result before offering the split, passing
+the refreshed bill and its matching order projection to
+[`SplitCheckModal`](../../frontend/src/components/pos/SplitCheckModal.tsx). For a split-group child
+the child's own projection is authoritative; a paid sibling never leaks into the editor. Stale or
+racing lookups are ignored by lookup id, rapid clicks open at most one allocator, and while the
+explicit split-opening request is in flight competing payment and split mutations are disabled until
+it finally releases.
+
 ### The KDS live feed is a WebSocket, not a request
 
 Two surfaces open a socket to the same `/kds` path. The base ports for that path are `:3001` and

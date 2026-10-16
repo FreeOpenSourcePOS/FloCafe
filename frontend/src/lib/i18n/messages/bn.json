@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "বিবরণ দেখতে বাম দিক থেকে একটি অর্ডার নির্বাচন করুন।",
     "orderNotInCurrentList": "এই অর্ডারটি আর বর্তমান তালিকায় নেই।",
     "orderMissing": "এই অর্ডারটি আর নেই বা উপলভ্য নয়।",
-    "itemCount": "{count, plural, one {১টি আইটেম} other {#টি আইটেম}}"
+    "itemCount": "{count, plural, one {১টি আইটেম} other {#টি আইটেম}}",
+    "editPreparationStartedHint": "প্রস্তুতি শুরু হয়েছে। আপনি পরিমাণ বাড়াতে বা কমাতে পারেন। পণ্য পরিবর্তন করা যাবে না।",
+    "editWasteReasonLabel": "অপচয়ের কারণ (আবশ্যক)",
+    "editWasteReasonPlaceholder": "রান্নাঘরের অপচয়ের কারণ",
+    "pendingItemEdit": "মুলতুবি আইটেম সম্পাদনা",
+    "pendingItemEditHint": "পূর্ববর্তী ফলাফল নিশ্চিত করা হয়নি। মীমাংসা করলে সংরক্ষিত সম্পাদনা আবার পাঠানো হয় এবং না পৌঁছালে সম্পূর্ণ হতে পারে।",
+    "resolvePendingItemEdit": "মুলতুবি সম্পাদনা মীমাংসা করুন",
+    "resolvingPendingItemEdit": "সম্পাদনা মীমাংসা হচ্ছে...",
+    "pendingItemEditStorageError": "সংরক্ষিত সম্পাদনা পড়া বা হালনাগাদ করা যায়নি। এই ডিভাইসেই রাখা আছে।",
+    "pendingItemEditAuthRequired": "এই সম্পাদনা মীমাংসা করতে মূল অ্যাকাউন্ট দিয়ে সাইন ইন করুন।",
+    "pendingItemEditRateLimited": "অনুরোধ অনেক বেশি। অপেক্ষা করুন, তারপর আবার চেষ্টা করুন।",
+    "pendingItemEditRefreshFailed": "সম্পাদনা নিশ্চিত হয়েছে, তবে বর্তমান অর্ডারের বিবরণ রিফ্রেশ করা যায়নি।"
   },
   "pos": {
     "addCustomer": "গ্রাহক যোগ করুন",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "অর্ডার দিন বা চেকআউটে নগদ নিন",
     "swapNameAndPhone": "নাম এবং ফোন অদলবদল করুন",
     "createWithPhone": "ফোন নম্বর সহ গ্রাহক তৈরি করুন: {phone}",
-    "createWithName": "নামের গ্রাহক তৈরি করুন: {name}"
+    "createWithName": "নামের গ্রাহক তৈরি করুন: {name}",
+    "splitItemsIntoChecks": "আইটেমগুলো একাধিক বিলে ভাগ করুন",
+    "splitCheckAvailabilityLoading": "বিল ভাগ করার প্রাপ্যতা পরীক্ষা করা হচ্ছে...",
+    "splitCheckAvailabilityFailed": "বিল ভাগ করার প্রাপ্যতা পরীক্ষা করা যায়নি।",
+    "splitCheckPermissionRequired": "আপনার বিল ভাগ করার অনুমতি নেই।",
+    "splitCheckResolvePaymentFirst": "ভাগ করার আগে বর্তমান পেমেন্ট সম্পন্ন বা মীমাংসা করুন।",
+    "splitCheckBeforePaymentOnly": "কোনো পেমেন্ট রেকর্ড হওয়ার আগেই বিল ভাগ করা যায়।",
+    "splitCheckDineInOnly": "শুধু ভেতরে বসে খাওয়ার বিল ভাগ করা যায়।",
+    "splitCheckWholeUnitsOnly": "ভাগ করতে পূর্ণসংখ্যক আইটেম পরিমাণ দরকার।",
+    "splitCheckTwoUnitsRequired": "কমপক্ষে দুটি যোগ্য আইটেম ইউনিট দরকার।",
+    "splitCheckCheckAvailability": "প্রাপ্যতা পরীক্ষা করুন",
+    "viewMore": "আরও দেখুন",
+    "viewLess": "কম দেখুন",
+    "splitCheckSettingDenied": "এই অ্যাকাউন্ট বিল ভাগ করার প্রাপ্যতা পরীক্ষা করতে পারে না।"
   },
   "printTest": {
     "amt": "এএমটি",

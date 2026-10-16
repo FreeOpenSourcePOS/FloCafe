@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "Pilih pesanan di kiri untuk melihat detail.",
     "orderNotInCurrentList": "Pesanan ini tidak lagi ada dalam daftar saat ini.",
     "orderMissing": "Pesanan ini sudah tidak ada atau tidak tersedia.",
-    "itemCount": "{count, plural, one {1 item} other {# item}}"
+    "itemCount": "{count, plural, one {1 item} other {# item}}",
+    "editPreparationStartedHint": "Persiapan telah dimulai. Anda dapat menambah atau mengurangi jumlah. Mengganti produk tidak tersedia.",
+    "editWasteReasonLabel": "Alasan kerugian (wajib)",
+    "editWasteReasonPlaceholder": "Alasan kerugian dapur",
+    "pendingItemEdit": "Perubahan item tertunda",
+    "pendingItemEditHint": "Hasil sebelumnya tidak dikonfirmasi. Menyelesaikan mengirim ulang perubahan yang tersimpan dan dapat menyelesaikannya jika belum diterima.",
+    "resolvePendingItemEdit": "Selesaikan perubahan tertunda",
+    "resolvingPendingItemEdit": "Menyelesaikan perubahan...",
+    "pendingItemEditStorageError": "Perubahan yang tersimpan tidak dapat dibaca atau diperbarui. Tetap disimpan di perangkat ini.",
+    "pendingItemEditAuthRequired": "Masuk dengan akun asli untuk menyelesaikan perubahan ini.",
+    "pendingItemEditRateLimited": "Terlalu banyak permintaan. Tunggu, lalu coba lagi.",
+    "pendingItemEditRefreshFailed": "Perubahan dikonfirmasi, tetapi detail pesanan terkini tidak dapat disegarkan."
   },
   "pos": {
     "addCustomer": "Tambah Pelanggan",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "Buat pesanan atau terima pembayaran tunai saat checkout",
     "swapNameAndPhone": "Tukar Nama & Telepon",
     "createWithPhone": "Buat pelanggan dengan telepon: {phone}",
-    "createWithName": "Buat pelanggan bernama: {name}"
+    "createWithName": "Buat pelanggan bernama: {name}",
+    "splitItemsIntoChecks": "Bagi item menjadi beberapa tagihan",
+    "splitCheckAvailabilityLoading": "Memeriksa ketersediaan pembagian tagihan...",
+    "splitCheckAvailabilityFailed": "Ketersediaan pembagian tagihan tidak dapat diperiksa.",
+    "splitCheckPermissionRequired": "Anda tidak memiliki izin untuk membagi tagihan.",
+    "splitCheckResolvePaymentFirst": "Selesaikan atau tuntaskan pembayaran berjalan sebelum membagi.",
+    "splitCheckBeforePaymentOnly": "Tagihan dibagi sebelum ada pembayaran yang tercatat.",
+    "splitCheckDineInOnly": "Hanya tagihan makan di tempat yang dapat dibagi.",
+    "splitCheckWholeUnitsOnly": "Pembagian memerlukan jumlah item dalam satuan bulat.",
+    "splitCheckTwoUnitsRequired": "Diperlukan setidaknya dua unit item yang memenuhi syarat.",
+    "splitCheckCheckAvailability": "Periksa ketersediaan",
+    "viewMore": "Lihat selengkapnya",
+    "viewLess": "Tampilkan lebih sedikit",
+    "splitCheckSettingDenied": "Akun ini tidak dapat memeriksa ketersediaan pembagian tagihan."
   },
   "printTest": {
     "amt": "Jml",

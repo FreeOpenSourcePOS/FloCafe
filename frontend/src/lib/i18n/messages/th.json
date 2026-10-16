@@ -773,7 +773,18 @@
     "selectOrderPlaceholder": "เลือกคำสั่งซื้อทางซ้ายเพื่อดูรายละเอียด",
     "orderNotInCurrentList": "คำสั่งซื้อนี้ไม่อยู่ในรายการปัจจุบันแล้ว",
     "orderMissing": "คำสั่งซื้อนี้ไม่มีอยู่แล้วหรือไม่พร้อมใช้งาน",
-    "itemCount": "{count, plural, one {# รายการ} other {# รายการ}}"
+    "itemCount": "{count, plural, one {# รายการ} other {# รายการ}}",
+    "editPreparationStartedHint": "เริ่มการเตรียมแล้ว คุณสามารถเพิ่มหรือลดจำนวนได้ ไม่สามารถเปลี่ยนสินค้าได้",
+    "editWasteReasonLabel": "เหตุผลการสูญเสีย (จำเป็น)",
+    "editWasteReasonPlaceholder": "เหตุผลการสูญเสียจากครัว",
+    "pendingItemEdit": "การแก้ไขสินค้าที่รอดำเนินการ",
+    "pendingItemEditHint": "ไม่สามารถยืนยันผลลัพธ์ก่อนหน้าได้ การแก้ไขจะส่งการแก้ไขที่บันทึกไว้ซ้ำ และอาจสำเร็จได้หากยังไม่ถูกรับ",
+    "resolvePendingItemEdit": "ดำเนินการแก้ไขที่รออยู่ให้เสร็จ",
+    "resolvingPendingItemEdit": "กำลังดำเนินการแก้ไข...",
+    "pendingItemEditStorageError": "ไม่สามารถอ่านหรืออัปเดตการแก้ไขที่บันทึกไว้ได้ ระบบจะยังเก็บไว้บนอุปกรณ์นี้",
+    "pendingItemEditAuthRequired": "เข้าสู่ระบบด้วยบัญชีเดิมเพื่อดำเนินการแก้ไขนี้ให้เสร็จ",
+    "pendingItemEditRateLimited": "มีคำขอมากเกินไป รอสักครู่แล้วลองอีกครั้ง",
+    "pendingItemEditRefreshFailed": "การแก้ไขได้รับการยืนยันแล้ว แต่ไม่สามารถรีเฟรชรายละเอียดการสั่งซื้อปัจจุบันได้"
   },
   "pos": {
     "addCustomer": "เพิ่มลูกค้า",
@@ -1116,7 +1127,20 @@
     "spaceTenderShortcut": "สร้างคำสั่งซื้อหรือรับเงินสดที่หน้าชำระเงิน",
     "swapNameAndPhone": "สลับชื่อและโทรศัพท์",
     "createWithPhone": "สร้างลูกค้าด้วยเบอร์โทร: {phone}",
-    "createWithName": "สร้างลูกค้าชื่อ: {name}"
+    "createWithName": "สร้างลูกค้าชื่อ: {name}",
+    "splitItemsIntoChecks": "แบ่งรายการสินค้าออกเป็นหลายบิล",
+    "splitCheckAvailabilityLoading": "กำลังตรวจสอบความพร้อมในการแบ่งบิล...",
+    "splitCheckAvailabilityFailed": "ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้",
+    "splitCheckPermissionRequired": "คุณไม่มีสิทธิ์ในการแบ่งบิล",
+    "splitCheckResolvePaymentFirst": "ให้การชำระเงินปัจจุบันเสร็จสิ้นก่อนแบ่งบิล",
+    "splitCheckBeforePaymentOnly": "แบ่งบิลได้ก่อนบันทึกการชำระเงินเท่านั้น",
+    "splitCheckDineInOnly": "แบ่งบิลได้เฉพาะบิลสำหรับทานในร้านเท่านั้น",
+    "splitCheckWholeUnitsOnly": "การแบ่งบิลต้องใช้จำนวนสินค้าเป็นจำนวนเต็ม",
+    "splitCheckTwoUnitsRequired": "ต้องมีสินค้าที่เข้าเงื่อนไขอย่างน้อย 2 หน่วย",
+    "splitCheckCheckAvailability": "ตรวจสอบความพร้อม",
+    "viewMore": "ดูเพิ่มเติม",
+    "viewLess": "ดูน้อยลง",
+    "splitCheckSettingDenied": "บัญชีนี้ไม่สามารถตรวจสอบความพร้อมในการแบ่งบิลได้"
   },
   "printTest": {
     "amt": "จำนวนเงิน",

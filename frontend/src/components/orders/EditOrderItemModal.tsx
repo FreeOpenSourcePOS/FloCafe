@@ -9,13 +9,14 @@ import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import AddonModal from '@/components/pos/AddonModal';
 import { formatItemHeading } from '@/lib/printer/item-heading';
+import { cartVariantUnitPrice } from '@/lib/cart-price';
 import {
   clearOrderItemEditAttempt,
-  isUnresolvedOrderItemEditFailure,
   newOrderItemEditAttempt,
   orderItemEditAttemptStorageKey,
   persistOrderItemEditAttempt,
   readOrderItemEditAttempt,
+  replayOrderItemEditAttempt,
   withOrderItemEditAttemptLock,
   type OrderItemEditAttemptBody,
   type OrderItemEditAttemptMode,
@@ -27,6 +28,8 @@ import type { Addon, Order, OrderItem, Product, ProductVariant } from '@/lib/typ
 interface Props {
   orderId: number;
   item: OrderItem;
+  /** Quote the variant's online platform price, matching the order this line belongs to. */
+  onlinePlatformSelected?: boolean;
   onClose: () => void;
   onSaved: (order: Order) => void;
 }
@@ -92,7 +95,13 @@ function attemptBodiesMatch(a: OrderItemEditAttemptBody, b: OrderItemEditAttempt
 }
 
 /** Owner-only edit of a live order line: change its quantity or swap it for another product. */
-export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: Props) {
+export default function EditOrderItemModal({
+  orderId,
+  item,
+  onlinePlatformSelected = false,
+  onClose,
+  onSaved,
+}: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
@@ -284,10 +293,17 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           setAttemptState({ attempt: snapshot, storageBlocked: false });
         }
 
-        try {
-          const { data } = await api.patch(snapshot.path, snapshot.body, {
-            headers: { 'Idempotency-Key': snapshot.idempotencyKey },
-          });
+        const result = await replayOrderItemEditAttempt<Order>({
+          snapshot,
+          send: async (path, body, idempotencyKey) => {
+            const { data } = await api.patch(path, body, {
+              headers: { 'Idempotency-Key': idempotencyKey },
+            });
+            return data.order as Order;
+          },
+        });
+
+        if (result.outcome === 'committed') {
           if (
             clearOrderItemEditAttempt(
               snapshot.tenantId,
@@ -299,29 +315,40 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
           ) {
             setAttemptState({ attempt: null, storageBlocked: false });
           }
-          return data.order as Order;
-        } catch (error) {
-          const status = (error as { response?: { status?: unknown } })?.response?.status;
-          if (!isUnresolvedOrderItemEditFailure(error) && status !== 401) {
-            if (
-              clearOrderItemEditAttempt(
-                snapshot.tenantId,
-                snapshot.actorId,
-                snapshot.orderId,
-                snapshot.itemId,
-                snapshot.idempotencyKey,
-              )
-            ) {
-              setAttemptState({ attempt: null, storageBlocked: false });
-            }
-          }
-          throw error;
+          return result.data;
         }
+        if (result.outcome === 'rejected') {
+          if (
+            clearOrderItemEditAttempt(
+              snapshot.tenantId,
+              snapshot.actorId,
+              snapshot.orderId,
+              snapshot.itemId,
+              snapshot.idempotencyKey,
+            )
+          ) {
+            setAttemptState({ attempt: null, storageBlocked: false });
+          }
+        }
+        // unresolved / authRequired / forbidden / rateLimited: the saved record
+        // stays because these responses cannot establish that an earlier
+        // request committed.
+        throw result.error;
       });
 
       if (committedOrder === null) {
         toast.error(tOrders('editItemFailed'));
         await refreshAfterConflict();
+        return;
+      }
+
+      // Identity may have changed while the awaited lock ran; never install
+      // another actor's or order's results into the current view.
+      const postLockIdentity = useAuthStore.getState();
+      const postLockActorId = postLockIdentity.user ? String(postLockIdentity.user.id) : null;
+      if (postLockIdentity.currentTenant?.id !== tenantId || postLockActorId !== actorId) {
+        inFlightRef.current = false;
+        setSaving(false);
         return;
       }
 
@@ -401,8 +428,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
 
             {isStarted && (
               <p className="text-xs text-muted-foreground bg-muted p-2 rounded-md">
-                Preparation has started in kitchen. Swapping products is disabled; only quantity
-                reductions or voids are allowed.
+                {tOrders('editPreparationStartedHint')}
               </p>
             )}
 
@@ -416,10 +442,12 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {fmt(
-                        Number(
-                          effectiveReplacement.variant?.price ??
-                            effectiveReplacement.product.price ??
-                            0,
+                        cartVariantUnitPrice(
+                          {
+                            product: effectiveReplacement.product,
+                            variant: effectiveReplacement.variant,
+                          },
+                          onlinePlatformSelected,
                         ),
                       )}
                     </p>
@@ -505,7 +533,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
             {isDecrease && (
               <label className="block text-sm">
                 <span className="text-muted-foreground">
-                  {isStarted ? 'Reason *' : tCommon('reasonOptional')}
+                  {isStarted ? tOrders('editWasteReasonLabel') : tCommon('reasonOptional')}
                 </span>
                 <input
                   type="text"
@@ -516,7 +544,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
                     if (inFlightRef.current || operationLocked) return;
                     setReason(event.target.value);
                   }}
-                  placeholder={isStarted ? 'Reason for kitchen waste' : ''}
+                  placeholder={isStarted ? tOrders('editWasteReasonPlaceholder') : ''}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
                 />
               </label>
@@ -541,6 +569,7 @@ export default function EditOrderItemModal({ orderId, item, onClose, onSaved }: 
             product={customizingProduct}
             currency={currentTenant?.currency || 'USD'}
             country={currentTenant?.country}
+            onlinePlatformSelected={onlinePlatformSelected}
             initialQuantity={parsedQuantity > 0 ? parsedQuantity : 1}
             initialVariant={
               effectiveReplacement?.product.id === customizingProduct.id

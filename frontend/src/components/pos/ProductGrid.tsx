@@ -74,7 +74,8 @@ function CategoryRow({
   const allChip = (
     <button
       onClick={() => setSelectedCategory(null)}
-      className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+      title={collapse ? allLabel : undefined}
+      className={`${collapse ? 'min-w-0 truncate ' : ''}px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
         !selectedCategory
           ? 'bg-brand text-white'
           : 'bg-card text-foreground border border-border hover:bg-muted'

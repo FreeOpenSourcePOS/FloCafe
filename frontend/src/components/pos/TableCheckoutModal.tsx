@@ -253,6 +253,7 @@ export default function TableCheckoutModal({
           orderId={order.id}
           item={editingItem}
           onClose={() => setEditingItem(null)}
+          onIdentityChanged={onClose}
           onSaved={() => {
             api
               .get(`/orders/${order.id}`)

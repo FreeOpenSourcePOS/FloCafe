@@ -16,6 +16,7 @@ export interface FittingCalculationInput<T extends { key: string }> {
 export interface FittingCalculationResult<T> {
   allFit: boolean;
   visibleChoices: T[];
+  firstMandatoryMaxWidth?: number;
 }
 
 /**
@@ -100,7 +101,15 @@ export function calculateFittingChoices<T extends { key: string }>({
 
   // Filter choices in EXACT ORIGINAL ORDER so mandatory choices are NEVER moved to front
   const visibleChoices = choices.filter((c) => visibleKeySet.has(c.key));
-  return { allFit: false, visibleChoices };
+  return {
+    allFit: false,
+    visibleChoices,
+    firstMandatoryMaxWidth:
+      fixedReservedWidth > availableWidth && mandatoryChoices.length > 0
+        ? Math.max(0, availableWidth - labelWidth - toggleWidth - fixedGaps) /
+          mandatoryChoices.length
+        : undefined,
+  };
 }
 
 interface Props {
@@ -159,6 +168,7 @@ export default function CollapsiblePosChoices({
   // null = not measured yet; Set of fitting keys when collapsed
   const [fittingKeySet, setFittingKeySet] = useState<Set<string> | null>(null);
   const [allFit, setAllFit] = useState(false);
+  const [firstMandatoryMaxWidth, setFirstMandatoryMaxWidth] = useState<number>();
   const [probeMounted, setProbeMounted] = useState(true);
 
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +228,7 @@ export default function CollapsiblePosChoices({
     });
 
     setAllFit(result.allFit);
+    setFirstMandatoryMaxWidth(result.firstMandatoryMaxWidth);
     if (result.allFit) {
       setFittingKeySet(null);
     } else {
@@ -288,6 +299,7 @@ export default function CollapsiblePosChoices({
 
       <div
         ref={rowRef}
+        id={toggleId}
         aria-label={ariaLabel}
         data-testid={testId}
         className={`relative flex min-w-0 items-center gap-2 ${
@@ -314,6 +326,11 @@ export default function CollapsiblePosChoices({
                 ? 'shrink'
                 : 'shrink-0'
             }`}
+            style={
+              !expanded && !probeMounted && choice.key === mandatoryKeys[0]
+                ? { maxWidth: firstMandatoryMaxWidth }
+                : undefined
+            }
           >
             {choice.node}
           </span>

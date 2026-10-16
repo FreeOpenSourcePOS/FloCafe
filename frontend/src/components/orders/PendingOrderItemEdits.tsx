@@ -262,7 +262,7 @@ export default function PendingOrderItemEdits({
         // Definitive rejection (e.g. 409 stale edit version, 400/404/422).
         // Clear the matching record, refresh current order data, and display
         // the rejection message.
-        clearOrderItemEditAttempt(
+        const cleared = clearOrderItemEditAttempt(
           attempt.tenantId,
           attempt.actorId,
           attempt.orderId,
@@ -272,6 +272,9 @@ export default function PendingOrderItemEdits({
         outcomeHandled = true;
         await retryRefresh(attempt.itemId, attempt.orderId);
         if (!mountedRef.current) return;
+        if (!cleared) {
+          setStorageErrors((prev) => ({ ...prev, [attempt.itemId]: true }));
+        }
         const backendMessage = ((result.error as { response?: { data?: { error?: string } } })
           ?.response?.data?.error ?? undefined) as string | undefined;
         setRejectionNotices((prev) => ({

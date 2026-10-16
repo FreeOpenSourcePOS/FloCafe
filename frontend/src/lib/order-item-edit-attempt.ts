@@ -305,9 +305,7 @@ function attemptsChangedEventMatches(
     if (!scope) return true;
     const key = (event as StorageEvent).key;
     if (key === null) return true;
-    return key.startsWith(
-      orderItemEditAttemptStorageKey(scope.tenantId, scope.actorId, scope.orderId, ''),
-    );
+    return key.startsWith(scopedKeyPrefix(scope.tenantId, scope.actorId, scope.orderId));
   }
   return false;
 }
@@ -460,7 +458,10 @@ export function orderItemEditAttemptsEquivalent(
   );
 }
 
-function attemptBodiesMatch(a: OrderItemEditAttemptBody, b: OrderItemEditAttemptBody): boolean {
+export function attemptBodiesMatch(
+  a: OrderItemEditAttemptBody,
+  b: OrderItemEditAttemptBody,
+): boolean {
   if (
     a.expected_edit_version !== b.expected_edit_version ||
     a.quantity !== b.quantity ||

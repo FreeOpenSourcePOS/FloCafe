@@ -11,6 +11,7 @@ import AddonModal from '@/components/pos/AddonModal';
 import { formatItemHeading } from '@/lib/printer/item-heading';
 import { cartVariantUnitPrice } from '@/lib/cart-price';
 import {
+  attemptBodiesMatch,
   clearOrderItemEditAttempt,
   newOrderItemEditAttempt,
   orderItemEditAttemptStorageKey,
@@ -32,6 +33,7 @@ interface Props {
   onlinePlatformSelected?: boolean;
   onClose: () => void;
   onSaved: (order: Order) => void;
+  onIdentityChanged: () => void;
 }
 
 interface AttemptState {
@@ -66,34 +68,6 @@ function readInitialAttemptState(
   }
 }
 
-function attemptBodiesMatch(a: OrderItemEditAttemptBody, b: OrderItemEditAttemptBody): boolean {
-  if (
-    a.expected_edit_version !== b.expected_edit_version ||
-    a.quantity !== b.quantity ||
-    (a.reason ?? '') !== (b.reason ?? '')
-  ) {
-    return false;
-  }
-  if (a.replacement === undefined || b.replacement === undefined) {
-    return a.replacement === b.replacement;
-  }
-  const aAddons = (a.replacement.addons ?? []).map((x) => ({
-    id: String(x.id ?? ''),
-    quantity: x.quantity ?? 1,
-  }));
-  const bAddons = (b.replacement.addons ?? []).map((x) => ({
-    id: String(x.id ?? ''),
-    quantity: x.quantity ?? 1,
-  }));
-  return (
-    a.replacement.product_id === b.replacement.product_id &&
-    a.replacement.quantity === b.replacement.quantity &&
-    (a.replacement.variant_id ?? '') === (b.replacement.variant_id ?? '') &&
-    (a.replacement.special_instructions ?? '') === (b.replacement.special_instructions ?? '') &&
-    JSON.stringify(aAddons) === JSON.stringify(bAddons)
-  );
-}
-
 /** Owner-only edit of a live order line: change its quantity or swap it for another product. */
 export default function EditOrderItemModal({
   orderId,
@@ -101,6 +75,7 @@ export default function EditOrderItemModal({
   onlinePlatformSelected = false,
   onClose,
   onSaved,
+  onIdentityChanged,
 }: Props) {
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
@@ -349,6 +324,8 @@ export default function EditOrderItemModal({
       if (postLockIdentity.currentTenant?.id !== tenantId || postLockActorId !== actorId) {
         inFlightRef.current = false;
         setSaving(false);
+        onClose();
+        onIdentityChanged();
         return;
       }
 

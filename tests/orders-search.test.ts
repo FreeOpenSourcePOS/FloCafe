@@ -150,6 +150,8 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
   };
 
   const orderRequests: Array<Record<string, unknown>> = [];
+  let pendingOrdersResponse: Promise<{ data: { orders: unknown[]; nextCursor: null } }> | null =
+    null;
   const Icon = () => null;
   const ButtonStub = (props: Record<string, unknown>) => ({ type: 'button', props });
   const MasterListStub = (props: Record<string, unknown>) => ({ type: 'OrdersMasterList', props });
@@ -194,6 +196,7 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
           if (url === '/orders') {
             const params = config?.params ?? {};
             orderRequests.push(params);
+            if (pendingOrdersResponse) return pendingOrdersResponse;
             if (params.before_id === 55) {
               return {
                 data: {
@@ -410,6 +413,15 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
         undefined,
         'Load More button stays hidden on the held tab',
       );
+      const heldRecovery = collectElements(
+        page1Tree,
+        (el) => typeof el.props?.onItemEditResolved === 'function',
+      )[0];
+      assert.equal(
+        await heldRecovery.props.onItemEditResolved(101),
+        false,
+        'a skipped held-tab refresh does not report fresh order data',
+      );
 
       // Switching back to a non-held tab restores Load More and clicking it fetches the next page.
       const allTabButton = collectElements(
@@ -446,6 +458,23 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
         undefined,
         'Load More button is hidden once nextOrdersCursor is null',
       );
+      const recovery = collectElements(
+        page2Tree,
+        (el) => typeof el.props?.onItemEditResolved === 'function',
+      )[0];
+      let release!: (response: { data: { orders: unknown[]; nextCursor: null } }) => void;
+      pendingOrdersResponse = new Promise((resolve) => {
+        release = resolve;
+      });
+      const activeRefresh = recovery.props.onItemEditResolved(101);
+      assert.equal(
+        await recovery.props.onItemEditResolved(101),
+        false,
+        'a coalesced refresh cannot report success before the active request finishes',
+      );
+      pendingOrdersResponse = null;
+      release({ data: { orders: [], nextCursor: null } });
+      assert.equal(await activeRefresh, true, 'a completed fresh list request reports success');
     } finally {
       for (const cleanup of cleanups) {
         if (typeof cleanup === 'function') cleanup();

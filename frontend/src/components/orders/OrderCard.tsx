@@ -734,7 +734,8 @@ export function OrderCard({
                     {/* Touchscreen-accessible item actions for Manager */}
                     {canCancelItems &&
                       !isPaid &&
-                      !['completed', 'cancelled'].includes(order.status) && (
+                      !['completed', 'cancelled'].includes(order.status) &&
+                      !itemEditBlocked(item.id) && (
                         <div className="flex items-center gap-1 ms-1 shrink-0">
                           {item.status === 'pending' && onDeleteItem && (
                             <button

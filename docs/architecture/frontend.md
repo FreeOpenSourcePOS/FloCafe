@@ -120,7 +120,7 @@ Transport timeouts and 5xx, authentication/permission/rate-limit
 responses (401/403/429), and failed local clears all preserve the record and surface their distinct
 messages inline: the 403/429 classes cannot establish whether an earlier request committed, so no
 automatic retry timer runs for them. A confirmed edit whose order refresh failed is reported as a
-refresh failure, not an edit failure, and the cleansed attempt is not re-created.
+refresh failure, not an edit failure, and the cleared attempt is not re-created.
 
 The Orders page owns the data result: after a resolved edit it refetches the current order and
 the already-loaded list pages through its existing fetch/refresh routines. A failed detail refresh after
@@ -128,6 +128,8 @@ either confirmation or definitive rejection leaves a visible refresh warning wit
 Scoped native custom events
 (`flo.orders.item-edit.attempt.changed`) refresh mounted notices in the current tab after the edit
 modal persists or resolves an attempt, and the browser `storage` event covers other tabs.
+An identity change during an item-edit commit closes the stale editor and refreshes the current
+order or table context without installing the returned order from the previous identity.
 
 ### Split-check availability is a state, not a hidden button
 

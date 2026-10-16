@@ -2602,7 +2602,7 @@ test.describe('POS collapse rows and cart table control', () => {
       for (let index = 0; index < 10; index += 1) {
         const response = await request.post(`${BASE}/api/categories`, {
           headers: authHeaders,
-          data: { name: `E2E Split Row ${index}` },
+          data: { name: `E2E Split Row ${index} with a deliberately long category label` },
         });
         expect(response.ok(), `fixture category ${index} created`).toBeTruthy();
         createdIds.push((await response.json()).category.id as string);
@@ -2620,8 +2620,12 @@ test.describe('POS collapse rows and cart table control', () => {
 
       const toggle = page.getByRole('button', { name: 'View more' });
       await expect(toggle, 'overflowing categories offer the toggle').toBeVisible();
+      expect(await toggle.getAttribute('aria-controls')).toBe(await row.getAttribute('id'));
       await toggle.click();
       await expect(page.getByRole('button', { name: 'View less' })).toBeVisible();
+      expect(
+        await page.getByRole('button', { name: 'View less' }).getAttribute('aria-controls'),
+      ).toBe(await row.getAttribute('id'));
 
       // Expanded rows wrap and every category is reachable without the page or
       // the grid scrolling sideways.
@@ -2652,7 +2656,7 @@ test.describe('POS collapse rows and cart table control', () => {
     }
   });
 
-  test('a long selected category and its toggle fit the collapsed row on mobile', async ({
+  test('a long selected category and toggle fit narrow English, German, Turkish and RTL rows', async ({
     page,
     request,
   }) => {
@@ -2669,41 +2673,58 @@ test.describe('POS collapse rows and cart table control', () => {
         createdIds.push((await response.json()).category.id as string);
       }
 
-      await page.setViewportSize({ width: 390, height: 844 });
       await loginAsManager(page);
       await openPosAsManager(page);
+      for (const [width, language] of [
+        [390, 'en'],
+        [320, 'de'],
+        [320, 'tr'],
+        [320, 'ar'],
+      ] as const) {
+        await page.setViewportSize({ width, height: 844 });
+        await setLanguage(page, language);
+        await page.reload();
 
-      // Expand and pick the last category so it sits beyond any collapsed prefix.
-      const row = page.getByTestId('pos-category-row');
-      await page.getByRole('button', { name: 'View more' }).click();
-      const selected = row.getByRole('button', {
-        name: 'E2E Tail Row 9 with a deliberately long category label',
-      });
-      await selected.click();
-      await page.getByRole('button', { name: 'View less' }).click();
+        // Expand and pick the last category so it sits beyond any collapsed prefix.
+        const row = page.getByTestId('pos-category-row');
+        await row.locator('button[aria-expanded="false"]').click();
+        const selected = row.getByRole('button', {
+          name: 'E2E Tail Row 9 with a deliberately long category label',
+        });
+        await selected.click();
+        await row.locator('button[aria-expanded="true"]').click();
 
-      await expect(selected).toBeVisible();
-      const toggle = row.getByRole('button', { name: 'View more', exact: true });
-      await expect
-        .poll(async () => {
-          const bounds = await row.boundingBox();
-          const toggleBounds = await toggle.boundingBox();
-          const selectedBounds = await selected.boundingBox();
-          return Boolean(
-            bounds &&
-            toggleBounds &&
-            selectedBounds &&
-            toggleBounds.x >= bounds.x &&
-            toggleBounds.x + toggleBounds.width <= bounds.x + bounds.width + 1 &&
-            selectedBounds.x + selectedBounds.width <= bounds.x + bounds.width + 1,
-          );
-        }, 'the selected category and toggle are completely inside the row')
-        .toBe(true);
-      await toggle.click();
-      await expect(
-        row.getByRole('button', { name: 'E2E Tail Row 0 with a deliberately long category label' }),
-      ).toBeVisible();
+        await expect(selected).toBeVisible();
+        const toggle = row.locator('button[aria-expanded="false"]');
+        await expect
+          .poll(async () => {
+            const bounds = await row.boundingBox();
+            const toggleBounds = await toggle.boundingBox();
+            const selectedBounds = await selected.boundingBox();
+            const allBounds = await row.getByRole('button').first().boundingBox();
+            return Boolean(
+              bounds &&
+              toggleBounds &&
+              selectedBounds &&
+              allBounds &&
+              allBounds.x >= bounds.x &&
+              allBounds.x + allBounds.width <= bounds.x + bounds.width + 1 &&
+              toggleBounds.x >= bounds.x &&
+              toggleBounds.x + toggleBounds.width <= bounds.x + bounds.width + 1 &&
+              selectedBounds.x >= bounds.x &&
+              selectedBounds.x + selectedBounds.width <= bounds.x + bounds.width + 1,
+            );
+          }, 'the selected category and toggle are completely inside the row')
+          .toBe(true);
+        await toggle.click();
+        await expect(
+          row.getByRole('button', {
+            name: 'E2E Tail Row 0 with a deliberately long category label',
+          }),
+        ).toBeVisible();
+      }
     } finally {
+      await setLanguage(page, 'en');
       for (const categoryId of createdIds) {
         await request.delete(`${BASE}/api/categories/${categoryId}`, { headers: authHeaders });
       }
@@ -2747,10 +2768,11 @@ test.describe('POS collapse rows and cart table control', () => {
     expect(businessResponse.ok()).toBeTruthy();
     const originalBusiness = await businessResponse.json();
     try {
-      await page.request.put(`${BASE}/api/settings/business`, {
+      const switchUpdate = await page.request.put(`${BASE}/api/settings/business`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { ...originalBusiness, tables_required: true },
       });
+      expect(switchUpdate.ok()).toBeTruthy();
 
       await page.setViewportSize({ width: 390, height: 844 });
       await loginAsManager(page);

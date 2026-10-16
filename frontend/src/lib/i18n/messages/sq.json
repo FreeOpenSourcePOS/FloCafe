@@ -778,7 +778,7 @@
     "editWasteReasonLabel": "Arsyeja e humbjes (e detyrueshme)",
     "editWasteReasonPlaceholder": "Arsyeja e humbjes nga kuzhina",
     "pendingItemEdit": "Redaktim artikulli në pritje",
-    "pendingItemEditHint": "Rezulti i mëparshëm nuk u konfirmua. Zgjidhja dërgon përsëri redaktimin e ruajtur dhe mund ta përfundojë nëse nuk ishte pranuar.",
+    "pendingItemEditHint": "Rezultati i mëparshëm nuk u konfirmua. Zgjidhja dërgon përsëri redaktimin e ruajtur dhe mund ta përfundojë nëse nuk ishte pranuar.",
     "resolvePendingItemEdit": "Zgjidh redaktimin në pritje",
     "resolvingPendingItemEdit": "Po e zgjidh redaktimin...",
     "pendingItemEditStorageError": "Redaktimi i ruajtur nuk mund të lexohej ose përditësohej. U mbajt në këtë pajisje.",

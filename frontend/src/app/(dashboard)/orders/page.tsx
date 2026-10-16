@@ -403,25 +403,25 @@ export default function OrdersPage() {
       refreshLoadedPages = false,
     }: { rateLimitedRefresh?: boolean; refreshLoadedPages?: boolean } = {},
   ): Promise<boolean> => {
-    if (tabFilterRef.current === 'held') return true;
+    if (tabFilterRef.current === 'held') return false;
     if (
       cursor === undefined &&
       (ordersLoadMoreInProgressRef.current || ordersRefreshInProgressRef.current)
     ) {
       ordersRefreshPendingRef.current = true;
       ordersRefreshLoadedPagesPendingRef.current ||= refreshLoadedPages;
-      return true;
+      return false;
     }
     if (
       cursor !== undefined &&
       (ordersRefreshInProgressRef.current || ordersLoadMoreInProgressRef.current)
     )
-      return true;
+      return false;
     if (cursor === undefined && rateLimitedRefresh) {
       if (ordersRefreshTimerRef.current !== null) {
         ordersRefreshPendingRef.current = true;
         ordersRefreshLoadedPagesPendingRef.current ||= refreshLoadedPages;
-        return true;
+        return false;
       }
       ordersRefreshTimerRef.current = setTimeout(() => {
         ordersRefreshTimerRef.current = null;
@@ -483,12 +483,12 @@ export default function OrdersPage() {
           },
         });
         if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
-          return true;
+          return false;
         orders.push(...(data.orders || []));
         nextCursor = data.nextCursor ?? null;
       }
       if (fetchId !== ordersFetchIdRef.current || requestFilterKey !== ordersFilterKeyRef.current)
-        return true;
+        return false;
       const selectedId = selectedOrderIdRef.current;
       if (selectedId !== null) {
         const refreshedSelection = orders.find((order) => order.id === selectedId);
@@ -2064,6 +2064,7 @@ export default function OrdersPage() {
           onlinePlatformSelected={Boolean(editItemTarget.order.online_platform)}
           onClose={() => setEditItemTarget(null)}
           onSaved={() => fetchOrders(undefined, { refreshLoadedPages: true })}
+          onIdentityChanged={() => fetchOrders(undefined, { refreshLoadedPages: true })}
         />
       )}
       {voidItemModal && (

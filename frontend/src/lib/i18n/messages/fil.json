@@ -783,7 +783,7 @@
     "resolvingPendingItemEdit": "Nilulutas ang pag-edit...",
     "pendingItemEditStorageError": "Hindi nabasa o na-update ang na-save na pag-edit. Nakaingatan ito sa device na ito.",
     "pendingItemEditAuthRequired": "Mag-sign in gamit ang orihinal na account para malutas ang pag-edit na ito.",
-    "pendingItemEditRateLimited": "Sobrang daming reQuest. Maghintay, pagkatapos ay subukan muli.",
+    "pendingItemEditRateLimited": "Sobrang daming request. Maghintay, pagkatapos ay subukan muli.",
     "pendingItemEditRefreshFailed": "Nakumpirma ang pag-edit, ngunit hindi na-refresh ang kasalukuyang detalye ng order."
   },
   "pos": {

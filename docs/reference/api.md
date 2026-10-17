@@ -344,7 +344,7 @@ does not wrap the handler again.
   line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
   `cancelled` and restores the recorded inventory deduction and recipe components.
 - Cancelling the last active item cancels the order and frees its table.
-- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force.
+- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts).
 
 ### Order item status
 

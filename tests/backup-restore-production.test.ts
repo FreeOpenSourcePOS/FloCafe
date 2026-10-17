@@ -493,6 +493,68 @@ async function run() {
       'the restored ledger row keeps its pool attribution',
     );
 
+    // Regression test for Issue #1175: Cross-version restore creates duplicate uncompressed snapshots
+    // and leaks temporary files on failed materialization.
+    const originalMkdtempSync = nativeFs.mkdtempSync;
+    const trackedRestoreDirs: string[] = [];
+    (nativeFs as any).mkdtempSync = (prefix: string, options?: any) => {
+      const created = originalMkdtempSync(prefix, options);
+      if (typeof prefix === 'string' && prefix.includes('flo-restore-source-')) {
+        trackedRestoreDirs.push(created);
+      }
+      return created;
+    };
+
+    try {
+      // 1. Direct restore (matching version): exactly 1 staged snapshot, cleaned up on return
+      const directStart = trackedRestoreDirs.length;
+      const directResult = restoreBackup(variantBackup, true);
+      assert.equal(directResult.success, true, 'direct restore succeeds');
+      const directDirs = trackedRestoreDirs.slice(directStart);
+      assert.equal(directDirs.length, 1, 'direct restore stages exactly 1 snapshot');
+      assert.equal(fs.existsSync(directDirs[0]), false, 'direct restore snapshot is cleaned up upon return');
+
+      // 2. Data-only restore (supported mismatched version): exactly 1 staged snapshot (no duplicate), cleaned up on return
+      const olderVariantBackup = path.join(testDir, 'older-variant-schema.db');
+      copyAndStamp(variantBackup, olderVariantBackup, currentVersion - 1);
+      const mismatchStart = trackedRestoreDirs.length;
+      const mismatchResult = restoreBackup(olderVariantBackup, false);
+      assert.equal(mismatchResult.success, true, 'mismatched-version data-only restore succeeds');
+      const mismatchDirs = trackedRestoreDirs.slice(mismatchStart);
+      assert.equal(mismatchDirs.length, 1, 'data-only restore stages exactly 1 snapshot (no duplicate)');
+      assert.equal(fs.existsSync(mismatchDirs[0]), false, 'data-only restore snapshot is cleaned up upon return');
+
+      // 3. Data-only restore with safe rejection (e.g. invalid FK): exactly 1 snapshot, cleaned up on return
+      const rejectedStart = trackedRestoreDirs.length;
+      const rejectedResult = restoreBackup(invalidBackup, false);
+      assert.equal(rejectedResult.success, false, 'invalid foreign key backup is safely rejected');
+      const rejectedDirs = trackedRestoreDirs.slice(rejectedStart);
+      assert.equal(rejectedDirs.length, 1, 'safely rejected restore stages exactly 1 snapshot');
+      assert.equal(fs.existsSync(rejectedDirs[0]), false, 'safely rejected restore snapshot is cleaned up upon return');
+
+      // 4. Failed materialization (e.g. write error): temp dir is cleaned up immediately, no leak
+      const originalWriteFileSync = nativeFs.writeFileSync;
+      const failedMaterializeStart = trackedRestoreDirs.length;
+      (nativeFs as any).writeFileSync = (target: any, data: any, options: any) => {
+        if (typeof target === 'string' && target.includes('flo-restore-source-')) {
+          throw new Error('injected snapshot write failure');
+        }
+        return originalWriteFileSync(target, data, options);
+      };
+      try {
+        const failedMaterialize = restoreBackup(sameSchemaBackup, true);
+        assert.equal(failedMaterialize.success, false, 'restore fails gracefully on materialization write failure');
+        assert.equal(failedMaterialize.error, 'injected snapshot write failure');
+        const failedDirs = trackedRestoreDirs.slice(failedMaterializeStart);
+        assert.equal(failedDirs.length, 1, 'materialize created a temp directory before failure');
+        assert.equal(fs.existsSync(failedDirs[0]), false, 'failed materialization cleaned up its temp directory');
+      } finally {
+        (nativeFs as any).writeFileSync = originalWriteFileSync;
+      }
+    } finally {
+      (nativeFs as any).mkdtempSync = originalMkdtempSync;
+    }
+
     console.log('✅ Production database restore tests passed');
   } finally {
     closeDatabase();

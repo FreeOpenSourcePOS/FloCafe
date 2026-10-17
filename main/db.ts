@@ -3317,8 +3317,10 @@ export function restoreBackup(
 ): RestoreResult {
   throwIfDatabaseMaintenanceAborted(signal);
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
+  let stagedSource: { snapshotPath: string; cleanup: () => void } | undefined;
   try {
-    backupPath = materializeRestoreSource(backupPath, getDbPath());
+    stagedSource = materializeRestoreSource(backupPath, getDbPath());
+    backupPath = stagedSource.snapshotPath;
   } catch (error: any) {
     const currentVersion = getCurrentSchemaVersion();
     return {
@@ -3330,6 +3332,8 @@ export function restoreBackup(
       error: error?.message || 'Invalid restore source',
     };
   }
+
+  try {
 
   let metadataVersion = 0;
   let metadataStampPresent = false;
@@ -3583,6 +3587,9 @@ export function restoreBackup(
     preservedOutboxes,
     signal,
   );
+  } finally {
+    stagedSource?.cleanup();
+  }
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -3636,7 +3643,10 @@ export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
-function materializeRestoreSource(sourcePath: string, livePath: string): string {
+function materializeRestoreSource(
+  sourcePath: string,
+  livePath: string,
+): { snapshotPath: string; cleanup: () => void } {
   const sourceStat = fs.lstatSync(sourcePath);
   if (sourceStat.isSymbolicLink() || !sourceStat.isFile())
     throw new Error('Restore source must be a regular file');
@@ -3679,14 +3689,24 @@ function materializeRestoreSource(sourcePath: string, livePath: string): string 
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
     const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
-    const snapshotPath = path.join(snapshotDir, 'source.db');
-    fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
-    setImmediate(() => {
+    try {
+      const snapshotPath = path.join(snapshotDir, 'source.db');
+      fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        try {
+          fs.rmSync(snapshotDir, { recursive: true, force: true });
+        } catch {}
+      };
+      return { snapshotPath, cleanup };
+    } catch (writeError) {
       try {
         fs.rmSync(snapshotDir, { recursive: true, force: true });
       } catch {}
-    });
-    return snapshotPath;
+      throw writeError;
+    }
   } finally {
     fs.closeSync(sourceFd);
   }
@@ -3719,18 +3739,6 @@ function dataOnlyRestore(
       currentSchemaVersion: currentVersion,
       tablesRestored: 0,
       error: 'Data-only restore source cannot be the live database or its SQLite sidecars',
-    };
-  }
-  try {
-    backupPath = materializeRestoreSource(backupPath, livePath);
-  } catch (error: any) {
-    return {
-      success: false,
-      mode: 'data_only',
-      backupSchemaVersion: backupVersion,
-      currentSchemaVersion: currentVersion,
-      tablesRestored: 0,
-      error: error?.message || 'Invalid data-only restore source',
     };
   }
   let backupDb: Database.Database | undefined;

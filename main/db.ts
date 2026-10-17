@@ -1529,74 +1529,103 @@ function runStartupIntegrityCheck(): void {
   }
 }
 
-/** Re-seeds sequences table from existing orders and bills to fix unique constraint collisions. */
-function repairSequences(): void {
+/**
+ * Execute sequence repair queries directly inside SQLite.
+ *
+ * Coverage boundary: Reconstructs sequence counters for canonical daily order format
+ * (`ORD-YYYYMMDD-NNNN`) and canonical daily bill format (`INV-YYYYMMDD-NNNN`).
+ * Customized prefixes (e.g. `FAC-`, `BILL-`) or non-daily reset periods (`monthly`,
+ * `financial_year`, `no_reset`) are not reconstructed from table scans; their counters
+ * are managed dynamically in the sequences table.
+ */
+export function executeSequenceRepair(targetDb: Database.Database): {
+  orderChanges: number;
+  billChanges: number;
+} {
+  const orderInfo = targetDb
+    .prepare(`
+      INSERT INTO sequences (name, date, current_value)
+      SELECT
+        'orders' AS name,
+        substr(order_number, 5, 8) AS date,
+        MAX(CAST(substr(order_number, 14) AS INTEGER)) AS current_value
+      FROM orders
+      WHERE order_number GLOB 'ORD-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9]*'
+        AND substr(order_number, 14) NOT GLOB '*[^0-9]*'
+      GROUP BY substr(order_number, 5, 8)
+      HAVING current_value > 0
+      ON CONFLICT(name, date) DO UPDATE SET
+        current_value = MAX(sequences.current_value, excluded.current_value)
+    `)
+    .run();
+
+  const billInfo = targetDb
+    .prepare(`
+      INSERT INTO sequences (name, date, current_value)
+      SELECT
+        'bills' AS name,
+        substr(bill_number, 5, 8) AS date,
+        MAX(CAST(substr(bill_number, 14) AS INTEGER)) AS current_value
+      FROM bills
+      WHERE bill_number GLOB 'INV-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9]*'
+        AND substr(bill_number, 14) NOT GLOB '*[^0-9]*'
+      GROUP BY substr(bill_number, 5, 8)
+      HAVING current_value > 0
+      ON CONFLICT(name, date) DO UPDATE SET
+        current_value = MAX(sequences.current_value, excluded.current_value)
+    `)
+    .run();
+
+  return {
+    orderChanges: orderInfo.changes,
+    billChanges: billInfo.changes,
+  };
+}
+
+/**
+ * Re-seeds sequences table from existing orders and bills to fix unique constraint collisions.
+ *
+ * Uses SQL-level aggregation to eliminate JavaScript array materialization of historical IDs.
+ * Ordinary boots verify sequence health and skip the full scan unless flagged as pending.
+ */
+export function repairSequences(force: boolean = false): {
+  repaired: boolean;
+  orderSequencesUpdated: number;
+  billSequencesUpdated: number;
+} {
   try {
-    const collectSequenceMax = (
-      table: 'orders' | 'bills',
-      numberColumn: string,
-      pattern: RegExp,
-    ) => {
-      const rows = db
-        .prepare(`SELECT ${numberColumn} AS value FROM ${table} WHERE ${numberColumn} IS NOT NULL`)
-        .all() as { value: string }[];
-      const maxByDate = new Map<string, number>();
+    const isPending = getSettingValue('sequence_repair_pending') === '1';
+    const isCompleted = Boolean(getSettingValue('sequence_repair_completed_at'));
 
-      for (const row of rows) {
-        const match = String(row.value).match(pattern);
-        if (!match) continue;
-        const date = match[1];
-        const sequence = Number.parseInt(match[2], 10);
-        if (!Number.isFinite(sequence)) continue;
-        maxByDate.set(date, Math.max(maxByDate.get(date) || 0, sequence));
+    if (!force && !isPending && isCompleted) {
+      // Check safety fallback: if sequences exist, or if there are no historical orders/bills,
+      // skip scanning historical tables on ordinary boots.
+      const hasSequences = Boolean(db.prepare('SELECT 1 FROM sequences LIMIT 1').get());
+      if (hasSequences) {
+        return { repaired: false, orderSequencesUpdated: 0, billSequencesUpdated: 0 };
       }
-
-      return Array.from(maxByDate, ([date, max_val]) => ({ date, max_val }));
-    };
-
-    // Extract max sequence per date from order_numbers (format: ORD-YYYYMMDD-NNNN)
-    const orderRows = collectSequenceMax('orders', 'order_number', /^ORD-(\d{8})-(\d+)$/);
-
-    for (const row of orderRows) {
-      if (!row.date || !row.max_val) continue;
-      const existing = db
-        .prepare(`SELECT current_value FROM sequences WHERE name = 'orders' AND date = ?`)
-        .get(row.date) as any;
-      if (!existing) {
-        db.prepare(`INSERT INTO sequences (name, date, current_value) VALUES ('orders', ?, ?)`).run(
-          row.date,
-          row.max_val,
-        );
-      } else if (existing.current_value < row.max_val) {
-        db.prepare(`UPDATE sequences SET current_value = ? WHERE name = 'orders' AND date = ?`).run(
-          row.max_val,
-          row.date,
-        );
+      const hasOrders = Boolean(db.prepare('SELECT 1 FROM orders LIMIT 1').get());
+      const hasBills = Boolean(db.prepare('SELECT 1 FROM bills LIMIT 1').get());
+      if (!hasOrders && !hasBills) {
+        return { repaired: false, orderSequencesUpdated: 0, billSequencesUpdated: 0 };
       }
     }
 
-    // Extract max sequence per date from bill_numbers (format: INV-YYYYMMDD-NNNN)
-    const billRows = collectSequenceMax('bills', 'bill_number', /^INV-(\d{8})-(\d+)$/);
+    return withTxn(() => {
+      const { orderChanges, billChanges } = executeSequenceRepair(db);
 
-    for (const row of billRows) {
-      if (!row.date || !row.max_val) continue;
-      const existing = db
-        .prepare(`SELECT current_value FROM sequences WHERE name = 'bills' AND date = ?`)
-        .get(row.date) as any;
-      if (!existing) {
-        db.prepare(`INSERT INTO sequences (name, date, current_value) VALUES ('bills', ?, ?)`).run(
-          row.date,
-          row.max_val,
-        );
-      } else if (existing.current_value < row.max_val) {
-        db.prepare(`UPDATE sequences SET current_value = ? WHERE name = 'bills' AND date = ?`).run(
-          row.max_val,
-          row.date,
-        );
-      }
-    }
+      upsertSetting('sequence_repair_completed_at', now());
+      upsertSetting('sequence_repair_pending', '0');
+
+      return {
+        repaired: true,
+        orderSequencesUpdated: orderChanges,
+        billSequencesUpdated: billChanges,
+      };
+    });
   } catch (err) {
     console.error('[DB] repairSequences failed:', err);
+    return { repaired: false, orderSequencesUpdated: 0, billSequencesUpdated: 0 };
   }
 }
 
@@ -3604,6 +3633,19 @@ export function restoreBackup(
         freshDb.prepare('DELETE FROM customer_display_tokens').run();
         mergeRestoreOutboxState(freshDb, preservedOutboxes);
         mergeRevocations(freshDb, preservedRevocations);
+        executeSequenceRepair(freshDb);
+        freshDb
+          .prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_completed_at', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `)
+          .run(now(), now());
+        freshDb
+          .prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_pending', '0', ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `)
+          .run(now());
         const integrity = freshDb.prepare('PRAGMA integrity_check').all() as {
           integrity_check: string;
         }[];
@@ -4038,6 +4080,19 @@ function dataOnlyRestore(
     currentDb.prepare('DELETE FROM customer_display_tokens').run();
     mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
+    executeSequenceRepair(currentDb);
+    currentDb
+      .prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_completed_at', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `)
+      .run(now(), now());
+    currentDb
+      .prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_pending', '0', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `)
+      .run(now());
     const inventoryValidationError = validateInventoryLedgerDatabase(currentDb);
     if (inventoryValidationError) {
       throw new Error(`Restore would violate the inventory ledger: ${inventoryValidationError}`);
@@ -4343,6 +4398,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           PRIMARY KEY (name, date)
         )
       `);
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_pending', '1', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(now());
     },
   },
   {

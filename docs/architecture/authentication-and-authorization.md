@@ -166,6 +166,15 @@ drift apart without any test failing. Treat them as a set. Note also that `:3002
 `is_active`, revocation, and staleness a second time inside its status-update transaction
 (`main/kds-server.ts:410`), which is a defence in depth rather than a duplicate bug.
 
+### Shared login attempt rate limiting across servers
+
+All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` Server App) share an install-wide login attempt rate limiter exported from [`main/middleware/security.ts`](../../main/middleware/security.ts):
+
+1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password changes) use independent rate-limiter instances.
+2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which strips `::ffff:` IPv4-mapped IPv6 prefixes so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
+3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP.
+4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures.
+
 ## Master PIN as a second factor
 
 The master PIN is a 4-digit PIN, separate from a staff password, used to gate destructive

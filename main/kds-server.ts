@@ -35,6 +35,11 @@ import { normalizeEmail, parseCategoryIds } from './routes/auth';
 import {
   rateLimit,
   authRateLimit,
+  loginAuthRateLimit,
+  checkLoginRateLimit,
+  incrementFailedLogin,
+  resetSuccessfulLogin,
+  FAILED_LOGIN_LOCKOUT_MINUTES,
   staticRouteRateLimit,
   corsOptions,
   isTokenRevoked,
@@ -233,8 +238,16 @@ export function startKdsServer(): Promise<void> {
     );
 
     // KDS Auth - verify user has chef/manager/owner role
-    app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
+    app.post('/api/auth/login', loginAuthRateLimit(), (req: Request, res: Response) => {
       try {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        const loginLimiter = checkLoginRateLimit(ip);
+        if (!loginLimiter.allowed) {
+          return res.status(429).json({
+            error: `Too many failed attempts. Try again in ${loginLimiter.waitMinutes} minutes.`,
+          });
+        }
+
         const email = normalizeEmail(req.body?.email);
         const { password } = req.body || {};
         if (!email || !password) {
@@ -248,8 +261,15 @@ export function startKdsServer(): Promise<void> {
           .prepare('SELECT * FROM users WHERE email = ? AND is_active = 1')
           .get(email) as any;
         if (!user || !bcrypt.compareSync(password, user.password)) {
-          return res.status(401).json({ error: 'Invalid credentials' });
+          const attemptsRemaining = incrementFailedLogin(ip);
+          return res.status(401).json({
+            error: 'Invalid credentials',
+            attempts_remaining: attemptsRemaining,
+            lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
+          });
         }
+
+        resetSuccessfulLogin(ip);
 
         // Only allow chef, manager, owner roles
         if (!hasPermission(user.id, 'kitchen.use')) {

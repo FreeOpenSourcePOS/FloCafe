@@ -3745,17 +3745,13 @@ router.post(
           );
       }
       const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
-      const isNowPaid = (bill.paid_amount || 0) > 0 && newBalance === 0;
 
       const updatedBill = withTxn(() => {
         db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
-          total = ?, round_off = ?, balance = ?,
-          payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
-          paid_at = CASE WHEN ? = 1 THEN ? ELSE paid_at END,
-          updated_at = ?
+          total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
       `).run(
           totals.subtotal,
@@ -3772,9 +3768,6 @@ router.post(
           newTotal,
           newRoundOff,
           newBalance,
-          isNowPaid ? 1 : 0,
-          isNowPaid ? 1 : 0,
-          now(),
           now(),
           req.params.id,
         );

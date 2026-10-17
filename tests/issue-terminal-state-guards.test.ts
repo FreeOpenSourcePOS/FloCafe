@@ -673,7 +673,9 @@ async function main(): Promise<void> {
       assertEqual(Number(afterBill.balance), 400, 'issue-1176: bill balance unchanged');
     }
 
-    console.log('\n─── Issue #1176: Exact-balance discount auto-settles bill to paid ───');
+    console.log(
+      '\n─── Issue #1176: Exact-balance discount leaves balance at zero and settles cleanly ───',
+    );
     {
       resetPinRateLimitForTests();
       setSetting(db, 'discount_requires_approval', 'false');
@@ -691,10 +693,20 @@ async function main(): Promise<void> {
       assertEqual(Number(afterBill.balance), 0, 'issue-1176: bill balance is 0');
       assertEqual(
         afterBill.payment_status,
-        'paid',
-        'issue-1176: bill payment_status auto-settled to paid',
+        'partial',
+        'issue-1176: bill payment_status remains partial until zero-balance settlement',
       );
-      assertEqual(Boolean(afterBill.paid_at), true, 'issue-1176: paid_at timestamp is populated');
+
+      const settleRes = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(settleRes.status, 200, 'issue-1176: zero-balance bill settles cleanly');
+      const settledBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+      assertEqual(settledBill.payment_status, 'paid', 'issue-1176: settled bill is paid');
+      assertEqual(Boolean(settledBill.paid_at), true, 'issue-1176: paid_at timestamp is populated');
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'issue-1176: order completed after settlement',
+      );
     }
   } finally {
     server.close();

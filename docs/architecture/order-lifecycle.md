@@ -96,8 +96,7 @@ Common rules, enforced in the handlers:
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
   `discount_value`.
 - A discount cannot reduce a bill's total below collected payments (`below_collected_funds`,
-  `409`). If a discount on a partially paid bill reduces the remaining balance to zero, the bill
-  auto-settles to `paid` with `paid_at` recorded.
+  `409`).
 - Applying an order or bill discount records an `order_discount_applied` action in
   `order_audit_log` with the authenticated actor, discount details, and the approving manager ID
   when a manager PIN override was used (the raw PIN is never stored).

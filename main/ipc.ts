@@ -90,6 +90,28 @@ function isValidRasterColumns(value: unknown): value is number {
   );
 }
 
+const TRUSTED_LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/** Verifies that a URL has http: scheme, no credentials, loopback host, and matches the configured port. */
+export function isTrustedLoopbackUrl(rawUrl: string, port: number): boolean {
+  if (typeof port !== 'number' || !Number.isSafeInteger(port) || port <= 0) {
+    return false;
+  }
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' || parsed.username || parsed.password) {
+      return false;
+    }
+    const parsedPort = parsed.port ? Number(parsed.port) : 80;
+    if (parsedPort !== port) {
+      return false;
+    }
+    return TRUSTED_LOOPBACK_HOSTNAMES.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Verifies that IPC sender origin is the localhost-served POS renderer. */
 export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
@@ -99,6 +121,60 @@ export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender
   } catch {
     return false;
   }
+}
+
+/** Verifies that IPC sender is the active main BrowserWindow, current top-level frame, and exact local app origin. */
+export function isTrustedMainWindowSender(
+  event: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+  mainWindowOrGetter: BrowserWindow | null | (() => BrowserWindow | null),
+  port: number,
+  browserWindowClass: { fromWebContents: (sender: any) => BrowserWindow | null } = BrowserWindow,
+): boolean {
+  if (typeof port !== 'number' || !Number.isSafeInteger(port) || port <= 0) {
+    return false;
+  }
+
+  const mainWindow =
+    typeof mainWindowOrGetter === 'function' ? mainWindowOrGetter() : mainWindowOrGetter;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (!event || !event.sender) {
+    return false;
+  }
+
+  let senderWindow: BrowserWindow | null = null;
+  try {
+    senderWindow = browserWindowClass.fromWebContents(event.sender);
+  } catch {
+    return false;
+  }
+  if (!senderWindow || senderWindow !== mainWindow) {
+    return false;
+  }
+
+  let currentFrame: Electron.WebFrameMain | null = null;
+  try {
+    currentFrame = event.sender.mainFrame;
+  } catch {
+    return false;
+  }
+  if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
+    return false;
+  }
+
+  const senderUrl = event.sender?.getURL?.() ?? '';
+  if (!isTrustedLoopbackUrl(senderUrl, port)) {
+    return false;
+  }
+
+  const frameUrl = (event.senderFrame as { url?: string } | null | undefined)?.url;
+  if (typeof frameUrl === 'string' && !isTrustedLoopbackUrl(frameUrl, port)) {
+    return false;
+  }
+
+  return true;
 }
 
 type MainWindowGetter = () => BrowserWindow | null;

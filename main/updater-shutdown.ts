@@ -26,6 +26,7 @@ type RestartAndInstallOptions = {
   onInstallFailure: (error: unknown) => void;
   warn: (message: string) => void;
   error: (message: string, error: unknown) => void;
+  validateSender?: (event: unknown) => boolean;
 };
 
 type AutoUpdaterErrorHandlerOptions = {
@@ -83,8 +84,12 @@ export function createRestartAndInstallHandler({
   onInstallFailure,
   warn,
   error,
+  validateSender,
 }: RestartAndInstallOptions): (event: unknown, pin?: unknown) => Promise<RestartAndInstallResult> {
-  return async (_event, pin) => {
+  return async (event, pin) => {
+    if (validateSender && !validateSender(event)) {
+      return { success: false, error: 'Unauthorized sender' };
+    }
     if (!isInstallReady()) {
       warn('[Update] Ignoring install request before an update is downloaded');
       return { success: false, error: 'No downloaded update is ready to install.' };

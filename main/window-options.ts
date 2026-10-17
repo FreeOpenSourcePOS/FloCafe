@@ -177,3 +177,41 @@ export function createLocalWindowOpenHandler(
     };
   };
 }
+
+/**
+ * Creates a will-navigate event handler for the privileged main window.
+ * Allows safe local application URLs, delegates safe external HTTP/HTTPS URLs
+ * to the default system browser via shell.openExternal, and blocks unsafe schemes.
+ */
+export function createMainWindowWillNavigateHandler(
+  isAllowedLocalWindowUrl: LocalWindowUrlChecker,
+  getServerPort: () => number,
+  getLocalIP: () => string,
+  isSafeExternalUrl: (rawUrl: string) => boolean,
+  openExternal: (url: string) => Promise<unknown> | unknown,
+  warn: (message: string, ...args: unknown[]) => void = console.warn,
+): (event: { preventDefault: () => void }, url: string) => void {
+  return (event, url) => {
+    if (isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP())) {
+      return;
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      try {
+        const res = openExternal(url);
+        if (res && typeof (res as Promise<unknown>).catch === 'function') {
+          (res as Promise<unknown>).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            warn('[Flo] Failed to open external URL:', message);
+          });
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        warn('[Flo] Failed to open external URL:', message);
+      }
+    } else {
+      warn('[Flo] Blocked unsafe navigation URL:', url);
+    }
+  };
+}
+

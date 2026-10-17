@@ -133,8 +133,12 @@ permission check inside the `withTxn` callback, after the transaction opens, usi
 additionally require the presenting user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a
 deliberate context-policy role check, not a permission, because the override PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
-say. The check cannot be hoisted into middleware without changing the read the decision is based
-on, and it is invisible to anything that inspects the route's middleware chain.
+say. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
+evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction
+(with client-IP rate limits checked first). The pre-verified approver is then atomically re-validated
+inside `withTxn` against current SQLite state (active status, owner/manager role, required permissions,
+and matching `pin_hash`). The check cannot be hoisted into middleware without changing the read the
+decision is based on, and it is invisible to anything that inspects the route's middleware chain.
 
 **KDS WebSocket authorization.** The KDS socket authenticates with the same bearer token but
 authorizes per message. See below.

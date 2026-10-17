@@ -2278,9 +2278,7 @@ router.patch(
             ? `pin:${clientIp}:order-cancel`
             : `pin:${clientIp}:order-complete`;
         if (isPinRateLimited(rateLimitKey)) {
-          return res
-            .status(429)
-            .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
         if (/^\d{4,6}$/.test(override_pin)) {
           const explicitApproverId =
@@ -2292,7 +2290,9 @@ router.patch(
                 )
                 .all(explicitApproverId) as PinApproverCandidate[])
             : (db
-                .prepare('SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
+                .prepare(
+                  'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                )
                 .all() as PinApproverCandidate[]);
 
           for (const candidate of candidateUsers) {
@@ -2302,7 +2302,10 @@ router.patch(
               (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
-                preVerifiedStatusApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
+                preVerifiedStatusApprover = {
+                  id: candidate.id,
+                  verifiedPinHash: candidate.pin_hash,
+                };
                 break;
               }
             }
@@ -3074,7 +3077,9 @@ router.patch(
                 )
                 .all(explicitApproverId) as PinApproverCandidate[])
             : (db
-                .prepare('SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
+                .prepare(
+                  'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+                )
                 .all() as PinApproverCandidate[]);
           let user: PinApproverCandidate | undefined;
           for (const candidate of candidateUsers) {
@@ -3476,7 +3481,9 @@ router.patch(
               )
               .all(explicitApproverId) as PinApproverCandidate[])
           : (db
-              .prepare('SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              )
               .all() as PinApproverCandidate[]);
         let user: PinApproverCandidate | undefined;
         for (const candidate of candidateUsers) {
@@ -3921,9 +3928,7 @@ router.patch(
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const rateLimitKey = `pin:${clientIp}:item-void`;
         if (isPinRateLimited(rateLimitKey)) {
-          return res
-            .status(429)
-            .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
         if (/^\d{4,6}$/.test(override_pin)) {
           const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
@@ -3932,9 +3937,16 @@ router.patch(
                 .prepare(
                   'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
                 )
-                .all(managerId) as { id: string; role: string; pin_hash: string; is_active: number }[])
+                .all(managerId) as {
+                id: string;
+                role: string;
+                pin_hash: string;
+                is_active: number;
+              }[])
             : (db
-                .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+                .prepare(
+                  'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+                )
                 .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
 
           for (const candidate of candidateUsers) {

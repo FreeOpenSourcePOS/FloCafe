@@ -8400,7 +8400,6 @@ export async function verifyPinAsync(
   return bcrypt.compare(String(inputPin), storedHash);
 }
 
-
 // Duration a voided in-progress item remains visible on KDS boards before dropping off.
 export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
 

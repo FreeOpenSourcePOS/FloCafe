@@ -106,7 +106,9 @@ async function run() {
   }
 
   // Seed category and product
-  db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('cat-async', 'Async', 1)`).run();
+  db.prepare(
+    `INSERT INTO categories (id, name, sort_order) VALUES ('cat-async', 'Async', 1)`,
+  ).run();
   db.prepare(`
     INSERT INTO products (id, category_id, name, price, tax_type, is_active, sort_order, track_inventory, stock_quantity, created_at, updated_at)
     VALUES ('prod-async-1', 'cat-async', 'Async item', 50, 'none', 1, 1, 0, 100, ?, ?)
@@ -121,6 +123,13 @@ async function run() {
   const ownerAuth = makeToken('mgr-1', 'manager', 'mgr1@test.local');
   const cashierAuth = makeToken('cashier-1', 'cashier', 'cashier1@test.local');
   const app = createApp({ '/api/bills': billRoutes, '/api/orders': orderRoutes });
+
+  let bcryptCompareCalls = 0;
+  const originalBcryptCompare = bcrypt.compare;
+  bcrypt.compare = function (...args: any[]) {
+    bcryptCompareCalls++;
+    return originalBcryptCompare.apply(this, args);
+  };
 
   // ─── 1. Unit Event Loop Yielding Test ─────────────────────────────────────
   console.log('\n--- 1. Unit Event Loop Yielding Verification ---');
@@ -156,7 +165,9 @@ async function run() {
   console.log('\n--- 2. Route-Level Non-Blocking PIN Verification ---');
 
   // Helper to monitor event loop ticks during an async HTTP operation
-  async function executeWithTickTracker<T>(action: () => Promise<T>): Promise<{ result: T; ticks: number }> {
+  async function executeWithTickTracker<T>(
+    action: () => Promise<T>,
+  ): Promise<{ result: T; ticks: number }> {
     let ticks = 0;
     const timer = setInterval(() => {
       ticks++;
@@ -171,10 +182,12 @@ async function run() {
 
   // A. PATCH /api/orders/:id/discount
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-001', 'dine_in', 100, 10, 110, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
@@ -202,15 +215,19 @@ async function run() {
 
   // B. PATCH /api/orders/:id/items/:itemId/discount
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-002', 'dine_in', 50, 5, 55, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
-    const itemRes = db.prepare(`
+    const itemRes = db
+      .prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Item A', 50, 1, 50, 55, 'pending', ?, ?)
-    `).run(orderId, now(), now());
+    `)
+      .run(orderId, now(), now());
     const itemId = itemRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
@@ -238,15 +255,19 @@ async function run() {
 
   // C. PATCH /api/orders/:orderId/items/:itemId/cancel (in-progress item void)
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-003', 'dine_in', 50, 5, 55, 'preparing', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
-    const itemRes = db.prepare(`
+    const itemRes = db
+      .prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Item In Prep', 50, 1, 50, 55, 'preparing', ?, ?)
-    `).run(orderId, now(), now());
+    `)
+      .run(orderId, now(), now());
     const itemId = itemRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
@@ -261,15 +282,19 @@ async function run() {
     assertGreaterThanOrThrow(ticksC1, 0, 'Event loop yielded during item void PIN scan');
 
     // Seed fresh preparing order and item for invalid PIN test
-    const orderRes2 = db.prepare(`
+    const orderRes2 = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-003B', 'dine_in', 50, 5, 55, 'preparing', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId2 = orderRes2.lastInsertRowid;
-    const itemRes2 = db.prepare(`
+    const itemRes2 = db
+      .prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Item In Prep 2', 50, 1, 50, 55, 'preparing', ?, ?)
-    `).run(orderId2, now(), now());
+    `)
+      .run(orderId2, now(), now());
     const itemId2 = itemRes2.lastInsertRowid;
 
     resetOrderPinRateLimit();
@@ -283,67 +308,89 @@ async function run() {
     assertGreaterThanOrThrow(ticksC2, 0, 'Event loop yielded during invalid item void scan');
 
     // Non-void item cancel (pending item) does not trigger async PIN scan even if override_pin is supplied
-    const orderRes3 = db.prepare(`
+    const orderRes3 = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-003C', 'dine_in', 50, 5, 55, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId3 = orderRes3.lastInsertRowid;
-    const itemRes3 = db.prepare(`
+    const itemRes3 = db
+      .prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Pending Item', 50, 1, 50, 55, 'pending', ?, ?)
-    `).run(orderId3, now(), now());
+    `)
+      .run(orderId3, now(), now());
     const itemId3 = itemRes3.lastInsertRowid;
 
     resetOrderPinRateLimit();
-    const { result: resC3, ticks: ticksC3 } = await executeWithTickTracker(() =>
-      request(app)
-        .patch(`/api/orders/${orderId3}/items/${itemId3}/cancel`)
-        .set(ownerAuth)
-        .send({ reason: 'Not wanted', override_pin: '9999' }),
-    );
+    const pinCallsBeforeC3 = bcryptCompareCalls;
+    const resC3 = await request(app)
+      .patch(`/api/orders/${orderId3}/items/${itemId3}/cancel`)
+      .set(ownerAuth)
+      .send({ reason: 'Not wanted', override_pin: '9999' });
     assertEqualOrThrow(resC3.status, 200, 'Pending item cancel succeeds without PIN requirement');
-    assertEqualOrThrow(ticksC3, 0, 'No event loop ticks incurred for non-void item cancel');
+    assertEqualOrThrow(
+      bcryptCompareCalls - pinCallsBeforeC3,
+      0,
+      'No async bcrypt comparisons incurred for non-void item cancel',
+    );
 
     // Rate-limited client is rejected with 429 before bcrypt scan on item void
     resetOrderPinRateLimit();
     for (let i = 0; i < 5; i++) {
-      const oRes = db.prepare(`
+      const oRes = db
+        .prepare(`
         INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
         VALUES (?, 'dine_in', 50, 5, 55, 'preparing', ?, ?)
-      `).run(`ORD-RL-${i}`, now(), now());
-      const itRes = db.prepare(`
+      `)
+        .run(`ORD-RL-${i}`, now(), now());
+      const itRes = db
+        .prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
         VALUES (?, 'prod-async-1', 'Item', 50, 1, 50, 55, 'preparing', ?, ?)
-      `).run(oRes.lastInsertRowid, now(), now());
+      `)
+        .run(oRes.lastInsertRowid, now(), now());
       await request(app)
         .patch(`/api/orders/${oRes.lastInsertRowid}/items/${itRes.lastInsertRowid}/cancel`)
         .set(cashierAuth)
         .send({ reason: 'Mistake', override_pin: '9999' });
     }
-    const oResLockout = db.prepare(`
+    const oResLockout = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-RL-LOCKOUT', 'dine_in', 50, 5, 55, 'preparing', ?, ?)
-    `).run(now(), now());
-    const itResLockout = db.prepare(`
+    `)
+      .run(now(), now());
+    const itResLockout = db
+      .prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Item', 50, 1, 50, 55, 'preparing', ?, ?)
-    `).run(oResLockout.lastInsertRowid, now(), now());
-    const { result: resCRateLimit, ticks: ticksCRateLimit } = await executeWithTickTracker(() =>
-      request(app)
-        .patch(`/api/orders/${oResLockout.lastInsertRowid}/items/${itResLockout.lastInsertRowid}/cancel`)
-        .set(cashierAuth)
-        .send({ reason: 'Mistake', override_pin: '5555' }),
-    );
+    `)
+      .run(oResLockout.lastInsertRowid, now(), now());
+    const pinCallsBeforeRateLimit = bcryptCompareCalls;
+    const resCRateLimit = await request(app)
+      .patch(
+        `/api/orders/${oResLockout.lastInsertRowid}/items/${itResLockout.lastInsertRowid}/cancel`,
+      )
+      .set(cashierAuth)
+      .send({ reason: 'Mistake', override_pin: '5555' });
     assertEqualOrThrow(resCRateLimit.status, 429, 'Rate-limited item void returns 429');
-    assertEqualOrThrow(ticksCRateLimit, 0, 'Rate-limited item void rejected before async bcrypt scan (0 ticks)');
+    assertEqualOrThrow(
+      bcryptCompareCalls - pinCallsBeforeRateLimit,
+      0,
+      'Rate-limited item void rejected before async bcrypt scan (0 calls)',
+    );
   }
 
   // D. PATCH /api/orders/:id/status (order cancel override)
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-004', 'dine_in', 80, 8, 88, 'preparing', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
@@ -358,10 +405,12 @@ async function run() {
     assertGreaterThanOrThrow(ticksD1, 0, 'Event loop yielded during order cancel PIN scan');
 
     // Re-seed preparing order for invalid PIN test
-    const orderRes2 = db.prepare(`
+    const orderRes2 = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-005', 'dine_in', 80, 8, 88, 'preparing', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId2 = orderRes2.lastInsertRowid;
 
     resetOrderPinRateLimit();
@@ -375,59 +424,79 @@ async function run() {
     assertGreaterThanOrThrow(ticksD2, 0, 'Event loop yielded during invalid order cancel scan');
 
     // Non-override status update (e.g. preparing) does not trigger async PIN scan even if override_pin is supplied
-    const orderRes3 = db.prepare(`
+    const orderRes3 = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-005B', 'dine_in', 80, 8, 88, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId3 = orderRes3.lastInsertRowid;
 
     resetOrderPinRateLimit();
-    const { result: resD3, ticks: ticksD3 } = await executeWithTickTracker(() =>
-      request(app)
-        .patch(`/api/orders/${orderId3}/status`)
-        .set(cashierAuth)
-        .send({ status: 'preparing', override_pin: '9999' }),
+    const pinCallsBeforeD3 = bcryptCompareCalls;
+    const resD3 = await request(app)
+      .patch(`/api/orders/${orderId3}/status`)
+      .set(cashierAuth)
+      .send({ status: 'preparing', override_pin: '9999' });
+    assertEqualOrThrow(
+      resD3.status,
+      200,
+      'Non-override status update succeeds without PIN requirement',
     );
-    assertEqualOrThrow(resD3.status, 200, 'Non-override status update succeeds without PIN requirement');
-    assertEqualOrThrow(ticksD3, 0, 'No event loop ticks incurred for non-override status transition');
+    assertEqualOrThrow(
+      bcryptCompareCalls - pinCallsBeforeD3,
+      0,
+      'No async bcrypt comparisons incurred for non-override status transition',
+    );
 
     // Rate-limited client is rejected with 429 before bcrypt scan on order cancel
     resetOrderPinRateLimit();
     for (let i = 0; i < 5; i++) {
-      const oRes = db.prepare(`
+      const oRes = db
+        .prepare(`
         INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
         VALUES (?, 'dine_in', 80, 8, 88, 'preparing', ?, ?)
-      `).run(`ORD-RL-STATUS-${i}`, now(), now());
+      `)
+        .run(`ORD-RL-STATUS-${i}`, now(), now());
       await request(app)
         .patch(`/api/orders/${oRes.lastInsertRowid}/status`)
         .set(cashierAuth)
         .send({ status: 'cancelled', reason: 'Walkout', override_pin: '9999' });
     }
-    const oResLockout = db.prepare(`
+    const oResLockout = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-RL-STATUS-LOCKOUT', 'dine_in', 80, 8, 88, 'preparing', ?, ?)
-    `).run(now(), now());
-    const { result: resDRateLimit, ticks: ticksDRateLimit } = await executeWithTickTracker(() =>
-      request(app)
-        .patch(`/api/orders/${oResLockout.lastInsertRowid}/status`)
-        .set(cashierAuth)
-        .send({ status: 'cancelled', reason: 'Walkout', override_pin: '5555' }),
-    );
+    `)
+      .run(now(), now());
+    const pinCallsBeforeDRateLimit = bcryptCompareCalls;
+    const resDRateLimit = await request(app)
+      .patch(`/api/orders/${oResLockout.lastInsertRowid}/status`)
+      .set(cashierAuth)
+      .send({ status: 'cancelled', reason: 'Walkout', override_pin: '5555' });
     assertEqualOrThrow(resDRateLimit.status, 429, 'Rate-limited order cancel returns 429');
-    assertEqualOrThrow(ticksDRateLimit, 0, 'Rate-limited order cancel rejected before async bcrypt scan (0 ticks)');
+    assertEqualOrThrow(
+      bcryptCompareCalls - pinCallsBeforeDRateLimit,
+      0,
+      'Rate-limited order cancel rejected before async bcrypt scan (0 calls)',
+    );
   }
 
   // E. POST /api/bills/:id/applyDiscount
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-006', 'dine_in', 100, 10, 110, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
-    const billRes = db.prepare(`
+    const billRes = db
+      .prepare(`
       INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
       VALUES ('BILL-ASYNC-001', ?, 100, 10, 110, 0, 110, 'unpaid', ?, ?)
-    `).run(orderId, now(), now());
+    `)
+      .run(orderId, now(), now());
     const billId = billRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
@@ -455,63 +524,73 @@ async function run() {
 
   // F. POST /api/bills/:id/payment (kitchen delivery gate override)
   {
-    const orderRes = db.prepare(`
+    const orderRes = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-007', 'dine_in', 40, 4, 44, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId = orderRes.lastInsertRowid;
     db.prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Hot Pizza', 40, 1, 40, 44, 'preparing', ?, ?)
     `).run(orderId, now(), now());
-    const billRes = db.prepare(`
+    const billRes = db
+      .prepare(`
       INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
       VALUES ('BILL-ASYNC-002', ?, 40, 4, 44, 0, 44, 'unpaid', ?, ?)
-    `).run(orderId, now(), now());
+    `)
+      .run(orderId, now(), now());
     const billId = billRes.lastInsertRowid;
 
     // Scan to last candidate (#5, PIN '5555')
     resetBillPinRateLimit();
     const { result: resF1, ticks: ticksF1 } = await executeWithTickTracker(() =>
-      request(app)
-        .post(`/api/bills/${billId}/payment`)
-        .set(ownerAuth)
-        .send({
-          method: 'cash',
-          amount: 44,
-          override_pin: '5555',
-        }),
+      request(app).post(`/api/bills/${billId}/payment`).set(ownerAuth).send({
+        method: 'cash',
+        amount: 44,
+        override_pin: '5555',
+      }),
     );
-    assertEqualOrThrow(resF1.status, 200, 'Payment with kitchen override succeeds with candidate #5 PIN');
-    assertEqualOrThrow(resF1.body.kitchenDeliveryOverridden, true, 'Payment marked as kitchen delivery overridden');
+    assertEqualOrThrow(
+      resF1.status,
+      200,
+      'Payment with kitchen override succeeds with candidate #5 PIN',
+    );
+    assertEqualOrThrow(
+      resF1.body.kitchenDeliveryOverridden,
+      true,
+      'Payment marked as kitchen delivery overridden',
+    );
     assertGreaterThanOrThrow(ticksF1, 0, 'Event loop yielded during kitchen override PIN scan');
 
     // Seed another unpaid bill with undelivered item for invalid PIN test
-    const orderRes2 = db.prepare(`
+    const orderRes2 = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-ASYNC-008', 'dine_in', 40, 4, 44, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const orderId2 = orderRes2.lastInsertRowid;
     db.prepare(`
       INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
       VALUES (?, 'prod-async-1', 'Hot Pasta', 40, 1, 40, 44, 'preparing', ?, ?)
     `).run(orderId2, now(), now());
-    const billRes2 = db.prepare(`
+    const billRes2 = db
+      .prepare(`
       INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
       VALUES ('BILL-ASYNC-003', ?, 40, 4, 44, 0, 44, 'unpaid', ?, ?)
-    `).run(orderId2, now(), now());
+    `)
+      .run(orderId2, now(), now());
     const billId2 = billRes2.lastInsertRowid;
 
     resetBillPinRateLimit();
     const { result: resF2, ticks: ticksF2 } = await executeWithTickTracker(() =>
-      request(app)
-        .post(`/api/bills/${billId2}/payment`)
-        .set(ownerAuth)
-        .send({
-          method: 'cash',
-          amount: 44,
-          override_pin: '9999',
-        }),
+      request(app).post(`/api/bills/${billId2}/payment`).set(ownerAuth).send({
+        method: 'cash',
+        amount: 44,
+        override_pin: '9999',
+      }),
     );
     assertEqualOrThrow(resF2.status, 403, 'Payment fails with 403 on invalid manager PIN');
     assertGreaterThanOrThrow(ticksF2, 0, 'Event loop yielded during invalid kitchen override scan');
@@ -568,7 +647,10 @@ async function run() {
     } catch (e: any) {
       if (e.statusCode === 403) threwExpected = true;
     }
-    assertOrThrow(threwExpected, 'Deactivated manager between pre-check and commit rejected with 403');
+    assertOrThrow(
+      threwExpected,
+      'Deactivated manager between pre-check and commit rejected with 403',
+    );
     // Restore active status
     db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run('mgr-1');
 
@@ -608,10 +690,12 @@ async function run() {
       return true;
     })();
 
-    const walOrder = db.prepare(`
+    const walOrder = db
+      .prepare(`
       INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES ('ORD-WAL-001', 'dine_in', 10, 1, 11, 'pending', ?, ?)
-    `).run(now(), now());
+    `)
+      .run(now(), now());
     const walOrderId = walOrder.lastInsertRowid;
 
     // While the async verification is executing, perform concurrent database writes
@@ -626,7 +710,11 @@ async function run() {
 
     const verifyResult = await asyncVerifyPromise;
     assertEqualOrThrow(verifyResult, true, 'Asynchronous PIN verification completed successfully');
-    assertEqualOrThrow(writeCount, 10, '10 concurrent WAL database writes succeeded during async PIN verification');
+    assertEqualOrThrow(
+      writeCount,
+      10,
+      '10 concurrent WAL database writes succeeded during async PIN verification',
+    );
   }
 
   console.log('\nAll Asynchronous PIN Event Loop tests passed successfully!');

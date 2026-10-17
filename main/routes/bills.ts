@@ -239,7 +239,8 @@ function checkKitchenDeliveryStatus(
       .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
       .all() as { id: string; role: string; pin_hash: string }[];
     manager = managers.find(
-      (user) => hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin),
+      (user) =>
+        hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin),
     );
   }
 
@@ -3401,30 +3402,30 @@ router.post(
 
       res.json(result);
     } catch (error: any) {
-    const statusCode = error.statusCode || 500;
-    console.error('[API] Bill payment failed:', error);
-    return res.status(statusCode).json({
-      ...structuredBillFailure(
-        req,
-        operationCommitted
-          ? 'fc.backend.payment.create.completion'
-          : statusCode >= 500
-            ? 'fc.backend.payment.create.persistence'
-            : 'fc.backend.payment.create.validation',
-        statusCode >= 500 ? 'Bill payment failed' : error.message,
-        statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
-        operationCommitted ? 'applied' : 'not_applied',
-      ),
-      ...(error.code
-        ? {
-            code: error.code,
-            undeliveredCount: error.undeliveredCount,
-            undeliveredItems: error.undeliveredItems,
-          }
-        : {}),
-    });
-  }
-}),
+      const statusCode = error.statusCode || 500;
+      console.error('[API] Bill payment failed:', error);
+      return res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          operationCommitted
+            ? 'fc.backend.payment.create.completion'
+            : statusCode >= 500
+              ? 'fc.backend.payment.create.persistence'
+              : 'fc.backend.payment.create.validation',
+          statusCode >= 500 ? 'Bill payment failed' : error.message,
+          statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
+          operationCommitted ? 'applied' : 'not_applied',
+        ),
+        ...(error.code
+          ? {
+              code: error.code,
+              undeliveredCount: error.undeliveredCount,
+              undeliveredItems: error.undeliveredItems,
+            }
+          : {}),
+      });
+    }
+  }),
 );
 
 // Atomic split-payment batch endpoint applying payment lines in a single transaction.
@@ -3492,30 +3493,30 @@ router.post(
 
       res.json(result);
     } catch (error: any) {
-    const statusCode = error.statusCode || 500;
-    console.error('[API] Batch bill payment failed:', error);
-    return res.status(statusCode).json({
-      ...structuredBillFailure(
-        req,
-        operationCommitted
-          ? 'fc.backend.payment.create.completion'
-          : statusCode >= 500
-            ? 'fc.backend.payment.create.persistence'
-            : 'fc.backend.payment.create.validation',
-        statusCode >= 500 ? 'Bill payment failed' : error.message,
-        statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
-        operationCommitted ? 'applied' : 'not_applied',
-      ),
-      ...(error.code
-        ? {
-            code: error.code,
-            undeliveredCount: error.undeliveredCount,
-            undeliveredItems: error.undeliveredItems,
-          }
-        : {}),
-    });
-  }
-}),
+      const statusCode = error.statusCode || 500;
+      console.error('[API] Batch bill payment failed:', error);
+      return res.status(statusCode).json({
+        ...structuredBillFailure(
+          req,
+          operationCommitted
+            ? 'fc.backend.payment.create.completion'
+            : statusCode >= 500
+              ? 'fc.backend.payment.create.persistence'
+              : 'fc.backend.payment.create.validation',
+          statusCode >= 500 ? 'Bill payment failed' : error.message,
+          statusCode >= 500 ? undefined : error.displayCode || error.diagnosticCode,
+          operationCommitted ? 'applied' : 'not_applied',
+        ),
+        ...(error.code
+          ? {
+              code: error.code,
+              undeliveredCount: error.undeliveredCount,
+              undeliveredItems: error.undeliveredItems,
+            }
+          : {}),
+      });
+    }
+  }),
 );
 
 router.post(

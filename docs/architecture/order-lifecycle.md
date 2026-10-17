@@ -75,9 +75,9 @@ settings:
 
 | Surface | Endpoint | Notes |
 | --- | --- | --- |
-| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills return `409`, and completed or cancelled orders return `400`. |
-| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
-| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills and cancelled orders return `409`. A completed order can still be discounted while its bill is unpaid. |
+| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills or discounts below collected payments return `409`, and completed or cancelled orders return `400`. |
+| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
+| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills, completed or cancelled orders, and discounts below collected payments return `409`. |
 
 Common rules, enforced in the handlers:
 
@@ -95,6 +95,12 @@ Common rules, enforced in the handlers:
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
   `discount_value`.
+- A discount cannot reduce a bill's total below collected payments (`below_collected_funds`,
+  `409`). If a discount on a partially paid bill reduces the remaining balance to zero, the bill
+  auto-settles to `paid` with `paid_at` recorded.
+- Applying an order or bill discount records an `order_discount_applied` action in
+  `order_audit_log` with the authenticated actor, discount details, and the approving manager ID
+  when a manager PIN override was used (the raw PIN is never stored).
 
 ## Bills
 

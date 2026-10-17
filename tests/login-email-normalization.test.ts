@@ -146,9 +146,20 @@ async function run() {
     assertEqual(kdsRes1.status, 200, 'KDS: Exact lowercase email login succeeds');
     assert(!!kdsRes1.body.access_token, 'KDS: Login returns access token');
     assertEqual(kdsRes1.body.user?.role, 'chef', 'KDS: User role is chef');
-    assertEqual(kdsRes1.body.user?.email, 'chef@flocafe.local', 'KDS: Canonical stored email returned');
-    assert(kdsRes1.body.user?.station_ids?.includes('kds-norm-station-1'), 'KDS: Station ID assigned');
-    assertEqual(kdsRes1.body.user?.station_assignments_configured, true, 'KDS: Station assignments configured');
+    assertEqual(
+      kdsRes1.body.user?.email,
+      'chef@flocafe.local',
+      'KDS: Canonical stored email returned',
+    );
+    assert(
+      kdsRes1.body.user?.station_ids?.includes('kds-norm-station-1'),
+      'KDS: Station ID assigned',
+    );
+    assertEqual(
+      kdsRes1.body.user?.station_assignments_configured,
+      true,
+      'KDS: Station assignments configured',
+    );
 
     // KDS Test 2: Uppercase email
     const kdsRes2 = await request(kdsUrl)
@@ -156,14 +167,22 @@ async function run() {
       .send({ email: 'CHEF@FLOCAFE.LOCAL', password: 'ChefPass1234!' });
     assertEqual(kdsRes2.status, 200, 'KDS: Uppercase email login succeeds');
     assert(!!kdsRes2.body.access_token, 'KDS: Uppercase login returns access token');
-    assertEqual(kdsRes2.body.user?.email, 'chef@flocafe.local', 'KDS: Uppercase login returns canonical stored email');
+    assertEqual(
+      kdsRes2.body.user?.email,
+      'chef@flocafe.local',
+      'KDS: Uppercase login returns canonical stored email',
+    );
 
     // KDS Test 3: Mixed-case email
     const kdsRes3 = await request(kdsUrl)
       .post('/api/auth/login')
       .send({ email: 'ChEf@FloCafe.Local', password: 'ChefPass1234!' });
     assertEqual(kdsRes3.status, 200, 'KDS: Mixed-case email login succeeds');
-    assertEqual(kdsRes3.body.user?.email, 'chef@flocafe.local', 'KDS: Mixed-case login returns canonical stored email');
+    assertEqual(
+      kdsRes3.body.user?.email,
+      'chef@flocafe.local',
+      'KDS: Mixed-case login returns canonical stored email',
+    );
 
     // KDS Test 4: Whitespace-padded email
     const kdsRes4 = await request(kdsUrl)
@@ -180,7 +199,9 @@ async function run() {
     // KDS Test 6: Missing credentials
     const kdsRes6Empty = await request(kdsUrl).post('/api/auth/login').send({});
     assertEqual(kdsRes6Empty.status, 400, 'KDS: Missing body returns 400');
-    const kdsRes6Whitespace = await request(kdsUrl).post('/api/auth/login').send({ email: '   ', password: 'ChefPass1234!' });
+    const kdsRes6Whitespace = await request(kdsUrl)
+      .post('/api/auth/login')
+      .send({ email: '   ', password: 'ChefPass1234!' });
     assertEqual(kdsRes6Whitespace.status, 400, 'KDS: Whitespace-only email returns 400');
 
     // KDS Test 7: Wrong password with lowercase and mixed-case email
@@ -205,14 +226,22 @@ async function run() {
     const kdsRes9 = await request(kdsUrl)
       .post('/api/auth/login')
       .send({ email: 'SERVER@FLOCAFE.LOCAL', password: 'ServerPass1234!' });
-    assertEqual(kdsRes9.status, 403, 'KDS: Non-kitchen staff with uppercase email is rejected with 403');
+    assertEqual(
+      kdsRes9.status,
+      403,
+      'KDS: Non-kitchen staff with uppercase email is rejected with 403',
+    );
 
     // KDS Test 10: Chef with configured station assignments but no active stations returns 403
     const kdsRes10 = await request(kdsUrl)
       .post('/api/auth/login')
       .send({ email: 'UNASSIGNED-CHEF@FLOCAFE.LOCAL', password: 'ChefPass1234!' });
     assertEqual(kdsRes10.status, 403, 'KDS: Chef with no station assignment returns 403');
-    assertEqual(kdsRes10.body?.error, 'No active kitchen station is assigned to this user', 'KDS: Specific station error message returned');
+    assertEqual(
+      kdsRes10.body?.error,
+      'No active kitchen station is assigned to this user',
+      'KDS: Specific station error message returned',
+    );
   } finally {
     await stopKdsServer();
   }
@@ -231,7 +260,9 @@ run()
     fs.rmSync(testDir, { recursive: true, force: true });
   })
   .catch((err) => {
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
     console.error(err);

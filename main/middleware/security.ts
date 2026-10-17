@@ -117,13 +117,8 @@ export function resetSharedLoginAuthRateLimiter(): void {
   sharedLoginAuthRateLimiterEnvMax = undefined;
 }
 
-export const resetSharedAuthRateLimiter = resetSharedLoginAuthRateLimiter;
-
 /** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */
-export function authRateLimit(options: { max?: number; scope?: 'login' } = {}) {
-  if (options.scope === 'login') {
-    return loginAuthRateLimit(options);
-  }
+export function authRateLimit(options: { max?: number } = {}) {
   const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX
     ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10)
     : undefined;

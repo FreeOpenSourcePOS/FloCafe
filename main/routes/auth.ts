@@ -197,7 +197,6 @@ function requireLocalSetup(req: Request, res: Response): boolean {
 }
 
 // ── Rate Limiting (In-Memory for local offline apps) ──────────────────────────
-const checkRateLimit = checkLoginRateLimit;
 const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: number }>();
 const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
 const PASSWORD_CHANGE_LOCKOUT_MINUTES = 5;
@@ -237,7 +236,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
-      const rateLimit = checkRateLimit(ip);
+      const rateLimit = checkLoginRateLimit(ip);
       if (!rateLimit.allowed) {
         return res.status(429).json({
           error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,

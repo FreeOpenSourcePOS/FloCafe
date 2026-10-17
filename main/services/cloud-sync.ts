@@ -921,6 +921,28 @@ function sanitizeOrderSnapshot(value: unknown): unknown {
   return safe;
 }
 
+interface OrderSnapshotSource extends Record<string, unknown> {
+  id?: string | number;
+  table_id?: string | number | null;
+}
+
+interface OrderItemSnapshotSource extends Record<string, unknown> {
+  id: number;
+  order_id?: string | number;
+}
+
+interface TableSnapshotSource extends Record<string, unknown> {
+  id?: string | number;
+  number?: string;
+}
+
+interface BillSnapshotSource extends Record<string, unknown> {
+  id?: string | number;
+  order_id?: string | number;
+  payment_status?: string;
+  payment_details?: string | null;
+}
+
 export class CloudSyncService {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
@@ -3402,7 +3424,7 @@ export class CloudSyncService {
       ORDER BY created_at ASC
       LIMIT 200
     `)
-      .all(...statuses) as any[];
+      .all(...statuses) as OrderSnapshotSource[];
 
     return { orders: this.decorateOrders(orders) };
   }
@@ -3610,16 +3632,18 @@ export class CloudSyncService {
 
   private buildOrderSnapshot(orderId: number | string) {
     const db = getDatabase();
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as
+      | OrderSnapshotSource
+      | undefined;
     if (!order) return null;
     return this.decorateOrder(order);
   }
 
-  private decorateOrder(order: any) {
+  private decorateOrder(order: OrderSnapshotSource) {
     return this.decorateOrders([order])[0] ?? null;
   }
 
-  private decorateOrders(orders: any[]): any[] {
+  private decorateOrders(orders: OrderSnapshotSource[]): unknown[] {
     if (orders.length === 0) return [];
 
     const db = getDatabase();
@@ -3628,9 +3652,9 @@ export class CloudSyncService {
 
     const rawItems = db
       .prepare(`SELECT * FROM order_items WHERE order_id IN (${orderPlaceholders}) ORDER BY id ASC`)
-      .all(...orderIds) as any[];
+      .all(...orderIds) as OrderItemSnapshotSource[];
     const parsedItems = attachEffectiveAddons(db, rawItems.map(parseItemJson));
-    const itemsByOrderId = new Map<string, any[]>();
+    const itemsByOrderId = new Map<string, unknown[]>();
     for (const item of parsedItems) {
       const key = String(item.order_id);
       const list = itemsByOrderId.get(key);
@@ -3644,12 +3668,12 @@ export class CloudSyncService {
     const tableIds = Array.from(
       new Set(orders.map((o) => o.table_id).filter((id): id is string | number => Boolean(id))),
     );
-    const tableMap = new Map<string, any>();
+    const tableMap = new Map<string, TableSnapshotSource>();
     if (tableIds.length > 0) {
       const tablePlaceholders = tableIds.map(() => '?').join(',');
       const tableRows = db
         .prepare(`SELECT * FROM tables WHERE id IN (${tablePlaceholders})`)
-        .all(...tableIds) as any[];
+        .all(...tableIds) as TableSnapshotSource[];
       for (const table of tableRows) {
         tableMap.set(String(table.id), table);
       }
@@ -3657,8 +3681,8 @@ export class CloudSyncService {
 
     const billRows = db
       .prepare(`SELECT * FROM bills WHERE order_id IN (${orderPlaceholders}) ORDER BY id ASC`)
-      .all(...orderIds) as any[];
-    const billsByOrderId = new Map<string, any[]>();
+      .all(...orderIds) as BillSnapshotSource[];
+    const billsByOrderId = new Map<string, BillSnapshotSource[]>();
     for (const bill of billRows) {
       const key = String(bill.order_id);
       const list = billsByOrderId.get(key);
@@ -3679,7 +3703,10 @@ export class CloudSyncService {
         items,
         table: tableRow ? { ...tableRow, name: tableRow.number } : null,
         bill: bill ? { ...bill, payment_details: safeJsonParse(bill.payment_details) } : null,
-        bills: bills.map((row) => ({ ...row, payment_details: safeJsonParse(row.payment_details) })),
+        bills: bills.map((row) => ({
+          ...row,
+          payment_details: safeJsonParse(row.payment_details),
+        })),
       });
     });
   }

@@ -60,8 +60,14 @@ async function run() {
       const emptyResult = (service as any).liveOrders();
       assert.deepStrictEqual(emptyResult, { orders: [] }, 'Empty database returns { orders: [] }');
 
-      const invalidResult = (service as any).liveOrders({ statuses: ['invalid_status', 'cancelled'] });
-      assert.deepStrictEqual(invalidResult, { orders: [] }, 'Invalid statuses return { orders: [] }');
+      const invalidResult = (service as any).liveOrders({
+        statuses: ['invalid_status', 'cancelled'],
+      });
+      assert.deepStrictEqual(
+        invalidResult,
+        { orders: [] },
+        'Invalid statuses return { orders: [] }',
+      );
       console.log('  ✓ empty database and invalid statuses return empty orders');
     }
 
@@ -95,15 +101,35 @@ async function run() {
           `INSERT INTO orders (order_number, table_id, customer_id, type, status, subtotal, total, delivery_address, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run('ORD-001', 'table-1', 'cust-123', 'dine_in', 'pending', 25.0, 27.5, '123 Secret St', now(), now())
-        .lastInsertRowid;
+        .run(
+          'ORD-001',
+          'table-1',
+          'cust-123',
+          'dine_in',
+          'pending',
+          25.0,
+          27.5,
+          '123 Secret St',
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       const item1Id = db
         .prepare(
           `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(order1Id, 'prod-burger', 'Gourmet Burger', 2, 10.0, 20.0, 20.0, now(), now()).lastInsertRowid;
+        .run(
+          order1Id,
+          'prod-burger',
+          'Gourmet Burger',
+          2,
+          10.0,
+          20.0,
+          20.0,
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       db.prepare(
         `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
@@ -120,18 +146,50 @@ async function run() {
           `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(order1Id, 'prod-fries', 'Truffle Fries', 1, 5.0, 5.0, 5.0, now(), now()).lastInsertRowid;
+        .run(
+          order1Id,
+          'prod-fries',
+          'Truffle Fries',
+          1,
+          5.0,
+          5.0,
+          5.0,
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       // Bill 1 (unpaid) and Bill 2 (paid)
       db.prepare(
         `INSERT INTO bills (order_id, bill_number, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(order1Id, 'BILL-001', 25.0, 27.5, 0.0, 27.5, 'pending', JSON.stringify({ method: 'cash' }), now(), now());
+      ).run(
+        order1Id,
+        'BILL-001',
+        25.0,
+        27.5,
+        0.0,
+        27.5,
+        'pending',
+        JSON.stringify({ method: 'cash' }),
+        now(),
+        now(),
+      );
 
       db.prepare(
         `INSERT INTO bills (order_id, bill_number, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(order1Id, 'BILL-002', 25.0, 27.5, 27.5, 0.0, 'paid', JSON.stringify({ method: 'card' }), now(), now());
+      ).run(
+        order1Id,
+        'BILL-002',
+        25.0,
+        27.5,
+        27.5,
+        0.0,
+        'paid',
+        JSON.stringify({ method: 'card' }),
+        now(),
+        now(),
+      );
 
       // Order 2: No table, one item, one paid bill
       const order2Id = db
@@ -139,7 +197,17 @@ async function run() {
           `INSERT INTO orders (order_number, table_id, customer_id, type, status, subtotal, total, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run('ORD-002', null, 'cust-456', 'takeaway', 'preparing', 8.0, 8.0, now(), now()).lastInsertRowid;
+        .run(
+          'ORD-002',
+          null,
+          'cust-456',
+          'takeaway',
+          'preparing',
+          8.0,
+          8.0,
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       db.prepare(
         `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
@@ -149,7 +217,18 @@ async function run() {
       db.prepare(
         `INSERT INTO bills (order_id, bill_number, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(order2Id, 'BILL-003', 8.0, 8.0, 8.0, 0.0, 'paid', JSON.stringify({ method: 'qr' }), now(), now());
+      ).run(
+        order2Id,
+        'BILL-003',
+        8.0,
+        8.0,
+        8.0,
+        0.0,
+        'paid',
+        JSON.stringify({ method: 'qr' }),
+        now(),
+        now(),
+      );
 
       // Order 3: Has table, no items, no bills
       const order3Id = db
@@ -157,7 +236,17 @@ async function run() {
           `INSERT INTO orders (order_number, table_id, customer_id, type, status, subtotal, total, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run('ORD-003', 'table-1', null, 'dine_in', 'ready', 0.0, 0.0, now(), now()).lastInsertRowid;
+        .run(
+          'ORD-003',
+          'table-1',
+          null,
+          'dine_in',
+          'ready',
+          0.0,
+          0.0,
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       // Order 4: Non-existent table_id, status served
       const order4Id = db
@@ -165,7 +254,17 @@ async function run() {
           `INSERT INTO orders (order_number, table_id, customer_id, type, status, subtotal, total, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run('ORD-004', 'table-nonexistent', null, 'dine_in', 'served', 12.0, 12.0, now(), now()).lastInsertRowid;
+        .run(
+          'ORD-004',
+          'table-nonexistent',
+          null,
+          'dine_in',
+          'served',
+          12.0,
+          12.0,
+          now(),
+          now(),
+        ).lastInsertRowid;
 
       db.prepare(
         `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
@@ -203,7 +302,10 @@ async function run() {
       assertEqual(ord1.table.number, 'T-01', 'Order 1 table number matches');
       assertEqual(ord1.table.name, 'T-01', 'Order 1 table name normalized to number');
       assertEqual(ord1.bills.length, 2, 'Order 1 has 2 bills');
-      customAssert(!('payment_details' in ord1.bill), 'payment_details is stripped by sanitizeOrderSnapshot');
+      customAssert(
+        !('payment_details' in ord1.bill),
+        'payment_details is stripped by sanitizeOrderSnapshot',
+      );
 
       // Check Order 2
       const ord2 = batchedDecorated[1];
@@ -221,7 +323,9 @@ async function run() {
       const ord4 = batchedDecorated[3];
       assertEqual(ord4.table, null, 'Order 4 with non-existent table resolves to null table');
 
-      console.log('  ✓ exact shape, addons, bills, tables, and PII sanitization match single-order decoration');
+      console.log(
+        '  ✓ exact shape, addons, bills, tables, and PII sanitization match single-order decoration',
+      );
     }
 
     // ------------------------------------------------------------------------
@@ -244,15 +348,33 @@ async function run() {
             `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(`ORD-BATCH-${String(i).padStart(4, '0')}`, 'table-1', 'dine_in', status, 20.0, 22.0, now(), now())
-          .lastInsertRowid;
+          .run(
+            `ORD-BATCH-${String(i).padStart(4, '0')}`,
+            'table-1',
+            'dine_in',
+            status,
+            20.0,
+            22.0,
+            now(),
+            now(),
+          ).lastInsertRowid;
 
         const itmId = db
           .prepare(
             `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(ordId, `prod-${i}`, `Product ${i}`, 1, 20.0, 20.0, 20.0, now(), now()).lastInsertRowid;
+          .run(
+            ordId,
+            `prod-${i}`,
+            `Product ${i}`,
+            1,
+            20.0,
+            20.0,
+            20.0,
+            now(),
+            now(),
+          ).lastInsertRowid;
 
         db.prepare(
           `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
@@ -262,7 +384,18 @@ async function run() {
         db.prepare(
           `INSERT INTO bills (order_id, bill_number, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(ordId, `BILL-BATCH-${i}`, 20.0, 22.0, 0.0, 22.0, 'pending', JSON.stringify({ note: `Bill ${i}` }), now(), now());
+        ).run(
+          ordId,
+          `BILL-BATCH-${i}`,
+          20.0,
+          22.0,
+          0.0,
+          22.0,
+          'pending',
+          JSON.stringify({ note: `Bill ${i}` }),
+          now(),
+          now(),
+        );
       }
 
       // Spy on db.prepare to track query count
@@ -302,7 +435,9 @@ async function run() {
         assertEqual(ord.bills.length, 1, 'Bill attached');
       }
 
-      console.log(`  ✓ N+1 query pattern eliminated: ${orderCount} orders resolved in ${prepareCount} queries (<= 6)`);
+      console.log(
+        `  ✓ N+1 query pattern eliminated: ${orderCount} orders resolved in ${prepareCount} queries (<= 6)`,
+      );
     }
 
     // ------------------------------------------------------------------------
@@ -316,15 +451,33 @@ async function run() {
             `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(`ORD-BATCH-${String(i).padStart(4, '0')}`, 'table-1', 'dine_in', 'pending', 15.0, 16.5, now(), now())
-          .lastInsertRowid;
+          .run(
+            `ORD-BATCH-${String(i).padStart(4, '0')}`,
+            'table-1',
+            'dine_in',
+            'pending',
+            15.0,
+            16.5,
+            now(),
+            now(),
+          ).lastInsertRowid;
 
         const itmId = db
           .prepare(
             `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(ordId, `prod-${i}`, `Product ${i}`, 1, 15.0, 15.0, 15.0, now(), now()).lastInsertRowid;
+          .run(
+            ordId,
+            `prod-${i}`,
+            `Product ${i}`,
+            1,
+            15.0,
+            15.0,
+            15.0,
+            now(),
+            now(),
+          ).lastInsertRowid;
 
         db.prepare(
           `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)

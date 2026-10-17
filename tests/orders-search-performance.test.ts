@@ -35,10 +35,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const Database = require('better-sqlite3');
-const {
-  assertOrThrow,
-  assertEqualOrThrow,
-} = require('./helpers/test-setup');
+const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 const {
   registerOrderSearchFunctions,
   initDatabase,
@@ -49,10 +46,7 @@ const {
 function calculatePercentile(values: number[], percentile: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(
-    Math.floor((percentile / 100) * sorted.length),
-    sorted.length - 1,
-  );
+  const index = Math.min(Math.floor((percentile / 100) * sorted.length), sorted.length - 1);
   return sorted[index];
 }
 
@@ -72,22 +66,38 @@ async function main() {
     registerOrderSearchFunctions(testConn);
 
     // Verify functions work
-    const check1 = testConn.prepare("SELECT orders_search_contains('Order-1234', '123') as res").get() as any;
+    const check1 = testConn
+      .prepare("SELECT orders_search_contains('Order-1234', '123') as res")
+      .get() as any;
     assertEqualOrThrow(check1.res, 1, 'orders_search_contains is available and functional');
-    const checkDigits1 = testConn.prepare("SELECT orders_search_digits_contains('+1 (555) 234-5678', '555234') as res").get() as any;
-    assertEqualOrThrow(checkDigits1.res, 1, 'orders_search_digits_contains is available and functional');
+    const checkDigits1 = testConn
+      .prepare("SELECT orders_search_digits_contains('+1 (555) 234-5678', '555234') as res")
+      .get() as any;
+    assertEqualOrThrow(
+      checkDigits1.res,
+      1,
+      'orders_search_digits_contains is available and functional',
+    );
 
     // Repeated registration on same connection is idempotent and does not throw
     registerOrderSearchFunctions(testConn);
-    const check2 = testConn.prepare("SELECT orders_search_contains('Hello World', 'world') as res").get() as any;
+    const check2 = testConn
+      .prepare("SELECT orders_search_contains('Hello World', 'world') as res")
+      .get() as any;
     assertEqualOrThrow(check2.res, 1, 'Repeated registration preserves function availability');
 
     // Close and reopen connection
     testConn.close();
     testConn = new Database(dbPath);
     registerOrderSearchFunctions(testConn);
-    const checkReopened = testConn.prepare("SELECT orders_search_contains('Order-Reopen', 'reopen') as res").get() as any;
-    assertEqualOrThrow(checkReopened.res, 1, 'Reopened connection registers functions successfully');
+    const checkReopened = testConn
+      .prepare("SELECT orders_search_contains('Order-Reopen', 'reopen') as res")
+      .get() as any;
+    assertEqualOrThrow(
+      checkReopened.res,
+      1,
+      'Reopened connection registers functions successfully',
+    );
     testConn.close();
     console.log('✓ Connection reopen and idempotent registration verified');
 
@@ -172,12 +182,9 @@ async function main() {
       LIMIT 50
     `;
 
-    const planRows = db.prepare(searchPlanSql).all(
-      '"ORD-PERF-050000"',
-      '"ORD-PERF-050000"',
-      'ORD-PERF-050000',
-      'ORD-PERF-050000',
-    ) as any[];
+    const planRows = db
+      .prepare(searchPlanSql)
+      .all('"ORD-PERF-050000"', '"ORD-PERF-050000"', 'ORD-PERF-050000', 'ORD-PERF-050000') as any[];
 
     const planDetails = planRows.map((r) => r.detail).join('\n');
     console.log('Query Plan for eligible search at 100k:\n' + planDetails);
@@ -244,12 +251,18 @@ async function main() {
       'ORD-PERF-050000',
     ) as any[];
     assertEqualOrThrow(matchRows.length, 1, 'Selective search returns 1 matching order');
-    assertEqualOrThrow(matchRows[0].order_number, 'ORD-PERF-050000', 'Matching order number is correct');
+    assertEqualOrThrow(
+      matchRows[0].order_number,
+      'ORD-PERF-050000',
+      'Matching order number is correct',
+    );
     assertOrThrow(
       searchContainsCallbacks <= 2,
       `Selective search callback count is bounded (got ${searchContainsCallbacks}, expected <= 2)`,
     );
-    console.log(`✓ Selective search callback count at 100k: ${searchContainsCallbacks} (expected <= 2)`);
+    console.log(
+      `✓ Selective search callback count at 100k: ${searchContainsCallbacks} (expected <= 2)`,
+    );
 
     // 2.3 Latency Benchmark at 100k rows
     const latencies100k: number[] = [];
@@ -260,7 +273,9 @@ async function main() {
     }
     const p50_100k = calculatePercentile(latencies100k, 50);
     const p95_100k = calculatePercentile(latencies100k, 95);
-    console.log(`✓ Latency at 100k rows (no-match): p50 = ${p50_100k.toFixed(3)} ms, p95 = ${p95_100k.toFixed(3)} ms`);
+    console.log(
+      `✓ Latency at 100k rows (no-match): p50 = ${p50_100k.toFixed(3)} ms, p95 = ${p95_100k.toFixed(3)} ms`,
+    );
 
     // ─────────────────────────────────────────────────────────────────────────
     // Section 3: 300,000 Rows Scale Benchmark
@@ -302,28 +317,35 @@ async function main() {
       'ORD-PERF-250000',
     ) as any[];
     assertEqualOrThrow(match300k.length, 1, 'Selective search returns 1 matching order at 300k');
-    assertEqualOrThrow(match300k[0].order_number, 'ORD-PERF-250000', 'Matching order number is correct');
+    assertEqualOrThrow(
+      match300k[0].order_number,
+      'ORD-PERF-250000',
+      'Matching order number is correct',
+    );
     assertOrThrow(
       searchContainsCallbacks <= 2,
       `Selective search callback count at 300k is bounded (got ${searchContainsCallbacks}, expected <= 2)`,
     );
-    console.log(`✓ Selective search callback count at 300k: ${searchContainsCallbacks} (expected <= 2)`);
+    console.log(
+      `✓ Selective search callback count at 300k: ${searchContainsCallbacks} (expected <= 2)`,
+    );
 
     // Customer name search at 300k
     searchContainsCallbacks = 0;
-    const matchCust300k = searchStmt.all(
-      '"Zoë"',
-      '"Zoë"',
-      'zoë',
-      'zoë',
-    ) as any[];
+    const matchCust300k = searchStmt.all('"Zoë"', '"Zoë"', 'zoë', 'zoë') as any[];
     assertEqualOrThrow(matchCust300k.length, 1, 'Customer name search returns matching order');
-    assertEqualOrThrow(matchCust300k[0].order_number, 'ORD-PERF-000001', 'Found order for customer Zoë');
+    assertEqualOrThrow(
+      matchCust300k[0].order_number,
+      'ORD-PERF-000001',
+      'Found order for customer Zoë',
+    );
     assertOrThrow(
       searchContainsCallbacks <= 5,
       `Customer name callback count at 300k is bounded (got ${searchContainsCallbacks}, expected <= 5)`,
     );
-    console.log(`✓ Customer name callback count at 300k: ${searchContainsCallbacks} (expected <= 5)`);
+    console.log(
+      `✓ Customer name callback count at 300k: ${searchContainsCallbacks} (expected <= 5)`,
+    );
 
     // 3.2 Latency Benchmark at 300k rows
     const latencies300k: number[] = [];
@@ -334,7 +356,9 @@ async function main() {
     }
     const p50_300k = calculatePercentile(latencies300k, 50);
     const p95_300k = calculatePercentile(latencies300k, 95);
-    console.log(`✓ Latency at 300k rows (no-match): p50 = ${p50_300k.toFixed(3)} ms, p95 = ${p95_300k.toFixed(3)} ms`);
+    console.log(
+      `✓ Latency at 300k rows (no-match): p50 = ${p50_300k.toFixed(3)} ms, p95 = ${p95_300k.toFixed(3)} ms`,
+    );
 
     // ─────────────────────────────────────────────────────────────────────────
     // Section 4: Phone Search Candidate & Fallback Verification at Scale
@@ -384,13 +408,23 @@ async function main() {
       '555234',
       '555234',
     ) as any[];
-    assertEqualOrThrow(phoneResults.length, 1, 'Phone search finds target order across 300k orders');
-    assertEqualOrThrow(phoneResults[0].order_number, 'ORD-PERF-000001', 'Found order for Zoë by phone fragment');
+    assertEqualOrThrow(
+      phoneResults.length,
+      1,
+      'Phone search finds target order across 300k orders',
+    );
+    assertEqualOrThrow(
+      phoneResults[0].order_number,
+      'ORD-PERF-000001',
+      'Found order for Zoë by phone fragment',
+    );
     assertOrThrow(
       searchDigitsCallbacks < 2000,
       `Phone search examines customers table only, not 300,000 orders (callbacks = ${searchDigitsCallbacks})`,
     );
-    console.log(`✓ Phone search verified at 300k rows: 1 match, ${searchDigitsCallbacks} digit callbacks across customers`);
+    console.log(
+      `✓ Phone search verified at 300k rows: 1 match, ${searchDigitsCallbacks} digit callbacks across customers`,
+    );
 
     // 4.1 Short Query Fallback (< 3 chars)
     const shortQuerySql = `
@@ -410,7 +444,11 @@ async function main() {
     `;
     const shortResults = db.prepare(shortQuerySql).all('zo', 'zo') as any[];
     assertEqualOrThrow(shortResults.length, 1, 'Short query fallback finds target order');
-    assertEqualOrThrow(shortResults[0].order_number, 'ORD-PERF-000001', 'Short query matches customer Zoë');
+    assertEqualOrThrow(
+      shortResults[0].order_number,
+      'ORD-PERF-000001',
+      'Short query matches customer Zoë',
+    );
     console.log('✓ Short query fallback (< 3 chars) verified');
 
     console.log('\nAll order search performance, scaling & invariant tests passed successfully.');

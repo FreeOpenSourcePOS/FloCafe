@@ -43,36 +43,16 @@ async function main() {
     '2020-01-01 00:00:00',
     '2020-01-01 00:00:00',
   );
-  insertOrder.run(
-    'ORD-SYNTH-ZOE',
-    'cust-zoe',
-    '2023-01-01 00:00:00',
-    '2023-01-01 00:00:00',
-  );
+  insertOrder.run('ORD-SYNTH-ZOE', 'cust-zoe', '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run(
     'ORD-SYNTH-OCONNOR',
     'cust-oconnor',
     '2023-01-01 00:00:00',
     '2023-01-01 00:00:00',
   );
-  insertOrder.run(
-    'ORD-SYNTH-NOCUST-999',
-    null,
-    '2023-01-01 00:00:00',
-    '2023-01-01 00:00:00',
-  );
-  insertOrder.run(
-    'ORD-SYNTH-ALPHA123',
-    null,
-    '2023-01-01 00:00:00',
-    '2023-01-01 00:00:00',
-  );
-  insertOrder.run(
-    'ORD-SYNTH-EMOJI-🍕🍔',
-    null,
-    '2023-01-01 00:00:00',
-    '2023-01-01 00:00:00',
-  );
+  insertOrder.run('ORD-SYNTH-NOCUST-999', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('ORD-SYNTH-ALPHA123', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('ORD-SYNTH-EMOJI-🍕🍔', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   for (let i = 0; i < 55; i++) {
     insertOrder.run(
       `ORD-SEARCH-NEWER-${i}`,
@@ -241,9 +221,13 @@ async function main() {
 
     // ── Synthetic API Probes (#1185) ─────────────────────────────────────────
     // 1. Order number substring probe
-    const probeOrderNum = await api(baseUrl, `/api/orders?search=${encodeURIComponent('SYNTH-ALPHA')}`, {
-      headers: owner.authHeader,
-    });
+    const probeOrderNum = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('SYNTH-ALPHA')}`,
+      {
+        headers: owner.authHeader,
+      },
+    );
     assertEqualOrThrow(probeOrderNum.status, 200, 'probe search for order number succeeds');
     assertOrThrow(
       probeOrderNum.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-ALPHA123'),
@@ -271,9 +255,13 @@ async function main() {
     );
 
     // 4. Case-insensitive apostrophe name o'connor probe
-    const probeOConnor = await api(baseUrl, `/api/orders?search=${encodeURIComponent("o'connor")}`, {
-      headers: owner.authHeader,
-    });
+    const probeOConnor = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent("o'connor")}`,
+      {
+        headers: owner.authHeader,
+      },
+    );
     assertEqualOrThrow(probeOConnor.status, 200, "probe search for o'connor succeeds");
     assertOrThrow(
       probeOConnor.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-OCONNOR'),
@@ -281,9 +269,13 @@ async function main() {
     );
 
     // 5. Punctuated phone search probe: (555) 234
-    const probePhonePunct = await api(baseUrl, `/api/orders?search=${encodeURIComponent('(555) 234')}`, {
-      headers: owner.authHeader,
-    });
+    const probePhonePunct = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('(555) 234')}`,
+      {
+        headers: owner.authHeader,
+      },
+    );
     assertEqualOrThrow(probePhonePunct.status, 200, 'probe search for punctuated phone succeeds');
     assertOrThrow(
       probePhonePunct.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-ZOE'),
@@ -291,9 +283,13 @@ async function main() {
     );
 
     // 6. Phone fragment probe: 4960000
-    const probePhoneFrag = await api(baseUrl, `/api/orders?search=${encodeURIComponent('4960000')}`, {
-      headers: owner.authHeader,
-    });
+    const probePhoneFrag = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('4960000')}`,
+      {
+        headers: owner.authHeader,
+      },
+    );
     assertEqualOrThrow(probePhoneFrag.status, 200, 'probe search for phone fragment succeeds');
     assertOrThrow(
       probePhoneFrag.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-OCONNOR'),
@@ -301,9 +297,13 @@ async function main() {
     );
 
     // 7. Mixed alphanumeric input probe
-    const probeAlphaNum = await api(baseUrl, `/api/orders?search=${encodeURIComponent('ALPHA123')}`, {
-      headers: owner.authHeader,
-    });
+    const probeAlphaNum = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('ALPHA123')}`,
+      {
+        headers: owner.authHeader,
+      },
+    );
     assertEqualOrThrow(probeAlphaNum.status, 200, 'probe search for alphanumeric input succeeds');
     assertOrThrow(
       probeAlphaNum.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-ALPHA123'),
@@ -342,9 +342,13 @@ async function main() {
 
     // 11. Repeated requests after registration was skipped
     for (let i = 0; i < 3; i++) {
-      const probeRepeated = await api(baseUrl, `/api/orders?search=${encodeURIComponent('ALPHA123')}`, {
-        headers: owner.authHeader,
-      });
+      const probeRepeated = await api(
+        baseUrl,
+        `/api/orders?search=${encodeURIComponent('ALPHA123')}`,
+        {
+          headers: owner.authHeader,
+        },
+      );
       assertEqualOrThrow(probeRepeated.status, 200, `repeated search ${i + 1} succeeds`);
       assertOrThrow(
         probeRepeated.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-ALPHA123'),

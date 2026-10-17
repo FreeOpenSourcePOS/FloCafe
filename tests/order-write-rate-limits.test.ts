@@ -36,6 +36,10 @@ const {
   resolveOrderWriteRateLimitMax,
   shouldSkipOrderWriteRateLimit,
 } = require('../main/routes/orders');
+const {
+  billRoutes,
+  resetPinRateLimitForTests: resetBillPinRateLimitForTests,
+} = require('../main/routes/bills');
 
 function seedUser(db: any, id: string, role: string, pin?: string) {
   const email = `${id}@test.local`;
@@ -152,6 +156,7 @@ async function main() {
     }
   });
   app.use('/api/orders', orderRoutes);
+  app.use('/api/bills', billRoutes);
 
   const { baseUrl, server } = await startServer(app);
 
@@ -500,6 +505,155 @@ async function main() {
       'Too many PIN attempts',
       'PIN limiter error message is preserved',
     );
+
+    console.log('\n7. Failure-only PIN rate limiting across order/item discount, item void, and bill discount');
+    // Turn on discount approval requirement in settings
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_requires_approval', 'true', ?)").run(now());
+
+    // ── 7a. Order discount: 6 valid approvals succeed without lockout ────────
+    resetPinRateLimitForTests();
+    const discOrder = seedPendingOrderWithItem(db, 'DISC-ORD');
+    for (let i = 0; i < 6; i++) {
+      const res = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+      });
+      assertEqualOrThrow(res.status, 200, `valid order discount approval #${i + 1} succeeds (200)`);
+    }
+
+    // 5 invalid attempts exhaust the failure budget
+    for (let i = 0; i < 5; i++) {
+      const res = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '9999' },
+      });
+      assertEqualOrThrow(res.status, 403, `invalid PIN order discount attempt #${i + 1} returns 403`);
+    }
+    const orderDiscLocked = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+    });
+    assertEqualOrThrow(orderDiscLocked.status, 429, '6th order discount attempt after 5 failures is throttled with 429');
+
+    // Below limit, a valid approval clears the failure count
+    resetPinRateLimitForTests();
+    for (let i = 0; i < 2; i++) {
+      const res = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '9999' },
+      });
+      assertEqualOrThrow(res.status, 403, `pre-reset invalid PIN attempt #${i + 1} returns 403`);
+    }
+    const validReset = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+    });
+    assertEqualOrThrow(validReset.status, 200, 'valid approval clears the failure bucket');
+    // Now 5 more failures are required before lockout
+    for (let i = 0; i < 5; i++) {
+      const res = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '9999' },
+      });
+      assertEqualOrThrow(res.status, 403, `post-reset invalid attempt #${i + 1} returns 403`);
+    }
+    const postResetLocked = await api(baseUrl, `/api/orders/${discOrder.orderId}/discount`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+    });
+    assertEqualOrThrow(postResetLocked.status, 429, 'lockout triggers after 5 full new failures');
+
+    // ── 7b. Item discount: failure-only rate limiting ────────────────────────
+    resetPinRateLimitForTests();
+    const itemDiscOrder = seedPendingOrderWithItem(db, 'ITEM-DISC');
+    for (let i = 0; i < 6; i++) {
+      const res = await api(baseUrl, `/api/orders/${itemDiscOrder.orderId}/items/${itemDiscOrder.itemId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+      });
+      assertEqualOrThrow(res.status, 200, `valid item discount #${i + 1} succeeds (200)`);
+    }
+    for (let i = 0; i < 5; i++) {
+      const res = await api(baseUrl, `/api/orders/${itemDiscOrder.orderId}/items/${itemDiscOrder.itemId}/discount`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { discount_type: 'percentage', discount_value: 5, override_pin: '9999' },
+      });
+      assertEqualOrThrow(res.status, 403, `invalid item discount PIN #${i + 1} returns 403`);
+    }
+    const itemDiscLocked = await api(baseUrl, `/api/orders/${itemDiscOrder.orderId}/items/${itemDiscOrder.itemId}/discount`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: { discount_type: 'percentage', discount_value: 5, override_pin: '1234' },
+    });
+    assertEqualOrThrow(itemDiscLocked.status, 429, '6th item discount attempt after 5 failures is throttled with 429');
+
+    // ── 7c. Item void: failure-only rate limiting ───────────────────────────
+    resetPinRateLimitForTests();
+    for (let i = 0; i < 6; i++) {
+      const voidOrder = seedPreparingOrderWithItem(db, `VOID-SUCC-${i}`);
+      const res = await api(baseUrl, `/api/orders/${voidOrder.orderId}/items/${voidOrder.itemId}/cancel`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { override_pin: '1234', reason: 'Customer changed mind' },
+      });
+      assertEqualOrThrow(res.status, 200, `valid item void #${i + 1} succeeds (200)`);
+    }
+    const voidFailOrder = seedPreparingOrderWithItem(db, 'VOID-FAIL');
+    for (let i = 0; i < 5; i++) {
+      const res = await api(baseUrl, `/api/orders/${voidFailOrder.orderId}/items/${voidFailOrder.itemId}/cancel`, {
+        method: 'PATCH',
+        headers: managerAuth,
+        body: { override_pin: '9999', reason: 'Customer changed mind' },
+      });
+      assertEqualOrThrow(res.status, 403, `invalid item void PIN #${i + 1} returns 403`);
+    }
+    const voidLocked = await api(baseUrl, `/api/orders/${voidFailOrder.orderId}/items/${voidFailOrder.itemId}/cancel`, {
+      method: 'PATCH',
+      headers: managerAuth,
+      body: { override_pin: '1234', reason: 'Customer changed mind' },
+    });
+    assertEqualOrThrow(voidLocked.status, 429, '6th item void attempt after 5 failures is throttled with 429');
+
+    // ── 7d. Bill discount: failure-only rate limiting ────────────────────────
+    resetBillPinRateLimitForTests();
+    const billOrder = seedPendingOrderWithItem(db, 'BILL-DISC');
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES ('BILL-DISC-001', ?, 100, 0, 100, 0, 100, 'unpaid', ?, ?)
+    `).run(billOrder.orderId, now(), now());
+    const billId = (db.prepare('SELECT id FROM bills WHERE bill_number = ?').get('BILL-DISC-001') as any).id;
+
+    for (let i = 0; i < 6; i++) {
+      const res = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        headers: managerAuth,
+        body: { type: 'percentage', value: 5, override_pin: '1234' },
+      });
+      assertEqualOrThrow(res.status, 200, `valid bill discount #${i + 1} succeeds (200)`);
+    }
+    for (let i = 0; i < 5; i++) {
+      const res = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        headers: managerAuth,
+        body: { type: 'percentage', value: 5, override_pin: '9999' },
+      });
+      assertEqualOrThrow(res.status, 403, `invalid bill discount PIN #${i + 1} returns 403`);
+    }
+    const billDiscLocked = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+      method: 'POST',
+      headers: managerAuth,
+      body: { type: 'percentage', value: 5, override_pin: '1234' },
+    });
+    assertEqualOrThrow(billDiscLocked.status, 429, '6th bill discount attempt after 5 failures is throttled with 429');
   } finally {
     if (originalEnvLimit === undefined) {
       delete process.env.FLO_ORDER_WRITE_RATE_LIMIT_MAX;

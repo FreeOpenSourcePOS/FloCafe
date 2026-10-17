@@ -3550,7 +3550,7 @@ router.post(
         }
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const rateLimitKey = `pin:${clientIp}:bill-discount`;
-        if (!checkPinRateLimit(rateLimitKey)) {
+        if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
         const managerId = req.body.manager_id || req.body.user_id;
@@ -3584,8 +3584,10 @@ router.post(
           }
         }
         if (!user) {
+          checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+        pinAttempts.delete(rateLimitKey);
       }
 
       // Check discount mode

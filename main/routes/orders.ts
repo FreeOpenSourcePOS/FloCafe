@@ -268,13 +268,17 @@ export function checkPinRateLimit(key: string): boolean {
   return true;
 }
 
-function isPinRateLimited(key: string): boolean {
+export function isPinRateLimited(key: string): boolean {
   const entry = pinAttempts.get(key);
   if (!entry || Date.now() > entry.resetAt) {
     pinAttempts.delete(key);
     return false;
   }
   return entry.count >= PIN_MAX_ATTEMPTS;
+}
+
+export function clearPinRateLimit(key: string): void {
+  pinAttempts.delete(key);
 }
 
 export function resetPinRateLimitForTests(): void {
@@ -3004,7 +3008,7 @@ router.patch(
           }
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
           const rateLimitKey = `pin:${clientIp}:discount`;
-          if (!checkPinRateLimit(rateLimitKey)) {
+          if (isPinRateLimited(rateLimitKey)) {
             return res
               .status(429)
               .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
@@ -3020,8 +3024,10 @@ router.patch(
               verifyPin(candidate.pin_hash, override_pin),
           );
           if (!user) {
+            checkPinRateLimit(rateLimitKey);
             return res.status(403).json({ error: 'Invalid manager PIN' });
           }
+          pinAttempts.delete(rateLimitKey);
           approvedByUserId = user.id;
         }
       }
@@ -3370,7 +3376,7 @@ router.patch(
         }
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const rateLimitKey = `pin:${clientIp}:item-discount`;
-        if (!checkPinRateLimit(rateLimitKey)) {
+        if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
         const user = (
@@ -3384,8 +3390,10 @@ router.patch(
             verifyPin(candidate.pin_hash, override_pin),
         );
         if (!user) {
+          checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+        pinAttempts.delete(rateLimitKey);
         approvedByUserId = user.id;
       }
 
@@ -3870,7 +3878,7 @@ router.patch(
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
           // Rate-limit attempts per client rather than per item to prevent brute force attacks.
           const rateLimitKey = `pin:${clientIp}:item-void`;
-          if (!checkPinRateLimit(rateLimitKey)) {
+          if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
             });
@@ -3909,8 +3917,10 @@ router.patch(
             }
           }
           if (!pinUser) {
+            checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
+          pinAttempts.delete(rateLimitKey);
           approvedByUserId = pinUser.id;
         }
 

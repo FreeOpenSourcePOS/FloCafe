@@ -323,13 +323,30 @@ async function main() {
     });
     assertEqual(doubleRefund.status, 409, 'refunding an already-refunded item is rejected before touching the PIN budget');
 
-    // ── Rate limiting: the shared PIN budget above is now exhausted ────────
-    const sixthAttempt = await api(baseUrl, '/api/refunds', {
+    // ── Rate limiting: valid approvals do not exhaust the failure budget ─
+    const sixthValidAttempt = await api(baseUrl, '/api/refunds', {
       method: 'POST',
-      body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234', manager_id: managerId },
+      body: { bill_id: noPinBill.bill.id, amount: 10, method: 'cash', override_pin: '1234', manager_id: managerId },
       headers: ownerAuth,
     });
-    assertEqual(sixthAttempt.status, 429, 'the 6th refund call reaching PIN approval is throttled regardless of a correct PIN');
+    assertEqual(sixthValidAttempt.status, 201, 'the 6th valid refund call succeeds and is not throttled');
+
+    // 5 consecutive invalid PIN attempts exhaust the failure budget
+    for (let i = 0; i < 5; i++) {
+      const failedAttempt = await api(baseUrl, '/api/refunds', {
+        method: 'POST',
+        body: { bill_id: noPinBill.bill.id, amount: 10, method: 'cash', override_pin: '9999', manager_id: managerId },
+        headers: ownerAuth,
+      });
+      assertEqual(failedAttempt.status, 403, `invalid PIN refund attempt #${i + 1} returns 403`);
+    }
+
+    const lockedAttempt = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: noPinBill.bill.id, amount: 10, method: 'cash', override_pin: '1234', manager_id: managerId },
+      headers: ownerAuth,
+    });
+    assertEqual(lockedAttempt.status, 429, 'the 6th refund attempt after 5 failures is throttled with 429');
 
     resetPinRateLimitForTests();
     const outstandingOrder = await api(baseUrl, '/api/orders', {

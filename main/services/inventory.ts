@@ -107,7 +107,11 @@ export function resolveInventoryDeduction(
     }
     if (Number(variant.track_inventory) === 1 || variant.track_inventory === true) {
       if (!Number.isFinite(quantity) || quantity <= 0) return null;
-      return { productId: String(product.id), deductedQuantity: quantity, variantId: String(variant.id) };
+      return {
+        productId: String(product.id),
+        deductedQuantity: quantity,
+        variantId: String(variant.id),
+      };
     }
   }
   if (product.inventory_product_id) {
@@ -131,14 +135,20 @@ export function adjustProductStock(
   if (!Number.isFinite(options.quantityDelta) || options.quantityDelta === 0) {
     throw new InventoryServiceError(400, 'quantity_delta must be a non-zero finite number');
   }
-  const normalizedQuantityDelta = Number(options.quantityDelta.toFixed(INVENTORY_QUANTITY_PRECISION));
+  const normalizedQuantityDelta = Number(
+    options.quantityDelta.toFixed(INVENTORY_QUANTITY_PRECISION),
+  );
   if (normalizedQuantityDelta === 0) {
     throw new InventoryServiceError(400, 'quantity_delta is too small to change stock');
   }
   if (!options.actorUserId) {
     throw new InventoryServiceError(400, 'actor_user_id is required');
   }
-  if (options.reason !== undefined && options.reason !== null && typeof options.reason !== 'string') {
+  if (
+    options.reason !== undefined &&
+    options.reason !== null &&
+    typeof options.reason !== 'string'
+  ) {
     throw new InventoryServiceError(400, 'reason must be a string');
   }
   if (typeof options.reason === 'string' && options.reason.length > 500) {
@@ -149,10 +159,16 @@ export function adjustProductStock(
   // One movement moves one pool. Naming two would write a ledger row that the
   // validator cannot attribute to a single snapshot row.
   if (addonId && variantId) {
-    throw new InventoryServiceError(400, 'A movement moves either a variant pool or an add-on pool, not both');
+    throw new InventoryServiceError(
+      400,
+      'A movement moves either a variant pool or an add-on pool, not both',
+    );
   }
   if (addonId && options.productId) {
-    throw new InventoryServiceError(400, 'A movement moves either a product pool or an add-on pool, not both');
+    throw new InventoryServiceError(
+      400,
+      'A movement moves either a product pool or an add-on pool, not both',
+    );
   }
   if (!options.productId && !addonId) {
     throw new InventoryServiceError(400, 'product_id or addon_id is required');
@@ -215,7 +231,9 @@ export function adjustProductStock(
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
   const stockAfter = Number(updatedStock.stock_quantity);
-  const effectiveQuantityDelta = Number((stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION));
+  const effectiveQuantityDelta = Number(
+    (stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION),
+  );
 
   db.prepare(`
     INSERT INTO inventory_movements (
@@ -229,7 +247,9 @@ export function adjustProductStock(
     effectiveQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
-    options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),
+    options.referenceId === null || options.referenceId === undefined
+      ? null
+      : String(options.referenceId),
     options.reason ?? null,
     options.actorUserId,
     stockAfter,
@@ -259,8 +279,15 @@ export function listInventoryMovements(
     params.push(filters.movementType);
   }
   if (filters.referenceType && filters.referenceId) {
-    conditions.push('((m.reference_type = ? AND m.reference_id = ?) OR (m.source_reference_type = ? AND m.source_reference_id = ?))');
-    params.push(filters.referenceType, filters.referenceId, filters.referenceType, filters.referenceId);
+    conditions.push(
+      '((m.reference_type = ? AND m.reference_id = ?) OR (m.source_reference_type = ? AND m.source_reference_id = ?))',
+    );
+    params.push(
+      filters.referenceType,
+      filters.referenceId,
+      filters.referenceType,
+      filters.referenceId,
+    );
   } else if (filters.referenceType) {
     conditions.push('(m.reference_type = ? OR m.source_reference_type = ?)');
     params.push(filters.referenceType, filters.referenceType);
@@ -269,9 +296,9 @@ export function listInventoryMovements(
     params.push(filters.referenceId, filters.referenceId);
   }
   if (filters.beforeId !== undefined) {
-    const cursor = db.prepare('SELECT created_at FROM inventory_movements WHERE id = ?').get(filters.beforeId) as
-      | { created_at: string }
-      | undefined;
+    const cursor = db
+      .prepare('SELECT created_at FROM inventory_movements WHERE id = ?')
+      .get(filters.beforeId) as { created_at: string } | undefined;
     if (cursor) {
       conditions.push('(m.created_at, m.id) < (?, ?)');
       params.push(cursor.created_at, filters.beforeId);
@@ -280,7 +307,8 @@ export function listInventoryMovements(
 
   const perPage = filters.perPage ?? 50;
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT
       m.id,
       m.product_id,
@@ -311,7 +339,8 @@ export function listInventoryMovements(
     ${whereSql}
     ORDER BY m.created_at DESC, m.id DESC
     LIMIT ?
-  `).all(...params, perPage + 1) as InventoryMovement[];
+  `)
+    .all(...params, perPage + 1) as InventoryMovement[];
 
   const hasMore = rows.length > perPage;
   const movements = hasMore ? rows.slice(0, perPage) : rows;

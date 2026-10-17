@@ -2267,28 +2267,44 @@ router.patch(
       }
 
       let preVerifiedStatusApprover: { id: string; verifiedPinHash: string } | null = null;
-      if (override_pin && typeof override_pin === 'string' && /^\d{4,6}$/.test(override_pin)) {
-        const explicitApproverId =
-          req.body.approver_id || req.body.manager_id || req.body.user_id;
-        const candidateUsers = explicitApproverId
-          ? (db
-              .prepare(
-                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
-              )
-              .all(explicitApproverId) as PinApproverCandidate[])
-          : (db
-              .prepare('SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-              .all() as PinApproverCandidate[]);
+      if (
+        (status === 'cancelled' || status === 'completed') &&
+        override_pin &&
+        typeof override_pin === 'string'
+      ) {
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const rateLimitKey =
+          status === 'cancelled'
+            ? `pin:${clientIp}:order-cancel`
+            : `pin:${clientIp}:order-complete`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res
+            .status(429)
+            .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (/^\d{4,6}$/.test(override_pin)) {
+          const explicitApproverId =
+            req.body.approver_id || req.body.manager_id || req.body.user_id;
+          const candidateUsers = explicitApproverId
+            ? (db
+                .prepare(
+                  'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+                )
+                .all(explicitApproverId) as PinApproverCandidate[])
+            : (db
+                .prepare('SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
+                .all() as PinApproverCandidate[]);
 
-        for (const candidate of candidateUsers) {
-          if (
-            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-            hasPermission(candidate.id, 'orders.status.update') &&
-            (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
-          ) {
-            if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
-              preVerifiedStatusApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
-              break;
+          for (const candidate of candidateUsers) {
+            if (
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'orders.status.update') &&
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
+            ) {
+              if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
+                preVerifiedStatusApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
+                break;
+              }
             }
           }
         }
@@ -3899,27 +3915,37 @@ router.patch(
         return res.status(404).json({ error: 'Item not found in this order' });
       }
 
+      const isItemVoidInProgress = ['preparing', 'ready'].includes(item.status);
       let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
-      if (override_pin && typeof override_pin === 'string' && /^\d{4,6}$/.test(override_pin)) {
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
-        const candidateUsers = managerId
-          ? (db
-              .prepare(
-                'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
-              )
-              .all(managerId) as { id: string; role: string; pin_hash: string; is_active: number }[])
-          : (db
-              .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
-              .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
+      if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const rateLimitKey = `pin:${clientIp}:item-void`;
+        if (isPinRateLimited(rateLimitKey)) {
+          return res
+            .status(429)
+            .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (/^\d{4,6}$/.test(override_pin)) {
+          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+          const candidateUsers = managerId
+            ? (db
+                .prepare(
+                  'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+                )
+                .all(managerId) as { id: string; role: string; pin_hash: string; is_active: number }[])
+            : (db
+                .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+                .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
 
-        for (const candidate of candidateUsers) {
-          if (
-            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-            hasPermission(candidate.id, 'orders.item.void')
-          ) {
-            if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
-              preVerifiedVoidApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
-              break;
+          for (const candidate of candidateUsers) {
+            if (
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'orders.item.void')
+            ) {
+              if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
+                preVerifiedVoidApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
+                break;
+              }
             }
           }
         }

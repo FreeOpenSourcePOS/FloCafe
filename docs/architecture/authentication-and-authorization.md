@@ -145,10 +145,10 @@ authorizes per message. See below.
 
 ### Three separate token-verification middlewares
 
-`isTokenRevoked`, `isTokenStale`, `getJWTSecret`, `rateLimit`, `authRateLimit`, and
-`staticRouteRateLimit` are exported from one module and imported by all three servers, so the
-primitives are shared. The *middleware body* that sequences them is not: each server writes its
-own.
+`isTokenRevoked`, `isTokenStale`, `getJWTSecret`, `rateLimit`, `authRateLimit`,
+`loginAuthRateLimit`, and `staticRouteRateLimit` are exported from one module and imported by all
+three servers, so the primitives are shared. The *middleware body* that sequences them is not: each
+server writes its own.
 
 | Server | Middleware | Shape |
 | --- | --- | --- |

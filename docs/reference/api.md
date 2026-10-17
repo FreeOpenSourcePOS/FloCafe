@@ -102,14 +102,23 @@ the same LAN-exempt helper, and `3003` applies 150 per minute. `express-rate-lim
 `rateLimit` helper in [`main/middleware/security.ts`](../../main/middleware/security.ts) does the
 same.
 
-`authRateLimit` is the one limiter that deliberately does **not** exempt private addresses. It
-does not bypass private IPs, so LAN clients are counted. Five routes use it: the three
-credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
-`POST /api/auth/recover-password` on `3001`, plus `POST /api/staff` and `PUT /api/staff/:id`, which
-create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable
-with `FLO_AUTH_RATE_LIMIT_MAX`.
+`loginAuthRateLimit` and `authRateLimit` deliberately do **not** exempt private addresses, so
+LAN clients are counted against authentication rate limits.
 
-In addition to the `authRateLimit` volume limiter, `POST /api/auth/login` on `3001`, `3002`, and `3003` shares an install-wide failed-login attempt budget keyed to canonical client IP (`normalizeIpForRateLimit`). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429` with `error: "Too many failed attempts. Try again in X minutes."`). Successful login on any listener resets the failed attempt count for that IP. Non-credential rejections (such as `403` role/permission checks on valid passwords) do not count as credential failures.
+`loginAuthRateLimit` is the shared volume limiter across all three default login endpoints
+(`POST /api/auth/login` on `3001`, `3002`, and `3003`). It reuses a single shared budget
+(default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`).
+In addition, these three login endpoints share an install-wide failed-login attempt lockout keyed to
+canonical client IP (`normalizeIpForRateLimit`): 5 failed credential attempts across any
+combination of the three listeners triggers a 15-minute lockout (`429`). Successful login on any listener
+resets the counter for that IP. See
+[`docs/architecture/authentication-and-authorization.md`](../architecture/authentication-and-authorization.md#shared-login-attempt-rate-limiting-across-servers)
+for architecture and role/permission handling details.
+
+`authRateLimit` provides independent per-route volume limiters (also defaulting to 10 attempts
+per 15 minutes, overridable with `FLO_AUTH_RATE_LIMIT_MAX`) for non-login credential and staff
+routes on `3001`: `POST /api/auth/password/change`, `POST /api/auth/recover-password`,
+`POST /api/staff`, and `PUT /api/staff/:id`.
 
 Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
 their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
@@ -147,7 +156,7 @@ Router: `main/routes/auth.ts`. Full path: `/api/auth`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/login` | any authenticated role + auth limiter | body: `email`, `password`, `rememberMe` | `{ access_token, token_type: "bearer", expires_in, user: { id, name, email, role, category_ids }, tenants: [ ... ] }`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners. |
+| `POST` | `/login` | none, `loginAuthRateLimit` + shared failed-login limiter | body: `email`, `password`, `rememberMe` | `{ access_token, token_type: "bearer", expires_in, user: { id, name, email, role, category_ids }, tenants: [ ... ] }`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners. |
 | `POST` | `/tenants/select` | any authenticated role | none | `{ access_token, token_type: "bearer", tenant }`. |
 | `POST` | `/logout` | any authenticated role | none | `{ message }`. Revokes the presented token. |
 | `POST` | `/refresh` | any authenticated role | none | `{ access_token, token_type: "bearer", expires_in }`. |
@@ -873,7 +882,7 @@ The KDS server reads the same database as the main API. Its whole surface:
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | none | `{ status, service, version, timestamp }` |
 | `GET` | `/api/kds/info` | none | none | `{ language, country, kds_default_view }` for the pre-login display. `404` when KDS is disabled, so the surface is not advertised to the LAN. |
-| `POST` | `/api/auth/login` | none, `authRateLimit` + shared failed-login limiter | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `kitchen`. |
+| `POST` | `/api/auth/login` | none, `loginAuthRateLimit` + shared failed-login limiter | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `kitchen`. |
 | `POST` | `/api/auth/logout` | bearer token, not role-gated | none | `{ message }`. Revokes the token. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.kitchen` | none | `{ user: { id, name, email, role } }` |
 | `GET` | `/api/kds/orders` | `ROLE_ACCESS.kitchen` | none | `{ orders, counts }`, the same projection and the same category and station narrowing as the WebSocket `initial_data` frame. `403` when KDS is disabled or the caller has no active station. |
@@ -923,7 +932,7 @@ The seven routes that are not forwards:
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | `{ status, service, version, timestamp }` |
 | `GET` | `/api/server-app/info` | none | `{ language, country, currency, currency_symbol, currency_position, currency_fraction_digits, kds_enabled }`. `404` when the feature is disabled; `409` with `error: "regional_not_configured"` when the regional snapshot cannot be resolved. |
-| `POST` | `/api/auth/login` | none, `authRateLimit` + shared failed-login limiter | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `ROLE_ACCESS.serverApp`. |
+| `POST` | `/api/auth/login` | none, `loginAuthRateLimit` + shared failed-login limiter | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `ROLE_ACCESS.serverApp`. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.serverApp` | `{ user: { id, name, email, role } }` |
 | `POST` | `/api/auth/logout` | `ROLE_ACCESS.serverApp` | `{ success: true }`, revoking the token |
 | `GET` | `/` | none | Redirect to `/server-standalone` |

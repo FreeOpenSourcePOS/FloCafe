@@ -134,8 +134,20 @@ async function main() {
     { id: 'user-owner', name: 'Owner User', email: 'owner@test.com', role: 'owner', active: 1 },
     { id: 'user-chef', name: 'Chef User', email: 'chef@test.com', role: 'chef', active: 1 },
     { id: 'user-server', name: 'Server User', email: 'server@test.com', role: 'server', active: 1 },
-    { id: 'user-cashier', name: 'Cashier User', email: 'cashier@test.com', role: 'cashier', active: 1 },
-    { id: 'user-disabled', name: 'Disabled User', email: 'disabled@test.com', role: 'server', active: 0 },
+    {
+      id: 'user-cashier',
+      name: 'Cashier User',
+      email: 'cashier@test.com',
+      role: 'cashier',
+      active: 1,
+    },
+    {
+      id: 'user-disabled',
+      name: 'Disabled User',
+      email: 'disabled@test.com',
+      role: 'server',
+      active: 0,
+    },
   ];
 
   for (const u of users) {
@@ -184,12 +196,24 @@ async function main() {
     console.log('Testing volume rate limiter isolation & sharing...');
     const loginLimiter1 = loginAuthRateLimit();
     const loginLimiter2 = loginAuthRateLimit();
-    assert.equal(loginLimiter1, loginLimiter2, 'loginAuthRateLimit returns the same shared singleton instance');
+    assert.equal(
+      loginLimiter1,
+      loginLimiter2,
+      'loginAuthRateLimit returns the same shared singleton instance',
+    );
 
     const authLimiter1 = authRateLimit();
     const authLimiter2 = authRateLimit();
-    assert.notEqual(authLimiter1, authLimiter2, 'authRateLimit returns separate instances for non-login routes');
-    assert.notEqual(authLimiter1, loginLimiter1, 'authRateLimit does not share instance with loginAuthRateLimit');
+    assert.notEqual(
+      authLimiter1,
+      authLimiter2,
+      'authRateLimit returns separate instances for non-login routes',
+    );
+    assert.notEqual(
+      authLimiter1,
+      loginLimiter1,
+      'authRateLimit does not share instance with loginAuthRateLimit',
+    );
 
     // ── Part 2: Cross-Server Failed Login Accumulation & Lockout ─────────────
     console.log('Testing cross-listener failed login accumulation...');
@@ -209,7 +233,11 @@ async function main() {
       password: 'WrongPassword2',
     });
     assert.equal(res2.status, 401, 'KDS rejected bad password with 401');
-    assert.equal(res2.body.attempts_remaining, 3, 'Remaining attempts is 3 after 2nd failure across servers');
+    assert.equal(
+      res2.body.attempts_remaining,
+      3,
+      'Remaining attempts is 3 after 2nd failure across servers',
+    );
 
     // 3rd failed attempt on Server App (:3003)
     const res3 = await postJson(serverAppBaseUrl, '/api/auth/login', {
@@ -217,7 +245,11 @@ async function main() {
       password: 'WrongPassword3',
     });
     assert.equal(res3.status, 401, 'Server App rejected bad password with 401');
-    assert.equal(res3.body.attempts_remaining, 2, 'Remaining attempts is 2 after 3rd failure across servers');
+    assert.equal(
+      res3.body.attempts_remaining,
+      2,
+      'Remaining attempts is 2 after 3rd failure across servers',
+    );
 
     // 4th failed attempt on Main POS API (:3001)
     const res4 = await postJson(mainBaseUrl, '/api/auth/login', {
@@ -244,7 +276,8 @@ async function main() {
     });
     assert.equal(res6Main.status, 429, 'Main API returns 429 after 5 failures');
     assert(
-      typeof res6Main.body.error === 'string' && res6Main.body.error.includes('Too many failed attempts'),
+      typeof res6Main.body.error === 'string' &&
+        res6Main.body.error.includes('Too many failed attempts'),
       'Main API response contains lockout message',
     );
 
@@ -255,7 +288,8 @@ async function main() {
     });
     assert.equal(res6Kds.status, 429, 'KDS returns 429 after 5 failures');
     assert(
-      typeof res6Kds.body.error === 'string' && res6Kds.body.error.includes('Too many failed attempts'),
+      typeof res6Kds.body.error === 'string' &&
+        res6Kds.body.error.includes('Too many failed attempts'),
       'KDS response contains lockout message',
     );
 
@@ -266,7 +300,8 @@ async function main() {
     });
     assert.equal(res6ServerApp.status, 429, 'Server App returns 429 after 5 failures');
     assert(
-      typeof res6ServerApp.body.error === 'string' && res6ServerApp.body.error.includes('Too many failed attempts'),
+      typeof res6ServerApp.body.error === 'string' &&
+        res6ServerApp.body.error.includes('Too many failed attempts'),
       'Server App response contains lockout message',
     );
 
@@ -275,19 +310,31 @@ async function main() {
       email: 'owner@test.com',
       password: 'CorrectPassword123!',
     });
-    assert.equal(validMainDuringLockout.status, 429, 'Main API rejects valid credentials during lockout with 429');
+    assert.equal(
+      validMainDuringLockout.status,
+      429,
+      'Main API rejects valid credentials during lockout with 429',
+    );
 
     const validKdsDuringLockout = await postJson(kdsBaseUrl, '/api/auth/login', {
       email: 'chef@test.com',
       password: 'CorrectPassword123!',
     });
-    assert.equal(validKdsDuringLockout.status, 429, 'KDS rejects valid credentials during lockout with 429');
+    assert.equal(
+      validKdsDuringLockout.status,
+      429,
+      'KDS rejects valid credentials during lockout with 429',
+    );
 
     const validServerAppDuringLockout = await postJson(serverAppBaseUrl, '/api/auth/login', {
       email: 'server@test.com',
       password: 'CorrectPassword123!',
     });
-    assert.equal(validServerAppDuringLockout.status, 429, 'Server App rejects valid credentials during lockout with 429');
+    assert.equal(
+      validServerAppDuringLockout.status,
+      429,
+      'Server App rejects valid credentials during lockout with 429',
+    );
 
     // ── Part 3: Successful Login Resets Counter for That IP ──────────────────
     console.log('Testing successful login reset...');
@@ -296,7 +343,10 @@ async function main() {
     // Accumulate 3 failed attempts across servers
     await postJson(mainBaseUrl, '/api/auth/login', { email: 'owner@test.com', password: 'bad1' });
     await postJson(kdsBaseUrl, '/api/auth/login', { email: 'owner@test.com', password: 'bad2' });
-    const fail3 = await postJson(serverAppBaseUrl, '/api/auth/login', { email: 'owner@test.com', password: 'bad3' });
+    const fail3 = await postJson(serverAppBaseUrl, '/api/auth/login', {
+      email: 'owner@test.com',
+      password: 'bad3',
+    });
     assert.equal(fail3.body.attempts_remaining, 2, '3 failed attempts leave 2 remaining');
 
     // Perform a successful login on Server App
@@ -313,7 +363,11 @@ async function main() {
       password: 'badAfterSuccess',
     });
     assert.equal(afterSuccessFail.status, 401, 'Main API rejects invalid credentials');
-    assert.equal(afterSuccessFail.body.attempts_remaining, 4, 'Successful login on Server App reset failure counter to 0');
+    assert.equal(
+      afterSuccessFail.body.attempts_remaining,
+      4,
+      'Successful login on Server App reset failure counter to 0',
+    );
 
     // Accumulate 2 failures, then succeed on Main API
     await postJson(kdsBaseUrl, '/api/auth/login', { email: 'owner@test.com', password: 'badKds' });
@@ -329,7 +383,11 @@ async function main() {
       password: 'badKdsAfterSuccess',
     });
     assert.equal(afterMainSuccessFail.status, 401, 'KDS rejects invalid credentials');
-    assert.equal(afterMainSuccessFail.body.attempts_remaining, 4, 'Successful login on Main API reset failure counter to 0');
+    assert.equal(
+      afterMainSuccessFail.body.attempts_remaining,
+      4,
+      'Successful login on Main API reset failure counter to 0',
+    );
 
     // ── Part 4: Role/Permission Enforcement on Valid Credentials ─────────────
     console.log('Testing role and permission enforcement across listeners...');
@@ -349,7 +407,11 @@ async function main() {
       email: 'owner@test.com',
       password: 'badPasswordCheck',
     });
-    assert.equal(checkAfter403.body.attempts_remaining, 4, '403 permission denial did not increment failed login attempts');
+    assert.equal(
+      checkAfter403.body.attempts_remaining,
+      4,
+      '403 permission denial did not increment failed login attempts',
+    );
 
     clearLoginRateLimits();
 
@@ -359,7 +421,11 @@ async function main() {
       email: 'chef@test.com',
       password: 'CorrectPassword123!',
     });
-    assert.equal(chefOnServerApp.status, 403, 'Server App returns 403 for chef role lacking server-app.use');
+    assert.equal(
+      chefOnServerApp.status,
+      403,
+      'Server App returns 403 for chef role lacking server-app.use',
+    );
     assert.equal(chefOnServerApp.body.code, 'permission_denied');
 
     // Verify this 403 does NOT count as a failed login attempt
@@ -367,7 +433,11 @@ async function main() {
       email: 'chef@test.com',
       password: 'badPasswordCheck2',
     });
-    assert.equal(checkAfterServerApp403.body.attempts_remaining, 4, '403 on Server App did not increment failed login attempts');
+    assert.equal(
+      checkAfterServerApp403.body.attempts_remaining,
+      4,
+      '403 on Server App did not increment failed login attempts',
+    );
 
     // ── Part 5: Deactivated Users Cannot Log In ──────────────────────────────
     console.log('Testing deactivated user handling...');
@@ -378,7 +448,11 @@ async function main() {
       password: 'CorrectPassword123!',
     });
     assert.equal(deactMain.status, 401, 'Deactivated user rejected on Main API');
-    assert.equal(deactMain.body.attempts_remaining, 4, 'Inactive user attempt counts as failed attempt');
+    assert.equal(
+      deactMain.body.attempts_remaining,
+      4,
+      'Inactive user attempt counts as failed attempt',
+    );
 
     const deactKds = await postJson(kdsBaseUrl, '/api/auth/login', {
       email: 'disabled@test.com',
@@ -434,7 +508,12 @@ async function main() {
     assert.equal(serverMeBefore.body.user.email, 'server@test.com');
 
     // Log out on Server App
-    const serverLogoutRes = await postJson(serverAppBaseUrl, '/api/auth/logout', {}, serverAppToken);
+    const serverLogoutRes = await postJson(
+      serverAppBaseUrl,
+      '/api/auth/logout',
+      {},
+      serverAppToken,
+    );
     assert.equal(serverLogoutRes.status, 200, 'Server App logout succeeded');
 
     // Token must now be rejected on Server App

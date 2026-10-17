@@ -86,7 +86,9 @@ Common rules, enforced in the handlers:
 - `discount_max_percentage` (default 25) and `discount_max_amount` (`0` means no limit) cap the
   value. A discount above the cap is a `400`.
 - `discount_requires_approval` requires a manager PIN, and the approving user must itself hold the
-  discount permission.
+  discount permission. When an approver is explicitly supplied (`approver_id`, `manager_id`, or
+  `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
+  without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
   subtotal. Re-applying a discount never compounds on the previous one.
 - The discount rescales each line's tax by the discounted share of the subtotal and rounds to the

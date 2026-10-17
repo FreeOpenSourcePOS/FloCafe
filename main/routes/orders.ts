@@ -66,6 +66,8 @@ import { randomUUID } from 'crypto';
 import { isAllowedPrivateIp } from '../middleware/security';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
+type PinApproverCandidate = { id: string; role: string; pin_hash: string };
+
 const router = Router();
 const ORDER_WRITE_RATE_LIMIT_ERROR = {
   error: 'Too many requests, please try again later.',
@@ -2521,7 +2523,6 @@ router.patch(
             });
           }
 
-          type PinApproverCandidate = { id: string; role: string; pin_hash: string };
           const explicitApproverId =
             req.body.approver_id || req.body.manager_id || req.body.user_id;
           const candidateUsers = explicitApproverId
@@ -3021,10 +3022,10 @@ router.patch(
                 .prepare(
                   'SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
                 )
-                .all(explicitApproverId) as any[])
+                .all(explicitApproverId) as PinApproverCandidate[])
             : (db
                 .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-                .all() as any[]);
+                .all() as PinApproverCandidate[]);
           const user = candidateUsers.find(
             (candidate) =>
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
@@ -3393,17 +3394,16 @@ router.patch(
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const explicitApproverId =
-          req.body.approver_id || req.body.manager_id || req.body.user_id;
+        const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
                 'SELECT * FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
               )
-              .all(explicitApproverId) as any[])
+              .all(explicitApproverId) as PinApproverCandidate[])
           : (db
               .prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL')
-              .all() as any[]);
+              .all() as PinApproverCandidate[]);
         const user = candidateUsers.find(
           (candidate) =>
             hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&

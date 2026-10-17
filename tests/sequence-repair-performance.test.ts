@@ -69,27 +69,45 @@ async function main() {
     db.prepare('DELETE FROM bills').run();
     db.prepare('DELETE FROM sequences').run();
 
-    db.prepare("INSERT INTO sequences (name, date, current_value) VALUES ('orders', '20261017', 1)").run();
+    db.prepare(
+      "INSERT INTO sequences (name, date, current_value) VALUES ('orders', '20261017', 1)",
+    ).run();
     db.prepare("INSERT INTO orders (order_number) VALUES ('ORD-20261017-0001')").run();
     db.prepare("INSERT INTO orders (order_number) VALUES ('ORD-20261017-0005')").run();
 
     const repairGapResult = repairSequences(true);
     assertOrThrow(repairGapResult.repaired === true, 'Repair executed on force');
 
-    const gapSeq = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261017'").get() as any;
-    assertEqualOrThrow(gapSeq.current_value, 5, 'Stored counter advanced from 1 to greatest suffix 5 across gap');
+    const gapSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261017'")
+      .get() as any;
+    assertEqualOrThrow(
+      gapSeq.current_value,
+      5,
+      'Stored counter advanced from 1 to greatest suffix 5 across gap',
+    );
 
     // 1.2 Higher existing counter: stored counter 25, orders only up to 5
-    db.prepare("UPDATE sequences SET current_value = 25 WHERE name = 'orders' AND date = '20261017'").run();
+    db.prepare(
+      "UPDATE sequences SET current_value = 25 WHERE name = 'orders' AND date = '20261017'",
+    ).run();
     repairSequences(true);
-    const highSeq = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261017'").get() as any;
+    const highSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261017'")
+      .get() as any;
     assertEqualOrThrow(highSeq.current_value, 25, 'Existing higher counter 25 is never lowered');
 
     // 1.3 Absent counter: date with orders but no sequence row
     db.prepare("INSERT INTO orders (order_number) VALUES ('ORD-20261018-0008')").run();
     repairSequences(true);
-    const absentSeq = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261018'").get() as any;
-    assertEqualOrThrow(absentSeq.current_value, 8, 'Absent sequence row seeded to greatest suffix 8');
+    const absentSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20261018'")
+      .get() as any;
+    assertEqualOrThrow(
+      absentSeq.current_value,
+      8,
+      'Absent sequence row seeded to greatest suffix 8',
+    );
 
     // 1.4 Next sequence generation strictly exceeds maximum without value reuse
     const nextOrderNum = generateOrderNumber();
@@ -108,16 +126,16 @@ async function main() {
 
     // Insert malformed variants that must NOT seed or corrupt sequence counters
     const malformedOrders = [
-      'ORD-20261020-0',           // zero suffix
-      'ORD-20261020-0000',        // multi-zero suffix
-      'ORD-20261020-00a',         // non-numeric suffix
-      'ORD-20261020-foo',         // text suffix
-      'ORD-20261020-',            // empty suffix
-      'ORD-20261020-0005-extra',  // trailing hyphen segment
-      'ORD-2026102-0001',         // 7-digit date
-      'ORD-202610201-0001',       // 9-digit date
-      'FAC-20261020-0001',        // non-canonical order prefix
-      'CUSTOM-20261020-0001',     // non-canonical prefix
+      'ORD-20261020-0', // zero suffix
+      'ORD-20261020-0000', // multi-zero suffix
+      'ORD-20261020-00a', // non-numeric suffix
+      'ORD-20261020-foo', // text suffix
+      'ORD-20261020-', // empty suffix
+      'ORD-20261020-0005-extra', // trailing hyphen segment
+      'ORD-2026102-0001', // 7-digit date
+      'ORD-202610201-0001', // 9-digit date
+      'FAC-20261020-0001', // non-canonical order prefix
+      'CUSTOM-20261020-0001', // non-canonical prefix
     ];
 
     for (const mo of malformedOrders) {
@@ -130,10 +148,20 @@ async function main() {
     repairSequences(true);
 
     const malformedSeq = db.prepare("SELECT * FROM sequences WHERE date = '20261020'").get();
-    assertEqualOrThrow(malformedSeq, undefined, 'Malformed suffixes, non-canonical prefixes, and zero suffixes ignored');
+    assertEqualOrThrow(
+      malformedSeq,
+      undefined,
+      'Malformed suffixes, non-canonical prefixes, and zero suffixes ignored',
+    );
 
-    const validSeq = db.prepare("SELECT current_value FROM sequences WHERE date = '20261021'").get() as any;
-    assertEqualOrThrow(validSeq?.current_value, 3, 'Valid order sequence on 20261021 parsed correctly');
+    const validSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE date = '20261021'")
+      .get() as any;
+    assertEqualOrThrow(
+      validSeq?.current_value,
+      3,
+      'Valid order sequence on 20261021 parsed correctly',
+    );
 
     // ─────────────────────────────────────────────────────────────────────────
     // Section 3: Recovery Triggering & Ordinary Startup Fast-Path
@@ -148,20 +176,38 @@ async function main() {
 
     // Ordinary boot check with sequences intact: must skip scan
     const ordinaryBootResult = repairSequences(false);
-    assertEqualOrThrow(ordinaryBootResult.repaired, false, 'Ordinary boot skips historical scan when sequences are in sync');
+    assertEqualOrThrow(
+      ordinaryBootResult.repaired,
+      false,
+      'Ordinary boot skips historical scan when sequences are in sync',
+    );
 
     // Setting sequence_repair_pending = '1' re-triggers repair
     db.prepare("UPDATE settings SET value = '1' WHERE key = 'sequence_repair_pending'").run();
     const pendingBootResult = repairSequences(false);
-    assertEqualOrThrow(pendingBootResult.repaired, true, 'sequence_repair_pending = 1 successfully triggers repair');
-    assertEqualOrThrow(getSettingValue('sequence_repair_pending'), '0', 'sequence_repair_pending reset to 0 after repair');
+    assertEqualOrThrow(
+      pendingBootResult.repaired,
+      true,
+      'sequence_repair_pending = 1 successfully triggers repair',
+    );
+    assertEqualOrThrow(
+      getSettingValue('sequence_repair_pending'),
+      '0',
+      'sequence_repair_pending reset to 0 after repair',
+    );
 
     // Self-healing fallback: if sequences table is wiped while orders exist
     db.prepare('DELETE FROM sequences').run();
     assertOrThrow(Boolean(db.prepare('SELECT 1 FROM orders LIMIT 1').get()), 'Orders exist');
     const selfHealResult = repairSequences(false);
-    assertEqualOrThrow(selfHealResult.repaired, true, 'Self-healing triggered when sequences table is empty but orders exist');
-    const healedSeq = db.prepare("SELECT current_value FROM sequences WHERE date = '20261021'").get() as any;
+    assertEqualOrThrow(
+      selfHealResult.repaired,
+      true,
+      'Self-healing triggered when sequences table is empty but orders exist',
+    );
+    const healedSeq = db
+      .prepare("SELECT current_value FROM sequences WHERE date = '20261021'")
+      .get() as any;
     assertEqualOrThrow(healedSeq?.current_value, 3, 'Sequences restored by self-healing');
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -200,16 +246,35 @@ async function main() {
     const repair100kDuration = repair100kT1 - repair100kT0;
     const heapDelta100k = memAfter100k - memBefore100k;
 
-    console.log(`  100k Repair duration: ${repair100kDuration.toFixed(2)} ms (order updates: ${repair100kRes.orderSequencesUpdated}, bill updates: ${repair100kRes.billSequencesUpdated})`);
+    console.log(
+      `  100k Repair duration: ${repair100kDuration.toFixed(2)} ms (order updates: ${repair100kRes.orderSequencesUpdated}, bill updates: ${repair100kRes.billSequencesUpdated})`,
+    );
     console.log(`  100k Heap delta: ${(heapDelta100k / 1024).toFixed(1)} KB`);
 
-    assertEqualOrThrow(repair100kRes.orderSequencesUpdated, 1000, 'All 1,000 order date buckets seeded');
-    assertEqualOrThrow(repair100kRes.billSequencesUpdated, 1000, 'All 1,000 bill date buckets seeded');
-    assertOrThrow(heapDelta100k < 2 * 1024 * 1024, `Heap delta must be < 2 MB, was ${(heapDelta100k / 1024).toFixed(1)} KB`);
+    assertEqualOrThrow(
+      repair100kRes.orderSequencesUpdated,
+      1000,
+      'All 1,000 order date buckets seeded',
+    );
+    assertEqualOrThrow(
+      repair100kRes.billSequencesUpdated,
+      1000,
+      'All 1,000 bill date buckets seeded',
+    );
+    assertOrThrow(
+      heapDelta100k < 2 * 1024 * 1024,
+      `Heap delta must be < 2 MB, was ${(heapDelta100k / 1024).toFixed(1)} KB`,
+    );
 
     // Verify sample sequences match maximums (100)
-    const sampleSeq100k = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20100500'").get() as any;
-    assertEqualOrThrow(sampleSeq100k?.current_value, 100, 'Sample date 20100500 has high-water 100');
+    const sampleSeq100k = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20100500'")
+      .get() as any;
+    assertEqualOrThrow(
+      sampleSeq100k?.current_value,
+      100,
+      'Sample date 20100500 has high-water 100',
+    );
 
     // Test ordinary boot fast-path over 100k dataset
     const fastBoot100kT0 = performance.now();
@@ -219,7 +284,10 @@ async function main() {
 
     console.log(`  100k Ordinary boot duration: ${fastBoot100kDuration.toFixed(3)} ms`);
     assertEqualOrThrow(fastBoot100kRes.repaired, false, 'Ordinary boot skips scanning 100k rows');
-    assertOrThrow(fastBoot100kDuration < 15, `Ordinary boot must take < 15 ms, took ${fastBoot100kDuration.toFixed(2)} ms`);
+    assertOrThrow(
+      fastBoot100kDuration < 15,
+      `Ordinary boot must take < 15 ms, took ${fastBoot100kDuration.toFixed(2)} ms`,
+    );
 
     // ─────────────────────────────────────────────────────────────────────────
     // Section 5: Scale Benchmark at 365k Rows (10 Years of Data)
@@ -256,12 +324,24 @@ async function main() {
     console.log(`  365k Repair duration: ${repair365kDuration.toFixed(2)} ms`);
     console.log(`  365k Heap delta: ${(heapDelta365k / 1024).toFixed(1)} KB`);
 
-    assertOrThrow(repair365kDuration < 1500, `Repair duration must be < 1500 ms, took ${repair365kDuration.toFixed(2)} ms`);
-    assertOrThrow(heapDelta365k < 2 * 1024 * 1024, `Heap delta must be < 2 MB, was ${(heapDelta365k / 1024).toFixed(1)} KB`);
+    assertOrThrow(
+      repair365kDuration < 1500,
+      `Repair duration must be < 1500 ms, took ${repair365kDuration.toFixed(2)} ms`,
+    );
+    assertOrThrow(
+      heapDelta365k < 2 * 1024 * 1024,
+      `Heap delta must be < 2 MB, was ${(heapDelta365k / 1024).toFixed(1)} KB`,
+    );
 
     // Verify sample date in newly added range
-    const sample365k = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20102500'").get() as any;
-    assertEqualOrThrow(sample365k?.current_value, 100, 'Sample 365k order sequence has high-water 100');
+    const sample365k = db
+      .prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = '20102500'")
+      .get() as any;
+    assertEqualOrThrow(
+      sample365k?.current_value,
+      100,
+      'Sample 365k order sequence has high-water 100',
+    );
 
     // Test ordinary boot fast-path over 365k dataset
     const fastBoot365kT0 = performance.now();
@@ -271,7 +351,10 @@ async function main() {
 
     console.log(`  365k Ordinary boot duration: ${fastBoot365kDuration.toFixed(3)} ms`);
     assertEqualOrThrow(fastBoot365kRes.repaired, false, 'Ordinary boot skips scanning 365k rows');
-    assertOrThrow(fastBoot365kDuration < 15, `Ordinary boot must take < 15 ms, took ${fastBoot365kDuration.toFixed(2)} ms`);
+    assertOrThrow(
+      fastBoot365kDuration < 15,
+      `Ordinary boot must take < 15 ms, took ${fastBoot365kDuration.toFixed(2)} ms`,
+    );
 
     console.log('\n' + '='.repeat(60));
     console.log('✓ All sequence repair performance and correctness tests passed!');

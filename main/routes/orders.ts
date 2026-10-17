@@ -3227,11 +3227,21 @@ router.patch(
             pack,
             currency,
           );
+          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+            throw Object.assign(
+              new Error('Discount cannot reduce bill total below collected payments'),
+              { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+            );
+          }
           const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const isBillNowPaid = (existingBill.paid_amount || 0) > 0 && newBillBalance === 0;
           db.prepare(`
           UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN ? ELSE paid_at END,
+            updated_at = ?
           WHERE id = ?
         `).run(
             totals.subtotal,
@@ -3248,6 +3258,9 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );
@@ -3563,9 +3576,19 @@ router.patch(
             pack,
             currency,
           );
+          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+            throw Object.assign(
+              new Error('Discount cannot reduce bill total below collected payments'),
+              { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+            );
+          }
           const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const isBillNowPaid = (existingBill.paid_amount || 0) > 0 && newBillBalance === 0;
           db.prepare(
-            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`,
+            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN ? ELSE paid_at END,
+            updated_at = ? WHERE id = ?`,
           ).run(
             orderTotals.subtotal,
             billTotal,
@@ -3578,6 +3601,9 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );

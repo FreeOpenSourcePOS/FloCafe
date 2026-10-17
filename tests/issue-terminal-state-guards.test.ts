@@ -307,6 +307,168 @@ async function main(): Promise<void> {
       const after = billRow(db, billId);
       assertEqual(Number(after.total), Number(before.total), 'item-disc: bill total unchanged');
     }
+
+    // ── Issue #1176: Bill discount order-state guards, collected-funds validation, and audit logging ──
+    console.log('\n─── Issue #1176: Bill discount rejected on completed order ───');
+    {
+      resetPinRateLimitForTests();
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      // Complete unpaid order via manager PIN override
+      const completeRes = await setOrderStatus(orderId, {
+        status: 'completed',
+        override_pin: pin,
+      });
+      assertEqual(completeRes.status, 200, 'issue-1176: order completed with manager PIN override');
+      assertEqual(orderRow(db, orderId).status, 'completed', 'issue-1176: order is completed');
+      const beforeBill = billRow(db, billId);
+
+      const discRes = await applyBillDiscount(billId, { type: 'amount', value: 100 });
+      assertEqual(discRes.status, 409, 'issue-1176: bill discount on completed order rejected with 409');
+      assertEqual(discRes.data.display_code, 'order_not_discountable', 'issue-1176: display_code is order_not_discountable');
+
+      const afterBill = billRow(db, billId);
+      assertEqual(Number(afterBill.total), Number(beforeBill.total), 'issue-1176: bill total unchanged');
+      assertEqual(Number(afterBill.discount_amount), Number(beforeBill.discount_amount), 'issue-1176: bill discount_amount unchanged');
+
+      const audits = db.prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?').all(orderId, 'order_discount_applied');
+      assertEqual(audits.length, 0, 'issue-1176: no discount audit log created for rejected discount');
+    }
+
+    console.log('\n─── Issue #1176: Active unpaid bill discount succeeds and audits authenticated caller ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const discRes = await applyBillDiscount(billId, { type: 'amount', value: 100 });
+      assertEqual(discRes.status, 200, 'issue-1176: bill discount applied successfully');
+
+      const afterBill = billRow(db, billId);
+      assertEqual(Number(afterBill.total), 900, 'issue-1176: bill total reduced to 900');
+      assertEqual(Number(afterBill.discount_amount), 100, 'issue-1176: bill discount_amount is 100');
+      assertEqual(Number(afterBill.balance), 900, 'issue-1176: bill balance is 900');
+
+      const audit = db.prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?').get(orderId, 'order_discount_applied') as any;
+      assertEqual(Boolean(audit), true, 'issue-1176: discount audit row recorded');
+      assertEqual(audit.actor_user_id, ownerId, 'issue-1176: audit attributed to authenticated actor');
+      const details = JSON.parse(audit.details_json);
+      assertEqual(details.discount_type, 'amount', 'issue-1176: audit recorded discount_type');
+      assertEqual(details.discount_value, 100, 'issue-1176: audit recorded discount_value');
+      assertEqual(details.approved_by, undefined, 'issue-1176: approved_by is undefined when no PIN was required');
+    }
+
+    console.log('\n─── Issue #1176: PIN-approved bill discount attributes actor and approver separately ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'true');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const discRes = await applyBillDiscount(billId, {
+        type: 'amount',
+        value: 150,
+        override_pin: pin,
+      });
+      assertEqual(discRes.status, 200, 'issue-1176: PIN-approved bill discount applied successfully');
+
+      const afterBill = billRow(db, billId);
+      assertEqual(Number(afterBill.total), 850, 'issue-1176: bill total reduced to 850');
+      assertEqual(Number(afterBill.discount_amount), 150, 'issue-1176: bill discount_amount is 150');
+      assertEqual(Number(afterBill.balance), 850, 'issue-1176: bill balance is 850');
+
+      const audit = db.prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?').get(orderId, 'order_discount_applied') as any;
+      assertEqual(Boolean(audit), true, 'issue-1176: discount audit row recorded');
+      assertEqual(audit.actor_user_id, ownerId, 'issue-1176: audit attributed to authenticated actor');
+      const details = JSON.parse(audit.details_json);
+      assertEqual(details.discount_type, 'amount', 'issue-1176: audit recorded discount_type');
+      assertEqual(details.discount_value, 150, 'issue-1176: audit recorded discount_value');
+      assertEqual(details.approved_by, managerId, 'issue-1176: audit recorded approving manager');
+      assertEqual(details.override_pin, undefined, 'issue-1176: override_pin never saved in audit log');
+      assertEqual(audit.details_json.includes('1234'), false, 'issue-1176: raw PIN never saved in audit log');
+    }
+
+    console.log('\n─── Issue #1176: Partially paid bill discount preserves remaining balance ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const payRes = await pay(billId, { method: 'cash', amount: 300 });
+      assertEqual(payRes.status, 200, 'issue-1176: partial payment of 300 accepted');
+
+      const discRes = await applyBillDiscount(billId, { type: 'amount', value: 200 });
+      assertEqual(discRes.status, 200, 'issue-1176: partial payment discount of 200 accepted');
+
+      const afterBill = billRow(db, billId);
+      assertEqual(Number(afterBill.total), 800, 'issue-1176: bill total is 800');
+      assertEqual(Number(afterBill.paid_amount), 300, 'issue-1176: bill paid_amount is 300');
+      assertEqual(Number(afterBill.balance), 500, 'issue-1176: bill balance is 500 (800 - 300)');
+      assertEqual(afterBill.payment_status, 'partial', 'issue-1176: bill payment_status remains partial');
+    }
+
+    console.log('\n─── Issue #1176: Bill discount reducing total below collected funds is rejected ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const payRes = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(payRes.status, 200, 'issue-1176: partial payment of 600 accepted');
+
+      const beforeBill = billRow(db, billId);
+      // Attempting discount of 500 would reduce total to 500, below collected 600
+      const discRes = await applyBillDiscount(billId, { type: 'amount', value: 500 });
+      assertEqual(discRes.status, 409, 'issue-1176: discount below collected funds rejected with 409');
+      assertEqual(discRes.data.display_code, 'below_collected_funds', 'issue-1176: display_code is below_collected_funds');
+
+      const afterBill = billRow(db, billId);
+      assertEqual(Number(afterBill.total), Number(beforeBill.total), 'issue-1176: bill total unchanged');
+      assertEqual(Number(afterBill.paid_amount), 600, 'issue-1176: bill paid_amount unchanged');
+      assertEqual(Number(afterBill.balance), 400, 'issue-1176: bill balance unchanged');
+      assertEqual(afterBill.payment_status, 'partial', 'issue-1176: payment_status unchanged');
+
+      const refunds = db.prepare('SELECT * FROM refunds WHERE bill_id = ?').all(billId);
+      assertEqual(refunds.length, 0, 'issue-1176: no refund created on rejected discount');
+    }
+
+    console.log('\n─── Issue #1176: Order-level discount reducing total below collected funds is rejected ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const payRes = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(payRes.status, 200, 'issue-1176: partial payment of 600 accepted');
+
+      const beforeBill = billRow(db, billId);
+      const beforeOrder = orderRow(db, orderId);
+
+      // Attempt order discount of 500
+      const discRes = await applyOrderDiscount(orderId, { discount_type: 'amount', discount_value: 500 });
+      assertEqual(discRes.status, 409, 'issue-1176: order discount below collected funds rejected with 409');
+      assertEqual(discRes.data.display_code, 'below_collected_funds', 'issue-1176: display_code is below_collected_funds');
+
+      const afterBill = billRow(db, billId);
+      const afterOrder = orderRow(db, orderId);
+      assertEqual(Number(afterOrder.total), Number(beforeOrder.total), 'issue-1176: order total unchanged');
+      assertEqual(Number(afterBill.total), Number(beforeBill.total), 'issue-1176: bill total unchanged');
+      assertEqual(Number(afterBill.paid_amount), 600, 'issue-1176: bill paid_amount unchanged');
+      assertEqual(Number(afterBill.balance), 400, 'issue-1176: bill balance unchanged');
+    }
+
+    console.log('\n─── Issue #1176: Exact-balance discount auto-settles bill to paid ───');
+    {
+      resetPinRateLimitForTests();
+      setSetting(db, 'discount_requires_approval', 'false');
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const payRes = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(payRes.status, 200, 'issue-1176: partial payment of 600 accepted');
+
+      // Bill total is 1000, paid 600, balance 400. Discount 400 makes total 600, balance 0.
+      const discRes = await applyBillDiscount(billId, { type: 'amount', value: 400 });
+      assertEqual(discRes.status, 200, 'issue-1176: exact balance discount applied successfully');
+
+      const afterBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+      assertEqual(Number(afterBill.total), 600, 'issue-1176: bill total is 600');
+      assertEqual(Number(afterBill.paid_amount), 600, 'issue-1176: bill paid_amount is 600');
+      assertEqual(Number(afterBill.balance), 0, 'issue-1176: bill balance is 0');
+      assertEqual(afterBill.payment_status, 'paid', 'issue-1176: bill payment_status auto-settled to paid');
+      assertEqual(Boolean(afterBill.paid_at), true, 'issue-1176: paid_at timestamp is populated');
+    }
   } finally {
     server.close();
     closeDatabase();

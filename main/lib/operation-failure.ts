@@ -61,6 +61,7 @@ const DISCOUNT_DISPLAY_CODES = [
   'split_check',
   'refunded',
   'paid',
+  'below_collected_funds',
 ] as const;
 const PAYMENT_DISPLAY_CODES = [
   'transaction_reference_used',

@@ -240,7 +240,8 @@ function isDatabaseMaintenanceRoute(req: Request): boolean {
   // so an exact-match lookup on the raw spelling misses case variants.
   // Trailing slash is normalized to match Express route handling.
   const rawPath = ((req.baseUrl || '') + (req.path || '')).toLowerCase();
-  const fullPath = rawPath.length > 1 && rawPath.endsWith('/') ? rawPath.replace(/\/+$/, '') : rawPath;
+  const fullPath =
+    rawPath.length > 1 && rawPath.endsWith('/') ? rawPath.replace(/\/+$/, '') : rawPath;
   const method = String(req.method || '').toUpperCase();
   return DATABASE_MAINTENANCE_ROUTES.has(`${method} ${fullPath}`);
 }

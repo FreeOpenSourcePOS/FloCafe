@@ -1,7 +1,7 @@
 /**
  * Database maintenance allowlist cannot drift from the routes that exist.
  *
- * main/db.ts holds five hardcoded "<METHOD> /api/..." strings so the handlers
+ * main/db.ts holds hardcoded "<METHOD> /api/..." strings so the handlers
  * that take the maintenance lock are not counted in activeDatabaseRequests.
  * A route renamed out of that list is no longer excluded, so its own request
  * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS - a
@@ -22,7 +22,8 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'flo-db-maint-allowlist-'));
 Module._load = function (request_: string, parent: unknown, isMain: boolean) {
-  if (request_ === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request_ === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 

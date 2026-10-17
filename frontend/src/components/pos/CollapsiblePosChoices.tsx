@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useTranslations } from 'use-intl';
 
 export interface FittingCalculationInput<T extends { key: string }> {
@@ -236,11 +244,16 @@ export default function CollapsiblePosChoices({
     }
   }, [choices, mandatoryKeys]);
 
-  // Measurement pass: mount all chips, read widths, then apply visible subset.
+  const committedMeasureRef = useRef(measure);
+  useLayoutEffect(() => {
+    committedMeasureRef.current = measure;
+  }, [measure]);
+
+  // Scheduled frames must measure the latest committed choice list.
   useEffect(() => {
     if (!probeMounted || expanded) return;
     const frame = requestAnimationFrame(() => {
-      measure();
+      committedMeasureRef.current();
       setProbeMounted(false);
     });
     return () => cancelAnimationFrame(frame);

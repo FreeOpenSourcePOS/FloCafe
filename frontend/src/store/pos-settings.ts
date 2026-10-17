@@ -100,6 +100,52 @@ export interface PosSettingsState {
   setWhatsappEnabled: (v: boolean) => void;
   setBillLanguagePolicy: (policy: ReceiptLanguagePolicy) => void;
   setKotLanguagePolicy: (policy: KotLanguagePolicy) => void;
+  hydrateReceiptSettings: (data: ReceiptSettingsHydrationData) => void;
+}
+
+export interface ReceiptSettingsHydrationData {
+  bill_show_logo?: boolean | string | null;
+  billShowLogo?: boolean | string | null;
+  bill_show_name?: boolean | string | null;
+  billShowName?: boolean | string | null;
+  bill_show_address?: boolean | string | null;
+  billShowAddress?: boolean | string | null;
+  bill_show_phone?: boolean | string | null;
+  billShowPhone?: boolean | string | null;
+  bill_show_tax_id?: boolean | string | null;
+  billShowTaxId?: boolean | string | null;
+  bill_show_tax_breakdown?: boolean | string | null;
+  billShowTaxBreakdown?: boolean | string | null;
+  bill_show_customer_name?: boolean | string | null;
+  billShowCustomerName?: boolean | string | null;
+  bill_show_customer_phone?: boolean | string | null;
+  billShowCustomerPhone?: boolean | string | null;
+  bill_delivery_show_customer_phone_always?: boolean | string | null;
+  billDeliveryShowCustomerPhoneAlways?: boolean | string | null;
+  bill_show_table_number?: boolean | string | null;
+  billShowTableNumber?: boolean | string | null;
+  receipt_logo?: string | null;
+  receiptLogo?: string | null;
+  receipt_logo_raster?: string | null;
+  receiptLogoRaster?: string | null;
+  tax_registration_number?: string | null;
+  billTaxRegistrationNumber?: string | null;
+  taxRegistrationNumber?: string | null;
+  business_address?: string | null;
+  billAddress?: string | null;
+  businessAddress?: string | null;
+  business_phone?: string | null;
+  billPhone?: string | null;
+  businessPhone?: string | null;
+  bill_footer_message?: string | null;
+  billFooterMessage?: string | null;
+  bill_template?: string | null;
+  billTemplate?: string | null;
+  billTemplateSource?: 'core' | 'pack' | 'merchant' | null;
+  billing_type?: string | null;
+  billingType?: string | null;
+  tables_required?: boolean | string | null;
+  tablesRequired?: boolean | string | null;
 }
 
 export const usePosSettingsStore = create<PosSettingsState>()(
@@ -192,6 +238,119 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
       setBillLanguagePolicy: (billLanguagePolicy) => set({ billLanguagePolicy }),
       setKotLanguagePolicy: (kotLanguagePolicy) => set({ kotLanguagePolicy }),
+      hydrateReceiptSettings: (d) =>
+        set(() => {
+          const updates: Partial<PosSettingsState> = {};
+          const showLogo = d.bill_show_logo ?? d.billShowLogo;
+          if (showLogo !== undefined && showLogo !== null) {
+            updates.billShowLogo = showLogo === true || showLogo === 'true';
+          }
+          const showName = d.bill_show_name ?? d.billShowName;
+          if (showName !== undefined && showName !== null) {
+            updates.billShowName = showName !== false && showName !== 'false';
+          }
+          const showAddress = d.bill_show_address ?? d.billShowAddress;
+          if (showAddress !== undefined && showAddress !== null) {
+            updates.billShowAddress = showAddress !== false && showAddress !== 'false';
+          }
+          const showPhone = d.bill_show_phone ?? d.billShowPhone;
+          if (showPhone !== undefined && showPhone !== null) {
+            updates.billShowPhone = showPhone !== false && showPhone !== 'false';
+          }
+          const showTaxId = d.bill_show_tax_id ?? d.billShowTaxId;
+          if (showTaxId !== undefined && showTaxId !== null) {
+            updates.billShowTaxId = showTaxId === true || showTaxId === 'true';
+          }
+          const showTaxBreakdown = d.bill_show_tax_breakdown ?? d.billShowTaxBreakdown;
+          if (showTaxBreakdown !== undefined && showTaxBreakdown !== null) {
+            updates.billShowTaxBreakdown =
+              showTaxBreakdown !== false && showTaxBreakdown !== 'false';
+          }
+          const showCustName = d.bill_show_customer_name ?? d.billShowCustomerName;
+          if (showCustName !== undefined && showCustName !== null) {
+            updates.billShowCustomerName =
+              showCustName !== false && showCustName !== 'false';
+          }
+          const showCustPhone = d.bill_show_customer_phone ?? d.billShowCustomerPhone;
+          if (showCustPhone !== undefined && showCustPhone !== null) {
+            updates.billShowCustomerPhone =
+              showCustPhone !== false && showCustPhone !== 'false';
+          }
+          const showDeliveryPhone =
+            d.bill_delivery_show_customer_phone_always ??
+            d.billDeliveryShowCustomerPhoneAlways;
+          if (showDeliveryPhone !== undefined && showDeliveryPhone !== null) {
+            updates.billDeliveryShowCustomerPhoneAlways =
+              showDeliveryPhone !== false && showDeliveryPhone !== 'false';
+          }
+          const showTableNum = d.bill_show_table_number ?? d.billShowTableNumber;
+          if (showTableNum !== undefined && showTableNum !== null) {
+            updates.billShowTableNumber =
+              showTableNum !== false && showTableNum !== 'false';
+          }
+          const logo = d.receipt_logo ?? d.receiptLogo;
+          if (logo !== undefined) {
+            updates.receiptLogo = logo || '';
+          }
+          const logoRaster = d.receipt_logo_raster ?? d.receiptLogoRaster;
+          if (logoRaster !== undefined) {
+            updates.receiptLogoRaster = logoRaster || '';
+          }
+          const taxReg =
+            d.tax_registration_number ??
+            d.billTaxRegistrationNumber ??
+            d.taxRegistrationNumber;
+          if (taxReg !== undefined) {
+            updates.billTaxRegistrationNumber = taxReg || '';
+          }
+          const address = d.business_address ?? d.billAddress ?? d.businessAddress;
+          if (address !== undefined) {
+            updates.billAddress = address || '';
+          }
+          const phone = d.business_phone ?? d.billPhone ?? d.businessPhone;
+          if (phone !== undefined) {
+            updates.billPhone = phone || '';
+          }
+          const footer = d.bill_footer_message ?? d.billFooterMessage;
+          if (footer !== undefined) {
+            updates.billFooterMessage = footer || '';
+          }
+          const template = d.bill_template ?? d.billTemplate;
+          if (template !== undefined && template !== null) {
+            let templateId = String(template);
+            let templateSource: 'core' | 'pack' | 'merchant' | null =
+              d.billTemplateSource ?? null;
+            if (templateId.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(templateId);
+                if (parsed && typeof parsed.id === 'string') {
+                  templateId = parsed.id;
+                  if (
+                    parsed.source === 'core' ||
+                    parsed.source === 'pack' ||
+                    parsed.source === 'merchant'
+                  ) {
+                    templateSource = parsed.source;
+                  }
+                }
+              } catch {
+                /* keep raw */
+              }
+            }
+            updates.billTemplate = templateId;
+            updates.billTemplateSource = templateSource ?? 'core';
+          }
+          const billingType = d.billing_type ?? d.billingType;
+          if (billingType !== undefined && billingType !== null) {
+            updates.billingType = billingType === 'prepaid' ? 'prepaid' : 'postpaid';
+          }
+          const tablesReq = d.tables_required ?? d.tablesRequired;
+          if (tablesReq !== undefined && tablesReq !== null) {
+            updates.tablesRequired =
+              typeof tablesReq === 'boolean' ? tablesReq : tablesReq !== 'false';
+          }
+          return updates;
+        }),
     }),
     {
       name: 'pos-settings',

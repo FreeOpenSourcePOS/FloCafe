@@ -156,7 +156,6 @@ export default function AppSidebar() {
     tablesRequired,
     kdsEnabled,
     whatsappEnabled,
-    setTablesRequired,
     setKdsEnabled,
     setWhatsappEnabled,
   } = usePosSettingsStore();
@@ -217,14 +216,6 @@ export default function AppSidebar() {
     if (!currentTenant) return;
     if (tenantCan(currentTenant, 'settings.view')) {
       api
-        .get('/settings/business')
-        .then((res) => {
-          setTablesRequired(
-            typeof res.data.tables_required === 'boolean' ? res.data.tables_required : true,
-          );
-        })
-        .catch(() => {});
-      api
         .get('/settings/kds_enabled')
         .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
         .catch(() => {});
@@ -238,7 +229,7 @@ export default function AppSidebar() {
     } else {
       setWhatsappEnabled(false);
     }
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
+  }, [currentTenant, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {
     if (!tenantCan(currentTenant, 'cloud.account.manage')) return;

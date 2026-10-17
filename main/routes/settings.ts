@@ -307,7 +307,6 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       receipt_logo,
       receipt_logo_raster,
       bill_show_logo,
-      bill_footer_message,
       currency_display,
       number_digits,
       calendar,
@@ -456,8 +455,6 @@ router.put('/business', requirePermission('settings.manage'), (req: Request, res
       bill_show_logo: boolFlag(bill_show_logo),
       receipt_logo: normalizedReceiptLogo,
       receipt_logo_raster: normalizedReceiptLogoRaster,
-      bill_footer_message:
-        bill_footer_message !== undefined ? String(bill_footer_message || '') : undefined,
       ...localeUpdates,
       // Only mark country as user-confirmed if it actually changed in this submission.
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),

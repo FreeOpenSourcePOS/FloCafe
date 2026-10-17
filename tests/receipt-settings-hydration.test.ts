@@ -338,24 +338,27 @@ async function runTests() {
       'bill_template in GET /api/settings/business',
     );
 
-    // Test updating bill_footer_message via PUT /api/settings/business
-    const putRes = await api(baseUrl, '/api/settings/business', {
+    // Test updating bill_footer_message via PUT /api/settings/bill_footer_message
+    const putRes = await api(baseUrl, '/api/settings/bill_footer_message', {
       method: 'PUT',
       headers: seedData.authHeader,
       body: {
-        business_name: 'Harbor POS Cafe',
-        bill_footer_message: 'Updated footer: Visit us online!',
+        value: 'Updated footer: Visit us online!',
       },
     });
-    assertEqualOrThrow(putRes.status, 200, 'PUT /api/settings/business accepts bill_footer_message');
+    assertEqualOrThrow(putRes.status, 200, 'PUT /api/settings/bill_footer_message accepts footer message');
+
+    const updatedBusinessRes = await api(baseUrl, '/api/settings/business', {
+      headers: seedData.authHeader,
+    });
     assertEqualOrThrow(
-      putRes.data.bill_footer_message,
+      updatedBusinessRes.data.bill_footer_message,
       'Updated footer: Visit us online!',
-      'PUT /api/settings/business returns updated bill_footer_message',
+      'GET /api/settings/business returns updated bill_footer_message',
     );
 
     // Verify direct hydration from the API response
-    store.hydrateReceiptSettings(putRes.data);
+    store.hydrateReceiptSettings(updatedBusinessRes.data);
     const finalState = usePosSettingsStore.getState();
     assertEqualOrThrow(
       finalState.billFooterMessage,

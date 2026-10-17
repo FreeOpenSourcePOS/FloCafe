@@ -129,16 +129,9 @@ export interface ReceiptSettingsHydrationData {
   receipt_logo_raster?: string | null;
   receiptLogoRaster?: string | null;
   tax_registration_number?: string | null;
-  billTaxRegistrationNumber?: string | null;
-  taxRegistrationNumber?: string | null;
   business_address?: string | null;
-  billAddress?: string | null;
-  businessAddress?: string | null;
   business_phone?: string | null;
-  billPhone?: string | null;
-  businessPhone?: string | null;
   bill_footer_message?: string | null;
-  billFooterMessage?: string | null;
   bill_template?: string | null;
   billTemplate?: string | null;
   billTemplateSource?: 'core' | 'pack' | 'merchant' | null;
@@ -296,24 +289,17 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           if (logoRaster !== undefined) {
             updates.receiptLogoRaster = logoRaster || '';
           }
-          const taxReg =
-            d.tax_registration_number ??
-            d.billTaxRegistrationNumber ??
-            d.taxRegistrationNumber;
-          if (taxReg !== undefined) {
-            updates.billTaxRegistrationNumber = taxReg || '';
+          if (d.tax_registration_number !== undefined) {
+            updates.billTaxRegistrationNumber = d.tax_registration_number || '';
           }
-          const address = d.business_address ?? d.billAddress ?? d.businessAddress;
-          if (address !== undefined) {
-            updates.billAddress = address || '';
+          if (d.business_address !== undefined) {
+            updates.billAddress = d.business_address || '';
           }
-          const phone = d.business_phone ?? d.billPhone ?? d.businessPhone;
-          if (phone !== undefined) {
-            updates.billPhone = phone || '';
+          if (d.business_phone !== undefined) {
+            updates.billPhone = d.business_phone || '';
           }
-          const footer = d.bill_footer_message ?? d.billFooterMessage;
-          if (footer !== undefined) {
-            updates.billFooterMessage = footer || '';
+          if (d.bill_footer_message !== undefined) {
+            updates.billFooterMessage = d.bill_footer_message || '';
           }
           const template = d.bill_template ?? d.billTemplate;
           if (template !== undefined && template !== null) {

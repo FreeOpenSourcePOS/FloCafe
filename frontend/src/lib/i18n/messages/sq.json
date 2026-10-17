@@ -2446,8 +2446,6 @@
     "chargesSaved": "Ngarkesat u ruajtën",
     "chargesSaveFailed": "Ngarkesat nuk mund të ruheshin",
     "chargeName": "Emri",
-    "chargeId": "ID e ngarkesës",
-    "chargeIdHint": "Shkronja të vogla, shifra, vijë ose vijë e nënvizës. service_charge dhe packaging_charge furnizojnë kolonat ekzistuese të raporteve.",
     "chargeType": "Lloji",
     "chargeTypePercentage": "Përqindje",
     "chargeTypeFixed": "Shumë fikse",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Ngarko Logon",
     "removeLogo": "Hiq Logon",
     "logoUploaded": "Logoja u ngarkua me sukses",
-    "showLogo": "Logoja e Dyqanit"
+    "showLogo": "Logoja e Dyqanit",
+    "chargeKind": "Lloji i tarifës",
+    "chargePresetCustom": "E personalizuar",
+    "editCharge": "Ndrysho tarifën",
+    "chargeReopenRequired": "Kjo tarifë nuk është më e disponueshme. Ju lutemi rihapeni dhe provoni përsëri."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

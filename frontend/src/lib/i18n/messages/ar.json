@@ -2446,8 +2446,6 @@
     "chargesSaved": "تم حفظ الرسوم",
     "chargesSaveFailed": "تعذر حفظ الرسوم",
     "chargeName": "الاسم",
-    "chargeId": "المعرف",
-    "chargeIdHint": "أحرف إنجليزية صغيرة وأرقام وشرطة أو شرطة سفلية. يستخدم service_charge وpackaging_charge أعمدة التقارير الحالية.",
     "chargeType": "النوع",
     "chargeTypePercentage": "نسبة مئوية",
     "chargeTypeFixed": "مبلغ ثابت",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "تحميل الشعار",
     "removeLogo": "إزالة الشعار",
     "logoUploaded": "تم تحميل الشعار بنجاح",
-    "showLogo": "شعار المتجر"
+    "showLogo": "شعار المتجر",
+    "chargeKind": "نوع الرسم",
+    "chargePresetCustom": "مخصص",
+    "editCharge": "تحرير الرسم",
+    "chargeReopenRequired": "هذا الرسم لم يعد متاحًا. يُرجى إعادة فتحه والمحاولة مجددًا."
   },
   "setup": {
     "alreadyCompleted": "تم الانتهاء من عملية الإعداد في هذا التثبيت. يتم إعادة التوجيه إلى صفحة تسجيل الدخول…",

@@ -158,6 +158,29 @@ racing lookups are ignored by lookup id, rapid clicks open at most one allocator
 explicit split-opening request is in flight competing payment and split mutations are disabled until
 it finally releases.
 
+### Add-on groups have one editor
+
+Add-on groups are managed only in Products, on the tab selected by `/products?tab=addons`. The
+Products page reads `tab` (`products`, `categories`, or `addons`; anything else selects Products)
+inside a Suspense boundary and writes tab clicks back with `router.replace`, keeping other query
+parameters. The tab is shown to restaurants and to any business whose role grants `catalog.manage`.
+The legacy `/addon-groups` route is kept for bookmarks and the static export; it makes no API call and
+client-redirects to `/products?tab=addons` with `router.replace`.
+
+The group editor echoes each saved add-on's `tax_category_id`, `tax_behavior`, and
+`inherit_parent_tax_category` back on save, and sends `stock_quantity` only when the stock field was
+edited, so an ordinary save cannot overwrite stock moved since the editor opened.
+
+### Charge identity is chosen, not typed
+
+[`ChargesSettingsCard`](../../frontend/src/components/settings/ChargesSettingsCard.tsx) offers Service,
+Packaging, and Custom kinds for a new charge. Service and Packaging use the reserved IDs
+`service_charge` and `packaging_charge` (which feed the standard report columns); if that ID already
+exists, choosing the kind opens the saved definition instead of applying defaults. Custom charges get
+an opaque `charge-<32 hex>` ID from `crypto.getRandomValues`, generated once per draft. IDs are never
+derived from names or editable, so renaming a charge keeps its identity. Choosing a kind writes
+nothing; only Save persists.
+
 ### The KDS live feed is a WebSocket, not a request
 
 Two surfaces open a socket to the same `/kds` path. The base ports for that path are `:3001` and
@@ -595,7 +618,7 @@ frontend/src/
 │   ├── products/               Product image uploader
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
-│   │   BetaChannelToggle, CurrencyResetDialog, DatabaseSettingsTab,
+│   │   BetaChannelToggle, ChargesSettingsCard, CurrencyResetDialog, DatabaseSettingsTab,
 │   │   GeneralSettingsTab, HealthCheckDialog,
 │   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
 │   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,

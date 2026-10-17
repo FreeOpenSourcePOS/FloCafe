@@ -2446,8 +2446,6 @@
     "chargesSaved": "費用已儲存",
     "chargesSaveFailed": "無法儲存費用",
     "chargeName": "名稱",
-    "chargeId": "識別碼",
-    "chargeIdHint": "小寫字母、數字、連字號或底線。service_charge 與 packaging_charge 會寫入既有的報表欄位。",
     "chargeType": "類型",
     "chargeTypePercentage": "百分比",
     "chargeTypeFixed": "固定金額",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "上傳標誌",
     "removeLogo": "移除標誌",
     "logoUploaded": "標誌上傳成功",
-    "showLogo": "店鋪標誌"
+    "showLogo": "店鋪標誌",
+    "chargeKind": "費用類型",
+    "chargePresetCustom": "自訂",
+    "editCharge": "編輯費用",
+    "chargeReopenRequired": "此費用已無法使用。請重新開啟後再試。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

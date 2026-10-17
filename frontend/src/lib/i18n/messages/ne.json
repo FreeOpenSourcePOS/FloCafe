@@ -2446,8 +2446,6 @@
     "chargesSaved": "शुल्क सुरक्षित भयो",
     "chargesSaveFailed": "शुल्क सुरक्षित गर्न सकिएन",
     "chargeName": "नाम",
-    "chargeId": "आईडी",
-    "chargeIdHint": "सानो अंग्रेजी अक्षर, अङ्क, हाइफन वा अन्डरस्कोर। service_charge र packaging_charge ले विद्यमान प्रतिवेदन स्तम्भहरू भर्छन्।",
     "chargeType": "प्रकार",
     "chargeTypePercentage": "प्रतिशत",
     "chargeTypeFixed": "निश्चित राशि",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "लोगो अपलोड गर्नुहोस्",
     "removeLogo": "लोगो हटाउनुहोस्",
     "logoUploaded": "लोगो सफलतापूर्वक अपलोड गरियो",
-    "showLogo": "स्टोर लोगो"
+    "showLogo": "स्टोर लोगो",
+    "chargeKind": "शुल्क प्रकार",
+    "chargePresetCustom": "अनुकूलित",
+    "editCharge": "शुल्क सम्पादन गर्नुहोस्",
+    "chargeReopenRequired": "यो शुल्क अब उपलब्ध छैन। कृपया पुनः खोल्नुहोस् र फेरि प्रयास गर्नुहोस्।"
   },
   "setup": {
     "alreadyCompleted": "यस स्थापनामा सेटअप पहिले नै पूरा भइसकेको छ। लगइन गर्न रिडिरेक्ट गर्दै...",

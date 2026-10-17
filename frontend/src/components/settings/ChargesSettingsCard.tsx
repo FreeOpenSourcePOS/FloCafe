@@ -9,11 +9,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { useConfirm } from '@/hooks/use-confirm';
 import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { VALID_CHARGE_ORDER_TYPES, type ChargeDefinition } from '@/lib/charges';
+import { VALID_CHARGE_ORDER_TYPES, type STANDARD_CHARGE_COLUMN_IDS, type ChargeDefinition } from '@/lib/charges';
 import { useChargesStore } from '@/store/charges';
+
+export type ChargePresetKind = 'service' | 'packaging' | 'custom';
 
 interface ChargeForm {
   id: string;
+  presetKind: ChargePresetKind;
   name: string;
   type: 'percentage' | 'fixed';
   value: string;
@@ -23,9 +26,40 @@ interface ChargeForm {
   is_default_active: boolean;
 }
 
+const STANDARD_PRESETS: Record<
+  Exclude<ChargePresetKind, 'custom'>,
+  {
+    id: (typeof STANDARD_CHARGE_COLUMN_IDS)[number];
+    nameKey: 'entityServiceCharge' | 'entityPackaging';
+    type: ChargeForm['type'];
+    order_types: readonly OrderType[];
+  }
+> = {
+  service: { id: 'service_charge', nameKey: 'entityServiceCharge', type: 'percentage', order_types: ['dine_in'] },
+  packaging: {
+    id: 'packaging_charge',
+    nameKey: 'entityPackaging',
+    type: 'fixed',
+    order_types: ['takeaway', 'delivery', 'online'],
+  },
+};
+
+function generateCustomChargeId(): string {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return `charge-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function getPresetKind(id: string): ChargePresetKind {
+  if (id === STANDARD_PRESETS.service.id) return 'service';
+  if (id === STANDARD_PRESETS.packaging.id) return 'packaging';
+  return 'custom';
+}
+
 function emptyForm(): ChargeForm {
   return {
-    id: '',
+    id: generateCustomChargeId(),
+    presetKind: 'custom',
     name: '',
     type: 'percentage',
     value: '',
@@ -39,6 +73,7 @@ function emptyForm(): ChargeForm {
 function toForm(charge: ChargeDefinition): ChargeForm {
   return {
     id: charge.id,
+    presetKind: getPresetKind(charge.id),
     name: charge.name,
     type: charge.type,
     value: String(charge.value),
@@ -50,12 +85,7 @@ function toForm(charge: ChargeDefinition): ChargeForm {
 }
 
 function toDefinition(form: ChargeForm, existing?: ChargeDefinition): ChargeDefinition {
-  // A blank id falls back to the name so the form never submits an empty id.
-  const rawId = (form.id.trim() || form.name).trim();
-  const normalizedId = rawId.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
-  const id = !form.id.trim() && !/[a-z0-9]/.test(normalizedId)
-    ? `charge-${Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('')}`
-    : normalizedId;
+  const id = existing ? existing.id : form.id;
   return {
     id,
     name: form.name.trim(),
@@ -74,6 +104,7 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
   const t = useTranslations('settings');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
+  const tTax = useTranslations('tax');
   const fmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -115,21 +146,46 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
     await persist(charges.filter((candidate) => candidate.id !== charge.id));
   };
 
+  const handlePresetChange = (kind: ChargePresetKind) => {
+    if (saving || editingOriginalId !== null) return;
+    setDuplicateId(false);
+    if (kind === 'custom') {
+      setEditing(emptyForm());
+      return;
+    }
+    const preset = STANDARD_PRESETS[kind];
+    const existing = charges.find((charge) => charge.id === preset.id);
+    if (existing) {
+      setEditing(toForm(existing));
+      setEditingOriginalId(existing.id);
+      return;
+    }
+    setEditing({
+      ...emptyForm(),
+      id: preset.id,
+      presetKind: kind,
+      name: tTax(preset.nameKey),
+      type: preset.type,
+      order_types: [...preset.order_types],
+    });
+  };
+
   const submitForm = async () => {
     if (!editing || loading || loadError) return;
     const existing = editingOriginalId ? charges.find((charge) => charge.id === editingOriginalId) : undefined;
+    if (editingOriginalId && !existing) {
+      toast.error(t('chargeReopenRequired'));
+      closeForm();
+      void load();
+      return;
+    }
     const definition = toDefinition(editing, existing);
     if (charges.some((charge) => charge.id === definition.id && charge.id !== editingOriginalId)) {
       setDuplicateId(true);
       return;
     }
-    // Editing replaces the row it came from, so renaming the id renames that
-    // charge instead of adding a second one beside it.
-    const targetId = editingOriginalId && charges.some((charge) => charge.id === editingOriginalId)
-      ? editingOriginalId
-      : definition.id;
-    const next = charges.some((charge) => charge.id === targetId)
-      ? charges.map((charge) => (charge.id === targetId ? definition : charge))
+    const next = editingOriginalId
+      ? charges.map((charge) => (charge.id === editingOriginalId ? definition : charge))
       : [...charges, definition];
     setSaving(true);
     try {
@@ -210,11 +266,24 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
       <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) closeForm(); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('addCharge')}</DialogTitle>
+            <DialogTitle>{editingOriginalId ? t('editCharge') : t('addCharge')}</DialogTitle>
             <DialogDescription>{t('chargesAndSurchargesHint')}</DialogDescription>
           </DialogHeader>
           {editing && (
             <div className="space-y-3">
+              <label className="block">
+                <span className="text-sm text-muted-foreground">{t('chargeKind')}</span>
+                <select
+                  value={editing.presetKind}
+                  onChange={(e) => handlePresetChange(e.target.value as ChargePresetKind)}
+                  disabled={saving || editingOriginalId !== null}
+                  className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg disabled:opacity-50"
+                >
+                  <option value="custom">{t('chargePresetCustom')}</option>
+                  <option value="service">{tTax(STANDARD_PRESETS.service.nameKey)}</option>
+                  <option value="packaging">{tTax(STANDARD_PRESETS.packaging.nameKey)}</option>
+                </select>
+              </label>
               <label className="block">
                 <span className="text-sm text-muted-foreground">{t('chargeName')}</span>
                 <input
@@ -222,18 +291,7 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
                   onChange={(e) => { setEditing({ ...editing, name: e.target.value }); setDuplicateId(false); }}
                   className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg"
                 />
-              </label>
-              <label className="block">
-                <span className="text-sm text-muted-foreground">{t('chargeId')}</span>
-                <input
-                  value={editing.id}
-                  onChange={(e) => { setEditing({ ...editing, id: e.target.value }); setDuplicateId(false); }}
-                  placeholder="service_charge"
-                  aria-invalid={duplicateId}
-                  className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg"
-                />
-                <span className="text-xs text-muted-foreground">{t('chargeIdHint')}</span>
-                {duplicateId && <span role="alert" className="block text-xs text-destructive">{t('chargesSaveFailed')}</span>}
+                {duplicateId && <span role="alert" className="block mt-1 text-xs text-destructive">{t('chargesSaveFailed')}</span>}
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
@@ -310,7 +368,7 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={closeForm}>{tCommon('cancel')}</Button>
-            <Button onClick={() => void submitForm()} disabled={saving || loading || !!loadError || !editing?.name || editing.value === ''}>
+            <Button onClick={() => void submitForm()} disabled={saving || loading || !!loadError || !editing?.name.trim() || editing.value === ''}>
               {tCommon('save')}
             </Button>
           </DialogFooter>

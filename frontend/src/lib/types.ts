@@ -152,6 +152,9 @@ export interface Addon {
   low_stock_threshold: number;
   is_active: boolean;
   sort_order: number;
+  tax_category_id?: string | null;
+  tax_behavior?: Product['tax_behavior'];
+  inherit_parent_tax_category?: boolean;
 }
 
 export interface Table {

@@ -2446,8 +2446,6 @@
     "chargesSaved": "บันทึกค่าธรรมเนียมแล้ว",
     "chargesSaveFailed": "ไม่สามารถบันทึกค่าธรรมเนียมได้",
     "chargeName": "ชื่อ",
-    "chargeId": "รหัส",
-    "chargeIdHint": "ตัวอักษรอังกฤษพิมพ์เล็ก ตัวเลข ยัติภังค์ หรือขีดล่าง service_charge และ packaging_charge จะเติมคอลัมน์รายงานเดิม",
     "chargeType": "ประเภท",
     "chargeTypePercentage": "เปอร์เซ็นต์",
     "chargeTypeFixed": "จำนวนเงินคงที่",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "อัปโหลดโลโก้",
     "removeLogo": "ลบโลโก้",
     "logoUploaded": "อัปโหลดโลโก้สำเร็จแล้ว",
-    "showLogo": "โลโก้ร้านค้า"
+    "showLogo": "โลโก้ร้านค้า",
+    "chargeKind": "ประเภทค่าธรรมเนียม",
+    "chargePresetCustom": "กำหนดเอง",
+    "editCharge": "แก้ไขค่าธรรมเนียม",
+    "chargeReopenRequired": "ค่าธรรมเนียมนี้ไม่พร้อมใช้งานแล้ว โปรดเปิดใหม่อีกครั้งแล้วลองใหม่"
   },
   "setup": {
     "alreadyCompleted": "ตั้งค่าการติดตั้งนี้เสร็จสมบูรณ์แล้ว กำลังกลับไปหน้าเข้าสู่ระบบ…",

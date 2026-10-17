@@ -2446,8 +2446,6 @@
     "chargesSaved": "शुल्क सहेजे गए",
     "chargesSaveFailed": "शुल्क सहेजे नहीं जा सके",
     "chargeName": "नाम",
-    "chargeId": "आईडी",
-    "chargeIdHint": "छोटे अंग्रेज़ी अक्षर, अंक, डैश या अंडरस्कोर। service_charge और packaging_charge मौजूदा रिपोर्ट कॉलम को भरते हैं।",
     "chargeType": "प्रकार",
     "chargeTypePercentage": "प्रतिशत",
     "chargeTypeFixed": "निश्चित राशि",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "लोगो अपलोड करें",
     "removeLogo": "लोगो हटाएं",
     "logoUploaded": "लोगो सफलतापूर्वक अपलोड हो गया",
-    "showLogo": "स्टोर लोगो"
+    "showLogo": "स्टोर लोगो",
+    "chargeKind": "शुल्क प्रकार",
+    "chargePresetCustom": "कस्टम",
+    "editCharge": "शुल्क संपादित करें",
+    "chargeReopenRequired": "यह शुल्क अब उपलब्ध नहीं है। कृपया इसे पुनः खोलें और फिर से प्रयास करें।"
   },
   "setup": {
     "alreadyCompleted": "इस इंस्टाल पर सेटअप पहले ही पूरा हो चुका है. लॉगिन करने के लिए पुनः निर्देशित किया जा रहा है...",

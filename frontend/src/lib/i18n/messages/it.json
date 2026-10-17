@@ -2446,8 +2446,6 @@
     "chargesSaved": "Spese salvate",
     "chargesSaveFailed": "Impossibile salvare le spese",
     "chargeName": "Nome",
-    "chargeId": "ID spesa",
-    "chargeIdHint": "Lettere minuscole, cifre, trattino o underscore. service_charge e packaging_charge alimentano le colonne dei report esistenti.",
     "chargeType": "Tipo",
     "chargeTypePercentage": "Percentuale",
     "chargeTypeFixed": "Importo fisso",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Carica logo",
     "removeLogo": "Rimuovi logo",
     "logoUploaded": "Logo caricato con successo",
-    "showLogo": "Logo del negozio"
+    "showLogo": "Logo del negozio",
+    "chargeKind": "Tipo di spesa",
+    "chargePresetCustom": "Personalizzato",
+    "editCharge": "Modifica spesa",
+    "chargeReopenRequired": "Questa spesa non è più disponibile. Riapri e riprova."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

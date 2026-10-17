@@ -2446,8 +2446,6 @@
     "chargesSaved": "هزینه‌ها ذخیره شد",
     "chargesSaveFailed": "ذخیره هزینه‌ها ممکن نشد",
     "chargeName": "نام",
-    "chargeId": "شناسه",
-    "chargeIdHint": "حروف کوچک انگلیسی، رقم، خط تیره یا زیرخط. service_charge و packaging_charge ستون‌های گزارش موجود را پر می‌کنند.",
     "chargeType": "نوع",
     "chargeTypePercentage": "درصدی",
     "chargeTypeFixed": "مبلغ ثابت",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "بارگذاری لوگو",
     "removeLogo": "حذف لوگو",
     "logoUploaded": "لوگو با موفقیت بارگذاری شد",
-    "showLogo": "لوگوی فروشگاه"
+    "showLogo": "لوگوی فروشگاه",
+    "chargeKind": "نوع هزینه",
+    "chargePresetCustom": "سفارشی",
+    "editCharge": "ویرایش هزینه",
+    "chargeReopenRequired": "این هزینه دیگر در دسترس نیست. لطفاً دوباره باز کنید و مجدداً تلاش کنید."
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

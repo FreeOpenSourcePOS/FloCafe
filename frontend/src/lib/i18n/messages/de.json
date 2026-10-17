@@ -2446,8 +2446,6 @@
     "chargesSaved": "Gebühren gespeichert",
     "chargesSaveFailed": "Gebühren konnten nicht gespeichert werden",
     "chargeName": "Bezeichnung",
-    "chargeId": "Gebühren-ID",
-    "chargeIdHint": "Kleinbuchstaben, Ziffern, Bindestrich oder Unterstrich. service_charge und packaging_charge speisen die bestehenden Berichtsspalten.",
     "chargeType": "Typ",
     "chargeTypePercentage": "Prozent",
     "chargeTypeFixed": "Fester Betrag",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Logo hochladen",
     "removeLogo": "Logo entfernen",
     "logoUploaded": "Logo erfolgreich hochgeladen",
-    "showLogo": "Geschäftslogo"
+    "showLogo": "Geschäftslogo",
+    "chargeKind": "Gebührenart",
+    "chargePresetCustom": "Benutzerdefiniert",
+    "editCharge": "Gebühr bearbeiten",
+    "chargeReopenRequired": "Diese Gebühr ist nicht mehr verfügbar. Bitte erneut öffnen und wiederholen."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

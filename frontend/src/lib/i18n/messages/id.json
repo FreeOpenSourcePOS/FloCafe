@@ -2446,8 +2446,6 @@
     "chargesSaved": "Biaya disimpan",
     "chargesSaveFailed": "Biaya tidak dapat disimpan",
     "chargeName": "Nama",
-    "chargeId": "ID biaya",
-    "chargeIdHint": "Huruf kecil, angka, tanda hubung, atau garis bawah. service_charge dan packaging_charge mengisi kolom laporan yang sudah ada.",
     "chargeType": "Jenis",
     "chargeTypePercentage": "Persentase",
     "chargeTypeFixed": "Nominal tetap",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Unggah Logo",
     "removeLogo": "Hapus Logo",
     "logoUploaded": "Logo berhasil diunggah",
-    "showLogo": "Logo Toko"
+    "showLogo": "Logo Toko",
+    "chargeKind": "Jenis biaya",
+    "chargePresetCustom": "Kustom",
+    "editCharge": "Ubah biaya",
+    "chargeReopenRequired": "Biaya ini sudah tidak tersedia. Silakan buka kembali dan coba lagi."
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

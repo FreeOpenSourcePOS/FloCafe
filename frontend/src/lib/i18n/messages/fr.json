@@ -2446,8 +2446,6 @@
     "chargesSaved": "Frais enregistrés",
     "chargesSaveFailed": "Impossible d'enregistrer les frais",
     "chargeName": "Nom",
-    "chargeId": "Identifiant du frais",
-    "chargeIdHint": "Lettres minuscules, chiffres, tiret ou tiret bas. service_charge et packaging_charge alimentent les colonnes de rapport existantes.",
     "chargeType": "Nature",
     "chargeTypePercentage": "Pourcentage",
     "chargeTypeFixed": "Montant fixe",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Télécharger le logo",
     "removeLogo": "Supprimer le logo",
     "logoUploaded": "Logo téléchargé avec succès",
-    "showLogo": "Logo du magasin"
+    "showLogo": "Logo du magasin",
+    "chargeKind": "Type de frais",
+    "chargePresetCustom": "Personnalisé",
+    "editCharge": "Modifier le frais",
+    "chargeReopenRequired": "Ce frais n’est plus disponible. Veuillez rouvrir et réessayer."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

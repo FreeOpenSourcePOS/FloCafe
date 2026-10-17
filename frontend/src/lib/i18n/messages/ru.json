@@ -2446,8 +2446,6 @@
     "chargesSaved": "Сборы сохранены",
     "chargesSaveFailed": "Не удалось сохранить сборы",
     "chargeName": "Название",
-    "chargeId": "Идентификатор",
-    "chargeIdHint": "Строчные буквы, цифры, дефис или подчёркивание. service_charge и packaging_charge заполняют существующие колонки отчётов.",
     "chargeType": "Тип",
     "chargeTypePercentage": "Процент",
     "chargeTypeFixed": "Фиксированная сумма",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Загрузить логотип",
     "removeLogo": "Удалить логотип",
     "logoUploaded": "Логотип успешно загружен",
-    "showLogo": "Логотип магазина"
+    "showLogo": "Логотип магазина",
+    "chargeKind": "Тип сбора",
+    "chargePresetCustom": "Пользовательский",
+    "editCharge": "Изменить сбор",
+    "chargeReopenRequired": "Этот сбор больше недоступен. Откройте его снова и повторите попытку."
   },
   "setup": {
     "alreadyCompleted": "Настройка этой установки уже завершена. Перенаправление на вход…",

@@ -2446,8 +2446,6 @@
     "chargesSaved": "Taxas guardadas",
     "chargesSaveFailed": "Não foi possível guardar as taxas",
     "chargeName": "Nome",
-    "chargeId": "ID da taxa",
-    "chargeIdHint": "Letras minúsculas, dígitos, hífen ou underscore. service_charge e packaging_charge alimentam as colunas de relatório existentes.",
     "chargeType": "Tipo",
     "chargeTypePercentage": "Percentagem",
     "chargeTypeFixed": "Valor fixo",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Carregar logotipo",
     "removeLogo": "Remover logotipo",
     "logoUploaded": "Logotipo carregado com sucesso",
-    "showLogo": "Logotipo da loja"
+    "showLogo": "Logotipo da loja",
+    "chargeKind": "Tipo de taxa",
+    "chargePresetCustom": "Personalizado",
+    "editCharge": "Editar taxa",
+    "chargeReopenRequired": "Esta taxa não está mais disponível. Reabra e tente novamente."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

@@ -2446,8 +2446,6 @@
     "chargesSaved": "Cargos guardados",
     "chargesSaveFailed": "No se pudieron guardar los cargos",
     "chargeName": "Nombre",
-    "chargeId": "ID del cargo",
-    "chargeIdHint": "Letras minúsculas, dígitos, guion o guion bajo. service_charge y packaging_charge alimentan las columnas de informe existentes.",
     "chargeType": "Tipo",
     "chargeTypePercentage": "Porcentaje",
     "chargeTypeFixed": "Importe fijo",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Subir logotipo",
     "removeLogo": "Eliminar logotipo",
     "logoUploaded": "Logotipo subido correctamente",
-    "showLogo": "Logotipo de la tienda"
+    "showLogo": "Logotipo de la tienda",
+    "chargeKind": "Tipo de cargo",
+    "chargePresetCustom": "Personalizado",
+    "editCharge": "Editar cargo",
+    "chargeReopenRequired": "Este cargo ya no está disponible. Vuelva a abrirlo e inténtelo de nuevo."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

@@ -58,8 +58,10 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
 
     // 1c. Addon Groups (EN)
     await page.goto(`${BASE}/addon-groups`);
+    await page.waitForURL((url) => url.pathname.startsWith('/products') && url.searchParams.get('tab') === 'addons');
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Addon Groups');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Products');
+    await expect(page.getByRole('tab', { name: 'Addon Groups' })).toHaveAttribute('data-state', 'active');
     await captureScreenshot(page, 'batch-5e-addon-groups-en.png');
 
     // 1d. Staff (EN)
@@ -107,8 +109,10 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
 
     // 2c. Addon Groups (ES)
     await page.goto(`${BASE}/addon-groups`);
+    await page.waitForURL((url) => url.pathname.startsWith('/products') && url.searchParams.get('tab') === 'addons');
     await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Grupos de adicionales');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Productos');
+    await expect(page.getByRole('tab', { name: 'Grupos de adicionales' })).toHaveAttribute('data-state', 'active');
     await captureScreenshot(page, 'batch-5e-addon-groups-es.png');
 
     // 2d. Staff (ES)
@@ -156,8 +160,10 @@ test.describe('Batch 5E Migrated Pages & Components E2E Validation', () => {
 
       // 3c. Addon Groups (FA)
       await page.goto(`${BASE}/addon-groups`);
+      await page.waitForURL((url) => url.pathname.startsWith('/products') && url.searchParams.get('tab') === 'addons');
       await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('گروه‌های افزونه');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('کالاها');
+      await expect(page.getByRole('tab', { name: 'گروه‌های افزودنی' })).toHaveAttribute('data-state', 'active');
       await captureScreenshot(page, 'batch-5e-addon-groups-fa.png');
 
       // 3d. Staff (FA)

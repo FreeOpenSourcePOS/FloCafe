@@ -2446,8 +2446,6 @@
     "chargesSaved": "فیس محفوظ ہو گئی",
     "chargesSaveFailed": "فیس محفوظ نہیں ہو سکیں",
     "chargeName": "نام",
-    "chargeId": "شناخت",
-    "chargeIdHint": "چھوٹے انگریزی حروف، ہندسے، ڈیش یا انڈر سکور۔ service_charge اور packaging_charge موجود رپورٹ کالمز کو بھرتے ہیں۔",
     "chargeType": "قسم",
     "chargeTypePercentage": "فیصد",
     "chargeTypeFixed": "مقررہ رقم",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "لوگو اپ لوڈ کریں",
     "removeLogo": "لوگو ہٹائیں",
     "logoUploaded": "لوگو کامیابی کے ساتھ اپ لوڈ ہو گیا",
-    "showLogo": "دکان کا لوگو"
+    "showLogo": "دکان کا لوگو",
+    "chargeKind": "فیس کی قسم",
+    "chargePresetCustom": "حسب ضرورت",
+    "editCharge": "فیس میں ترمیم کریں",
+    "chargeReopenRequired": "یہ فیس اب دستیاب نہیں ہے۔ براہ کرم دوبارہ کھولیں اور کوشش کریں۔"
   },
   "setup": {
     "alreadyCompleted": "اس انسٹال کا سیٹ اپ پہلے ہی مکمل ہو چکا ہے۔ سائن ان پر بھیج رہا ہے…",

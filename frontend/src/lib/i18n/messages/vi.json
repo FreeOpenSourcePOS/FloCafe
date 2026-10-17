@@ -2446,8 +2446,6 @@
     "chargesSaved": "Đã lưu phí",
     "chargesSaveFailed": "Không thể lưu phí",
     "chargeName": "Tên",
-    "chargeId": "Mã",
-    "chargeIdHint": "Chữ thường, chữ số, dấu gạch ngang hoặc gạch dưới. service_charge và packaging_charge điền vào các cột báo cáo hiện có.",
     "chargeType": "Loại",
     "chargeTypePercentage": "Phần trăm",
     "chargeTypeFixed": "Số tiền cố định",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Tải Lên Logo",
     "removeLogo": "Xóa Logo",
     "logoUploaded": "Đã tải lên logo thành công",
-    "showLogo": "Logo Cửa Hàng"
+    "showLogo": "Logo Cửa Hàng",
+    "chargeKind": "Loại phí",
+    "chargePresetCustom": "Tùy chỉnh",
+    "editCharge": "Chỉnh sửa phí",
+    "chargeReopenRequired": "Khoản phí này không còn khả dụng. Vui lòng mở lại và thử lại."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

@@ -2446,8 +2446,6 @@
     "chargesSaved": "Charges saved",
     "chargesSaveFailed": "Could not save charges",
     "chargeName": "Name",
-    "chargeId": "Charge ID",
-    "chargeIdHint": "Lowercase letters, digits, dash or underscore. service_charge and packaging_charge feed the existing report columns.",
     "chargeType": "Type",
     "chargeTypePercentage": "Percentage",
     "chargeTypeFixed": "Fixed amount",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Upload Logo",
     "removeLogo": "Remove Logo",
     "logoUploaded": "Logo uploaded successfully",
-    "showLogo": "Store Logo"
+    "showLogo": "Store Logo",
+    "chargeKind": "Fee Type",
+    "chargePresetCustom": "Custom",
+    "editCharge": "Edit Charge",
+    "chargeReopenRequired": "This charge is no longer available. Please reopen and try again."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

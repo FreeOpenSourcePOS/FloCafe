@@ -2446,8 +2446,6 @@
     "chargesSaved": "费用已保存",
     "chargesSaveFailed": "无法保存费用",
     "chargeName": "名称",
-    "chargeId": "标识",
-    "chargeIdHint": "小写字母、数字、连字符或下划线。service_charge 和 packaging_charge 会写入现有的报表列。",
     "chargeType": "类型",
     "chargeTypePercentage": "百分比",
     "chargeTypeFixed": "固定金额",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "上传标志",
     "removeLogo": "移除标志",
     "logoUploaded": "标志上传成功",
-    "showLogo": "店铺标志"
+    "showLogo": "店铺标志",
+    "chargeKind": "费用类型",
+    "chargePresetCustom": "自定义",
+    "editCharge": "编辑费用",
+    "chargeReopenRequired": "此费用已不可用。请重新打开后再试。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

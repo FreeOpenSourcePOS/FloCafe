@@ -2446,8 +2446,6 @@
     "chargesSaved": "Kosten opgeslagen",
     "chargesSaveFailed": "Kosten konden niet worden opgeslagen",
     "chargeName": "Naam",
-    "chargeId": "Kosten-ID",
-    "chargeIdHint": "Kleine letters, cijfers, streepje of underscore. service_charge en packaging_charge voeden de bestaande rapportkolommen.",
     "chargeType": "Soort",
     "chargeTypePercentage": "Procent",
     "chargeTypeFixed": "Vast bedrag",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Logo uploaden",
     "removeLogo": "Logo verwijderen",
     "logoUploaded": "Logo succesvol geüpload",
-    "showLogo": "Winkellogo"
+    "showLogo": "Winkellogo",
+    "chargeKind": "Kostensoort",
+    "chargePresetCustom": "Aangepast",
+    "editCharge": "Kosten bewerken",
+    "chargeReopenRequired": "Deze kosten zijn niet meer beschikbaar. Open opnieuw en probeer het nog eens."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

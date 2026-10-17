@@ -596,6 +596,7 @@ async function runCatalogSaveBoundaryTests() {
 
   const Icon = () => React.createElement('span');
   const currentTenant = { currency: 'JPY', country: 'JP' };
+  let replacedPath = '';
   const calls: Array<{ method: string; path: string; payload?: any }> = [];
   const api = {
     get: async () => ({ data: { products: [], categories: [], addon_groups: [] } }),
@@ -665,28 +666,49 @@ async function runCatalogSaveBoundaryTests() {
       ChevronDown: Icon,
       ChevronRight: Icon,
     },
+    'next/navigation': {
+      useRouter: () => ({
+        replace: (path: string) => {
+          replacedPath = path;
+        },
+        push: () => undefined,
+      }),
+      useSearchParams: () => new URLSearchParams(),
+    },
   };
   const originalLoad = moduleApi._load;
   const originalUseState = React.useState;
   const originalUseEffect = React.useEffect;
   const originalUseRef = React.useRef;
+  const originalUseCallback = React.useCallback;
   moduleApi._load = function (request: string, parent: any, isMain: boolean) {
     if (request in mocks) return mocks[request];
     return originalLoad.call(this, request, parent, isMain);
   };
   React.useEffect = (() => undefined) as typeof React.useEffect;
+  React.useCallback = ((fn: any) => fn) as typeof React.useCallback;
 
   try {
     const ProductsPage = require('../frontend/src/app/(dashboard)/products/page').default;
-    const renderProductsPage = (activeTab: 'products' | 'addons') => {
+    const renderProductsPage = (
+      activeTab: 'products' | 'addons',
+      options?: {
+        editingAddonGroup?: any;
+        addonForm?: any;
+        addonList?: any[];
+      },
+    ) => {
       let stateCall = 0;
       React.useState = ((initial: unknown) => {
         stateCall += 1;
         if (stateCall === 1) return [activeTab, () => undefined];
         if (stateCall === 9) return [false, () => undefined];
         if (stateCall === 10) return [activeTab === 'products', () => undefined];
+        if (stateCall === 13) return [options?.editingAddonGroup ?? null, () => undefined];
+        if (stateCall === 15 && options?.addonForm) return [options.addonForm, () => undefined];
         if (stateCall === 16) return [activeTab === 'addons', () => undefined];
-        if (stateCall === 17) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+        if (stateCall === 17)
+          return [options?.addonList ?? [{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
         if (stateCall === 18)
           return [
             {
@@ -753,9 +775,7 @@ async function runCatalogSaveBoundaryTests() {
       'inline add-on price is rounded at the save handler',
     );
 
-    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
-    const addon = { id: 'addon-1', name: 'Old Sauce', price: 1, is_active: true };
-    const group = {
+    const updateGroup = {
       id: 'group-1',
       name: 'Extras',
       description: null,
@@ -764,50 +784,97 @@ async function runCatalogSaveBoundaryTests() {
       min_selection: 0,
       max_selection: 1,
       is_active: true,
-      addons: [addon],
+      addons: [],
     };
-    const renderAddonPage = (editing: boolean) => {
-      let addonStateCall = 0;
-      React.useState = ((initial: unknown) => {
-        addonStateCall += 1;
-        if (addonStateCall === 1) return [[group], () => undefined];
-        if (addonStateCall === 2) return [false, () => undefined];
-        if (addonStateCall === 5) return ['group-1', () => undefined];
-        if (addonStateCall === 8) return [{ name: 'New Sauce', price: '1.5' }, () => undefined];
-        if (addonStateCall === 9) return [editing ? null : 'group-1', () => undefined];
-        if (addonStateCall === 10)
-          return [editing ? { groupId: 'group-1', addon } : null, () => undefined];
-        return [initial, () => undefined];
-      }) as typeof React.useState;
-      return AddonGroupsPage();
+    const updateAddon = {
+      id: 'addon-1',
+      name: 'Old Sauce',
+      price: '1.5',
+      is_active: true,
+      track_inventory: true,
+      stock_quantity: '10',
+      low_stock_threshold: '2',
+      stock_edited: false,
+      tax_category_id: 'tax-cat-1',
+      tax_behavior: 'exclusive',
+      inherit_parent_tax_category: false,
     };
-    const addTree = renderAddonPage(false);
-    const addButton = collectElements(
-      addTree,
-      (element) => elementText(element) === 'products.addButton',
-    )[0];
-    assert(addButton, 'AddonGroupsPage exposes the add add-on handler');
-    await addButton.props.onClick();
-    const addSave = calls.find(
-      (call) => call.method === 'post' && call.path === '/addon-groups/group-1/addons',
+    const updateAddonGroupTree = renderProductsPage('addons', {
+      editingAddonGroup: updateGroup,
+      addonForm: {
+        name: 'Extras',
+        description: '',
+        is_required: false,
+        allow_multiple_quantities: false,
+        min_selection: 0,
+        max_selection: 1,
+      },
+      addonList: [updateAddon],
+    });
+    const updateAddonGroupForms = collectElements(
+      updateAddonGroupTree,
+      (element) => typeof element.props?.onSubmit === 'function',
     );
-    assert.equal(addSave?.payload?.price, 2, 'add add-on handler rounds JPY price');
+    assert.equal(
+      updateAddonGroupForms.length,
+      1,
+      'ProductsPage exposes the add-on group update form',
+    );
+    await updateAddonGroupForms[0].props.onSubmit({ preventDefault: () => undefined });
+    const addonGroupUpdate = calls.find(
+      (call) => call.method === 'put' && call.path === '/addon-groups/group-1',
+    );
+    assert(addonGroupUpdate, 'ProductsPage sends put request for existing add-on group');
+    assert.equal(
+      addonGroupUpdate?.payload?.addons?.[0]?.price,
+      2,
+      'update add-on handler rounds JPY price',
+    );
+    assert.equal(
+      'stock_quantity' in (addonGroupUpdate?.payload?.addons?.[0] ?? {}),
+      false,
+      'untouched add-on stock_quantity is omitted from update payload',
+    );
+    assert.equal(
+      addonGroupUpdate?.payload?.addons?.[0]?.tax_category_id,
+      'tax-cat-1',
+      'tax_category_id is preserved on update',
+    );
+    assert.equal(
+      addonGroupUpdate?.payload?.addons?.[0]?.tax_behavior,
+      'exclusive',
+      'tax_behavior is preserved on update',
+    );
+    assert.equal(
+      addonGroupUpdate?.payload?.addons?.[0]?.inherit_parent_tax_category,
+      false,
+      'inherit_parent_tax_category is preserved on update',
+    );
 
-    const updateTree = renderAddonPage(true);
-    const updateButton = collectElements(
-      updateTree,
-      (element) => elementText(element) === 'common.save',
-    )[0];
-    assert(updateButton, 'AddonGroupsPage exposes the update add-on handler');
-    await updateButton.props.onClick();
-    const updateSave = calls.find(
-      (call) => call.method === 'put' && call.path === '/addon-groups/group-1/addons/addon-1',
+    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
+    const initialCallCount = calls.length;
+    let redirectEffectRan = false;
+    React.useEffect = ((effect: () => void) => {
+      effect();
+      redirectEffectRan = true;
+    }) as typeof React.useEffect;
+    AddonGroupsPage();
+    assert(redirectEffectRan, 'AddonGroupsPage executes redirect effect');
+    assert.equal(
+      replacedPath,
+      '/products?tab=addons',
+      'AddonGroupsPage compatibility route redirects to /products?tab=addons',
     );
-    assert.equal(updateSave?.payload?.price, 2, 'update add-on handler rounds JPY price');
+    assert.equal(
+      calls.length,
+      initialCallCount,
+      'AddonGroupsPage redirect performs zero API reads or writes',
+    );
   } finally {
     React.useState = originalUseState;
     React.useEffect = originalUseEffect;
     React.useRef = originalUseRef;
+    React.useCallback = originalUseCallback;
     moduleApi._load = originalLoad;
   }
   console.log('  ✓ Product and add-on save handlers verified');

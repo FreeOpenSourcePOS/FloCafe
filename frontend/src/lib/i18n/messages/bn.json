@@ -2446,8 +2446,6 @@
     "chargesSaved": "ফি সংরক্ষিত",
     "chargesSaveFailed": "ফি সংরক্ষণ করা যায়নি",
     "chargeName": "নাম",
-    "chargeId": "আইডি",
-    "chargeIdHint": "ছোট ইংরেজি অক্ষর, সংখ্যা, ড্যাশ বা আন্ডারস্কোর। service_charge ও packaging_charge বিদ্যমান রিপোর্ট কলাম পূরণ করে।",
     "chargeType": "ধরন",
     "chargeTypePercentage": "শতাংশ",
     "chargeTypeFixed": "নির্দিষ্ট পরিমাণ",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "লোগো আপলোড করুন",
     "removeLogo": "লোগো সরান",
     "logoUploaded": "লোগো সফলভাবে আপলোড হয়েছে",
-    "showLogo": "স্টোর লোগো"
+    "showLogo": "স্টোর লোগো",
+    "chargeKind": "ফির ধরন",
+    "chargePresetCustom": "কাস্টম",
+    "editCharge": "ফি সম্পাদনা করুন",
+    "chargeReopenRequired": "এই ফি আর উপলব্ধ নেই। অনুগ্রহ করে পুনরায় খুলুন এবং আবার চেষ্টা করুন।"
   },
   "setup": {
     "alreadyCompleted": "এই ইনস্টলে সেটআপ ইতিমধ্যেই সম্পন্ন হয়েছে। লগইন করার জন্য পুনঃনির্দেশ করা হচ্ছে...",

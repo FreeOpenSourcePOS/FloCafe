@@ -2446,8 +2446,6 @@
     "chargesSaved": "Nai-save ang mga bayarin",
     "chargesSaveFailed": "Hindi ma-save ang mga bayarin",
     "chargeName": "Pangalan",
-    "chargeId": "ID ng bayarin",
-    "chargeIdHint": "Maliit na titik, numero, dash o underscore. Ang service_charge at packaging_charge ay pumupun sa umiiral na mga column ng ulat.",
     "chargeType": "Uri",
     "chargeTypePercentage": "Porsyento",
     "chargeTypeFixed": "Halagang nakapirming",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "I-upload ang Logo",
     "removeLogo": "Alisin ang Logo",
     "logoUploaded": "Matagumpay na na-upload ang logo",
-    "showLogo": "Logo ng Tindahan"
+    "showLogo": "Logo ng Tindahan",
+    "chargeKind": "Uri ng bayarin",
+    "chargePresetCustom": "Pasadya",
+    "editCharge": "I-edit ang bayarin",
+    "chargeReopenRequired": "Hindi na available ang bayaring ito. Pakibuksan muli at subukang muli."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

@@ -2446,8 +2446,6 @@
     "chargesSaved": "料金を保存しました",
     "chargesSaveFailed": "料金を保存できませんでした",
     "chargeName": "名称",
-    "chargeId": "料金 ID",
-    "chargeIdHint": "小文字の英数字、ハイフン、アンダースコア。service_charge と packaging_charge は既存のレポート列に反映されます。",
     "chargeType": "種類",
     "chargeTypePercentage": "パーセント",
     "chargeTypeFixed": "固定額",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "ロゴをアップロード",
     "removeLogo": "ロゴを削除",
     "logoUploaded": "ロゴをアップロードしました",
-    "showLogo": "店舗ロゴ"
+    "showLogo": "店舗ロゴ",
+    "chargeKind": "料金種別",
+    "chargePresetCustom": "カスタム",
+    "editCharge": "料金を編集",
+    "chargeReopenRequired": "この料金は利用できなくなりました。再度開いてお試しください。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

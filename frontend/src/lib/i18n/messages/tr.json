@@ -2446,8 +2446,6 @@
     "chargesSaved": "Ücretler kaydedildi",
     "chargesSaveFailed": "Ücretler kaydedilemedi",
     "chargeName": "Ad",
-    "chargeId": "Kimlik",
-    "chargeIdHint": "Küçük harfler, rakamlar, tire veya alt çizgi. service_charge ve packaging_charge mevcut rapor sütunlarını besler.",
     "chargeType": "Tür",
     "chargeTypePercentage": "Yüzde",
     "chargeTypeFixed": "Sabit tutar",
@@ -2466,7 +2464,11 @@
     "uploadLogo": "Logo Yükle",
     "removeLogo": "Logoyu Kaldır",
     "logoUploaded": "Logo başarıyla yüklendi",
-    "showLogo": "Mağaza Logosu"
+    "showLogo": "Mağaza Logosu",
+    "chargeKind": "Ücret türü",
+    "chargePresetCustom": "Özel",
+    "editCharge": "Ücreti düzenle",
+    "chargeReopenRequired": "Bu ücret artık mevcut değil. Lütfen yeniden açıp tekrar deneyin."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

@@ -3334,259 +3334,258 @@ export function restoreBackup(
   }
 
   try {
+    let metadataVersion = 0;
+    let metadataStampPresent = false;
+    let pragmaVersion = 0;
+    let backupDb: Database.Database | undefined;
+    let unreadableSource = false;
+    try {
+      backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+      const metaRow = backupDb
+        .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
+        .get() as { value: string } | undefined;
+      metadataStampPresent = Boolean(metaRow);
+      metadataVersion = metaRow ? (parseCanonicalSchemaVersion(metaRow.value) ?? 0) : 0;
+      pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+    } catch {
+      // A file that is not a readable SQLite database (truncated, corrupt, or
+      // simply not a database at all) must be refused, never applied.
+      unreadableSource = true;
+    } finally {
+      backupDb?.close();
+    }
 
-  let metadataVersion = 0;
-  let metadataStampPresent = false;
-  let pragmaVersion = 0;
-  let backupDb: Database.Database | undefined;
-  let unreadableSource = false;
-  try {
-    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
-    const metaRow = backupDb
-      .prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`)
-      .get() as { value: string } | undefined;
-    metadataStampPresent = Boolean(metaRow);
-    metadataVersion = metaRow ? (parseCanonicalSchemaVersion(metaRow.value) ?? 0) : 0;
-    pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
-  } catch {
-    // A file that is not a readable SQLite database (truncated, corrupt, or
-    // simply not a database at all) must be refused, never applied.
-    unreadableSource = true;
-  } finally {
-    backupDb?.close();
-  }
+    if (unreadableSource) {
+      return {
+        success: false,
+        mode: forceDirect ? 'direct' : 'data_only',
+        backupSchemaVersion: 0,
+        currentSchemaVersion: getCurrentSchemaVersion(),
+        tablesRestored: 0,
+        error: 'Restore source is not a readable Flo database file',
+      };
+    }
 
-  if (unreadableSource) {
-    return {
-      success: false,
-      mode: forceDirect ? 'direct' : 'data_only',
-      backupSchemaVersion: 0,
-      currentSchemaVersion: getCurrentSchemaVersion(),
-      tablesRestored: 0,
-      error: 'Restore source is not a readable Flo database file',
-    };
-  }
+    // Determine schema version from metadata stamp or SQLite user_version pragma.
+    const backupSchemaVersion =
+      Number.isFinite(metadataVersion) && metadataVersion > 0 ? metadataVersion : pragmaVersion;
+    const currentDb = getDatabase();
+    const currentVersion = getCurrentSchemaVersion();
+    // Preserve revocations from live database so restored older snapshot cannot unrevoke tokens.
+    const preservedRevocations = readRevocations(currentDb);
+    const preservedUserSecurity = captureUserSecurityState(currentDb);
+    const preservedUserStations = captureUserStationSecurityState(currentDb);
+    const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
+    const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
+    const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
+    const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
-  // Determine schema version from metadata stamp or SQLite user_version pragma.
-  const backupSchemaVersion =
-    Number.isFinite(metadataVersion) && metadataVersion > 0 ? metadataVersion : pragmaVersion;
-  const currentDb = getDatabase();
-  const currentVersion = getCurrentSchemaVersion();
-  // Preserve revocations from live database so restored older snapshot cannot unrevoke tokens.
-  const preservedRevocations = readRevocations(currentDb);
-  const preservedUserSecurity = captureUserSecurityState(currentDb);
-  const preservedUserStations = captureUserStationSecurityState(currentDb);
-  const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
-  const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
-  const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
-  const preservedOutboxes = captureRestoreOutboxState(currentDb);
-
-  console.log(
-    `[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`,
-  );
-
-  if (metadataStampPresent && (metadataVersion <= 0 || metadataVersion !== pragmaVersion)) {
-    return {
-      success: false,
-      mode: forceDirect ? 'direct' : 'data_only',
-      backupSchemaVersion,
-      currentSchemaVersion: currentVersion,
-      tablesRestored: 0,
-      error: 'Backup schema metadata does not match the SQLite header',
-    };
-  }
-
-  if (forceDirect && pragmaVersion > currentVersion) {
-    return {
-      success: false,
-      mode: 'direct',
-      backupSchemaVersion,
-      currentSchemaVersion: currentVersion,
-      tablesRestored: 0,
-      error: `Direct restore rejected: backup schema v${pragmaVersion} is newer than supported schema v${currentVersion}`,
-    };
-  }
-
-  if (forceDirect || backupSchemaVersion === currentVersion) {
-    throwIfDatabaseMaintenanceAborted(signal);
-    const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
-    const validationError = validateDirectBackup(
-      backupPath,
-      currentDb,
-      currentVersion,
-      baselineForeignKeyViolations,
+    console.log(
+      `[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`,
     );
-    if (validationError) {
+
+    if (metadataStampPresent && (metadataVersion <= 0 || metadataVersion !== pragmaVersion)) {
+      return {
+        success: false,
+        mode: forceDirect ? 'direct' : 'data_only',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: 'Backup schema metadata does not match the SQLite header',
+      };
+    }
+
+    if (forceDirect && pragmaVersion > currentVersion) {
       return {
         success: false,
         mode: 'direct',
         backupSchemaVersion,
         currentSchemaVersion: currentVersion,
         tablesRestored: 0,
-        error: validationError,
+        error: `Direct restore rejected: backup schema v${pragmaVersion} is newer than supported schema v${currentVersion}`,
       };
     }
 
-    console.log('[DB] restoreBackup: Direct restore (same schema version)');
-    const dbPath = getDbPath();
-    let recoveryPath = '';
-    let journalPath = '';
-
-    let recoveryCopyReady = false;
-    let recoveryCompleted = false;
-    try {
-      // Checkpoint the live WAL before making a synchronous recovery copy.
-      currentDb.pragma('wal_checkpoint(TRUNCATE)');
-      const replacementJournal = beginDatabaseReplacementJournal(dbPath, 'restore');
-      recoveryPath = replacementJournal.recoveryPath;
-      journalPath = replacementJournal.journalPath;
-      recoveryCopyReady = true;
-      writeReplacementJournal(journalPath, {
-        phase: 'prepared',
-        recoveryPath,
-        dbPath,
-        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
-        driveInvalidationRequired: true,
-      });
+    if (forceDirect || backupSchemaVersion === currentVersion) {
       throwIfDatabaseMaintenanceAborted(signal);
-      closeDatabase();
-      throwIfDatabaseMaintenanceAborted(signal);
-      const removeFailures = removeDatabaseFiles(dbPath);
-      if (removeFailures.length > 0) {
-        throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
-      }
-      throwIfDatabaseMaintenanceAborted(signal);
-      fs.copyFileSync(backupPath, dbPath);
-      initDatabase(false, true);
-
-      const freshDb = getDatabase();
-      mergeUserSecurityState(freshDb, preservedUserSecurity);
-      mergeUserStationSecurityState(
-        freshDb,
-        preservedUserStations,
-        preservedUserSecurity.map((row) => row.id),
-        preservedStationSecurity,
+      const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+      const validationError = validateDirectBackup(
+        backupPath,
+        currentDb,
+        currentVersion,
+        baselineForeignKeyViolations,
       );
-      mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
-      mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
-      freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
-      freshDb.prepare('DELETE FROM customer_display_tokens').run();
-      mergeRestoreOutboxState(freshDb, preservedOutboxes);
-      mergeRevocations(freshDb, preservedRevocations);
-      const integrity = freshDb.prepare('PRAGMA integrity_check').all() as {
-        integrity_check: string;
-      }[];
-      const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)].filter(
-        (key) => !baselineForeignKeyViolations.has(key),
-      );
-      if (
-        integrity.some((row) => row.integrity_check !== 'ok') ||
-        newForeignKeyViolations.length > 0
-      ) {
-        throw new Error('Restored database failed integrity validation');
+      if (validationError) {
+        return {
+          success: false,
+          mode: 'direct',
+          backupSchemaVersion,
+          currentSchemaVersion: currentVersion,
+          tablesRestored: 0,
+          error: validationError,
+        };
       }
-      throwIfDatabaseMaintenanceAborted(signal);
-      freshDb.pragma('wal_checkpoint(TRUNCATE)');
-      syncFile(dbPath);
-      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
-        throw new Error('Could not durably commit restored database');
-      }
-      throwIfDatabaseMaintenanceAborted(signal);
-      clearGoogleDriveRestoreBinding(freshDb);
-      writeReplacementJournal(journalPath, {
-        phase: 'committed',
-        recoveryPath,
-        dbPath,
-        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
-        driveInvalidationRequired: true,
-      });
-      // The replacement is durable; keep the snapshot of what it replaced so a
-      // customer who restores the wrong file can undo it.
-      retainRestoreSafetyCopy(recoveryPath, currentVersion);
-      return {
-        success: true,
-        mode: 'direct',
-        backupSchemaVersion,
-        currentSchemaVersion: currentVersion,
-        tablesRestored: getTables(freshDb).length,
-        committed: true,
-        cleanupPending: false,
-      };
-    } catch (error: any) {
-      const committedJournal = readReplacementJournal(journalPath);
-      if (committedJournal?.phase === 'committed') {
-        // The replacement is authoritative once the committed journal is durable.
-        // Do not roll it back after a post-commit error; Drive invalidation and
-        // artifact cleanup must finish from the durable boundary.
+
+      console.log('[DB] restoreBackup: Direct restore (same schema version)');
+      const dbPath = getDbPath();
+      let recoveryPath = '';
+      let journalPath = '';
+
+      let recoveryCopyReady = false;
+      let recoveryCompleted = false;
+      try {
+        // Checkpoint the live WAL before making a synchronous recovery copy.
+        currentDb.pragma('wal_checkpoint(TRUNCATE)');
+        const replacementJournal = beginDatabaseReplacementJournal(dbPath, 'restore');
+        recoveryPath = replacementJournal.recoveryPath;
+        journalPath = replacementJournal.journalPath;
+        recoveryCopyReady = true;
+        writeReplacementJournal(journalPath, {
+          phase: 'prepared',
+          recoveryPath,
+          dbPath,
+          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          driveInvalidationRequired: true,
+        });
+        throwIfDatabaseMaintenanceAborted(signal);
+        closeDatabase();
+        throwIfDatabaseMaintenanceAborted(signal);
+        const removeFailures = removeDatabaseFiles(dbPath);
+        if (removeFailures.length > 0) {
+          throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
+        }
+        throwIfDatabaseMaintenanceAborted(signal);
+        fs.copyFileSync(backupPath, dbPath);
+        initDatabase(false, true);
+
+        const freshDb = getDatabase();
+        mergeUserSecurityState(freshDb, preservedUserSecurity);
+        mergeUserStationSecurityState(
+          freshDb,
+          preservedUserStations,
+          preservedUserSecurity.map((row) => row.id),
+          preservedStationSecurity,
+        );
+        mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
+        mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
+        freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
+        freshDb.prepare('DELETE FROM customer_display_tokens').run();
+        mergeRestoreOutboxState(freshDb, preservedOutboxes);
+        mergeRevocations(freshDb, preservedRevocations);
+        const integrity = freshDb.prepare('PRAGMA integrity_check').all() as {
+          integrity_check: string;
+        }[];
+        const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)].filter(
+          (key) => !baselineForeignKeyViolations.has(key),
+        );
+        if (
+          integrity.some((row) => row.integrity_check !== 'ok') ||
+          newForeignKeyViolations.length > 0
+        ) {
+          throw new Error('Restored database failed integrity validation');
+        }
+        throwIfDatabaseMaintenanceAborted(signal);
+        freshDb.pragma('wal_checkpoint(TRUNCATE)');
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably commit restored database');
+        }
+        throwIfDatabaseMaintenanceAborted(signal);
+        clearGoogleDriveRestoreBinding(freshDb);
+        writeReplacementJournal(journalPath, {
+          phase: 'committed',
+          recoveryPath,
+          dbPath,
+          baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+          driveInvalidationRequired: true,
+        });
+        // The replacement is durable; keep the snapshot of what it replaced so a
+        // customer who restores the wrong file can undo it.
+        retainRestoreSafetyCopy(recoveryPath, currentVersion);
         return {
           success: true,
           mode: 'direct',
           backupSchemaVersion,
           currentSchemaVersion: currentVersion,
-          tablesRestored: getTables(getDatabase()).length,
+          tablesRestored: getTables(freshDb).length,
           committed: true,
-          cleanupPending: true,
+          cleanupPending: false,
         };
-      }
-      // A corrupt/incompatible same-version file must not strand the live
-      // database. Restore the checkpointed safety copy before rethrowing.
-      if (!recoveryCopyReady) throw error;
-      try {
-        closeDatabase();
-        const recoveryRemoveFailures = removeDatabaseFiles(dbPath);
-        if (recoveryRemoveFailures.length > 0) {
+      } catch (error: any) {
+        const committedJournal = readReplacementJournal(journalPath);
+        if (committedJournal?.phase === 'committed') {
+          // The replacement is authoritative once the committed journal is durable.
+          // Do not roll it back after a post-commit error; Drive invalidation and
+          // artifact cleanup must finish from the durable boundary.
+          return {
+            success: true,
+            mode: 'direct',
+            backupSchemaVersion,
+            currentSchemaVersion: currentVersion,
+            tablesRestored: getTables(getDatabase()).length,
+            committed: true,
+            cleanupPending: true,
+          };
+        }
+        // A corrupt/incompatible same-version file must not strand the live
+        // database. Restore the checkpointed safety copy before rethrowing.
+        if (!recoveryCopyReady) throw error;
+        try {
+          closeDatabase();
+          const recoveryRemoveFailures = removeDatabaseFiles(dbPath);
+          if (recoveryRemoveFailures.length > 0) {
+            throw new Error(
+              `Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`,
+            );
+          }
+          fs.copyFileSync(recoveryPath, dbPath);
+          syncFile(dbPath);
+          if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+            throw new Error('Could not durably recover direct-restore database');
+          }
+          initDatabase(false, true);
+          recoveryCompleted = true;
+        } catch (recoveryError: any) {
           throw new Error(
-            `Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`,
+            `Direct restore failed: ${error?.message || 'unknown error'}; ` +
+              `live database recovery failed: ${recoveryError?.message || 'unknown error'}`,
+            { cause: recoveryError },
           );
         }
-        fs.copyFileSync(recoveryPath, dbPath);
-        syncFile(dbPath);
-        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
-          throw new Error('Could not durably recover direct-restore database');
+        throw error;
+      } finally {
+        if (recoveryCompleted) {
+          removeReplacementArtifactsDurably(journalPath, recoveryPath);
+        } else if (
+          recoveryCopyReady &&
+          isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false) &&
+          isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)
+        ) {
+          // A committed journal is finalized here; an uncommitted journal is
+          // intentionally retained if recovery itself failed.
+          try {
+            const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
+            if (journal.phase === 'committed' && journal.driveInvalidationRequired !== true)
+              removeReplacementArtifactsDurably(journalPath, recoveryPath);
+          } catch {}
         }
-        initDatabase(false, true);
-        recoveryCompleted = true;
-      } catch (recoveryError: any) {
-        throw new Error(
-          `Direct restore failed: ${error?.message || 'unknown error'}; ` +
-            `live database recovery failed: ${recoveryError?.message || 'unknown error'}`,
-          { cause: recoveryError },
-        );
-      }
-      throw error;
-    } finally {
-      if (recoveryCompleted) {
-        removeReplacementArtifactsDurably(journalPath, recoveryPath);
-      } else if (
-        recoveryCopyReady &&
-        isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false) &&
-        isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)
-      ) {
-        // A committed journal is finalized here; an uncommitted journal is
-        // intentionally retained if recovery itself failed.
-        try {
-          const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
-          if (journal.phase === 'committed' && journal.driveInvalidationRequired !== true)
-            removeReplacementArtifactsDurably(journalPath, recoveryPath);
-        } catch {}
       }
     }
-  }
 
-  console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(
-    backupPath,
-    backupSchemaVersion,
-    currentVersion,
-    preservedRevocations,
-    preservedUserSecurity,
-    preservedUserStations,
-    preservedStationSecurity,
-    preservedKdsEnabled,
-    preservedProtectedSettings,
-    preservedOutboxes,
-    signal,
-  );
+    console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
+    return dataOnlyRestore(
+      backupPath,
+      backupSchemaVersion,
+      currentVersion,
+      preservedRevocations,
+      preservedUserSecurity,
+      preservedUserStations,
+      preservedStationSecurity,
+      preservedKdsEnabled,
+      preservedProtectedSettings,
+      preservedOutboxes,
+      signal,
+    );
   } finally {
     stagedSource?.cleanup();
   }

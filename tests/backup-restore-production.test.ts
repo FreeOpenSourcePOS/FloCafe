@@ -39,19 +39,32 @@ import { adjustProductStock } from '../main/services/inventory';
 
 function assertNoRestoreAttachment(): void {
   const attached = getDatabase().prepare('PRAGMA database_list').all() as { name: string }[];
-  assert.equal(attached.some((entry) => entry.name === '_restore_src'), false, 'restore source is detached');
+  assert.equal(
+    attached.some((entry) => entry.name === '_restore_src'),
+    false,
+    'restore source is detached',
+  );
 }
 
 function seedLinkedData(): void {
   const db = getDatabase();
-  db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('restore-category', 'Restore Category');
-  db.prepare('INSERT INTO products (id, category_id, name, price) VALUES (?, ?, ?, ?)')
-    .run('restore-product', 'restore-category', 'Restore Product', 12.5);
+  db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run(
+    'restore-category',
+    'Restore Category',
+  );
+  db.prepare('INSERT INTO products (id, category_id, name, price) VALUES (?, ?, ?, ?)').run(
+    'restore-product',
+    'restore-category',
+    'Restore Product',
+    12.5,
+  );
   db.prepare(`
     INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
     VALUES (?, 'takeaway', 'pending', ?, ?, datetime('now'), datetime('now'))
   `).run('RESTORE-001', 12.5, 12.5);
-  const order = db.prepare('SELECT id FROM orders WHERE order_number = ?').get('RESTORE-001') as { id: number };
+  const order = db.prepare('SELECT id FROM orders WHERE order_number = ?').get('RESTORE-001') as {
+    id: number;
+  };
   db.prepare(`
     INSERT INTO order_items
       (order_id, product_id, product_name, unit_price, quantity, subtotal, total, status, created_at, updated_at)
@@ -61,14 +74,18 @@ function seedLinkedData(): void {
 
 function clearLinkedData(): void {
   const db = getDatabase();
-  db.exec('DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM inventory_movements; DELETE FROM products; DELETE FROM categories;');
+  db.exec(
+    'DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM inventory_movements; DELETE FROM products; DELETE FROM categories;',
+  );
 }
 
 function copyAndStamp(sourcePath: string, destinationPath: string, schemaVersion: number): void {
   fs.copyFileSync(sourcePath, destinationPath);
   const backupDb = new Database(destinationPath);
   backupDb.pragma('foreign_keys = OFF');
-  backupDb.prepare("UPDATE _flo_meta SET value = ? WHERE key = 'schema_version'").run(String(schemaVersion));
+  backupDb
+    .prepare("UPDATE _flo_meta SET value = ? WHERE key = 'schema_version'")
+    .run(String(schemaVersion));
   backupDb.pragma(`user_version = ${schemaVersion}`);
   backupDb.close();
 }
@@ -84,13 +101,21 @@ async function run() {
       VALUES ('restore-station-current', 'Current Station', '[]', 1, datetime('now'), datetime('now'))`).run();
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
-    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime(\'now\'))')
-      .run('restore-station-chef', 'restore-station-current');
+    db.prepare(
+      "INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime('now'))",
+    ).run('restore-station-chef', 'restore-station-current');
     db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run();
-    for (const [key, value] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['cloud_pos_hash', 'current-pos-hash'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
+    for (const [key, value] of [
+      ['jwt_secret', 'current-jwt'],
+      ['cloud_api_key', 'current-cloud-key'],
+      ['cloud_device_secret', 'current-device-secret'],
+      ['cloud_pos_hash', 'current-pos-hash'],
+      ['telemetry_enabled', 'false'],
+      ['diagnostics_consent', 'false'],
+    ]) {
       db.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
@@ -109,7 +134,11 @@ async function run() {
     fs.chmodSync(readOnlySourceDir, 0o500);
     try {
       const readOnlyRestore = restoreBackup(readOnlySource, true);
-      assert.equal(readOnlyRestore.success, true, 'restore reads a backup from a read-only source directory');
+      assert.equal(
+        readOnlyRestore.success,
+        true,
+        'restore reads a backup from a read-only source directory',
+      );
     } finally {
       fs.chmodSync(readOnlySourceDir, 0o700);
     }
@@ -120,39 +149,108 @@ async function run() {
     enabledKdsDb.pragma('foreign_keys = OFF');
     enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key = 'kds_enabled'").run();
     enabledKdsDb.prepare("UPDATE settings SET value = 'backup-jwt' WHERE key = 'jwt_secret'").run();
-    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-cloud-key' WHERE key = 'cloud_api_key'").run();
-    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-device-secret' WHERE key = 'cloud_device_secret'").run();
-    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-pos-hash' WHERE key = 'cloud_pos_hash'").run();
-    enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key IN ('telemetry_enabled', 'diagnostics_consent')").run();
-    enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code', 'backup-pairing-code', datetime('now'))").run();
-    enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code_expires_at', '2099-01-01T00:00:00.000Z', datetime('now'))").run();
-    enabledKdsDb.prepare("INSERT INTO kds_pairing_tokens (id, token, station_id, expires_at, created_at) VALUES ('backup-kds-token', 'backup-token-value', NULL, '2099-01-01 00:00:00', datetime('now'))").run();
+    enabledKdsDb
+      .prepare("UPDATE settings SET value = 'backup-cloud-key' WHERE key = 'cloud_api_key'")
+      .run();
+    enabledKdsDb
+      .prepare(
+        "UPDATE settings SET value = 'backup-device-secret' WHERE key = 'cloud_device_secret'",
+      )
+      .run();
+    enabledKdsDb
+      .prepare("UPDATE settings SET value = 'backup-pos-hash' WHERE key = 'cloud_pos_hash'")
+      .run();
+    enabledKdsDb
+      .prepare(
+        "UPDATE settings SET value = 'true' WHERE key IN ('telemetry_enabled', 'diagnostics_consent')",
+      )
+      .run();
+    enabledKdsDb
+      .prepare(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code', 'backup-pairing-code', datetime('now'))",
+      )
+      .run();
+    enabledKdsDb
+      .prepare(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code_expires_at', '2099-01-01T00:00:00.000Z', datetime('now'))",
+      )
+      .run();
+    enabledKdsDb
+      .prepare(
+        "INSERT INTO kds_pairing_tokens (id, token, station_id, expires_at, created_at) VALUES ('backup-kds-token', 'backup-token-value', NULL, '2099-01-01 00:00:00', datetime('now'))",
+      )
+      .run();
     enabledKdsDb.close();
     const enabledKdsRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(enabledKdsRestore.success, true, 'restore succeeds when backup enables KDS');
     assert.equal(
-      (getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string }).value,
+      (
+        getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as {
+          value: string;
+        }
+      ).value,
       'false',
       'direct restore preserves the current disabled KDS setting',
     );
-    for (const [key, expected] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['cloud_pos_hash', 'current-pos-hash'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
-      assert.equal((getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string }).value, expected, `direct restore preserves current ${key}`);
+    for (const [key, expected] of [
+      ['jwt_secret', 'current-jwt'],
+      ['cloud_api_key', 'current-cloud-key'],
+      ['cloud_device_secret', 'current-device-secret'],
+      ['cloud_pos_hash', 'current-pos-hash'],
+      ['telemetry_enabled', 'false'],
+      ['diagnostics_consent', 'false'],
+    ]) {
+      assert.equal(
+        (
+          getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as {
+            value: string;
+          }
+        ).value,
+        expected,
+        `direct restore preserves current ${key}`,
+      );
     }
 
-    assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'mobile_pairing_code'").get(), undefined, 'restore discards backup mobile pairing codes');
-    assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM kds_pairing_tokens').get() as { count: number }).count, 0, 'restore invalidates backup KDS pairing tokens');
-    getDatabase().prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+    assert.equal(
+      getDatabase().prepare("SELECT value FROM settings WHERE key = 'mobile_pairing_code'").get(),
+      undefined,
+      'restore discards backup mobile pairing codes',
+    );
+    assert.equal(
+      (
+        getDatabase().prepare('SELECT COUNT(*) AS count FROM kds_pairing_tokens').get() as {
+          count: number;
+        }
+      ).count,
+      0,
+      'restore invalidates backup KDS pairing tokens',
+    );
+    getDatabase()
+      .prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`)
+      .run();
     const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(currentOnlyRestore.success, true, 'restore succeeds with a current-only user');
-    assert.equal((getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-current-only-user') as { is_active: number }).is_active, 1, 'current-only users survive restore');
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT is_active FROM users WHERE id = ?')
+          .get('restore-current-only-user') as { is_active: number }
+      ).is_active,
+      1,
+      'current-only users survive restore',
+    );
 
     const missingStationBackup = path.join(testDir, 'missing-current-station.db');
     copyAndStamp(sameSchemaBackup, missingStationBackup, currentVersion);
     const missingStationDb = new Database(missingStationBackup);
     missingStationDb.pragma('foreign_keys = OFF');
-    missingStationDb.prepare('DELETE FROM station_users WHERE station_id = ?').run('restore-station-current');
-    missingStationDb.prepare('DELETE FROM kitchen_stations WHERE id = ?').run('restore-station-current');
+    missingStationDb
+      .prepare('DELETE FROM station_users WHERE station_id = ?')
+      .run('restore-station-current');
+    missingStationDb
+      .prepare('DELETE FROM kitchen_stations WHERE id = ?')
+      .run('restore-station-current');
     missingStationDb.close();
     assert.throws(
       () => restoreBackup(missingStationBackup, true),
@@ -160,7 +258,11 @@ async function run() {
       'restore rejects a backup that cannot preserve current station assignments',
     );
     assert.equal(
-      (getDatabase().prepare('SELECT station_id FROM station_users WHERE user_id = ?').get('restore-station-chef') as { station_id: string }).station_id,
+      (
+        getDatabase()
+          .prepare('SELECT station_id FROM station_users WHERE user_id = ?')
+          .get('restore-station-chef') as { station_id: string }
+      ).station_id,
       'restore-station-current',
       'failed station-assignment restore leaves the current restriction intact',
     );
@@ -169,28 +271,49 @@ async function run() {
     copyAndStamp(sameSchemaBackup, changedStationBackup, currentVersion);
     const changedStationDb = new Database(changedStationBackup);
     changedStationDb.pragma('foreign_keys = OFF');
-    changedStationDb.prepare('UPDATE kitchen_stations SET is_active = 0, category_ids = ? WHERE id = ?')
+    changedStationDb
+      .prepare('UPDATE kitchen_stations SET is_active = 0, category_ids = ? WHERE id = ?')
       .run('["different-category"]', 'restore-station-current');
     changedStationDb.close();
     const changedStationRestore = restoreBackup(changedStationBackup, true);
-    assert.equal(changedStationRestore.success, true, 'restore preserves current station security configuration');
-    const restoredStationSecurity = getDatabase().prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?').get('restore-station-current') as { is_active: number; category_ids: string };
-    assert.equal(restoredStationSecurity.is_active, 1, 'restore preserves the current station active state');
-    assert.equal(restoredStationSecurity.category_ids, '[]', 'restore preserves the current station categories');
+    assert.equal(
+      changedStationRestore.success,
+      true,
+      'restore preserves current station security configuration',
+    );
+    const restoredStationSecurity = getDatabase()
+      .prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?')
+      .get('restore-station-current') as { is_active: number; category_ids: string };
+    assert.equal(
+      restoredStationSecurity.is_active,
+      1,
+      'restore preserves the current station active state',
+    );
+    assert.equal(
+      restoredStationSecurity.category_ids,
+      '[]',
+      'restore preserves the current station categories',
+    );
 
     const backupOnlyUserBackup = path.join(testDir, 'backup-only-user.db');
     copyAndStamp(sameSchemaBackup, backupOnlyUserBackup, currentVersion);
     const backupOnlyUserDb = new Database(backupOnlyUserBackup);
     backupOnlyUserDb.pragma('foreign_keys = OFF');
-    backupOnlyUserDb.prepare(`
+    backupOnlyUserDb
+      .prepare(`
       INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
-    `).run();
+    `)
+      .run();
     backupOnlyUserDb.close();
     const backupOnlyUserRestore = restoreBackup(backupOnlyUserBackup, true);
     assert.equal(backupOnlyUserRestore.success, true, 'restore succeeds with a backup-only user');
     assert.equal(
-      (getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-backup-only-chef') as { is_active: number }).is_active,
+      (
+        getDatabase()
+          .prepare('SELECT is_active FROM users WHERE id = ?')
+          .get('restore-backup-only-chef') as { is_active: number }
+      ).is_active,
       0,
       'backup-only users remain disabled after restore',
     );
@@ -202,44 +325,88 @@ async function run() {
     const inconsistentLedgerBackup = path.join(testDir, 'inconsistent-ledger.db');
     copyAndStamp(sameSchemaBackup, inconsistentLedgerBackup, currentVersion - 1);
     const inconsistentLedgerDb = new Database(inconsistentLedgerBackup);
-    inconsistentLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(7, 'restore-product');
+    inconsistentLedgerDb
+      .prepare('UPDATE products SET stock_quantity = ? WHERE id = ?')
+      .run(7, 'restore-product');
     inconsistentLedgerDb.exec('DROP TABLE inventory_movements');
     inconsistentLedgerDb.close();
     const inconsistentRestore = restoreBackup(inconsistentLedgerBackup, false);
-    assert.equal(inconsistentRestore.success, false, 'data-only restore rejects stock without matching movement history');
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      inconsistentRestore.success,
+      false,
+      'data-only restore rejects stock without matching movement history',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+          .get('restore-product') as { stock_quantity: number }
+      ).stock_quantity,
       0,
       'rejected inconsistent restore leaves the live stock cache unchanged',
     );
 
-    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare('UPDATE products SET stock_quantity = ? WHERE id = ?')
+      .run(5, 'restore-product');
+    getDatabase()
+      .prepare(`
       INSERT INTO inventory_movements (
         product_id, quantity_delta, movement_type, reference_type, reference_id,
         reason, actor_user_id, stock_after, created_at
       ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, datetime('now'))
-    `).run('restore-product', 5, 'restore-product', 'Current opening balance', 'restore-station-chef', 5);
+    `)
+      .run(
+        'restore-product',
+        5,
+        'restore-product',
+        'Current opening balance',
+        'restore-station-chef',
+        5,
+      );
     const zeroResetRestore = restoreBackup(olderBackup, false);
-    assert.equal(zeroResetRestore.success, false, 'data-only restore rejects an unaudited stock reset');
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      zeroResetRestore.success,
+      false,
+      'data-only restore rejects an unaudited stock reset',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+          .get('restore-product') as { stock_quantity: number }
+      ).stock_quantity,
       5,
       'rejected stock-reset restore leaves the live stock cache unchanged',
     );
     assert.equal(
-      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      (
+        getDatabase()
+          .prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?')
+          .get('restore-product') as { count: number }
+      ).count,
       1,
       'rejected stock-reset restore leaves movement history unchanged',
     );
 
-    getDatabase().prepare('UPDATE products SET stock_quantity = 0 WHERE id = ?').run('restore-product');
-    getDatabase().prepare(`
+    getDatabase()
+      .prepare('UPDATE products SET stock_quantity = 0 WHERE id = ?')
+      .run('restore-product');
+    getDatabase()
+      .prepare(`
       INSERT INTO inventory_movements (
         product_id, quantity_delta, movement_type, reference_type, reference_id,
         reason, actor_user_id, stock_after, created_at
       ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, datetime('now'))
-    `).run('restore-product', -5, 'partial-restore', 'Partial restore fixture', 'restore-station-chef', 0);
+    `)
+      .run(
+        'restore-product',
+        -5,
+        'partial-restore',
+        'Partial restore fixture',
+        'restore-station-chef',
+        0,
+      );
     const partialRestoreBackup = path.join(testDir, 'partial-ledger-restore.db');
     copyAndStamp(sameSchemaBackup, partialRestoreBackup, currentVersion - 1);
     const partialRestoreDb = new Database(partialRestoreBackup);
@@ -247,19 +414,35 @@ async function run() {
     partialRestoreDb.exec('DROP TABLE products');
     partialRestoreDb.close();
     const partialRestore = restoreBackup(partialRestoreBackup, false);
-    assert.equal(partialRestore.success, false, 'data-only restore rejects movement history without products');
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      partialRestore.success,
+      false,
+      'data-only restore rejects movement history without products',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+          .get('restore-product') as { stock_quantity: number }
+      ).stock_quantity,
       0,
       'rejected partial restore leaves the zero stock cache unchanged',
     );
     assert.equal(
-      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      (
+        getDatabase()
+          .prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?')
+          .get('restore-product') as { count: number }
+      ).count,
       2,
       'rejected partial restore preserves zero-ending movement history',
     );
-    getDatabase().prepare('DELETE FROM inventory_movements WHERE product_id = ? AND reference_id = ?').run('restore-product', 'partial-restore');
-    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    getDatabase()
+      .prepare('DELETE FROM inventory_movements WHERE product_id = ? AND reference_id = ?')
+      .run('restore-product', 'partial-restore');
+    getDatabase()
+      .prepare('UPDATE products SET stock_quantity = ? WHERE id = ?')
+      .run(5, 'restore-product');
 
     const staleLedgerBackup = path.join(testDir, 'stale-ledger.db');
     copyAndStamp(sameSchemaBackup, staleLedgerBackup, currentVersion - 1);
@@ -268,14 +451,28 @@ async function run() {
     staleLedgerDb.exec('DROP TABLE inventory_movements');
     staleLedgerDb.close();
     const staleLedgerRestore = restoreBackup(staleLedgerBackup, false);
-    assert.equal(staleLedgerRestore.success, false, 'data-only restore rejects a merged stock and ledger mismatch');
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      staleLedgerRestore.success,
+      false,
+      'data-only restore rejects a merged stock and ledger mismatch',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+          .get('restore-product') as { stock_quantity: number }
+      ).stock_quantity,
       5,
       'rejected merged-state restore leaves the live stock cache unchanged',
     );
     assert.equal(
-      (getDatabase().prepare('SELECT stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get('restore-product') as { stock_after: number }).stock_after,
+      (
+        getDatabase()
+          .prepare(
+            'SELECT stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1',
+          )
+          .get('restore-product') as { stock_after: number }
+      ).stock_after,
       5,
       'rejected merged-state restore leaves the live movement history unchanged',
     );
@@ -284,13 +481,23 @@ async function run() {
     copyAndStamp(sameSchemaBackup, legacyPreLedgerBackup, currentVersion - 1);
     const legacyPreLedgerDb = new Database(legacyPreLedgerBackup);
     legacyPreLedgerDb.pragma('foreign_keys = OFF');
-    legacyPreLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    legacyPreLedgerDb
+      .prepare('UPDATE products SET stock_quantity = ? WHERE id = ?')
+      .run(5, 'restore-product');
     legacyPreLedgerDb.exec('DROP TABLE inventory_movements');
     legacyPreLedgerDb.close();
     const legacyPreLedgerRestore = restoreBackup(legacyPreLedgerBackup, false);
-    assert.equal(legacyPreLedgerRestore.success, false, 'pre-ledger backups with stock are rejected without movement history');
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      legacyPreLedgerRestore.success,
+      false,
+      'pre-ledger backups with stock are rejected without movement history',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+          .get('restore-product') as { stock_quantity: number }
+      ).stock_quantity,
       5,
       'pre-ledger restore preserves the migrated stock cache',
     );
@@ -299,13 +506,25 @@ async function run() {
     const restored = restoreBackup(olderBackup, false);
     assert.equal(restored.success, true, 'foreign-key-linked data-only restore succeeds');
     assert.equal(
-      (getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as { name: string }).name,
+      (
+        getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as {
+          name: string;
+        }
+      ).name,
       'Restore Product',
       'child data is restored after parent data',
     );
-    assert.equal(getDatabase().pragma('foreign_keys', { simple: true }), 1, 'foreign keys are re-enabled after restore');
     assert.equal(
-      (getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string }).value,
+      getDatabase().pragma('foreign_keys', { simple: true }),
+      1,
+      'foreign keys are re-enabled after restore',
+    );
+    assert.equal(
+      (
+        getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as {
+          value: string;
+        }
+      ).value,
       'false',
       'data-only restore preserves the current disabled KDS setting',
     );
@@ -324,7 +543,11 @@ async function run() {
     const failed = restoreBackup(invalidBackup, false);
     assert.equal(failed.success, false, 'invalid foreign-key source is rejected');
     assert.equal(
-      (getDatabase().prepare('SELECT name FROM categories WHERE id = ?').get(marker) as { name: string }).name,
+      (
+        getDatabase().prepare('SELECT name FROM categories WHERE id = ?').get(marker) as {
+          name: string;
+        }
+      ).name,
       'Keep Me',
       'failed restore leaves existing data unchanged',
     );
@@ -343,9 +566,17 @@ async function run() {
     incompleteDb.exec('DROP TABLE categories');
     incompleteDb.close();
     const incomplete = restoreBackup(incompleteBackup, true);
-    assert.equal(incomplete.success, false, 'direct restore rejects a same-version backup missing required tables');
     assert.equal(
-      (getDatabase().prepare('SELECT name FROM categories WHERE id = ?').get('restore-category') as { name: string }).name,
+      incomplete.success,
+      false,
+      'direct restore rejects a same-version backup missing required tables',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT name FROM categories WHERE id = ?')
+          .get('restore-category') as { name: string }
+      ).name,
       'Restore Category',
       'live data remains unchanged after incomplete-schema rejection',
     );
@@ -355,9 +586,17 @@ async function run() {
     copyAndStamp(sameSchemaBackup, newerBackup, currentVersion + 1);
     const rejected = restoreBackup(newerBackup, true);
     assert.equal(rejected.success, false, 'forceDirect rejects a newer-schema backup');
-    assert.equal(getCurrentSchemaVersion(), currentVersion, 'live schema remains current after rejection');
     assert.equal(
-      (getDatabase().prepare('SELECT name FROM categories WHERE id = ?').get('restore-category') as { name: string }).name,
+      getCurrentSchemaVersion(),
+      currentVersion,
+      'live schema remains current after rejection',
+    );
+    assert.equal(
+      (
+        getDatabase()
+          .prepare('SELECT name FROM categories WHERE id = ?')
+          .get('restore-category') as { name: string }
+      ).name,
       'Restore Category',
       'live data remains unchanged after newer-schema rejection',
     );
@@ -366,8 +605,13 @@ async function run() {
     assert.equal(direct.success, true, 'same-schema direct restore still succeeds');
     assertNoRestoreAttachment();
 
-    const recoveryArtifactsBeforeJournalTest = new Set(fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)));
-    const mutableFs = nativeFs as unknown as { copyFileSync: typeof fs.copyFileSync; unlinkSync: typeof fs.unlinkSync };
+    const recoveryArtifactsBeforeJournalTest = new Set(
+      fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)),
+    );
+    const mutableFs = nativeFs as unknown as {
+      copyFileSync: typeof fs.copyFileSync;
+      unlinkSync: typeof fs.unlinkSync;
+    };
     const originalCopyFileSync = nativeFs.copyFileSync;
     mutableFs.copyFileSync = ((source, target, mode) => {
       originalCopyFileSync(source, target, mode);
@@ -379,13 +623,22 @@ async function run() {
       'failed recovery journal preparation propagates the copy failure',
     );
     mutableFs.copyFileSync = originalCopyFileSync;
-    const orphanedRecoveryArtifacts = fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name) && !recoveryArtifactsBeforeJournalTest.has(name));
-    assert.deepEqual(orphanedRecoveryArtifacts, [], 'failed journal preparation removes partial recovery artifacts');
+    const orphanedRecoveryArtifacts = fs
+      .readdirSync(path.join(testDir, 'backups'))
+      .filter((name) => /recovery-/.test(name) && !recoveryArtifactsBeforeJournalTest.has(name));
+    assert.deepEqual(
+      orphanedRecoveryArtifacts,
+      [],
+      'failed journal preparation removes partial recovery artifacts',
+    );
 
-    const recoveryArtifactsBeforeDirectRestoreTest = new Set(fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)));
+    const recoveryArtifactsBeforeDirectRestoreTest = new Set(
+      fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)),
+    );
     mutableFs.copyFileSync = ((source, target, mode) => {
       originalCopyFileSync(source, target, mode);
-      if (String(source) === getDbPath() && String(target).includes('flo-restore-recovery-')) throw new Error('injected direct recovery copy failure');
+      if (String(source) === getDbPath() && String(target).includes('flo-restore-recovery-'))
+        throw new Error('injected direct recovery copy failure');
     }) as typeof fs.copyFileSync;
     assert.throws(
       () => restoreBackup(sameSchemaBackup, true),
@@ -393,13 +646,22 @@ async function run() {
       'same-schema restore propagates a pre-journal recovery copy failure',
     );
     mutableFs.copyFileSync = originalCopyFileSync;
-    const orphanedDirectRecoveryArtifacts = fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name) && !recoveryArtifactsBeforeDirectRestoreTest.has(name));
-    assert.deepEqual(orphanedDirectRecoveryArtifacts, [], 'same-schema restore removes a partial pre-journal recovery copy');
+    const orphanedDirectRecoveryArtifacts = fs
+      .readdirSync(path.join(testDir, 'backups'))
+      .filter(
+        (name) => /recovery-/.test(name) && !recoveryArtifactsBeforeDirectRestoreTest.has(name),
+      );
+    assert.deepEqual(
+      orphanedDirectRecoveryArtifacts,
+      [],
+      'same-schema restore removes a partial pre-journal recovery copy',
+    );
 
     const abortHandle = beginDatabaseReplacementJournal(sameSchemaBackup, 'restore');
     const originalUnlinkSync = nativeFs.unlinkSync;
     mutableFs.unlinkSync = ((target) => {
-      if (String(target) === abortHandle.recoveryPath) throw new Error('injected recovery cleanup failure');
+      if (String(target) === abortHandle.recoveryPath)
+        throw new Error('injected recovery cleanup failure');
       return originalUnlinkSync(target);
     }) as typeof fs.unlinkSync;
     assert.throws(
@@ -408,14 +670,23 @@ async function run() {
       'prepared journal cleanup propagates artifact deletion failure',
     );
     mutableFs.unlinkSync = originalUnlinkSync;
-    assert.equal(fs.existsSync(abortHandle.journalPath), true, 'failed cleanup preserves the prepared journal');
-    assert.equal(fs.existsSync(abortHandle.recoveryPath), true, 'failed cleanup preserves the recovery database');
+    assert.equal(
+      fs.existsSync(abortHandle.journalPath),
+      true,
+      'failed cleanup preserves the prepared journal',
+    );
+    assert.equal(
+      fs.existsSync(abortHandle.recoveryPath),
+      true,
+      'failed cleanup preserves the recovery database',
+    );
     abortDatabaseReplacementJournal(abortHandle);
 
     const cleanupCopyHandle = beginDatabaseReplacementJournal(sameSchemaBackup, 'restore');
     const cleanupUnlinkSync = nativeFs.unlinkSync;
     mutableFs.unlinkSync = ((target) => {
-      if (String(target).includes('.cleanup-')) throw new Error('injected cleanup-copy deletion failure');
+      if (String(target).includes('.cleanup-'))
+        throw new Error('injected cleanup-copy deletion failure');
       return cleanupUnlinkSync(target);
     }) as typeof fs.unlinkSync;
     assert.throws(
@@ -424,20 +695,42 @@ async function run() {
       'cleanup-copy deletion failures remain visible to the replacement boundary',
     );
     mutableFs.unlinkSync = cleanupUnlinkSync;
-    assert.equal(fs.existsSync(cleanupCopyHandle.journalPath), true, 'cleanup-copy failure preserves the journal');
-    assert.equal(fs.existsSync(cleanupCopyHandle.recoveryPath), true, 'cleanup-copy failure preserves the recovery database');
+    assert.equal(
+      fs.existsSync(cleanupCopyHandle.journalPath),
+      true,
+      'cleanup-copy failure preserves the journal',
+    );
+    assert.equal(
+      fs.existsSync(cleanupCopyHandle.recoveryPath),
+      true,
+      'cleanup-copy failure preserves the recovery database',
+    );
     assert.ok(
-      fs.readdirSync(path.dirname(cleanupCopyHandle.journalPath)).some((name) => name.startsWith(`${path.basename(cleanupCopyHandle.recoveryPath)}.cleanup-`)),
+      fs
+        .readdirSync(path.dirname(cleanupCopyHandle.journalPath))
+        .some((name) =>
+          name.startsWith(`${path.basename(cleanupCopyHandle.recoveryPath)}.cleanup-`),
+        ),
       'cleanup-copy failure retains durable recovery evidence',
     );
     fs.unlinkSync(cleanupCopyHandle.journalPath);
     fs.unlinkSync(cleanupCopyHandle.recoveryPath);
     closeDatabase();
     initDatabase();
-    assert.equal(fs.existsSync(cleanupCopyHandle.journalPath), false, 'startup consumes restored cleanup journal evidence');
-    assert.equal(fs.existsSync(cleanupCopyHandle.recoveryPath), false, 'startup consumes restored cleanup database evidence');
     assert.equal(
-      fs.readdirSync(path.dirname(cleanupCopyHandle.journalPath)).some((name) => name.includes('.cleanup-')),
+      fs.existsSync(cleanupCopyHandle.journalPath),
+      false,
+      'startup consumes restored cleanup journal evidence',
+    );
+    assert.equal(
+      fs.existsSync(cleanupCopyHandle.recoveryPath),
+      false,
+      'startup consumes restored cleanup database evidence',
+    );
+    assert.equal(
+      fs
+        .readdirSync(path.dirname(cleanupCopyHandle.journalPath))
+        .some((name) => name.includes('.cleanup-')),
       false,
       'startup removes consumed cleanup evidence copies',
     );
@@ -446,20 +739,41 @@ async function run() {
     const recoveryMarker = path.join(testDir, 'backups', 'flo-restore-recovery-test.db');
     const recoveryJournal = path.join(testDir, 'backups', 'flo-restore-recovery-test.json');
     fs.copyFileSync(interruptedRecoverySource, recoveryMarker);
-    fs.writeFileSync(recoveryJournal, JSON.stringify({ phase: 'prepared', recoveryPath: recoveryMarker, dbPath: getDbPath() }));
+    fs.writeFileSync(
+      recoveryJournal,
+      JSON.stringify({ phase: 'prepared', recoveryPath: recoveryMarker, dbPath: getDbPath() }),
+    );
     closeDatabase();
     fs.unlinkSync(getDbPath());
     initDatabase();
-    assert.equal((getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as { name: string }).name, 'Restore Product', 'startup recovers a durable interrupted-restore snapshot');
-    assert.equal(fs.existsSync(recoveryMarker), false, 'startup removes the consumed recovery marker');
-    assert.equal(fs.existsSync(recoveryJournal), false, 'startup removes the consumed recovery journal');
+    assert.equal(
+      (
+        getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as {
+          name: string;
+        }
+      ).name,
+      'Restore Product',
+      'startup recovers a durable interrupted-restore snapshot',
+    );
+    assert.equal(
+      fs.existsSync(recoveryMarker),
+      false,
+      'startup removes the consumed recovery marker',
+    );
+    assert.equal(
+      fs.existsSync(recoveryJournal),
+      false,
+      'startup removes the consumed recovery journal',
+    );
 
     // A variant owns a stock pool of its own while its ledger row names the
     // owning product, so the chain check must be per pool: a stocked variant
     // used to make every later restore of this store fail.
-    getDatabase().prepare(`INSERT INTO product_variants (
+    getDatabase()
+      .prepare(`INSERT INTO product_variants (
         id, product_id, name, price, track_inventory, stock_quantity, is_active, created_at, updated_at
-      ) VALUES ('restore-variant', 'restore-product', 'Large', 14, 1, 0, 1, datetime('now'), datetime('now'))`).run();
+      ) VALUES ('restore-variant', 'restore-product', 'Large', 14, 1, 0, 1, datetime('now'), datetime('now'))`)
+      .run();
     adjustProductStock(getDatabase(), {
       productId: 'restore-product',
       variantId: 'restore-variant',
@@ -483,12 +797,22 @@ async function run() {
       `a backup carrying a stocked variant restores (got ${JSON.stringify(variantRestore)})`,
     );
     assert.equal(
-      (getDatabase().prepare('SELECT stock_quantity FROM product_variants WHERE id = ?').get('restore-variant') as { stock_quantity: number }).stock_quantity,
+      (
+        getDatabase()
+          .prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
+          .get('restore-variant') as { stock_quantity: number }
+      ).stock_quantity,
       5,
       'the restored variant keeps its own stock',
     );
     assert.equal(
-      (getDatabase().prepare('SELECT variant_id FROM inventory_movements WHERE product_id = ? AND variant_id IS NOT NULL').get('restore-product') as { variant_id: string }).variant_id,
+      (
+        getDatabase()
+          .prepare(
+            'SELECT variant_id FROM inventory_movements WHERE product_id = ? AND variant_id IS NOT NULL',
+          )
+          .get('restore-product') as { variant_id: string }
+      ).variant_id,
       'restore-variant',
       'the restored ledger row keeps its pool attribution',
     );
@@ -512,7 +836,11 @@ async function run() {
       assert.equal(directResult.success, true, 'direct restore succeeds');
       const directDirs = trackedRestoreDirs.slice(directStart);
       assert.equal(directDirs.length, 1, 'direct restore stages exactly 1 snapshot');
-      assert.equal(fs.existsSync(directDirs[0]), false, 'direct restore snapshot is cleaned up upon return');
+      assert.equal(
+        fs.existsSync(directDirs[0]),
+        false,
+        'direct restore snapshot is cleaned up upon return',
+      );
 
       // 2. Data-only restore (supported mismatched version): exactly 1 staged snapshot (no duplicate), cleaned up on return
       const olderVariantBackup = path.join(testDir, 'older-variant-schema.db');
@@ -521,8 +849,16 @@ async function run() {
       const mismatchResult = restoreBackup(olderVariantBackup, false);
       assert.equal(mismatchResult.success, true, 'mismatched-version data-only restore succeeds');
       const mismatchDirs = trackedRestoreDirs.slice(mismatchStart);
-      assert.equal(mismatchDirs.length, 1, 'data-only restore stages exactly 1 snapshot (no duplicate)');
-      assert.equal(fs.existsSync(mismatchDirs[0]), false, 'data-only restore snapshot is cleaned up upon return');
+      assert.equal(
+        mismatchDirs.length,
+        1,
+        'data-only restore stages exactly 1 snapshot (no duplicate)',
+      );
+      assert.equal(
+        fs.existsSync(mismatchDirs[0]),
+        false,
+        'data-only restore snapshot is cleaned up upon return',
+      );
 
       // 3. Data-only restore with safe rejection (e.g. invalid FK): exactly 1 snapshot, cleaned up on return
       const rejectedStart = trackedRestoreDirs.length;
@@ -530,7 +866,11 @@ async function run() {
       assert.equal(rejectedResult.success, false, 'invalid foreign key backup is safely rejected');
       const rejectedDirs = trackedRestoreDirs.slice(rejectedStart);
       assert.equal(rejectedDirs.length, 1, 'safely rejected restore stages exactly 1 snapshot');
-      assert.equal(fs.existsSync(rejectedDirs[0]), false, 'safely rejected restore snapshot is cleaned up upon return');
+      assert.equal(
+        fs.existsSync(rejectedDirs[0]),
+        false,
+        'safely rejected restore snapshot is cleaned up upon return',
+      );
 
       // 4. Failed materialization (e.g. write error): temp dir is cleaned up immediately, no leak
       const originalWriteFileSync = nativeFs.writeFileSync;
@@ -543,11 +883,19 @@ async function run() {
       };
       try {
         const failedMaterialize = restoreBackup(sameSchemaBackup, true);
-        assert.equal(failedMaterialize.success, false, 'restore fails gracefully on materialization write failure');
+        assert.equal(
+          failedMaterialize.success,
+          false,
+          'restore fails gracefully on materialization write failure',
+        );
         assert.equal(failedMaterialize.error, 'injected snapshot write failure');
         const failedDirs = trackedRestoreDirs.slice(failedMaterializeStart);
         assert.equal(failedDirs.length, 1, 'materialize created a temp directory before failure');
-        assert.equal(fs.existsSync(failedDirs[0]), false, 'failed materialization cleaned up its temp directory');
+        assert.equal(
+          fs.existsSync(failedDirs[0]),
+          false,
+          'failed materialization cleaned up its temp directory',
+        );
       } finally {
         (nativeFs as any).writeFileSync = originalWriteFileSync;
       }
@@ -564,7 +912,9 @@ async function run() {
 }
 
 run().catch((error) => {
-  try { closeDatabase(); } catch { }
+  try {
+    closeDatabase();
+  } catch {}
   Module._load = originalLoad;
   fs.rmSync(testDir, { recursive: true, force: true });
   console.error(error);

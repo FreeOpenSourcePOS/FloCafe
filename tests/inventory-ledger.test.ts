@@ -20,6 +20,7 @@ const {
   initDatabase, getDatabase, getCurrentSchemaVersion, MIGRATIONS, closeDatabase, now,
   validateInventoryLedgerReplacement,
 } = require('../main/db');
+const { adjustProductStock } = require('../main/services/inventory');
 const {
   createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, api,
   assertEqual, assert, getResults, resetCounters,
@@ -206,6 +207,119 @@ async function main() {
       0,
       'fractional sales reach zero without floating-point stock residue',
     );
+    const fractionalDeltas = (
+      db.prepare('SELECT quantity_delta FROM inventory_movements WHERE product_id = ? ORDER BY id ASC').all(fractionalProductId) as { quantity_delta: number }[]
+    ).map((m) => m.quantity_delta);
+    assertEqual(
+      JSON.stringify(fractionalDeltas),
+      JSON.stringify([0.3, -0.1, -0.1, -0.1]),
+      'movement quantity_delta values have exact canonical decimal precision without IEEE 754 residue',
+    );
+
+    // ── Boundary & precision tests for adjustProductStock ────────────────────
+    const precProd = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-ledger',
+        name: 'Precision Test Item',
+        price: 10,
+        sale_unit: 'kg',
+        allow_fractional_quantity: true,
+        weight_precision: 3,
+        track_inventory: true,
+        stock_quantity: 10,
+        reason: 'Opening 10kg',
+      },
+    });
+    assertEqual(precProd.status, 201, 'precision test product created');
+    const precId = precProd.data.product.id;
+
+    // 10 -> -0.3 adjustment -> 9.7 (movement delta must be exactly -0.3)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: -0.3,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Minus 0.3 adjustment',
+    });
+    // 9.7 -> +0.3 adjustment -> 10 (movement delta must be exactly 0.3)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: 0.3,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Plus 0.3 adjustment',
+    });
+    // 10 -> -0.1 adjustment -> 9.9 (movement delta must be exactly -0.1)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: -0.1,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Minus 0.1 adjustment',
+    });
+    // 9.9 -> +0.2 adjustment -> 10.1 (movement delta must be exactly 0.2)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: 0.2,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Plus 0.2 adjustment',
+    });
+
+    const precMovements = (
+      db.prepare('SELECT quantity_delta, stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id ASC').all(precId) as { quantity_delta: number; stock_after: number }[]
+    );
+    assertEqual(
+      JSON.stringify(precMovements.map((m: any) => m.quantity_delta)),
+      JSON.stringify([10, -0.3, 0.3, -0.1, 0.2]),
+      'manual adjustments persist exact normalized 8-place deltas without binary residue',
+    );
+    assertEqual(
+      JSON.stringify(precMovements.map((m: any) => m.stock_after)),
+      JSON.stringify([10, 9.7, 10, 9.9, 10.1]),
+      'stock_after values accurately reflect the successive adjustments',
+    );
+
+    // 8-place boundary test:
+    // Input below 8 decimal places (1e-9) is rejected as too small
+    let belowPrecisionRejected = false;
+    try {
+      adjustProductStock(db, {
+        productId: precId,
+        quantityDelta: 1e-9,
+        movementType: 'adjustment',
+        actorUserId: owner.userId,
+      });
+    } catch (err: any) {
+      belowPrecisionRejected = err.statusCode === 400 && err.message.includes('too small');
+    }
+    assertEqual(belowPrecisionRejected, true, 'quantity_delta below 8-decimal precision is rejected');
+
+    // Clamping at zero: stock at 2e-8 followed by -1e-8 adjustment clamps stock to 0 and records -2e-8 delta
+    const clampProd = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-ledger',
+        name: 'Clamp Test Item',
+        price: 10,
+        track_inventory: true,
+        stock_quantity: 0.00000002,
+        reason: '2e-8 opening',
+      },
+    });
+    const clampId = clampProd.data.product.id;
+    adjustProductStock(db, {
+      productId: clampId,
+      quantityDelta: -0.00000001,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+    });
+    const clampMovement = db.prepare('SELECT quantity_delta, stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get(clampId) as { quantity_delta: number; stock_after: number };
+    assertEqual(clampMovement.stock_after, 0, 'stock near zero is clamped to 0');
+    assertEqual(clampMovement.quantity_delta, -0.00000002, 'movement delta reflects the clamped change (-2e-8)');
 
     const manualIncrease = await api(baseUrl, `/api/products/${productId}/stock`, {
       method: 'POST',

@@ -215,7 +215,7 @@ export function adjustProductStock(
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
   const stockAfter = Number(updatedStock.stock_quantity);
-  const effectiveQuantityDelta = stockAfter - stockBefore;
+  const effectiveQuantityDelta = Number((stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION));
 
   db.prepare(`
     INSERT INTO inventory_movements (

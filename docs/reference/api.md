@@ -102,12 +102,23 @@ the same LAN-exempt helper, and `3003` applies 150 per minute. `express-rate-lim
 `rateLimit` helper in [`main/middleware/security.ts`](../../main/middleware/security.ts) does the
 same.
 
-`authRateLimit` is the one limiter that deliberately does **not** exempt private addresses. It
-passes `bypassPrivateIp: false`, so LAN clients are counted. Five routes use it: the three
-credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
-`POST /api/auth/recover-password` on `3001`, plus `POST /api/staff` and `PUT /api/staff/:id`, which
-create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable
-with `FLO_AUTH_RATE_LIMIT_MAX`.
+`loginAuthRateLimit` and `authRateLimit` deliberately do **not** exempt private addresses, so
+LAN clients are counted against authentication rate limits.
+
+`loginAuthRateLimit` is the shared volume limiter across all three default login endpoints
+(`POST /api/auth/login` on `3001`, `3002`, and `3003`). It reuses a single shared budget
+(default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`).
+In addition, these three login endpoints share an install-wide failed-login attempt lockout keyed to
+canonical client IP (`normalizeIpForRateLimit`): 5 failed credential attempts across any
+combination of the three listeners triggers a 15-minute lockout (`429`). Successful login on any listener
+resets the counter for that IP. See
+[`docs/architecture/authentication-and-authorization.md`](../architecture/authentication-and-authorization.md#shared-login-attempt-rate-limiting-across-servers)
+for architecture and role/permission handling details.
+
+`authRateLimit` provides independent per-route volume limiters (also defaulting to 10 attempts
+per 15 minutes, overridable with `FLO_AUTH_RATE_LIMIT_MAX`) for non-login credential and staff
+routes on `3001`: `POST /api/auth/password/change`, `POST /api/auth/recover-password`,
+`POST /api/staff`, and `PUT /api/staff/:id`.
 
 Per-resource limiters named in the tables below are `express-rate-limit` instances declared in
 their own route file. Unless noted otherwise, they apply to every caller including LAN addresses.
@@ -145,7 +156,7 @@ Router: `main/routes/auth.ts`. Full path: `/api/auth`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/login` | any authenticated role + auth limiter | body: `email`, `password`, `rememberMe` | `{ access_token, token_type: "bearer", expires_in, user: { id, name, email, role, category_ids }, tenants: [ ... ] }`. `401` on bad credentials; `429` after repeated failures from one IP. |
+| `POST` | `/login` | none, `loginAuthRateLimit` + shared failed-login limiter | body: `email`, `password`, `rememberMe` | `{ access_token, token_type: "bearer", expires_in, user: { id, name, email, role, category_ids }, tenants: [ ... ] }`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners. |
 | `POST` | `/tenants/select` | any authenticated role | none | `{ access_token, token_type: "bearer", tenant }`. |
 | `POST` | `/logout` | any authenticated role | none | `{ message }`. Revokes the presented token. |
 | `POST` | `/refresh` | any authenticated role | none | `{ access_token, token_type: "bearer", expires_in }`. |
@@ -282,12 +293,12 @@ and settlement - is in [Order lifecycle](../architecture/order-lifecycle.md).
 | `GET` | `/:id` | `orders.read` (default roles: `ROLE_ACCESS.sales`) + order read limiter | path: `id` | `{ ...order, items, table }`. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`, `delivery_address`, `expected_payment_method`, `expected_payment_method_id`, `delivery_note`; header: `Idempotency-Key` | `201` with the created order. Repeating the same request body with an `Idempotency-Key` returns its stored response; reusing the key with a different body returns `409`. `expected_payment_method` and `delivery_note` are stored only for `type: 'delivery'`: without an id, the method keeps its legacy string/sentinel resolution (`unknown` by default, `pending`, `cash`, `card`, or an active custom method name), and is never recorded as a payment; `400` for any other method or a note over 200 characters. A custom method whose name matches a built-in or sentinel needs its id to be identified as custom. An optional `expected_payment_method_id` must be a positive safe integer naming an **active** configured method; the server stores its canonical name and requires any supplied non-empty name to match case-insensitively. Invalid, unknown, or inactive ids return `400`. The id is a historical marker, not a foreign key, so renaming or deleting the method later never rewrites an order; only `orders.expected_payment_method_id` decides that the stored name prints literally on a delivery slip. Non-delivery orders persist both expected-method fields as `null`. An item's `variant_id` is required when the product has active variants, and `400` when it names an unknown, foreign, or inactive variant; `unit_price` is never taken from the client. |
 | `POST` | `/:id/items` | `ROLE_ACCESS.sales` + order write limiter | path: `id`; body: `items`, `special_instructions`; header: `Idempotency-Key` | Appends items and returns the recomputed order. Honours `Idempotency-Key`. Items resolve a `variant_id` under the same rules as order creation, priced with `variant.online_price` when the order carries an `online_platform`. |
-| `PATCH` | `/:id/status` | `orders.status.update` (default roles: `ROLE_ACCESS.orderStatus`) + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table`, `approver_id`, `manager_id` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. See the status safeguard rules below. |
+| `PATCH` | `/:id/status` | `orders.status.update` (default roles: `ROLE_ACCESS.orderStatus`) + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table`, `approver_id`, `manager_id`, `user_id` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. See the status safeguard rules below. |
 | `PATCH` | `/:id/customer` | `ROLE_ACCESS.ownerManager` + order write limiter | path: `id`; body: `customer_id` | - |
 | `PATCH` | `/:id/convert-to-takeaway` | `ROLE_ACCESS.sales` + order write limiter | path: `id` | - |
-| `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin` | - |
-| `PATCH` | `/:id/items/:itemId/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`, `itemId`; body: `discount_type`, `discount_value`, `override_pin` | Returns `{ item }` with updated `edit_version`. |
-| `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin`, `approver_id`, `manager_id`, `user_id` | `400` when the order is completed or cancelled (`order_not_discountable`). `409` on a split or refunded bill, or when the discount would reduce a partially paid bill's total below collected payments (`below_collected_funds`). Audited as `order_discount_applied`. |
+| `PATCH` | `/:id/items/:itemId/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`, `itemId`; body: `discount_type`, `discount_value`, `override_pin`, `approver_id`, `manager_id`, `user_id` | Returns `{ item }` with updated `edit_version`. `400` on a completed or cancelled order. `409` on a split or refunded bill, or when the discount would reduce a partially paid bill's total below collected payments (`below_collected_funds`). |
+| `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `approver_id`, `manager_id`, `user_id` | See the note below. Returns `{ order: { ...order, items } }`. |
 | `PATCH` | `/:orderId/items/:itemId/edit` | `orders.item.edit` (shipped to `ROLE_ACCESS.owner`) + order write limiter | path: `orderId`, `itemId`; header: `Idempotency-Key`; body: `expected_edit_version` (non-negative integer matching the item's `edit_version`, derived from the latest `order_audit_log.id` for the item or `0`), and exactly one of `quantity` or `replacement` (`product_id`, `quantity`, optional `variant_id`, `modifier_selection`, `addons`, `special_instructions`), optional `reason` | Returns `{ order: { ...order, items } }` where hydrated items carry `edit_version` and, on `cancelled` or `voided` rows marked `superseded: true` in `item_edited`, `superseded: true`. Honours `Idempotency-Key` (replaying a matching key + request before stale-version or terminal-item checks, `409` on key reuse with a different request) and rejects a stale `expected_edit_version` with `409`. On a `pending` line, restores recorded product/add-on/recipe stock once, cancels the old line as superseded (`superseded: true`), and inserts and deducts the new `pending` line; the new line keeps the stored variant and add-on selections even if the catalog has since disabled them (reductions preserve stored selections and scale historical recipe snapshots and inventory deductions onto the new pending line; replacements and increases re-validate against the current catalog, and the carried `variant_selection` snapshot is persisted verbatim). On a line the kitchen already started (`preparing`, `ready`, `served`), a quantity increase keeps the original line and inserts/deducts only the extra units as a new `pending` line (`superseded: false`); a quantity decrease updates the existing line's billable quantity in place without restoring or re-deducting stock, scaling its held `inventory_deducted_quantity`, add-on deductions, and `recipe_snapshot` to the remaining quantity so wasted units stay out of available stock, while preserving its kitchen status and stored unit/add-on prices and recording `wasted_quantity` in `item_edited`; product replacement is disallowed once kitchen preparation has started (`400`). Re-syncs unpaid and partially paid bills. `409` on a split, paid, or refunded order, or when the new total falls below the amount already collected. Audited as `item_edited`. |
 | `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `orders.item.restore` (shipped to `ROLE_ACCESS.ownerManager`) | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed, cancelled, or paid order, or when the cancelled line was superseded by an item edit. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
@@ -317,8 +328,8 @@ one. Failures without a registered tuple may retain the `{ error }` response.
   recorded collected funds. Cancellation preserves bill payment and refund records (refunds remain a
   separate operation via `/api/refunds`) and restores product, variant, add-on, and recipe stock
   only for items still in `pending` status.
-- When `approver_id` (or `manager_id`) is supplied on an overridden transition, PIN verification is
-  restricted to that active user. Every overridden `status_changed` audit log entry records
+- When `approver_id` (or `manager_id`, `user_id`) is supplied on an overridden transition, PIN verification is
+  restricted to that active user without falling back to scanning other managers. Every overridden `status_changed` audit log entry records
   `actor_user_id`, `approved_by`, `overridden_safeguards`, `bill_ids`, `outstanding_amount`,
   `outstanding_amounts`, and `collected_amount` (plus `undelivered_items` when overriding kitchen
   delivery), and never records the PIN.
@@ -334,7 +345,9 @@ does not wrap the handler again.
   `preparing` or `ready`, and `403` without it again for an item that is already `voided`,
   `void_adjustment` or `refunded`. Every other status, including `pending`, `served` and an item
   already `cancelled`, needs `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`). Voiding
-  an in-progress item additionally requires `override_pin`. A caller who already holds the required
+  an in-progress item additionally requires `override_pin`. When an approver is explicitly supplied
+  (`approver_id`, `manager_id`, or `user_id`), PIN verification is restricted to that active user
+  without falling back to scanning other managers. A caller who already holds the required
   permission can repeat the call on a terminal item without a PIN, in which case it is a no-op
   that returns the current state.
 - `409` when any bill for the order is paid, partially paid, or carries payment details.
@@ -344,7 +357,7 @@ does not wrap the handler again.
   line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
   `cancelled` and restores the recorded inventory deduction and recipe components.
 - Cancelling the last active item cancels the order and frees its table.
-- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force.
+- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts).
 
 ### Order item status
 
@@ -383,7 +396,7 @@ Bill generation, settlement, and completion are described end to end in
 | `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries and the resulting split group is capped at 20 checks. An unpaid untouched dine-in check is divided by allocating every active order item quantity; a split-group child may be divided again while it stays unpaid with no payment recorded, keeping its bill id, bill number and group, while paid siblings keep their own rows and payments. `400` when a request does not allocate exactly the source's own quantities. `403` when `split_checks_enabled` is off. `409` when the source has a recorded payment, a legacy already-split bill is re-split, the source has no divisible allocation, or the resulting split group would exceed 20 checks. |
 | `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
 | `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
-| `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | `409` when the order is cancelled. |
+| `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `approver_id`, `manager_id`, `user_id` | `400` when the bill is paid (`paid`). `409` when the order is completed or cancelled (`order_not_discountable`), the bill is split (`split_check`) or refunded (`refunded`), or the discount would reduce the bill total below collected payments (`below_collected_funds`). Audited as `order_discount_applied`. |
 | `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
 | `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |
 | `POST` | `/:id/print` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `print_type` | - |
@@ -869,7 +882,7 @@ The KDS server reads the same database as the main API. Its whole surface:
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | none | `{ status, service, version, timestamp }` |
 | `GET` | `/api/kds/info` | none | none | `{ language, country, kds_default_view }` for the pre-login display. `404` when KDS is disabled, so the surface is not advertised to the LAN. |
-| `POST` | `/api/auth/login` | none, `authRateLimit` | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `403` for a role outside `kitchen`. |
+| `POST` | `/api/auth/login` | none, `loginAuthRateLimit` + shared failed-login limiter | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `kitchen`. |
 | `POST` | `/api/auth/logout` | bearer token, not role-gated | none | `{ message }`. Revokes the token. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.kitchen` | none | `{ user: { id, name, email, role } }` |
 | `GET` | `/api/kds/orders` | `ROLE_ACCESS.kitchen` | none | `{ orders, counts }`, the same projection and the same category and station narrowing as the WebSocket `initial_data` frame. `403` when KDS is disabled or the caller has no active station. |
@@ -919,7 +932,7 @@ The seven routes that are not forwards:
 | --- | --- | --- | --- |
 | `GET` | `/api/health` | none | `{ status, service, version, timestamp }` |
 | `GET` | `/api/server-app/info` | none | `{ language, country, currency, currency_symbol, currency_position, currency_fraction_digits, kds_enabled }`. `404` when the feature is disabled; `409` with `error: "regional_not_configured"` when the regional snapshot cannot be resolved. |
-| `POST` | `/api/auth/login` | none, `authRateLimit` | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `403` for a role outside `ROLE_ACCESS.serverApp`. |
+| `POST` | `/api/auth/login` | none, `loginAuthRateLimit` + shared failed-login limiter | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `401` on bad credentials with `attempts_remaining`; `429` after 5 failed attempts across local login listeners; `403` for a role outside `ROLE_ACCESS.serverApp`. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.serverApp` | `{ user: { id, name, email, role } }` |
 | `POST` | `/api/auth/logout` | `ROLE_ACCESS.serverApp` | `{ success: true }`, revoking the token |
 | `GET` | `/` | none | Redirect to `/server-standalone` |

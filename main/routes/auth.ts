@@ -8,6 +8,11 @@ import { seedSetupProfile } from '../setup/seed-data';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import {
   authRateLimit,
+  loginAuthRateLimit,
+  checkLoginRateLimit,
+  incrementFailedLogin,
+  resetSuccessfulLogin,
+  FAILED_LOGIN_LOCKOUT_MINUTES,
   validatePassword,
   revokeToken,
   isTokenRevoked,
@@ -143,7 +148,7 @@ function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCur
   }
 }
 
-function normalizeEmail(email: unknown): string {
+export function normalizeEmail(email: unknown): string {
   return String(email || '')
     .trim()
     .toLowerCase();
@@ -192,44 +197,9 @@ function requireLocalSetup(req: Request, res: Response): boolean {
 }
 
 // ── Rate Limiting (In-Memory for local offline apps) ──────────────────────────
-const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MINUTES = 15;
 const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: number }>();
 const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
 const PASSWORD_CHANGE_LOCKOUT_MINUTES = 5;
-
-function checkRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
-  const nowMs = Date.now();
-  let record = loginAttempts.get(ip);
-
-  if (record) {
-    if (record.lockedUntil > nowMs) {
-      const waitMinutes = Math.ceil((record.lockedUntil - nowMs) / 60000);
-      return { allowed: false, waitMinutes };
-    }
-    // If lock expired, reset
-    if (record.lockedUntil > 0 && record.lockedUntil <= nowMs) {
-      record = { count: 0, lockedUntil: 0 };
-      loginAttempts.set(ip, record);
-    }
-  }
-  return { allowed: true };
-}
-
-function incrementFailedLogin(ip: string): number {
-  const record = loginAttempts.get(ip) || { count: 0, lockedUntil: 0 };
-  record.count += 1;
-  if (record.count >= MAX_ATTEMPTS) {
-    record.lockedUntil = Date.now() + LOCKOUT_MINUTES * 60000;
-  }
-  loginAttempts.set(ip, record);
-  return Math.max(0, MAX_ATTEMPTS - record.count);
-}
-
-function resetSuccessfulLogin(ip: string) {
-  loginAttempts.delete(ip);
-}
 
 function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
   const nowMs = Date.now();
@@ -262,11 +232,11 @@ function resetPasswordChangeRateLimit(userId: string): void {
 
 router.post(
   '/login',
-  authRateLimit(),
+  loginAuthRateLimit(),
   asyncHandler(async (req: Request, res: Response) => {
     try {
       const ip = req.ip || req.socket.remoteAddress || 'unknown';
-      const rateLimit = checkRateLimit(ip);
+      const rateLimit = checkLoginRateLimit(ip);
       if (!rateLimit.allowed) {
         return res.status(429).json({
           error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.`,
@@ -298,7 +268,7 @@ router.post(
         return res.status(401).json({
           error: 'Invalid credentials',
           attempts_remaining: attemptsRemaining,
-          lockout_minutes: attemptsRemaining === 0 ? LOCKOUT_MINUTES : undefined,
+          lockout_minutes: attemptsRemaining === 0 ? FAILED_LOGIN_LOCKOUT_MINUTES : undefined,
         });
       }
 

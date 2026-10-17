@@ -75,9 +75,9 @@ settings:
 
 | Surface | Endpoint | Notes |
 | --- | --- | --- |
-| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills return `409`, and completed or cancelled orders return `400`. |
-| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
-| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills and cancelled orders return `409`. A completed order can still be discounted while its bill is unpaid. |
+| Order | `PATCH /api/orders/:id/discount` | Percentage or flat amount against the item subtotal; split bills or discounts below collected payments return `409`, and completed or cancelled orders return `400`. |
+| Order item | `PATCH /api/orders/:id/items/:itemId/discount` | One line; split or refunded bills or discounts below collected payments return `409`, and completed or cancelled orders or cancelled, voided, void-adjustment, or refunded items return `400`. |
+| Bill | `POST /api/bills/:id/applyDiscount` | Recomputes the bill and order; paid bills return `400`, split or refunded bills, completed or cancelled orders, and discounts below collected payments return `409`. |
 
 Common rules, enforced in the handlers:
 
@@ -86,7 +86,9 @@ Common rules, enforced in the handlers:
 - `discount_max_percentage` (default 25) and `discount_max_amount` (`0` means no limit) cap the
   value. A discount above the cap is a `400`.
 - `discount_requires_approval` requires a manager PIN, and the approving user must itself hold the
-  discount permission.
+  discount permission. When an approver is explicitly supplied (`approver_id`, `manager_id`, or
+  `user_id`) on an order, item, or bill discount, PIN verification is restricted to that active user
+  without falling back to scanning other managers.
 - A percentage discount applies to the fresh item subtotal, and a flat discount is capped at that
   subtotal. Re-applying a discount never compounds on the previous one.
 - The discount rescales each line's tax by the discounted share of the subtotal and rounds to the
@@ -95,6 +97,11 @@ Common rules, enforced in the handlers:
   A zero `discount_value` clears an order discount, and a zero `value` clears a bill discount,
   subject to the bill endpoint's discount-mode checks. The item endpoint requires a positive
   `discount_value`.
+- A discount cannot reduce a bill's total below collected payments (`below_collected_funds`,
+  `409`).
+- Applying an order or bill discount records an `order_discount_applied` action in
+  `order_audit_log` with the authenticated actor, discount details, and the approving manager ID
+  when a manager PIN override was used (the raw PIN is never stored).
 
 ## Bills
 

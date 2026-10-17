@@ -152,14 +152,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const {
-    tablesRequired,
-    kdsEnabled,
-    whatsappEnabled,
-    setTablesRequired,
-    setKdsEnabled,
-    setWhatsappEnabled,
-  } = usePosSettingsStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, setKdsEnabled, setWhatsappEnabled } =
+    usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
@@ -217,14 +211,6 @@ export default function AppSidebar() {
     if (!currentTenant) return;
     if (tenantCan(currentTenant, 'settings.view')) {
       api
-        .get('/settings/business')
-        .then((res) => {
-          setTablesRequired(
-            typeof res.data.tables_required === 'boolean' ? res.data.tables_required : true,
-          );
-        })
-        .catch(() => {});
-      api
         .get('/settings/kds_enabled')
         .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
         .catch(() => {});
@@ -238,7 +224,7 @@ export default function AppSidebar() {
     } else {
       setWhatsappEnabled(false);
     }
-  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
+  }, [currentTenant, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {
     if (!tenantCan(currentTenant, 'cloud.account.manage')) return;

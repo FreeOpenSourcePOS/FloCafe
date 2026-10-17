@@ -1807,20 +1807,10 @@ export default function SettingsPage() {
       };
       setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
       setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
-      posSettings.setBillShowLogo(billDisplay.billShowLogo);
-      posSettings.setReceiptLogo(d.receipt_logo || '');
-      posSettings.setReceiptLogoRaster(d.receipt_logo_raster || '');
-      posSettings.setBillShowName(billDisplay.billShowName);
-      posSettings.setBillShowAddress(billDisplay.billShowAddress);
-      posSettings.setBillShowPhone(billDisplay.billShowPhone);
-      posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
-      posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
-      posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
-      posSettings.setBillDeliveryShowCustomerPhoneAlways(
-        billDisplay.billDeliveryShowCustomerPhoneAlways,
-      );
-      posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
+      posSettings.hydrateReceiptSettings({
+        ...d,
+        ...billDisplay,
+      });
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
@@ -2113,28 +2103,10 @@ export default function SettingsPage() {
         };
         mergeHydratedPrinting(billDisplay, printingAtHydrationStart, hydrationTouchSnapshot);
         setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
-        posSettings.setBillShowLogo(billDisplay.billShowLogo);
-        posSettings.setReceiptLogo(d.receipt_logo || '');
-        posSettings.setReceiptLogoRaster(d.receipt_logo_raster || '');
-        posSettings.setBillShowName(billDisplay.billShowName);
-        posSettings.setBillShowAddress(billDisplay.billShowAddress);
-        posSettings.setBillShowPhone(billDisplay.billShowPhone);
-        posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-        posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
-        posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
-        posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
-        posSettings.setBillDeliveryShowCustomerPhoneAlways(
-          billDisplay.billDeliveryShowCustomerPhoneAlways,
-        );
-        posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
-        if (d.tax_registration_number)
-          posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
-        if (d.business_address) posSettings.setBillAddress(d.business_address);
-        if (d.business_phone) posSettings.setBillPhone(d.business_phone);
-        posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
-        posSettings.setTablesRequired(
-          typeof d.tables_required === 'boolean' ? d.tables_required : true,
-        );
+        posSettings.hydrateReceiptSettings({
+          ...d,
+          ...billDisplay,
+        });
         businessHydrated.current = true;
       })();
       businessHydrationPromise.current = promise;
@@ -3493,13 +3465,15 @@ export default function SettingsPage() {
       setForm(updatedForm);
       setTaxIdFormat(resolvedTaxIdFormat);
       setTaxIdFormatCountryCode(form.countryCode);
-      posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
-      posSettings.setBillAddress(form.businessAddress);
-      posSettings.setBillPhone(normalizedBusinessPhone);
-      posSettings.setBillingType(form.billingType);
-      posSettings.setTablesRequired(form.tablesRequired);
-      posSettings.setReceiptLogo(form.receiptLogo || '');
-      posSettings.setReceiptLogoRaster(form.receiptLogoRaster || '');
+      posSettings.hydrateReceiptSettings({
+        tax_registration_number: form.taxRegistrationNumber,
+        business_address: form.businessAddress,
+        business_phone: normalizedBusinessPhone,
+        billing_type: form.billingType,
+        tables_required: form.tablesRequired,
+        receipt_logo: form.receiptLogo || '',
+        receipt_logo_raster: form.receiptLogoRaster || '',
+      });
       updateCurrentTenant({
         currency: form.currency,
         timezone: form.timezone,

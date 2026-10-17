@@ -434,5 +434,6 @@ npm run test:google-drive
 npm run test:telemetry
 npm run test:support-ticket
 npm run test:cloud-account-status
+npm run test:cloud-live-orders-batching
 npm run test:recovery-cloud   # includes tests/cloud-deletion-recovery.test.ts
 ```

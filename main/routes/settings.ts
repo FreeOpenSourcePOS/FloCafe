@@ -241,6 +241,8 @@ function businessShape(s: Record<string, string>) {
     bill_show_logo: s.bill_show_logo === 'true',
     receipt_logo: s.receipt_logo || '',
     receipt_logo_raster: s.receipt_logo_raster || '',
+    bill_footer_message: s.bill_footer_message || '',
+    bill_template: s.bill_template || 'classic',
     currency_display: resolveStoredLocalePreference(
       'currency_display',
       s.currency_display,

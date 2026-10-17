@@ -53,6 +53,8 @@ export interface RefundRequest {
   createdByUserId: string;
   clientIp: string;
   checkPinRateLimit: (key: string) => boolean;
+  isPinRateLimited: (key: string) => boolean;
+  clearPinRateLimit: (key: string) => void;
   idempotencyKey?: string | null;
   requestHash?: string;
 }
@@ -261,16 +263,19 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     );
   }
   const rateLimitKey = `pin:${req.clientIp}:refund`;
-  if (!req.checkPinRateLimit(rateLimitKey)) {
+  if (req.isPinRateLimited(rateLimitKey)) {
     throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429, 'pin_rate_limited');
   }
   const approver = resolveRefundApprover(db, req.overridePin, req.approverId, lateRefund);
-  if (!approver)
+  if (!approver) {
+    req.checkPinRateLimit(rateLimitKey);
     throw httpError(
       lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN',
       403,
       'approver_pin_invalid',
     );
+  }
+  req.clearPinRateLimit(rateLimitKey);
 
   const timestamp = now();
 

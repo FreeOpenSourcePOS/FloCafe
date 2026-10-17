@@ -97,12 +97,16 @@ role against the server-app role set, and then forwards a fixed list of paths to
 `Authorization` header, `Idempotency-Key`, and JSON body, and copying the upstream status and body
 back.
 
-Two consequences matter when you work on it:
+Three consequences matter when you work on it:
 
 - **Adding an endpoint to `:3001` does not expose it on `:3003`.** A path becomes reachable from
   the server app only when an explicit forwarding route is added to `main/server-app.ts`.
 - **An unreachable main API surfaces as `502`** from the forwarding layer, and an aborted request
   as `503`.
+- **Forwarded requests hand off database maintenance admission.** Requests admitted on `:3003`
+  pass a single-use admission ticket (`x-flo-maintenance-handoff`) over loopback to `:3001`. The main
+  API accepts the ticket so requests in flight when a database maintenance lock activates drain
+  cleanly instead of failing with `503` or double-counting in-flight database requests.
 
 When the server app feature is disabled, the authenticated middleware answers `404` rather than
 revealing that the surface exists.

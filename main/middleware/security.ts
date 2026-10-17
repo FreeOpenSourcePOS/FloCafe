@@ -21,7 +21,7 @@ const DEFAULT_WINDOW_MS = 60 * 1000; // 1 minute
 const DEFAULT_MAX = 100;
 
 /** Canonicalizes an IP address for rate-limit bucketing so equivalent forms share budget. */
-function normalizeIpForRateLimit(ip: string): string {
+export function normalizeIpForRateLimit(ip: string): string {
   const lower = ip.toLowerCase();
   return lower.startsWith('::ffff:') ? lower.substring(7) : lower;
 }
@@ -82,15 +82,97 @@ export function rateLimit(options: RateLimitOptions = {}) {
   };
 }
 
+let sharedLoginAuthRateLimiter: ReturnType<typeof expressRateLimit> | null = null;
+let sharedLoginAuthRateLimiterEnvMax: string | undefined = undefined;
+
+/** Shared volume rate limiter across default login endpoints (:3001, :3002, :3003). */
+export function loginAuthRateLimit(options: { max?: number } = {}) {
+  const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX;
+  if (!options.max) {
+    if (!sharedLoginAuthRateLimiter || sharedLoginAuthRateLimiterEnvMax !== envMax) {
+      sharedLoginAuthRateLimiterEnvMax = envMax;
+      const parsedEnvMax = envMax ? parseInt(envMax, 10) : undefined;
+      sharedLoginAuthRateLimiter = expressRateLimit({
+        windowMs: 15 * 60 * 1000, // 15 minutes
+        limit: Number.isFinite(parsedEnvMax) ? parsedEnvMax! : 10,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { error: 'Too many authentication attempts. Please try again later.' },
+      });
+    }
+    return sharedLoginAuthRateLimiter;
+  }
+  const parsedEnvMax = envMax ? parseInt(envMax, 10) : undefined;
+  return expressRateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: options.max ?? (Number.isFinite(parsedEnvMax) ? parsedEnvMax : 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many authentication attempts. Please try again later.' },
+  });
+}
+
+export function resetSharedLoginAuthRateLimiter(): void {
+  sharedLoginAuthRateLimiter = null;
+  sharedLoginAuthRateLimiterEnvMax = undefined;
+}
+
 /** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */
 export function authRateLimit(options: { max?: number } = {}) {
-  const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10) : undefined;
-  return rateLimit({
+  const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX
+    ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10)
+    : undefined;
+  return expressRateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: options.max ?? (Number.isFinite(envMax) ? envMax : 10),
-    message: 'Too many authentication attempts. Please try again later.',
-    bypassPrivateIp: false,
+    limit: options.max ?? (Number.isFinite(envMax) ? envMax : 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many authentication attempts. Please try again later.' },
   });
+}
+
+// ── Shared Failed-Login Lockout (Install-wide across all login surfaces) ───────
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+export const FAILED_LOGIN_MAX_ATTEMPTS = 5;
+export const FAILED_LOGIN_LOCKOUT_MINUTES = 15;
+
+export function checkLoginRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
+  const canonicalIp = normalizeIpForRateLimit(ip);
+  const nowMs = Date.now();
+  let record = loginAttempts.get(canonicalIp);
+
+  if (record) {
+    if (record.lockedUntil > nowMs) {
+      const waitMinutes = Math.ceil((record.lockedUntil - nowMs) / 60000);
+      return { allowed: false, waitMinutes };
+    }
+    // If lock expired, reset
+    if (record.lockedUntil > 0 && record.lockedUntil <= nowMs) {
+      record = { count: 0, lockedUntil: 0 };
+      loginAttempts.set(canonicalIp, record);
+    }
+  }
+  return { allowed: true };
+}
+
+export function incrementFailedLogin(ip: string): number {
+  const canonicalIp = normalizeIpForRateLimit(ip);
+  const record = loginAttempts.get(canonicalIp) || { count: 0, lockedUntil: 0 };
+  record.count += 1;
+  if (record.count >= FAILED_LOGIN_MAX_ATTEMPTS) {
+    record.lockedUntil = Date.now() + FAILED_LOGIN_LOCKOUT_MINUTES * 60000;
+  }
+  loginAttempts.set(canonicalIp, record);
+  return Math.max(0, FAILED_LOGIN_MAX_ATTEMPTS - record.count);
+}
+
+export function resetSuccessfulLogin(ip: string): void {
+  const canonicalIp = normalizeIpForRateLimit(ip);
+  loginAttempts.delete(canonicalIp);
+}
+
+export function clearLoginRateLimits(): void {
+  loginAttempts.clear();
 }
 
 /** Shared rate limiter for static/SPA file serving with private IP bypass. */
@@ -137,11 +219,17 @@ export function getUserAuthStatus(
 
   const cached = userAuthCache.get(userId);
   if (!options.fresh && cached && cached.expiresAt > now) {
-    return { isActive: cached.isActive, role: cached.role, tokensValidAfter: cached.tokensValidAfter };
+    return {
+      isActive: cached.isActive,
+      role: cached.role,
+      tokensValidAfter: cached.tokensValidAfter,
+    };
   }
 
   const db = getDatabase();
-  const user = db.prepare('SELECT is_active, role, tokens_valid_after FROM users WHERE id = ?').get(userId) as
+  const user = db
+    .prepare('SELECT is_active, role, tokens_valid_after FROM users WHERE id = ?')
+    .get(userId) as
     | { is_active: number; role: string; tokens_valid_after: string | null }
     | undefined;
 
@@ -171,7 +259,10 @@ export function clearUserAuthCache(): void {
 }
 
 /** True if token iat predates user tokens_valid_after (e.g. after password/PIN change). */
-export function isTokenStale(iat: number | undefined, tokensValidAfter: string | null | undefined): boolean {
+export function isTokenStale(
+  iat: number | undefined,
+  tokensValidAfter: string | null | undefined,
+): boolean {
   if (!tokensValidAfter || typeof iat !== 'number') return false;
   // tokens_valid_after is stored in UTC; compare at second resolution.
   const tokensValidAfterSeconds = Math.floor(parseDbTimestamp(tokensValidAfter).getTime() / 1000);
@@ -205,9 +296,10 @@ export function revokeToken(token: string, verifiedExpiresAtMs?: number): void {
     revokedTokens.add(token);
   }
 
-  const expiresAt = typeof verifiedExpiresAtMs === 'number' && Number.isFinite(verifiedExpiresAtMs)
-    ? verifiedExpiresAtMs
-    : null;
+  const expiresAt =
+    typeof verifiedExpiresAtMs === 'number' && Number.isFinite(verifiedExpiresAtMs)
+      ? verifiedExpiresAtMs
+      : null;
   if (expiresAt === null || expiresAt <= Date.now()) return;
 
   try {
@@ -236,9 +328,9 @@ export function isTokenRevoked(token: string): boolean {
     const db = getDatabase();
     const nowMs = Date.now();
     cleanupExpiredRevocations(db, nowMs);
-    const row = db.prepare(
-      'SELECT 1 AS revoked FROM revoked_tokens WHERE token_hash = ? AND expires_at > ?',
-    ).get(hashRevokedToken(token), nowMs) as { revoked: number } | undefined;
+    const row = db
+      .prepare('SELECT 1 AS revoked FROM revoked_tokens WHERE token_hash = ? AND expires_at > ?')
+      .get(hashRevokedToken(token), nowMs) as { revoked: number } | undefined;
     return row?.revoked === 1;
   } catch (error) {
     // Fail closed: database query failure denies rather than allows token.
@@ -317,7 +409,7 @@ export function isAllowedPrivateIp(ip: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true;
   // Private Class C (192.168.0.0/16)
   if (a === 192 && b === 168) return true;
-  
+
   // Tailscale CGNAT (100.64.0.0/10)
   if (a === 100 && b >= 64 && b <= 127) return true;
 
@@ -408,12 +500,12 @@ export const corsOptions = {
       if (hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname)) {
         return callback(null, true);
       }
-      
+
       callback(new Error('Not allowed by CORS'));
     } catch (err) {
       callback(new Error('Invalid origin format'));
     }
-  }
+  },
 };
 
 /** Validates password complexity: >= 8 chars with uppercase, lowercase, and digit. */

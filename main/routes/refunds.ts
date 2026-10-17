@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
 import { requirePermission } from '../services/authorization';
-import { checkPinRateLimit } from './orders';
+import { checkPinRateLimit, isPinRateLimited, clearPinRateLimit } from './orders';
 import { createRefund, getTenantCurrency, RefundRequest } from '../services/refund';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { cloudSync } from '../services/cloud-sync';
@@ -218,6 +218,8 @@ router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Resp
       createdByUserId: userId,
       clientIp,
       checkPinRateLimit,
+      isPinRateLimited,
+      clearPinRateLimit,
       idempotencyKey,
       requestHash,
     };

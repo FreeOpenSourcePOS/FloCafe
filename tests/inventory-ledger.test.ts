@@ -12,17 +12,32 @@ const jwt = require('jsonwebtoken');
 
 let activeTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-inventory-ledger-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initDatabase, getDatabase, getCurrentSchemaVersion, MIGRATIONS, closeDatabase, now,
+  initDatabase,
+  getDatabase,
+  getCurrentSchemaVersion,
+  MIGRATIONS,
+  closeDatabase,
+  now,
   validateInventoryLedgerReplacement,
 } = require('../main/db');
+const { adjustProductStock } = require('../main/services/inventory');
 const {
-  createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, api,
-  assertEqual, assert, getResults, resetCounters,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedManagerUser,
+  seedCategory,
+  api,
+  assertEqual,
+  assert,
+  getResults,
+  resetCounters,
 } = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { registerRoutes } = require('../main/routes/index');
@@ -39,7 +54,10 @@ function runPendingMigrations() {
 }
 
 function tableColumns(db: any, table: string): string[] {
-  return db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+  return db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map((column: any) => column.name);
 }
 
 function signedToken(userId: string, role: string): Record<string, string> {
@@ -64,15 +82,44 @@ async function main() {
   assertEqual(getCurrentSchemaVersion(), latestVersion, 'fresh install reaches the latest schema');
   const columns = tableColumns(db, 'inventory_movements');
   assert(
-    ['product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id', 'reason', 'actor_user_id', 'stock_after', 'created_at', 'imported_by_user_id', 'import_batch_id', 'source_actor_user_id', 'source_reference_type', 'source_reference_id', 'source_reason', 'source_created_at']
-      .every((column) => columns.includes(column)),
+    [
+      'product_id',
+      'quantity_delta',
+      'movement_type',
+      'reference_type',
+      'reference_id',
+      'reason',
+      'actor_user_id',
+      'stock_after',
+      'created_at',
+      'imported_by_user_id',
+      'import_batch_id',
+      'source_actor_user_id',
+      'source_reference_type',
+      'source_reference_id',
+      'source_reason',
+      'source_created_at',
+    ].every((column) => columns.includes(column)),
     'fresh install creates the append-only inventory movement columns',
   );
-  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'inventory_movements'")
-    .all().map((row: any) => row.name);
-  assert(indexes.includes('idx_inventory_movements_product_created'), 'fresh install creates the product/time movement index');
-  assert(indexes.includes('idx_inventory_movements_reference'), 'fresh install creates the reference index');
-  assert(indexes.includes('idx_inventory_movements_created'), 'fresh install creates the time movement index');
+  const indexes = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'inventory_movements'",
+    )
+    .all()
+    .map((row: any) => row.name);
+  assert(
+    indexes.includes('idx_inventory_movements_product_created'),
+    'fresh install creates the product/time movement index',
+  );
+  assert(
+    indexes.includes('idx_inventory_movements_reference'),
+    'fresh install creates the reference index',
+  );
+  assert(
+    indexes.includes('idx_inventory_movements_created'),
+    'fresh install creates the time movement index',
+  );
   closeDatabase();
   fs.rmSync(activeTestDir, { recursive: true, force: true });
 
@@ -83,7 +130,12 @@ async function main() {
   initDatabase();
   db = getDatabase();
   assertEqual(getCurrentSchemaVersion(), 84, 'upgrade fixture starts at schema v84');
-  assert(!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'upgrade fixture starts without the ledger table');
+  assert(
+    !db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'")
+      .get(),
+    'upgrade fixture starts without the ledger table',
+  );
   db.prepare(`
     INSERT INTO users (id, name, password, role, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, ?, ?)
@@ -103,28 +155,67 @@ async function main() {
     rolledBack = true;
   }
   assert(rolledBack, 'failed additive migration is rolled back');
-  assert(!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'rolled-back migration leaves no partial ledger table');
+  assert(
+    !db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'")
+      .get(),
+    'rolled-back migration leaves no partial ledger table',
+  );
 
   MIGRATIONS.length = 0;
   MIGRATIONS.push(...originalMigrations);
   runPendingMigrations();
   assertEqual(getCurrentSchemaVersion(), latestVersion, 'upgraded store reaches the latest schema');
-  assert(!!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'upgraded store receives the ledger table');
   assert(
-    ['imported_by_user_id', 'import_batch_id', 'source_actor_user_id', 'source_reference_type', 'source_reference_id', 'source_reason', 'source_created_at']
-      .every((column) => tableColumns(db, 'inventory_movements').includes(column)),
+    !!db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'")
+      .get(),
+    'upgraded store receives the ledger table',
+  );
+  assert(
+    [
+      'imported_by_user_id',
+      'import_batch_id',
+      'source_actor_user_id',
+      'source_reference_type',
+      'source_reference_id',
+      'source_reason',
+      'source_created_at',
+    ].every((column) => tableColumns(db, 'inventory_movements').includes(column)),
     'upgraded store receives inventory import provenance columns',
   );
-  const migratedOpening = db.prepare(`
+  const migratedOpening = db
+    .prepare(`
     SELECT quantity_delta, movement_type, reference_type, actor_user_id, stock_after
     FROM inventory_movements
     WHERE product_id = ?
-  `).get('legacy-stock-product') as any;
-  assertEqual(migratedOpening.quantity_delta, 10, 'upgrade backfill records the legacy stock quantity');
-  assertEqual(migratedOpening.movement_type, 'adjustment', 'upgrade backfill uses an adjustment movement');
-  assertEqual(migratedOpening.reference_type, 'opening_balance', 'upgrade backfill records an opening balance');
-  assertEqual(migratedOpening.actor_user_id, 'legacy-owner', 'upgrade backfill attributes the opening balance');
-  assertEqual(migratedOpening.stock_after, 10, 'upgrade backfill records the legacy cache as resulting stock');
+  `)
+    .get('legacy-stock-product') as any;
+  assertEqual(
+    migratedOpening.quantity_delta,
+    10,
+    'upgrade backfill records the legacy stock quantity',
+  );
+  assertEqual(
+    migratedOpening.movement_type,
+    'adjustment',
+    'upgrade backfill uses an adjustment movement',
+  );
+  assertEqual(
+    migratedOpening.reference_type,
+    'opening_balance',
+    'upgrade backfill records an opening balance',
+  );
+  assertEqual(
+    migratedOpening.actor_user_id,
+    'legacy-owner',
+    'upgrade backfill attributes the opening balance',
+  );
+  assertEqual(
+    migratedOpening.stock_after,
+    10,
+    'upgrade backfill records the legacy cache as resulting stock',
+  );
   closeDatabase();
   fs.rmSync(activeTestDir, { recursive: true, force: true });
 
@@ -136,8 +227,12 @@ async function main() {
   db = getDatabase();
   // Regional settings come from signup, never a fallback; seed one
   // explicitly so resolveRegionalSnapshot() resolves.
-  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
-  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'Asia/Kolkata', ?) ON CONFLICT(key) DO UPDATE SET value='Asia/Kolkata', updated_at=excluded.updated_at`).run(now());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`,
+  ).run(now());
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'Asia/Kolkata', ?) ON CONFLICT(key) DO UPDATE SET value='Asia/Kolkata', updated_at=excluded.updated_at`,
+  ).run(now());
   const owner = seedOwnerUser(db);
   const manager = seedManagerUser(db);
   seedCategory(db, 'cat-ledger', 'Ledger Category');
@@ -146,7 +241,15 @@ async function main() {
   db.prepare(`
     INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run('cashier-ledger', 'Ledger Cashier', 'cashier-ledger@test.local', 'x', 'cashier', now(), now());
+  `).run(
+    'cashier-ledger',
+    'Ledger Cashier',
+    'cashier-ledger@test.local',
+    'x',
+    'cashier',
+    now(),
+    now(),
+  );
 
   const app = createApp({});
   registerRoutes(app);
@@ -167,13 +270,27 @@ async function main() {
     });
     assertEqual(created.status, 201, 'product opening balance creates the product');
     const productId = created.data.product.id;
-    let movements = db.prepare('SELECT * FROM inventory_movements WHERE product_id = ? ORDER BY id').all(productId) as any[];
+    let movements = db
+      .prepare('SELECT * FROM inventory_movements WHERE product_id = ? ORDER BY id')
+      .all(productId) as any[];
     assertEqual(movements.length, 1, 'opening balance appends one movement');
     assertEqual(movements[0].quantity_delta, 10, 'opening balance stores the signed quantity');
-    assertEqual(movements[0].movement_type, 'adjustment', 'opening balance uses the adjustment movement type');
-    assertEqual(movements[0].reference_type, 'opening_balance', 'opening balance stores its reference type');
+    assertEqual(
+      movements[0].movement_type,
+      'adjustment',
+      'opening balance uses the adjustment movement type',
+    );
+    assertEqual(
+      movements[0].reference_type,
+      'opening_balance',
+      'opening balance stores its reference type',
+    );
     assertEqual(movements[0].reason, 'Opening count', 'opening balance stores its reason');
-    assertEqual(movements[0].actor_user_id, owner.userId, 'opening balance stores the authenticated actor');
+    assertEqual(
+      movements[0].actor_user_id,
+      owner.userId,
+      'opening balance stores the authenticated actor',
+    );
     assertEqual(movements[0].stock_after, 10, 'opening balance stores resulting stock');
 
     const fractionalCreated = await api(baseUrl, '/api/products', {
@@ -202,9 +319,141 @@ async function main() {
       assertEqual(fractionalSale.status, 201, `fractional sale ${saleIndex + 1} succeeds`);
     }
     assertEqual(
-      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(fractionalProductId).stock_quantity,
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(fractionalProductId)
+        .stock_quantity,
       0,
       'fractional sales reach zero without floating-point stock residue',
+    );
+    const fractionalDeltas = (
+      db
+        .prepare(
+          'SELECT quantity_delta FROM inventory_movements WHERE product_id = ? ORDER BY id ASC',
+        )
+        .all(fractionalProductId) as { quantity_delta: number }[]
+    ).map((m) => m.quantity_delta);
+    assertEqual(
+      JSON.stringify(fractionalDeltas),
+      JSON.stringify([0.3, -0.1, -0.1, -0.1]),
+      'movement quantity_delta values have exact canonical decimal precision without IEEE 754 residue',
+    );
+
+    // ── Boundary & precision tests for adjustProductStock ────────────────────
+    const precProd = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-ledger',
+        name: 'Precision Test Item',
+        price: 10,
+        sale_unit: 'kg',
+        allow_fractional_quantity: true,
+        weight_precision: 3,
+        track_inventory: true,
+        stock_quantity: 10,
+        reason: 'Opening 10kg',
+      },
+    });
+    assertEqual(precProd.status, 201, 'precision test product created');
+    const precId = precProd.data.product.id;
+
+    // 10 -> -0.3 adjustment -> 9.7 (movement delta must be exactly -0.3)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: -0.3,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Minus 0.3 adjustment',
+    });
+    // 9.7 -> +0.3 adjustment -> 10 (movement delta must be exactly 0.3)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: 0.3,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Plus 0.3 adjustment',
+    });
+    // 10 -> -0.1 adjustment -> 9.9 (movement delta must be exactly -0.1)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: -0.1,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Minus 0.1 adjustment',
+    });
+    // 9.9 -> +0.2 adjustment -> 10.1 (movement delta must be exactly 0.2)
+    adjustProductStock(db, {
+      productId: precId,
+      quantityDelta: 0.2,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Plus 0.2 adjustment',
+    });
+
+    const precMovements = db
+      .prepare(
+        'SELECT quantity_delta, stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id ASC',
+      )
+      .all(precId) as { quantity_delta: number; stock_after: number }[];
+    assertEqual(
+      JSON.stringify(precMovements.map((m: any) => m.quantity_delta)),
+      JSON.stringify([10, -0.3, 0.3, -0.1, 0.2]),
+      'manual adjustments persist exact normalized 8-place deltas without binary residue',
+    );
+    assertEqual(
+      JSON.stringify(precMovements.map((m: any) => m.stock_after)),
+      JSON.stringify([10, 9.7, 10, 9.9, 10.1]),
+      'stock_after values accurately reflect the successive adjustments',
+    );
+
+    // 8-place boundary test:
+    // Input below 8 decimal places (1e-9) is rejected as too small
+    let belowPrecisionRejected = false;
+    try {
+      adjustProductStock(db, {
+        productId: precId,
+        quantityDelta: 1e-9,
+        movementType: 'adjustment',
+        actorUserId: owner.userId,
+      });
+    } catch (err: any) {
+      belowPrecisionRejected = err.statusCode === 400 && err.message.includes('too small');
+    }
+    assertEqual(
+      belowPrecisionRejected,
+      true,
+      'quantity_delta below 8-decimal precision is rejected',
+    );
+
+    // Clamping at zero: stock at 2e-8 followed by -1e-8 adjustment clamps stock to 0 and records -2e-8 delta
+    const clampProd = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-ledger',
+        name: 'Clamp Test Item',
+        price: 10,
+        track_inventory: true,
+        stock_quantity: 0.00000002,
+        reason: '2e-8 opening',
+      },
+    });
+    const clampId = clampProd.data.product.id;
+    adjustProductStock(db, {
+      productId: clampId,
+      quantityDelta: -0.00000001,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+    });
+    const clampMovement = db
+      .prepare(
+        'SELECT quantity_delta, stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1',
+      )
+      .get(clampId) as { quantity_delta: number; stock_after: number };
+    assertEqual(clampMovement.stock_after, 0, 'stock near zero is clamped to 0');
+    assertEqual(
+      clampMovement.quantity_delta,
+      -0.00000002,
+      'movement delta reflects the clamped change (-2e-8)',
     );
 
     const manualIncrease = await api(baseUrl, `/api/products/${productId}/stock`, {
@@ -213,7 +462,11 @@ async function main() {
       body: { action: 'increase', quantity: 2, reason: 'Delivery received' },
     });
     assertEqual(manualIncrease.status, 200, 'reasoned manual increase succeeds');
-    assertEqual(manualIncrease.data.product.stock_quantity, 12, 'manual increase updates the stock cache');
+    assertEqual(
+      manualIncrease.data.product.stock_quantity,
+      12,
+      'manual increase updates the stock cache',
+    );
 
     const manualDecrease = await api(baseUrl, `/api/products/${productId}/stock`, {
       method: 'POST',
@@ -221,17 +474,33 @@ async function main() {
       body: { action: 'decrease', quantity: 2, reason: 'Count correction' },
     });
     assertEqual(manualDecrease.status, 200, 'reasoned manual decrease succeeds');
-    assertEqual(manualDecrease.data.product.stock_quantity, 10, 'manual decrease updates the stock cache');
+    assertEqual(
+      manualDecrease.data.product.stock_quantity,
+      10,
+      'manual decrease updates the stock cache',
+    );
 
     const defaultReasonAdjustment = await api(baseUrl, `/api/products/${productId}/stock`, {
       method: 'POST',
       headers: owner.authHeader,
       body: { action: 'increase', quantity: 1 },
     });
-    assertEqual(defaultReasonAdjustment.status, 200, 'manual adjustment without a reason preserves the stock route');
-    assertEqual(defaultReasonAdjustment.data.product.stock_quantity, 11, 'manual adjustment without a reason updates the cache');
     assertEqual(
-      db.prepare('SELECT reason FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get(productId).reason,
+      defaultReasonAdjustment.status,
+      200,
+      'manual adjustment without a reason preserves the stock route',
+    );
+    assertEqual(
+      defaultReasonAdjustment.data.product.stock_quantity,
+      11,
+      'manual adjustment without a reason updates the cache',
+    );
+    assertEqual(
+      db
+        .prepare(
+          'SELECT reason FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1',
+        )
+        .get(productId).reason,
       'Manual stock adjustment',
       'manual adjustment without a reason stores a default audit reason',
     );
@@ -242,7 +511,11 @@ async function main() {
       body: { action: 'decrease', quantity: 100, reason: 'Too much' },
     });
     assertEqual(failedDecrease.status, 400, 'insufficient manual decrease is rejected');
-    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 11, 'failed manual decrease leaves the cache unchanged');
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity,
+      11,
+      'failed manual decrease leaves the cache unchanged',
+    );
 
     const productUpdate = await api(baseUrl, `/api/products/${productId}`, {
       method: 'PUT',
@@ -250,19 +523,47 @@ async function main() {
       body: { stock_quantity: 8, reason: 'Physical count' },
     });
     assertEqual(productUpdate.status, 200, 'absolute stock update succeeds');
-    assertEqual(productUpdate.data.product.stock_quantity, 8, 'absolute stock update uses the cache as current state');
-    const absoluteAdjustment = db.prepare('SELECT quantity_delta, movement_type, reason FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get(productId);
-    assertEqual(absoluteAdjustment.quantity_delta, -3, 'absolute stock update appends the signed adjustment');
-    assertEqual(absoluteAdjustment.movement_type, 'adjustment', 'absolute stock update uses the adjustment movement type');
-    assertEqual(absoluteAdjustment.reason, 'Physical count', 'absolute stock update stores its reason');
+    assertEqual(
+      productUpdate.data.product.stock_quantity,
+      8,
+      'absolute stock update uses the cache as current state',
+    );
+    const absoluteAdjustment = db
+      .prepare(
+        'SELECT quantity_delta, movement_type, reason FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1',
+      )
+      .get(productId);
+    assertEqual(
+      absoluteAdjustment.quantity_delta,
+      -3,
+      'absolute stock update appends the signed adjustment',
+    );
+    assertEqual(
+      absoluteAdjustment.movement_type,
+      'adjustment',
+      'absolute stock update uses the adjustment movement type',
+    );
+    assertEqual(
+      absoluteAdjustment.reason,
+      'Physical count',
+      'absolute stock update stores its reason',
+    );
 
     const failedProductUpdate = await api(baseUrl, `/api/products/${productId}`, {
       method: 'PUT',
       headers: owner.authHeader,
       body: { stock_quantity: -1, reason: 'Invalid count' },
     });
-    assertEqual(failedProductUpdate.status, 400, 'PUT stock updates preserve typed inventory errors');
-    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 8, 'failed PUT stock updates leave the cache unchanged');
+    assertEqual(
+      failedProductUpdate.status,
+      400,
+      'PUT stock updates preserve typed inventory errors',
+    );
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity,
+      8,
+      'failed PUT stock updates leave the cache unchanged',
+    );
 
     const firstOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -276,7 +577,11 @@ async function main() {
       body: { type: 'takeaway', items: [{ product_id: productId, quantity: 2 }] },
     });
     assertEqual(replayOrder.status, 200, 'idempotent order retry replays the original order');
-    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 6, 'idempotent order retry does not double-deduct stock');
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity,
+      6,
+      'idempotent order retry does not double-deduct stock',
+    );
 
     const orderId = firstOrder.data.order.id;
     const added = await api(baseUrl, `/api/orders/${orderId}/items`, {
@@ -285,7 +590,9 @@ async function main() {
       body: { items: [{ product_id: productId, quantity: 1 }] },
     });
     assertEqual(added.status, 200, 'adding an order item deducts stock');
-    const addedItem = added.data.order.items.find((item: any) => item.product_id === productId && item.id !== firstOrder.data.order.items[0].id);
+    const addedItem = added.data.order.items.find(
+      (item: any) => item.product_id === productId && item.id !== firstOrder.data.order.items[0].id,
+    );
 
     const itemCancel = await api(baseUrl, `/api/orders/${orderId}/items/${addedItem.id}/cancel`, {
       method: 'PATCH',
@@ -299,11 +606,15 @@ async function main() {
       body: {},
     });
     assertEqual(itemRestore.status, 200, 'item restore re-deducts stock');
-    const repeatedRestore = await api(baseUrl, `/api/orders/${orderId}/items/${addedItem.id}/restore`, {
-      method: 'PATCH',
-      headers: owner.authHeader,
-      body: {},
-    });
+    const repeatedRestore = await api(
+      baseUrl,
+      `/api/orders/${orderId}/items/${addedItem.id}/restore`,
+      {
+        method: 'PATCH',
+        headers: owner.authHeader,
+        body: {},
+      },
+    );
     assertEqual(repeatedRestore.status, 200, 'repeated item restore is idempotent');
 
     const orderCancel = await api(baseUrl, `/api/orders/${orderId}/status`, {
@@ -318,52 +629,110 @@ async function main() {
       body: { status: 'cancelled', reason: 'Retry' },
     });
     assertEqual(repeatedOrderCancel.status, 200, 'repeated whole-order cancellation is idempotent');
-    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 8, 'all sale/restoration paths leave the expected cache');
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity,
+      8,
+      'all sale/restoration paths leave the expected cache',
+    );
 
-    movements = db.prepare('SELECT * FROM inventory_movements WHERE product_id = ? ORDER BY id').all(productId) as any[];
-    assertEqual(movements.filter((movement) => movement.movement_type === 'sale').length, 2, 'create and add-item sales both append movements');
-    assertEqual(movements.filter((movement) => movement.movement_type === 'cancel_restore').length, 4, 'item cancel, item restore, and order cancellation append movements');
-    assertEqual(movements[movements.length - 1].stock_after, 8, 'latest movement records resulting stock');
+    movements = db
+      .prepare('SELECT * FROM inventory_movements WHERE product_id = ? ORDER BY id')
+      .all(productId) as any[];
+    assertEqual(
+      movements.filter((movement) => movement.movement_type === 'sale').length,
+      2,
+      'create and add-item sales both append movements',
+    );
+    assertEqual(
+      movements.filter((movement) => movement.movement_type === 'cancel_restore').length,
+      4,
+      'item cancel, item restore, and order cancellation append movements',
+    );
+    assertEqual(
+      movements[movements.length - 1].stock_after,
+      8,
+      'latest movement records resulting stock',
+    );
 
-    const unauthorized = await api(baseUrl, '/api/inventory/movements', { headers: cashierHeaders });
+    const unauthorized = await api(baseUrl, '/api/inventory/movements', {
+      headers: cashierHeaders,
+    });
     assertEqual(unauthorized.status, 403, 'cashier cannot read inventory history');
-    const managerHistory = await api(baseUrl, '/api/inventory/movements?product_id=' + encodeURIComponent(productId) + '&movement_type=cancel_restore&per_page=2', {
-      headers: manager.authHeader,
-    });
+    const managerHistory = await api(
+      baseUrl,
+      '/api/inventory/movements?product_id=' +
+        encodeURIComponent(productId) +
+        '&movement_type=cancel_restore&per_page=2',
+      {
+        headers: manager.authHeader,
+      },
+    );
     assertEqual(managerHistory.status, 200, 'manager can read inventory history');
-    assertEqual(managerHistory.data.movements.length, 2, 'history applies movement type and page-size filters');
+    assertEqual(
+      managerHistory.data.movements.length,
+      2,
+      'history applies movement type and page-size filters',
+    );
     assert(managerHistory.data.nextCursor > 0, 'history returns a stable next cursor');
-    assert(managerHistory.data.movements[0].id > managerHistory.data.movements[1].id, 'history is ordered newest first with id tie-breaker');
-    assertEqual(managerHistory.data.movements[0].actor_user_id, owner.userId, 'history includes the movement actor');
+    assert(
+      managerHistory.data.movements[0].id > managerHistory.data.movements[1].id,
+      'history is ordered newest first with id tie-breaker',
+    );
+    assertEqual(
+      managerHistory.data.movements[0].actor_user_id,
+      owner.userId,
+      'history includes the movement actor',
+    );
 
-    const nextPage = await api(baseUrl, `/api/inventory/movements?product_id=${encodeURIComponent(productId)}&movement_type=cancel_restore&per_page=2&before_id=${managerHistory.data.nextCursor}`, {
-      headers: manager.authHeader,
-    });
+    const nextPage = await api(
+      baseUrl,
+      `/api/inventory/movements?product_id=${encodeURIComponent(productId)}&movement_type=cancel_restore&per_page=2&before_id=${managerHistory.data.nextCursor}`,
+      {
+        headers: manager.authHeader,
+      },
+    );
     assertEqual(nextPage.status, 200, 'history cursor fetch succeeds');
-    assert(nextPage.data.movements.every((movement: any) => movement.id < managerHistory.data.nextCursor), 'history cursor advances without overlap');
+    assert(
+      nextPage.data.movements.every(
+        (movement: any) => movement.id < managerHistory.data.nextCursor,
+      ),
+      'history cursor advances without overlap',
+    );
     // A movement row is identified by its pool as well: a replacement that
     // swaps a variant's movements for the same numbers under another variant id
     // is erasing history, not replacing it.
-    const replacement = (variantId: string | null) => [{
-      id: 1,
-      product_id: 'replacement-product',
-      variant_id: variantId,
-      quantity_delta: 5,
-      movement_type: 'adjustment',
-      reference_type: 'opening_balance',
-      reference_id: 'replacement-variant',
-      reason: 'Opening count',
-      actor_user_id: 'replacement-owner',
-      stock_after: 5,
-      created_at: '2020-01-01 00:00:00',
-    }];
+    const replacement = (variantId: string | null) => [
+      {
+        id: 1,
+        product_id: 'replacement-product',
+        variant_id: variantId,
+        quantity_delta: 5,
+        movement_type: 'adjustment',
+        reference_type: 'opening_balance',
+        reference_id: 'replacement-variant',
+        reason: 'Opening count',
+        actor_user_id: 'replacement-owner',
+        stock_after: 5,
+        created_at: '2020-01-01 00:00:00',
+      },
+    ];
     assertEqual(
-      validateInventoryLedgerReplacement([], replacement('variant-a'), [], replacement('variant-b')),
+      validateInventoryLedgerReplacement(
+        [],
+        replacement('variant-a'),
+        [],
+        replacement('variant-b'),
+      ),
       'Inventory movement history cannot be erased by a replacement',
       'a replacement cannot swap one variant pool movement history for another',
     );
     assertEqual(
-      validateInventoryLedgerReplacement([], replacement('variant-a'), [], replacement('variant-a')),
+      validateInventoryLedgerReplacement(
+        [],
+        replacement('variant-a'),
+        [],
+        replacement('variant-a'),
+      ),
       null,
       're-importing the same variant pool movement history is allowed',
     );

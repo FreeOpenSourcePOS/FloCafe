@@ -999,7 +999,6 @@ export function getRecoverySchemaBuildCount(): number {
   return recoverySchemaBuildCount;
 }
 
-
 function getMigrationRegistryIdentity(): string {
   const last = MIGRATIONS[MIGRATIONS.length - 1];
   return `${MIGRATIONS.length}:${last?.version ?? 0}:${last?.name ?? ''}`;
@@ -1015,9 +1014,7 @@ function getRecoverySchemaReference(): SchemaRecoveryReference {
   try {
     cachedSchemaRecoveryReference = {
       identity: currentIdentity,
-      tableColumns: new Map(
-        getTables(idealDb).map((table) => [table, getColumns(idealDb, table)]),
-      ),
+      tableColumns: new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)])),
       definitions: normalizedSchemaDefinitions(idealDb),
     };
     return cachedSchemaRecoveryReference;

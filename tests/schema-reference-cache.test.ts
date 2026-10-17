@@ -52,17 +52,33 @@ async function main() {
 
     const healthyFirst = isHealthyDatabaseFile(backupPath);
     assert.equal(healthyFirst, true, 'valid backup file is reported healthy');
-    assert.equal(getRecoverySchemaBuildCount() - countBeforeCold, 1, 'cold check must build ideal schema exactly once');
+    assert.equal(
+      getRecoverySchemaBuildCount() - countBeforeCold,
+      1,
+      'cold check must build ideal schema exactly once',
+    );
 
     // Second check must reuse the cached reference without building again
     const healthySecond = isHealthyDatabaseFile(backupPath);
     assert.equal(healthySecond, true, 'second check reports healthy');
-    assert.equal(getRecoverySchemaBuildCount() - countBeforeCold, 1, 'second check reuses cache without building again');
+    assert.equal(
+      getRecoverySchemaBuildCount() - countBeforeCold,
+      1,
+      'second check reuses cache without building again',
+    );
 
     // Live db without metadata is also healthy when requireMetadata = false
     const healthyLive = isHealthyDatabaseFile(dbPath, undefined, false);
-    assert.equal(healthyLive, true, 'live database without metadata is healthy when requireMetadata = false');
-    assert.equal(getRecoverySchemaBuildCount() - countBeforeCold, 1, 're-uses cached schema reference');
+    assert.equal(
+      healthyLive,
+      true,
+      'live database without metadata is healthy when requireMetadata = false',
+    );
+    assert.equal(
+      getRecoverySchemaBuildCount() - countBeforeCold,
+      1,
+      're-uses cached schema reference',
+    );
 
     // ── 2. Same-version direct restore reuses the cached reference ──
     console.log('[2/4] Testing same-version direct restore caching...');

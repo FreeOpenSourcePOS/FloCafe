@@ -166,7 +166,8 @@ Directory syncing is skipped on Windows, which does not support it.
 | `npm run test:upgrade-path` | Migration from historical snapshots up to the current version. |
 | `npm run test:upgrade-regression` | Regression cover for past migration defects. |
 | `npm run test:upgrade-matrix-harness` | The harness the CI upgrade matrix drives. |
-| `npm run test:schema-health` | Schema shape and index health. |
+| `npm run test:schema-health` | Schema shape, index health, and recovery reference caching. |
+| `npm run test:schema-reference-cache` | Recovery schema reference caching and migration registry invalidation. |
 | `npm run test:backup` | Backup and restore behaviour. |
 | `npm run test:issue-278-fail-closed-db` | The missing-database guard. |
 
@@ -174,7 +175,8 @@ Directory syncing is skipped on Windows, which does not support it.
 requires a clean `integrity_check`, no foreign-key violations outside an explicit allowlist, a
 schema version above zero and within the supported range, an `_flo_meta` stamp that matches the
 pragma, and a table and column set, plus normalised `CREATE` definitions, that match the ideal
-schema built by running the whole migration pipeline in memory.
+schema built by running the whole migration pipeline in memory (cached across health checks and
+invalidated on migration registry changes).
 
 ## Adding a migration
 

@@ -246,6 +246,103 @@ function isDatabaseMaintenanceRoute(req: Request): boolean {
   return DATABASE_MAINTENANCE_ROUTES.has(`${method} ${fullPath}`);
 }
 
+export interface DatabaseAdmissionReservation {
+  retain(): boolean;
+  release(): void;
+  isReleased(): boolean;
+}
+
+class DatabaseAdmissionReservationImpl implements DatabaseAdmissionReservation {
+  private refCount = 1;
+  private released = false;
+
+  retain(): boolean {
+    if (this.released) return false;
+    this.refCount += 1;
+    return true;
+  }
+
+  isReleased(): boolean {
+    return this.released;
+  }
+
+  release(): void {
+    if (this.released) return;
+    this.refCount -= 1;
+    if (this.refCount <= 0) {
+      this.released = true;
+      activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+      releaseMaintenanceDrainWaiters();
+      releaseMaintenanceRequestWaiters();
+      releaseDatabaseIdleWaiters();
+    }
+  }
+}
+
+function isLoopbackAddress(ip: string | undefined): boolean {
+  if (!ip) return false;
+  const normalized = ip.startsWith('::ffff:') ? ip.substring(7) : ip;
+  return normalized === '127.0.0.1' || normalized === '::1' || normalized.startsWith('127.');
+}
+
+const MAINTENANCE_HANDOFF_TTL_MS = 15_000;
+
+interface MaintenanceHandoffEntry {
+  reservation: DatabaseAdmissionReservation;
+  expiresAt: number;
+}
+
+const activeMaintenanceHandoffs = new Map<string, MaintenanceHandoffEntry>();
+
+function sweepExpiredMaintenanceHandoffs(): void {
+  const now = Date.now();
+  for (const [token, entry] of activeMaintenanceHandoffs.entries()) {
+    if (entry.expiresAt <= now) {
+      activeMaintenanceHandoffs.delete(token);
+      entry.reservation.release();
+    }
+  }
+}
+
+export function createDatabaseMaintenanceHandoff(
+  reservation: DatabaseAdmissionReservation,
+): string | null {
+  if (reservation.isReleased()) return null;
+  if (!reservation.retain()) return null;
+  sweepExpiredMaintenanceHandoffs();
+  const token = crypto.randomUUID();
+  activeMaintenanceHandoffs.set(token, {
+    reservation,
+    expiresAt: Date.now() + MAINTENANCE_HANDOFF_TTL_MS,
+  });
+  return token;
+}
+
+export function consumeDatabaseMaintenanceHandoff(
+  token: string,
+): DatabaseAdmissionReservation | null {
+  const entry = activeMaintenanceHandoffs.get(token);
+  if (!entry) return null;
+  activeMaintenanceHandoffs.delete(token);
+  if (Date.now() > entry.expiresAt || entry.reservation.isReleased()) {
+    entry.reservation.release();
+    return null;
+  }
+  return entry.reservation;
+}
+
+export function revokeDatabaseMaintenanceHandoff(token: string): void {
+  const entry = activeMaintenanceHandoffs.get(token);
+  if (entry) {
+    activeMaintenanceHandoffs.delete(token);
+    entry.reservation.release();
+  }
+}
+
+export function getActiveDatabaseRequestsCount(): number {
+  return activeDatabaseRequests;
+}
+
 export function databaseMaintenanceMiddleware(
   req: Request,
   res: Response,
@@ -261,27 +358,45 @@ export function databaseMaintenanceMiddleware(
     res.status(503).json({ error: 'Database is shutting down' });
     return;
   }
-  // Reject requests while maintenance is active before middleware can touch database handle.
-  if (databaseMaintenanceActive) {
+
+  // Trusted internal loopback handoff from Server App (:3003) to Main API (:3001)
+  const rawHandoffHeader = req.headers?.['x-flo-maintenance-handoff'];
+  let handoffReservation: DatabaseAdmissionReservation | null = null;
+  if (typeof rawHandoffHeader === 'string' && isLoopbackAddress(req.socket?.remoteAddress)) {
+    handoffReservation = consumeDatabaseMaintenanceHandoff(rawHandoffHeader);
+  }
+
+  // Reject requests while maintenance is active unless already admitted via trusted handoff.
+  if (!handoffReservation && databaseMaintenanceActive) {
     res.status(503).json({ error: 'Database maintenance in progress' });
     return;
   }
 
   // Maintenance route handlers acquire the FIFO lock themselves; exclude from active count.
   if (isDatabaseMaintenanceRoute(req)) {
+    if (handoffReservation) {
+      handoffReservation.release();
+    }
     next();
     return;
   }
 
-  activeDatabaseRequests += 1;
+  let reservation: DatabaseAdmissionReservation;
+  if (handoffReservation) {
+    // Ticket hold transferred to this inner request — no extra retain or activeDatabaseRequests increment needed.
+    reservation = handoffReservation;
+  } else {
+    activeDatabaseRequests += 1;
+    reservation = new DatabaseAdmissionReservationImpl();
+  }
+
+  (req as any).databaseAdmissionReservation = reservation;
+
   let released = false;
   const release = () => {
     if (released) return;
     released = true;
-    activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
-    releaseMaintenanceDrainWaiters();
-    releaseMaintenanceRequestWaiters();
-    releaseDatabaseIdleWaiters();
+    reservation.release();
   };
   res.once('finish', release);
   res.once('close', release);

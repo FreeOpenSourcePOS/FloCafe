@@ -13,7 +13,14 @@ import {
   installHttpShutdownTracking,
   trackHttpRequestWork,
 } from './shutdown';
-import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
+import {
+  DatabaseAdmissionReservation,
+  createDatabaseMaintenanceHandoff,
+  databaseMaintenanceMiddleware,
+  getDatabase,
+  isServerAppEnabled,
+  revokeDatabaseMaintenanceHandoff,
+} from './db';
 import { getJWTSecret } from './security/jwt-secret';
 import {
   authRateLimit,
@@ -146,6 +153,11 @@ async function forwardToMainApiImpl(req: Request, res: Response, targetPath: str
     }
   }
 
+  const reservation = (req as any).databaseAdmissionReservation as
+    | DatabaseAdmissionReservation
+    | undefined;
+  const handoffToken = reservation ? createDatabaseMaintenanceHandoff(reservation) : undefined;
+
   try {
     const upstream = await fetch(target, {
       method: req.method,
@@ -153,6 +165,7 @@ async function forwardToMainApiImpl(req: Request, res: Response, targetPath: str
         'Content-Type': 'application/json',
         ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
         ...(req.get('Idempotency-Key') ? { 'Idempotency-Key': req.get('Idempotency-Key')! } : {}),
+        ...(handoffToken ? { 'x-flo-maintenance-handoff': handoffToken } : {}),
       },
       body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body || {}),
       signal: getHttpRequestSignal(req),
@@ -169,6 +182,10 @@ async function forwardToMainApiImpl(req: Request, res: Response, targetPath: str
     }
     console.error('[Server App] Main API forward failed:', error);
     res.status(502).json({ error: 'Could not reach the local POS API' });
+  } finally {
+    if (handoffToken) {
+      revokeDatabaseMaintenanceHandoff(handoffToken);
+    }
   }
 }
 

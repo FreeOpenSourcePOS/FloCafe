@@ -143,7 +143,7 @@ function getPendingCurrencyReset(db: ReturnType<typeof getDatabase>): PendingCur
   }
 }
 
-function normalizeEmail(email: unknown): string {
+export function normalizeEmail(email: unknown): string {
   return String(email || '')
     .trim()
     .toLowerCase();

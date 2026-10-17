@@ -11,7 +11,7 @@ import { closeServerResources, createShutdownCancellationError, installHttpShutd
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret } from './security/jwt-secret';
-import { parseCategoryIds } from './routes/auth';
+import { normalizeEmail, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
@@ -185,7 +185,8 @@ export function startKdsServer(): Promise<void> {
     // KDS Auth - verify user has chef/manager/owner role
     app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
       try {
-        const { email, password } = req.body;
+        const email = normalizeEmail(req.body?.email);
+        const { password } = req.body || {};
         if (!email || !password) {
           return res.status(400).json({ error: 'Email and password required' });
         }

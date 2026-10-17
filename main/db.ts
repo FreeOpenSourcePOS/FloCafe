@@ -984,17 +984,46 @@ export function recoverDatabaseReplacementJournal(handle: DatabaseReplacementJou
   removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
 }
 
-let recoverySchemaReference: Map<string, string[]> | null = null;
+interface SchemaRecoveryReference {
+  identity: string;
+  tableColumns: Map<string, string[]>;
+  definitions: Map<string, string>;
+}
+
+let cachedSchemaRecoveryReference: SchemaRecoveryReference | null = null;
 let buildingIdealSchema = false;
 
-function getRecoverySchemaReference(): Map<string, string[]> {
-  if (recoverySchemaReference) return recoverySchemaReference;
+let recoverySchemaBuildCount = 0;
+
+export function getRecoverySchemaBuildCount(): number {
+  return recoverySchemaBuildCount;
+}
+
+export function clearRecoverySchemaReference(): void {
+  cachedSchemaRecoveryReference = null;
+}
+
+function getMigrationRegistryIdentity(): string {
+  const last = MIGRATIONS[MIGRATIONS.length - 1];
+  return `${MIGRATIONS.length}:${last?.version ?? 0}:${last?.name ?? ''}`;
+}
+
+function getRecoverySchemaReference(): SchemaRecoveryReference {
+  const currentIdentity = getMigrationRegistryIdentity();
+  if (cachedSchemaRecoveryReference && cachedSchemaRecoveryReference.identity === currentIdentity) {
+    return cachedSchemaRecoveryReference;
+  }
+  recoverySchemaBuildCount += 1;
   const idealDb = buildIdealSchemaDb();
   try {
-    recoverySchemaReference = new Map(
-      getTables(idealDb).map((table) => [table, getColumns(idealDb, table)]),
-    );
-    return recoverySchemaReference;
+    cachedSchemaRecoveryReference = {
+      identity: currentIdentity,
+      tableColumns: new Map(
+        getTables(idealDb).map((table) => [table, getColumns(idealDb, table)]),
+      ),
+      definitions: normalizedSchemaDefinitions(idealDb),
+    };
+    return cachedSchemaRecoveryReference;
   } finally {
     idealDb.close();
   }
@@ -1015,7 +1044,7 @@ function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string,
   );
 }
 
-function isHealthyDatabaseFile(
+export function isHealthyDatabaseFile(
   filePath: string,
   allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
   requireMetadata = true,
@@ -1039,23 +1068,17 @@ function isHealthyDatabaseFile(
         .get() as { value: string } | undefined;
     } catch {}
     const tables = new Set(getTables(candidate));
-    const expectedSchema = getRecoverySchemaReference();
+    const schemaRef = getRecoverySchemaReference();
+    const expectedSchema = schemaRef.tableColumns;
     const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
       const available = new Set(getColumns(candidate, table));
       return columns.every((column) => available.has(column));
     });
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
-    const idealDb = buildIdealSchemaDb();
-    let definitionsValid = false;
-    try {
-      const expectedDefinitions = normalizedSchemaDefinitions(idealDb);
-      const actualDefinitions = normalizedSchemaDefinitions(candidate);
-      definitionsValid =
-        expectedDefinitions.size === actualDefinitions.size &&
-        [...expectedDefinitions].every(([key, sql]) => actualDefinitions.get(key) === sql);
-    } finally {
-      idealDb.close();
-    }
+    const actualDefinitions = normalizedSchemaDefinitions(candidate);
+    const definitionsValid =
+      schemaRef.definitions.size === actualDefinitions.size &&
+      [...schemaRef.definitions].every(([key, sql]) => actualDefinitions.get(key) === sql);
     candidate.close();
     return (
       integrity &&

@@ -103,7 +103,7 @@ the same LAN-exempt helper, and `3003` applies 150 per minute. `express-rate-lim
 same.
 
 `authRateLimit` is the one limiter that deliberately does **not** exempt private addresses. It
-passes `bypassPrivateIp: false`, so LAN clients are counted. Five routes use it: the three
+does not bypass private IPs, so LAN clients are counted. Five routes use it: the three
 credential routes `POST /api/auth/login`, `POST /api/auth/password/change`, and
 `POST /api/auth/recover-password` on `3001`, plus `POST /api/staff` and `PUT /api/staff/:id`, which
 create and modify staff credentials. `POST /api/auth/login` on `3002` and `3003` uses it too. Its default ceiling is 10 attempts per 15 minutes, overridable

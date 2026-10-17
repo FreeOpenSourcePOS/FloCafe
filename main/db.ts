@@ -8391,6 +8391,16 @@ export function verifyPin(
   return bcrypt.compareSync(String(inputPin), storedHash);
 }
 
+/** Verify a user PIN against the stored pin_hash asynchronously without blocking the event loop. */
+export async function verifyPinAsync(
+  storedHash: string | null | undefined,
+  inputPin: string | number,
+): Promise<boolean> {
+  if (!storedHash || !inputPin) return false;
+  return bcrypt.compare(String(inputPin), storedHash);
+}
+
+
 // Duration a voided in-progress item remains visible on KDS boards before dropping off.
 export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
 

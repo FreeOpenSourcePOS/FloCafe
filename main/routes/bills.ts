@@ -12,6 +12,7 @@ import {
   recordOrderAudit,
   utcTodayDate,
   verifyPin,
+  verifyPinAsync,
   withTxn,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
@@ -118,12 +119,47 @@ function paymentValidationError(
   return Object.assign(new Error(message), { statusCode, displayCode });
 }
 
+export async function preVerifyKitchenDeliveryPin(
+  db: ReturnType<typeof getDatabase>,
+  overridePin: unknown,
+  clientIp = 'unknown',
+): Promise<{ id: string; verifiedPinHash: string } | null> {
+  if (overridePin === undefined || overridePin === null || overridePin === '') {
+    return null;
+  }
+  const rateLimitKey = `pin:${clientIp}:kitchen-delivery`;
+  if (isPinRateLimited(rateLimitKey)) {
+    throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
+      statusCode: 429,
+    });
+  }
+  if (typeof overridePin !== 'string' || !/^\d{4,6}$/.test(overridePin)) {
+    checkPinRateLimit(rateLimitKey);
+    throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  }
+
+  const managers = db
+    .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+    .all() as { id: string; role: string; pin_hash: string }[];
+  for (const user of managers) {
+    if (hasRole(user.role, ROLE_ACCESS.ownerManager)) {
+      if (await verifyPinAsync(user.pin_hash, overridePin)) {
+        return { id: user.id, verifiedPinHash: user.pin_hash };
+      }
+    }
+  }
+
+  checkPinRateLimit(rateLimitKey);
+  throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+}
+
 function checkKitchenDeliveryStatus(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number,
   overridePin?: unknown,
   clientIp = 'unknown',
   billId?: string | number,
+  preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
 ): {
   allowed: boolean;
   count: number;
@@ -183,12 +219,30 @@ function checkKitchenDeliveryStatus(
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
 
-  const managers = db
-    .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
-    .all() as { id: string; role: string; pin_hash: string }[];
-  const manager = managers.find(
-    (user) => hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin),
-  );
+  let manager: { id: string } | undefined;
+  if (preVerifiedManager) {
+    const candidate = db
+      .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+      .get(preVerifiedManager.id) as
+      | { id: string; role: string; pin_hash: string | null; is_active: number }
+      | undefined;
+    if (
+      candidate &&
+      candidate.is_active === 1 &&
+      hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+      candidate.pin_hash === preVerifiedManager.verifiedPinHash
+    ) {
+      manager = candidate;
+    }
+  } else {
+    const managers = db
+      .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+      .all() as { id: string; role: string; pin_hash: string }[];
+    manager = managers.find(
+      (user) => hasRole(user.role, ROLE_ACCESS.ownerManager) && verifyPin(user.pin_hash, overridePin),
+    );
+  }
+
   if (!manager) {
     checkPinRateLimit(rateLimitKey);
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
@@ -3071,6 +3125,7 @@ function applyPaymentBatch(
   idempotencyUserId?: string,
   overridePin?: unknown,
   clientIp = 'unknown',
+  preVerifiedKitchenManager?: { id: string; verifiedPinHash: string } | null,
 ): {
   bill: any;
   walletDebited: boolean;
@@ -3120,6 +3175,7 @@ function applyPaymentBatch(
     overridePin,
     clientIp,
     bill.id,
+    preVerifiedKitchenManager,
   );
   if (!kitchenStatus.allowed) {
     throw Object.assign(new Error('Kitchen items must be delivered before billing'), {
@@ -3290,51 +3346,61 @@ function applyPaymentBatch(
   return result;
 }
 
-router.post('/:id/payment', requirePermission('payments.take'), (req: Request, res: Response) => {
-  let operationCommitted = false;
-  try {
-    const payment = req.body;
-    if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
-      return res
-        .status(400)
-        .json(
-          structuredBillFailure(
-            req,
-            'fc.backend.payment.create.validation',
-            'Payment body must be an object',
-            'payment_input_invalid',
-          ),
-        );
-    }
-    const db = getDatabase();
-    const { override_pin, ...paymentLine } = payment;
-    const requestHash = paymentRequestHash(
-      req.params.id as string,
-      [paymentLine],
-      paymentLine.customer_id,
-    );
-    const result = withTxn(() =>
-      applyPaymentBatch(
-        db,
+router.post(
+  '/:id/payment',
+  requirePermission('payments.take'),
+  asyncHandler(async (req: Request, res: Response) => {
+    let operationCommitted = false;
+    try {
+      const payment = req.body;
+      if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+        return res
+          .status(400)
+          .json(
+            structuredBillFailure(
+              req,
+              'fc.backend.payment.create.validation',
+              'Payment body must be an object',
+              'payment_input_invalid',
+            ),
+          );
+      }
+      const db = getDatabase();
+      const { override_pin, ...paymentLine } = payment;
+      const requestHash = paymentRequestHash(
         req.params.id as string,
         [paymentLine],
         paymentLine.customer_id,
-        true,
-        paymentIdempotencyKey(req),
-        requestHash,
-        String((req as any).user.userId),
+      );
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+        db,
         override_pin,
-        req.ip || req.socket.remoteAddress || 'unknown',
-      ),
-    );
-    operationCommitted = true;
+        clientIp,
+      );
+      const result = withTxn(() =>
+        applyPaymentBatch(
+          db,
+          req.params.id as string,
+          [paymentLine],
+          paymentLine.customer_id,
+          true,
+          paymentIdempotencyKey(req),
+          requestHash,
+          String((req as any).user.userId),
+          override_pin,
+          clientIp,
+          preVerifiedKitchenManager,
+        ),
+      );
+      operationCommitted = true;
 
-    const billStatus = (result.bill as any)?.payment_status;
-    if (billStatus === 'paid') notifyKdsUpdate();
-    else notifyOrderUpdated();
+      const billStatus = (result.bill as any)?.payment_status;
+      if (billStatus === 'paid') notifyKdsUpdate();
+      else notifyOrderUpdated();
 
-    res.json(result);
-  } catch (error: any) {
+      res.json(result);
+    } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill payment failed:', error);
     return res.status(statusCode).json({
@@ -3358,63 +3424,74 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
         : {}),
     });
   }
-});
+}),
+);
 
 // Atomic split-payment batch endpoint applying payment lines in a single transaction.
-router.post('/:id/payments', requirePermission('payments.take'), (req: Request, res: Response) => {
-  let operationCommitted = false;
-  try {
-    const body = req.body;
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return res
-        .status(400)
-        .json(
-          structuredBillFailure(
-            req,
-            'fc.backend.payment.create.validation',
-            'Payment batch body must be an object',
-            'payment_input_invalid',
-          ),
-        );
-    }
-    const { payments, customer_id: bodyCustomerId, override_pin } = body;
-    if (!Array.isArray(payments) || payments.length === 0) {
-      return res
-        .status(400)
-        .json(
-          structuredBillFailure(
-            req,
-            'fc.backend.payment.create.validation',
-            'payments must be a non-empty array',
-            'payment_input_invalid',
-          ),
-        );
-    }
+router.post(
+  '/:id/payments',
+  requirePermission('payments.take'),
+  asyncHandler(async (req: Request, res: Response) => {
+    let operationCommitted = false;
+    try {
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return res
+          .status(400)
+          .json(
+            structuredBillFailure(
+              req,
+              'fc.backend.payment.create.validation',
+              'Payment batch body must be an object',
+              'payment_input_invalid',
+            ),
+          );
+      }
+      const { payments, customer_id: bodyCustomerId, override_pin } = body;
+      if (!Array.isArray(payments) || payments.length === 0) {
+        return res
+          .status(400)
+          .json(
+            structuredBillFailure(
+              req,
+              'fc.backend.payment.create.validation',
+              'payments must be a non-empty array',
+              'payment_input_invalid',
+            ),
+          );
+      }
 
-    const db = getDatabase();
-    const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
-    const result = withTxn(() =>
-      applyPaymentBatch(
+      const db = getDatabase();
+      const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
         db,
-        req.params.id as string,
-        payments,
-        bodyCustomerId,
-        false,
-        paymentIdempotencyKey(req),
-        requestHash,
-        String((req as any).user.userId),
         override_pin,
-        req.ip || req.socket.remoteAddress || 'unknown',
-      ),
-    );
-    operationCommitted = true;
+        clientIp,
+      );
+      const result = withTxn(() =>
+        applyPaymentBatch(
+          db,
+          req.params.id as string,
+          payments,
+          bodyCustomerId,
+          false,
+          paymentIdempotencyKey(req),
+          requestHash,
+          String((req as any).user.userId),
+          override_pin,
+          clientIp,
+          preVerifiedKitchenManager,
+        ),
+      );
+      operationCommitted = true;
 
-    const billStatus = (result.bill as any)?.payment_status;
-    if (billStatus === 'paid') notifyKdsUpdate();
-    else notifyOrderUpdated();
+      const billStatus = (result.bill as any)?.payment_status;
+      if (billStatus === 'paid') notifyKdsUpdate();
+      else notifyOrderUpdated();
 
-    res.json(result);
-  } catch (error: any) {
+      res.json(result);
+    } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Batch bill payment failed:', error);
     return res.status(statusCode).json({
@@ -3438,12 +3515,13 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
         : {}),
     });
   }
-});
+}),
+);
 
 router.post(
   '/:id/applyDiscount',
   requirePermission('bills.discount.apply'),
-  (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const { type, value, reason } = req.body;
@@ -3541,6 +3619,7 @@ router.post(
 
       // Check if approval is required
       let approvedByUserId: string | undefined;
+      let preVerifiedPinHash: string | undefined;
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval && value > 0) {
         const { override_pin } = req.body;
@@ -3564,7 +3643,7 @@ router.post(
             candidate &&
             hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
             hasPermission(candidate.id, 'bills.discount.apply') &&
-            verifyPin(candidate.pin_hash, override_pin)
+            (await verifyPinAsync(candidate.pin_hash, override_pin))
           ) {
             user = candidate;
           }
@@ -3576,7 +3655,7 @@ router.post(
             if (
               hasRole(u.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(u.id, 'bills.discount.apply') &&
-              verifyPin(u.pin_hash, override_pin)
+              (await verifyPinAsync(u.pin_hash, override_pin))
             ) {
               user = u;
               break;
@@ -3589,6 +3668,7 @@ router.post(
         }
         pinAttempts.delete(rateLimitKey);
         approvedByUserId = user.id;
+        preVerifiedPinHash = user.pin_hash;
       }
 
       // Check discount mode
@@ -3746,6 +3826,22 @@ router.post(
       const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
 
       const updatedBill = withTxn(() => {
+        if (approvedByUserId && preVerifiedPinHash) {
+          const approver = db
+            .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+            .get(approvedByUserId) as
+            | { id: string; role: string; pin_hash: string | null; is_active: number }
+            | undefined;
+          if (
+            !approver ||
+            approver.is_active !== 1 ||
+            !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+            !hasPermission(approver.id, 'bills.discount.apply') ||
+            approver.pin_hash !== preVerifiedPinHash
+          ) {
+            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+          }
+        }
         db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
@@ -3837,7 +3933,7 @@ router.post(
           ),
         );
     }
-  },
+  }),
 );
 
 /**

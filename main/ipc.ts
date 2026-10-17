@@ -128,7 +128,9 @@ export function isTrustedMainWindowSender(
   event: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
   mainWindowOrGetter: BrowserWindow | null | (() => BrowserWindow | null),
   port: number,
-  browserWindowClass: { fromWebContents: (sender: any) => BrowserWindow | null } = BrowserWindow,
+  browserWindowClass: {
+    fromWebContents: (sender: Electron.WebContents) => BrowserWindow | null;
+  } = BrowserWindow,
 ): boolean {
   if (typeof port !== 'number' || !Number.isSafeInteger(port) || port <= 0) {
     return false;

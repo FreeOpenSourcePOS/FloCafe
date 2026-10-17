@@ -322,9 +322,11 @@ frame's URL to be `http:` on `localhost` or `127.0.0.1`. That establishes **whic
 calling**. It does not establish **who is signed in**, and the single POS window serves every role
 from chef to owner. Everything else in this section follows from that gap.
 
-Registering a privileged channel with a bare `ipcMain.handle` skips the check. `pick-restore-file`,
-`backup-database`, `restore-backup`, and `db-initialize` did that once; they go through the wrapper
-now, and a new channel does too or it has not been reviewed.
+Registering a privileged channel with a bare `ipcMain.handle` skips the check. All privileged
+channels in [`main/ipc.ts`](../../main/ipc.ts) go through the `handle` wrapper, and direct update
+and status handlers in [`main/update-ipc.ts`](../../main/update-ipc.ts) go through
+`registerDirectUpdateIpcHandlers` using `isTrustedMainWindowSender`; any new channel must enforce
+sender validation.
 
 ### What the settings channel may write
 

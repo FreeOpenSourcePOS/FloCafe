@@ -94,9 +94,13 @@ export function createDirectUpdateIpcHandlers(
     validateSender,
   } = options;
 
-  const isSenderAuthorized = (event: any): boolean => {
+  const isSenderAuthorized = (event: unknown): boolean => {
     if (validateSender) return validateSender(event);
-    return isTrustedMainWindowSender(event, getMainWindow, getServerPort());
+    return isTrustedMainWindowSender(
+      event as Parameters<typeof isTrustedMainWindowSender>[0],
+      getMainWindow,
+      getServerPort(),
+    );
   };
 
   return {
@@ -230,6 +234,6 @@ export function createDirectUpdateIpcHandlers(
 export function registerDirectUpdateIpcHandlers(options: DirectUpdateIpcOptions): void {
   const handlers = createDirectUpdateIpcHandlers(options);
   for (const [channel, handler] of Object.entries(handlers)) {
-    options.ipcMain.handle(channel, handler as any);
+    options.ipcMain.handle(channel, handler as Parameters<IpcMain['handle']>[1]);
   }
 }

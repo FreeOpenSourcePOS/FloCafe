@@ -154,7 +154,12 @@ async function runTests() {
 
   // Legitimate sender
   assert.equal(
-    isTrustedMainWindowSender(validEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      validEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     true,
   );
   assert.equal(
@@ -166,7 +171,12 @@ async function runTests() {
   const destroyedWindow = new FakeBrowserWindow('http://localhost:3001/', 'token-pos');
   destroyedWindow.destroyed = true;
   assert.equal(
-    isTrustedMainWindowSender(validEvent, () => destroyedWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      validEvent,
+      () => destroyedWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -185,7 +195,12 @@ async function runTests() {
     senderFrameToken: 'token-kds',
   });
   assert.equal(
-    isTrustedMainWindowSender(otherWindowEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      otherWindowEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -198,7 +213,12 @@ async function runTests() {
     detached: true,
   });
   assert.equal(
-    isTrustedMainWindowSender(detachedEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      detachedEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -210,7 +230,12 @@ async function runTests() {
     senderFrameToken: 'token-iframe',
   });
   assert.equal(
-    isTrustedMainWindowSender(subframeEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      subframeEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -222,7 +247,12 @@ async function runTests() {
     senderFrameToken: 'token-pos',
   });
   assert.equal(
-    isTrustedMainWindowSender(remoteUrlEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      remoteUrlEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -235,13 +265,23 @@ async function runTests() {
     senderFrameUrl: 'https://evil.com/',
   });
   assert.equal(
-    isTrustedMainWindowSender(untrustedFrameUrlEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      untrustedFrameUrlEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
   // Wrong port
   assert.equal(
-    isTrustedMainWindowSender(validEvent, () => mainWindow as any, 3002, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      validEvent,
+      () => mainWindow as any,
+      3002,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -251,7 +291,12 @@ async function runTests() {
     omitSenderFrame: true,
   });
   assert.equal(
-    isTrustedMainWindowSender(missingFrameEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      missingFrameEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
@@ -260,11 +305,18 @@ async function runTests() {
     omitSender: true,
   });
   assert.equal(
-    isTrustedMainWindowSender(missingSenderEvent, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+    isTrustedMainWindowSender(
+      missingSenderEvent,
+      () => mainWindow as any,
+      3001,
+      FakeBrowserWindowClass as any,
+    ),
     false,
   );
 
-  console.log('✓ isTrustedMainWindowSender enforces window identity, frame token, and loopback origin');
+  console.log(
+    '✓ isTrustedMainWindowSender enforces window identity, frame token, and loopback origin',
+  );
 
   console.log('--- Testing Direct Update IPC Handlers ---');
 
@@ -285,7 +337,9 @@ async function runTests() {
     channel: 'stable',
   };
 
-  const createOptions = (customSenderValidator?: (event: unknown) => boolean): DirectUpdateIpcOptions => ({
+  const createOptions = (
+    customSenderValidator?: (event: unknown) => boolean,
+  ): DirectUpdateIpcOptions => ({
     ipcMain: { handle: () => {} } as any,
     getMainWindow: () => mainWindow as any,
     getServerPort: () => 3001,
@@ -341,15 +395,35 @@ async function runTests() {
     validateSender: customSenderValidator,
   });
 
-  const testUntrustedSenders = async (handlers: Record<string, (event: any, ...args: any[]) => any>) => {
+  const testUntrustedSenders = async (
+    handlers: Record<string, (event: any, ...args: any[]) => any>,
+  ) => {
     const invalidEvents = [
-      { name: 'remote URL', event: createMockEvent({ window: mainWindow, url: 'https://attacker.invalid/' }) },
-      { name: 'wrong host', event: createMockEvent({ window: mainWindow, url: 'http://evil.com:3001/' }) },
-      { name: 'wrong port', event: createMockEvent({ window: mainWindow, url: 'http://localhost:3002/' }) },
-      { name: 'other window', event: createMockEvent({ window: otherWindow, url: 'http://localhost:3001/' }) },
+      {
+        name: 'remote URL',
+        event: createMockEvent({ window: mainWindow, url: 'https://attacker.invalid/' }),
+      },
+      {
+        name: 'wrong host',
+        event: createMockEvent({ window: mainWindow, url: 'http://evil.com:3001/' }),
+      },
+      {
+        name: 'wrong port',
+        event: createMockEvent({ window: mainWindow, url: 'http://localhost:3002/' }),
+      },
+      {
+        name: 'other window',
+        event: createMockEvent({ window: otherWindow, url: 'http://localhost:3001/' }),
+      },
       { name: 'detached frame', event: createMockEvent({ window: mainWindow, detached: true }) },
-      { name: 'subframe mismatch', event: createMockEvent({ window: mainWindow, senderFrameToken: 'iframe-tok' }) },
-      { name: 'missing frame', event: createMockEvent({ window: mainWindow, omitSenderFrame: true }) },
+      {
+        name: 'subframe mismatch',
+        event: createMockEvent({ window: mainWindow, senderFrameToken: 'iframe-tok' }),
+      },
+      {
+        name: 'missing frame',
+        event: createMockEvent({ window: mainWindow, omitSenderFrame: true }),
+      },
     ];
 
     const channels = [
@@ -381,16 +455,43 @@ async function runTests() {
           `${channel} rejected ${name} with Unauthorized sender`,
         );
 
-        if (['updates:set-auto-check', 'updates:set-beta-channel', 'restart-and-install', 'set-theme-effective'].includes(channel)) {
+        if (
+          [
+            'updates:set-auto-check',
+            'updates:set-beta-channel',
+            'restart-and-install',
+            'set-theme-effective',
+          ].includes(channel)
+        ) {
           assert.equal(res?.success, false, `${channel} set success: false for ${name}`);
         }
 
         // Downstream guard assertion: NO action taken
-        assert.equal(checkUpdatesCalled, false, `checkForUpdates not called on ${name} via ${channel}`);
-        assert.equal(downloadUpdateCalled, false, `downloadUpdate not called on ${name} via ${channel}`);
-        assert.equal(autoUpdateWriteCalled, false, `autoUpdate write not called on ${name} via ${channel}`);
-        assert.equal(betaChannelWriteCalled, false, `betaChannel write not called on ${name} via ${channel}`);
-        assert.equal(restartAndInstallCalled, false, `restartAndInstall not called on ${name} via ${channel}`);
+        assert.equal(
+          checkUpdatesCalled,
+          false,
+          `checkForUpdates not called on ${name} via ${channel}`,
+        );
+        assert.equal(
+          downloadUpdateCalled,
+          false,
+          `downloadUpdate not called on ${name} via ${channel}`,
+        );
+        assert.equal(
+          autoUpdateWriteCalled,
+          false,
+          `autoUpdate write not called on ${name} via ${channel}`,
+        );
+        assert.equal(
+          betaChannelWriteCalled,
+          false,
+          `betaChannel write not called on ${name} via ${channel}`,
+        );
+        assert.equal(
+          restartAndInstallCalled,
+          false,
+          `restartAndInstall not called on ${name} via ${channel}`,
+        );
         assert.equal(currentThemeIsDark, false, `theme dark not mutated on ${name} via ${channel}`);
       }
     }
@@ -398,12 +499,19 @@ async function runTests() {
 
   const handlersWithValidator = createDirectUpdateIpcHandlers(
     createOptions((event) =>
-      isTrustedMainWindowSender(event as any, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
+      isTrustedMainWindowSender(
+        event as any,
+        () => mainWindow as any,
+        3001,
+        FakeBrowserWindowClass as any,
+      ),
     ),
   );
 
   await testUntrustedSenders(handlersWithValidator);
-  console.log('✓ All 10 handlers reject remote, wrong-host, wrong-port, other-window, and stale-frame senders');
+  console.log(
+    '✓ All 10 handlers reject remote, wrong-host, wrong-port, other-window, and stale-frame senders',
+  );
 
   // Test legitimate sender execution and argument validation
   console.log('--- Testing legitimate sender execution & arguments ---');
@@ -430,11 +538,21 @@ async function runTests() {
 
   // 5. updates:set-auto-check argument validation & success
   autoUpdateWriteCalled = false;
-  const invalidAutoCheckRes: any = await handlersWithValidator['updates:set-auto-check'](validEvent, 'not-a-boolean');
+  const invalidAutoCheckRes: any = await handlersWithValidator['updates:set-auto-check'](
+    validEvent,
+    'not-a-boolean',
+  );
   assert.deepEqual(invalidAutoCheckRes, { success: false, error: 'enabled must be a boolean' });
-  assert.equal(autoUpdateWriteCalled, false, 'writeAutoUpdateCheckEnabled not called on invalid arg');
+  assert.equal(
+    autoUpdateWriteCalled,
+    false,
+    'writeAutoUpdateCheckEnabled not called on invalid arg',
+  );
 
-  const validAutoCheckRes: any = await handlersWithValidator['updates:set-auto-check'](validEvent, false);
+  const validAutoCheckRes: any = await handlersWithValidator['updates:set-auto-check'](
+    validEvent,
+    false,
+  );
   assert.deepEqual(validAutoCheckRes, { success: true });
   assert.equal(autoUpdateWriteCalled, true);
   assert.equal(autoUpdateCheckEnabled, false);
@@ -445,11 +563,17 @@ async function runTests() {
 
   // 7. updates:set-beta-channel argument validation & success
   betaChannelWriteCalled = false;
-  const invalidBetaRes: any = await handlersWithValidator['updates:set-beta-channel'](validEvent, 123);
+  const invalidBetaRes: any = await handlersWithValidator['updates:set-beta-channel'](
+    validEvent,
+    123,
+  );
   assert.deepEqual(invalidBetaRes, { success: false, error: 'enabled must be a boolean' });
   assert.equal(betaChannelWriteCalled, false, 'writeBetaChannelEnabled not called on invalid arg');
 
-  const validBetaRes: any = await handlersWithValidator['updates:set-beta-channel'](validEvent, true);
+  const validBetaRes: any = await handlersWithValidator['updates:set-beta-channel'](
+    validEvent,
+    true,
+  );
   assert.deepEqual(validBetaRes, { success: true });
   assert.equal(betaChannelWriteCalled, true);
   assert.equal(betaChannelEnabled, true);
@@ -474,7 +598,10 @@ async function runTests() {
   assert.equal(typeof appStatus.memory.heapUsed, 'number');
 
   // 10. set-theme-effective argument validation & success
-  const invalidThemeRes: any = await handlersWithValidator['set-theme-effective'](validEvent, 'dark');
+  const invalidThemeRes: any = await handlersWithValidator['set-theme-effective'](
+    validEvent,
+    'dark',
+  );
   assert.deepEqual(invalidThemeRes, { success: false, error: 'isDark must be boolean' });
 
   const validThemeRes: any = await handlersWithValidator['set-theme-effective'](validEvent, true);
@@ -520,7 +647,10 @@ async function runTests() {
   // Not ready
   isReady = false;
   const notReadyRes = await restartHandler(validEvent, 'master-1234');
-  assert.deepEqual(notReadyRes, { success: false, error: 'No downloaded update is ready to install.' });
+  assert.deepEqual(notReadyRes, {
+    success: false,
+    error: 'No downloaded update is ready to install.',
+  });
   assert.equal(pinAuthorized, false, 'PIN not evaluated when not ready');
   assert.equal(cleanupRun, false);
   assert.equal(quitAndInstallRun, false);
@@ -633,7 +763,10 @@ async function runTests() {
   willNavigate(mockNavEvent, 'javascript:alert(1)');
   assert.equal(navPrevented, true, 'javascript URL prevented');
   assert.equal(openedExternalUrl, null, 'javascript URL not opened externally');
-  assert.equal(navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')), true);
+  assert.equal(
+    navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')),
+    true,
+  );
 
   // Unsafe file URL -> prevented in-window, NOT opened externally, warned
   navPrevented = false;
@@ -642,7 +775,10 @@ async function runTests() {
   willNavigate(mockNavEvent, 'file:///etc/passwd');
   assert.equal(navPrevented, true, 'file URL prevented');
   assert.equal(openedExternalUrl, null, 'file URL not opened externally');
-  assert.equal(navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')), true);
+  assert.equal(
+    navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')),
+    true,
+  );
 
   // Unsafe data URL -> prevented in-window, NOT opened externally, warned
   navPrevented = false;
@@ -651,11 +787,18 @@ async function runTests() {
   willNavigate(mockNavEvent, 'data:text/html,<h1>attack</h1>');
   assert.equal(navPrevented, true, 'data URL prevented');
   assert.equal(openedExternalUrl, null, 'data URL not opened externally');
-  assert.equal(navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')), true);
+  assert.equal(
+    navWarnings.some((w) => w.includes('Blocked unsafe navigation URL')),
+    true,
+  );
 
-  console.log('✓ createMainWindowWillNavigateHandler confines local app navigation and delegates external URLs safely');
+  console.log(
+    '✓ createMainWindowWillNavigateHandler confines local app navigation and delegates external URLs safely',
+  );
 
-  console.log('\n✅ All update IPC sender validation and window navigation tests passed successfully.');
+  console.log(
+    '\n✅ All update IPC sender validation and window navigation tests passed successfully.',
+  );
 }
 
 runTests().catch((err) => {

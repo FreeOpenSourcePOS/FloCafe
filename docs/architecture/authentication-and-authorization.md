@@ -275,9 +275,9 @@ port to a guest or shared network.
 
 **The renderer sandbox is disabled.** The main window sets `sandbox: false`, and the Windows build
 appends Chromium's `disable-gpu-sandbox` switch as a compatibility workaround.
-`contextIsolation: true`, `nodeIntegration: false`, the CSP, and the external-window URL allowlist
-carry the isolation instead. A renderer compromise has less process isolation than Electron's
-preferred configuration.
+`contextIsolation: true`, `nodeIntegration: false`, the CSP, the external-window URL allowlist,
+and in-window navigation confinement carry the isolation instead. A renderer compromise has less
+process isolation than Electron's preferred configuration.
 
 **The WhatsApp session is not encrypted at rest.** `main/services/whatsapp.ts` creates the
 credential directory with mode `0o700`, so another OS user cannot read it, but the session files

@@ -62,12 +62,14 @@ async function run() {
     fs.mkdirSync(path.join(testDir, 'backups'), { recursive: true });
     initDatabase();
 
+    const { databaseMaintenanceMiddleware } = require('../main/db');
     const { authRoutes } = require('../main/routes/auth');
     const { requireAuth } = require('../main/server');
     const app = express();
     // Same chain main/server.ts mounts, in the same order, so this test exercises
     // the route the way production reaches it rather than a quieter variant.
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
+    app.use('/api', databaseMaintenanceMiddleware);
     app.use('/api', expressRateLimit({
       windowMs: 60 * 1000,
       limit: 100,
@@ -151,6 +153,24 @@ async function run() {
     assert.equal(consumeRestoreFileSelection('wrong-token'), null, 'a mismatched token does not yield the path');
     assert.equal(consumeRestoreFileSelection(reused.token), backupSource, 'the matching token yields the picked path once');
     assert.equal(consumeRestoreFileSelection(reused.token), null, 'the selection is consumed after one use');
+
+    // --- backup endpoint and trailing slash support ---------------------------
+    const { setMasterPin } = require('../main/services/master-pin');
+    setMasterPin('1234');
+
+    const noSlashBackup = await request(app)
+      .post('/api/db/backup')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ master_pin: '1234' });
+    assert.equal(noSlashBackup.status, 200, 'no-slash backup succeeds without maintenance deadlock');
+    assert.equal(noSlashBackup.body.success, true, 'no-slash backup reports success');
+
+    const trailingSlashBackup = await request(app)
+      .post('/api/db/backup/')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ master_pin: '1234' });
+    assert.equal(trailingSlashBackup.status, 200, 'trailing-slash backup succeeds without maintenance deadlock');
+    assert.equal(trailingSlashBackup.body.success, true, 'trailing-slash backup reports success');
 
     console.log('✅ Restore-from-file API and authorisation tests passed');
   } finally {

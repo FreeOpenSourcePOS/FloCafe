@@ -36,6 +36,7 @@ const { registerRoutes } = require('../main/routes/index');
 const EXPECTED_MAINTENANCE_HANDLERS = [
   'POST /api/db/import',
   'POST /api/db/backup',
+  'POST /api/db/restore',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
@@ -54,7 +55,7 @@ async function run() {
   assert.deepEqual(
     [...allowlisted].sort(),
     [...EXPECTED_MAINTENANCE_HANDLERS].sort(),
-    'the maintenance allowlist still holds exactly the five handlers that take the lock',
+    'the maintenance allowlist still holds exactly the registered handlers that take the lock',
   );
 
   const app = express();
@@ -74,6 +75,14 @@ async function run() {
       response.status,
       404,
       `${entry} is allowlisted for maintenance but no route is registered for it`,
+    );
+
+    // Verify trailing slash variant is also registered in Express
+    const trailingResponse = await request(app)[method.toLowerCase()](`${routePath}/`).send({});
+    assert.notEqual(
+      trailingResponse.status,
+      404,
+      `${entry}/ trailing slash is accepted by Express but returned 404`,
     );
   }
 

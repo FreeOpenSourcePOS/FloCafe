@@ -3554,7 +3554,7 @@ router.post(
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const managerId = req.body.manager_id || req.body.user_id;
+        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
         let user: any = null;
         if (managerId) {
           const candidate = db
@@ -3568,8 +3568,7 @@ router.post(
           ) {
             user = candidate;
           }
-        }
-        if (!user) {
+        } else {
           const managers = db
             .prepare('SELECT * FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
             .all() as any[];

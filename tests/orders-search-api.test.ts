@@ -67,6 +67,12 @@ async function main() {
     '2023-01-01 00:00:00',
     '2023-01-01 00:00:00',
   );
+  insertOrder.run(
+    'ORD-SYNTH-EMOJI-🍕🍔',
+    null,
+    '2023-01-01 00:00:00',
+    '2023-01-01 00:00:00',
+  );
   for (let i = 0; i < 55; i++) {
     insertOrder.run(
       `ORD-SEARCH-NEWER-${i}`,
@@ -324,7 +330,17 @@ async function main() {
       'probe returns order matching short query via fallback',
     );
 
-    // 10. Repeated requests after registration was skipped
+    // 10. Astral Unicode probe (fewer than 3 codepoints, falling back to UDF scan)
+    const probeAstral = await api(baseUrl, `/api/orders?search=${encodeURIComponent('🍕🍔')}`, {
+      headers: owner.authHeader,
+    });
+    assertEqualOrThrow(probeAstral.status, 200, 'probe search for astral characters succeeds');
+    assertOrThrow(
+      probeAstral.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-EMOJI-🍕🍔'),
+      'probe returns order matching astral emoji query via fallback',
+    );
+
+    // 11. Repeated requests after registration was skipped
     for (let i = 0; i < 3; i++) {
       const probeRepeated = await api(baseUrl, `/api/orders?search=${encodeURIComponent('ALPHA123')}`, {
         headers: owner.authHeader,

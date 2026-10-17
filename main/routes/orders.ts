@@ -675,7 +675,7 @@ router.get(
         )
       )`;
 
-        const isEligible = search.length >= 3 && (!isPhoneSearch || phoneDigits.length >= 3);
+        const isEligible = [...search].length >= 3 && (!isPhoneSearch || phoneDigits.length >= 3);
         const hasFts = isEligible && isSearchIndexAvailable(db);
 
         if (hasFts) {

@@ -54,7 +54,9 @@ function ownerToken(): string {
 }
 
 function serverToken(): string {
-  return jwt.sign({ userId: 'restore-server', role: 'server' }, getJWTSecret(), { expiresIn: '10m' });
+  return jwt.sign({ userId: 'restore-server', role: 'server' }, getJWTSecret(), {
+    expiresIn: '10m',
+  });
 }
 
 async function run() {
@@ -62,32 +64,42 @@ async function run() {
     fs.mkdirSync(path.join(testDir, 'backups'), { recursive: true });
     initDatabase();
 
+    const { databaseMaintenanceMiddleware } = require('../main/db');
     const { authRoutes } = require('../main/routes/auth');
     const { requireAuth } = require('../main/server');
     const app = express();
     // Same chain main/server.ts mounts, in the same order, so this test exercises
     // the route the way production reaches it rather than a quieter variant.
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
-    app.use('/api', expressRateLimit({
-      windowMs: 60 * 1000,
-      limit: 100,
-      standardHeaders: true,
-      legacyHeaders: false,
-      skip: (req: any) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
-    }));
+    app.use('/api', databaseMaintenanceMiddleware);
+    app.use(
+      '/api',
+      expressRateLimit({
+        windowMs: 60 * 1000,
+        limit: 100,
+        standardHeaders: true,
+        legacyHeaders: false,
+        skip: (req: any) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
+      }),
+    );
     app.use(requireAuth);
     app.use('/api/auth', authRoutes);
     app.use('/api/db', databaseRoutes);
 
-    const seedUser = (id: string, role: string) => getDatabase().prepare(`
+    const seedUser = (id: string, role: string) =>
+      getDatabase()
+        .prepare(`
       INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, id, `${id}@test.local`, 'not-a-real-hash', role, now(), now());
+    `)
+        .run(id, id, `${id}@test.local`, 'not-a-real-hash', role, now(), now());
     seedUser('restore-owner', 'owner');
     seedUser('restore-server', 'server');
 
     const backupSource = (await createBackup()).path;
-    getDatabase().prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run('api-post-backup', 'Added After Backup');
+    getDatabase()
+      .prepare('INSERT INTO categories (id, name) VALUES (?, ?)')
+      .run('api-post-backup', 'Added After Backup');
 
     // --- confirmation phrase is required --------------------------------------
     const noConfirmSelection = rememberRestoreFileSelection(backupSource);
@@ -104,7 +116,11 @@ async function run() {
       .set('Authorization', `Bearer ${ownerToken()}`)
       .send({ confirmation: RESTORE_CONFIRMATION, selection_token: 'invented-token' });
     assert.equal(noSelection.status, 400, 'restore with a token that was never issued is refused');
-    assert.match(noSelection.body.error, /Choose a backup file/, 'the refusal explains the file must be chosen first');
+    assert.match(
+      noSelection.body.error,
+      /Choose a backup file/,
+      'the refusal explains the file must be chosen first',
+    );
 
     // --- a session without database.manage is refused -------------------------
     const unprivilegedSelection = rememberRestoreFileSelection(backupSource);
@@ -112,7 +128,11 @@ async function run() {
       .post('/api/db/restore')
       .set('Authorization', `Bearer ${serverToken()}`)
       .send({ confirmation: RESTORE_CONFIRMATION, selection_token: unprivilegedSelection.token });
-    assert.equal(unprivileged.status, 403, 'restore is refused for a session without database.manage');
+    assert.equal(
+      unprivileged.status,
+      403,
+      'restore is refused for a session without database.manage',
+    );
     clearRestoreFileSelection();
 
     // --- an unauthenticated caller is refused ---------------------------------
@@ -129,7 +149,11 @@ async function run() {
       .post('/api/db/restore')
       .set('Authorization', `Bearer ${ownerToken()}`)
       .send({ confirmation: RESTORE_CONFIRMATION, selection_token: selection.token });
-    assert.equal(restored.status, 200, `restore from a picked file succeeds (got ${restored.status}: ${JSON.stringify(restored.body)})`);
+    assert.equal(
+      restored.status,
+      200,
+      `restore from a picked file succeeds (got ${restored.status}: ${JSON.stringify(restored.body)})`,
+    );
     assert.equal(restored.body.success, true, 'restore reports success');
     assert.equal(
       getDatabase().prepare('SELECT id FROM categories WHERE id = ?').get('api-post-backup'),
@@ -146,15 +170,59 @@ async function run() {
 
     // --- the selection service itself -----------------------------------------
     clearRestoreFileSelection();
-    assert.equal(consumeRestoreFileSelection('anything'), null, 'no selection means nothing to consume');
+    assert.equal(
+      consumeRestoreFileSelection('anything'),
+      null,
+      'no selection means nothing to consume',
+    );
     const reused = rememberRestoreFileSelection(backupSource);
-    assert.equal(consumeRestoreFileSelection('wrong-token'), null, 'a mismatched token does not yield the path');
-    assert.equal(consumeRestoreFileSelection(reused.token), backupSource, 'the matching token yields the picked path once');
-    assert.equal(consumeRestoreFileSelection(reused.token), null, 'the selection is consumed after one use');
+    assert.equal(
+      consumeRestoreFileSelection('wrong-token'),
+      null,
+      'a mismatched token does not yield the path',
+    );
+    assert.equal(
+      consumeRestoreFileSelection(reused.token),
+      backupSource,
+      'the matching token yields the picked path once',
+    );
+    assert.equal(
+      consumeRestoreFileSelection(reused.token),
+      null,
+      'the selection is consumed after one use',
+    );
+
+    // --- backup endpoint and trailing slash support ---------------------------
+    const { setMasterPin } = require('../main/services/master-pin');
+    setMasterPin('1234');
+
+    const noSlashBackup = await request(app)
+      .post('/api/db/backup')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ master_pin: '1234' });
+    assert.equal(
+      noSlashBackup.status,
+      200,
+      'no-slash backup succeeds without maintenance deadlock',
+    );
+    assert.equal(noSlashBackup.body.success, true, 'no-slash backup reports success');
+
+    const trailingSlashBackup = await request(app)
+      .post('/api/db/backup/')
+      .set('Authorization', `Bearer ${ownerToken()}`)
+      .send({ master_pin: '1234' });
+    assert.equal(
+      trailingSlashBackup.status,
+      200,
+      'trailing-slash backup succeeds without maintenance deadlock',
+    );
+    assert.equal(trailingSlashBackup.body.success, true, 'trailing-slash backup reports success');
 
     console.log('✅ Restore-from-file API and authorisation tests passed');
   } finally {
-    try { closeDatabase(); } catch { }
+    try {
+      closeDatabase();
+    } catch {}
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
   }

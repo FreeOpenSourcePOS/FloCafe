@@ -229,6 +229,7 @@ export function isDatabaseMaintenanceActive(): boolean {
 const DATABASE_MAINTENANCE_ROUTES = new Set([
   'POST /api/db/import',
   'POST /api/db/backup',
+  'POST /api/db/restore',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
@@ -237,8 +238,12 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
 function isDatabaseMaintenanceRoute(req: Request): boolean {
   // Lowercased for the same reason as requireAuth: the mount is case-insensitive,
   // so an exact-match lookup on the raw spelling misses case variants.
-  const fullPath = ((req.baseUrl || '') + req.path).toLowerCase();
-  return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${fullPath}`);
+  // Trailing slash is normalized to match Express route handling.
+  const rawPath = ((req.baseUrl || '') + (req.path || '')).toLowerCase();
+  const fullPath =
+    rawPath.length > 1 && rawPath.endsWith('/') ? rawPath.replace(/\/+$/, '') : rawPath;
+  const method = String(req.method || '').toUpperCase();
+  return DATABASE_MAINTENANCE_ROUTES.has(`${method} ${fullPath}`);
 }
 
 export function databaseMaintenanceMiddleware(

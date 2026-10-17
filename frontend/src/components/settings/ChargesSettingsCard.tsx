@@ -5,11 +5,22 @@ import { Percent, Plus, Trash2, Pencil } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { useConfirm } from '@/hooks/use-confirm';
 import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { VALID_CHARGE_ORDER_TYPES, type STANDARD_CHARGE_COLUMN_IDS, type ChargeDefinition } from '@/lib/charges';
+import {
+  VALID_CHARGE_ORDER_TYPES,
+  type STANDARD_CHARGE_COLUMN_IDS,
+  type ChargeDefinition,
+} from '@/lib/charges';
 import { useChargesStore } from '@/store/charges';
 
 export type ChargePresetKind = 'service' | 'packaging' | 'custom';
@@ -35,7 +46,12 @@ const STANDARD_PRESETS: Record<
     order_types: readonly OrderType[];
   }
 > = {
-  service: { id: 'service_charge', nameKey: 'entityServiceCharge', type: 'percentage', order_types: ['dine_in'] },
+  service: {
+    id: 'service_charge',
+    nameKey: 'entityServiceCharge',
+    type: 'percentage',
+    order_types: ['dine_in'],
+  },
   packaging: {
     id: 'packaging_charge',
     nameKey: 'entityPackaging',
@@ -171,24 +187,33 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
   };
 
   const submitForm = async () => {
-    if (!editing || loading || loadError) return;
-    const existing = editingOriginalId ? charges.find((charge) => charge.id === editingOriginalId) : undefined;
-    if (editingOriginalId && !existing) {
-      toast.error(t('chargeReopenRequired'));
-      closeForm();
-      void load();
-      return;
-    }
-    const definition = toDefinition(editing, existing);
-    if (charges.some((charge) => charge.id === definition.id && charge.id !== editingOriginalId)) {
-      setDuplicateId(true);
-      return;
-    }
-    const next = editingOriginalId
-      ? charges.map((charge) => (charge.id === editingOriginalId ? definition : charge))
-      : [...charges, definition];
+    if (!editing || loading || loadError || saving) return;
     setSaving(true);
     try {
+      await load();
+      const latest = useChargesStore.getState();
+      if (latest.loading || latest.error) return;
+      const currentCharges = latest.charges;
+      const existing = editingOriginalId
+        ? currentCharges.find((charge) => charge.id === editingOriginalId)
+        : undefined;
+      if (editingOriginalId && !existing) {
+        toast.error(t('chargeReopenRequired'));
+        closeForm();
+        return;
+      }
+      const definition = toDefinition(editing, existing);
+      if (
+        currentCharges.some(
+          (charge) => charge.id === definition.id && charge.id !== editingOriginalId,
+        )
+      ) {
+        setDuplicateId(true);
+        return;
+      }
+      const next = editingOriginalId
+        ? currentCharges.map((charge) => (charge.id === editingOriginalId ? definition : charge))
+        : [...currentCharges, definition];
       await save(next);
       setEditing(null);
       setEditingOriginalId(null);
@@ -206,6 +231,18 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
     setDuplicateId(false);
   };
 
+  const loadErrorNotice = loadError ? (
+    <div
+      role="alert"
+      className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+    >
+      <span>{t('reloadFailed')}</span>
+      <Button size="sm" variant="outline" onClick={() => void load()}>
+        {t('retry')}
+      </Button>
+    </div>
+  ) : null;
+
   return (
     <div className="bg-card rounded-xl border border-border p-6">
       <div className="flex items-center justify-between gap-3 mb-1">
@@ -214,26 +251,31 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
           <h2 className="font-semibold text-foreground">{t('chargesAndSurcharges')}</h2>
         </div>
         {canManage && (
-          <Button size="sm" disabled={loading || !!loadError} onClick={() => { setEditing(emptyForm()); setEditingOriginalId(null); }}>
+          <Button
+            size="sm"
+            disabled={loading || !!loadError}
+            onClick={() => {
+              setEditing(emptyForm());
+              setEditingOriginalId(null);
+            }}
+          >
             <Plus size={14} className="me-1" /> {t('addCharge')}
           </Button>
         )}
       </div>
       <p className="text-sm text-muted-foreground mb-4">{t('chargesAndSurchargesHint')}</p>
 
-      {loadError && (
-        <div role="alert" className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-          <span>{t('reloadFailed')}</span>
-          <Button size="sm" variant="outline" onClick={() => void load()}>{t('retry')}</Button>
-        </div>
-      )}
+      {!editing && loadErrorNotice}
 
       {charges.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t('noChargesConfigured')}</p>
       ) : (
         <div className="space-y-2">
           {charges.map((charge) => (
-            <div key={charge.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+            <div
+              key={charge.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+            >
               <div className="min-w-0">
                 <p className="font-medium text-foreground truncate">{charge.name}</p>
                 <p className="text-xs text-muted-foreground">
@@ -243,17 +285,34 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
                   {' · '}
                   {charge.calculation_basis === 'net' ? t('chargeBasisNet') : t('chargeBasisGross')}
                   {' · '}
-                  {charge.order_types.map((type) => tOrders(ORDER_TYPE_LABEL_KEYS[type])).join(', ')}
+                  {charge.order_types
+                    .map((type) => tOrders(ORDER_TYPE_LABEL_KEYS[type]))
+                    .join(', ')}
                   {charge.is_optional ? ` · ${t('chargeWaivable')}` : ''}
                   {!charge.is_default_active ? ` · ${t('chargeOptionalApply')}` : ''}
                 </p>
               </div>
               {canManage && (
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button size="sm" variant="ghost" aria-label={tCommon('edit')} disabled={loading || !!loadError} onClick={() => { setEditing(toForm(charge)); setEditingOriginalId(charge.id); }}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={tCommon('edit')}
+                    disabled={loading || !!loadError}
+                    onClick={() => {
+                      setEditing(toForm(charge));
+                      setEditingOriginalId(charge.id);
+                    }}
+                  >
                     <Pencil size={14} />
                   </Button>
-                  <Button size="sm" variant="ghost" aria-label={tCommon('delete')} disabled={loading || !!loadError} onClick={() => void removeCharge(charge)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={tCommon('delete')}
+                    disabled={loading || !!loadError}
+                    onClick={() => void removeCharge(charge)}
+                  >
                     <Trash2 size={14} />
                   </Button>
                 </div>
@@ -263,12 +322,18 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
         </div>
       )}
 
-      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) closeForm(); }}>
+      <Dialog
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingOriginalId ? t('editCharge') : t('addCharge')}</DialogTitle>
             <DialogDescription>{t('chargesAndSurchargesHint')}</DialogDescription>
           </DialogHeader>
+          {loadErrorNotice}
           {editing && (
             <div className="space-y-3">
               <label className="block">
@@ -288,17 +353,26 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
                 <span className="text-sm text-muted-foreground">{t('chargeName')}</span>
                 <input
                   value={editing.name}
-                  onChange={(e) => { setEditing({ ...editing, name: e.target.value }); setDuplicateId(false); }}
+                  onChange={(e) => {
+                    setEditing({ ...editing, name: e.target.value });
+                    setDuplicateId(false);
+                  }}
                   className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg"
                 />
-                {duplicateId && <span role="alert" className="block mt-1 text-xs text-destructive">{t('chargesSaveFailed')}</span>}
+                {duplicateId && (
+                  <span role="alert" className="block mt-1 text-xs text-destructive">
+                    {t('chargesSaveFailed')}
+                  </span>
+                )}
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className="text-sm text-muted-foreground">{t('chargeType')}</span>
                   <select
                     value={editing.type}
-                    onChange={(e) => setEditing({ ...editing, type: e.target.value as ChargeForm['type'] })}
+                    onChange={(e) =>
+                      setEditing({ ...editing, type: e.target.value as ChargeForm['type'] })
+                    }
                     className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg"
                   >
                     <option value="percentage">{t('chargeTypePercentage')}</option>
@@ -321,7 +395,12 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
                 <span className="text-sm text-muted-foreground">{t('chargeBasis')}</span>
                 <select
                   value={editing.calculation_basis}
-                  onChange={(e) => setEditing({ ...editing, calculation_basis: e.target.value as ChargeForm['calculation_basis'] })}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      calculation_basis: e.target.value as ChargeForm['calculation_basis'],
+                    })
+                  }
                   className="w-full mt-1 px-3 py-2 text-sm border border-border bg-background rounded-lg"
                 >
                   <option value="gross">{t('chargeBasisGross')}</option>
@@ -336,12 +415,14 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
                       <input
                         type="checkbox"
                         checked={editing.order_types.includes(type)}
-                        onChange={(e) => setEditing({
-                          ...editing,
-                          order_types: e.target.checked
-                            ? [...editing.order_types, type]
-                            : editing.order_types.filter((candidate) => candidate !== type),
-                        })}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            order_types: e.target.checked
+                              ? [...editing.order_types, type]
+                              : editing.order_types.filter((candidate) => candidate !== type),
+                          })
+                        }
                       />
                       {tOrders(ORDER_TYPE_LABEL_KEYS[type])}
                     </label>
@@ -367,8 +448,15 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={closeForm}>{tCommon('cancel')}</Button>
-            <Button onClick={() => void submitForm()} disabled={saving || loading || !!loadError || !editing?.name.trim() || editing.value === ''}>
+            <Button variant="outline" onClick={closeForm}>
+              {tCommon('cancel')}
+            </Button>
+            <Button
+              onClick={() => void submitForm()}
+              disabled={
+                saving || loading || !!loadError || !editing?.name.trim() || editing.value === ''
+              }
+            >
               {tCommon('save')}
             </Button>
           </DialogFooter>

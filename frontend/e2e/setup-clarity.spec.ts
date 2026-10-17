@@ -7,7 +7,9 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
   const cashierToken = getE2eToken('e2e-cashier', 'cashier@flo.local', 'cashier');
   const authHeaders = { Authorization: `Bearer ${ownerToken}` };
 
-  test('direct legacy /addon-groups navigates and replaces history to /products?tab=addons', async ({ page }) => {
+  test('direct legacy /addon-groups navigates and replaces history to /products?tab=addons', async ({
+    page,
+  }) => {
     await page.addInitScript((token) => {
       localStorage.setItem('token', token);
     }, ownerToken);
@@ -28,13 +30,15 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
     expect(page.url()).toContain('/dashboard');
   });
 
-  test('canonical tab deep link, reload, and query navigation work as expected', async ({ page }) => {
+  test('canonical tab deep link, reload, and query navigation work as expected', async ({
+    page,
+  }) => {
     await page.addInitScript((token) => {
       localStorage.setItem('token', token);
     }, ownerToken);
 
     // 1. Direct visit to /products?tab=addons selects Add-on Groups
-    await page.goto(`${BASE}/products?tab=addons`);
+    await page.goto(`${BASE}/products?tab=addons&origin=setup`);
     const addonsTabTrigger = page.getByRole('tab', { name: /add-?on groups/i });
     await expect(addonsTabTrigger).toHaveAttribute('data-state', 'active');
     await expect(page.getByRole('button', { name: /add add-?on group/i })).toBeVisible();
@@ -42,6 +46,9 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
     // 2. Reload preserves selection
     await page.reload();
     await expect(addonsTabTrigger).toHaveAttribute('data-state', 'active');
+
+    const search = page.getByRole('textbox', { name: /search/i });
+    await search.fill('retained setup filter');
 
     // 3. Tab clicks update the query with router.replace
     const productsTabTrigger = page.getByRole('tab', { name: /^products/i });
@@ -54,19 +61,27 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
 
     const categoriesTabTrigger = page.getByRole('tab', { name: /categories/i });
     await categoriesTabTrigger.click();
-    await page.waitForURL((url) => url.searchParams.get('tab') === 'categories', { timeout: 5_000 });
+    await page.waitForURL((url) => url.searchParams.get('tab') === 'categories', {
+      timeout: 5_000,
+    });
     await expect(categoriesTabTrigger).toHaveAttribute('data-state', 'active');
 
     await addonsTabTrigger.click();
     await page.waitForURL((url) => url.searchParams.get('tab') === 'addons', { timeout: 5_000 });
     await expect(addonsTabTrigger).toHaveAttribute('data-state', 'active');
 
+    await expect(search).toHaveValue('retained setup filter');
+    expect(new URL(page.url()).searchParams.get('origin')).toBe('setup');
+
     // 4. Invalid tab query value safely falls back to products tab
     await page.goto(`${BASE}/products?tab=invalid_value`);
     await expect(productsTabTrigger).toHaveAttribute('data-state', 'active');
   });
 
-  test('authorized non-restaurant business can manage add-on groups in Products', async ({ page, request }) => {
+  test('authorized non-restaurant business can manage add-on groups in Products', async ({
+    page,
+    request,
+  }) => {
     // Read original business setting
     const bRes = await request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
     expect(bRes.ok()).toBeTruthy();
@@ -102,7 +117,9 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
     }
   });
 
-  test('unauthorized user without catalog.manage is blocked from /products and /addon-groups', async ({ page }) => {
+  test('unauthorized user without catalog.manage is blocked from /products and /addon-groups', async ({
+    page,
+  }) => {
     await page.addInitScript((token) => {
       localStorage.setItem('token', token);
     }, cashierToken);
@@ -114,7 +131,10 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
 
     await page.goto(`${BASE}/addon-groups`);
     // Cashier should also be bounced away from /addon-groups
-    await page.waitForURL((url) => !url.pathname.startsWith('/addon-groups') && !url.pathname.startsWith('/products'), { timeout: 10_000 });
+    await page.waitForURL(
+      (url) => !url.pathname.startsWith('/addon-groups') && !url.pathname.startsWith('/products'),
+      { timeout: 10_000 },
+    );
     expect(page.url()).not.toContain('/addon-groups');
   });
 
@@ -136,7 +156,10 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
 
     // Add an add-on item
     await modal.getByRole('button', { name: /\+ add addon/i }).click();
-    await modal.locator('input[placeholder*="Name" i], input[placeholder*="Addon" i]').last().fill('Vanilla');
+    await modal
+      .locator('input[placeholder*="Name" i], input[placeholder*="Addon" i]')
+      .last()
+      .fill('Vanilla');
     await modal.locator('input[aria-label="Price"]').last().fill('15');
 
     let posts = 0;
@@ -221,10 +244,20 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
       await expect(modal).not.toBeVisible();
 
       // Verify the persisted tax fields via API
-      const getRes = await request.get(`${BASE}/api/addon-groups/${createdGroup.id}`, { headers: authHeaders });
+      const getRes = await request.get(`${BASE}/api/addon-groups/${createdGroup.id}`, {
+        headers: authHeaders,
+      });
       expect(getRes.ok()).toBeTruthy();
       const updatedGroup = (await getRes.json()).addon_group;
-      const updatedAddon = updatedGroup.addons.find((a: { id: number; name: string; tax_category_id?: string | null; tax_behavior?: string; inherit_parent_tax_category?: boolean }) => a.id === createdAddonId);
+      const updatedAddon = updatedGroup.addons.find(
+        (a: {
+          id: number;
+          name: string;
+          tax_category_id?: string | null;
+          tax_behavior?: string;
+          inherit_parent_tax_category?: boolean;
+        }) => a.id === createdAddonId,
+      );
 
       expect(updatedAddon.name).toBe('Renamed Taxed Extra');
       expect(updatedAddon.tax_category_id).toBe('standard');
@@ -235,7 +268,10 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
     }
   });
 
-  test('does not overwrite inventory stock during ordinary edits without stock changes', async ({ page, request }) => {
+  test('does not overwrite inventory stock during ordinary edits without stock changes', async ({
+    page,
+    request,
+  }) => {
     const runId = Date.now();
     const groupName = `StockGroup_${runId}`;
 
@@ -297,10 +333,14 @@ test.describe('FloCafe Manager Setup Clarity - Add-ons (#1155)', () => {
       await modal.getByRole('button', { name: /create|update/i }).click();
       await expect(modal).not.toBeVisible();
 
-      const checkRes = await request.get(`${BASE}/api/addon-groups/${createdGroup.id}`, { headers: authHeaders });
+      const checkRes = await request.get(`${BASE}/api/addon-groups/${createdGroup.id}`, {
+        headers: authHeaders,
+      });
       const checkedGroup = (await checkRes.json()).addon_group;
       expect(checkedGroup.name).toBe(`${groupName}_Edited`);
-      const checkedAddon = checkedGroup.addons.find((a: { id: number; stock_quantity?: number }) => a.id === addonId);
+      const checkedAddon = checkedGroup.addons.find(
+        (a: { id: number; stock_quantity?: number }) => a.id === addonId,
+      );
       expect(checkedAddon.stock_quantity).toBe(7);
     } finally {
       await request.delete(`${BASE}/api/addon-groups/${createdGroup.id}`, { headers: authHeaders });

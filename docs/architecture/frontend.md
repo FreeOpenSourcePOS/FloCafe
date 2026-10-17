@@ -179,7 +179,9 @@ Packaging, and Custom kinds for a new charge. Service and Packaging use the rese
 exists, choosing the kind opens the saved definition instead of applying defaults. Custom charges get
 an opaque `charge-<32 hex>` ID from `crypto.getRandomValues`, generated once per draft. IDs are never
 derived from names or editable, so renaming a charge keeps its identity. Choosing a kind writes
-nothing; only Save persists.
+nothing; only Save persists. Save reloads definitions before constructing the replacement list, so
+an edit does not recreate a charge already deleted on the server or overwrite other definitions from
+the editor's old snapshot. A failed reload retains the draft and blocks saving until Retry succeeds.
 
 ### The KDS live feed is a WebSocket, not a request
 

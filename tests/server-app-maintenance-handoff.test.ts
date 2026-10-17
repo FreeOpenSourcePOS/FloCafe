@@ -69,14 +69,25 @@ async function run() {
     fakeRes.json = () => fakeRes;
     let nextCalled = false;
     databaseMaintenanceMiddleware(
-      { baseUrl: '', path: '/api/orders', headers: {}, socket: { remoteAddress: '127.0.0.1' } } as any,
+      {
+        baseUrl: '',
+        path: '/api/orders',
+        headers: {},
+        socket: { remoteAddress: '127.0.0.1' },
+      } as any,
       fakeRes,
-      () => { nextCalled = true; },
+      () => {
+        nextCalled = true;
+      },
     );
     assert.equal(nextCalled, true, 'normal request enters middleware');
     assert.equal(getActiveDatabaseRequestsCount(), 1, 'active count incremented to 1');
     fakeRes.emit('finish');
-    assert.equal(getActiveDatabaseRequestsCount(), 0, 'active count decremented back to 0 on finish');
+    assert.equal(
+      getActiveDatabaseRequestsCount(),
+      0,
+      'active count decremented back to 0 on finish',
+    );
   }
 
   // 1b. Direct request rejected with 503 during maintenance
@@ -87,14 +98,27 @@ async function run() {
       const fakeRes = new EventEmitter() as any;
       let statusCode = 0;
       let body: any = null;
-      fakeRes.status = (code: number) => { statusCode = code; return fakeRes; };
-      fakeRes.json = (b: any) => { body = b; return fakeRes; };
+      fakeRes.status = (code: number) => {
+        statusCode = code;
+        return fakeRes;
+      };
+      fakeRes.json = (b: any) => {
+        body = b;
+        return fakeRes;
+      };
 
       let nextCalled = false;
       databaseMaintenanceMiddleware(
-        { baseUrl: '', path: '/api/orders', headers: {}, socket: { remoteAddress: '127.0.0.1' } } as any,
+        {
+          baseUrl: '',
+          path: '/api/orders',
+          headers: {},
+          socket: { remoteAddress: '127.0.0.1' },
+        } as any,
         fakeRes,
-        () => { nextCalled = true; },
+        () => {
+          nextCalled = true;
+        },
       );
       assert.equal(nextCalled, false, 'direct request blocked during maintenance');
       assert.equal(statusCode, 503, 'returns 503');
@@ -120,7 +144,9 @@ async function run() {
       socket: { remoteAddress: '192.168.1.50' }, // client from LAN
     };
     let outerNextCalled = false;
-    databaseMaintenanceMiddleware(outerReq, outerRes, () => { outerNextCalled = true; });
+    databaseMaintenanceMiddleware(outerReq, outerRes, () => {
+      outerNextCalled = true;
+    });
     assert.equal(outerNextCalled, true, 'outer request admitted');
     assert.equal(getActiveDatabaseRequestsCount(), 1, 'outer request increments active count to 1');
 
@@ -142,7 +168,11 @@ async function run() {
 
     // Give maintenance event loop turn to set databaseMaintenanceActive = true and wait for active count
     await delay(10);
-    assert.equal(maintenanceStarted, false, 'maintenance is paused waiting for active requests to drain');
+    assert.equal(
+      maintenanceStarted,
+      false,
+      'maintenance is paused waiting for active requests to drain',
+    );
 
     // Downstream hop: loopback fetch arrives at Main API (:3001) carrying handoff ticket
     const innerRes = new EventEmitter() as any;
@@ -155,14 +185,28 @@ async function run() {
       socket: { remoteAddress: '127.0.0.1' }, // loopback hop
     };
     let innerNextCalled = false;
-    databaseMaintenanceMiddleware(innerReq, innerRes, () => { innerNextCalled = true; });
+    databaseMaintenanceMiddleware(innerReq, innerRes, () => {
+      innerNextCalled = true;
+    });
 
-    assert.equal(innerNextCalled, true, 'proxied request is admitted via handoff even during maintenance');
-    assert.equal(getActiveDatabaseRequestsCount(), 1, 'active count is NOT double-counted (still 1)');
+    assert.equal(
+      innerNextCalled,
+      true,
+      'proxied request is admitted via handoff even during maintenance',
+    );
+    assert.equal(
+      getActiveDatabaseRequestsCount(),
+      1,
+      'active count is NOT double-counted (still 1)',
+    );
 
     // Inner response finishes
     innerRes.emit('finish');
-    assert.equal(getActiveDatabaseRequestsCount(), 1, 'count remains held while outer response is still open');
+    assert.equal(
+      getActiveDatabaseRequestsCount(),
+      1,
+      'count remains held while outer response is still open',
+    );
     assert.equal(maintenanceStarted, false, 'maintenance still waits for outer response');
 
     // Outer response finishes
@@ -181,7 +225,10 @@ async function run() {
   {
     const fakeRes = new EventEmitter() as any;
     let statusCode = 0;
-    fakeRes.status = (c: number) => { statusCode = c; return fakeRes; };
+    fakeRes.status = (c: number) => {
+      statusCode = c;
+      return fakeRes;
+    };
     fakeRes.json = () => fakeRes;
 
     const dummyReservation = { retain: () => true, release: () => {}, isReleased: () => false };
@@ -198,7 +245,9 @@ async function run() {
           socket: { remoteAddress: '192.168.1.100' }, // NON-LOOPBACK!
         } as any,
         fakeRes,
-        () => { nextCalled = true; },
+        () => {
+          nextCalled = true;
+        },
       );
       assert.equal(nextCalled, false, 'LAN request cannot use handoff header');
       assert.equal(statusCode, 503, 'rejected with 503');
@@ -212,7 +261,10 @@ async function run() {
   {
     const fakeRes = new EventEmitter() as any;
     let statusCode = 0;
-    fakeRes.status = (c: number) => { statusCode = c; return fakeRes; };
+    fakeRes.status = (c: number) => {
+      statusCode = c;
+      return fakeRes;
+    };
     fakeRes.json = () => fakeRes;
 
     await withDatabaseMaintenanceLock(async () => {
@@ -225,7 +277,9 @@ async function run() {
           socket: { remoteAddress: '127.0.0.1' },
         } as any,
         fakeRes,
-        () => { nextCalled = true; },
+        () => {
+          nextCalled = true;
+        },
       );
       assert.equal(nextCalled, false, 'forged ticket rejected');
       assert.equal(statusCode, 503, 'rejected with 503');
@@ -288,7 +342,11 @@ async function run() {
 
     // Outer client disconnects abruptly before inner finishes
     outerRes.emit('close');
-    assert.equal(getActiveDatabaseRequestsCount(), 1, 'count remains held while inner is still working');
+    assert.equal(
+      getActiveDatabaseRequestsCount(),
+      1,
+      'count remains held while inner is still working',
+    );
 
     // Inner completes and closes
     innerRes.emit('close');
@@ -315,7 +373,11 @@ async function run() {
     // Outer client socket disconnects BEFORE inner hop arrives at Main API
     outerRes.emit('close');
     // Ticket retains active count so maintenance cannot sneak in!
-    assert.equal(getActiveDatabaseRequestsCount(), 1, 'count remains held by pending ticket despite outer disconnect');
+    assert.equal(
+      getActiveDatabaseRequestsCount(),
+      1,
+      'count remains held by pending ticket despite outer disconnect',
+    );
 
     let maintRan = false;
     const maintPromise = withDatabaseMaintenanceLock(async () => {
@@ -335,7 +397,9 @@ async function run() {
       socket: { remoteAddress: '127.0.0.1' },
     };
     let innerAdmitted = false;
-    databaseMaintenanceMiddleware(innerReq, innerRes, () => { innerAdmitted = true; });
+    databaseMaintenanceMiddleware(innerReq, innerRes, () => {
+      innerAdmitted = true;
+    });
     assert.equal(innerAdmitted, true, 'inner admitted via held ticket');
     assert.equal(maintRan, false, 'maintenance still blocked while inner processes');
 
@@ -436,7 +500,11 @@ async function run() {
     const proxiedRes = await fetch(`${serverAppBase}/api/tables`, {
       headers: { Authorization: `Bearer ${waiterToken}` },
     });
-    assert.equal(proxiedRes.status, 200, 'proxied /api/tables succeeds through Server App to Main API');
+    assert.equal(
+      proxiedRes.status,
+      200,
+      'proxied /api/tables succeeds through Server App to Main API',
+    );
 
     // 4b. Deterministic race: Maintenance starts while proxied request is in flight between Server App and Main API
     console.log('[5/5] Testing deterministic maintenance lock across two live servers...');
@@ -470,7 +538,11 @@ async function run() {
 
         // Yield so maintenance lock can set databaseMaintenanceActive = true
         await delay(10);
-        assert.equal(maintenanceStarted, false, 'maintenance is waiting for in-flight request to drain');
+        assert.equal(
+          maintenanceStarted,
+          false,
+          'maintenance is waiting for in-flight request to drain',
+        );
 
         // Now let the HTTP request reach Main API while databaseMaintenanceActive is true!
         const upstreamResponse = await originalFetch(input, init);
@@ -483,17 +555,27 @@ async function run() {
       const raceRes = await fetch(`${serverAppBase}/api/tables`, {
         headers: { Authorization: `Bearer ${waiterToken}` },
       });
-      assert.equal(raceRes.status, 200, 'forwarded request succeeded with 200 despite mid-flight maintenance');
+      assert.equal(
+        raceRes.status,
+        200,
+        'forwarded request succeeded with 200 despite mid-flight maintenance',
+      );
       assert(maintenancePromise, 'maintenance lock was triggered during hop');
       const maintResult = await maintenancePromise;
-      assert.equal(maintResult, 'maintenance_ok', 'maintenance lock completed after request drained');
+      assert.equal(
+        maintResult,
+        'maintenance_ok',
+        'maintenance lock completed after request drained',
+      );
       assert.equal(maintenanceFinished, true, 'maintenance finished cleanly');
     } finally {
       globalThis.fetch = originalFetch;
     }
 
     // 4c. Deterministic race: Maintenance starts AFTER BOTH Server App and Main API have admitted the request
-    console.log('Testing deterministic maintenance lock started after both 3003 and 3001 admissions...');
+    console.log(
+      'Testing deterministic maintenance lock started after both 3003 and 3001 admissions...',
+    );
     let bothAdmittedHop = false;
     let bothMaintStarted = false;
     let bothMaintFinished = false;
@@ -519,7 +601,11 @@ async function run() {
         const origArrayBuffer = upstreamResponse.arrayBuffer.bind(upstreamResponse);
         upstreamResponse.arrayBuffer = async () => {
           await delay(15);
-          assert.equal(bothMaintStarted, false, 'maintenance must wait while Server App response streaming finishes');
+          assert.equal(
+            bothMaintStarted,
+            false,
+            'maintenance must wait while Server App response streaming finishes',
+          );
           return origArrayBuffer();
         };
 
@@ -555,8 +641,16 @@ async function run() {
       directMainApiBlocked = mainRes.status === 503;
     });
 
-    assert.equal(directServerAppBlocked, true, 'direct Server App request blocked with 503 during maintenance');
-    assert.equal(directMainApiBlocked, true, 'direct Main API request blocked with 503 during maintenance');
+    assert.equal(
+      directServerAppBlocked,
+      true,
+      'direct Server App request blocked with 503 during maintenance',
+    );
+    assert.equal(
+      directMainApiBlocked,
+      true,
+      'direct Main API request blocked with 503 during maintenance',
+    );
   } finally {
     // Cleanup servers and DB
     await stopServerApp();

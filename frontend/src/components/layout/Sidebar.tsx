@@ -152,13 +152,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
-  const {
-    tablesRequired,
-    kdsEnabled,
-    whatsappEnabled,
-    setKdsEnabled,
-    setWhatsappEnabled,
-  } = usePosSettingsStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, setKdsEnabled, setWhatsappEnabled } =
+    usePosSettingsStore();
   const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');

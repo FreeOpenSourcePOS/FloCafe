@@ -35,7 +35,12 @@ const { getDatabase } = require('../main/db');
 // Dynamically resolve frontend modules for testing
 function loadFrontendModules() {
   const originalResolveFilename = Module._resolveFilename;
-  Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  Module._resolveFilename = function (
+    request: string,
+    parent: any,
+    isMain: boolean,
+    options?: any,
+  ) {
     let resolvedRequest = request;
     if (request === '@countries') {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
@@ -114,7 +119,8 @@ async function runTests() {
     tax_registration_number: 'CA123456789RT0001',
     bill_footer_message: 'Thank you for dining with us! Follow @blueharbor',
     bill_show_logo: true,
-    receipt_logo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY44YAAAAASUVORK5CYII=',
+    receipt_logo:
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY44YAAAAASUVORK5CYII=',
     receipt_logo_raster: '1,1:ff',
     bill_show_name: true,
     bill_show_address: true,
@@ -189,16 +195,38 @@ async function runTests() {
   });
 
   const rehydrated = usePosSettingsStore.getState();
-  assertEqualOrThrow(rehydrated.billAddress, '', 'cleared business_address updates billAddress to empty');
-  assertEqualOrThrow(rehydrated.taxRegistrationNumber, undefined, 'form-only taxRegistrationNumber undefined');
-  assertEqualOrThrow(rehydrated.billTaxRegistrationNumber, '', 'cleared tax_registration_number updates to empty');
-  assertEqualOrThrow(rehydrated.billFooterMessage, 'New Season Greetings!', 'updated bill_footer_message reflected');
+  assertEqualOrThrow(
+    rehydrated.billAddress,
+    '',
+    'cleared business_address updates billAddress to empty',
+  );
+  assertEqualOrThrow(
+    rehydrated.taxRegistrationNumber,
+    undefined,
+    'form-only taxRegistrationNumber undefined',
+  );
+  assertEqualOrThrow(
+    rehydrated.billTaxRegistrationNumber,
+    '',
+    'cleared tax_registration_number updates to empty',
+  );
+  assertEqualOrThrow(
+    rehydrated.billFooterMessage,
+    'New Season Greetings!',
+    'updated bill_footer_message reflected',
+  );
   assertEqualOrThrow(rehydrated.billShowLogo, false, 'billShowLogo updated to false');
   // Phone should remain from previous state since not passed in this partial update
-  assertEqualOrThrow(rehydrated.billPhone, '+1 604-555-0199', 'omitted fields retain previous value');
+  assertEqualOrThrow(
+    rehydrated.billPhone,
+    '+1 604-555-0199',
+    'omitted fields retain previous value',
+  );
 
   // ── Test 4: Browser print HTML reflects hydrated store settings ──
-  console.log('\n4. Browser print generation reflects current backend store settings without visiting Settings');
+  console.log(
+    '\n4. Browser print generation reflects current backend store settings without visiting Settings',
+  );
 
   // Hydrate full store settings
   store.hydrateReceiptSettings({
@@ -265,8 +293,12 @@ async function runTests() {
       currentState.billShowTaxId && currentState.billTaxRegistrationNumber
         ? currentState.billTaxRegistrationNumber
         : undefined,
-    address: currentState.billShowAddress && currentState.billAddress ? currentState.billAddress : undefined,
-    phone: currentState.billShowPhone && currentState.billPhone ? currentState.billPhone : undefined,
+    address:
+      currentState.billShowAddress && currentState.billAddress
+        ? currentState.billAddress
+        : undefined,
+    phone:
+      currentState.billShowPhone && currentState.billPhone ? currentState.billPhone : undefined,
     footerNote: currentState.billFooterMessage || undefined,
     businessName: sampleTenant.business_name,
     showBusinessName: currentState.billShowName,
@@ -296,7 +328,9 @@ async function runTests() {
   );
 
   // ── Test 5: Backend API GET and PUT /api/settings/business ──
-  console.log('\n5. Backend GET /api/settings/business returns bill_footer_message and bill_template');
+  console.log(
+    '\n5. Backend GET /api/settings/business returns bill_footer_message and bill_template',
+  );
   const { initDatabase, closeDatabase, now } = require('../main/db');
   initDatabase();
   const { startServer, seedOwnerUser, api } = require('./helpers/test-setup');
@@ -324,9 +358,17 @@ async function runTests() {
       headers: seedData.authHeader,
     });
     assertEqualOrThrow(getRes.status, 200, 'GET /api/settings/business returns 200');
-    assertEqualOrThrow(getRes.data.business_address, '123 Pier Way, Seattle, WA', 'business_address in API');
+    assertEqualOrThrow(
+      getRes.data.business_address,
+      '123 Pier Way, Seattle, WA',
+      'business_address in API',
+    );
     assertEqualOrThrow(getRes.data.business_phone, '+1 206-555-0100', 'business_phone in API');
-    assertEqualOrThrow(getRes.data.tax_registration_number, 'WA-777888999', 'tax_registration_number in API');
+    assertEqualOrThrow(
+      getRes.data.tax_registration_number,
+      'WA-777888999',
+      'tax_registration_number in API',
+    );
     assertEqualOrThrow(
       getRes.data.bill_footer_message,
       'Fresh seafood daily. Thank you!',
@@ -346,7 +388,11 @@ async function runTests() {
         value: 'Updated footer: Visit us online!',
       },
     });
-    assertEqualOrThrow(putRes.status, 200, 'PUT /api/settings/bill_footer_message accepts footer message');
+    assertEqualOrThrow(
+      putRes.status,
+      200,
+      'PUT /api/settings/bill_footer_message accepts footer message',
+    );
 
     const updatedBusinessRes = await api(baseUrl, '/api/settings/business', {
       headers: seedData.authHeader,
@@ -374,8 +420,8 @@ async function runTests() {
     server.close();
   }
 
-    closeDatabase();
-    fs.rmSync(testDir, { recursive: true, force: true });
+  closeDatabase();
+  fs.rmSync(testDir, { recursive: true, force: true });
   console.log('\n==================================================');
   console.log('✓ All Receipt Settings Hydration tests passed successfully!');
   console.log('==================================================');

@@ -261,25 +261,21 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           }
           const showCustName = d.bill_show_customer_name ?? d.billShowCustomerName;
           if (showCustName !== undefined && showCustName !== null) {
-            updates.billShowCustomerName =
-              showCustName !== false && showCustName !== 'false';
+            updates.billShowCustomerName = showCustName !== false && showCustName !== 'false';
           }
           const showCustPhone = d.bill_show_customer_phone ?? d.billShowCustomerPhone;
           if (showCustPhone !== undefined && showCustPhone !== null) {
-            updates.billShowCustomerPhone =
-              showCustPhone !== false && showCustPhone !== 'false';
+            updates.billShowCustomerPhone = showCustPhone !== false && showCustPhone !== 'false';
           }
           const showDeliveryPhone =
-            d.bill_delivery_show_customer_phone_always ??
-            d.billDeliveryShowCustomerPhoneAlways;
+            d.bill_delivery_show_customer_phone_always ?? d.billDeliveryShowCustomerPhoneAlways;
           if (showDeliveryPhone !== undefined && showDeliveryPhone !== null) {
             updates.billDeliveryShowCustomerPhoneAlways =
               showDeliveryPhone !== false && showDeliveryPhone !== 'false';
           }
           const showTableNum = d.bill_show_table_number ?? d.billShowTableNumber;
           if (showTableNum !== undefined && showTableNum !== null) {
-            updates.billShowTableNumber =
-              showTableNum !== false && showTableNum !== 'false';
+            updates.billShowTableNumber = showTableNum !== false && showTableNum !== 'false';
           }
           const logo = d.receipt_logo ?? d.receiptLogo;
           if (logo !== undefined) {
@@ -304,8 +300,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           const template = d.bill_template ?? d.billTemplate;
           if (template !== undefined && template !== null) {
             let templateId = String(template);
-            let templateSource: 'core' | 'pack' | 'merchant' | null =
-              d.billTemplateSource ?? null;
+            let templateSource: 'core' | 'pack' | 'merchant' | null = d.billTemplateSource ?? null;
             if (templateId.trim().startsWith('{')) {
               try {
                 const parsed = JSON.parse(templateId);

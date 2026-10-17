@@ -1651,6 +1651,42 @@ for (const outcome of ['deleted', 'updated', 'unavailable'] as const) {
   });
 }
 
+test('Charges retry a creation whose committed response was lost without treating its stable ID as a duplicate', async ({
+  page,
+}) => {
+  await startMockedSettingsSession(page);
+  let serverCharges: Array<{ id: string; name: string }> = [];
+  let firstId = '';
+  let writes = 0;
+  await page.route('**/api/settings/charges', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ status: 200, json: { charges: serverCharges } });
+      return;
+    }
+    writes += 1;
+    serverCharges = route.request().postDataJSON().charges;
+    if (writes === 1) {
+      firstId = serverCharges[0].id;
+      await route.fulfill({ status: 503, json: { error: 'Response lost after commit' } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: { charges: serverCharges } });
+  });
+  await page.goto(`${BASE}/settings?tab=pos`);
+  await page.getByRole('button', { name: 'Add Charge', exact: true }).click();
+  const form = page.getByRole('dialog');
+  await form.getByLabel('Name').fill('Delivery fee');
+  await form.getByLabel('Value').fill('5');
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => writes).toBe(1);
+  await expect(form).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toBeHidden();
+  expect(writes).toBe(2);
+  expect(serverCharges).toEqual([expect.objectContaining({ id: firstId, name: 'Delivery fee' })]);
+});
+
 test('Charges ignore an older failed load after a newer load succeeds', async ({ page }) => {
   await startMockedSettingsSession(page);
   const latestCharge = {

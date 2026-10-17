@@ -190,10 +190,13 @@ export function ChargesSettingsCard({ canManage }: { canManage: boolean }) {
     if (!editing || loading || loadError || saving) return;
     setSaving(true);
     try {
-      await load();
-      const latest = useChargesStore.getState();
-      if (latest.loading || latest.error) return;
-      const currentCharges = latest.charges;
+      let currentCharges = charges;
+      if (editingOriginalId) {
+        await load();
+        const latest = useChargesStore.getState();
+        if (latest.loading || latest.error) return;
+        currentCharges = latest.charges;
+      }
       const existing = editingOriginalId
         ? currentCharges.find((charge) => charge.id === editingOriginalId)
         : undefined;

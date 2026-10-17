@@ -3615,36 +3615,12 @@ export class CloudSyncService {
     return this.decorateOrder(order);
   }
 
-  private decorateOrder(order: any, itemsOverride?: any[]) {
-    if (itemsOverride) {
-      const db = getDatabase();
-      const tableRow = order.table_id
-        ? (db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any)
-        : null;
-      const bills = db
-        .prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id')
-        .all(order.id) as any[];
-      const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
-      return sanitizeOrderSnapshot({
-        ...order,
-        items: itemsOverride,
-        table: tableRow ? { ...tableRow, name: tableRow.number } : null,
-        bill: bill ? { ...bill, payment_details: safeJsonParse(bill.payment_details) } : null,
-        bills: bills.map((row) => ({ ...row, payment_details: safeJsonParse(row.payment_details) })),
-      });
-    }
+  private decorateOrder(order: any) {
     return this.decorateOrders([order])[0] ?? null;
   }
 
   private decorateOrders(orders: any[]): any[] {
     if (orders.length === 0) return [];
-    if (orders.length > 200) {
-      const results: any[] = [];
-      for (let i = 0; i < orders.length; i += 200) {
-        results.push(...this.decorateOrders(orders.slice(i, i + 200)));
-      }
-      return results;
-    }
 
     const db = getDatabase();
     const orderIds = orders.map((o) => o.id);

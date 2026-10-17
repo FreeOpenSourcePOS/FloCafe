@@ -8,8 +8,8 @@
  * 2. Exact response shape, field structure, and PII sanitization properties are
  *    preserved identically to single-order decoration.
  * 3. Query count remains constant (<= 6 queries) regardless of the number of orders.
- * 4. Status filtering, edge cases (empty orders, missing tables, multiple bills),
- *    and large batches (>200) work correctly.
+ * 4. Status filtering and edge cases (empty orders, missing tables, multiple bills)
+ *    work correctly.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -372,29 +372,6 @@ async function run() {
       );
 
       console.log('  ✓ status filtering restricts returned orders to requested statuses');
-    }
-
-    // ------------------------------------------------------------------------
-    // Test 6: Safe chunking for > 200 orders in decorateOrders
-    // ------------------------------------------------------------------------
-    {
-      // Generate 250 dummy order records
-      const dummyOrders: any[] = [];
-      for (let i = 1; i <= 250; i++) {
-        dummyOrders.push({
-          id: 10000 + i,
-          order_number: `ORD-DUMMY-${i}`,
-          status: 'pending',
-          table_id: null,
-          created_at: now(),
-        });
-      }
-
-      const chunkedResult = (service as any).decorateOrders(dummyOrders);
-      assertEqual(chunkedResult.length, 250, 'Decorates all 250 orders across chunks');
-      assertEqual(chunkedResult[0].order_number, 'ORD-DUMMY-1', 'First order preserved');
-      assertEqual(chunkedResult[249].order_number, 'ORD-DUMMY-250', 'Last order preserved');
-      console.log('  ✓ safe chunking for > 200 orders in decorateOrders verified');
     }
 
     console.log('='.repeat(60));

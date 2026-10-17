@@ -29,12 +29,10 @@ async function main() {
   const dbModule = await import('../main/db');
   const {
     initDatabase,
-    getDatabase,
     closeDatabase,
     createBackup,
     restoreBackup,
     isHealthyDatabaseFile,
-    clearRecoverySchemaReference,
     MIGRATIONS,
   } = dbModule;
 
@@ -49,8 +47,7 @@ async function main() {
     const { getRecoverySchemaBuildCount } = dbModule;
 
     // ── 1. Cold health check builds the reference exactly once ──
-    console.log('[1/5] Testing cold health check builds reference at most once...');
-    clearRecoverySchemaReference();
+    console.log('[1/4] Testing cold health check builds reference at most once...');
     const countBeforeCold = getRecoverySchemaBuildCount();
 
     const healthyFirst = isHealthyDatabaseFile(backupPath);
@@ -67,29 +64,19 @@ async function main() {
     assert.equal(healthyLive, true, 'live database without metadata is healthy when requireMetadata = false');
     assert.equal(getRecoverySchemaBuildCount() - countBeforeCold, 1, 're-uses cached schema reference');
 
-    // ── 2. Same-version direct restore builds at most once across all checks ──
-    console.log('[2/5] Testing same-version direct restore caching...');
-    clearRecoverySchemaReference();
+    // ── 2. Same-version direct restore reuses the cached reference ──
+    console.log('[2/4] Testing same-version direct restore caching...');
     const countBeforeRestore = getRecoverySchemaBuildCount();
 
     await restoreBackup(backupPath);
     assert.equal(
-      getRecoverySchemaBuildCount() - countBeforeRestore,
-      1,
-      'direct restore executes at most one ideal schema build across all pre/post health checks',
-    );
-
-    // Subsequent direct restore reuses the cache completely (0 new builds)
-    const countBeforeSecondRestore = getRecoverySchemaBuildCount();
-    await restoreBackup(backupPath);
-    assert.equal(
       getRecoverySchemaBuildCount(),
-      countBeforeSecondRestore,
-      'subsequent direct restore reuses the cached reference without re-building',
+      countBeforeRestore,
+      'direct restore reuses the cached reference without re-building',
     );
 
     // ── 3. Migration registry mutation invalidates and updates cache ──
-    console.log('[3/5] Testing migration registry identity change invalidation...');
+    console.log('[3/4] Testing migration registry identity change invalidation...');
     const countBeforeMutation = getRecoverySchemaBuildCount();
 
     // Mutate MIGRATIONS registry by appending a synthetic migration
@@ -124,15 +111,8 @@ async function main() {
       'restoring original registry identity triggers cache rebuild matching current code',
     );
 
-    // ── 4. Explicit clearRecoverySchemaReference() resets cache ──
-    console.log('[4/5] Testing clearRecoverySchemaReference()...');
-    clearRecoverySchemaReference();
-    const countBeforeClear = getRecoverySchemaBuildCount();
-    isHealthyDatabaseFile(backupPath);
-    assert.equal(getRecoverySchemaBuildCount() - countBeforeClear, 1, 'cache rebuilt after explicit clear');
-
-    // ── 5. Schema verification still rejects malformed/incomplete databases ──
-    console.log('[5/5] Testing detection of invalid candidate databases...');
+    // ── 4. Schema verification still rejects malformed/incomplete databases ──
+    console.log('[4/4] Testing detection of invalid candidate databases...');
     const corruptedDbPath = path.join(testDir, 'corrupted.db');
     fs.copyFileSync(dbPath, corruptedDbPath);
 

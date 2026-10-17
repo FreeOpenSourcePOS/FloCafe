@@ -999,9 +999,6 @@ export function getRecoverySchemaBuildCount(): number {
   return recoverySchemaBuildCount;
 }
 
-export function clearRecoverySchemaReference(): void {
-  cachedSchemaRecoveryReference = null;
-}
 
 function getMigrationRegistryIdentity(): string {
   const last = MIGRATIONS[MIGRATIONS.length - 1];

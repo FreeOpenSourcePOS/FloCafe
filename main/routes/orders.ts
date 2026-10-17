@@ -16,6 +16,7 @@ import {
   utcTodayDate,
   recordOrderAudit,
   isKdsEnabled,
+  registerOrderSearchFunctions,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
@@ -69,6 +70,25 @@ import { isAllowedPrivateIp } from '../middleware/security';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 type PinApproverCandidate = { id: string; role: string; pin_hash: string };
+
+const registeredSearchDatabases = new WeakSet<object>();
+
+function ensureOrderSearchFunctions(dbInstance: any): void {
+  if (registeredSearchDatabases.has(dbInstance)) return;
+  registerOrderSearchFunctions(dbInstance);
+  registeredSearchDatabases.add(dbInstance);
+}
+
+function isSearchIndexAvailable(dbInstance: any): boolean {
+  try {
+    const row = dbInstance
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'orders_search_fts'")
+      .get();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
 
 const router = Router();
 const ORDER_WRITE_RATE_LIMIT_ERROR = {
@@ -638,28 +658,67 @@ router.get(
       }
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
       if (search) {
-        db.function('orders_search_contains', (value: string | null, query: string) =>
-          typeof value === 'string' && value.toLowerCase().includes(query.toLowerCase()) ? 1 : 0,
-        );
-        db.function('orders_search_digits_contains', (value: string | null, digits: string) =>
-          typeof value === 'string' && value.replace(/\D/g, '').includes(digits) ? 1 : 0,
-        );
+        ensureOrderSearchFunctions(db);
         const phoneDigits = search.replace(/\D/g, '');
+        const isPhoneSearch = Boolean(phoneDigits && !/\p{L}/u.test(search));
         const customerSearch = ['orders_search_contains(search_customer.name, ?)'];
-        if (phoneDigits && !/\p{L}/u.test(search)) {
+        if (isPhoneSearch) {
           customerSearch.push('orders_search_digits_contains(search_customer.phone_digits, ?)');
           customerSearch.push('orders_search_digits_contains(search_customer.phone, ?)');
         }
-        wheres.push(`(
+        const udfClause = `(
         orders_search_contains(orders.order_number, ?)
         OR EXISTS (
           SELECT 1 FROM customers AS search_customer
           WHERE search_customer.id = orders.customer_id
             AND (${customerSearch.join(' OR ')})
         )
-      )`);
-        params.push(search, search);
-        if (phoneDigits && !/\p{L}/u.test(search)) params.push(phoneDigits, phoneDigits);
+      )`;
+
+        const isEligible = search.length >= 3 && (!isPhoneSearch || phoneDigits.length >= 3);
+        const hasFts = isEligible && isSearchIndexAvailable(db);
+
+        if (hasFts) {
+          let candidateClause: string;
+          const candidateParams: any[] = [];
+
+          if (isPhoneSearch) {
+            // For phone searches, customer phone strings may contain varied formatting
+            // (e.g. "+1/555 ext 0199"). Querying customers table with digit UDF efficiently
+            // identifies matching customer IDs across the small customers table, avoiding a
+            // full orders scan while preserving full parity across phone formats.
+            const ftsSearch = '"' + phoneDigits.replace(/"/g, '""') + '"';
+            candidateClause = `(
+              orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
+              OR orders.customer_id IN (
+                SELECT id FROM customers
+                WHERE (phone_digits IS NOT NULL AND orders_search_digits_contains(phone_digits, ?))
+                   OR (phone IS NOT NULL AND orders_search_digits_contains(phone, ?))
+                   OR orders_search_contains(name, ?)
+              )
+            )`;
+            candidateParams.push(ftsSearch, phoneDigits, phoneDigits, search);
+          } else {
+            const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
+            candidateClause = `(
+              orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
+              OR orders.customer_id IN (
+                SELECT id FROM customers WHERE rowid IN (
+                  SELECT rowid FROM customers_search_fts WHERE customers_search_fts MATCH ?
+                )
+              )
+            )`;
+            candidateParams.push(ftsSearch, ftsSearch);
+          }
+
+          wheres.push(`(${candidateClause} AND ${udfClause})`);
+          params.push(...candidateParams, search, search);
+          if (isPhoneSearch) params.push(phoneDigits, phoneDigits);
+        } else {
+          wheres.push(udfClause);
+          params.push(search, search);
+          if (isPhoneSearch) params.push(phoneDigits, phoneDigits);
+        }
       }
       // Filter by UTC day or date range across indexed created_at column.
       if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {

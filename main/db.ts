@@ -1323,6 +1323,19 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
   }
 }
 
+export function registerOrderSearchFunctions(dbInstance: Database.Database): void {
+  try {
+    dbInstance.function('orders_search_contains', (value: string | null, query: string) =>
+      typeof value === 'string' && value.toLowerCase().includes(query.toLowerCase()) ? 1 : 0,
+    );
+    dbInstance.function('orders_search_digits_contains', (value: string | null, digits: string) =>
+      typeof value === 'string' && value.replace(/\D/g, '').includes(digits) ? 1 : 0,
+    );
+  } catch {
+    // Function already registered or connection closed
+  }
+}
+
 export function initDatabase(
   recoverInterruptedReplacement = true,
   allowDuringShutdown = false,
@@ -1350,6 +1363,7 @@ export function initDatabase(
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
   db = new Database(dbPath);
+  registerOrderSearchFunctions(db);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
   db.pragma('busy_timeout = 5000');
@@ -2409,7 +2423,11 @@ export function getTables(dbInstance: Database.Database): string[] {
     const tables = dbInstance
       .prepare(`
       SELECT name FROM sqlite_master WHERE type='table' 
-      AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
+      AND (sql NOT LIKE 'CREATE VIRTUAL TABLE%' OR sql IS NULL)
+      AND name NOT LIKE 'sqlite_%' 
+      AND name NOT LIKE '%_fts_%'
+      AND name NOT LIKE '%_fts'
+      AND name <> '_flo_meta'
     `)
       .all() as { name: string }[];
     return tables.map((t) => t.name);
@@ -4093,6 +4111,7 @@ function dataOnlyRestore(
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
       `)
       .run(now());
+    rebuildSearchIndex(currentDb);
     const inventoryValidationError = validateInventoryLedgerDatabase(currentDb);
     if (inventoryValidationError) {
       throw new Error(`Restore would violate the inventory ledger: ${inventoryValidationError}`);
@@ -4247,9 +4266,31 @@ export function getCurrentSchemaVersion(): number {
   return (db ?? getDatabase()).pragma('user_version', { simple: true }) as number;
 }
 
+export function rebuildSearchIndex(targetDb?: Database.Database): void {
+  const target = targetDb || db;
+  if (!target) return;
+  try {
+    const hasOrdersFts = target
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'orders_search_fts'")
+      .get();
+    if (hasOrdersFts) {
+      target.exec("INSERT INTO orders_search_fts(orders_search_fts) VALUES('rebuild')");
+    }
+    const hasCustomersFts = target
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'customers_search_fts'")
+      .get();
+    if (hasCustomersFts) {
+      target.exec("INSERT INTO customers_search_fts(customers_search_fts) VALUES('rebuild')");
+    }
+  } catch (err) {
+    console.warn('[DB] rebuildSearchIndex error:', err);
+  }
+}
+
 /** Builds in-memory database using migration pipeline as ideal schema reference. */
 export function buildIdealSchemaDb(): Database.Database {
   const idealDb = new Database(':memory:');
+  registerOrderSearchFunctions(idealDb);
   idealDb.pragma('foreign_keys = OFF'); // Off during migrations
   const previousDb = db;
   db = idealDb;
@@ -7345,6 +7386,55 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     up: () => {
       db.exec(`
         CREATE INDEX IF NOT EXISTS idx_order_audit_log_item ON order_audit_log(order_item_id);
+      `);
+    },
+  },
+  {
+    version: 115,
+    name: 'add_order_and_customer_search_fts',
+    up: () => {
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS orders_search_fts USING fts5(
+          order_number,
+          content='orders',
+          content_rowid='id',
+          tokenize='trigram'
+        );
+        CREATE TRIGGER IF NOT EXISTS trg_orders_search_ai AFTER INSERT ON orders BEGIN
+          INSERT INTO orders_search_fts(rowid, order_number) VALUES (new.id, new.order_number);
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_orders_search_ad AFTER DELETE ON orders BEGIN
+          INSERT INTO orders_search_fts(orders_search_fts, rowid, order_number) VALUES('delete', old.id, old.order_number);
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_orders_search_au AFTER UPDATE OF order_number ON orders BEGIN
+          INSERT INTO orders_search_fts(orders_search_fts, rowid, order_number) VALUES('delete', old.id, old.order_number);
+          INSERT INTO orders_search_fts(rowid, order_number) VALUES (new.id, new.order_number);
+        END;
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS customers_search_fts USING fts5(
+          name,
+          phone,
+          phone_digits,
+          content='customers',
+          content_rowid='rowid',
+          tokenize='trigram'
+        );
+        CREATE TRIGGER IF NOT EXISTS trg_customers_search_ai AFTER INSERT ON customers BEGIN
+          INSERT INTO customers_search_fts(rowid, name, phone, phone_digits) VALUES (new.rowid, new.name, new.phone, new.phone_digits);
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_customers_search_ad AFTER DELETE ON customers BEGIN
+          INSERT INTO customers_search_fts(customers_search_fts, rowid, name, phone, phone_digits) VALUES('delete', old.rowid, old.name, old.phone, old.phone_digits);
+        END;
+        CREATE TRIGGER IF NOT EXISTS trg_customers_search_au AFTER UPDATE OF name, phone, phone_digits ON customers BEGIN
+          INSERT INTO customers_search_fts(customers_search_fts, rowid, name, phone, phone_digits) VALUES('delete', old.rowid, old.name, old.phone, old.phone_digits);
+          INSERT INTO customers_search_fts(rowid, name, phone, phone_digits) VALUES (new.rowid, new.name, new.phone, new.phone_digits);
+        END;
+
+        INSERT INTO orders_search_fts(rowid, order_number)
+        SELECT id, order_number FROM orders;
+
+        INSERT INTO customers_search_fts(rowid, name, phone, phone_digits)
+        SELECT rowid, name, phone, phone_digits FROM customers;
       `);
     },
   },

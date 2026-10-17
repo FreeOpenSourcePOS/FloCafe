@@ -485,7 +485,7 @@ async function runTests() {
 
   console.log('✓ All 10 handlers succeed for legitimate senders and reject malformed arguments');
 
-  console.log('--- Testing restartAndInstallHandler sender & readiness & PIN guards ---');
+  console.log('--- Testing restartAndInstallHandler readiness & PIN guards ---');
 
   let isReady = false;
   let pinAuthorized = false;
@@ -494,8 +494,6 @@ async function runTests() {
   let warnMessages: string[] = [];
 
   const restartHandler = createRestartAndInstallHandler({
-    validateSender: (event) =>
-      isTrustedMainWindowSender(event as any, () => mainWindow as any, 3001, FakeBrowserWindowClass as any),
     isInstallReady: () => isReady,
     authorize: (pin) => {
       if (pin === 'master-1234') {
@@ -519,14 +517,7 @@ async function runTests() {
     error: () => {},
   });
 
-  // Untrusted sender
-  const untrustedRestartRes = await restartHandler(remoteUrlEvent, 'master-1234');
-  assert.deepEqual(untrustedRestartRes, { success: false, error: 'Unauthorized sender' });
-  assert.equal(pinAuthorized, false, 'PIN not evaluated on untrusted sender');
-  assert.equal(cleanupRun, false);
-  assert.equal(quitAndInstallRun, false);
-
-  // Trusted sender, but not ready
+  // Not ready
   isReady = false;
   const notReadyRes = await restartHandler(validEvent, 'master-1234');
   assert.deepEqual(notReadyRes, { success: false, error: 'No downloaded update is ready to install.' });
@@ -534,14 +525,14 @@ async function runTests() {
   assert.equal(cleanupRun, false);
   assert.equal(quitAndInstallRun, false);
 
-  // Trusted sender, ready, but invalid PIN
+  // Ready, but invalid PIN
   isReady = true;
   const badPinRes = await restartHandler(validEvent, 'wrong-pin');
   assert.deepEqual(badPinRes, { success: false, error: 'Invalid master PIN' });
   assert.equal(cleanupRun, false);
   assert.equal(quitAndInstallRun, false);
 
-  // Trusted sender, ready, valid PIN
+  // Ready, valid PIN
   isReady = true;
   const authorizedRes = await restartHandler(validEvent, 'master-1234');
   assert.deepEqual(authorizedRes, { success: true });
@@ -549,7 +540,7 @@ async function runTests() {
   assert.equal(cleanupRun, true);
   assert.equal(quitAndInstallRun, true);
 
-  console.log('✓ restartAndInstallHandler sender, readiness, and PIN guards enforce proper precedence');
+  console.log('✓ restartAndInstallHandler readiness and PIN guards enforce proper precedence');
 
   console.log('--- Testing registerDirectUpdateIpcHandlers registration ---');
 

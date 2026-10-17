@@ -39,7 +39,7 @@ import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from '.
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
 import { destroySharedRasterRenderer } from './printers/raster-renderer';
-import { registerIpcHandlers, isTrustedMainWindowSender } from './ipc';
+import { registerIpcHandlers } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
 import {
   requestShutdown as requestWhatsAppShutdown,
@@ -1514,8 +1514,6 @@ async function initialize(): Promise<void> {
       configureAutoUpdaterChannel,
       setUpdateStatus,
       restartAndInstallHandler: createRestartAndInstallHandler({
-        validateSender: (event) =>
-          isTrustedMainWindowSender(event as any, () => mainWindow, getServerPort()),
         isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
         authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
         runCleanup,

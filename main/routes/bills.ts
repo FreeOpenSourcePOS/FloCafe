@@ -3442,6 +3442,7 @@ router.post(
           resolveAttempt = resolve;
           rejectAttempt = reject;
         });
+        attemptPromise.catch(() => {});
         inFlightPaymentAttempts.set(inFlightKey, {
           billId: String(billId),
           requestHash,
@@ -3637,6 +3638,7 @@ router.post(
           resolveAttempt = resolve;
           rejectAttempt = reject;
         });
+        attemptPromise.catch(() => {});
         inFlightPaymentAttempts.set(inFlightKey, {
           billId: String(billId),
           requestHash,

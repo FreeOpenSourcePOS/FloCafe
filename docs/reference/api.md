@@ -111,7 +111,7 @@ LAN clients are counted against authentication rate limits.
 In addition, these three login endpoints share an install-wide failed-login attempt lockout keyed to
 canonical client IP (`normalizeIpForRateLimit`): 5 failed credential attempts across any
 combination of the three listeners triggers a 15-minute lockout (`429`). Successful login on any listener
-resets the counter for that IP. See
+resets the counter for that IP (non-credential `403` responses preserve accumulated failures). See
 [`docs/architecture/authentication-and-authorization.md`](../architecture/authentication-and-authorization.md#shared-login-attempt-rate-limiting-across-servers)
 for architecture and role/permission handling details.
 
@@ -357,7 +357,7 @@ does not wrap the handler again.
   line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
   `cancelled` and restores the recorded inventory deduction and recipe components.
 - Cancelling the last active item cancels the order and frees its table.
-- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts).
+- `override_pin` attempts are rate limited per canonical client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts within 15 minutes; serialized to prevent concurrent brute-force races).
 
 ### Order item status
 

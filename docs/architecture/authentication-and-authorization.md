@@ -134,8 +134,10 @@ additionally require the presenting user to satisfy `hasRole(role, ROLE_ACCESS.o
 deliberate context-policy role check, not a permission, because the override PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
 say. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
-evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction
-(with client-IP rate limits checked first). The pre-verified approver is then atomically re-validated
+evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction,
+serialized per client IP and action key with `withPinVerificationLock` from
+[`main/middleware/security.ts`](../../main/middleware/security.ts) (re-checking client-IP rate limits
+inside the lock before executing bcrypt). The pre-verified approver is then atomically re-validated
 inside `withTxn` against current SQLite state (active status, owner/manager role, required permissions,
 and matching `pin_hash`). The check cannot be hoisted into middleware without changing the read the
 decision is based on, and it is invisible to anything that inspects the route's middleware chain.
@@ -172,8 +174,8 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 
 1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password changes) use independent rate-limiter instances.
 2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which strips `::ffff:` IPv4-mapped IPv6 prefixes so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
-3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP.
-4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures.
+3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
+4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
 ## Master PIN as a second factor
 

@@ -682,47 +682,24 @@ router.get(
         if (hasFts) {
           let candidateClause: string;
           const candidateParams: any[] = [];
-          const ftsOrderSearch = '"' + search.replace(/"/g, '""') + '"';
+          const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
 
           if (isPhoneSearch) {
             // For phone searches, customer phone strings may contain varied formatting
             // (e.g. "+1/555 ext 0199"). Querying customers table with digit UDF efficiently
             // identifies matching customer IDs across the small customers table, avoiding a
             // full orders scan while preserving full parity across phone formats.
-            // For orders_search_fts, search using the raw search string so punctuation in
-            // order numbers (e.g. "01-1234") is preserved, and optionally also search phone digits.
-            if (phoneDigits !== search && phoneDigits.length >= 3) {
-              const ftsPhoneSearch = '"' + phoneDigits.replace(/"/g, '""') + '"';
-              candidateClause = `(
-                orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ? OR orders_search_fts MATCH ?)
-                OR orders.customer_id IN (
-                  SELECT id FROM customers
-                  WHERE (phone_digits IS NOT NULL AND orders_search_digits_contains(phone_digits, ?))
-                     OR (phone IS NOT NULL AND orders_search_digits_contains(phone, ?))
-                     OR orders_search_contains(name, ?)
-                )
-              )`;
-              candidateParams.push(
-                ftsOrderSearch,
-                ftsPhoneSearch,
-                phoneDigits,
-                phoneDigits,
-                search,
-              );
-            } else {
-              candidateClause = `(
-                orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
-                OR orders.customer_id IN (
-                  SELECT id FROM customers
-                  WHERE (phone_digits IS NOT NULL AND orders_search_digits_contains(phone_digits, ?))
-                     OR (phone IS NOT NULL AND orders_search_digits_contains(phone, ?))
-                     OR orders_search_contains(name, ?)
-                )
-              )`;
-              candidateParams.push(ftsOrderSearch, phoneDigits, phoneDigits, search);
-            }
+            candidateClause = `(
+              orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
+              OR orders.customer_id IN (
+                SELECT id FROM customers
+                WHERE (phone_digits IS NOT NULL AND orders_search_digits_contains(phone_digits, ?))
+                   OR (phone IS NOT NULL AND orders_search_digits_contains(phone, ?))
+                   OR orders_search_contains(name, ?)
+              )
+            )`;
+            candidateParams.push(ftsSearch, phoneDigits, phoneDigits, search);
           } else {
-            const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
             candidateClause = `(
               orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
               OR orders.customer_id IN (

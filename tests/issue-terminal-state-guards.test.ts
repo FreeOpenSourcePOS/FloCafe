@@ -693,8 +693,14 @@ async function main(): Promise<void> {
       assertEqual(Number(afterBill.balance), 0, 'issue-1176: bill balance is 0');
       assertEqual(
         afterBill.payment_status,
-        'partial',
-        'issue-1176: bill payment_status remains partial until zero-balance settlement',
+        'paid',
+        'issue-1176: bill payment_status auto-settled to paid',
+      );
+      assertEqual(Boolean(afterBill.paid_at), true, 'issue-1176: paid_at timestamp is populated');
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'issue-1176: order completed after exact-balance discount',
       );
 
       const settleRes = await pay(billId, { method: 'cash', amount: null });

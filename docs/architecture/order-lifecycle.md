@@ -174,6 +174,15 @@ When a payment settles the last unpaid bill of an order, the order becomes `comp
 already completed or cancelled) and its dine-in table is released to `available`. A payment never
 resurrects a terminal order.
 
+When an order, item, or bill discount reduces the remaining balance of a partially paid bill to exactly
+zero (where collected funds equal the discounted total), the bill automatically settles to `paid` with
+its `paid_at` timestamp recorded. If all sibling bills are settled, the order transitions to `completed`
+and releases its dine-in table to `available`. Loyalty cashback is credited on collected net funds, and
+no phantom payment lines are written to `bill.payment_details`. A zero-balance settlement retry on an
+already settled bill returns `200` idempotently without rejecting. Discounts that would reduce the bill
+total below already-collected payments are rejected (`409` with diagnostic code `below_collected_funds`).
+Discounts on orders with zero collected payments leave the bill `unpaid` until explicitly settled.
+
 Wallet lines debit the customer's loyalty ledger. A paid bill credits cashback when loyalty is
 enabled, excluding the share funded by wallet points.
 
@@ -207,6 +216,7 @@ movements, and refunds have their own end-of-business-day cutoff described above
 ```sh
 npm run test:integration-order-hold-payment   # hold, discount, tax, installments, gates, replay
 npm run test:financial-safety-remediation     # payment replay idempotency, PIN decoupling, discount revalidation
+npm run test:issue-exact-balance-settlement    # auto-settle bill and complete order on exact-balance discount
 npm run test:integration-happy                # order to payment, discount recalculated
 npm run test:integration-payments             # payment methods and split lines
 npm run test:integration-discount             # discount edge cases

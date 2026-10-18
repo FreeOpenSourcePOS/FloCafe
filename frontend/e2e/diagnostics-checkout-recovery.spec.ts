@@ -224,9 +224,7 @@ test('a structured stock rejection displays the specific item name to the cashie
 
     const getHelp = page.getByRole('button', { name: 'Get help', exact: true });
     await getHelp.click();
-    await expect
-      .poll(() => supportSubmissions.length)
-      .toBe(1);
+    await expect.poll(() => supportSubmissions.length).toBe(1);
     expect(
       supportSubmissions[0].message,
       'support ticket receives the item-specific stock rejection message',

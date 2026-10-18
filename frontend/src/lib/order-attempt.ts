@@ -464,7 +464,11 @@ export function sanitizeServerError(rawError: unknown): string | null {
   if (typeof rawError !== 'string') return null;
   const trimmed = rawError.trim();
   if (!trimmed || trimmed.length > 200) return null;
-  if (/[\r\n]/.test(trimmed) || /\bat\s+\S+\s+\(/.test(trimmed) || /\bat\s+.*:\d+:\d+/.test(trimmed)) {
+  if (
+    /[\r\n]/.test(trimmed) ||
+    /\bat\s+\S+\s+\(/.test(trimmed) ||
+    /\bat\s+.*:\d+:\d+/.test(trimmed)
+  ) {
     return null;
   }
   if (
@@ -474,10 +478,16 @@ export function sanitizeServerError(rawError: unknown): string | null {
   ) {
     return null;
   }
-  if (/^(?:[A-Z][a-zA-Z0-9_]*(?:Error|Exception)|TypeError|RangeError|SyntaxError|ReferenceError|SystemError):/i.test(trimmed)) {
+  if (
+    /^(?:[A-Z][a-zA-Z0-9_]*(?:Error|Exception)|TypeError|RangeError|SyntaxError|ReferenceError|SystemError):/i.test(
+      trimmed,
+    )
+  ) {
     return null;
   }
-  if (/\b(?:ENOENT|EACCES|EPERM|ECONNREFUSED|ECONNRESET|EADDRINUSE|ETIMEDOUT|EPIPE)\b/i.test(trimmed)) {
+  if (
+    /\b(?:ENOENT|EACCES|EPERM|ECONNREFUSED|ECONNRESET|EADDRINUSE|ETIMEDOUT|EPIPE)\b/i.test(trimmed)
+  ) {
     return null;
   }
   if (/(?:^|[\s"'`])(?:(?:\/|[a-zA-Z]:[\\/])\w+|(?:\.\.?[\\/]\w+))/i.test(trimmed)) {

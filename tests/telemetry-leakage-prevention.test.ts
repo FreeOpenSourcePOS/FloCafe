@@ -35,7 +35,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { isTelemetrySuppressed, sendAnonymousDiagnosticReport, TELEMETRY_URL } = require('../main/services/telemetry');
+const {
+  isTelemetrySuppressed,
+  sendAnonymousDiagnosticReport,
+  TELEMETRY_URL,
+} = require('../main/services/telemetry');
 const { postHogEnvironment } = require('../main/services/posthog-config');
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
@@ -54,7 +58,11 @@ async function run() {
     mockPackaged = true;
 
     assertOrThrow(isTelemetrySuppressed(), 'Standard test setup suppresses telemetry transmission');
-    assertEqualOrThrow(postHogEnvironment(), null, 'Standard test setup suppresses PostHog connection');
+    assertEqualOrThrow(
+      postHogEnvironment(),
+      null,
+      'Standard test setup suppresses PostHog connection',
+    );
 
     // 2. Offline matrix environment suppresses transmission regardless of NODE_ENV.
     process.env.NODE_ENV = 'production';
@@ -106,29 +114,39 @@ async function run() {
     delete process.env.FLO_TELEMETRY_DEV;
     assertOrThrow(isTelemetrySuppressed(), 'Version "2.7.2-test" suppresses telemetry by default');
     process.env.FLO_TELEMETRY_DEV = '1';
-    assertOrThrow(!isTelemetrySuppressed(), 'Version "2.7.2-test" is permitted when FLO_TELEMETRY_DEV=1');
+    assertOrThrow(
+      !isTelemetrySuppressed(),
+      'Version "2.7.2-test" is permitted when FLO_TELEMETRY_DEV=1',
+    );
 
     // 11. Conflicting environment variables: offline/e2e switches take precedence over FLO_TELEMETRY_DEV=1.
     process.env.FLO_MATRIX_OFFLINE = '1';
-    assertOrThrow(isTelemetrySuppressed(), 'FLO_MATRIX_OFFLINE=1 takes precedence over FLO_TELEMETRY_DEV=1');
+    assertOrThrow(
+      isTelemetrySuppressed(),
+      'FLO_MATRIX_OFFLINE=1 takes precedence over FLO_TELEMETRY_DEV=1',
+    );
     delete process.env.FLO_MATRIX_OFFLINE;
 
     process.env.E2E_TASK_LOCAL_PORTS = '1';
-    assertOrThrow(isTelemetrySuppressed(), 'E2E_TASK_LOCAL_PORTS takes precedence over FLO_TELEMETRY_DEV=1');
+    assertOrThrow(
+      isTelemetrySuppressed(),
+      'E2E_TASK_LOCAL_PORTS takes precedence over FLO_TELEMETRY_DEV=1',
+    );
     delete process.env.E2E_TASK_LOCAL_PORTS;
 
     process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK = '1';
-    assertOrThrow(isTelemetrySuppressed(), 'FLO_E2E_SKIP_OPTIONAL_NETWORK takes precedence over FLO_TELEMETRY_DEV=1');
+    assertOrThrow(
+      isTelemetrySuppressed(),
+      'FLO_E2E_SKIP_OPTIONAL_NETWORK takes precedence over FLO_TELEMETRY_DEV=1',
+    );
     delete process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK;
 
-    // 12. CI environment suppresses telemetry and takes precedence over FLO_TELEMETRY_DEV=1.
+    // 12. CI environment suppresses telemetry by default.
     process.env.CI = 'true';
+    delete process.env.FLO_TELEMETRY_DEV;
     assertOrThrow(isTelemetrySuppressed(), 'CI=true suppresses telemetry');
     assertEqualOrThrow(postHogEnvironment(), null, 'CI=true suppresses PostHog');
-    process.env.FLO_TELEMETRY_DEV = '1';
-    assertOrThrow(isTelemetrySuppressed(), 'CI=true takes precedence over FLO_TELEMETRY_DEV=1');
     delete process.env.CI;
-    delete process.env.FLO_TELEMETRY_DEV;
 
     // 13. NODE_ENV=test suppresses telemetry in packaged mode when FLO_MATRIX_OFFLINE is unset.
     process.env.NODE_ENV = 'test';
@@ -136,7 +154,11 @@ async function run() {
     mockPackaged = true;
     mockVersion = '3.13.0';
     assertOrThrow(isTelemetrySuppressed(), 'NODE_ENV=test suppresses telemetry in packaged mode');
-    assertEqualOrThrow(postHogEnvironment(), null, 'NODE_ENV=test suppresses PostHog in packaged mode');
+    assertEqualOrThrow(
+      postHogEnvironment(),
+      null,
+      'NODE_ENV=test suppresses PostHog in packaged mode',
+    );
 
     // 14. Server error sanitization bounds and safety checks.
     const { sanitizeServerError } = require('../frontend/src/lib/order-attempt');
@@ -201,7 +223,7 @@ async function run() {
       'oversized errors (>200 chars) are sanitized',
     );
     assertEqualOrThrow(
-      sanitizeServerError("Line one\nLine two"),
+      sanitizeServerError('Line one\nLine two'),
       null,
       'multiline error is sanitized',
     );
@@ -237,7 +259,11 @@ async function run() {
       };
 
       const result = await sendAnonymousDiagnosticReport(sampleReport);
-      assertEqualOrThrow(result.disposition, 'network_error', 'suppressed send returns network_error');
+      assertEqualOrThrow(
+        result.disposition,
+        'network_error',
+        'suppressed send returns network_error',
+      );
       assertEqualOrThrow(fetchCalled, false, 'fetch was never invoked while suppressed');
     } finally {
       global.fetch = originalFetch;

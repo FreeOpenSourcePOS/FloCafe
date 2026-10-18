@@ -396,11 +396,7 @@ function main() {
     classification: 'expected_rejection',
     correlation_id: operationReference,
   });
-  assert.equal(
-    mismatchedOp.reasonCode,
-    null,
-    'a reason for another operation is not trusted',
-  );
+  assert.equal(mismatchedOp.reasonCode, null, 'a reason for another operation is not trusted');
   assert.equal(
     mismatchedOp.detail,
     'The local server response did not confirm the result (HTTP 400)',

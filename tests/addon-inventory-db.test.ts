@@ -7,33 +7,54 @@ const path = require('path');
 
 let activeTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-addon-inventory-db-'));
 Module._load = function (request: string) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => activeTestDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initDatabase, getDatabase, closeDatabase, now, MIGRATIONS, getCurrentSchemaVersion,
-  getInventoryMovementRows, validateInventoryLedgerDatabase, validateInventoryLedgerRows,
-  validateInventoryLedgerReplacement, resetDatabaseForCurrencyChange, createBackup, restoreBackup,
+  initDatabase,
+  getDatabase,
+  closeDatabase,
+  now,
+  MIGRATIONS,
+  getCurrentSchemaVersion,
+  getInventoryMovementRows,
+  validateInventoryLedgerDatabase,
+  validateInventoryLedgerRows,
+  validateInventoryLedgerReplacement,
+  resetDatabaseForCurrencyChange,
+  createBackup,
+  restoreBackup,
 } = require('../main/db');
 const { adjustProductStock, listInventoryMovements } = require('../main/services/inventory');
 const {
-  assertOrThrow, assertEqualOrThrow, getResults, resetCounters,
+  assertOrThrow,
+  assertEqualOrThrow,
+  getResults,
+  resetCounters,
 } = require('./helpers/test-setup');
 
 const ADDON_INVENTORY_VERSION = 104;
 
 function columnInfo(db: any, table: string, column: string): any {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).find((info) => info.name === column);
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as any[]).find(
+    (info) => info.name === column,
+  );
 }
 
 function columnsOf(db: any, table: string): string[] {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((column) => column.name);
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+    (column) => column.name,
+  );
 }
 
 function indexNames(db: any, table: string): string[] {
-  return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?").all(table) as { name: string }[])
-    .map((row) => row.name);
+  return (
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ?")
+      .all(table) as { name: string }[]
+  ).map((row) => row.name);
 }
 
 function seedAddonPool(db: any, addonId: string, stock: number, actorId = 'owner'): void {
@@ -43,8 +64,14 @@ function seedAddonPool(db: any, addonId: string, stock: number, actorId = 'owner
     VALUES (?, 'milk', ?, 40, 1, ?, 2, 1, ?, ?)`).run(addonId, addonId, stock, stamp, stamp);
   db.prepare(`INSERT INTO inventory_movements (product_id, variant_id, addon_id, quantity_delta, movement_type,
       reference_type, reference_id, reason, actor_user_id, stock_after, created_at)
-    VALUES (NULL, NULL, ?, ?, 'adjustment', 'opening_balance', ?, 'Opening count', ?, ?, ?)`)
-    .run(addonId, stock, addonId, actorId, stock, stamp);
+    VALUES (NULL, NULL, ?, ?, 'adjustment', 'opening_balance', ?, 'Opening count', ?, ?, ?)`).run(
+    addonId,
+    stock,
+    addonId,
+    actorId,
+    stock,
+    stamp,
+  );
 }
 
 function seedMenu(db: any): void {
@@ -61,8 +88,9 @@ function seedMenu(db: any): void {
     VALUES ('milk', 'Milk', 1, ?, ?)`).run(stamp, stamp);
   db.prepare(`INSERT INTO inventory_movements (product_id, variant_id, quantity_delta, movement_type,
       reference_type, reference_id, reason, actor_user_id, stock_after, created_at)
-    VALUES ('latte', NULL, 12, 'adjustment', 'opening_balance', 'latte', 'Opening count', 'owner', 12, ?)`)
-    .run(stamp);
+    VALUES ('latte', NULL, 12, 'adjustment', 'opening_balance', 'latte', 'Opening count', 'owner', 12, ?)`).run(
+    stamp,
+  );
 }
 
 async function closeStore(): Promise<void> {
@@ -75,7 +103,11 @@ function freshInstallAssertions(): void {
   const db = getDatabase();
   const migration = MIGRATIONS.find((entry: any) => entry.version === ADDON_INVENTORY_VERSION);
   assertOrThrow(!!migration, 'the add-on inventory migration is registered');
-  assertEqualOrThrow(migration.name, 'add_addon_inventory', 'the migration is named add_addon_inventory');
+  assertEqualOrThrow(
+    migration.name,
+    'add_addon_inventory',
+    'the migration is named add_addon_inventory',
+  );
   assertEqualOrThrow(
     getCurrentSchemaVersion(),
     MIGRATIONS[MIGRATIONS.length - 1].version,
@@ -100,10 +132,18 @@ function freshInstallAssertions(): void {
   // An add-on pool has no owning product, so product_id must be nullable and
   // must keep its product foreign key for product and variant pools.
   const productId = columnInfo(db, 'inventory_movements', 'product_id');
-  assertEqualOrThrow(productId.notnull, 0, 'inventory_movements.product_id accepts a pool with no product');
-  const movementDdl = (db.prepare(
-    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'",
-  ).get() as { sql: string }).sql;
+  assertEqualOrThrow(
+    productId.notnull,
+    0,
+    'inventory_movements.product_id accepts a pool with no product',
+  );
+  const movementDdl = (
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'",
+      )
+      .get() as { sql: string }
+  ).sql;
   assertOrThrow(
     /product_id TEXT DEFAULT NULL REFERENCES products\(id\)/.test(movementDdl),
     'the rebuilt ledger still references products(id) from product_id',
@@ -113,17 +153,23 @@ function freshInstallAssertions(): void {
     'idx_inventory_movements_reference',
     'idx_inventory_movements_created',
   ]) {
-    assertOrThrow(indexNames(db, 'inventory_movements').includes(index), `the rebuilt ledger keeps ${index}`);
+    assertOrThrow(
+      indexNames(db, 'inventory_movements').includes(index),
+      `the rebuilt ledger keeps ${index}`,
+    );
   }
 
   seedMenu(db);
   const stamp = now();
   db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active, created_at, updated_at)
     VALUES ('untracked', 'milk', 'Untracked add-on', 10, 1, ?, ?)`).run(stamp, stamp);
-  const untracked = db.prepare('SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?')
+  const untracked = db
+    .prepare('SELECT track_inventory, stock_quantity, low_stock_threshold FROM addons WHERE id = ?')
     .get('untracked');
   assertOrThrow(
-    Number(untracked.track_inventory) === 0 && Number(untracked.stock_quantity) === 0 && Number(untracked.low_stock_threshold) === 0,
+    Number(untracked.track_inventory) === 0 &&
+      Number(untracked.stock_quantity) === 0 &&
+      Number(untracked.low_stock_threshold) === 0,
     'an add-on defaults to an untracked, zero-stock pool',
   );
 
@@ -134,7 +180,9 @@ function freshInstallAssertions(): void {
   db.prepare(`INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
     VALUES (1, 'untracked', 'Untracked add-on', 10, 1, ?)`).run(stamp);
   assertEqualOrThrow(
-    db.prepare('SELECT inventory_deducted_quantity FROM order_item_addons WHERE addon_id = ?').get('untracked').inventory_deducted_quantity,
+    db
+      .prepare('SELECT inventory_deducted_quantity FROM order_item_addons WHERE addon_id = ?')
+      .get('untracked').inventory_deducted_quantity,
     0,
     'an add-on line defaults to no deducted quantity',
   );
@@ -159,11 +207,21 @@ function inventoryServiceAssertions(): void {
     actorUserId: 'owner',
   });
   assertEqualOrThrow(sold.stockAfter, 3, 'an add-on sale reduces the add-on pool');
-  const movement = db.prepare('SELECT * FROM inventory_movements WHERE addon_id = ? ORDER BY id DESC LIMIT 1').get('oat');
+  const movement = db
+    .prepare('SELECT * FROM inventory_movements WHERE addon_id = ? ORDER BY id DESC LIMIT 1')
+    .get('oat');
   assertEqualOrThrow(movement.product_id, null, 'an add-on movement carries no product id');
   assertEqualOrThrow(movement.variant_id, null, 'an add-on movement carries no variant id');
-  assertEqualOrThrow(movement.actor_user_id, 'owner', 'an add-on movement is attributed to the authenticated actor');
-  assertEqualOrThrow(movement.stock_after, 3, 'an add-on movement records the resulting add-on stock');
+  assertEqualOrThrow(
+    movement.actor_user_id,
+    'owner',
+    'an add-on movement is attributed to the authenticated actor',
+  );
+  assertEqualOrThrow(
+    movement.stock_after,
+    3,
+    'an add-on movement records the resulting add-on stock',
+  );
   assertEqualOrThrow(
     db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('latte').stock_quantity,
     12,
@@ -202,7 +260,11 @@ function inventoryServiceAssertions(): void {
   } catch (error: any) {
     insufficient = error.message;
   }
-  assertEqualOrThrow(insufficient, 'Insufficient stock for add-on "oat"', 'an add-on pool cannot be driven negative');
+  assertEqualOrThrow(
+    insufficient,
+    'Insufficient stock for add-on "oat"',
+    'an add-on pool cannot be driven negative',
+  );
   assertEqualOrThrow(
     db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get('oat').stock_quantity,
     5,
@@ -239,10 +301,17 @@ function inventoryServiceAssertions(): void {
   } catch (error: any) {
     unknownAddon = error.message;
   }
-  assertEqualOrThrow(unknownAddon, 'Add-on not found', 'an unknown add-on pool is a 404, not a silent write');
+  assertEqualOrThrow(
+    unknownAddon,
+    'Add-on not found',
+    'an unknown add-on pool is a 404, not a silent write',
+  );
 
   const addonPage = listInventoryMovements(db, { addonId: 'oat' });
-  assertOrThrow(addonPage.movements.length >= 2, 'listing movements with addonId filter returns add-on movements');
+  assertOrThrow(
+    addonPage.movements.length >= 2,
+    'listing movements with addonId filter returns add-on movements',
+  );
   assertOrThrow(
     addonPage.movements.every((m: any) => m.addon_id === 'oat' && m.addon_name === 'oat'),
     'movements filtered by addonId carry addon_id and addon_name',
@@ -253,19 +322,46 @@ function ledgerValidatorAssertions(): void {
   const addons = [{ id: 'oat', stock_quantity: 5 }];
   const movements = [
     {
-      id: 1, product_id: null, variant_id: null, addon_id: 'oat', quantity_delta: 5,
-      movement_type: 'adjustment', reference_type: 'opening_balance', reference_id: 'oat',
-      reason: 'Opening count', actor_user_id: 'owner', stock_after: 5, created_at: '2026-01-01 00:00:00',
+      id: 1,
+      product_id: null,
+      variant_id: null,
+      addon_id: 'oat',
+      quantity_delta: 5,
+      movement_type: 'adjustment',
+      reference_type: 'opening_balance',
+      reference_id: 'oat',
+      reason: 'Opening count',
+      actor_user_id: 'owner',
+      stock_after: 5,
+      created_at: '2026-01-01 00:00:00',
     },
     {
-      id: 2, product_id: null, variant_id: null, addon_id: 'oat', quantity_delta: -2,
-      movement_type: 'sale', reference_type: 'order_item', reference_id: 'oi-1',
-      reason: null, actor_user_id: 'owner', stock_after: 3, created_at: '2026-01-02 00:00:00',
+      id: 2,
+      product_id: null,
+      variant_id: null,
+      addon_id: 'oat',
+      quantity_delta: -2,
+      movement_type: 'sale',
+      reference_type: 'order_item',
+      reference_id: 'oi-1',
+      reason: null,
+      actor_user_id: 'owner',
+      stock_after: 3,
+      created_at: '2026-01-02 00:00:00',
     },
     {
-      id: 3, product_id: null, variant_id: null, addon_id: 'oat', quantity_delta: 2,
-      movement_type: 'cancel_restore', reference_type: 'order_item', reference_id: 'oi-1',
-      reason: null, actor_user_id: 'owner', stock_after: 5, created_at: '2026-01-03 00:00:00',
+      id: 3,
+      product_id: null,
+      variant_id: null,
+      addon_id: 'oat',
+      quantity_delta: 2,
+      movement_type: 'cancel_restore',
+      reference_type: 'order_item',
+      reference_id: 'oi-1',
+      reason: null,
+      actor_user_id: 'owner',
+      stock_after: 5,
+      created_at: '2026-01-03 00:00:00',
     },
   ];
 
@@ -332,13 +428,20 @@ function ledgerValidatorAssertions(): void {
       getProducts(),
       currentMovements,
       getProducts(),
-      currentMovements.map((row: any) => (row.addon_id === 'oat' ? { ...row, addon_id: null, product_id: 'latte' } : row)),
+      currentMovements.map((row: any) =>
+        row.addon_id === 'oat' ? { ...row, addon_id: null, product_id: 'latte' } : row,
+      ),
     ),
     'Inventory movement history cannot be erased by a replacement',
     'a replacement cannot re-pool add-on history onto the product pool',
   );
   assertEqualOrThrow(
-    validateInventoryLedgerReplacement(getProducts(), currentMovements, getProducts(), currentMovements),
+    validateInventoryLedgerReplacement(
+      getProducts(),
+      currentMovements,
+      getProducts(),
+      currentMovements,
+    ),
     null,
     'replacing a store with identical add-on history is allowed',
   );
@@ -377,7 +480,8 @@ function replaySafetyAssertions(): void {
     'replaying v104 does not duplicate ledger indexes',
   );
   assertOrThrow(
-    JSON.stringify(db.prepare('SELECT id, stock_quantity FROM addons ORDER BY id').all()) === JSON.stringify(beforeAddons),
+    JSON.stringify(db.prepare('SELECT id, stock_quantity FROM addons ORDER BY id').all()) ===
+      JSON.stringify(beforeAddons),
     'replaying v104 keeps add-on stock untouched',
   );
   assertEqualOrThrow(
@@ -405,8 +509,12 @@ async function upgradeFromPreV104Assertions(): Promise<void> {
     VALUES ('oat', 'milk', 'Oat milk', 40, 1, ?, ?)`).run(stamp, stamp);
   db.prepare(`INSERT INTO inventory_movements (product_id, quantity_delta, movement_type,
       reference_type, reference_id, reason, actor_user_id, stock_after, created_at)
-    VALUES ('latte', 12, 'adjustment', 'opening_balance', 'latte', 'Opening count', 'owner', 12, ?)`).run(stamp);
-  const legacyMovementId = (db.prepare('SELECT MAX(id) AS id FROM inventory_movements').get() as { id: number }).id;
+    VALUES ('latte', 12, 'adjustment', 'opening_balance', 'latte', 'Opening count', 'owner', 12, ?)`).run(
+    stamp,
+  );
+  const legacyMovementId = (
+    db.prepare('SELECT MAX(id) AS id FROM inventory_movements').get() as { id: number }
+  ).id;
 
   assertOrThrow(
     !columnsOf(db, 'addons').includes('stock_quantity'),
@@ -451,8 +559,10 @@ async function upgradeFromPreV104Assertions(): Promise<void> {
     'the upgrade adds the add-on pool column to the ledger',
   );
   assertOrThrow(
-    JSON.stringify(db.prepare('SELECT id, name, price, stock_quantity FROM products ORDER BY id').all())
-      === JSON.stringify([
+    JSON.stringify(
+      db.prepare('SELECT id, name, price, stock_quantity FROM products ORDER BY id').all(),
+    ) ===
+      JSON.stringify([
         { id: 'latte', name: 'Latte', price: 250, stock_quantity: 12 },
         { id: 'tea', name: 'Tea', price: 100, stock_quantity: 0 },
       ]),
@@ -478,7 +588,8 @@ async function upgradeFromPreV104Assertions(): Promise<void> {
     'the upgraded store still validates against the ledger pre-check',
   );
 
-  const nextMovementId = db.prepare(`INSERT INTO inventory_movements (product_id, variant_id, addon_id,
+  const nextMovementId = db
+    .prepare(`INSERT INTO inventory_movements (product_id, variant_id, addon_id,
       quantity_delta, movement_type, reference_type, reference_id, reason, actor_user_id, stock_after, created_at)
     VALUES (NULL, NULL, 'oat', 5, 'adjustment', 'opening_balance', 'oat', 'Opening count', 'owner', 5, ?)`)
     .run(stamp).lastInsertRowid;
@@ -513,7 +624,9 @@ async function currencyResetAssertions(): Promise<void> {
   initDatabase();
   const db = getDatabase();
   const stamp = now();
-  const setting = db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+  const setting = db.prepare(
+    'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+  );
   setting.run('country', 'IN', stamp);
   setting.run('currency', 'INR', stamp);
   setting.run('timezone', 'Asia/Kolkata', stamp);
@@ -564,7 +677,11 @@ function initAtVersion(version: number): any {
   MIGRATIONS.length = 0;
   MIGRATIONS.push(...FULL_REGISTRY.filter((entry: any) => entry.version <= version));
   initDatabase();
-  assertEqualOrThrow(getCurrentSchemaVersion(), version, `the upgrade fixture starts at schema v${version}`);
+  assertEqualOrThrow(
+    getCurrentSchemaVersion(),
+    version,
+    `the upgrade fixture starts at schema v${version}`,
+  );
   return getDatabase();
 }
 
@@ -584,7 +701,9 @@ async function main() {
 
   console.log('─── Ledger validation ───');
   ledgerValidatorAssertions();
-  console.log('  ✓ the ledger accepts an add-on chain and refuses broken, colliding, and erased ones');
+  console.log(
+    '  ✓ the ledger accepts an add-on chain and refuses broken, colliding, and erased ones',
+  );
 
   console.log('─── Replay safety ───');
   replaySafetyAssertions();
@@ -592,7 +711,9 @@ async function main() {
 
   console.log('─── Upgrade from a pre-v104 store ───');
   await upgradeFromPreV104Assertions();
-  console.log('  ✓ a populated pre-v104 store upgrades without losing data or reusing movement ids');
+  console.log(
+    '  ✓ a populated pre-v104 store upgrades without losing data or reusing movement ids',
+  );
 
   console.log('─── Currency reset ───');
   await currencyResetAssertions();
@@ -609,6 +730,10 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
-    try { closeDatabase(); } catch { /* already closed */ }
+    try {
+      closeDatabase();
+    } catch {
+      /* already closed */
+    }
     fs.rmSync(activeTestDir, { recursive: true, force: true });
   });

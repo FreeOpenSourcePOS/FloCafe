@@ -34,7 +34,6 @@
  * failures through getResults().
  */
 
-process.env.FLO_MATRIX_OFFLINE = '1';
 process.env.NODE_ENV = 'test';
 
 const express = require('express');

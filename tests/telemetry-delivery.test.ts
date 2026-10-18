@@ -13,7 +13,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       app: {
         isPackaged: true,
         getPath: () => testDir,
-        getVersion: () => '2.7.2-test',
+        getVersion: () => '2.7.2',
       },
     };
   }
@@ -24,6 +24,7 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { telemetry, sendEvent, TELEMETRY_URL } = require('../main/services/telemetry');
 
 async function main() {
+  process.env.FLO_TELEMETRY_DEV = '1';
   initDatabase();
   const db = getDatabase();
   const set = db.prepare(`
@@ -52,7 +53,7 @@ async function main() {
     assert.equal(requestBody?.country, 'AR', 'telemetry sends the configured ISO country');
     assert.equal(requestBody?.currency, 'USD', 'telemetry sends the normalized configured currency');
     assert.equal(requestBody?.app, 'flocafe');
-    assert.equal(requestBody?.app_version, '2.7.2-test');
+    assert.equal(requestBody?.app_version, '2.7.2');
 
     // An unconfirmed country is omitted rather than sent as the install
     // default. FloAdmin geolocates the request IP when the field is absent, so
@@ -147,6 +148,7 @@ async function main() {
 
     console.log('✅ Telemetry delivery contract checks passed');
   } finally {
+    delete process.env.FLO_TELEMETRY_DEV;
     globalThis.fetch = originalFetch;
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

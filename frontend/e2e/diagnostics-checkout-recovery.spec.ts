@@ -161,7 +161,82 @@ test('a structured quantity rejection keeps its specific message without a dupli
       operation_id: originalOperationId,
       outcome: 'not_applied',
     });
+    expect(
+      supportSubmissions[0].message,
+      'support ticket contains the informative rejection reason',
+    ).toBe('Invalid order quantity');
     expect(supportSubmissions[1]).toEqual(supportSubmissions[0]);
+  } finally {
+    await restoreBusiness(page, originalBusiness);
+  }
+});
+
+test('a structured stock rejection displays the specific item name to the cashier and in the support ticket', async ({
+  page,
+}) => {
+  const originalBusiness = await setBillingType(page, 'postpaid');
+  try {
+    await loginAndOpenPos(page);
+    const supportSubmissions: Array<Record<string, unknown>> = [];
+    await page.route('**/api/support-ticket', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      supportSubmissions.push(payload);
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({ client_ticket_id: payload.client_ticket_id }),
+      });
+    });
+    let originalOperationId = '';
+    await page.route('**/api/orders', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+        return;
+      }
+      const operationId = route.request().headers()['x-operation-id'];
+      originalOperationId = operationId || '';
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: 'Insufficient stock for "Double Cheeseburger"',
+          reason_code: 'order.stock_insufficient',
+          operation: 'order.create',
+          stage: 'validation',
+          classification: 'expected_rejection',
+          outcome: 'not_applied',
+          correlation_id: operationId,
+        }),
+      });
+    });
+
+    await addOneProduct(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+
+    await expect(
+      page.getByRole('main').getByText('Insufficient stock for "Double Cheeseburger"'),
+    ).toBeVisible();
+    await expect(page.getByText('Correct the details, then submit the order again.')).toBeVisible();
+
+    const getHelp = page.getByRole('button', { name: 'Get help', exact: true });
+    await getHelp.click();
+    await expect
+      .poll(() => supportSubmissions.length)
+      .toBe(1);
+    expect(
+      supportSubmissions[0].message,
+      'support ticket receives the item-specific stock rejection message',
+    ).toBe('Insufficient stock for "Double Cheeseburger"');
+    expect(supportSubmissions[0].correlation_id).toBe(originalOperationId);
+    expect(supportSubmissions[0].operation_failure).toEqual({
+      capture_point: 'fc.backend.order.create.stock_validation',
+      operation_id: originalOperationId,
+      outcome: 'not_applied',
+    });
   } finally {
     await restoreBusiness(page, originalBusiness);
   }

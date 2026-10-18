@@ -192,8 +192,25 @@ export function adjustProductStock(
     stockLabel = 'Variant';
     stockIdArgs = [variantId, options.productId as string | number];
   }
-  const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
-  const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
+  const readStock = db.prepare(`SELECT stock_quantity, name FROM ${stockTable} WHERE ${stockKey}`);
+  const current = readStock.get(...stockIdArgs) as
+    | { stock_quantity: number | null; name?: string }
+    | undefined;
+  let itemName: string | null = null;
+  if (current?.name) {
+    if (variantId && options.productId) {
+      const productRow = db
+        .prepare('SELECT name FROM products WHERE id = ?')
+        .get(options.productId as string | number) as { name?: string } | undefined;
+      itemName = productRow?.name
+        ? `"${productRow.name}" (${current.name})`
+        : `variant "${current.name}"`;
+    } else if (addonId) {
+      itemName = `add-on "${current.name}"`;
+    } else {
+      itemName = `"${current.name}"`;
+    }
+  }
   const stockBefore = Number(current?.stock_quantity ?? 0);
   const update = db.prepare(`
     UPDATE ${stockTable}
@@ -226,7 +243,10 @@ export function adjustProductStock(
     if (!current) {
       throw new InventoryServiceError(404, `${stockLabel} not found`);
     }
-    throw new InventoryServiceError(400, 'Insufficient stock');
+    throw new InventoryServiceError(
+      400,
+      itemName ? `Insufficient stock for ${itemName}` : 'Insufficient stock',
+    );
   }
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };

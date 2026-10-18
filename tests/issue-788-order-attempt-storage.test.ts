@@ -28,6 +28,7 @@ const {
   getPrepaidOrderAttemptStorageKey,
   readOrderAttempt,
   persistOrderAttempt,
+  sanitizeServerError,
 } = require('../frontend/src/lib/order-attempt');
 
 class MemoryStorage {
@@ -372,27 +373,38 @@ function main() {
   assert.equal(stockRejected.reasonCode, 'order.stock_insufficient');
   assert.equal(quantityRejected.outcome, 'not_applied');
   assert.equal(
-    quantityRejected.detail.includes('secret'),
-    false,
-    'trusted structured detail never includes server text',
+    quantityRejected.detail,
+    'Invalid quantity for secret product',
+    'trusted structured detail preserves server rejection error message',
+  );
+  assert.equal(
+    stockRejected.detail,
+    'Insufficient stock for secret product',
+    'trusted structured detail preserves stock error message',
   );
   assert.notEqual(
     quantityRejected.reasonCode,
     stockRejected.reasonCode,
     'different validation reasons stay distinct',
   );
+  const mismatchedOp = classifyOrder({
+    error: 'secret',
+    reason_code: 'order.stock_insufficient',
+    operation: 'payment.create',
+    stage: 'validation',
+    outcome: 'not_applied',
+    classification: 'expected_rejection',
+    correlation_id: operationReference,
+  });
   assert.equal(
-    classifyOrder({
-      error: 'secret',
-      reason_code: 'order.stock_insufficient',
-      operation: 'payment.create',
-      stage: 'validation',
-      outcome: 'not_applied',
-      classification: 'expected_rejection',
-      correlation_id: operationReference,
-    }).reasonCode,
+    mismatchedOp.reasonCode,
     null,
     'a reason for another operation is not trusted',
+  );
+  assert.equal(
+    mismatchedOp.detail,
+    'The local server response did not confirm the result (HTTP 400)',
+    'untrusted failure retains safe fallback detail without server text',
   );
   assert.equal(
     classifyOrder({
@@ -782,6 +794,39 @@ function main() {
     'append recovery reads back the persisted operation reference',
   );
   assert.notEqual(appendStorage.getItem(getAppendAttemptStorageKey(USER_ID)), null);
+
+  // 11. Server error messages are sanitized and bounded to protect against
+  //     internal exceptions, SQL disclosure, or unbounded storage.
+  assert.equal(sanitizeServerError('Item "Latte" is out of stock'), 'Item "Latte" is out of stock');
+  assert.equal(sanitizeServerError('SQLITE_ERROR: no such table: orders'), null);
+  assert.equal(sanitizeServerError('Error: crash\n    at query (db.ts:1)'), null);
+  assert.equal(sanitizeServerError('TypeError: cannot read properties of undefined'), null);
+  assert.equal(sanitizeServerError('SELECT * FROM orders WHERE id = 1'), null);
+  assert.equal(sanitizeServerError('a'.repeat(300))?.length, 255);
+
+  const sqlLeakageAttempt = classifyOrderRequestFailure(
+    {
+      response: {
+        status: 400,
+        data: {
+          reason_code: 'validation.rejected',
+          operation: 'order.create',
+          stage: 'validation',
+          outcome: 'not_applied',
+          classification: 'expected_rejection',
+          correlation_id: operationReference,
+          error: 'SQLITE_ERROR: syntax error in INSERT INTO orders',
+        },
+      },
+    },
+    { operation: 'order.create', correlationId: operationReference },
+  );
+  assert.equal(sqlLeakageAttempt.serverError, null, 'SQL leakage is discarded from serverError');
+  assert.equal(
+    sqlLeakageAttempt.detail,
+    'The local server response did not confirm the result (HTTP 400)',
+    'SQL leakage falls back to safe generic detail',
+  );
 
   console.log('Issue #788 order-attempt storage tests passed');
 }

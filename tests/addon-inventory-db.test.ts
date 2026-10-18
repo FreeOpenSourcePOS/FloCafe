@@ -202,7 +202,7 @@ function inventoryServiceAssertions(): void {
   } catch (error: any) {
     insufficient = error.message;
   }
-  assertEqualOrThrow(insufficient, 'Insufficient stock', 'an add-on pool cannot be driven negative');
+  assertEqualOrThrow(insufficient, 'Insufficient stock for add-on "oat"', 'an add-on pool cannot be driven negative');
   assertEqualOrThrow(
     db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get('oat').stock_quantity,
     5,

@@ -460,6 +460,27 @@ function plainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
+export function sanitizeServerError(rawError: unknown): string | null {
+  if (typeof rawError !== 'string') return null;
+  const trimmed = rawError.trim();
+  if (!trimmed) return null;
+  const bounded = trimmed.length > 255 ? trimmed.slice(0, 255) : trimmed;
+  if (/[\r\n]/.test(bounded) || /\bat\s+\S+\s+\(/.test(bounded)) {
+    return null;
+  }
+  if (
+    /(?:sqlite|syntax error|database locked|no such table|foreign key constraint|unique constraint|table\s+\w+|column\s+\w+|select\s+.+from|insert\s+into|update\s+.+set|delete\s+from)/i.test(
+      bounded,
+    )
+  ) {
+    return null;
+  }
+  if (/^(?:[A-Z][a-zA-Z0-9_]*Error|Exception):\s*/i.test(bounded)) {
+    return null;
+  }
+  return bounded;
+}
+
 /** Trusts additive server metadata only when the closed tuple and operation reference match. */
 export function classifyOrderRequestFailure(
   error: unknown,
@@ -552,6 +573,9 @@ export function classifyOrderRequestFailure(
   )
     return fallback;
 
+  const serverError = sanitizeServerError(payload.error);
+  const detail = serverError ?? fallback.detail;
+
   return {
     ...fallback,
     code: payload.reason_code,
@@ -561,7 +585,8 @@ export function classifyOrderRequestFailure(
     classification: definition.classification,
     correlationId: expected.correlationId,
     displayCode: typeof displayCode === 'string' ? displayCode : null,
-    serverError: typeof payload.error === 'string' ? payload.error : null,
+    serverError,
+    detail,
     trusted: true,
   };
 }

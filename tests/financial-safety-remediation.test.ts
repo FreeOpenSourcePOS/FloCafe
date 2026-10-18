@@ -186,9 +186,15 @@ async function run(): Promise<void> {
       assertEqualOrThrow(pay1.data.bill.paid_amount, 50, 'Paid amount is 50');
 
       // Check payment count in database
-      const billRow1 = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billId) as any;
+      const billRow1 = db
+        .prepare('SELECT payment_details FROM bills WHERE id = ?')
+        .get(billId) as any;
       const payments1 = JSON.parse(billRow1.payment_details || '[]');
-      assertEqualOrThrow(payments1.length, 1, 'Exactly 1 payment entry recorded in payment_details');
+      assertEqualOrThrow(
+        payments1.length,
+        1,
+        'Exactly 1 payment entry recorded in payment_details',
+      );
 
       // Replay 1: Same idempotency key, but altered/invalid manager PIN '9999'
       const payReplayInvalidPin = await api(baseUrl, `/api/bills/${billId}/payment`, {
@@ -215,9 +221,15 @@ async function run(): Promise<void> {
       );
 
       // Verify no duplicate payment inserted
-      const billRowAfterReplay = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billId) as any;
+      const billRowAfterReplay = db
+        .prepare('SELECT payment_details FROM bills WHERE id = ?')
+        .get(billId) as any;
       const paymentsAfterReplay = JSON.parse(billRowAfterReplay.payment_details || '[]');
-      assertEqualOrThrow(paymentsAfterReplay.length, 1, 'Payment was not duplicated on replay with altered PIN');
+      assertEqualOrThrow(
+        paymentsAfterReplay.length,
+        1,
+        'Payment was not duplicated on replay with altered PIN',
+      );
 
       // Replay 2: Batch payment idempotency test
       const batchIdemKey = 'idem-batch-replay-001';
@@ -234,7 +246,9 @@ async function run(): Promise<void> {
       });
       assertEqualOrThrow(batchPay1.status, 200, 'Batch payment with valid PIN succeeds');
 
-      const billRowAfterBatch = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billId) as any;
+      const billRowAfterBatch = db
+        .prepare('SELECT payment_details FROM bills WHERE id = ?')
+        .get(billId) as any;
       const paymentsAfterBatch = JSON.parse(billRowAfterBatch.payment_details || '[]');
       assertEqualOrThrow(paymentsAfterBatch.length, 2, 'Total 2 payments recorded after batch');
 
@@ -256,12 +270,117 @@ async function run(): Promise<void> {
         'Batch payment replay returns 200 despite invalid override_pin',
       );
 
-      const billRowAfterBatchReplay = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(billId) as any;
+      const billRowAfterBatchReplay = db
+        .prepare('SELECT payment_details FROM bills WHERE id = ?')
+        .get(billId) as any;
       const paymentsAfterBatchReplay = JSON.parse(billRowAfterBatchReplay.payment_details || '[]');
       assertEqualOrThrow(
         paymentsAfterBatchReplay.length,
         2,
         'Batch payment was not duplicated on replay',
+      );
+
+      // Replay 3: Concurrent in-flight single payment replay
+      const concurrentOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'dine_in',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const cOrderId = concurrentOrderRes.data.order.id;
+      const cBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: cOrderId },
+        headers: cashierAuth,
+      });
+      const cBillId = cBillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'delivered' WHERE order_id = ?").run(cOrderId);
+
+      const concurrentIdemKey = 'idem-concurrent-in-flight-001';
+      const [concPayA, concPayB] = await Promise.all([
+        api(baseUrl, `/api/bills/${cBillId}/payment`, {
+          method: 'POST',
+          body: { amount: 100, method: 'cash' },
+          headers: { ...cashierAuth, 'Idempotency-Key': concurrentIdemKey },
+        }),
+        api(baseUrl, `/api/bills/${cBillId}/payment`, {
+          method: 'POST',
+          body: { amount: 100, method: 'cash' },
+          headers: { ...cashierAuth, 'Idempotency-Key': concurrentIdemKey },
+        }),
+      ]);
+
+      assertEqualOrThrow(concPayA.status, 200, 'First concurrent payment returns 200');
+      assertEqualOrThrow(concPayB.status, 200, 'Second concurrent payment returns 200');
+      assertEqualOrThrow(concPayA.data.bill.paid_amount, 100, 'First response reports 100 paid');
+      assertEqualOrThrow(concPayB.data.bill.paid_amount, 100, 'Second response reports 100 paid');
+
+      const cBillRow = db
+        .prepare('SELECT paid_amount, payment_details FROM bills WHERE id = ?')
+        .get(cBillId) as any;
+      assertEqualOrThrow(cBillRow.paid_amount, 100, 'Total recorded paid amount is exactly 100');
+      const cPayments = JSON.parse(cBillRow.payment_details || '[]');
+      assertEqualOrThrow(
+        cPayments.length,
+        1,
+        'Exactly 1 payment record inserted in database for concurrent replay',
+      );
+
+      // Replay 4: Concurrent in-flight replay with manager PIN override
+      const pinOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'dine_in',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const pinOrderId = pinOrderRes.data.order.id;
+      const pinBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: pinOrderId },
+        headers: cashierAuth,
+      });
+      const pinBillId = pinBillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(pinOrderId);
+
+      const pinIdemKey = 'idem-concurrent-pin-override-001';
+      const [pinPayA, pinPayB] = await Promise.all([
+        api(baseUrl, `/api/bills/${pinBillId}/payment`, {
+          method: 'POST',
+          body: { amount: 100, method: 'cash', override_pin: '1111' },
+          headers: { ...cashierAuth, 'Idempotency-Key': pinIdemKey },
+        }),
+        api(baseUrl, `/api/bills/${pinBillId}/payment`, {
+          method: 'POST',
+          body: { amount: 100, method: 'cash', override_pin: '9999' },
+          headers: { ...cashierAuth, 'Idempotency-Key': pinIdemKey },
+        }),
+      ]);
+
+      assertEqualOrThrow(pinPayA.status, 200, 'Primary in-flight payment succeeds with valid PIN');
+      assertEqualOrThrow(
+        pinPayB.status,
+        200,
+        'Concurrent replay with modified PIN succeeds without 403 error',
+      );
+      assertEqualOrThrow(
+        pinPayB.data.bill.paid_amount,
+        100,
+        'Concurrent replay returned settled bill',
+      );
+
+      const pinBillRow = db
+        .prepare('SELECT paid_amount, payment_details FROM bills WHERE id = ?')
+        .get(pinBillId) as any;
+      assertEqualOrThrow(pinBillRow.paid_amount, 100, 'Paid amount is exactly 100');
+      const pinPayments = JSON.parse(pinBillRow.payment_details || '[]');
+      assertEqualOrThrow(
+        pinPayments.length,
+        1,
+        'Exactly 1 payment recorded for concurrent in-flight replay with PIN',
       );
     }
 
@@ -365,7 +484,9 @@ async function run(): Promise<void> {
       );
 
       // Verify bill state remains unchanged
-      const currentBill = db.prepare('SELECT total, paid_amount, balance FROM bills WHERE id = ?').get(billId) as any;
+      const currentBill = db
+        .prepare('SELECT total, paid_amount, balance FROM bills WHERE id = ?')
+        .get(billId) as any;
       assertEqualOrThrow(currentBill.total, 100, 'Bill total unchanged at 100');
       assertEqualOrThrow(currentBill.paid_amount, 60, 'Bill paid_amount unchanged at 60');
       assertEqualOrThrow(currentBill.balance, 40, 'Bill balance unchanged at 40');
@@ -430,6 +551,157 @@ async function run(): Promise<void> {
         'split_check',
         'Rejection has diagnostic code split_check',
       );
+
+      // Test 3D: Race scenario - Payment before Discount
+      // Bill total = 100. Payment of 80 is processed first.
+      // Discount of 50 is then attempted.
+      // Inside transaction, discount detects new total (50) < collected payments (80)
+      // and aborts with 409 below_collected_funds, leaving financial state intact.
+      const raceOrder1Res = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const race1OrderId = raceOrder1Res.data.order.id;
+      const race1BillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: race1OrderId },
+        headers: cashierAuth,
+      });
+      const race1BillId = race1BillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'delivered' WHERE order_id = ?").run(
+        race1OrderId,
+      );
+
+      // Process payment of 80
+      const payBeforeDiscount = await api(baseUrl, `/api/bills/${race1BillId}/payment`, {
+        method: 'POST',
+        body: { amount: 80, method: 'cash' },
+        headers: cashierAuth,
+      });
+      assertEqualOrThrow(payBeforeDiscount.status, 200, 'Payment of 80 recorded before discount');
+
+      // Attempt bill discount of 50
+      const rejectedDiscount = await api(baseUrl, `/api/bills/${race1BillId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'amount', value: 50, override_pin: '1111' },
+        headers: cashierAuth,
+      });
+      assertEqualOrThrow(
+        rejectedDiscount.status,
+        409,
+        'Bill discount after payment is rejected with 409 when reducing total below collected funds',
+      );
+      assertEqualOrThrow(
+        rejectedDiscount.data.display_code,
+        'below_collected_funds',
+        'Rejection has diagnostic code below_collected_funds',
+      );
+
+      const billAfterRejectedDiscount = db
+        .prepare('SELECT total, paid_amount, balance FROM bills WHERE id = ?')
+        .get(race1BillId) as any;
+      assertEqualOrThrow(billAfterRejectedDiscount.total, 100, 'Bill total unchanged at 100');
+      assertEqualOrThrow(billAfterRejectedDiscount.paid_amount, 80, 'Bill paid_amount remains 80');
+      assertEqualOrThrow(billAfterRejectedDiscount.balance, 20, 'Bill balance remains 20');
+
+      // Test 3E: Race scenario - Discount before Payment
+      // Bill total = 100. Discount of 30 is applied first (new total = 70, balance = 70).
+      // Payment of 70 is then processed.
+      // Payment succeeds, settling the freshly discounted bill.
+      const raceOrder2Res = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const race2OrderId = raceOrder2Res.data.order.id;
+      const race2BillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: race2OrderId },
+        headers: cashierAuth,
+      });
+      const race2BillId = race2BillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'delivered' WHERE order_id = ?").run(
+        race2OrderId,
+      );
+
+      // Apply discount of 30
+      const discountBeforePayment = await api(baseUrl, `/api/bills/${race2BillId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'amount', value: 30, override_pin: '1111' },
+        headers: cashierAuth,
+      });
+      assertEqualOrThrow(
+        discountBeforePayment.status,
+        200,
+        'Discount of 30 applied before payment',
+      );
+      assertEqualOrThrow(discountBeforePayment.data.bill.total, 70, 'Discounted total is 70');
+      assertEqualOrThrow(discountBeforePayment.data.bill.balance, 70, 'Discounted balance is 70');
+
+      // Settle the discounted balance of 70
+      const payAfterDiscount = await api(baseUrl, `/api/bills/${race2BillId}/payment`, {
+        method: 'POST',
+        body: { amount: 70, method: 'cash' },
+        headers: cashierAuth,
+      });
+      assertEqualOrThrow(payAfterDiscount.status, 200, 'Payment for discounted balance succeeds');
+      assertEqualOrThrow(payAfterDiscount.data.bill.payment_status, 'paid', 'Bill is fully paid');
+      assertEqualOrThrow(payAfterDiscount.data.bill.balance, 0, 'Bill balance is 0');
+
+      // Test 3F: Controlled barrier race - Simultaneous Payment and Discount
+      // Bill total = 100. Simultaneous execution via Promise.all
+      const barrierOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'takeaway',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const barrierOrderId = barrierOrderRes.data.order.id;
+      const barrierBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: barrierOrderId },
+        headers: cashierAuth,
+      });
+      const barrierBillId = barrierBillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'delivered' WHERE order_id = ?").run(
+        barrierOrderId,
+      );
+
+      const [racePayment, raceDiscount] = await Promise.all([
+        api(baseUrl, `/api/bills/${barrierBillId}/payment`, {
+          method: 'POST',
+          body: { amount: 80, method: 'cash' },
+          headers: cashierAuth,
+        }),
+        api(baseUrl, `/api/bills/${barrierBillId}/applyDiscount`, {
+          method: 'POST',
+          body: { type: 'amount', value: 50, override_pin: '1111' },
+          headers: cashierAuth,
+        }),
+      ]);
+
+      // Exactly one order of operations occurred; verify consistency
+      const finalBillState = db
+        .prepare('SELECT total, paid_amount, balance FROM bills WHERE id = ?')
+        .get(barrierBillId) as any;
+      assertOrThrow(
+        finalBillState.paid_amount <= finalBillState.total,
+        'In-txn coordination ensures collected funds never exceed total',
+      );
+      assertEqualOrThrow(
+        finalBillState.balance,
+        Math.max(0, finalBillState.total - finalBillState.paid_amount),
+        'Bill balance accurately reflects total minus paid_amount',
+      );
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -474,30 +746,44 @@ async function run(): Promise<void> {
       `).run(now(), orderId);
 
       // Apply 20% item discount
-      const itemDiscountRes = await api(baseUrl, `/api/orders/${orderId}/items/${itemId}/discount`, {
-        method: 'PATCH',
-        body: {
-          discount_type: 'percentage',
-          discount_value: 20,
-          override_pin: '1111',
+      const itemDiscountRes = await api(
+        baseUrl,
+        `/api/orders/${orderId}/items/${itemId}/discount`,
+        {
+          method: 'PATCH',
+          body: {
+            discount_type: 'percentage',
+            discount_value: 20,
+            override_pin: '1111',
+          },
+          headers: cashierAuth,
         },
-        headers: cashierAuth,
-      });
+      );
       assertEqualOrThrow(itemDiscountRes.status, 200, 'Item discount applied successfully');
 
       // Verify that the item discount was computed using fresh quantity 1 (50 * 20% = 10 discount, 40 total)
       // rather than stale quantity 2 (100 * 20% = 20 discount, 80 total)
-      const updatedItem = db.prepare('SELECT quantity, discount_amount, subtotal, total FROM order_items WHERE id = ?').get(itemId) as any;
+      const updatedItem = db
+        .prepare('SELECT quantity, discount_amount, subtotal, total FROM order_items WHERE id = ?')
+        .get(itemId) as any;
       assertEqualOrThrow(updatedItem.quantity, 1, 'Item quantity is 1');
-      assertEqualOrThrow(updatedItem.discount_amount, 10, 'Item discount is 10 (20% of 50, not stale 20)');
+      assertEqualOrThrow(
+        updatedItem.discount_amount,
+        10,
+        'Item discount is 10 (20% of 50, not stale 20)',
+      );
       assertEqualOrThrow(updatedItem.subtotal, 40, 'Item subtotal is 40');
       assertEqualOrThrow(updatedItem.total, 40, 'Item total is 40');
 
-      const updatedOrder = db.prepare('SELECT subtotal, total FROM orders WHERE id = ?').get(orderId) as any;
+      const updatedOrder = db
+        .prepare('SELECT subtotal, total FROM orders WHERE id = ?')
+        .get(orderId) as any;
       assertEqualOrThrow(updatedOrder.subtotal, 40, 'Order subtotal matches fresh item total');
       assertEqualOrThrow(updatedOrder.total, 40, 'Order total matches fresh item total');
 
-      const updatedBill = db.prepare('SELECT subtotal, total, balance FROM bills WHERE order_id = ?').get(orderId) as any;
+      const updatedBill = db
+        .prepare('SELECT subtotal, total, balance FROM bills WHERE order_id = ?')
+        .get(orderId) as any;
       assertEqualOrThrow(updatedBill.subtotal, 40, 'Bill subtotal is 40');
       assertEqualOrThrow(updatedBill.total, 40, 'Bill total is 40');
       assertEqualOrThrow(updatedBill.balance, 40, 'Bill balance is 40');
@@ -573,7 +859,9 @@ async function run(): Promise<void> {
 
       // Verify audit log recorded mgr-with-pay as the approver
       const auditLog = db
-        .prepare("SELECT details_json FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1")
+        .prepare(
+          "SELECT details_json FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1",
+        )
         .get(orderId) as any;
       assertOrThrow(Boolean(auditLog), 'Audit log entry created for status change');
       const details = JSON.parse(auditLog.details_json || '{}');

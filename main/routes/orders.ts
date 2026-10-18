@@ -2313,12 +2313,21 @@ function orderRequiresPaymentOverrideOnComplete(
   const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
   const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
   const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
+  interface OrderStatusBillRow {
+    id: number | string;
+    total: number | string | null;
+    round_off: number | string | null;
+    paid_amount: number | string | null;
+    balance: number | string | null;
+    payment_status: string | null;
+    payment_details: string | null;
+  }
 
   const bills = db
     .prepare(
       'SELECT id, total, round_off, paid_amount, balance, payment_status, payment_details FROM bills WHERE order_id = ?',
     )
-    .all(orderId) as any[];
+    .all(orderId) as OrderStatusBillRow[];
 
   const evaluatedBills = bills.map((b) => {
     const paymentStatus = b.payment_status || 'unpaid';
@@ -3337,9 +3346,9 @@ router.patch(
         }
 
         // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(req.params.id) as any;
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
         if (!currentOrder) {
           throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
@@ -3350,9 +3359,7 @@ router.patch(
           );
         }
         const splitBill = db
-          .prepare(
-            'SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1',
-          )
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
           .get(req.params.id);
         if (splitBill) {
           throw Object.assign(
@@ -3373,9 +3380,9 @@ router.patch(
         }
 
         const customer = currentOrder.customer_id
-          ? (db
-              .prepare('SELECT * FROM customers WHERE id = ?')
-              .get(currentOrder.customer_id) as any)
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
           : null;
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
@@ -3697,9 +3704,9 @@ router.patch(
         }
 
         // Re-read current order and item under transaction lock to prevent financial state races (#1206)
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(req.params.id) as any;
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
         if (!currentOrder) {
           throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
@@ -3711,9 +3718,7 @@ router.patch(
         }
 
         const splitBill = db
-          .prepare(
-            'SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1',
-          )
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
           .get(req.params.id);
         if (splitBill) {
           throw Object.assign(
@@ -3735,7 +3740,7 @@ router.patch(
 
         const currentItem = db
           .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
-          .get(req.params.itemId, req.params.id) as any;
+          .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
         if (!currentItem) {
           throw Object.assign(new Error('Item not found'), { statusCode: 404 });
         }
@@ -3770,16 +3775,21 @@ router.patch(
         // Recalculate tax on discounted subtotal
         const product = db
           .prepare('SELECT * FROM products WHERE id = ?')
-          .get(currentItem.product_id) as any;
+          .get(currentItem.product_id) as ProductRow | undefined;
+        if (!product) {
+          throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+        }
         const customer = currentOrder.customer_id
-          ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any)
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
           : null;
         const settings = db
           .prepare(
-            "SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+            "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
           )
-          .all() as any[];
-        const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
+          .all() as { key: string; value: string }[];
+        const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
         const tenantInfo = {
           country: settingsMap.country || '',
           business_type: settingsMap.business_type || 'restaurant',
@@ -3822,12 +3832,18 @@ router.patch(
         if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
           // Scale discount proportionally to new subtotal
           newOrderDiscount = Number(
-            (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(decimals),
+            (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+              decimals,
+            ),
           );
         }
 
         // Recalculate tax on discounted subtotal
-        const engineCharges = resolveEngineCharges(currentOrder, orderTotals.subtotal, newOrderDiscount);
+        const engineCharges = resolveEngineCharges(
+          currentOrder,
+          orderTotals.subtotal,
+          newOrderDiscount,
+        );
         const {
           taxRollup,
           total: orderTotal,

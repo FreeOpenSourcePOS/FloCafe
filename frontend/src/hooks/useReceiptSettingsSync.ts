@@ -11,17 +11,23 @@ export function canSyncReceiptSettings(tenant: Tenant | null | undefined): boole
     tenantCan(tenant, 'settings.view') ||
     tenantCan(tenant, 'bills.read') ||
     tenantCan(tenant, 'bills.print') ||
-    tenantCan(tenant, 'orders.read') ||
     tenantCan(tenant, 'bills.generate')
   );
 }
 
 let syncPromise: Promise<void> | null = null;
 let isHydrated = false;
+let lastSyncTime = 0;
+const FOCUS_SYNC_THROTTLE_MS = 60_000;
 
-export function syncReceiptSettings(): Promise<void> {
+export function syncReceiptSettings(force = false): Promise<void> {
   if (syncPromise) {
     return syncPromise;
+  }
+
+  const now = Date.now();
+  if (!force && isHydrated && now - lastSyncTime < FOCUS_SYNC_THROTTLE_MS) {
+    return Promise.resolve();
   }
 
   const currentTenant = useAuthStore.getState().currentTenant;
@@ -35,6 +41,7 @@ export function syncReceiptSettings(): Promise<void> {
       if (res?.data) {
         usePosSettingsStore.getState().hydrateReceiptSettings(res.data);
         isHydrated = true;
+        lastSyncTime = Date.now();
       }
     })
     .catch(() => {
@@ -52,12 +59,13 @@ export async function ensureReceiptSettingsLoaded(): Promise<void> {
     await syncPromise;
   }
   if (isHydrated) return;
-  await syncReceiptSettings();
+  await syncReceiptSettings(true);
 }
 
 export function resetReceiptSettingsSyncForTests(): void {
   syncPromise = null;
   isHydrated = false;
+  lastSyncTime = 0;
 }
 
 export function useReceiptSettingsSync(): void {

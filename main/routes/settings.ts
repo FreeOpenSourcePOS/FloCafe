@@ -270,13 +270,7 @@ function taxShape(s: Record<string, string>) {
 
 router.get(
   '/business',
-  requireAnyPermission(
-    'settings.view',
-    'bills.read',
-    'bills.print',
-    'orders.read',
-    'bills.generate',
-  ),
+  requireAnyPermission('settings.view', 'bills.read', 'bills.print', 'bills.generate'),
   (req: Request, res: Response) => {
     try {
       const s = getAllSettings(getDatabase());

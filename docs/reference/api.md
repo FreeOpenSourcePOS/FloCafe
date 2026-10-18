@@ -588,7 +588,7 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/charges` | `settings.view`, `orders.create`, or `bills.discount.apply` | none | `{ charges }`; fee definitions only. |
 | `PUT` | `/charges` | `settings.manage` | body: `charges` or a charge-definition array | `{ charges }`; replaces the validated fee definitions. Fee amounts remain configured in Settings. |
-| `GET` | `/business` | `settings.view`, `bills.read`, `bills.print`, `orders.read`, or `bills.generate` | none | - |
+| `GET` | `/business` | `settings.view`, `bills.read`, `bills.print`, or `bills.generate` | none | - |
 | `PUT` | `/business` | `ROLE_ACCESS.ownerManager` | body: `business_name`, `timezone`, `business_day_start_time`, `currency`, `country`, `language`, `tax_registration_number`, `state_code`, `business_address`, `business_phone`, `instagram_handle`, `billing_type`, `tables_required`, `tax_registered`, `bill_show_name`, `bill_show_address`, `bill_show_phone`, `bill_show_tax_id`, `bill_show_tax_breakdown`, `bill_show_customer_name`, `bill_show_customer_phone`, `bill_show_table_number`, `bill_show_logo`, `receipt_logo`, `receipt_logo_raster`, `currency_display`, `number_digits`, `calendar`, `country_selected` | A `currency` that differs from the stored value returns `409` with `error: "currency_change_requires_reset"` plus `current_currency` and `requested_currency`. Currency changes go through the reset flow, not this route. |
 | `GET` | `/tax` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/tax` | `ROLE_ACCESS.ownerManager` | body: `tax_registered`, `tax_registration_number`, `state_code`, `tax_scheme`, `country` | - |

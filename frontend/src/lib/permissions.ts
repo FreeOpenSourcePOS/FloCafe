@@ -1,9 +1,6 @@
 import type { Tenant } from '@/lib/types';
-import {
-  permissionDefaultAllows,
-  type PermissionId,
-} from '@shared/permissions';
-import { isRole } from '@shared/role-permissions';
+import { permissionDefaultAllows, type PermissionId } from '../../../shared/permissions';
+import { isRole } from '../../../shared/role-permissions';
 
 /** Client-side UX gate only; the backend always re-checks live authorization. */
 export function tenantCan(tenant: Tenant | null | undefined, permissionId: PermissionId): boolean {

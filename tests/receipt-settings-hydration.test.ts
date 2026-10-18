@@ -448,11 +448,15 @@ async function runTests() {
     const serverStaff = createTestUser('server-001', 'Test Server', 'server@test.local', 'server');
     const chef = createTestUser('chef-001', 'Test Chef', 'chef@test.local', 'chef');
 
-    // Restrict cashier and chef from general settings access via user permission overrides
+    // Restrict cashier, server, and chef from general settings access via user permission overrides
     db.prepare(
       `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
        VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
     ).run('cashier-001', now(), now());
+    db.prepare(
+      `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+       VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
+    ).run('server-001', now(), now());
     db.prepare(
       `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
        VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
@@ -469,11 +473,11 @@ async function runTests() {
       'Cashier reads storefront address',
     );
 
-    // Server (orders.read) can read business settings
+    // Server (orders.read only) cannot read business settings (preserves charges-engine security boundary)
     const serverGetRes = await api(baseUrl, '/api/settings/business', {
       headers: serverStaff.authHeader,
     });
-    assertEqualOrThrow(serverGetRes.status, 200, 'Server GET /api/settings/business returns 200');
+    assertEqualOrThrow(serverGetRes.status, 403, 'Server GET /api/settings/business returns 403');
 
     // Chef (only kitchen.use, no billing or orders.read, and settings.view denied) cannot read business settings
     const chefGetRes = await api(baseUrl, '/api/settings/business', {
@@ -525,8 +529,8 @@ async function runTests() {
     );
     assertEqualOrThrow(
       canSyncReceiptSettings({ role: 'server', permission_ids: ['orders.read'] }),
-      true,
-      'canSyncReceiptSettings(server) with orders.read is true',
+      false,
+      'canSyncReceiptSettings(server) with orders.read only is false',
     );
     assertEqualOrThrow(
       canSyncReceiptSettings({ role: 'chef', permission_ids: ['kitchen.use'] }),

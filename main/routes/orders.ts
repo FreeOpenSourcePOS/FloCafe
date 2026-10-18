@@ -63,7 +63,11 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
-import { completeExactBalanceSettlement, getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
+import {
+  completeExactBalanceSettlement,
+  getTenantCurrency,
+  syncUnpaidBillsForOrder,
+} from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { isAllowedPrivateIp } from '../middleware/security';

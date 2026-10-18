@@ -141,7 +141,9 @@ same fields:
 
 Non-cash lines can never exceed the balance (`400`). Cash is applied up to the amount still owed and
 the difference is recorded as change, so an over-tendered bill settles and its ledger line carries
-`tendered_amount` and `change_amount`.
+`tendered_amount` and `change_amount`. When a bill's remaining balance is zero, any positive payment
+tender (cash or non-cash) is rejected (`400` with `payment_exceeds_balance`), while an omitted-amount
+payment line completes zero-balance settlement.
 
 The optional `Idempotency-Key` is actor-scoped: the same key with the same normalized request
 returns the committed response, and the same key with a different request is a `409`. Concurrent
@@ -162,8 +164,10 @@ Two gates sit between a valid request and the write:
   When all kitchen items are delivered, `override_pin` verification is bypassed. The override is
   recorded in the order audit log.
 
-A paid bill refuses further payment (`400`) and a refunded bill refuses it with `409`. The response
-carries the updated bill plus the wallet and loyalty effects; `bill.payment_details` is the
+A paid bill refuses positive payment (`400` with `bill_already_paid`) and a refunded bill refuses
+payment with `409`. A zero-balance payment retry on an already-settled bill returns `200`
+idempotently without rejecting. The response carries the updated bill plus the wallet and loyalty
+effects; `bill.payment_details` is the
 settlement ledger, one entry per line with the applied amount, the requested amount, cash tendered
 and change, the `cash_session_id`, and the timestamp.
 
@@ -175,13 +179,26 @@ already completed or cancelled) and its dine-in table is released to `available`
 resurrects a terminal order.
 
 When an order, item, or bill discount reduces the remaining balance of a partially paid bill to exactly
-zero (where collected funds equal the discounted total), the bill automatically settles to `paid` with
-its `paid_at` timestamp recorded. If all sibling bills are settled, the order transitions to `completed`
-and releases its dine-in table to `available`. Loyalty cashback is credited on collected net funds, and
-no phantom payment lines are written to `bill.payment_details`. A zero-balance settlement retry on an
-already settled bill returns `200` idempotently without rejecting. Discounts that would reduce the bill
-total below already-collected payments are rejected (`409` with diagnostic code `below_collected_funds`).
-Discounts on orders with zero collected payments leave the bill `unpaid` until explicitly settled.
+zero (where collected funds equal the discounted total), auto-settlement to `paid` is gated by kitchen
+delivery status. When `require_kitchen_delivered_before_settlement` is enabled, `kds_enabled` is not
+`false`, and `billing_type` is not `prepaid`:
+
+- If kitchen items remain undelivered (`pending`, `preparing`, or `ready`), auto-settlement is held:
+  the discount applies and reduces the balance to zero, but the bill remains in `partial` status
+  (`paid_at` is unset), the order stays active, and the dine-in table remains occupied. Supplying a
+  valid manager PIN as `override_pin` (or via an explicit approver) overrides the gate, recording
+  `kitchen_delivery_override` in `order_audit_log` and allowing auto-settlement to proceed immediately.
+- Once undelivered kitchen items are served (or when settled with an `override_pin`), a zero-balance
+  payment retry settles the bill to `paid`.
+
+When all kitchen items are delivered (or kitchen-delivery enforcement does not apply), the bill
+automatically settles to `paid` with its `paid_at` timestamp recorded. If all sibling bills are
+settled, the order transitions to `completed` and releases its dine-in table to `available`. Loyalty
+cashback is credited on collected net funds, and no phantom payment lines are written to
+`bill.payment_details`. A zero-balance settlement retry on an already settled bill returns `200`
+idempotently without rejecting. Discounts that would reduce the bill total below already-collected
+payments are rejected (`409` with diagnostic code `below_collected_funds`). Discounts on orders with
+zero collected payments leave the bill `unpaid` until explicitly settled.
 
 Wallet lines debit the customer's loyalty ledger. A paid bill credits cashback when loyalty is
 enabled, excluding the share funded by wallet points.

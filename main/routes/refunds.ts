@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, verifyPinAsync, withTxn } from '../db';
+import { getDatabase, verifyPinAsync, withTxn } from '../db';
 import { requirePermission } from '../services/authorization';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { checkPinRateLimit, isPinRateLimited, clearPinRateLimit } from './orders';
@@ -56,7 +56,11 @@ function refundIdempotencyKey(req: Request): string | null {
   return supplied;
 }
 
-function refundRequestHash(billId: string, body: any, approverId: string): string {
+function refundRequestHash(
+  billId: string,
+  body: Record<string, unknown>,
+  approverId: string,
+): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -299,14 +303,16 @@ router.post('/', requirePermission('refunds.initiate'), async (req: Request, res
         .prepare(
           `SELECT id, pin_hash, role, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`,
         )
-        .get(selectedApproverId, ...allowedRoles) as any;
+        .get(selectedApproverId, ...allowedRoles) as
+        | { id: string; pin_hash: string; role: string; is_active: number }
+        | undefined;
 
       let pinMatches = false;
       if (candidate) {
         pinMatches = await verifyPinAsync(candidate.pin_hash, overridePin);
       }
 
-      if (!pinMatches) {
+      if (!candidate || !pinMatches) {
         checkPinRateLimit(rateLimitKey);
         throw Object.assign(new Error(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN'), {
           statusCode: 403,

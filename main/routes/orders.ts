@@ -675,7 +675,7 @@ router.get(
         )
       )`;
 
-        const hasControlChars = /[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(search);
+        const hasControlChars = /[\x00-\x1F\x7F]/.test(search);
         const isEligible = !hasControlChars && [...search].length >= 3;
         const hasFts = isEligible && isSearchIndexAvailable(db);
 

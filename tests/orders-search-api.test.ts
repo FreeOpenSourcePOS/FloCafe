@@ -56,6 +56,7 @@ async function main() {
   insertOrder.run('01-1234', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run('2026-0042', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run('#100-special', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('ORD-SYNTH-TAB\t123', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   for (let i = 0; i < 55; i++) {
     insertOrder.run(
       `ORD-SEARCH-NEWER-${i}`,
@@ -439,6 +440,29 @@ async function main() {
       probeControl.status,
       200,
       'probe search with control chars succeeds without 500',
+    );
+
+    // 17. Embedded tab, newline, carriage return, and DEL probe (#1208 review finding)
+    const probeTab = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('SYNTH-TAB\t123')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(probeTab.status, 200, 'probe search with embedded tab succeeds without 500');
+    assertOrThrow(
+      probeTab.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-TAB\t123'),
+      'probe returns order matching embedded tab via UDF fallback',
+    );
+
+    const probeNewlineCrDel = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('test\n\r\x7F')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(
+      probeNewlineCrDel.status,
+      200,
+      'probe search with newline, carriage return, and DEL succeeds without 500',
     );
 
     const activePage1 = await api(

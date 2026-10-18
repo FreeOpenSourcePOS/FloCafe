@@ -47,6 +47,9 @@ const {
   MIGRATIONS,
   now,
   validateInventoryLedgerDatabase,
+  generateOrderNumber,
+  generateBillNumber,
+  repairSequences,
 } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
@@ -1750,6 +1753,95 @@ async function runTests() {
       matchingOverwriteNoPin.status === 403,
       `matching-schema overwrite import without a PIN is still rejected (got ${matchingOverwriteNoPin.status})`,
     );
+  }
+
+  // ── Test 3d: sequence repair on partial import without sequences table ──
+  console.log('\nTest 3d: POST /db/import repairs sequences when importing orders/bills without sequences');
+  {
+    const insertSetting = (key: string, value: string) =>
+      db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(key, value, now());
+    insertSetting('country', 'IN');
+    insertSetting('currency', 'INR');
+    insertSetting('timezone', 'Asia/Kolkata');
+
+    const initialOrderNum = generateOrderNumber();
+    const initialBillNum = generateBillNumber();
+    const ordResult = db.prepare("INSERT INTO orders (order_number, created_at) VALUES (?, ?)").run(initialOrderNum, now());
+    const initialOrderId = ordResult.lastInsertRowid;
+    db.prepare("INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, total, paid_amount, balance, created_at) VALUES (?, ?, 100, 0, 100, 100, 0, ?)").run(initialOrderId, initialBillNum, now());
+
+    const orderDate = initialOrderNum.split('-')[1];
+    const billDate = initialBillNum.split('-')[1];
+
+    const partialImport = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        overwrite: false,
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            users: [],
+            orders: [
+              { id: 102, order_number: `ORD-${orderDate}-0002`, created_at: now() },
+              { id: 103, order_number: `ORD-${orderDate}-0003`, created_at: now() },
+              { id: 104, order_number: `ORD-${orderDate}-0004`, created_at: now() },
+              { id: 105, order_number: `ORD-${orderDate}-0005`, created_at: now() },
+            ],
+            bills: [
+              { id: 102, order_id: 102, bill_number: `INV-${billDate}-0002`, subtotal: 10, tax_amount: 0, total: 10, paid_amount: 10, balance: 0, created_at: now() },
+              { id: 103, order_id: 103, bill_number: `INV-${billDate}-0003`, subtotal: 10, tax_amount: 0, total: 10, paid_amount: 10, balance: 0, created_at: now() },
+              { id: 104, order_id: 104, bill_number: `INV-${billDate}-0004`, subtotal: 10, tax_amount: 0, total: 10, paid_amount: 10, balance: 0, created_at: now() },
+              { id: 105, order_id: 105, bill_number: `INV-${billDate}-0005`, subtotal: 10, tax_amount: 0, total: 10, paid_amount: 10, balance: 0, created_at: now() },
+            ],
+          },
+        },
+      });
+
+    assert(partialImport.status === 200, `partial import succeeds (got ${partialImport.status})`);
+
+    const orderSeq = db.prepare("SELECT current_value FROM sequences WHERE name = 'orders' AND date = ?").get(orderDate) as { current_value: number } | undefined;
+    assertEqual(orderSeq?.current_value, 5, 'orders sequence counter advanced to 5 after import');
+
+    const billSeq = db.prepare("SELECT current_value FROM sequences WHERE name = 'bills' AND date = ?").get(billDate) as { current_value: number } | undefined;
+    assertEqual(billSeq?.current_value, 5, 'bills sequence counter advanced to 5 after import');
+
+    const nextOrderNum = generateOrderNumber();
+    assertEqual(nextOrderNum, `ORD-${orderDate}-0006`, 'next generated order number is 0006');
+    let orderInsertThrew = false;
+    try {
+      db.prepare("INSERT INTO orders (order_number, created_at) VALUES (?, ?)").run(nextOrderNum, now());
+    } catch {
+      orderInsertThrew = true;
+    }
+    assert(!orderInsertThrew, 'creating next order succeeds without UNIQUE constraint failure');
+
+    const nextBillNum = generateBillNumber();
+    assertEqual(nextBillNum, `INV-${billDate}-0006`, 'next generated bill number is 0006');
+    let billInsertThrew = false;
+    try {
+      db.prepare("INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, total, paid_amount, balance, created_at) VALUES (105, ?, 10, 0, 10, 10, 0, ?)").run(nextBillNum, now());
+    } catch {
+      billInsertThrew = true;
+    }
+    assert(!billInsertThrew, 'creating next bill succeeds without UNIQUE constraint failure');
+
+    // Simulate reopen fast-path
+    const bootRepair = repairSequences(false);
+    assertEqual(bootRepair.repaired, false, 'reopen fast-path skips historical scan');
+
+    const nextOrderNumAfterReopen = generateOrderNumber();
+    assertEqual(nextOrderNumAfterReopen, `ORD-${orderDate}-0007`, 'next order number after reopen is 0007');
+    let orderReopenThrew = false;
+    try {
+      db.prepare("INSERT INTO orders (order_number, created_at) VALUES (?, ?)").run(nextOrderNumAfterReopen, now());
+    } catch {
+      orderReopenThrew = true;
+    }
+    assert(!orderReopenThrew, 'creating order after reopen succeeds');
   }
 
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────

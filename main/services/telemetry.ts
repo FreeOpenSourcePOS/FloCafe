@@ -137,9 +137,6 @@ export function isTelemetrySuppressed(): boolean {
   if (process.env.FLO_TELEMETRY_DEV === '1') {
     return false;
   }
-  if (process.env.NODE_ENV === 'test') {
-    return true;
-  }
   const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
   if (
     version === '1.0.0-test' ||

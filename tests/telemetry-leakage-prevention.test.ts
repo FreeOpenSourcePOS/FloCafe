@@ -101,6 +101,27 @@ async function run() {
     mockVersion = '3.14.0-beta.1';
     assertOrThrow(!isTelemetrySuppressed(), 'Packaged beta release allows permitted telemetry');
 
+    // 10. Fixture version 2.7.2-test suppresses telemetry by default, but allows telemetry when FLO_TELEMETRY_DEV=1.
+    mockVersion = '2.7.2-test';
+    delete process.env.FLO_TELEMETRY_DEV;
+    assertOrThrow(isTelemetrySuppressed(), 'Version "2.7.2-test" suppresses telemetry by default');
+    process.env.FLO_TELEMETRY_DEV = '1';
+    assertOrThrow(!isTelemetrySuppressed(), 'Version "2.7.2-test" is permitted when FLO_TELEMETRY_DEV=1');
+
+    // 11. Conflicting environment variables: offline/e2e switches take precedence over FLO_TELEMETRY_DEV=1.
+    process.env.FLO_MATRIX_OFFLINE = '1';
+    assertOrThrow(isTelemetrySuppressed(), 'FLO_MATRIX_OFFLINE=1 takes precedence over FLO_TELEMETRY_DEV=1');
+    delete process.env.FLO_MATRIX_OFFLINE;
+
+    process.env.E2E_TASK_LOCAL_PORTS = '1';
+    assertOrThrow(isTelemetrySuppressed(), 'E2E_TASK_LOCAL_PORTS takes precedence over FLO_TELEMETRY_DEV=1');
+    delete process.env.E2E_TASK_LOCAL_PORTS;
+
+    process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK = '1';
+    assertOrThrow(isTelemetrySuppressed(), 'FLO_E2E_SKIP_OPTIONAL_NETWORK takes precedence over FLO_TELEMETRY_DEV=1');
+    delete process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK;
+    delete process.env.FLO_TELEMETRY_DEV;
+
     // 10. Proving fetch is never called when telemetry is suppressed.
     process.env.NODE_ENV = 'test';
     process.env.FLO_MATRIX_OFFLINE = '1';

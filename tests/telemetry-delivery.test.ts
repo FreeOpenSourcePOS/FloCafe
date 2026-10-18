@@ -13,7 +13,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       app: {
         isPackaged: true,
         getPath: () => testDir,
-        getVersion: () => '2.7.2',
+        getVersion: () => '2.7.2-test',
       },
     };
   }
@@ -53,7 +53,7 @@ async function main() {
     assert.equal(requestBody?.country, 'AR', 'telemetry sends the configured ISO country');
     assert.equal(requestBody?.currency, 'USD', 'telemetry sends the normalized configured currency');
     assert.equal(requestBody?.app, 'flocafe');
-    assert.equal(requestBody?.app_version, '2.7.2');
+    assert.equal(requestBody?.app_version, '2.7.2-test');
 
     // An unconfirmed country is omitted rather than sent as the install
     // default. FloAdmin geolocates the request IP when the field is absent, so

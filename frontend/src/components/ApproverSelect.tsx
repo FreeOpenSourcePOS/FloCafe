@@ -49,7 +49,7 @@ export function ApproverSelect({
       <p
         className={`rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 ${className}`}
       >
-        {loadFailedMessage || tOrders('refundApproverLoadFailed')}
+        {loadFailedMessage || 'Could not load approvers. Try again.'}
       </p>
     );
   }
@@ -59,7 +59,10 @@ export function ApproverSelect({
       <div
         className={`rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 ${className}`}
       >
-        <p>{emptyMessage || tOrders('refundApprovalSetupStaff')}</p>
+        <p>
+          {emptyMessage ||
+            'Approval is not configured. Ask the owner to set an Approval PIN in Staff.'}
+        </p>
       </div>
     );
   }

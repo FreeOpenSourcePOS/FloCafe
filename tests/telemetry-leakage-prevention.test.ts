@@ -120,9 +120,93 @@ async function run() {
     process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK = '1';
     assertOrThrow(isTelemetrySuppressed(), 'FLO_E2E_SKIP_OPTIONAL_NETWORK takes precedence over FLO_TELEMETRY_DEV=1');
     delete process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK;
+
+    // 12. CI environment suppresses telemetry and takes precedence over FLO_TELEMETRY_DEV=1.
+    process.env.CI = 'true';
+    assertOrThrow(isTelemetrySuppressed(), 'CI=true suppresses telemetry');
+    assertEqualOrThrow(postHogEnvironment(), null, 'CI=true suppresses PostHog');
+    process.env.FLO_TELEMETRY_DEV = '1';
+    assertOrThrow(isTelemetrySuppressed(), 'CI=true takes precedence over FLO_TELEMETRY_DEV=1');
+    delete process.env.CI;
     delete process.env.FLO_TELEMETRY_DEV;
 
-    // 10. Proving fetch is never called when telemetry is suppressed.
+    // 13. NODE_ENV=test suppresses telemetry in packaged mode when FLO_MATRIX_OFFLINE is unset.
+    process.env.NODE_ENV = 'test';
+    delete process.env.FLO_MATRIX_OFFLINE;
+    mockPackaged = true;
+    mockVersion = '3.13.0';
+    assertOrThrow(isTelemetrySuppressed(), 'NODE_ENV=test suppresses telemetry in packaged mode');
+    assertEqualOrThrow(postHogEnvironment(), null, 'NODE_ENV=test suppresses PostHog in packaged mode');
+
+    // 14. Server error sanitization bounds and safety checks.
+    const { sanitizeServerError } = require('../frontend/src/lib/order-attempt');
+    assertEqualOrThrow(
+      sanitizeServerError('Insufficient stock for "Double Cheeseburger"'),
+      'Insufficient stock for "Double Cheeseburger"',
+      'valid stock error is preserved',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Add-on "Extra Bacon" is out of stock (requested 1, available 0)'),
+      'Add-on "Extra Bacon" is out of stock (requested 1, available 0)',
+      'valid add-on error is preserved',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Error: SQLITE_BUSY: database is locked'),
+      null,
+      'SQLite database locked error is sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('SELECT * FROM users WHERE id = 1'),
+      null,
+      'SQL query statements are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('at Object.<anonymous> (/app/routes/orders.ts:42:15)'),
+      null,
+      'stack trace frame is sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Failed to open file /etc/shadow'),
+      null,
+      'UNIX file paths are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Failed to load C:\\Users\\Admin\\keys.db'),
+      null,
+      'Windows file paths are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Could not read ../secrets/.env'),
+      null,
+      'relative file paths are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('ENOENT: no such file or directory'),
+      null,
+      'system error codes are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Invalid bearer token xyz123'),
+      null,
+      'bearer tokens and secrets are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('Incorrect password supplied for user'),
+      null,
+      'password mentions are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError('A'.repeat(201)),
+      null,
+      'oversized errors (>200 chars) are sanitized',
+    );
+    assertEqualOrThrow(
+      sanitizeServerError("Line one\nLine two"),
+      null,
+      'multiline error is sanitized',
+    );
+
+    // 15. Proving fetch is never called when telemetry is suppressed.
     process.env.NODE_ENV = 'test';
     process.env.FLO_MATRIX_OFFLINE = '1';
     let fetchCalled = false;

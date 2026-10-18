@@ -463,22 +463,30 @@ function plainRecord(value: unknown): value is Record<string, unknown> {
 export function sanitizeServerError(rawError: unknown): string | null {
   if (typeof rawError !== 'string') return null;
   const trimmed = rawError.trim();
-  if (!trimmed) return null;
-  const bounded = trimmed.length > 255 ? trimmed.slice(0, 255) : trimmed;
-  if (/[\r\n]/.test(bounded) || /\bat\s+\S+\s+\(/.test(bounded)) {
+  if (!trimmed || trimmed.length > 200) return null;
+  if (/[\r\n]/.test(trimmed) || /\bat\s+\S+\s+\(/.test(trimmed) || /\bat\s+.*:\d+:\d+/.test(trimmed)) {
     return null;
   }
   if (
-    /(?:sqlite|syntax error|database locked|no such table|foreign key constraint|unique constraint|table\s+\w+|column\s+\w+|select\s+.+from|insert\s+into|update\s+.+set|delete\s+from)/i.test(
-      bounded,
+    /(?:sqlite|syntax error|database (?:locked|disk image)|no such (?:table|column)|foreign key constraint|unique constraint|primary key constraint|check constraint|table\s+\w+|column\s+\w+|select\s+.+from|insert\s+into|update\s+.+set|delete\s+from|drop\s+table|alter\s+table)/i.test(
+      trimmed,
     )
   ) {
     return null;
   }
-  if (/^(?:[A-Z][a-zA-Z0-9_]*Error|Exception):\s*/i.test(bounded)) {
+  if (/^(?:[A-Z][a-zA-Z0-9_]*(?:Error|Exception)|TypeError|RangeError|SyntaxError|ReferenceError|SystemError):/i.test(trimmed)) {
     return null;
   }
-  return bounded;
+  if (/\b(?:ENOENT|EACCES|EPERM|ECONNREFUSED|ECONNRESET|EADDRINUSE|ETIMEDOUT|EPIPE)\b/i.test(trimmed)) {
+    return null;
+  }
+  if (/(?:^|[\s"'`])(?:(?:\/|[a-zA-Z]:[\\/])\w+|(?:\.\.?[\\/]\w+))/i.test(trimmed)) {
+    return null;
+  }
+  if (/\b(?:bearer\s+[a-zA-Z0-9._-]+|jwt|api[_-]?key|password|secret)\b/i.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
 }
 
 /** Trusts additive server metadata only when the closed tuple and operation reference match. */

@@ -130,12 +130,16 @@ export function isTelemetrySuppressed(): boolean {
   if (
     process.env.FLO_MATRIX_OFFLINE === '1' ||
     Boolean(process.env.E2E_TASK_LOCAL_PORTS) ||
-    process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1'
+    process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1' ||
+    Boolean(process.env.CI)
   ) {
     return true;
   }
   if (process.env.FLO_TELEMETRY_DEV === '1') {
     return false;
+  }
+  if (process.env.NODE_ENV === 'test') {
+    return true;
   }
   const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
   if (

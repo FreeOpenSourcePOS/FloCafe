@@ -365,7 +365,11 @@ async function main() {
       `/api/orders?search=${encodeURIComponent('01-1234')}`,
       { headers: owner.authHeader },
     );
-    assertEqualOrThrow(probeHyphenOrder.status, 200, 'probe search for hyphenated order number succeeds');
+    assertEqualOrThrow(
+      probeHyphenOrder.status,
+      200,
+      'probe search for hyphenated order number succeeds',
+    );
     assertOrThrow(
       probeHyphenOrder.data.orders.some((o: any) => o.order_number === '01-1234'),
       'probe returns order matching hyphenated order number 01-1234',
@@ -388,17 +392,19 @@ async function main() {
       `/api/orders?search=${encodeURIComponent('01-12')}`,
       { headers: owner.authHeader },
     );
-    assertEqualOrThrow(probePartialHyphen.status, 200, 'probe search for partial hyphen sequence succeeds');
+    assertEqualOrThrow(
+      probePartialHyphen.status,
+      200,
+      'probe search for partial hyphen sequence succeeds',
+    );
     assertOrThrow(
       probePartialHyphen.data.orders.some((o: any) => o.order_number === '01-1234'),
       'probe returns order matching partial hyphen sequence 01-12',
     );
 
-    const probeNumericSub = await api(
-      baseUrl,
-      `/api/orders?search=${encodeURIComponent('1234')}`,
-      { headers: owner.authHeader },
-    );
+    const probeNumericSub = await api(baseUrl, `/api/orders?search=${encodeURIComponent('1234')}`, {
+      headers: owner.authHeader,
+    });
     assertEqualOrThrow(probeNumericSub.status, 200, 'probe search for numeric substring succeeds');
     assertOrThrow(
       probeNumericSub.data.orders.some((o: any) => o.order_number === '01-1234'),
@@ -418,11 +424,9 @@ async function main() {
     );
 
     // 15. Embedded NUL character probe (#1204 / #1208)
-    const probeNul = await api(
-      baseUrl,
-      `/api/orders?search=${encodeURIComponent('01-1234\0')}`,
-      { headers: owner.authHeader },
-    );
+    const probeNul = await api(baseUrl, `/api/orders?search=${encodeURIComponent('01-1234\0')}`, {
+      headers: owner.authHeader,
+    });
     assertEqualOrThrow(probeNul.status, 200, 'probe search with embedded NUL succeeds without 500');
 
     // 16. Control characters probe
@@ -431,7 +435,11 @@ async function main() {
       `/api/orders?search=${encodeURIComponent('\x01\x02test')}`,
       { headers: owner.authHeader },
     );
-    assertEqualOrThrow(probeControl.status, 200, 'probe search with control chars succeeds without 500');
+    assertEqualOrThrow(
+      probeControl.status,
+      200,
+      'probe search with control chars succeeds without 500',
+    );
 
     const activePage1 = await api(
       baseUrl,

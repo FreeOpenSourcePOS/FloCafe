@@ -702,7 +702,13 @@ router.get(
                      OR orders_search_contains(name, ?)
                 )
               )`;
-              candidateParams.push(ftsOrderSearch, ftsPhoneSearch, phoneDigits, phoneDigits, search);
+              candidateParams.push(
+                ftsOrderSearch,
+                ftsPhoneSearch,
+                phoneDigits,
+                phoneDigits,
+                search,
+              );
             } else {
               candidateClause = `(
                 orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)

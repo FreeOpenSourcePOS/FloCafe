@@ -3393,7 +3393,7 @@ router.post(
 
       // Check idempotency prior to any PIN verification (#1205)
       if (idempotencyKey && idempotencyUserId) {
-        inFlightKey = `${idempotencyUserId}:${idempotencyKey}`;
+        const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
           .prepare(`
           SELECT bill_id, request_hash, response_json
@@ -3422,7 +3422,7 @@ router.post(
           }
         }
 
-        const existingInFlight = inFlightPaymentAttempts.get(inFlightKey);
+        const existingInFlight = inFlightPaymentAttempts.get(inFlightAttemptKey);
         if (existingInFlight) {
           if (
             existingInFlight.billId !== String(billId) ||
@@ -3434,10 +3434,44 @@ router.post(
               409,
             );
           }
-          const sharedResult = await existingInFlight.promise;
-          return res.json(sharedResult);
+          try {
+            const sharedResult = await existingInFlight.promise;
+            return res.json(sharedResult);
+          } catch {
+            const committed = db
+              .prepare(`
+              SELECT bill_id, request_hash, response_json
+              FROM payment_idempotency
+              WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+              ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+              LIMIT 1
+            `)
+              .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
+              | { bill_id: string; request_hash: string; response_json: string }
+              | undefined;
+            if (committed) {
+              if (
+                String(committed.bill_id) !== String(billId) ||
+                committed.request_hash !== requestHash
+              ) {
+                throw paymentValidationError(
+                  'Idempotency-Key was already used for a different payment request',
+                  'idempotency_conflict',
+                  409,
+                );
+              }
+              try {
+                return res.json(JSON.parse(committed.response_json));
+              } catch {
+                throw Object.assign(new Error('Stored payment response is invalid'), {
+                  statusCode: 500,
+                });
+              }
+            }
+          }
         }
 
+        inFlightKey = inFlightAttemptKey;
         const attemptPromise = new Promise((resolve, reject) => {
           resolveAttempt = resolve;
           rejectAttempt = reject;
@@ -3589,7 +3623,7 @@ router.post(
 
       // Check idempotency prior to any PIN verification (#1205)
       if (idempotencyKey && idempotencyUserId) {
-        inFlightKey = `${idempotencyUserId}:${idempotencyKey}`;
+        const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
           .prepare(`
           SELECT bill_id, request_hash, response_json
@@ -3618,7 +3652,7 @@ router.post(
           }
         }
 
-        const existingInFlight = inFlightPaymentAttempts.get(inFlightKey);
+        const existingInFlight = inFlightPaymentAttempts.get(inFlightAttemptKey);
         if (existingInFlight) {
           if (
             existingInFlight.billId !== String(billId) ||
@@ -3630,10 +3664,44 @@ router.post(
               409,
             );
           }
-          const sharedResult = await existingInFlight.promise;
-          return res.json(sharedResult);
+          try {
+            const sharedResult = await existingInFlight.promise;
+            return res.json(sharedResult);
+          } catch {
+            const committed = db
+              .prepare(`
+              SELECT bill_id, request_hash, response_json
+              FROM payment_idempotency
+              WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+              ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+              LIMIT 1
+            `)
+              .get(idempotencyUserId, idempotencyKey, idempotencyUserId) as
+              | { bill_id: string; request_hash: string; response_json: string }
+              | undefined;
+            if (committed) {
+              if (
+                String(committed.bill_id) !== String(billId) ||
+                committed.request_hash !== requestHash
+              ) {
+                throw paymentValidationError(
+                  'Idempotency-Key was already used for a different payment request',
+                  'idempotency_conflict',
+                  409,
+                );
+              }
+              try {
+                return res.json(JSON.parse(committed.response_json));
+              } catch {
+                throw Object.assign(new Error('Stored payment response is invalid'), {
+                  statusCode: 500,
+                });
+              }
+            }
+          }
         }
 
+        inFlightKey = inFlightAttemptKey;
         const attemptPromise = new Promise((resolve, reject) => {
           resolveAttempt = resolve;
           rejectAttempt = reject;

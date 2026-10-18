@@ -382,6 +382,41 @@ async function run(): Promise<void> {
         1,
         'Exactly 1 payment recorded for concurrent in-flight replay with PIN',
       );
+
+      // Replay 5: In-flight attempt where owner rejects (invalid PIN), waiter continues with valid PIN
+      const failOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'dine_in',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const failOrderId = failOrderRes.data.order.id;
+      const failBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: failOrderId },
+        headers: cashierAuth,
+      });
+      const failBillId = failBillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(failOrderId);
+
+      const rejectedOwnerIdemKey = 'idem-owner-reject-waiter-succeeds-001';
+      const reqA = api(baseUrl, `/api/bills/${failBillId}/payment`, {
+        method: 'POST',
+        body: { amount: 100, method: 'cash', override_pin: '9999' },
+        headers: { ...cashierAuth, 'Idempotency-Key': rejectedOwnerIdemKey },
+      });
+      const reqB = api(baseUrl, `/api/bills/${failBillId}/payment`, {
+        method: 'POST',
+        body: { amount: 100, method: 'cash', override_pin: '1111' },
+        headers: { ...cashierAuth, 'Idempotency-Key': rejectedOwnerIdemKey },
+      });
+      const [resA, resB] = await Promise.all([reqA, reqB]);
+
+      assertEqualOrThrow(resA.status, 403, 'Owner attempt with invalid PIN returns 403');
+      assertEqualOrThrow(resB.status, 200, 'Waiter with valid PIN succeeds after owner rejection');
+      assertEqualOrThrow(resB.data.bill.paid_amount, 100, 'Waiter completed payment');
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -829,7 +864,7 @@ async function run(): Promise<void> {
       await api(baseUrl, '/api/bills/generate', {
         method: 'POST',
         body: { order_id: orderId },
-        headers: serverAuth,
+        headers: cashierAuth,
       });
 
       // Complete unpaid order as server-1 using PIN '4444'
@@ -869,6 +904,52 @@ async function run(): Promise<void> {
         details.approved_by,
         'mgr-with-pay',
         'Audit log correctly attributes approval to mgr-with-pay',
+      );
+
+      // Test null-balance fully-paid bill completion with kitchen-only override
+      const nullBalOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'dine_in',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: serverAuth,
+      });
+      const nullBalOrderId = nullBalOrderRes.data.order.id;
+      const nullBalBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: nullBalOrderId },
+        headers: cashierAuth,
+      });
+      const nullBalBillId = nullBalBillRes.data.bill.id;
+      // Mark bill paid, but simulate legacy record where balance is NULL
+      db.prepare(
+        "UPDATE bills SET paid_amount = 100, balance = NULL, payment_status = 'paid' WHERE id = ?",
+      ).run(nullBalBillId);
+      // Mark item preparing so kitchen override is required
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(
+        nullBalOrderId,
+      );
+
+      // Complete order specifying mgr-no-pay explicitly (who only has orders.status.update)
+      const completeNullBalRes = await api(baseUrl, `/api/orders/${nullBalOrderId}/status`, {
+        method: 'PATCH',
+        body: {
+          status: 'completed',
+          override_pin: '4444',
+          approver_id: 'mgr-no-pay',
+        },
+        headers: serverAuth,
+      });
+      assertEqualOrThrow(
+        completeNullBalRes.status,
+        200,
+        'Order with null-balance paid bill completes via kitchen override without requiring payments.take',
+      );
+      assertEqualOrThrow(
+        completeNullBalRes.data.order.status,
+        'completed',
+        'Null-balance order status is completed',
       );
     }
 

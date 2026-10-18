@@ -2299,46 +2299,61 @@ router.post(
   },
 );
 
-function orderRequiresPaymentOverrideOnComplete(
-  db: ReturnType<typeof getDatabase>,
-  orderId: string | number,
-): boolean {
-  const currentOrder = db
-    .prepare('SELECT total, round_off FROM orders WHERE id = ?')
-    .get(orderId) as { total?: number | string; round_off?: number | string } | undefined;
-  if (!currentOrder) return false;
-  const currency = getTenantCurrency();
-  const minorFactor = getCurrencyMinorUnitFactor(currency);
-  const orderTotalMinor = Math.max(0, Math.round(Number(currentOrder.total || 0) * minorFactor));
-  const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
-  const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
-  const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
-  interface OrderStatusBillRow {
-    id: number | string;
-    total: number | string | null;
-    round_off: number | string | null;
-    paid_amount: number | string | null;
-    balance: number | string | null;
-    payment_status: string | null;
-    payment_details: string | null;
-  }
+interface OrderStatusBillEvaluationRow {
+  id?: number | string;
+  total?: number | string | null;
+  round_off?: number | string | null;
+  paid_amount?: number | string | null;
+  refunded_cents?: number | string | null;
+  balance?: number | string | null;
+  payment_status?: string | null;
+  payment_details?: unknown;
+}
 
-  const bills = db
-    .prepare(
-      'SELECT id, total, round_off, paid_amount, balance, payment_status, payment_details FROM bills WHERE order_id = ?',
-    )
-    .all(orderId) as OrderStatusBillRow[];
-
+function evaluateOrderPaymentCompletion(
+  order: { total?: number | string | null; round_off?: number | string | null } | null | undefined,
+  bills: OrderStatusBillEvaluationRow[],
+  minorFactor = 100,
+) {
   const evaluatedBills = bills.map((b) => {
-    const paymentStatus = b.payment_status || 'unpaid';
-    const totalMinor = Math.round(Number(b.total || 0) * minorFactor);
+    const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
     const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
     const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
-    const recordedPaidMinor = Math.round(Number(b.paid_amount || 0) * minorFactor);
+    const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
+    const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
+    const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
     const storedBalanceMinor = Math.max(
       0,
-      Math.round(Number(b.balance ?? totalMinor) * minorFactor),
+      Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
     );
+    let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+    if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
+      try {
+        const parsed = JSON.parse(b.payment_details);
+        if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+      } catch {
+        parsedPaymentDetails = [];
+      }
+    } else if (Array.isArray(b.payment_details)) {
+      parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
+    }
+    const detailsPaidMinor = parsedPaymentDetails.reduce(
+      (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+      0,
+    );
+    const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+    const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
+    const paymentStatus = String(b.payment_status || '');
+    const effectiveCollectedMinor = Math.max(
+      netCollectedMinor,
+      paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
+    );
+    const hasCollectedFunds =
+      effectiveCollectedMinor > 0 ||
+      (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
+      paymentStatus === 'partial' ||
+      paymentStatus === 'partially_refunded' ||
+      (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
     const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
     const unpaidBalanceMinor = isPayable
       ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
@@ -2347,14 +2362,23 @@ function orderRequiresPaymentOverrideOnComplete(
       !isPayable ||
       (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
     return {
+      id: b.id,
+      paymentStatus,
       totalMinor,
       unroundedTotalMinor,
+      recordedPaidMinor,
+      effectiveCollectedMinor,
+      hasCollectedFunds,
       isPayable,
       unpaidBalanceMinor,
       isSettled,
     };
   });
 
+  const orderTotalMinor = Math.max(0, Math.round(Number(order?.total || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(order?.round_off || 0) * minorFactor);
+  const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
+  const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
   const payableBills = evaluatedBills.filter((b) => b.isPayable);
   const billedCoverageMinor = evaluatedBills.reduce(
     (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
@@ -2366,12 +2390,51 @@ function orderRequiresPaymentOverrideOnComplete(
       : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
   const totalOutstandingMinor =
     payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
+  const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
 
-  return (
+  const requiresPaymentOverride =
     totalOutstandingMinor > 0 ||
     (orderTotalMinor > 0 && payableBills.length === 0) ||
-    payableBills.some((b) => !b.isSettled)
-  );
+    payableBills.some((b) => !b.isSettled);
+
+  return {
+    evaluatedBills,
+    payableBills,
+    orderTotalMinor,
+    orderRoundOffMinor,
+    orderUnroundedTotalMinor,
+    effectiveOrderTargetMinor,
+    unbilledMinor,
+    totalOutstandingMinor,
+    totalCollectedMinor,
+    requiresPaymentOverride,
+  };
+}
+
+function orderRequiresPaymentOverrideOnComplete(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number,
+): boolean {
+  const currentOrder = db
+    .prepare('SELECT total, round_off FROM orders WHERE id = ?')
+    .get(orderId) as { total?: number | string; round_off?: number | string } | undefined;
+  if (!currentOrder) return false;
+  const currency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+
+  const bills = db
+    .prepare(`
+      SELECT b.id, b.total, b.round_off, b.paid_amount,
+             COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents,
+             b.balance, b.payment_status, b.payment_details
+      FROM bills b
+      WHERE b.order_id = ?
+      ORDER BY b.id ASC
+    `)
+    .all(orderId) as OrderStatusBillEvaluationRow[];
+
+  const evaluation = evaluateOrderPaymentCompletion(currentOrder, bills, minorFactor);
+  return evaluation.requiresPaymentOverride;
 }
 
 router.patch(
@@ -2545,96 +2608,16 @@ router.patch(
           payment_status?: string | null;
         }>;
 
-        const evaluatedBills = billRows.map((b) => {
-          const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
-          const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
-          const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
-          const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
-          const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
-          const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
-          const storedBalanceMinor = Math.max(
-            0,
-            Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
-          );
-          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
-          if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
-            try {
-              const parsed = JSON.parse(b.payment_details);
-              if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
-            } catch {
-              parsedPaymentDetails = [];
-            }
-          } else if (Array.isArray(b.payment_details)) {
-            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
-          }
-          const detailsPaidMinor = parsedPaymentDetails.reduce(
-            (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
-            0,
-          );
-          const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
-          const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
-          const paymentStatus = String(b.payment_status || '');
-          const effectiveCollectedMinor = Math.max(
-            netCollectedMinor,
-            paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
-          );
-          const hasCollectedFunds =
-            effectiveCollectedMinor > 0 ||
-            (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
-            paymentStatus === 'partial' ||
-            paymentStatus === 'partially_refunded' ||
-            (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
-          const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
-          const unpaidBalanceMinor = isPayable
-            ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
-            : 0;
-          const isSettled =
-            !isPayable ||
-            (paymentStatus === 'paid' &&
-              unpaidBalanceMinor === 0 &&
-              recordedPaidMinor >= totalMinor);
-          return {
-            id: b.id,
-            paymentStatus,
-            totalMinor,
-            unroundedTotalMinor,
-            recordedPaidMinor,
-            effectiveCollectedMinor,
-            hasCollectedFunds,
-            isPayable,
-            unpaidBalanceMinor,
-            isSettled,
-          };
-        });
+        const {
+          evaluatedBills,
+          payableBills,
+          orderTotalMinor,
+          totalOutstandingMinor,
+          totalCollectedMinor,
+          requiresPaymentOverride,
+        } = evaluateOrderPaymentCompletion(currentOrder, billRows, minorFactor);
 
-        const orderTotalMinor = Math.max(
-          0,
-          Math.round(Number(currentOrder.total || 0) * minorFactor),
-        );
-        const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
-        const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
-        const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
-        const payableBills = evaluatedBills.filter((b) => b.isPayable);
-        const billedCoverageMinor = evaluatedBills.reduce(
-          (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
-          0,
-        );
-        const unbilledMinor =
-          payableBills.length === 0
-            ? orderTotalMinor
-            : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
-        const totalOutstandingMinor =
-          payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
-        const totalCollectedMinor = evaluatedBills.reduce(
-          (sum, b) => sum + b.effectiveCollectedMinor,
-          0,
-        );
-
-        const paymentBlocksCompletion =
-          status === 'completed' &&
-          (totalOutstandingMinor > 0 ||
-            (orderTotalMinor > 0 && payableBills.length === 0) ||
-            payableBills.some((b) => !b.isSettled));
+        const paymentBlocksCompletion = status === 'completed' && requiresPaymentOverride;
 
         const requireKitchenDelivered = db
           .prepare(

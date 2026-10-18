@@ -417,6 +417,61 @@ async function run(): Promise<void> {
       assertEqualOrThrow(resA.status, 403, 'Owner attempt with invalid PIN returns 403');
       assertEqualOrThrow(resB.status, 200, 'Waiter with valid PIN succeeds after owner rejection');
       assertEqualOrThrow(resB.data.bill.paid_amount, 100, 'Waiter completed payment');
+
+      // Replay 6: Multi-waiter concurrent attempt where owner rejects (9999) and multiple waiters (1111) arrive
+      const multiWaitOrderRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: {
+          type: 'dine_in',
+          items: [{ product_id: 'prod-100', quantity: 1 }],
+        },
+        headers: cashierAuth,
+      });
+      const multiWaitOrderId = multiWaitOrderRes.data.order.id;
+      const multiWaitBillRes = await api(baseUrl, '/api/bills/generate', {
+        method: 'POST',
+        body: { order_id: multiWaitOrderId },
+        headers: cashierAuth,
+      });
+      const multiWaitBillId = multiWaitBillRes.data.bill.id;
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(
+        multiWaitOrderId,
+      );
+
+      const multiWaitIdemKey = 'idem-multi-waiter-recovery-001';
+      const mReqA = api(baseUrl, `/api/bills/${multiWaitBillId}/payment`, {
+        method: 'POST',
+        body: { amount: 100, method: 'cash', override_pin: '9999' },
+        headers: { ...cashierAuth, 'Idempotency-Key': multiWaitIdemKey },
+      });
+      const mReqB = api(baseUrl, `/api/bills/${multiWaitBillId}/payment`, {
+        method: 'POST',
+        body: { amount: 100, method: 'cash', override_pin: '1111' },
+        headers: { ...cashierAuth, 'Idempotency-Key': multiWaitIdemKey },
+      });
+      const mReqC = api(baseUrl, `/api/bills/${multiWaitBillId}/payment`, {
+        method: 'POST',
+        body: { amount: 100, method: 'cash', override_pin: '1111' },
+        headers: { ...cashierAuth, 'Idempotency-Key': multiWaitIdemKey },
+      });
+      const [mResA, mResB, mResC] = await Promise.all([mReqA, mReqB, mReqC]);
+
+      assertEqualOrThrow(mResA.status, 403, 'Owner attempt with invalid PIN returns 403');
+      assertEqualOrThrow(mResB.status, 200, 'First waiter succeeds with 200');
+      assertEqualOrThrow(mResC.status, 200, 'Second concurrent waiter succeeds with 200');
+      assertEqualOrThrow(mResB.data.bill.paid_amount, 100, 'First waiter reports 100 paid');
+      assertEqualOrThrow(mResC.data.bill.paid_amount, 100, 'Second waiter reports 100 paid');
+
+      const multiWaitBillRow = db
+        .prepare('SELECT paid_amount, payment_details FROM bills WHERE id = ?')
+        .get(multiWaitBillId) as any;
+      assertEqualOrThrow(multiWaitBillRow.paid_amount, 100, 'Paid amount is exactly 100');
+      const multiWaitPayments = JSON.parse(multiWaitBillRow.payment_details || '[]');
+      assertEqualOrThrow(
+        multiWaitPayments.length,
+        1,
+        'Exactly 1 payment recorded despite multiple concurrent waiters',
+      );
     }
 
     // ═════════════════════════════════════════════════════════════════════════

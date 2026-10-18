@@ -4,19 +4,44 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { setLanguage, setOrdersLayout, getE2eToken } from './helpers/test-auth';
+import { captureSettings, restoreSettings } from './helpers/kitchen-fixture';
 
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'flocafe-approval-manager-selection-evidence');
+
+const GATE_SETTINGS = [
+  'billing_type',
+  'kds_enabled',
+  'require_kitchen_delivered_before_settlement',
+];
 
 test.describe('Explicit Manager Selection for Approvals and Kitchen Override', () => {
   let ownerToken: string;
   let headers: Record<string, string>;
   let managerAliceId: string;
   let managerBobId: string;
+  let settingsBefore: Map<string, string | undefined>;
 
-  test.beforeAll(async () => {
+  test.beforeAll(async ({ request }) => {
     if (!fs.existsSync(EVIDENCE_DIR)) {
-      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+      try {
+        fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+      } catch {
+        // Fall back gracefully
+      }
+    }
+    settingsBefore = await captureSettings(request, GATE_SETTINGS);
+  });
+
+  test.afterEach(async ({ request }) => {
+    if (settingsBefore) {
+      await restoreSettings(request, settingsBefore);
+    }
+  });
+
+  test.afterAll(async ({ request }) => {
+    if (settingsBefore) {
+      await restoreSettings(request, settingsBefore);
     }
   });
 

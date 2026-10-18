@@ -591,6 +591,19 @@ async function main(): Promise<void> {
         '9. pay-rejected: display code is bill_already_paid',
       );
 
+      // Attempting positive cash payment on already-settled bill MUST ALSO reject with bill_already_paid (preventing phantom/unrecorded cash tender)
+      const extraCashPay = await pay(billId, { method: 'cash', amount: 50 });
+      assertEqual(
+        extraCashPay.status,
+        400,
+        '9. pay-rejected: positive cash payment on paid bill rejected with 400',
+      );
+      assertEqual(
+        extraCashPay.data.display_code,
+        'bill_already_paid',
+        '9. pay-rejected: cash display code is bill_already_paid',
+      );
+
       // Retrying single-line zero-balance settle (amount: null) succeeds cleanly
       const zeroRetry = await pay(billId, { method: 'cash', amount: null });
       assertEqual(
@@ -599,19 +612,6 @@ async function main(): Promise<void> {
         '9. retry: zero-balance omitted-amount settle retry succeeds',
       );
       assertEqual(zeroRetry.data.bill.payment_status, 'paid', '9. retry: bill remains paid');
-
-      // Retrying cash tender with positive amount on settled zero-balance bill succeeds with zero applied (change)
-      const cashRetry = await pay(billId, { method: 'cash', amount: 50 });
-      assertEqual(
-        cashRetry.status,
-        200,
-        '9. retry: cash tender on zero-balance paid bill succeeds',
-      );
-      assertEqual(
-        cashRetry.data.bill.payment_status,
-        'paid',
-        '9. retry: bill remains paid after cash retry',
-      );
 
       // Payment details must strictly reflect ONLY the actual 600 tendered cash, never phantom entries
       const recordedPayments = JSON.parse(billRow(db, billId).payment_details || '[]');
@@ -702,6 +702,229 @@ async function main(): Promise<void> {
         'available',
         '10. sibling: table released to available',
       );
+    }
+
+    // ── 11. Kitchen Delivery Gate on Exact-Balance Settlement & Zero-Balance Retries ──
+    console.log(
+      '\n─── 11. Kitchen Delivery Gate on Exact-Balance Settlement & Zero-Balance Retries ───',
+    );
+    {
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
+      setSetting(db, 'kds_enabled', 'true');
+      setSetting(db, 'billing_type', 'postpaid');
+
+      // Subtest 11a: Bill discount reduces balance to 0 while kitchen items pending (no override)
+      const create11a = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-eb-1',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      assertEqual(create11a.status, 201, '11a. dine-in order created');
+      const orderId11a = create11a.data.order.id;
+
+      const gen11a = await generateBill(orderId11a);
+      const billId11a = gen11a.data.bill.id;
+
+      // Pay 600 cash while items not yet in kitchen
+      const pay11a = await pay(billId11a, { method: 'cash', amount: 600 });
+      assertEqual(pay11a.status, 200, '11a. pay 600 accepted');
+
+      // Now enable kitchen delivery requirement and mark order item as preparing
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(orderId11a);
+
+      // Discount bill by 400 without override PIN -> balance becomes 0, but bill MUST NOT settle to paid!
+      const disc11a = await applyBillDiscount(billId11a, { type: 'amount', value: 400 });
+      assertEqual(disc11a.status, 200, '11a. bill discount applied');
+      const bill11aAfterDisc = billRow(db, billId11a);
+      assertEqual(
+        Number(bill11aAfterDisc.balance),
+        0,
+        '11a. bill balance is 0 after exact-balance discount',
+      );
+      assertEqual(
+        bill11aAfterDisc.payment_status,
+        'partial',
+        '11a. bill payment_status remains partial due to pending kitchen delivery',
+      );
+      assertEqual(
+        bill11aAfterDisc.paid_at,
+        null,
+        '11a. paid_at remains null due to pending kitchen delivery',
+      );
+      assertEqual(
+        orderRow(db, orderId11a).status !== 'completed',
+        true,
+        '11a. order remains active (not completed)',
+      );
+      assertEqual(tableRow(db, 'table-eb-1').status, 'occupied', '11a. table remains occupied');
+
+      // Zero-balance payment retry without manager override PIN -> rejected with 409 kitchen_undelivered
+      const retryNoPin = await pay(billId11a, { method: 'cash', amount: null });
+      assertEqual(
+        retryNoPin.status,
+        409,
+        '11a. zero-balance retry rejected with 409 when kitchen delivery pending',
+      );
+      assertEqual(
+        retryNoPin.data.display_code,
+        'kitchen_undelivered',
+        '11a. display_code is kitchen_undelivered',
+      );
+
+      // Positive payment attempt on 0-balance bill -> rejected with 400 payment_exceeds_balance
+      const retryPos = await pay(billId11a, { method: 'cash', amount: 50 });
+      assertEqual(retryPos.status, 400, '11a. positive tender on 0-balance bill rejected with 400');
+      assertEqual(
+        retryPos.data.display_code,
+        'payment_exceeds_balance',
+        '11a. display_code is payment_exceeds_balance',
+      );
+
+      // Zero-balance payment retry with valid manager override PIN -> succeeds!
+      const retryWithPin = await pay(billId11a, {
+        method: 'cash',
+        amount: null,
+        override_pin: '1234',
+        approver_id: managerId,
+      });
+      assertEqual(
+        retryWithPin.status,
+        200,
+        '11a. zero-balance retry with manager PIN override succeeds with 200',
+      );
+      const bill11aFinal = billRow(db, billId11a);
+      assertEqual(
+        bill11aFinal.payment_status,
+        'paid',
+        '11a. bill payment_status transitions to paid after override',
+      );
+      assertEqual(
+        Boolean(bill11aFinal.paid_at),
+        true,
+        '11a. paid_at timestamp is set after override',
+      );
+      assertEqual(
+        orderRow(db, orderId11a).status,
+        'completed',
+        '11a. order transitions to completed after override',
+      );
+      assertEqual(
+        tableRow(db, 'table-eb-1').status,
+        'available',
+        '11a. table released to available after override',
+      );
+
+      // Verify kitchen_delivery_override audit log was recorded
+      const overrideAudit = db
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
+        .get(orderId11a) as any;
+      assert(Boolean(overrideAudit), '11a. kitchen_delivery_override audit log recorded');
+
+      // Subtest 11b: Order discount with pending kitchen items but valid manager override_pin
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
+      const create11b = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-eb-1',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      const orderId11b = create11b.data.order.id;
+      const gen11b = await generateBill(orderId11b);
+      const billId11b = gen11b.data.bill.id;
+
+      const pay11b = await pay(billId11b, { method: 'cash', amount: 600 });
+      assertEqual(pay11b.status, 200, '11b. pay 600 accepted');
+
+      // Enable kitchen delivery requirement and mark item as preparing
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(orderId11b);
+
+      // Apply order discount with manager override PIN
+      const disc11b = await applyOrderDiscount(orderId11b, {
+        discount_type: 'amount',
+        discount_value: 400,
+        override_pin: '1234',
+        approver_id: managerId,
+      });
+      assertEqual(disc11b.status, 200, '11b. order discount with manager PIN applied');
+      const bill11bFinal = billRow(db, billId11b);
+      assertEqual(
+        bill11bFinal.payment_status,
+        'paid',
+        '11b. bill auto-settles to paid when manager override PIN supplied in discount',
+      );
+      assertEqual(
+        orderRow(db, orderId11b).status,
+        'completed',
+        '11b. order completes with manager override',
+      );
+      assertEqual(
+        tableRow(db, 'table-eb-1').status,
+        'available',
+        '11b. table released to available with manager override',
+      );
+
+      // Subtest 11c: Item discount with pending kitchen items -> served transition -> zero-balance retry
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
+      const create11c = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-eb-1',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      const orderId11c = create11c.data.order.id;
+      const itemId11c = create11c.data.order.items[0].id;
+      const gen11c = await generateBill(orderId11c);
+      const billId11c = gen11c.data.bill.id;
+
+      const pay11c = await pay(billId11c, { method: 'cash', amount: 600 });
+      assertEqual(pay11c.status, 200, '11c. pay 600 accepted');
+
+      // Enable kitchen delivery requirement and mark item as preparing
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
+      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(orderId11c);
+
+      // Item discount reduces balance to 0 without override PIN
+      const disc11c = await itemDiscount(orderId11c, itemId11c, {
+        discount_type: 'amount',
+        discount_value: 400,
+      });
+      assertEqual(disc11c.status, 200, '11c. item discount applied');
+      assertEqual(
+        billRow(db, billId11c).payment_status,
+        'partial',
+        '11c. bill stays partial because kitchen items are preparing',
+      );
+
+      // Mark items as served (kitchen delivery satisfied)
+      db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderId11c);
+
+      // Now zero-balance retry succeeds without needing PIN!
+      const settle11c = await pay(billId11c, { method: 'cash', amount: null });
+      assertEqual(
+        settle11c.status,
+        200,
+        '11c. zero-balance settle succeeds after kitchen items served',
+      );
+      assertEqual(
+        billRow(db, billId11c).payment_status,
+        'paid',
+        '11c. bill transitions to paid after items served',
+      );
+      assertEqual(
+        orderRow(db, orderId11c).status,
+        'completed',
+        '11c. order transitions to completed',
+      );
+      assertEqual(
+        tableRow(db, 'table-eb-1').status,
+        'available',
+        '11c. table released to available',
+      );
+
+      // Restore settings
+      setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
     }
   } finally {
     server.close();

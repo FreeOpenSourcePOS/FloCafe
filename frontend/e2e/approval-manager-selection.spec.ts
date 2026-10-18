@@ -3,7 +3,13 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import { setLanguage, setOrdersLayout, getE2eToken } from './helpers/test-auth';
+import {
+  setLanguage,
+  readOrdersLayout,
+  setOrdersLayout,
+  type E2EOrdersLayout,
+  getE2eToken,
+} from './helpers/test-auth';
 import { captureSettings, restoreSettings } from './helpers/kitchen-fixture';
 
 const EVIDENCE_DIR =
@@ -21,6 +27,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
   let managerAliceId: string;
   let managerBobId: string;
   let settingsBefore: Map<string, string | undefined>;
+  let ordersLayoutBefore: E2EOrdersLayout = 'split';
 
   test.beforeAll(async ({ request }) => {
     if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -33,7 +40,12 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     settingsBefore = await captureSettings(request, GATE_SETTINGS);
   });
 
-  test.afterEach(async ({ request }) => {
+  test.afterEach(async ({ page, request }) => {
+    try {
+      await setOrdersLayout(page, ordersLayoutBefore, BASE, ownerToken);
+    } catch {
+      // Ignore layout restoration error if page closed
+    }
     if (settingsBefore) {
       await restoreSettings(request, settingsBefore);
     }
@@ -65,6 +77,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
   test.beforeEach(async ({ page }) => {
     ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
     headers = { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' };
+    ordersLayoutBefore = await readOrdersLayout(page, BASE, ownerToken);
 
     // Login via UI
     await page.goto(`${BASE}/auth/login`);
@@ -72,7 +85,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     await page.locator('#password').fill('E2ePass123!');
     await page.locator('button[type="submit"]').click();
     await setLanguage(page, 'en');
-    await setOrdersLayout(page, 'cards');
+    await setOrdersLayout(page, 'cards', BASE, ownerToken);
   });
 
   test('Scenarios 1 & 2: Kitchen Delivery Override binds manager selection and rejects mismatch', async ({

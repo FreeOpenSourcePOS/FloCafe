@@ -139,7 +139,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const managerApprovers = useManagerApprovers();
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
-  const [discountApproverId, setDiscountApproverId] = useState('');
+  const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
   const previewDiscount = useMemo(() => {
@@ -469,7 +469,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         return;
       }
     }
-    const effectiveDiscountApproverId = discountApproverId || managerApprovers.selectedApproverId;
+    const effectiveDiscountApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
     if (preview.discountAmount > 0 && discountRequiresApproval) {
       if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
         toast.error(t('managerPinRequired'));
@@ -781,7 +781,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   <ApproverSelect
                     id="prepaidDiscountApprover"
                     approvers={managerApprovers.approvers}
-                    selectedApproverId={discountApproverId || managerApprovers.selectedApproverId}
+                    selectedApproverId={discountApproverId ?? managerApprovers.selectedApproverId}
                     onSelectApprover={(id) => {
                       setDiscountApproverId(id);
                       setDiscountPin('');
@@ -809,7 +809,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                     setDiscountValue('');
                     setDiscountReason('');
                     setDiscountPin('');
-                    setDiscountApproverId('');
+                    setDiscountApproverId(null);
                     setPaymentsTouched(false);
                   }}
                 >

@@ -90,7 +90,7 @@ interface CancelModal {
   freeTable: boolean;
   overridePin: string;
   requiresPin?: boolean;
-  approverId?: string;
+  approverId?: string | null;
 }
 
 function orderHasCollectedPayment(order: Order): boolean {
@@ -127,7 +127,7 @@ interface VoidItemModal {
   itemId: number;
   productName: string;
   overridePin: string;
-  approverId?: string;
+  approverId?: string | null;
 }
 
 interface DiscountModal {
@@ -226,7 +226,7 @@ export default function OrdersPage() {
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
-  const [discountApproverId, setDiscountApproverId] = useState('');
+  const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
 
   // Manager approver list for privileged write approvals
   const managerApprovers = useManagerApprovers();
@@ -329,6 +329,7 @@ export default function OrdersPage() {
     if (discountMode === 'none') {
       setDiscountModal(null);
       setDiscountPin('');
+      setDiscountApproverId(null);
     }
   }
 
@@ -1155,11 +1156,7 @@ export default function OrdersPage() {
   const handleVoidItem = async () => {
     if (!voidItemModal) return;
     const effectiveApproverId =
-      voidItemModal.approverId ||
-      managerApprovers.selectedApproverId ||
-      (managerApprovers.approvers.length === 1
-        ? String(managerApprovers.approvers[0].id)
-        : undefined);
+      voidItemModal.approverId ?? managerApprovers.selectedApproverId;
     setVoidingItem(true);
     try {
       await api.patch(`/orders/${voidItemModal.orderId}/items/${voidItemModal.itemId}/cancel`, {
@@ -1240,11 +1237,7 @@ export default function OrdersPage() {
     }
 
     const effectiveApproverId =
-      discountApproverId ||
-      managerApprovers.selectedApproverId ||
-      (managerApprovers.approvers.length === 1
-        ? String(managerApprovers.approvers[0].id)
-        : undefined);
+      discountApproverId ?? managerApprovers.selectedApproverId;
 
     const operationId = createOperationReference();
     try {
@@ -1258,7 +1251,7 @@ export default function OrdersPage() {
             discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
           approver_id:
             discountRequiresApproval && normalizedDiscountValue > 0
-              ? effectiveApproverId
+              ? effectiveApproverId || undefined
               : undefined,
         },
         { headers: operationHeaders(operationId) },
@@ -1293,7 +1286,7 @@ export default function OrdersPage() {
     } finally {
       setDiscountModal(null);
       setDiscountPin('');
-      setDiscountApproverId('');
+      setDiscountApproverId(null);
     }
   };
 
@@ -1498,11 +1491,7 @@ export default function OrdersPage() {
 
     const isPinRequired = cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order);
     const effectiveApproverId =
-      cancelModal.approverId ||
-      managerApprovers.selectedApproverId ||
-      (managerApprovers.approvers.length === 1
-        ? String(managerApprovers.approvers[0].id)
-        : undefined);
+      cancelModal.approverId ?? managerApprovers.selectedApproverId;
 
     setCancellingOrderId(cancelModal.order.id);
     try {
@@ -1511,7 +1500,10 @@ export default function OrdersPage() {
         reason: cancelModal.reason || undefined,
         free_table: cancelModal.freeTable,
         override_pin: cancelModal.overridePin || undefined,
-        approver_id: isPinRequired && cancelModal.overridePin ? effectiveApproverId : undefined,
+        approver_id:
+          isPinRequired && cancelModal.overridePin && effectiveApproverId
+            ? effectiveApproverId
+            : undefined,
       });
       toast.success(tOrders('orderCancelled'));
       setCancelModal(null);
@@ -1820,7 +1812,7 @@ export default function OrdersPage() {
                   reason: '',
                   freeTable: true,
                   overridePin: '',
-                  approverId: managerApprovers.selectedApproverId,
+                  approverId: null,
                 })
               }
               onPrint={(billId) => setConfirmPrintBillId(billId)}
@@ -1857,7 +1849,7 @@ export default function OrdersPage() {
                   itemId,
                   productName,
                   overridePin: '',
-                  approverId: managerApprovers.selectedApproverId,
+                  approverId: null,
                 })
               }
               onRestoreItem={restoreItem}
@@ -1900,7 +1892,7 @@ export default function OrdersPage() {
                   reason: '',
                   freeTable: true,
                   overridePin: '',
-                  approverId: managerApprovers.selectedApproverId,
+                  approverId: null,
                 })
               }
               onPrint={(billId) => setConfirmPrintBillId(billId)}
@@ -1936,7 +1928,7 @@ export default function OrdersPage() {
                   itemId,
                   productName,
                   overridePin: '',
-                  approverId: managerApprovers.selectedApproverId,
+                  approverId: null,
                 })
               }
               onRestoreItem={restoreItem}
@@ -2083,7 +2075,7 @@ export default function OrdersPage() {
                     id="cancelApproverSelect"
                     approvers={managerApprovers.approvers}
                     selectedApproverId={
-                      cancelModal.approverId || managerApprovers.selectedApproverId
+                      cancelModal.approverId ?? managerApprovers.selectedApproverId
                     }
                     onSelectApprover={(id) =>
                       updateCancelModal({ approverId: id, overridePin: '' })
@@ -2124,7 +2116,7 @@ export default function OrdersPage() {
                   ((cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order)) &&
                     (!cancelModal.overridePin ||
                       (managerApprovers.approvers.length > 1 &&
-                        !(cancelModal.approverId || managerApprovers.selectedApproverId))))
+                        !(cancelModal.approverId ?? managerApprovers.selectedApproverId))))
                 }
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2160,7 +2152,7 @@ export default function OrdersPage() {
               <ApproverSelect
                 id="voidApproverSelect"
                 approvers={managerApprovers.approvers}
-                selectedApproverId={voidItemModal.approverId || managerApprovers.selectedApproverId}
+                selectedApproverId={voidItemModal.approverId ?? managerApprovers.selectedApproverId}
                 onSelectApprover={(id) =>
                   setVoidItemModal({ ...voidItemModal, approverId: id, overridePin: '' })
                 }
@@ -2200,7 +2192,7 @@ export default function OrdersPage() {
                   voidingItem ||
                   !voidItemModal.overridePin ||
                   (managerApprovers.approvers.length > 1 &&
-                    !(voidItemModal.approverId || managerApprovers.selectedApproverId))
+                    !(voidItemModal.approverId ?? managerApprovers.selectedApproverId))
                 }
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2345,7 +2337,7 @@ export default function OrdersPage() {
                 <ApproverSelect
                   id="discountApproverSelect"
                   approvers={managerApprovers.approvers}
-                  selectedApproverId={discountApproverId || managerApprovers.selectedApproverId}
+                  selectedApproverId={discountApproverId ?? managerApprovers.selectedApproverId}
                   onSelectApprover={(id) => {
                     setDiscountApproverId(id);
                     setDiscountPin('');
@@ -2371,7 +2363,14 @@ export default function OrdersPage() {
             )}
 
             <div className="flex justify-end gap-2 mt-6">
-              <Button variant="outline" size="sm" onClick={() => setDiscountModal(null)}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDiscountModal(null);
+                  setDiscountApproverId(null);
+                }}
+              >
                 {tCommon('cancel')}
               </Button>
               <Button
@@ -2382,7 +2381,7 @@ export default function OrdersPage() {
                   (discountRequiresApproval &&
                     (!discountPin ||
                       (managerApprovers.approvers.length > 1 &&
-                        !(discountApproverId || managerApprovers.selectedApproverId))))
+                        !(discountApproverId ?? managerApprovers.selectedApproverId))))
                 }
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >

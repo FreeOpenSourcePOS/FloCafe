@@ -189,7 +189,7 @@ export default function PaymentModal({
     Boolean(initialOverridePin),
   );
   const [kitchenOverridePin, setKitchenOverridePin] = useState(initialOverridePin || '');
-  const [kitchenApproverId, setKitchenApproverId] = useState('');
+  const [kitchenApproverId, setKitchenApproverId] = useState<string | null>(null);
   const [kitchenUndeliveredCount, setKitchenUndeliveredCount] = useState(0);
   const [kitchenUndeliveredItems, setKitchenUndeliveredItems] = useState<string[]>([]);
   const [kitchenDeliveryError, setKitchenDeliveryError] = useState('');
@@ -213,7 +213,7 @@ export default function PaymentModal({
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
-  const [discountApproverId, setDiscountApproverId] = useState('');
+  const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
@@ -827,7 +827,7 @@ export default function PaymentModal({
       toast.error(t('discountInvalid'));
       return;
     }
-    const effectiveDiscountApproverId = discountApproverId || managerApprovers.selectedApproverId;
+    const effectiveDiscountApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
     // Check if PIN is required
     if (discountRequiresApproval && val > 0) {
       if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
@@ -860,7 +860,7 @@ export default function PaymentModal({
       );
       toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
-      setDiscountApproverId('');
+      setDiscountApproverId(null);
       if (val === 0) {
         setShowDiscount(false);
         setDiscountValue('');
@@ -1050,7 +1050,7 @@ export default function PaymentModal({
     inFlightRef.current = true;
     setProcessing(true);
     setRequestFailure(null);
-    const effectiveKitchenApproverId = kitchenApproverId || managerApprovers.selectedApproverId;
+    const effectiveKitchenApproverId = kitchenApproverId ?? managerApprovers.selectedApproverId;
     try {
       const res = await api.post(
         attempt.zeroBalance ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
@@ -1490,7 +1490,7 @@ export default function PaymentModal({
                 <ApproverSelect
                   id="kitchenApproverSelect"
                   approvers={managerApprovers.approvers}
-                  selectedApproverId={kitchenApproverId || managerApprovers.selectedApproverId}
+                  selectedApproverId={kitchenApproverId ?? managerApprovers.selectedApproverId}
                   onSelectApprover={(id) => {
                     setKitchenApproverId(id);
                     setKitchenOverridePin('');
@@ -1761,7 +1761,7 @@ export default function PaymentModal({
                           id="paymentDiscountApprover"
                           approvers={managerApprovers.approvers}
                           selectedApproverId={
-                            discountApproverId || managerApprovers.selectedApproverId
+                            discountApproverId ?? managerApprovers.selectedApproverId
                           }
                           onSelectApprover={(id) => {
                             setDiscountApproverId(id);
@@ -1796,7 +1796,7 @@ export default function PaymentModal({
                           parseFloat(discountValue) > 0 &&
                           (!discountPin ||
                             (managerApprovers.approvers.length > 1 &&
-                              !(discountApproverId || managerApprovers.selectedApproverId))))
+                              !(discountApproverId ?? managerApprovers.selectedApproverId))))
                       }
                       className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                     >
@@ -2273,7 +2273,7 @@ export default function PaymentModal({
                   (kitchenUndeliveredCount > 0 &&
                     (!kitchenOverridePin ||
                       (managerApprovers.approvers.length > 1 &&
-                        !(kitchenApproverId || managerApprovers.selectedApproverId))))
+                        !(kitchenApproverId ?? managerApprovers.selectedApproverId))))
                 }
                 className="w-full"
                 size="lg"

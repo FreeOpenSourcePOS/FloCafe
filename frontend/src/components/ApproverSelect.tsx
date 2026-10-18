@@ -14,6 +14,8 @@ export interface ApproverSelectProps {
   id?: string;
   label?: string;
   placeholder?: string;
+  loadFailedMessage?: string;
+  emptyMessage?: string;
   className?: string;
 }
 
@@ -27,6 +29,8 @@ export function ApproverSelect({
   id = 'approverSelect',
   label,
   placeholder,
+  loadFailedMessage,
+  emptyMessage,
   className = '',
 }: ApproverSelectProps) {
   const tOrders = useTranslations('orders');
@@ -45,7 +49,7 @@ export function ApproverSelect({
       <p
         className={`rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 ${className}`}
       >
-        {tOrders('refundApproverLoadFailed')}
+        {loadFailedMessage || tOrders('refundApproverLoadFailed')}
       </p>
     );
   }
@@ -55,7 +59,7 @@ export function ApproverSelect({
       <div
         className={`rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 ${className}`}
       >
-        <p>{tOrders('refundApprovalSetupStaff')}</p>
+        <p>{emptyMessage || tOrders('refundApprovalSetupStaff')}</p>
       </div>
     );
   }

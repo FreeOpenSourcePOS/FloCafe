@@ -72,7 +72,8 @@ function loadFrontendModules() {
 const { posSettings, webPrint, i18n, receiptSync, authStore, frontendApi } = loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
-const { canSyncReceiptSettings, ensureReceiptSettingsLoaded, resetReceiptSettingsSyncForTests } = receiptSync;
+const { canSyncReceiptSettings, ensureReceiptSettingsLoaded, resetReceiptSettingsSyncForTests } =
+  receiptSync;
 const { useAuthStore } = authStore;
 
 async function runTests() {
@@ -482,7 +483,11 @@ async function runTests() {
 
     // Unauthenticated request cannot read business settings
     const unauthGetRes = await api(baseUrl, '/api/settings/business');
-    assertEqualOrThrow(unauthGetRes.status, 401, 'Unauthenticated GET /api/settings/business returns 401');
+    assertEqualOrThrow(
+      unauthGetRes.status,
+      401,
+      'Unauthenticated GET /api/settings/business returns 401',
+    );
 
     // Cashier CANNOT mutate business settings (requires settings.manage)
     const cashierPutRes = await api(baseUrl, '/api/settings/business', {
@@ -503,7 +508,11 @@ async function runTests() {
       '\n7. Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race (#1225)',
     );
     // canSyncReceiptSettings checks role/permissions
-    assertEqualOrThrow(canSyncReceiptSettings(null), false, 'canSyncReceiptSettings(null) is false');
+    assertEqualOrThrow(
+      canSyncReceiptSettings(null),
+      false,
+      'canSyncReceiptSettings(null) is false',
+    );
     assertEqualOrThrow(
       canSyncReceiptSettings({ role: 'owner', permission_ids: ['settings.view'] }),
       true,

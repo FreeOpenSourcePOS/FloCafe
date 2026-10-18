@@ -2270,10 +2270,11 @@ export default function PaymentModal({
                   Boolean(updatingChargeId) ||
                   chargeStateUncertain ||
                   (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
-                  (kitchenUndeliveredCount > 0 &&
-                    (!kitchenOverridePin ||
-                      (managerApprovers.approvers.length > 1 &&
-                        !(kitchenApproverId ?? managerApprovers.selectedApproverId))))
+                  Boolean(
+                    kitchenOverridePin &&
+                      managerApprovers.approvers.length > 1 &&
+                      !(kitchenApproverId ?? managerApprovers.selectedApproverId),
+                  )
                 }
                 className="w-full"
                 size="lg"

@@ -494,13 +494,13 @@ async function runModalKeypadIntegrationTests() {
         PaymentModal,
         { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
         'PaymentModal',
-        4,
+        6,
       ],
       [
         PrepaidCheckoutModal,
         { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
         'PrepaidCheckoutModal',
-        3,
+        4,
       ],
     ] as const) {
       const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
@@ -535,13 +535,13 @@ async function runModalKeypadIntegrationTests() {
             PaymentModal,
             { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined },
             'PaymentModal',
-            4,
+            6,
           ],
           [
             PrepaidCheckoutModal,
             { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined },
             'PrepaidCheckoutModal',
-            3,
+            4,
           ],
         ] as const) {
           await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));

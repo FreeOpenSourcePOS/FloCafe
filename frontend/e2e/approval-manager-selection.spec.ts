@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { setLanguage, setOrdersLayout, getE2eToken } from './helpers/test-auth';
 
-const EVIDENCE_DIR = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M58BA03R9W302NZRCX6ESTER';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'flocafe-approval-manager-selection-evidence');
 
 test.describe('Explicit Manager Selection for Approvals and Kitchen Override', () => {
   let ownerToken: string;

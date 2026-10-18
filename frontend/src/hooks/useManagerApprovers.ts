@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 import type { Staff } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
@@ -12,11 +12,7 @@ export interface UseManagerApproversOptions {
 
 export function useManagerApprovers(options?: UseManagerApproversOptions) {
   const { user } = useAuthStore();
-  const allowedRolesOption = options?.allowedRoles;
-  const allowedRoles = useMemo(
-    () => allowedRolesOption || ROLE_ACCESS.ownerManager,
-    [allowedRolesOption],
-  );
+  const allowedRoles = options?.allowedRoles || ROLE_ACCESS.ownerManager;
 
   const [approvers, setApprovers] = useState<Staff[]>([]);
   const [selectedApproverId, setSelectedApproverId] = useState('');

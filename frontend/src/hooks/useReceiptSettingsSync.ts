@@ -20,6 +20,10 @@ let syncPromise: Promise<void> | null = null;
 let isHydrated = false;
 
 export function syncReceiptSettings(): Promise<void> {
+  if (syncPromise) {
+    return syncPromise;
+  }
+
   const currentTenant = useAuthStore.getState().currentTenant;
   if (!canSyncReceiptSettings(currentTenant)) {
     return Promise.resolve();
@@ -44,11 +48,10 @@ export function syncReceiptSettings(): Promise<void> {
 }
 
 export async function ensureReceiptSettingsLoaded(): Promise<void> {
-  if (isHydrated) return;
   if (syncPromise) {
     await syncPromise;
-    return;
   }
+  if (isHydrated) return;
   await syncReceiptSettings();
 }
 

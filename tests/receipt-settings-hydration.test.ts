@@ -55,19 +55,21 @@ function loadFrontendModules() {
   };
 
   try {
+    const apiModule = require('../frontend/src/lib/api');
     return {
       posSettings: require('../frontend/src/store/pos-settings'),
       webPrint: require('../frontend/src/lib/printer/web-print'),
       i18n: require('../frontend/src/lib/i18n'),
       receiptSync: require('../frontend/src/hooks/useReceiptSettingsSync'),
       authStore: require('../frontend/src/store/auth'),
+      frontendApi: apiModule.default || apiModule,
     };
   } finally {
     Module._resolveFilename = originalResolveFilename;
   }
 }
 
-const { posSettings, webPrint, i18n, receiptSync, authStore } = loadFrontendModules();
+const { posSettings, webPrint, i18n, receiptSync, authStore, frontendApi } = loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
 const { canSyncReceiptSettings, ensureReceiptSettingsLoaded, resetReceiptSettingsSyncForTests } = receiptSync;
@@ -535,6 +537,13 @@ async function runTests() {
 
     // Test ensureReceiptSettingsLoaded with mocked tenant in authStore
     resetReceiptSettingsSyncForTests();
+    usePosSettingsStore.setState({
+      billAddress: '',
+      billFooterMessage: '',
+    });
+    frontendApi.defaults.baseURL = `${baseUrl}/api`;
+    frontendApi.defaults.headers.common['Authorization'] = `Bearer ${cashier.token}`;
+
     useAuthStore.setState({
       currentTenant: {
         id: 'tenant-1',
@@ -549,8 +558,23 @@ async function runTests() {
     const ensurePromise2 = ensureReceiptSettingsLoaded();
     await Promise.all([ensurePromise1, ensurePromise2]);
 
+    const stateAfterSync = usePosSettingsStore.getState();
+    assertEqualOrThrow(
+      stateAfterSync.billAddress,
+      '123 Pier Way, Seattle, WA',
+      'ensureReceiptSettingsLoaded hydrates billAddress from API',
+    );
+    assertEqualOrThrow(
+      stateAfterSync.billFooterMessage,
+      'Updated footer: Visit us online!',
+      'ensureReceiptSettingsLoaded hydrates billFooterMessage from API',
+    );
+
     // Subsequent call resolves immediately
     await ensureReceiptSettingsLoaded();
+
+    delete frontendApi.defaults.headers.common['Authorization'];
+    frontendApi.defaults.baseURL = '/api';
 
     // Verify offline resilience: failure resolves without throwing
     resetReceiptSettingsSyncForTests();
@@ -563,6 +587,8 @@ async function runTests() {
     // For unauthorized role or network failure, ensureReceiptSettingsLoaded resolves cleanly
     await ensureReceiptSettingsLoaded();
   } finally {
+    delete frontendApi.defaults.headers.common['Authorization'];
+    frontendApi.defaults.baseURL = '/api';
     server.close();
   }
 

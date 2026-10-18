@@ -218,9 +218,9 @@ async function run() {
       'password mentions are sanitized',
     );
     assertEqualOrThrow(
-      sanitizeServerError('A'.repeat(201)),
-      null,
-      'oversized errors (>200 chars) are sanitized',
+      sanitizeServerError('A'.repeat(300))?.length,
+      255,
+      'oversized errors are bounded to 255 chars',
     );
     assertEqualOrThrow(
       sanitizeServerError('Line one\nLine two'),

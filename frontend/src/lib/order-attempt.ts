@@ -463,40 +463,45 @@ function plainRecord(value: unknown): value is Record<string, unknown> {
 export function sanitizeServerError(rawError: unknown): string | null {
   if (typeof rawError !== 'string') return null;
   const trimmed = rawError.trim();
-  if (!trimmed || trimmed.length > 200) return null;
+  if (!trimmed) return null;
+  const bounded = trimmed.length > 255 ? trimmed.slice(0, 255) : trimmed;
   if (
-    /[\r\n]/.test(trimmed) ||
-    /\bat\s+\S+\s+\(/.test(trimmed) ||
-    /\bat\s+.*:\d+:\d+/.test(trimmed)
+    /[\r\n]/.test(bounded) ||
+    /\bat\s+\S+\s+\(/.test(bounded) ||
+    /\bat\s+.*:\d+:\d+/.test(bounded)
   ) {
     return null;
   }
   if (
     /(?:sqlite|syntax error|database (?:locked|disk image)|no such (?:table|column)|foreign key constraint|unique constraint|primary key constraint|check constraint|table\s+\w+|column\s+\w+|select\s+.+from|insert\s+into|update\s+.+set|delete\s+from|drop\s+table|alter\s+table)/i.test(
-      trimmed,
+      bounded,
     )
   ) {
     return null;
   }
   if (
     /^(?:[A-Z][a-zA-Z0-9_]*(?:Error|Exception)|TypeError|RangeError|SyntaxError|ReferenceError|SystemError):/i.test(
-      trimmed,
+      bounded,
     )
   ) {
     return null;
   }
   if (
-    /\b(?:ENOENT|EACCES|EPERM|ECONNREFUSED|ECONNRESET|EADDRINUSE|ETIMEDOUT|EPIPE)\b/i.test(trimmed)
+    /\b(?:ENOENT|EACCES|EPERM|ECONNREFUSED|ECONNRESET|EADDRINUSE|ETIMEDOUT|EPIPE)\b/i.test(bounded)
   ) {
     return null;
   }
-  if (/(?:^|[\s"'`])(?:(?:\/|[a-zA-Z]:[\\/])\w+|(?:\.\.?[\\/]\w+))/i.test(trimmed)) {
+  if (/(?:^|[\s"'`])(?:(?:\/|[a-zA-Z]:[\\/])\w+|(?:\.\.?[\\/]\w+))/i.test(bounded)) {
     return null;
   }
-  if (/\b(?:bearer\s+[a-zA-Z0-9._-]+|jwt|api[_-]?key|password|secret)\b/i.test(trimmed)) {
+  if (
+    /\b(?:bearer\s+[a-zA-Z0-9._-]+|jwt|api[_-]?key|client[_-]?secret|secret[_-]?key|private[_-]?key|password)\b/i.test(
+      bounded,
+    )
+  ) {
     return null;
   }
-  return trimmed;
+  return bounded;
 }
 
 /** Trusts additive server metadata only when the closed tuple and operation reference match. */

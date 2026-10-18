@@ -320,57 +320,72 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
   test('Scenario 4: ApproverSelect displays graceful warning when no managers have PINs', async ({
     page,
   }) => {
-    // Temporarily clear PINs from all managers
-    const staffListRes = await page.request.get(`${BASE}/api/staff?active=true`, { headers });
-    const { staff } = await staffListRes.json();
-    for (const member of staff) {
-      if (['owner', 'manager'].includes(member.role) && member.has_pin) {
-        await page.request.put(`${BASE}/api/staff/${member.id}`, {
+    try {
+      // Temporarily clear PINs from all managers
+      const staffListRes = await page.request.get(`${BASE}/api/staff?active=true`, { headers });
+      const { staff } = await staffListRes.json();
+      for (const member of staff) {
+        if (['owner', 'manager'].includes(member.role) && member.has_pin) {
+          await page.request.put(`${BASE}/api/staff/${member.id}`, {
+            headers,
+            data: { pin: '' },
+          });
+        }
+      }
+
+      // Create an order and mark item as preparing
+      const orderRes = await page.request.post(`${BASE}/api/orders`, {
+        headers,
+        data: {
+          type: 'takeaway',
+          items: [{ product_id: 'e2e-product', quantity: 1 }],
+        },
+      });
+      const { order } = await orderRes.json();
+
+      const detailRes = await page.request.get(`${BASE}/api/orders/${order.id}`, { headers });
+      const detail = await detailRes.json();
+      const itemId = detail.order.items[0].id;
+      await page.request.patch(`${BASE}/api/order-items/${itemId}/status`, {
+        headers,
+        data: { status: 'preparing' },
+      });
+
+      await page.goto(`${BASE}/orders`);
+      await page
+        .getByPlaceholder(/search/i)
+        .first()
+        .fill(order.order_number);
+      const card = page
+        .locator('div.bg-card')
+        .filter({ hasText: `#${order.order_number}` })
+        .first();
+      await expect(card).toBeVisible();
+
+      const voidBtn = card.locator('button[title="Void item"]').first();
+      await expect(voidBtn).toBeVisible();
+      await voidBtn.click();
+
+      const emptyAlert = page.getByText('Approval is not configured');
+      await expect(emptyAlert).toBeVisible();
+
+      await page.screenshot({
+        path: path.join(EVIDENCE_DIR, 'scenario-4-approver-select-empty-state.png'),
+      });
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    } finally {
+      if (managerAliceId) {
+        await page.request.put(`${BASE}/api/staff/${managerAliceId}`, {
           headers,
-          data: { pin: '' },
+          data: { pin: '1111' },
+        });
+      }
+      if (managerBobId) {
+        await page.request.put(`${BASE}/api/staff/${managerBobId}`, {
+          headers,
+          data: { pin: '2222' },
         });
       }
     }
-
-    // Create an order and mark item as preparing
-    const orderRes = await page.request.post(`${BASE}/api/orders`, {
-      headers,
-      data: {
-        type: 'takeaway',
-        items: [{ product_id: 'e2e-product', quantity: 1 }],
-      },
-    });
-    const { order } = await orderRes.json();
-
-    const detailRes = await page.request.get(`${BASE}/api/orders/${order.id}`, { headers });
-    const detail = await detailRes.json();
-    const itemId = detail.order.items[0].id;
-    await page.request.patch(`${BASE}/api/order-items/${itemId}/status`, {
-      headers,
-      data: { status: 'preparing' },
-    });
-
-    await page.goto(`${BASE}/orders`);
-    await page
-      .getByPlaceholder(/search/i)
-      .first()
-      .fill(order.order_number);
-    const card = page
-      .locator('div.bg-card')
-      .filter({ hasText: `#${order.order_number}` })
-      .first();
-    await expect(card).toBeVisible();
-
-    const voidBtn = card.locator('button[title="Void item"]').first();
-    await expect(voidBtn).toBeVisible();
-    await voidBtn.click();
-
-    const emptyAlert = page.getByText('Approval is not configured');
-    await expect(emptyAlert).toBeVisible();
-
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-4-approver-select-empty-state.png'),
-    });
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   });
 });

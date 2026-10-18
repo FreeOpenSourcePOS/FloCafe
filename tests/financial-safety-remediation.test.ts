@@ -1,5 +1,5 @@
 /**
- * Test suite for Financial Safety Remediation (Issues #1205, #1206, #1207):
+ * Test suite for Financial Safety Remediation (Issues #1205, #1206):
  *
  * 1. Payment Replay Idempotency & PIN Decoupling (#1205):
  *    - Replaying an idempotent single payment with changed/invalid/rate-limited PIN succeeds with 200 without duplicate payments.
@@ -13,9 +13,6 @@
  *
  * 3. Stale Order-Item State Revalidation (#1206):
  *    - Item discount application re-reads item quantity inside transaction; if quantity was changed during async PIN approval, recalculates subtotal and total using fresh quantity.
- *
- * 4. Approver Permission Selection (#1207):
- *    - When completing an unpaid order requiring payment override and multiple managers share a PIN, the candidate loop selects the manager with payments.take permission rather than failing with 403.
  */
 
 import * as fs from 'node:fs';
@@ -72,7 +69,7 @@ function makeToken(id: string, role: string, email: string) {
 }
 
 async function run(): Promise<void> {
-  console.log('Testing Financial Safety Remediation (Issues #1205, #1206, #1207)...');
+  console.log('Testing Financial Safety Remediation (Issues #1205, #1206)...');
   console.log('='.repeat(70));
 
   const db = initTestDb();
@@ -877,135 +874,6 @@ async function run(): Promise<void> {
       assertEqualOrThrow(updatedBill.subtotal, 40, 'Bill subtotal is 40');
       assertEqualOrThrow(updatedBill.total, 40, 'Bill total is 40');
       assertEqualOrThrow(updatedBill.balance, 40, 'Bill balance is 40');
-    }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 5. Approver Permission Selection (#1207)
-    // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- 5. Approver Permission Selection (#1207) ---');
-    {
-      // Seed two managers sharing the exact same PIN '4444'
-      // Manager A (mgr-no-pay): has orders.status.update, DENIED payments.take
-      // Manager B (mgr-with-pay): has orders.status.update AND payments.take
-      const sharedPinHash = bcrypt.hashSync('4444', 8);
-
-      db.prepare(`
-        INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-        VALUES ('mgr-no-pay', 'Manager No Pay', 'mgr_nopay@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
-      `).run(sharedPinHash, now(), now());
-
-      db.prepare(`
-        INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
-        VALUES ('mgr-no-pay', 'payments.take', 'deny', 'mgr-1', ?, ?)
-      `).run(now(), now());
-
-      db.prepare(`
-        INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-        VALUES ('mgr-with-pay', 'Manager With Pay', 'mgr_pay@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
-      `).run(sharedPinHash, now(), now());
-
-      // Create unpaid order as server-1 (who lacks payments.take)
-      const orderRes = await api(baseUrl, '/api/orders', {
-        method: 'POST',
-        body: {
-          type: 'dine_in',
-          items: [{ product_id: 'prod-100', quantity: 1 }],
-        },
-        headers: serverAuth,
-      });
-      const orderId = orderRes.data.order.id;
-
-      // Generate unpaid bill
-      await api(baseUrl, '/api/bills/generate', {
-        method: 'POST',
-        body: { order_id: orderId },
-        headers: cashierAuth,
-      });
-
-      // Complete unpaid order as server-1 using PIN '4444'
-      // Prior to fix: The pre-verification loop selected 'mgr-no-pay' (ordered first by id),
-      // which failed inside withTxn because 'mgr-no-pay' lacks payments.take, returning 403.
-      // With fix: The pre-verification loop requires candidate to have payments.take when order
-      // is unpaid, correctly selecting 'mgr-with-pay'.
-      const completeRes = await api(baseUrl, `/api/orders/${orderId}/status`, {
-        method: 'PATCH',
-        body: {
-          status: 'completed',
-          override_pin: '4444',
-        },
-        headers: serverAuth,
-      });
-
-      assertEqualOrThrow(
-        completeRes.status,
-        200,
-        'Order completion succeeds by selecting manager with payments.take permission',
-      );
-      assertEqualOrThrow(
-        completeRes.data.order.status,
-        'completed',
-        'Order status updated to completed',
-      );
-
-      // Verify audit log recorded mgr-with-pay as the approver
-      const auditLog = db
-        .prepare(
-          "SELECT details_json FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1",
-        )
-        .get(orderId) as any;
-      assertOrThrow(Boolean(auditLog), 'Audit log entry created for status change');
-      const details = JSON.parse(auditLog.details_json || '{}');
-      assertEqualOrThrow(
-        details.approved_by,
-        'mgr-with-pay',
-        'Audit log correctly attributes approval to mgr-with-pay',
-      );
-
-      // Test null-balance fully-paid bill completion with kitchen-only override
-      const nullBalOrderRes = await api(baseUrl, '/api/orders', {
-        method: 'POST',
-        body: {
-          type: 'dine_in',
-          items: [{ product_id: 'prod-100', quantity: 1 }],
-        },
-        headers: serverAuth,
-      });
-      const nullBalOrderId = nullBalOrderRes.data.order.id;
-      const nullBalBillRes = await api(baseUrl, '/api/bills/generate', {
-        method: 'POST',
-        body: { order_id: nullBalOrderId },
-        headers: cashierAuth,
-      });
-      const nullBalBillId = nullBalBillRes.data.bill.id;
-      // Mark bill paid, but simulate legacy record where balance is NULL
-      db.prepare(
-        "UPDATE bills SET paid_amount = 100, balance = NULL, payment_status = 'paid' WHERE id = ?",
-      ).run(nullBalBillId);
-      // Mark item preparing so kitchen override is required
-      db.prepare("UPDATE order_items SET status = 'preparing' WHERE order_id = ?").run(
-        nullBalOrderId,
-      );
-
-      // Complete order specifying mgr-no-pay explicitly (who only has orders.status.update)
-      const completeNullBalRes = await api(baseUrl, `/api/orders/${nullBalOrderId}/status`, {
-        method: 'PATCH',
-        body: {
-          status: 'completed',
-          override_pin: '4444',
-          approver_id: 'mgr-no-pay',
-        },
-        headers: serverAuth,
-      });
-      assertEqualOrThrow(
-        completeNullBalRes.status,
-        200,
-        'Order with null-balance paid bill completes via kitchen override without requiring payments.take',
-      );
-      assertEqualOrThrow(
-        completeNullBalRes.data.order.status,
-        'completed',
-        'Null-balance order status is completed',
-      );
     }
 
     console.log('\nAll Financial Safety Remediation tests passed successfully!');

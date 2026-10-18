@@ -2411,32 +2411,6 @@ function evaluateOrderPaymentCompletion(
   };
 }
 
-function orderRequiresPaymentOverrideOnComplete(
-  db: ReturnType<typeof getDatabase>,
-  orderId: string | number,
-): boolean {
-  const currentOrder = db
-    .prepare('SELECT total, round_off FROM orders WHERE id = ?')
-    .get(orderId) as { total?: number | string; round_off?: number | string } | undefined;
-  if (!currentOrder) return false;
-  const currency = getTenantCurrency();
-  const minorFactor = getCurrencyMinorUnitFactor(currency);
-
-  const bills = db
-    .prepare(`
-      SELECT b.id, b.total, b.round_off, b.paid_amount,
-             COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents,
-             b.balance, b.payment_status, b.payment_details
-      FROM bills b
-      WHERE b.order_id = ?
-      ORDER BY b.id ASC
-    `)
-    .all(orderId) as OrderStatusBillEvaluationRow[];
-
-  const evaluation = evaluateOrderPaymentCompletion(currentOrder, bills, minorFactor);
-  return evaluation.requiresPaymentOverride;
-}
-
 router.patch(
   '/:id/status',
   orderWriteRateLimit,
@@ -2492,16 +2466,11 @@ router.patch(
                 )
                 .all() as PinApproverCandidate[]);
 
-          const requiresPaymentTake =
-            status === 'completed' &&
-            orderRequiresPaymentOverrideOnComplete(db, req.params.id as string);
-
           for (const candidate of candidateUsers) {
             if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.status.update') &&
-              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
-              (!requiresPaymentTake || hasPermission(candidate.id, 'payments.take'))
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
                 preVerifiedStatusApprover = {

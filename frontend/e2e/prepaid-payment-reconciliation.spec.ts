@@ -780,8 +780,8 @@ test('payment modal hides charge controls without bill discount permission', asy
         timeout: 10000,
       });
       markStage('payment_heading_visible', 'complete');
-      // Orders reads each setting once; Sidebar must not repeat denied reads after auth refresh.
-      expect(restrictedSettingsReads).toBeLessThanOrEqual(2);
+      // Orders and layout read settings for storefront/kds; Sidebar must not repeat denied reads after auth refresh.
+      expect(restrictedSettingsReads).toBeLessThanOrEqual(3);
     });
     await test.step('staff sees charge details without mutation controls', async () => {
       markStage('staff_readonly_charge_assertions', 'start');
@@ -802,7 +802,7 @@ test('payment modal hides charge controls without bill discount permission', asy
     expect(
       (await feeDefinitions.json()).charges.map((charge: { id: string }) => charge.id),
     ).toContain('payment_required');
-    const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/business`, {
+    const settingsDenied = await serverPage.request.get(`${BASE}/api/settings/tax`, {
       headers: limitedHeaders,
     });
     expect(settingsDenied.status()).toBe(403);

@@ -174,7 +174,7 @@ export function requireAnyPermission(...permissionIds: PermissionId[]): RequestH
     if (!userId) return res.status(401).json({ error: 'Authentication required', code: 'authentication_required' });
     const effective = resolveEffectivePermissions(userId);
     if (!effective || !permissionIds.some((permissionId) => effective.permissionIds.has(permissionId))) {
-      return res.status(403).json({ error: 'Insufficient permissions', code: 'permission_denied' });
+      return res.status(403).json({ error: 'Insufficient permissions', code: 'permission_denied', permission: permissionIds[0] });
     }
     next();
   };

@@ -316,6 +316,49 @@ async function run() {
     'PIN-only void records matching manager 1 in approved_by',
   );
 
+  // Test 11a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts (Issue #1221)
+  resetBillPinRateLimit();
+  const invalidBurst = await Promise.all(
+    Array.from({ length: 10 }, () =>
+      request(app)
+        .post(`/api/bills/${billId}/applyDiscount`)
+        .set(ownerAuth)
+        .send({ type: 'percentage', value: 10, override_pin: '9999' }),
+    ),
+  );
+  const statusCounts = invalidBurst.reduce((acc: Record<number, number>, res: any) => {
+    acc[res.status] = (acc[res.status] || 0) + 1;
+    return acc;
+  }, {});
+  assertEqual(statusCounts[403], 5, 'Exactly 5 invalid requests return 403 before lockout');
+  assertEqual(
+    statusCounts[429],
+    5,
+    'Remaining 5 concurrent requests return 429 without running bcrypt',
+  );
+
+  // Any subsequent request returns 429 immediately while locked out
+  const lockedOutRes = await request(app)
+    .post(`/api/bills/${billId}/applyDiscount`)
+    .set(ownerAuth)
+    .send({ type: 'percentage', value: 10, override_pin: '1111' });
+  assertEqual(lockedOutRes.status, 429, 'Subsequent attempt during lockout returns 429');
+
+  // Test 11b: Concurrent valid PIN requests succeed and do not trigger false 429 lockouts
+  resetBillPinRateLimit();
+  const validBurst = await Promise.all(
+    Array.from({ length: 5 }, () =>
+      request(app)
+        .post(`/api/bills/${billId}/applyDiscount`)
+        .set(ownerAuth)
+        .send({ type: 'percentage', value: 10, override_pin: '1111' }),
+    ),
+  );
+  for (const res of validBurst) {
+    assertEqual(res.status, 200, 'Concurrent valid PIN request succeeds with 200');
+  }
+  resetBillPinRateLimit();
+
   const results = getResults();
   if (results.failed > 0) {
     throw new Error(`${results.failed} test assertions failed`);

@@ -2406,9 +2406,7 @@ function evaluateOrderStatusPaymentBlock(
       : 0;
     const isSettled =
       !isPayable ||
-      (paymentStatus === 'paid' &&
-        unpaidBalanceMinor === 0 &&
-        recordedPaidMinor >= totalMinor);
+      (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
     return {
       id: b.id,
       paymentStatus,
@@ -2438,10 +2436,7 @@ function evaluateOrderStatusPaymentBlock(
       : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
   const totalOutstandingMinor =
     payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
-  const totalCollectedMinor = evaluatedBills.reduce(
-    (sum, b) => sum + b.effectiveCollectedMinor,
-    0,
-  );
+  const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
 
   const paymentBlocksCompletion =
     totalOutstandingMinor > 0 ||
@@ -2626,8 +2621,7 @@ router.patch(
           currentOrder.total,
           currentOrder.round_off,
         );
-        const paymentBlocksCompletion =
-          status === 'completed' && rawPaymentBlocksCompletion;
+        const paymentBlocksCompletion = status === 'completed' && rawPaymentBlocksCompletion;
 
         const requireKitchenDelivered = db
           .prepare(

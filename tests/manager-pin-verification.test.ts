@@ -334,10 +334,12 @@ async function run() {
     VALUES ('mgr-shared-pay', 'Manager With Pay', 'mgrpay@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
   `).run(bcrypt.hashSync('5555', 10), now(), now());
 
-  const unpaidOrderRes = db.prepare(`
+  const unpaidOrderRes = db
+    .prepare(`
     INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES ('ORD-UNPAID-001', 'dine_in', 100, 0, 100, 'pending', ?, ?)
-  `).run(now(), now());
+  `)
+    .run(now(), now());
   const unpaidOrderId = unpaidOrderRes.lastInsertRowid;
 
   db.prepare(`
@@ -358,15 +360,23 @@ async function run() {
     .patch(`/api/orders/${unpaidOrderId}/status`)
     .set(cashierAuth)
     .send({ status: 'completed', override_pin: '5555' });
-  assertEqual(res11b.status, 200, 'Fallback PIN scan authorizes eligible manager with payments.take');
+  assertEqual(
+    res11b.status,
+    200,
+    'Fallback PIN scan authorizes eligible manager with payments.take',
+  );
   resetOrderPinRateLimit();
 
-  const completedOrder = db.prepare('SELECT status FROM orders WHERE id = ?').get(unpaidOrderId) as any;
+  const completedOrder = db
+    .prepare('SELECT status FROM orders WHERE id = ?')
+    .get(unpaidOrderId) as any;
   assertEqual(completedOrder.status, 'completed', 'Order status updated to completed');
 
-  const auditLog11 = db.prepare(`
+  const auditLog11 = db
+    .prepare(`
     SELECT * FROM order_audit_log WHERE order_id = ? ORDER BY id DESC LIMIT 1
-  `).get(unpaidOrderId) as any;
+  `)
+    .get(unpaidOrderId) as any;
   assert(!!auditLog11, 'Audit log entry created for completed unpaid order');
   assertEqual(
     JSON.parse(auditLog11.details_json || '{}').approved_by,

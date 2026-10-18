@@ -2272,8 +2272,8 @@ export default function PaymentModal({
                   (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
                   Boolean(
                     kitchenOverridePin &&
-                      managerApprovers.approvers.length > 1 &&
-                      !(kitchenApproverId ?? managerApprovers.selectedApproverId),
+                    managerApprovers.approvers.length > 1 &&
+                    !(kitchenApproverId ?? managerApprovers.selectedApproverId),
                   )
                 }
                 className="w-full"

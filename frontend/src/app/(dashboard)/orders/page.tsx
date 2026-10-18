@@ -1155,8 +1155,7 @@ export default function OrdersPage() {
 
   const handleVoidItem = async () => {
     if (!voidItemModal) return;
-    const effectiveApproverId =
-      voidItemModal.approverId ?? managerApprovers.selectedApproverId;
+    const effectiveApproverId = voidItemModal.approverId ?? managerApprovers.selectedApproverId;
     setVoidingItem(true);
     try {
       await api.patch(`/orders/${voidItemModal.orderId}/items/${voidItemModal.itemId}/cancel`, {
@@ -1236,8 +1235,7 @@ export default function OrdersPage() {
       return;
     }
 
-    const effectiveApproverId =
-      discountApproverId ?? managerApprovers.selectedApproverId;
+    const effectiveApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
 
     const operationId = createOperationReference();
     try {
@@ -1490,8 +1488,7 @@ export default function OrdersPage() {
     if (!cancelModal) return;
 
     const isPinRequired = cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order);
-    const effectiveApproverId =
-      cancelModal.approverId ?? managerApprovers.selectedApproverId;
+    const effectiveApproverId = cancelModal.approverId ?? managerApprovers.selectedApproverId;
 
     setCancellingOrderId(cancelModal.order.id);
     try {

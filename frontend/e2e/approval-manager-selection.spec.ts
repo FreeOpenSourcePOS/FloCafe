@@ -53,7 +53,9 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     expect(staffListRes.ok()).toBeTruthy();
     const { staff } = await staffListRes.json();
 
-    const existingAlice = staff.find((s: any) => s.email === 'alice.mgr@flo.local');
+    const existingAlice = staff.find(
+      (s: { email?: string; id?: string }) => s.email === 'alice.mgr@flo.local',
+    );
     if (!existingAlice) {
       const res = await page.request.post(`${BASE}/api/staff`, {
         headers,
@@ -76,7 +78,9 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
       });
     }
 
-    const existingBob = staff.find((s: any) => s.email === 'bob.mgr@flo.local');
+    const existingBob = staff.find(
+      (s: { email?: string; id?: string }) => s.email === 'bob.mgr@flo.local',
+    );
     if (!existingBob) {
       const res = await page.request.post(`${BASE}/api/staff`, {
         headers,
@@ -112,7 +116,10 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
 
     // 4. Open Orders page and launch Checkout for this order
     await page.goto(`${BASE}/orders`);
-    await page.getByPlaceholder(/search/i).first().fill(order.order_number);
+    await page
+      .getByPlaceholder(/search/i)
+      .first()
+      .fill(order.order_number);
     await expect(page.getByText(`#${order.order_number}`)).toBeVisible();
     await page.getByRole('button', { name: 'Checkout', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Payment' })).toBeVisible();
@@ -179,15 +186,19 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     });
 
     // Verify audit log has kitchen_delivery_override with Bob's manager ID
-    const auditRes = await page.request.get(
-      `${BASE}/api/orders/${order.id}/audit-log`,
-      { headers },
-    );
+    const auditRes = await page.request.get(`${BASE}/api/orders/${order.id}/audit-log`, {
+      headers,
+    });
     if (auditRes.ok()) {
       const audit = await auditRes.json();
-      const overrideLog = audit.logs?.find((l: any) => l.action === 'kitchen_delivery_override');
+      const overrideLog = audit.logs?.find(
+        (l: { action?: string; details?: unknown }) => l.action === 'kitchen_delivery_override',
+      );
       if (overrideLog) {
-        const details = typeof overrideLog.details === 'string' ? JSON.parse(overrideLog.details) : overrideLog.details;
+        const details =
+          typeof overrideLog.details === 'string'
+            ? JSON.parse(overrideLog.details)
+            : overrideLog.details;
         expect(details.manager_user_id).toBe(managerBobId);
       }
     }
@@ -199,7 +210,10 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     // 1. Ensure managers exist with PINs
     const staffListRes = await page.request.get(`${BASE}/api/staff?active=true`, { headers });
     const { staff } = await staffListRes.json();
-    const activeManagers = staff.filter((s: any) => ['owner', 'manager'].includes(s.role) && s.has_pin);
+    const activeManagers = staff.filter(
+      (s: { role?: string; has_pin?: boolean }) =>
+        ['owner', 'manager'].includes(s.role || '') && s.has_pin,
+    );
     if (activeManagers.length < 2) {
       await page.request.post(`${BASE}/api/staff`, {
         headers,
@@ -253,8 +267,14 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     expect(patchRes.ok()).toBeTruthy();
 
     await page.goto(`${BASE}/orders`);
-    await page.getByPlaceholder(/search/i).first().fill(order.order_number);
-    const card = page.locator('div.bg-card').filter({ hasText: `#${order.order_number}` }).first();
+    await page
+      .getByPlaceholder(/search/i)
+      .first()
+      .fill(order.order_number);
+    const card = page
+      .locator('div.bg-card')
+      .filter({ hasText: `#${order.order_number}` })
+      .first();
     await expect(card).toBeVisible();
 
     // 3. Open Void Item modal
@@ -274,7 +294,9 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
     // 4. Open Cancel Order modal from Card action dropdown
-    const moreBtn = card.locator('button:has(svg.lucide-ellipsis, svg.lucide-more-horizontal)').first();
+    const moreBtn = card
+      .locator('button:has(svg.lucide-ellipsis, svg.lucide-more-horizontal)')
+      .first();
     await moreBtn.click();
 
     const cancelMenuItem = page.getByRole('menuitem', { name: /cancel/i });
@@ -327,8 +349,14 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     });
 
     await page.goto(`${BASE}/orders`);
-    await page.getByPlaceholder(/search/i).first().fill(order.order_number);
-    const card = page.locator('div.bg-card').filter({ hasText: `#${order.order_number}` }).first();
+    await page
+      .getByPlaceholder(/search/i)
+      .first()
+      .fill(order.order_number);
+    const card = page
+      .locator('div.bg-card')
+      .filter({ hasText: `#${order.order_number}` })
+      .first();
     await expect(card).toBeVisible();
 
     const voidBtn = card.locator('button[title="Void item"]').first();

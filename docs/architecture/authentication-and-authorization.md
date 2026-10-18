@@ -35,7 +35,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below (KDS station/category scope, refund approver identity, the
-override-PIN holder for order-status and item cancel/void overrides, and the
+override-PIN holder for order-status, kitchen-delivery, and item cancel/void overrides, and the
 last-active-owner/staff-target rule).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
@@ -128,10 +128,11 @@ a router, in [`main/routes/index.ts`](../../main/routes/index.ts). A static sear
 **Gates inside transaction bodies.** The most important case. Some endpoints perform the
 permission check inside the `withTxn` callback, after the transaction opens, using
 `hasPermission(actorId, id)` against state read in the same transaction.
-`PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, and the matching
-`.../restore` endpoint in `main/routes/orders.ts` do this, and their override-PIN paths
-additionally require the presenting user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a
-deliberate context-policy role check, not a permission, because the override PIN belongs to a
+`PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, the matching
+`.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
+in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
+user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
+not a permission, because the override PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
 say. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
 evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction

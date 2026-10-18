@@ -634,7 +634,7 @@ frontend/src/
 │   ├── tables/                 Floorplan editor, table move modal, table turnover badge
 │   ├── ui/                     shadcn/ui primitives
 │   └── updates/                Update download prompt and install guard dialog
-├── hooks/                      Printer, KDS, theme, update, cash, and formatting hooks
+├── hooks/                      Printer, KDS, theme, update, cash, approver, and formatting hooks
 ├── lib/
 │   ├── i18n/                   Language registry, loader, and the 24 message files
 │   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,

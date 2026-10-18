@@ -123,6 +123,7 @@ export async function preVerifyKitchenDeliveryPin(
   db: ReturnType<typeof getDatabase>,
   overridePin: unknown,
   clientIp = 'unknown',
+  approverId?: unknown,
 ): Promise<{ id: string; verifiedPinHash: string } | null> {
   if (overridePin === undefined || overridePin === null || overridePin === '') {
     return null;
@@ -136,6 +137,30 @@ export async function preVerifyKitchenDeliveryPin(
   if (typeof overridePin !== 'string' || !/^\d{4,6}$/.test(overridePin)) {
     checkPinRateLimit(rateLimitKey);
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  }
+
+  const explicitApproverId =
+    approverId !== undefined && approverId !== null && String(approverId).trim() !== ''
+      ? String(approverId).trim()
+      : null;
+
+  if (explicitApproverId) {
+    const candidate = db
+      .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+      .get(explicitApproverId) as
+      | { id: string; role: string; pin_hash: string | null; is_active: number }
+      | undefined;
+    if (
+      !candidate ||
+      candidate.is_active !== 1 ||
+      !candidate.pin_hash ||
+      !hasRole(candidate.role, ROLE_ACCESS.ownerManager) ||
+      !(await verifyPinAsync(candidate.pin_hash, overridePin))
+    ) {
+      checkPinRateLimit(rateLimitKey);
+      throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+    }
+    return { id: candidate.id, verifiedPinHash: candidate.pin_hash };
   }
 
   const managers = db
@@ -160,6 +185,7 @@ function checkKitchenDeliveryStatus(
   clientIp = 'unknown',
   billId?: string | number,
   preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
+  approverId?: unknown,
 ): {
   allowed: boolean;
   count: number;
@@ -219,18 +245,39 @@ function checkKitchenDeliveryStatus(
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
 
+  const explicitApproverId =
+    approverId !== undefined && approverId !== null && String(approverId).trim() !== ''
+      ? String(approverId).trim()
+      : null;
+
   let manager: { id: string } | undefined;
   if (preVerifiedManager) {
+    if (!explicitApproverId || String(preVerifiedManager.id) === explicitApproverId) {
+      const candidate = db
+        .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+        .get(preVerifiedManager.id) as
+        | { id: string; role: string; pin_hash: string | null; is_active: number }
+        | undefined;
+      if (
+        candidate &&
+        candidate.is_active === 1 &&
+        hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+        candidate.pin_hash === preVerifiedManager.verifiedPinHash
+      ) {
+        manager = candidate;
+      }
+    }
+  } else if (explicitApproverId) {
     const candidate = db
       .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
-      .get(preVerifiedManager.id) as
+      .get(explicitApproverId) as
       | { id: string; role: string; pin_hash: string | null; is_active: number }
       | undefined;
     if (
       candidate &&
       candidate.is_active === 1 &&
       hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-      candidate.pin_hash === preVerifiedManager.verifiedPinHash
+      verifyPin(candidate.pin_hash, overridePin)
     ) {
       manager = candidate;
     }
@@ -3127,6 +3174,7 @@ function applyPaymentBatch(
   overridePin?: unknown,
   clientIp = 'unknown',
   preVerifiedKitchenManager?: { id: string; verifiedPinHash: string } | null,
+  approverId?: unknown,
 ): {
   bill: any;
   walletDebited: boolean;
@@ -3177,6 +3225,7 @@ function applyPaymentBatch(
     clientIp,
     bill.id,
     preVerifiedKitchenManager,
+    approverId,
   );
   if (!kitchenStatus.allowed) {
     throw Object.assign(new Error('Kitchen items must be delivered before billing'), {
@@ -3368,6 +3417,13 @@ router.post(
       }
       const db = getDatabase();
       const { override_pin, ...paymentLine } = payment;
+      const explicitApproverId =
+        (payment as any).approver_id ||
+        (payment as any).manager_id ||
+        (payment as any).user_id ||
+        req.body.approver_id ||
+        req.body.manager_id ||
+        req.body.user_id;
       const requestHash = paymentRequestHash(
         req.params.id as string,
         [paymentLine],
@@ -3378,6 +3434,7 @@ router.post(
         db,
         override_pin,
         clientIp,
+        explicitApproverId,
       );
       const result = withTxn(() =>
         applyPaymentBatch(
@@ -3392,6 +3449,7 @@ router.post(
           override_pin,
           clientIp,
           preVerifiedKitchenManager,
+          explicitApproverId,
         ),
       );
       operationCommitted = true;
@@ -3449,6 +3507,13 @@ router.post(
           );
       }
       const { payments, customer_id: bodyCustomerId, override_pin } = body;
+      const explicitApproverId =
+        body.approver_id ||
+        body.manager_id ||
+        body.user_id ||
+        req.body.approver_id ||
+        req.body.manager_id ||
+        req.body.user_id;
       if (!Array.isArray(payments) || payments.length === 0) {
         return res
           .status(400)
@@ -3469,6 +3534,7 @@ router.post(
         db,
         override_pin,
         clientIp,
+        explicitApproverId,
       );
       const result = withTxn(() =>
         applyPaymentBatch(
@@ -3483,6 +3549,7 @@ router.post(
           override_pin,
           clientIp,
           preVerifiedKitchenManager,
+          explicitApproverId,
         ),
       );
       operationCommitted = true;

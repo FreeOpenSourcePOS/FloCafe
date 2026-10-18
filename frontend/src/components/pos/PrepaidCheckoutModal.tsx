@@ -33,6 +33,8 @@ import {
   type DiscountMode,
   type DiscountType,
 } from '@/lib/discount-settings';
+import { ApproverSelect } from '@/components/ApproverSelect';
+import { useManagerApprovers } from '@/hooks/useManagerApprovers';
 
 interface LoyaltySettings {
   loyalty_enabled: boolean;
@@ -49,6 +51,7 @@ export interface PrepaidDiscount {
   value: number;
   reason?: string;
   override_pin?: string;
+  approver_id?: string;
 }
 
 interface Props {
@@ -133,8 +136,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const [discountReason, setDiscountReason] = useState('');
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountModeLoaded, setDiscountModeLoaded] = useState(false);
+  const managerApprovers = useManagerApprovers();
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
+  const [discountApproverId, setDiscountApproverId] = useState('');
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
   const previewDiscount = useMemo(() => {
@@ -464,9 +469,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         return;
       }
     }
-    if (preview.discountAmount > 0 && discountRequiresApproval && !discountPin) {
-      toast.error(t('managerPinRequired'));
-      return;
+    const effectiveDiscountApproverId = discountApproverId || managerApprovers.selectedApproverId;
+    if (preview.discountAmount > 0 && discountRequiresApproval) {
+      if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
+        toast.error(t('managerPinRequired'));
+        return;
+      }
     }
     if (preview.discountAmount > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
       toast.error(t('discountInvalid'));
@@ -489,6 +497,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
             value: previewDiscount?.value ?? 0,
             reason: discountReason || undefined,
             override_pin: discountRequiresApproval && discountPin ? discountPin : undefined,
+            approver_id:
+              discountRequiresApproval && discountPin
+                ? effectiveDiscountApproverId || undefined
+                : undefined,
           }
         : null;
 
@@ -765,14 +777,28 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                 className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
               />
               {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                <input
-                  type="password"
-                  value={discountPin}
-                  onChange={(e) => setDiscountPin(e.target.value)}
-                  placeholder={t('managerPin')}
-                  maxLength={6}
-                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                />
+                <div className="space-y-2">
+                  <ApproverSelect
+                    id="prepaidDiscountApprover"
+                    approvers={managerApprovers.approvers}
+                    selectedApproverId={discountApproverId || managerApprovers.selectedApproverId}
+                    onSelectApprover={(id) => {
+                      setDiscountApproverId(id);
+                      setDiscountPin('');
+                    }}
+                    loading={managerApprovers.loading}
+                    loadFailed={managerApprovers.loadFailed}
+                    disabled={processing}
+                  />
+                  <input
+                    type="password"
+                    value={discountPin}
+                    onChange={(e) => setDiscountPin(e.target.value)}
+                    placeholder={t('managerPin')}
+                    maxLength={6}
+                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                  />
+                </div>
               )}
               {discountValue && (
                 <Button
@@ -783,6 +809,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                     setDiscountValue('');
                     setDiscountReason('');
                     setDiscountPin('');
+                    setDiscountApproverId('');
                     setPaymentsTouched(false);
                   }}
                 >

@@ -43,6 +43,7 @@ import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { columnsForConfiguredPrinter } from '@print/width';
+import { ensureReceiptSettingsLoaded } from '@/hooks/useReceiptSettingsSync';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
@@ -213,6 +214,7 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         let windowTransferred = false;
         try {
+          await ensureReceiptSettingsLoaded().catch(() => {});
           const {
             billTemplate,
             billTemplateSource,
@@ -482,6 +484,7 @@ export const usePrinterStore = create<PrinterState>()(
       printTaxBill: async (bill, tenant, opts) => {
         set({ lastError: null });
         try {
+          await ensureReceiptSettingsLoaded().catch(() => {});
           const {
             printerUseUnicode,
             printerArabicShaping,

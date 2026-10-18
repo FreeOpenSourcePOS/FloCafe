@@ -268,15 +268,19 @@ function taxShape(s: Record<string, string>) {
 
 // ── Specific routes (must come BEFORE /:key wildcard) ─────────────────────
 
-router.get('/business', requirePermission('settings.view'), (req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-    res.json(businessShape(s));
-  } catch (error: any) {
-    console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+router.get(
+  '/business',
+  requireAnyPermission('settings.view', 'bills.read', 'bills.print', 'orders.read', 'bills.generate'),
+  (req: Request, res: Response) => {
+    try {
+      const s = getAllSettings(getDatabase());
+      res.json(businessShape(s));
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
 
 router.put('/business', requirePermission('settings.manage'), (req: Request, res: Response) => {
   try {

@@ -2973,11 +2973,25 @@ function preparePaymentBatch(
     0,
     Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor),
   );
+  const isZeroBalanceSettle =
+    remainingCents <= 0 &&
+    resolvedPayments.every((p) => {
+      if (p.amount === null || p.amount === undefined) return true;
+      if (!isCashTender(db, p)) return false;
+      if (Number(bill.discount_amount || 0) > 0) return true;
+      const orderDiscounted = db
+        .prepare(
+          'SELECT 1 FROM orders WHERE id = ? AND discount_amount > 0 UNION SELECT 1 FROM order_items WHERE order_id = ? AND discount_amount > 0 LIMIT 1',
+        )
+        .get(bill.order_id, bill.order_id);
+      return Boolean(orderDiscounted);
+    });
+  if (bill.payment_status === 'paid' && !isZeroBalanceSettle) {
+    throw paymentValidationError('Bill is already paid', 'bill_already_paid');
+  }
   if (remainingCents <= 0) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId };
   }
-  if (bill.payment_status === 'paid')
-    throw paymentValidationError('Bill is already paid', 'bill_already_paid');
   const raw = resolvedPayments.map((payment) => {
     // Single-line payments may omit amount to pay remaining balance; multi-line requires explicit amounts.
     const supportsOmittedAmount = allowOmittedAmount || payments.length === 1;

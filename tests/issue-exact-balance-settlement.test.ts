@@ -391,6 +391,94 @@ async function main(): Promise<void> {
       assertEqual(payAfterRef.status, 409, '8. refund: payment on refunded bill rejected with 409');
     }
 
+    // ── 9. Payment Rejection on Paid Bills vs Zero-Balance Retry & Cash Session Accounting ──
+    console.log('\n─── 9. Positive Payment Rejected on Settled Bill & Accurate Cash Accounting ───');
+    {
+      const create = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      const orderId = create.data.order.id;
+      const gen = await generateBill(orderId);
+      const billId = gen.data.bill.id;
+
+      // Pay 600 cash
+      const initialPay = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(initialPay.status, 200, '9. cash: partial payment of 600 accepted');
+
+      // Auto-settle via 400 discount
+      const disc = await applyBillDiscount(billId, { type: 'amount', value: 400 });
+      assertEqual(disc.status, 200, '9. cash: discount applied and auto-settled');
+      assertEqual(billRow(db, billId).payment_status, 'paid', '9. cash: bill is paid');
+
+      // Attempting positive card payment on already-settled bill MUST reject with bill_already_paid
+      const extraPay = await pay(billId, { method: 'card', amount: 100 });
+      assertEqual(extraPay.status, 400, '9. pay-rejected: positive payment on paid bill rejected with 400');
+      assertEqual(extraPay.data.display_code, 'bill_already_paid', '9. pay-rejected: display code is bill_already_paid');
+
+      // Retrying single-line zero-balance settle (amount: null) succeeds cleanly
+      const zeroRetry = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(zeroRetry.status, 200, '9. retry: zero-balance omitted-amount settle retry succeeds');
+      assertEqual(zeroRetry.data.bill.payment_status, 'paid', '9. retry: bill remains paid');
+
+      // Retrying cash tender with positive amount on settled zero-balance bill succeeds with zero applied (change)
+      const cashRetry = await pay(billId, { method: 'cash', amount: 50 });
+      assertEqual(cashRetry.status, 200, '9. retry: cash tender on zero-balance paid bill succeeds');
+      assertEqual(cashRetry.data.bill.payment_status, 'paid', '9. retry: bill remains paid after cash retry');
+
+      // Payment details must strictly reflect ONLY the actual 600 tendered cash, never phantom entries
+      const recordedPayments = JSON.parse(billRow(db, billId).payment_details || '[]');
+      assertEqual(recordedPayments.length, 1, '9. accounting: exactly one payment record preserved in ledger');
+      assertEqual(Number(recordedPayments[0].amount), 600, '9. accounting: ledger entry has exact 600 tendered cash');
+    }
+
+    // ── 10. Sibling Bill Topology: Exact-Balance Auto-Settlement with Unpaid Sibling ──
+    console.log('\n─── 10. Sibling Bill Topology with Unpaid Sibling ───');
+    {
+      const create = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-eb-2',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
+      assertEqual(create.status, 201, '10. sibling: dine-in order created');
+      const orderId = create.data.order.id;
+
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, '10. sibling: bill 1 generated');
+      const bill1Id = gen.data.bill.id;
+
+      // Seed an unpaid sibling bill for the same order
+      const siblingRes = db.prepare(
+        `INSERT INTO bills (order_id, bill_number, subtotal, total, balance, paid_amount, payment_status, created_at, updated_at)
+         VALUES (?, 'BILL-SIB-10', 500, 500, 500, 0, 'unpaid', ?, ?)`,
+      ).run(orderId, now(), now());
+      const siblingBillId = siblingRes.lastInsertRowid;
+
+      // Partially pay Bill 1: pay 600 out of 1000
+      const pay1 = await pay(bill1Id, { method: 'cash', amount: 600 });
+      assertEqual(pay1.status, 200, '10. sibling: bill 1 partial pay 600 accepted');
+
+      // Discount Bill 1 by 400 -> exact-balance auto-settles Bill 1
+      const disc1 = await applyBillDiscount(bill1Id, { type: 'amount', value: 400 });
+      assertEqual(disc1.status, 200, '10. sibling: bill 1 discounted by 400');
+      assertEqual(billRow(db, bill1Id).payment_status, 'paid', '10. sibling: bill 1 auto-settled to paid');
+      assertEqual(Number(billRow(db, bill1Id).balance), 0, '10. sibling: bill 1 balance is 0');
+
+      // Crucial: Sibling bill is still unpaid, so Order must NOT be completed and table must NOT be freed!
+      assertEqual(billRow(db, siblingBillId).payment_status, 'unpaid', '10. sibling: sibling bill remains unpaid');
+      assertEqual(orderRow(db, orderId).status !== 'completed', true, '10. sibling: order remains active because sibling bill is unpaid');
+      assertEqual(tableRow(db, 'table-eb-2').status, 'occupied', '10. sibling: table remains occupied');
+
+      // Now pay sibling bill in full
+      const paySib = await pay(siblingBillId, { method: 'cash', amount: 500 });
+      assertEqual(paySib.status, 200, '10. sibling: sibling bill paid in full');
+      assertEqual(billRow(db, siblingBillId).payment_status, 'paid', '10. sibling: sibling bill is paid');
+
+      // Now all sibling bills are paid -> order completes and table is released!
+      assertEqual(orderRow(db, orderId).status, 'completed', '10. sibling: order transitions to completed after all bills paid');
+      assertEqual(tableRow(db, 'table-eb-2').status, 'available', '10. sibling: table released to available');
+    }
+
   } finally {
     server.close();
     closeDatabase();

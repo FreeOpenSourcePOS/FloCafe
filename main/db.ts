@@ -8720,53 +8720,68 @@ export function attachEffectiveAddons<T extends { id: number }>(
     })[];
 
   const ids = items.map((item) => item.id);
-  const placeholders = ids.map(() => '?').join(',');
-  const rows = dbInstance
-    .prepare(`SELECT * FROM order_item_addons WHERE order_item_id IN (${placeholders}) ORDER BY id`)
-    .all(...ids) as {
-    order_item_id: number;
-    addon_id: string | null;
-    addon_name: string;
-    price: number;
-    quantity: number;
-  }[];
+  const CHUNK_SIZE = 400;
 
   const byItem = new Map<
     number,
     { id: string | null; name: string; price: number; quantity: number }[]
   >();
-  for (const row of rows) {
-    const list = byItem.get(row.order_item_id) || [];
-    list.push({ id: row.addon_id, name: row.addon_name, price: row.price, quantity: row.quantity });
-    byItem.set(row.order_item_id, list);
+  for (let offset = 0; offset < ids.length; offset += CHUNK_SIZE) {
+    const chunk = ids.slice(offset, offset + CHUNK_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = dbInstance
+      .prepare(
+        `SELECT * FROM order_item_addons WHERE order_item_id IN (${placeholders}) ORDER BY id`,
+      )
+      .all(...chunk) as {
+      order_item_id: number;
+      addon_id: string | null;
+      addon_name: string;
+      price: number;
+      quantity: number;
+    }[];
+    for (const row of rows) {
+      const list = byItem.get(row.order_item_id) || [];
+      list.push({
+        id: row.addon_id,
+        name: row.addon_name,
+        price: row.price,
+        quantity: row.quantity,
+      });
+      byItem.set(row.order_item_id, list);
+    }
   }
 
   const editVersionByItem = new Map<number, number>();
   const supersededItemIds = new Set<number>();
   try {
-    const auditRows = dbInstance
-      .prepare(
-        `SELECT id, order_item_id, action, details_json FROM order_audit_log WHERE order_item_id IN (${placeholders}) ORDER BY id`,
-      )
-      .all(...ids) as {
-      id: number;
-      order_item_id: number | string | null;
-      action: string;
-      details_json: string | null;
-    }[];
-    for (const audit of auditRows) {
-      const itemId = Number(audit.order_item_id);
-      if (!Number.isFinite(itemId)) continue;
-      const prev = editVersionByItem.get(itemId) ?? 0;
-      if (audit.id > prev) editVersionByItem.set(itemId, audit.id);
-      if (audit.action === 'item_edited' && audit.details_json) {
-        try {
-          const details = JSON.parse(audit.details_json) as { superseded?: unknown } | null;
-          if (details?.superseded === true) {
-            supersededItemIds.add(itemId);
+    for (let offset = 0; offset < ids.length; offset += CHUNK_SIZE) {
+      const chunk = ids.slice(offset, offset + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const auditRows = dbInstance
+        .prepare(
+          `SELECT id, order_item_id, action, details_json FROM order_audit_log WHERE order_item_id IN (${placeholders}) ORDER BY id`,
+        )
+        .all(...chunk) as {
+        id: number;
+        order_item_id: number | string | null;
+        action: string;
+        details_json: string | null;
+      }[];
+      for (const audit of auditRows) {
+        const itemId = Number(audit.order_item_id);
+        if (!Number.isFinite(itemId)) continue;
+        const prev = editVersionByItem.get(itemId) ?? 0;
+        if (audit.id > prev) editVersionByItem.set(itemId, audit.id);
+        if (audit.action === 'item_edited' && audit.details_json) {
+          try {
+            const details = JSON.parse(audit.details_json) as { superseded?: unknown } | null;
+            if (details?.superseded === true) {
+              supersededItemIds.add(itemId);
+            }
+          } catch {
+            // Ignore malformed audit details_json.
           }
-        } catch {
-          // Ignore malformed audit details_json.
         }
       }
     }

@@ -3095,612 +3095,101 @@ router.patch(
 );
 
 const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => {
-    let operationCommitted = false;
-    try {
-      const db = getDatabase();
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-      if (
-        db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id)
-      ) {
-        return res
-          .status(409)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'Discounts cannot be changed after a check has been split',
-              'split_check',
-            ),
-          );
-      }
-
-      // Cannot apply discount to completed or cancelled orders
-      if (['completed', 'cancelled'].includes(order.status)) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'Cannot apply discount to a completed or cancelled order',
-              'order_not_discountable',
-            ),
-          );
-      }
-
-      const {
-        discount_type,
-        discount_value,
-        discount_reason,
-        override_pin,
-        approver_id,
-        user_id,
-        manager_id,
-      } = req.body || {};
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-
-      // Validate discount_type
-      if (
-        discount_value !== 0 &&
-        (!discount_type || !['percentage', 'amount'].includes(discount_type))
-      ) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'discount_type must be "percentage" or "amount"',
-              'invalid_type',
-            ),
-          );
-      }
-
-      // Validate discount_value is a non-negative finite number
-      if (
-        discount_value === undefined ||
-        discount_value === null ||
-        typeof discount_value !== 'number' ||
-        discount_value < 0 ||
-        !Number.isFinite(discount_value)
-      ) {
-        return res
-          .status(400)
-          .json(
-            structuredOperationFailure(
-              req,
-              'fc.backend.order.discount.validation',
-              'not_applied',
-              'discount_value must be a non-negative number',
-              'invalid_value',
-            ),
-          );
-      }
-
-      // Check if approval is required
-      const explicitApproverId = approver_id || manager_id || user_id;
-      let approvedByUserId: string | undefined;
-      let preVerifiedOrderDiscountPinHash: string | undefined;
-      if (discount_value > 0) {
-        const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
-        if (requiresApproval) {
-          if (!override_pin) {
-            return res
-              .status(403)
-              .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
-          }
-          const canonicalIp = normalizeIpForRateLimit(clientIp);
-          const rateLimitKey = `pin:${canonicalIp}:discount`;
-          if (isPinRateLimited(rateLimitKey)) {
-            return res
-              .status(429)
-              .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-          }
-          if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
-            checkPinRateLimit(rateLimitKey);
-            return res.status(403).json({ error: 'Invalid manager PIN' });
-          }
-          const candidateUsers = explicitApproverId
-            ? (db
-                .prepare(
-                  'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
-                )
-                .all(explicitApproverId) as PinApproverCandidate[])
-            : (db
-                .prepare(
-                  'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
-                )
-                .all() as PinApproverCandidate[]);
-
-          const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
-            if (isPinRateLimited(rateLimitKey)) {
-              return { rateLimited: true };
-            }
-            let user: PinApproverCandidate | undefined;
-            for (const candidate of candidateUsers) {
-              if (
-                hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-                hasPermission(candidate.id, 'orders.discount.apply') &&
-                (await verifyPinAsync(candidate.pin_hash, override_pin))
-              ) {
-                user = candidate;
-                break;
-              }
-            }
-            if (!user) {
-              checkPinRateLimit(rateLimitKey);
-              return { user: null };
-            }
-            clearPinRateLimit(rateLimitKey);
-            return { user };
-          });
-
-          if (verifiedResult.rateLimited) {
-            return res
-              .status(429)
-              .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-          }
-          if (!verifiedResult.user) {
-            return res.status(403).json({ error: 'Invalid manager PIN' });
-          }
-          approvedByUserId = verifiedResult.user.id;
-          preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;
-        }
-      }
-
-      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
-      if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
-        preVerifiedKitchenManager = {
-          id: approvedByUserId,
-          verifiedPinHash: preVerifiedOrderDiscountPinHash,
-        };
-      } else if (override_pin) {
-        const existingBill = db
-          .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
-          .get(req.params.id, 'paid') as { id: string | number } | undefined;
-        const initialKitchenStatus = checkKitchenDeliveryStatus(
-          db,
-          String(req.params.id),
-          undefined,
-          clientIp,
-          existingBill?.id,
-        );
-        if (!initialKitchenStatus.allowed) {
-          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
-            db,
-            override_pin,
-            clientIp,
-            explicitApproverId,
-          );
-        }
-      }
-
-      // Check discount mode
-      if (discount_value > 0) {
-        const discountMode = getSettingValue('discount_mode') || 'percentage';
-        if (discountMode === 'none') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Discounts are disabled',
-                'disabled',
-              ),
-            );
-        }
-        if (discountMode === 'flat' && discount_type === 'percentage') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Percentage discounts are disabled',
-                'type_disabled',
-              ),
-            );
-        }
-        if (discountMode === 'percentage' && discount_type === 'amount') {
-          return res
-            .status(400)
-            .json(
-              structuredOperationFailure(
-                req,
-                'fc.backend.order.discount.validation',
-                'not_applied',
-                'Flat amount discounts are disabled',
-                'type_disabled',
-              ),
-            );
-        }
-      }
-
-      // Check against limits from settings (0 = no limit)
-      if (discount_value > 0) {
-        if (discount_type === 'percentage') {
-          const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
-          if (maxPercentage > 0 && discount_value > maxPercentage) {
-            return res
-              .status(400)
-              .json(
-                structuredOperationFailure(
-                  req,
-                  'fc.backend.order.discount.validation',
-                  'not_applied',
-                  `discount_value exceeds maximum percentage of ${maxPercentage}`,
-                  'limit_exceeded',
-                ),
-              );
-          }
-        } else if (discount_type === 'amount') {
-          const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
-          if (maxAmount > 0 && discount_value > maxAmount) {
-            return res
-              .status(400)
-              .json(
-                structuredOperationFailure(
-                  req,
-                  'fc.backend.order.discount.validation',
-                  'not_applied',
-                  `discount_value exceeds maximum amount of ${maxAmount}`,
-                  'limit_exceeded',
-                ),
-              );
-          }
-        }
-      }
-      const tenantInfo = {
-        country: getSettingValue('country') || '',
-        business_type: getSettingValue('business_type') || 'restaurant',
-        state_code: getSettingValue('state_code') || '',
-        currency: getTenantCurrency(),
-        taxes_enabled: getSettingValue('taxes_enabled') === 'true',
-      };
-      // Wrap discount, tax recalculation, and bill sync in transaction.
-      const result = withTxn(() => {
-        if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
-          const approver = db
-            .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
-            .get(approvedByUserId) as
-            | { id: string; role: string; pin_hash: string | null; is_active: number }
-            | undefined;
-          if (
-            !approver ||
-            approver.is_active !== 1 ||
-            !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
-            !hasPermission(approver.id, 'orders.discount.apply') ||
-            approver.pin_hash !== preVerifiedOrderDiscountPinHash
-          ) {
-            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
-          }
-        }
-
-        // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
-        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
-          | EditableOrderRow
-          | undefined;
-        if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-        }
-        if (['completed', 'cancelled'].includes(currentOrder.status)) {
-          throw Object.assign(
-            new Error('Cannot apply discount to a completed or cancelled order'),
-            { statusCode: 400, diagnosticCode: 'order_not_discountable' },
-          );
-        }
-        const splitBill = db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id);
-        if (splitBill) {
-          throw Object.assign(
-            new Error('Discounts cannot be changed after a check has been split'),
-            { statusCode: 409, diagnosticCode: 'split_check' },
-          );
-        }
-        const refundedBill = db
-          .prepare(
-            `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
-          )
-          .get(req.params.id);
-        if (refundedBill) {
-          throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
-            statusCode: 409,
-            diagnosticCode: 'refunded',
-          });
-        }
-
-        const customer = currentOrder.customer_id
-          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
-              | Customer
-              | undefined) ?? null)
-          : null;
-        const currency = getTenantCurrency();
-        const decimals = getCurrencyFractionDigits(currency);
-
-        // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
-        // The fresh item sum is the only basis: it describes exactly the items the
-        // tax is summed over, and the write below heals the stored column to match.
-        const totals = calculateOrderTotals(db, req.params.id as string);
-
-        // Calculate discount amount
-        let discountAmount = 0;
-        if (discount_value > 0) {
-          if (discount_type === 'percentage') {
-            discountAmount = (totals.subtotal * discount_value) / 100;
-          } else {
-            discountAmount = Math.min(discount_value, totals.subtotal);
-          }
-          discountAmount = Number(discountAmount.toFixed(decimals));
-        }
-
-        const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
-        const {
-          taxRollup,
-          total: newTotal,
-          roundOff,
-        } = recomputeOrderTotals({
-          tenantInfo,
-          chargeContext: currentOrder,
-          customer,
-          totals,
-          discountAmount,
-          taxScaling: 'when-discounted',
-          appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
-          chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
-        });
-
-        const syncedServiceCharge = engineCharges
-          ? engineCharges.columns.service_charge
-          : currentOrder.service_charge || 0;
-        const syncedPackagingCharge = engineCharges
-          ? engineCharges.columns.packaging_charge
-          : currentOrder.packaging_charge || 0;
-        const syncedChargesJson = engineCharges
-          ? engineCharges.chargesJson
-          : (currentOrder.charges_breakdown ?? null);
-
-        db.prepare(`
-        UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
-          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
-          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
-      `).run(
-          totals.subtotal,
-          discountAmount,
-          discount_value > 0 ? discount_type : null,
-          discount_value > 0 ? discount_value : null,
-          discount_value > 0 ? discount_reason || null : null,
-          taxRollup.taxAmount,
-          JSON.stringify(taxRollup.breakdowns),
-          taxRollup.snapshotJson,
-          newTotal,
-          syncedServiceCharge,
-          syncedPackagingCharge,
-          syncedChargesJson,
-          roundOff,
-          now(),
-          req.params.id,
-        );
-
-        // Sync discount to bill if it exists and is unpaid
-        const existingBill = db
-          .prepare('SELECT * FROM bills WHERE order_id = ? AND payment_status != ?')
-          .get(req.params.id, 'paid') as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
-            newTotal,
-            pack,
-            currency,
-          );
-          const billPaidAmount = Number(existingBill.paid_amount || 0);
-          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
-            throw Object.assign(
-              new Error('Discount cannot reduce bill total below collected payments'),
-              { statusCode: 409, diagnosticCode: 'below_collected_funds' },
-            );
-          }
-          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
-          const kitchenStatus = checkKitchenDeliveryStatus(
-            db,
-            String(req.params.id),
-            override_pin,
-            clientIp,
-            existingBill.id,
-            preVerifiedKitchenManager,
-            explicitApproverId,
-          );
-          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
-          db.prepare(`
-          UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
-            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
-            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
-            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
-            updated_at = ?
-          WHERE id = ?
-        `).run(
-            totals.subtotal,
-            discountAmount,
-            discount_value > 0 ? discount_type : null,
-            discount_value > 0 ? discount_value : null,
-            discount_value > 0 ? discount_reason || null : null,
-            taxRollup.taxAmount,
-            JSON.stringify(taxRollup.breakdowns),
-            taxRollup.snapshotJson,
-            billTotal,
-            newBillBalance,
-            syncedServiceCharge,
-            syncedPackagingCharge,
-            syncedChargesJson,
-            billRoundOff,
-            isBillNowPaid ? 1 : 0,
-            isBillNowPaid ? 1 : 0,
-            now(),
-            now(),
-            existingBill.id,
-          );
-          if (isBillNowPaid) {
-            completeExactBalanceSettlement(
-              db,
-              existingBill.id,
-              billTotal,
-              currency,
-              now(),
-              override_pin,
-              clientIp,
-              preVerifiedKitchenManager,
-              explicitApproverId,
-            );
-          }
-          if (kitchenStatus.overridden && isBillNowPaid) {
-            recordOrderAudit(db, {
-              orderId: req.params.id as string,
-              actorUserId: (req as any).user.userId,
-              action: 'kitchen_delivery_override',
-              details: {
-                manager_user_id: kitchenStatus.managerUserId,
-                undelivered_count: kitchenStatus.count,
-              },
-            });
-          }
-        }
-
-        recordOrderAudit(db, {
-          orderId: req.params.id as string,
-          actorUserId: (req as any).user.userId,
-          action: 'order_discount_applied',
-          details: {
-            discount_type,
-            discount_value,
-            ...(approvedByUserId && { approved_by: approvedByUserId }),
-          },
-        });
-
-        const updatedOrder = parseRowJson(
-          db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
-        ) as any;
-        return updatedOrder;
-      });
-      operationCommitted = true;
-
-      notifyOrderUpdated();
-      res.json({ order: result });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      const statusCode = error.statusCode || 500;
-      const message = error.statusCode ? error.message : 'Internal server error';
-      if (statusCode === 404 && !operationCommitted)
-        return res.status(statusCode).json({ error: message });
-      const point = operationCommitted
-        ? 'fc.backend.order.discount.completion'
-        : statusCode >= 500
-          ? 'fc.backend.order.discount.persistence'
-          : 'fc.backend.order.discount.validation';
+  let operationCommitted = false;
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (
+      db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id)
+    ) {
       return res
-        .status(statusCode)
+        .status(409)
         .json(
           structuredOperationFailure(
             req,
-            point,
-            operationCommitted ? 'applied' : 'not_applied',
-            message,
-            operationCommitted ? undefined : error.diagnosticCode,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'Discounts cannot be changed after a check has been split',
+            'split_check',
           ),
         );
     }
-  });
 
-router.patch(
-  '/:id/discount',
-  orderWriteRateLimit,
-  requirePermission('orders.discount.apply'),
-  handleOrderDiscount,
-);
-router.post(
-  '/:id/discount',
-  orderWriteRateLimit,
-  requirePermission('orders.discount.apply'),
-  handleOrderDiscount,
-);
+    // Cannot apply discount to completed or cancelled orders
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'Cannot apply discount to a completed or cancelled order',
+            'order_not_discountable',
+          ),
+        );
+    }
 
-const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
-    try {
-      const db = getDatabase();
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-      if (!order) {
-        return res.status(404).json({ error: 'Order not found' });
-      }
-      if (
-        db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id)
-      ) {
-        return res
-          .status(409)
-          .json({ error: 'Discounts cannot be changed after a check has been split' });
-      }
+    const {
+      discount_type,
+      discount_value,
+      discount_reason,
+      override_pin,
+      approver_id,
+      user_id,
+      manager_id,
+    } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
-      const refundedBill = db
-        .prepare(
-          `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
-        )
-        .get(req.params.id);
-      if (refundedBill) {
-        return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
-      }
-      // Cannot apply discount to completed or cancelled orders
-      if (['completed', 'cancelled'].includes(order.status)) {
-        return res
-          .status(400)
-          .json({ error: 'Cannot apply discount to a completed or cancelled order' });
-      }
+    // Validate discount_type
+    if (
+      discount_value !== 0 &&
+      (!discount_type || !['percentage', 'amount'].includes(discount_type))
+    ) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'discount_type must be "percentage" or "amount"',
+            'invalid_type',
+          ),
+        );
+    }
 
-      const item = db
-        .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
-        .get(req.params.itemId, req.params.id) as any;
-      if (!item) {
-        return res.status(404).json({ error: 'Item not found' });
-      }
-      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) {
-        return res
-          .status(400)
-          .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
-      }
+    // Validate discount_value is a non-negative finite number
+    if (
+      discount_value === undefined ||
+      discount_value === null ||
+      typeof discount_value !== 'number' ||
+      discount_value < 0 ||
+      !Number.isFinite(discount_value)
+    ) {
+      return res
+        .status(400)
+        .json(
+          structuredOperationFailure(
+            req,
+            'fc.backend.order.discount.validation',
+            'not_applied',
+            'discount_value must be a non-negative number',
+            'invalid_value',
+          ),
+        );
+    }
 
-      const { discount_type, discount_value, override_pin, approver_id, user_id } = req.body;
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-
-      // Validate discount_type
-      if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
-        return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
-      }
-
-      // Validate discount_value is a positive number
-      if (
-        discount_value === undefined ||
-        discount_value === null ||
-        typeof discount_value !== 'number' ||
-        discount_value <= 0
-      ) {
-        return res.status(400).json({ error: 'discount_value must be a positive number' });
-      }
-
-      // Check if approval is required
-      const explicitApproverId = approver_id || req.body.manager_id || user_id;
-      let approvedByUserId: string | undefined;
-      let preVerifiedItemDiscountPinHash: string | undefined;
+    // Check if approval is required
+    const explicitApproverId = approver_id || manager_id || user_id;
+    let approvedByUserId: string | undefined;
+    let preVerifiedOrderDiscountPinHash: string | undefined;
+    if (discount_value > 0) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
         if (!override_pin) {
@@ -3709,7 +3198,7 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
         const canonicalIp = normalizeIpForRateLimit(clientIp);
-        const rateLimitKey = `pin:${canonicalIp}:item-discount`;
+        const rateLimitKey = `pin:${canonicalIp}:discount`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
@@ -3759,382 +3248,887 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
         approvedByUserId = verifiedResult.user.id;
-        preVerifiedItemDiscountPinHash = verifiedResult.user.pin_hash;
+        preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;
       }
+    }
 
-      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
-      if (approvedByUserId && preVerifiedItemDiscountPinHash) {
-        preVerifiedKitchenManager = {
-          id: approvedByUserId,
-          verifiedPinHash: preVerifiedItemDiscountPinHash,
-        };
-      } else if (override_pin) {
-        const existingBill = db
-          .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
-          .get(req.params.id, 'paid') as { id: string | number } | undefined;
-        const initialKitchenStatus = checkKitchenDeliveryStatus(
+    let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+    if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
+      preVerifiedKitchenManager = {
+        id: approvedByUserId,
+        verifiedPinHash: preVerifiedOrderDiscountPinHash,
+      };
+    } else if (override_pin) {
+      const existingBill = db
+        .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as { id: string | number } | undefined;
+      const initialKitchenStatus = checkKitchenDeliveryStatus(
+        db,
+        String(req.params.id),
+        undefined,
+        clientIp,
+        existingBill?.id,
+      );
+      if (!initialKitchenStatus.allowed) {
+        preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
           db,
-          String(req.params.id),
-          undefined,
+          override_pin,
           clientIp,
-          existingBill?.id,
+          explicitApproverId,
         );
-        if (!initialKitchenStatus.allowed) {
-          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
-            db,
-            override_pin,
-            clientIp,
-            explicitApproverId,
-          );
-        }
       }
+    }
 
-      // Check discount mode
+    // Check discount mode
+    if (discount_value > 0) {
       const discountMode = getSettingValue('discount_mode') || 'percentage';
       if (discountMode === 'none') {
-        return res.status(400).json({ error: 'Discounts are disabled' });
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Discounts are disabled',
+              'disabled',
+            ),
+          );
       }
       if (discountMode === 'flat' && discount_type === 'percentage') {
-        return res.status(400).json({ error: 'Percentage discounts are disabled' });
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Percentage discounts are disabled',
+              'type_disabled',
+            ),
+          );
       }
       if (discountMode === 'percentage' && discount_type === 'amount') {
-        return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+        return res
+          .status(400)
+          .json(
+            structuredOperationFailure(
+              req,
+              'fc.backend.order.discount.validation',
+              'not_applied',
+              'Flat amount discounts are disabled',
+              'type_disabled',
+            ),
+          );
       }
+    }
 
-      // BUG #14 FIX: Check item-level discount against max settings (0 = no limit)
+    // Check against limits from settings (0 = no limit)
+    if (discount_value > 0) {
       if (discount_type === 'percentage') {
         const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
         if (maxPercentage > 0 && discount_value > maxPercentage) {
           return res
             .status(400)
-            .json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                `discount_value exceeds maximum percentage of ${maxPercentage}`,
+                'limit_exceeded',
+              ),
+            );
         }
       } else if (discount_type === 'amount') {
         const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
         if (maxAmount > 0 && discount_value > maxAmount) {
           return res
             .status(400)
-            .json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
+            .json(
+              structuredOperationFailure(
+                req,
+                'fc.backend.order.discount.validation',
+                'not_applied',
+                `discount_value exceeds maximum amount of ${maxAmount}`,
+                'limit_exceeded',
+              ),
+            );
+        }
+      }
+    }
+    const tenantInfo = {
+      country: getSettingValue('country') || '',
+      business_type: getSettingValue('business_type') || 'restaurant',
+      state_code: getSettingValue('state_code') || '',
+      currency: getTenantCurrency(),
+      taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+    };
+    // Wrap discount, tax recalculation, and bill sync in transaction.
+    const result = withTxn(() => {
+      if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
+        const approver = db
+          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .get(approvedByUserId) as
+          | { id: string; role: string; pin_hash: string | null; is_active: number }
+          | undefined;
+        if (
+          !approver ||
+          approver.is_active !== 1 ||
+          !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+          !hasPermission(approver.id, 'orders.discount.apply') ||
+          approver.pin_hash !== preVerifiedOrderDiscountPinHash
+        ) {
+          throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
         }
       }
 
+      // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | EditableOrderRow
+        | undefined;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
+          statusCode: 400,
+          diagnosticCode: 'order_not_discountable',
+        });
+      }
+      const splitBill = db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id);
+      if (splitBill) {
+        throw Object.assign(new Error('Discounts cannot be changed after a check has been split'), {
+          statusCode: 409,
+          diagnosticCode: 'split_check',
+        });
+      }
+      const refundedBill = db
+        .prepare(
+          `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+        )
+        .get(req.params.id);
+      if (refundedBill) {
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+          statusCode: 409,
+          diagnosticCode: 'refunded',
+        });
+      }
+
+      const customer = currentOrder.customer_id
+        ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+            | Customer
+            | undefined) ?? null)
+        : null;
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
 
-      const updatedItem = withTxn(() => {
-        if (approvedByUserId && preVerifiedItemDiscountPinHash) {
-          const approver = db
-            .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
-            .get(approvedByUserId) as
-            | { id: string; role: string; pin_hash: string | null; is_active: number }
-            | undefined;
-          if (
-            !approver ||
-            approver.is_active !== 1 ||
-            !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
-            !hasPermission(approver.id, 'orders.discount.apply') ||
-            approver.pin_hash !== preVerifiedItemDiscountPinHash
-          ) {
-            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
-          }
-        }
+      // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
+      // The fresh item sum is the only basis: it describes exactly the items the
+      // tax is summed over, and the write below heals the stored column to match.
+      const totals = calculateOrderTotals(db, req.params.id as string);
 
-        // Re-read current order and item under transaction lock to prevent financial state races
-        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
-          | EditableOrderRow
-          | undefined;
-        if (!currentOrder) {
-          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-        }
-        if (['completed', 'cancelled'].includes(currentOrder.status)) {
-          throw Object.assign(
-            new Error('Cannot apply discount to a completed or cancelled order'),
-            { statusCode: 400 },
-          );
-        }
-
-        const splitBill = db
-          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
-          .get(req.params.id);
-        if (splitBill) {
-          throw Object.assign(
-            new Error('Discounts cannot be changed after a check has been split'),
-            { statusCode: 409 },
-          );
-        }
-
-        const refundedBill = db
-          .prepare(
-            `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
-          )
-          .get(req.params.id);
-        if (refundedBill) {
-          throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
-            statusCode: 409,
-          });
-        }
-
-        const currentItem = db
-          .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
-          .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
-        if (!currentItem) {
-          throw Object.assign(new Error('Item not found'), { statusCode: 404 });
-        }
-        if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
-          throw Object.assign(
-            new Error('Cannot apply discount to a cancelled, voided, or refunded item'),
-            { statusCode: 400 },
-          );
-        }
-
-        // Calculate item discount amount using fresh quantity and addons
-        const addonRows = db
-          .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
-          .all(currentItem.id) as { price: number; quantity?: number }[];
-        const addonTotal = addonRows.reduce(
-          (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
-          0,
-        );
-        const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
-
-        let discountAmount: number;
+      // Calculate discount amount
+      let discountAmount = 0;
+      if (discount_value > 0) {
         if (discount_type === 'percentage') {
-          discountAmount = (freshItemBaseTotal * discount_value) / 100;
+          discountAmount = (totals.subtotal * discount_value) / 100;
         } else {
-          discountAmount = Math.min(discount_value, freshItemBaseTotal);
+          discountAmount = Math.min(discount_value, totals.subtotal);
         }
         discountAmount = Number(discountAmount.toFixed(decimals));
+      }
 
-        // Recalculate item subtotal after discount
-        const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
+      const engineCharges = resolveEngineCharges(currentOrder, totals.subtotal, discountAmount);
+      const {
+        taxRollup,
+        total: newTotal,
+        roundOff,
+      } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals,
+        discountAmount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+      });
 
-        // Recalculate tax on discounted subtotal
-        const product = db
-          .prepare('SELECT * FROM products WHERE id = ?')
-          .get(currentItem.product_id) as ProductRow | undefined;
-        if (!product) {
-          throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      const syncedServiceCharge = engineCharges
+        ? engineCharges.columns.service_charge
+        : currentOrder.service_charge || 0;
+      const syncedPackagingCharge = engineCharges
+        ? engineCharges.columns.packaging_charge
+        : currentOrder.packaging_charge || 0;
+      const syncedChargesJson = engineCharges
+        ? engineCharges.chargesJson
+        : (currentOrder.charges_breakdown ?? null);
+
+      db.prepare(`
+        UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
+          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
+          service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(
+        totals.subtotal,
+        discountAmount,
+        discount_value > 0 ? discount_type : null,
+        discount_value > 0 ? discount_value : null,
+        discount_value > 0 ? discount_reason || null : null,
+        taxRollup.taxAmount,
+        JSON.stringify(taxRollup.breakdowns),
+        taxRollup.snapshotJson,
+        newTotal,
+        syncedServiceCharge,
+        syncedPackagingCharge,
+        syncedChargesJson,
+        roundOff,
+        now(),
+        req.params.id,
+      );
+
+      // Sync discount to bill if it exists and is unpaid
+      const existingBill = db
+        .prepare('SELECT * FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as any;
+      if (existingBill) {
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
+          newTotal,
+          pack,
+          currency,
+        );
+        const billPaidAmount = Number(existingBill.paid_amount || 0);
+        if (billPaidAmount > 0 && billTotal < billPaidAmount) {
+          throw Object.assign(
+            new Error('Discount cannot reduce bill total below collected payments'),
+            { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+          );
         }
-        const customer = currentOrder.customer_id
-          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
-              | Customer
-              | undefined) ?? null)
-          : null;
-        const settings = db
-          .prepare(
-            "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
-          )
-          .all() as { key: string; value: string }[];
-        const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
-        const tenantInfo = {
-          country: settingsMap.country || '',
-          business_type: settingsMap.business_type || 'restaurant',
-          state_code: settingsMap.state_code || '',
-          currency: getTenantCurrency(),
-          taxes_enabled: settingsMap.taxes_enabled === 'true',
-        };
-        const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
-        const newTaxAmount = taxResult.tax_amount;
-        const newTaxBreakdown = taxResult.tax_breakdown;
-        const newTaxSnapshotJson = taxResult.tax_snapshot
-          ? JSON.stringify(taxResult.tax_snapshot)
-          : null;
-
-        const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
-
-        // Update item with recalculated tax
+        const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          override_pin,
+          clientIp,
+          existingBill.id,
+          preVerifiedKitchenManager,
+          explicitApproverId,
+        );
+        const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
         db.prepare(`
+          UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
+            discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ?
+          WHERE id = ?
+        `).run(
+          totals.subtotal,
+          discountAmount,
+          discount_value > 0 ? discount_type : null,
+          discount_value > 0 ? discount_value : null,
+          discount_value > 0 ? discount_reason || null : null,
+          taxRollup.taxAmount,
+          JSON.stringify(taxRollup.breakdowns),
+          taxRollup.snapshotJson,
+          billTotal,
+          newBillBalance,
+          syncedServiceCharge,
+          syncedPackagingCharge,
+          syncedChargesJson,
+          billRoundOff,
+          isBillNowPaid ? 1 : 0,
+          isBillNowPaid ? 1 : 0,
+          now(),
+          now(),
+          existingBill.id,
+        );
+        if (isBillNowPaid) {
+          completeExactBalanceSettlement(
+            db,
+            existingBill.id,
+            billTotal,
+            currency,
+            now(),
+            override_pin,
+            clientIp,
+            preVerifiedKitchenManager,
+            explicitApproverId,
+          );
+        }
+        if (kitchenStatus.overridden && isBillNowPaid) {
+          recordOrderAudit(db, {
+            orderId: req.params.id as string,
+            actorUserId: (req as any).user.userId,
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
+      }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: (req as any).user.userId,
+        action: 'order_discount_applied',
+        details: {
+          discount_type,
+          discount_value,
+          ...(approvedByUserId && { approved_by: approvedByUserId }),
+        },
+      });
+
+      const updatedOrder = parseRowJson(
+        db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id),
+      ) as any;
+      return updatedOrder;
+    });
+    operationCommitted = true;
+
+    notifyOrderUpdated();
+    res.json({ order: result });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    const statusCode = error.statusCode || 500;
+    const message = error.statusCode ? error.message : 'Internal server error';
+    if (statusCode === 404 && !operationCommitted)
+      return res.status(statusCode).json({ error: message });
+    const point = operationCommitted
+      ? 'fc.backend.order.discount.completion'
+      : statusCode >= 500
+        ? 'fc.backend.order.discount.persistence'
+        : 'fc.backend.order.discount.validation';
+    return res
+      .status(statusCode)
+      .json(
+        structuredOperationFailure(
+          req,
+          point,
+          operationCommitted ? 'applied' : 'not_applied',
+          message,
+          operationCommitted ? undefined : error.diagnosticCode,
+        ),
+      );
+  }
+});
+
+router.patch(
+  '/:id/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleOrderDiscount,
+);
+router.post(
+  '/:id/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleOrderDiscount,
+);
+
+const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (
+      db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id)
+    ) {
+      return res
+        .status(409)
+        .json({ error: 'Discounts cannot be changed after a check has been split' });
+    }
+
+    const refundedBill = db
+      .prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+      )
+      .get(req.params.id);
+    if (refundedBill) {
+      return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+    }
+    // Cannot apply discount to completed or cancelled orders
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res
+        .status(400)
+        .json({ error: 'Cannot apply discount to a completed or cancelled order' });
+    }
+
+    const item = db
+      .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+      .get(req.params.itemId, req.params.id) as any;
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) {
+      return res
+        .status(400)
+        .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
+    }
+
+    const { discount_type, discount_value, override_pin, approver_id, user_id } = req.body;
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+
+    // Validate discount_type
+    if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
+      return res.status(400).json({ error: 'discount_type must be "percentage" or "amount"' });
+    }
+
+    // Validate discount_value is a positive number
+    if (
+      discount_value === undefined ||
+      discount_value === null ||
+      typeof discount_value !== 'number' ||
+      discount_value <= 0
+    ) {
+      return res.status(400).json({ error: 'discount_value must be a positive number' });
+    }
+
+    // Check if approval is required
+    const explicitApproverId = approver_id || req.body.manager_id || user_id;
+    let approvedByUserId: string | undefined;
+    let preVerifiedItemDiscountPinHash: string | undefined;
+    const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
+    if (requiresApproval) {
+      if (!override_pin) {
+        return res
+          .status(403)
+          .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
+      }
+      const canonicalIp = normalizeIpForRateLimit(clientIp);
+      const rateLimitKey = `pin:${canonicalIp}:item-discount`;
+      if (isPinRateLimited(rateLimitKey)) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+        checkPinRateLimit(rateLimitKey);
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+      const candidateUsers = explicitApproverId
+        ? (db
+            .prepare(
+              'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+            )
+            .all(explicitApproverId) as PinApproverCandidate[])
+        : (db
+            .prepare(
+              'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+            )
+            .all() as PinApproverCandidate[]);
+
+      const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+        if (isPinRateLimited(rateLimitKey)) {
+          return { rateLimited: true };
+        }
+        let user: PinApproverCandidate | undefined;
+        for (const candidate of candidateUsers) {
+          if (
+            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+            hasPermission(candidate.id, 'orders.discount.apply') &&
+            (await verifyPinAsync(candidate.pin_hash, override_pin))
+          ) {
+            user = candidate;
+            break;
+          }
+        }
+        if (!user) {
+          checkPinRateLimit(rateLimitKey);
+          return { user: null };
+        }
+        clearPinRateLimit(rateLimitKey);
+        return { user };
+      });
+
+      if (verifiedResult.rateLimited) {
+        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      }
+      if (!verifiedResult.user) {
+        return res.status(403).json({ error: 'Invalid manager PIN' });
+      }
+      approvedByUserId = verifiedResult.user.id;
+      preVerifiedItemDiscountPinHash = verifiedResult.user.pin_hash;
+    }
+
+    let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+    if (approvedByUserId && preVerifiedItemDiscountPinHash) {
+      preVerifiedKitchenManager = {
+        id: approvedByUserId,
+        verifiedPinHash: preVerifiedItemDiscountPinHash,
+      };
+    } else if (override_pin) {
+      const existingBill = db
+        .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+        .get(req.params.id, 'paid') as { id: string | number } | undefined;
+      const initialKitchenStatus = checkKitchenDeliveryStatus(
+        db,
+        String(req.params.id),
+        undefined,
+        clientIp,
+        existingBill?.id,
+      );
+      if (!initialKitchenStatus.allowed) {
+        preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+          db,
+          override_pin,
+          clientIp,
+          explicitApproverId,
+        );
+      }
+    }
+
+    // Check discount mode
+    const discountMode = getSettingValue('discount_mode') || 'percentage';
+    if (discountMode === 'none') {
+      return res.status(400).json({ error: 'Discounts are disabled' });
+    }
+    if (discountMode === 'flat' && discount_type === 'percentage') {
+      return res.status(400).json({ error: 'Percentage discounts are disabled' });
+    }
+    if (discountMode === 'percentage' && discount_type === 'amount') {
+      return res.status(400).json({ error: 'Flat amount discounts are disabled' });
+    }
+
+    // BUG #14 FIX: Check item-level discount against max settings (0 = no limit)
+    if (discount_type === 'percentage') {
+      const maxPercentage = parseFloat(getSettingValue('discount_max_percentage') || '25');
+      if (maxPercentage > 0 && discount_value > maxPercentage) {
+        return res
+          .status(400)
+          .json({ error: `discount_value exceeds maximum percentage of ${maxPercentage}` });
+      }
+    } else if (discount_type === 'amount') {
+      const maxAmount = parseFloat(getSettingValue('discount_max_amount') || '0');
+      if (maxAmount > 0 && discount_value > maxAmount) {
+        return res
+          .status(400)
+          .json({ error: `discount_value exceeds maximum amount of ${maxAmount}` });
+      }
+    }
+
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+
+    const updatedItem = withTxn(() => {
+      if (approvedByUserId && preVerifiedItemDiscountPinHash) {
+        const approver = db
+          .prepare('SELECT id, role, pin_hash, is_active FROM users WHERE id = ?')
+          .get(approvedByUserId) as
+          | { id: string; role: string; pin_hash: string | null; is_active: number }
+          | undefined;
+        if (
+          !approver ||
+          approver.is_active !== 1 ||
+          !hasRole(approver.role, ROLE_ACCESS.ownerManager) ||
+          !hasPermission(approver.id, 'orders.discount.apply') ||
+          approver.pin_hash !== preVerifiedItemDiscountPinHash
+        ) {
+          throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+        }
+      }
+
+      // Re-read current order and item under transaction lock to prevent financial state races
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+        | EditableOrderRow
+        | undefined;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), {
+          statusCode: 400,
+        });
+      }
+
+      const splitBill = db
+        .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+        .get(req.params.id);
+      if (splitBill) {
+        throw Object.assign(new Error('Discounts cannot be changed after a check has been split'), {
+          statusCode: 409,
+        });
+      }
+
+      const refundedBill = db
+        .prepare(
+          `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+        )
+        .get(req.params.id);
+      if (refundedBill) {
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+          statusCode: 409,
+        });
+      }
+
+      const currentItem = db
+        .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+        .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
+      if (!currentItem) {
+        throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+      }
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
+        throw Object.assign(
+          new Error('Cannot apply discount to a cancelled, voided, or refunded item'),
+          { statusCode: 400 },
+        );
+      }
+
+      // Calculate item discount amount using fresh quantity and addons
+      const addonRows = db
+        .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
+        .all(currentItem.id) as { price: number; quantity?: number }[];
+      const addonTotal = addonRows.reduce(
+        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
+        0,
+      );
+      const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
+
+      let discountAmount: number;
+      if (discount_type === 'percentage') {
+        discountAmount = (freshItemBaseTotal * discount_value) / 100;
+      } else {
+        discountAmount = Math.min(discount_value, freshItemBaseTotal);
+      }
+      discountAmount = Number(discountAmount.toFixed(decimals));
+
+      // Recalculate item subtotal after discount
+      const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
+
+      // Recalculate tax on discounted subtotal
+      const product = db
+        .prepare('SELECT * FROM products WHERE id = ?')
+        .get(currentItem.product_id) as ProductRow | undefined;
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
+      const customer = currentOrder.customer_id
+        ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+            | Customer
+            | undefined) ?? null)
+        : null;
+      const settings = db
+        .prepare(
+          "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+        )
+        .all() as { key: string; value: string }[];
+      const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+      const tenantInfo = {
+        country: settingsMap.country || '',
+        business_type: settingsMap.business_type || 'restaurant',
+        state_code: settingsMap.state_code || '',
+        currency: getTenantCurrency(),
+        taxes_enabled: settingsMap.taxes_enabled === 'true',
+      };
+      const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
+      const newTaxAmount = taxResult.tax_amount;
+      const newTaxBreakdown = taxResult.tax_breakdown;
+      const newTaxSnapshotJson = taxResult.tax_snapshot
+        ? JSON.stringify(taxResult.tax_snapshot)
+        : null;
+
+      const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
+
+      // Update item with recalculated tax
+      db.prepare(`
         UPDATE order_items SET discount_amount = ?,
           subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?,
           total = ?, updated_at = ? WHERE id = ?
       `).run(
-          discountAmount,
-          newSubtotal,
-          newTaxAmount,
-          JSON.stringify(newTaxBreakdown),
-          newTaxSnapshotJson,
-          taxResult.tax_type,
-          newTotal,
-          now(),
-          req.params.itemId,
+        discountAmount,
+        newSubtotal,
+        newTaxAmount,
+        JSON.stringify(newTaxBreakdown),
+        newTaxSnapshotJson,
+        taxResult.tax_type,
+        newTotal,
+        now(),
+        req.params.itemId,
+      );
+
+      // Update order totals excluding terminal items.
+      const orderTotals = calculateOrderTotals(db, req.params.id as string);
+
+      // Recalculate order-level discount proportionally on new subtotal
+      const existingDiscountAmount = currentOrder.discount_amount || 0;
+      let newOrderDiscount = existingDiscountAmount;
+      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+        // Scale discount proportionally to new subtotal
+        newOrderDiscount = Number(
+          (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+            decimals,
+          ),
         );
+      }
 
-        // Update order totals excluding terminal items.
-        const orderTotals = calculateOrderTotals(db, req.params.id as string);
+      // Recalculate tax on discounted subtotal
+      const engineCharges = resolveEngineCharges(
+        currentOrder,
+        orderTotals.subtotal,
+        newOrderDiscount,
+      );
+      const {
+        taxRollup,
+        total: orderTotal,
+        roundOff,
+      } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: orderTotals,
+        discountAmount: newOrderDiscount,
+        taxScaling: 'when-discounted',
+        appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
+        chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
+      });
 
-        // Recalculate order-level discount proportionally on new subtotal
-        const existingDiscountAmount = currentOrder.discount_amount || 0;
-        let newOrderDiscount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
-          // Scale discount proportionally to new subtotal
-          newOrderDiscount = Number(
-            (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
-              decimals,
-            ),
-          );
-        }
+      const syncedServiceCharge = engineCharges
+        ? engineCharges.columns.service_charge
+        : currentOrder.service_charge || 0;
+      const syncedPackagingCharge = engineCharges
+        ? engineCharges.columns.packaging_charge
+        : currentOrder.packaging_charge || 0;
+      const syncedChargesJson = engineCharges
+        ? engineCharges.chargesJson
+        : (currentOrder.charges_breakdown ?? null);
 
-        // Recalculate tax on discounted subtotal
-        const engineCharges = resolveEngineCharges(
-          currentOrder,
-          orderTotals.subtotal,
-          newOrderDiscount,
-        );
-        const {
-          taxRollup,
-          total: orderTotal,
-          roundOff,
-        } = recomputeOrderTotals({
-          tenantInfo,
-          chargeContext: currentOrder,
-          customer,
-          totals: orderTotals,
-          discountAmount: newOrderDiscount,
-          taxScaling: 'when-discounted',
-          appliedCharges: engineCharges ? engineCharges.appliedCharges : null,
-          chargeColumnOverrides: engineCharges?.chargeColumnOverrides,
-        });
-
-        const syncedServiceCharge = engineCharges
-          ? engineCharges.columns.service_charge
-          : currentOrder.service_charge || 0;
-        const syncedPackagingCharge = engineCharges
-          ? engineCharges.columns.packaging_charge
-          : currentOrder.packaging_charge || 0;
-        const syncedChargesJson = engineCharges
-          ? engineCharges.chargesJson
-          : (currentOrder.charges_breakdown ?? null);
-
-        db.prepare(`
+      db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
+        orderTotals.subtotal,
+        taxRollup.taxAmount,
+        JSON.stringify(taxRollup.breakdowns),
+        taxRollup.snapshotJson,
+        newOrderDiscount,
+        orderTotal,
+        syncedServiceCharge,
+        syncedPackagingCharge,
+        syncedChargesJson,
+        roundOff,
+        now(),
+        req.params.id,
+      );
+
+      // BUG #15 FIX: Sync item-level discount to bill
+      const existingBill = db
+        .prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'")
+        .get(req.params.id) as any;
+      if (existingBill) {
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
+          orderTotal,
+          pack,
+          currency,
+        );
+        const billPaidAmount = Number(existingBill.paid_amount || 0);
+        if (billPaidAmount > 0 && billTotal < billPaidAmount) {
+          throw Object.assign(
+            new Error('Discount cannot reduce bill total below collected payments'),
+            { statusCode: 409, diagnosticCode: 'below_collected_funds' },
+          );
+        }
+        const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          override_pin,
+          clientIp,
+          existingBill.id,
+          preVerifiedKitchenManager,
+          explicitApproverId,
+        );
+        const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
+        db.prepare(
+          `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ? WHERE id = ?`,
+        ).run(
           orderTotals.subtotal,
+          billTotal,
+          newBillBalance,
           taxRollup.taxAmount,
           JSON.stringify(taxRollup.breakdowns),
           taxRollup.snapshotJson,
           newOrderDiscount,
-          orderTotal,
           syncedServiceCharge,
           syncedPackagingCharge,
           syncedChargesJson,
-          roundOff,
+          billRoundOff,
+          isBillNowPaid ? 1 : 0,
+          isBillNowPaid ? 1 : 0,
           now(),
-          req.params.id,
+          now(),
+          existingBill.id,
         );
-
-        // BUG #15 FIX: Sync item-level discount to bill
-        const existingBill = db
-          .prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'")
-          .get(req.params.id) as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(
-            orderTotal,
-            pack,
-            currency,
-          );
-          const billPaidAmount = Number(existingBill.paid_amount || 0);
-          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
-            throw Object.assign(
-              new Error('Discount cannot reduce bill total below collected payments'),
-              { statusCode: 409, diagnosticCode: 'below_collected_funds' },
-            );
-          }
-          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
-          const kitchenStatus = checkKitchenDeliveryStatus(
+        if (isBillNowPaid) {
+          completeExactBalanceSettlement(
             db,
-            String(req.params.id),
+            existingBill.id,
+            billTotal,
+            currency,
+            now(),
             override_pin,
             clientIp,
-            existingBill.id,
             preVerifiedKitchenManager,
             explicitApproverId,
           );
-          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
-          db.prepare(
-            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
-            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
-            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
-            updated_at = ? WHERE id = ?`,
-          ).run(
-            orderTotals.subtotal,
-            billTotal,
-            newBillBalance,
-            taxRollup.taxAmount,
-            JSON.stringify(taxRollup.breakdowns),
-            taxRollup.snapshotJson,
-            newOrderDiscount,
-            syncedServiceCharge,
-            syncedPackagingCharge,
-            syncedChargesJson,
-            billRoundOff,
-            isBillNowPaid ? 1 : 0,
-            isBillNowPaid ? 1 : 0,
-            now(),
-            now(),
-            existingBill.id,
-          );
-          if (isBillNowPaid) {
-            completeExactBalanceSettlement(
-              db,
-              existingBill.id,
-              billTotal,
-              currency,
-              now(),
-              override_pin,
-              clientIp,
-              preVerifiedKitchenManager,
-              explicitApproverId,
-            );
-          }
-          if (kitchenStatus.overridden && isBillNowPaid) {
-            recordOrderAudit(db, {
-              orderId: req.params.id as string,
-              orderItemId: req.params.itemId as string,
-              actorUserId: (req as any).user.userId,
-              action: 'kitchen_delivery_override',
-              details: {
-                manager_user_id: kitchenStatus.managerUserId,
-                undelivered_count: kitchenStatus.count,
-              },
-            });
-          }
         }
+        if (kitchenStatus.overridden && isBillNowPaid) {
+          recordOrderAudit(db, {
+            orderId: req.params.id as string,
+            orderItemId: req.params.itemId as string,
+            actorUserId: (req as any).user.userId,
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
+      }
 
-        recordOrderAudit(db, {
-          orderId: req.params.id as string,
-          orderItemId: req.params.itemId as string,
-          actorUserId: (req as any).user.userId,
-          action: 'item_discount_applied',
-          details: {
-            discount_type,
-            discount_value,
-            ...(approvedByUserId && { approved_by: approvedByUserId }),
-          },
-        });
-
-        const updatedRow = db
-          .prepare('SELECT * FROM order_items WHERE id = ?')
-          .get(req.params.itemId) as Record<string, unknown>;
-        return {
-          ...updatedRow,
-          edit_version: getOrderItemEditVersion(
-            db,
-            req.params.id as string,
-            req.params.itemId as string,
-          ),
-        };
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        orderItemId: req.params.itemId as string,
+        actorUserId: (req as any).user.userId,
+        action: 'item_discount_applied',
+        details: {
+          discount_type,
+          discount_value,
+          ...(approvedByUserId && { approved_by: approvedByUserId }),
+        },
       });
 
-      res.json({ item: updatedItem });
-    } catch (error: any) {
-      console.error('[API] Internal error:', error);
-      res
-        .status(error.statusCode || 500)
-        .json({ error: error.statusCode ? error.message : 'Internal server error' });
-    }
-  });
+      const updatedRow = db
+        .prepare('SELECT * FROM order_items WHERE id = ?')
+        .get(req.params.itemId) as Record<string, unknown>;
+      return {
+        ...updatedRow,
+        edit_version: getOrderItemEditVersion(
+          db,
+          req.params.id as string,
+          req.params.itemId as string,
+        ),
+      };
+    });
+
+    res.json({ item: updatedItem });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res
+      .status(error.statusCode || 500)
+      .json({ error: error.statusCode ? error.message : 'Internal server error' });
+  }
+});
 
 router.patch(
   '/:id/items/:itemId/discount',

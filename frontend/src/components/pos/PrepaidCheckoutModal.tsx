@@ -1033,12 +1033,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               totalPaymentMinor < remainingMinor ||
               Boolean(
                 preview.discountAmount > 0 &&
-                  discountRequiresApproval &&
-                  (!discountPin ||
-                    managerApprovers.loading ||
-                    managerApprovers.loadFailed ||
-                    managerApprovers.approvers.length === 0 ||
-                    !(discountApproverId ?? managerApprovers.selectedApproverId)),
+                discountRequiresApproval &&
+                (!discountPin ||
+                  managerApprovers.loading ||
+                  managerApprovers.loadFailed ||
+                  managerApprovers.approvers.length === 0 ||
+                  !(discountApproverId ?? managerApprovers.selectedApproverId)),
               )
             }
             className="w-full h-12 text-base font-semibold rounded-xl"

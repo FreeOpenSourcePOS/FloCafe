@@ -2294,11 +2294,11 @@ export default function PaymentModal({
                   (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
                   Boolean(
                     (kitchenOverrideRequired || kitchenOverridePin) &&
-                      (!kitchenOverridePin ||
-                        managerApprovers.loading ||
-                        managerApprovers.loadFailed ||
-                        managerApprovers.approvers.length === 0 ||
-                        !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
+                    (!kitchenOverridePin ||
+                      managerApprovers.loading ||
+                      managerApprovers.loadFailed ||
+                      managerApprovers.approvers.length === 0 ||
+                      !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
                   )
                 }
                 className="w-full"

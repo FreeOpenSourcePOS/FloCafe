@@ -54,12 +54,37 @@ async function run() {
   const pinHashB = bcrypt.hashSync('2222', 10);
 
   // Seed test users
-  const mgrA = { id: 'mgr-a-pin', name: 'Alice Manager', role: 'manager', email: 'alice@test.local' };
+  const mgrA = {
+    id: 'mgr-a-pin',
+    name: 'Alice Manager',
+    role: 'manager',
+    email: 'alice@test.local',
+  };
   const mgrB = { id: 'mgr-b-pin', name: 'Bob Manager', role: 'manager', email: 'bob@test.local' };
-  const mgrNoPin = { id: 'mgr-no-pin', name: 'Charlie NoPin', role: 'manager', email: 'charlie@test.local' };
-  const mgrInactive = { id: 'mgr-inactive', name: 'Diana Inactive', role: 'manager', email: 'diana@test.local' };
-  const cashier = { id: 'cashier-1', name: 'Evan Cashier', role: 'cashier', email: 'evan@test.local' };
-  const serverUser = { id: 'server-1', name: 'Fiona Server', role: 'server', email: 'fiona@test.local' };
+  const mgrNoPin = {
+    id: 'mgr-no-pin',
+    name: 'Charlie NoPin',
+    role: 'manager',
+    email: 'charlie@test.local',
+  };
+  const mgrInactive = {
+    id: 'mgr-inactive',
+    name: 'Diana Inactive',
+    role: 'manager',
+    email: 'diana@test.local',
+  };
+  const cashier = {
+    id: 'cashier-1',
+    name: 'Evan Cashier',
+    role: 'cashier',
+    email: 'evan@test.local',
+  };
+  const serverUser = {
+    id: 'server-1',
+    name: 'Fiona Server',
+    role: 'server',
+    email: 'fiona@test.local',
+  };
   const chef = { id: 'chef-1', name: 'George Chef', role: 'chef', email: 'george@test.local' };
 
   // Mgr A: active, manager, has PIN
@@ -84,7 +109,16 @@ async function run() {
   db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-  `).run(mgrInactive.id, mgrInactive.name, mgrInactive.email, passwordHash, mgrInactive.role, pinHashA, now(), now());
+  `).run(
+    mgrInactive.id,
+    mgrInactive.name,
+    mgrInactive.email,
+    passwordHash,
+    mgrInactive.role,
+    pinHashA,
+    now(),
+    now(),
+  );
 
   // Cashier: active, cashier
   db.prepare(`
@@ -96,7 +130,15 @@ async function run() {
   db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, NULL, 1, ?, ?)
-  `).run(serverUser.id, serverUser.name, serverUser.email, passwordHash, serverUser.role, now(), now());
+  `).run(
+    serverUser.id,
+    serverUser.name,
+    serverUser.email,
+    passwordHash,
+    serverUser.role,
+    now(),
+    now(),
+  );
 
   // Chef: active, chef with PIN
   db.prepare(`

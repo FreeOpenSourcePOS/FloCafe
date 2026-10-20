@@ -62,7 +62,9 @@ function billRow(db: any, id: any): any {
 
 function orderRow(db: any, id: any): any {
   return db
-    .prepare(`SELECT id, status, table_id, subtotal, discount_amount, total, completed_at FROM orders WHERE id = ?`)
+    .prepare(
+      `SELECT id, status, table_id, subtotal, discount_amount, total, completed_at FROM orders WHERE id = ?`,
+    )
     .get(id);
 }
 
@@ -91,12 +93,30 @@ async function run() {
   db.prepare(
     `INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-  ).run(managerA.id, managerA.name, 'mgrA@test.local', passwordHash, managerA.role, pinHashA, now(), now());
+  ).run(
+    managerA.id,
+    managerA.name,
+    'mgrA@test.local',
+    passwordHash,
+    managerA.role,
+    pinHashA,
+    now(),
+    now(),
+  );
 
   db.prepare(
     `INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-  ).run(managerB.id, managerB.name, 'mgrB@test.local', passwordHash, managerB.role, pinHashB, now(), now());
+  ).run(
+    managerB.id,
+    managerB.name,
+    'mgrB@test.local',
+    passwordHash,
+    managerB.role,
+    pinHashB,
+    now(),
+    now(),
+  );
 
   seedCategory(db, 'cat-f3', 'F3 Category');
   seedProduct(db, 'prod-1000', 'cat-f3', 'Item 1000', 1000);
@@ -179,9 +199,15 @@ async function run() {
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'partial', 'Bill remains partial');
       const audit = db
-        .prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`)
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
         .get(orderId);
-      assertEqualOrThrow(audit, undefined, 'No kitchen_delivery_override audit recorded on rejected discount');
+      assertEqualOrThrow(
+        audit,
+        undefined,
+        'No kitchen_delivery_override audit recorded on rejected discount',
+      );
     }
 
     // ── 2. Order Discount Route: Mismatched Approver PIN must reject with 403 ──
@@ -209,9 +235,15 @@ async function run() {
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'partial', 'Bill remains partial');
       const audit = db
-        .prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`)
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
         .get(orderId);
-      assertEqualOrThrow(audit, undefined, 'No kitchen_delivery_override audit recorded on rejected discount');
+      assertEqualOrThrow(
+        audit,
+        undefined,
+        'No kitchen_delivery_override audit recorded on rejected discount',
+      );
     }
 
     // ── 3. Item Discount Route: Mismatched Approver PIN must reject with 403 ──
@@ -239,13 +271,21 @@ async function run() {
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'partial', 'Bill remains partial');
       const audit = db
-        .prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`)
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
         .get(orderId);
-      assertEqualOrThrow(audit, undefined, 'No kitchen_delivery_override audit recorded on rejected discount');
+      assertEqualOrThrow(
+        audit,
+        undefined,
+        'No kitchen_delivery_override audit recorded on rejected discount',
+      );
     }
 
     // ── 4. Valid Approver PIN strictly binds to Manager A ──
-    console.log('\n── Subtest 4: Valid matching approver ID and PIN succeeds and attributes properly ──');
+    console.log(
+      '\n── Subtest 4: Valid matching approver ID and PIN succeeds and attributes properly ──',
+    );
     {
       const { orderId, billId } = await setupOrderWithPartialPayment();
 
@@ -260,17 +300,27 @@ async function run() {
         headers: ownerAuth,
       });
 
-      assertEqualOrThrow(discountRes.status, 200, 'Bill discount with matching approver PIN succeeds');
+      assertEqualOrThrow(
+        discountRes.status,
+        200,
+        'Bill discount with matching approver PIN succeeds',
+      );
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'paid', 'Bill is auto-settled to paid');
       assertEqualOrThrow(orderRow(db, orderId).status, 'completed', 'Order completed');
 
       const audit = db
-        .prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`)
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
         .get(orderId) as any;
       assertOrThrow(Boolean(audit), 'kitchen_delivery_override audit log recorded');
       const details = JSON.parse(audit.details_json);
-      assertEqualOrThrow(details.manager_user_id, managerA.id, 'Audit log correctly attributes override to Manager A');
+      assertEqualOrThrow(
+        details.manager_user_id,
+        managerA.id,
+        'Audit log correctly attributes override to Manager A',
+      );
     }
 
     // ── 5. completeExactBalanceSettlement direct verification ──
@@ -296,11 +346,16 @@ async function run() {
           threwMismatched = true;
         }
       }
-      assertOrThrow(threwMismatched, 'completeExactBalanceSettlement rejected mismatched approver PIN');
+      assertOrThrow(
+        threwMismatched,
+        'completeExactBalanceSettlement rejected mismatched approver PIN',
+      );
     }
 
     // ── 6. When discount_requires_approval = 'true' ──
-    console.log('\n── Subtest 6: When discount_requires_approval is true, approver binding is enforced ──');
+    console.log(
+      '\n── Subtest 6: When discount_requires_approval is true, approver binding is enforced ──',
+    );
     {
       setSetting(db, 'discount_requires_approval', 'true');
       const { orderId, billId } = await setupOrderWithPartialPayment();
@@ -315,7 +370,11 @@ async function run() {
         },
         headers: ownerAuth,
       });
-      assertEqualOrThrow(rejectRes.status, 403, 'Discount with mismatched PIN rejected when approval required');
+      assertEqualOrThrow(
+        rejectRes.status,
+        403,
+        'Discount with mismatched PIN rejected when approval required',
+      );
 
       const okRes = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
         method: 'POST',
@@ -327,7 +386,11 @@ async function run() {
         },
         headers: ownerAuth,
       });
-      assertEqualOrThrow(okRes.status, 200, 'Discount with valid PIN accepted when approval required');
+      assertEqualOrThrow(
+        okRes.status,
+        200,
+        'Discount with valid PIN accepted when approval required',
+      );
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'paid', 'Bill auto-settled to paid');
     }

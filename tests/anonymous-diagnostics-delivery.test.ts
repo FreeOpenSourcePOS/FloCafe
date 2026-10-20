@@ -44,6 +44,7 @@ globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
 const { sendAnonymousDiagnosticReport } = require('../main/services/telemetry');
 
 async function main() {
+  process.env.FLO_TELEMETRY_DEV = '1';
   const window = new Date();
   window.setUTCMinutes(0, 0, 0);
   const utc = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -212,6 +213,7 @@ async function main() {
       'invalid_ack',
     );
   } finally {
+    delete process.env.FLO_TELEMETRY_DEV;
     globalThis.fetch = originalFetch;
     Module._load = originalLoad;
   }

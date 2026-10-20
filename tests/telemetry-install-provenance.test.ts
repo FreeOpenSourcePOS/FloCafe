@@ -284,6 +284,7 @@ async function main() {
   const originalFetch = globalThis.fetch;
   let body: Record<string, unknown> | null = null;
   try {
+    process.env.FLO_TELEMETRY_DEV = '1';
     globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       body = JSON.parse(String(init?.body || '{}'));
       return new Response(null, { status: 204 });
@@ -308,6 +309,7 @@ async function main() {
       'a dev run reports dev/dev over the wire',
     );
   } finally {
+    delete process.env.FLO_TELEMETRY_DEV;
     globalThis.fetch = originalFetch;
   }
 

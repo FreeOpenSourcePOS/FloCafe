@@ -71,7 +71,27 @@ import {
 } from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
-import { isAllowedPrivateIp } from '../middleware/security';
+import {
+  isAllowedPrivateIp,
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  normalizeIpForRateLimit,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+} from '../middleware/security';
+
+export {
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+};
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 
 type PinApproverCandidate = { id: string; role: string; pin_hash: string };
@@ -272,46 +292,6 @@ function getStoredOrderReplay(
   } catch {
     throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
   }
-}
-
-// Rate limiting for PIN validation (simple in-memory)
-const pinAttempts = new Map<string, { count: number; resetAt: number }>();
-const PIN_MAX_ATTEMPTS = 5;
-const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-
-export function checkPinRateLimit(key: string): boolean {
-  const now = Date.now();
-  // Sweep expired rate limit entries when map grows beyond threshold.
-  if (pinAttempts.size > 500) {
-    for (const [k, v] of pinAttempts.entries()) {
-      if (now > v.resetAt) pinAttempts.delete(k);
-    }
-  }
-  const entry = pinAttempts.get(key);
-  if (!entry || now > entry.resetAt) {
-    pinAttempts.set(key, { count: 1, resetAt: now + PIN_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= PIN_MAX_ATTEMPTS) return false;
-  entry.count++;
-  return true;
-}
-
-export function isPinRateLimited(key: string): boolean {
-  const entry = pinAttempts.get(key);
-  if (!entry || Date.now() > entry.resetAt) {
-    pinAttempts.delete(key);
-    return false;
-  }
-  return entry.count >= PIN_MAX_ATTEMPTS;
-}
-
-export function clearPinRateLimit(key: string): void {
-  pinAttempts.delete(key);
-}
-
-export function resetPinRateLimitForTests(): void {
-  pinAttempts.clear();
 }
 
 function syncCustomerTagCounts(
@@ -2491,37 +2471,45 @@ router.patch(
         typeof override_pin === 'string'
       ) {
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
         const rateLimitKey =
           status === 'cancelled'
-            ? `pin:${clientIp}:order-cancel`
-            : `pin:${clientIp}:order-complete`;
+            ? `pin:${canonicalIp}:order-cancel`
+            : `pin:${canonicalIp}:order-complete`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        if (/^\d{4,6}$/.test(override_pin)) {
-          const preVerificationRequiresPayment =
-            status === 'completed' &&
-            evaluateOrderStatusPaymentBlock(
-              db,
-              req.params.id,
-              (order as any).total,
-              (order as any).round_off,
-            ).paymentBlocksCompletion;
+        if (!/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
 
-          const explicitApproverId =
-            req.body.approver_id || req.body.manager_id || req.body.user_id;
-          const candidateUsers = explicitApproverId
-            ? (db
-                .prepare(
-                  'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
-                )
-                .all(explicitApproverId) as PinApproverCandidate[])
-            : (db
-                .prepare(
-                  'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
-                )
-                .all() as PinApproverCandidate[]);
+        const preVerificationRequiresPayment =
+          status === 'completed' &&
+          evaluateOrderStatusPaymentBlock(
+            db,
+            req.params.id,
+            (order as any).total,
+            (order as any).round_off,
+          ).paymentBlocksCompletion;
 
+        const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
+        const candidateUsers = explicitApproverId
+          ? (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE id = ? AND is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all(explicitApproverId) as PinApproverCandidate[])
+          : (db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
+              )
+              .all() as PinApproverCandidate[]);
+
+        const preVerifiedCandidate = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
           for (const candidate of candidateUsers) {
             if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
@@ -2530,15 +2518,27 @@ router.patch(
               (!preVerificationRequiresPayment || hasPermission(candidate.id, 'payments.take'))
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
-                preVerifiedStatusApprover = {
-                  id: candidate.id,
-                  verifiedPinHash: candidate.pin_hash,
+                clearPinRateLimit(rateLimitKey);
+                return {
+                  approver: {
+                    id: candidate.id,
+                    verifiedPinHash: candidate.pin_hash,
+                  },
                 };
-                break;
               }
             }
           }
+          checkPinRateLimit(rateLimitKey);
+          return { approver: null };
+        });
+
+        if (preVerifiedCandidate.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
+        if (!preVerifiedCandidate.approver) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        preVerifiedStatusApprover = preVerifiedCandidate.approver;
       }
 
       const nowStr = now();
@@ -2691,10 +2691,11 @@ router.patch(
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+          const canonicalIp = normalizeIpForRateLimit(clientIp);
           const rateLimitKey =
             status === 'cancelled'
-              ? `pin:${clientIp}:order-cancel`
-              : `pin:${clientIp}:order-complete`;
+              ? `pin:${canonicalIp}:order-cancel`
+              : `pin:${canonicalIp}:order-complete`;
           if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
@@ -2729,7 +2730,7 @@ router.patch(
             checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
-          pinAttempts.delete(rateLimitKey);
+          clearPinRateLimit(rateLimitKey);
           approvedByUserId = user.id;
         }
 
@@ -3198,11 +3199,16 @@ router.patch(
               .status(403)
               .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
           }
-          const rateLimitKey = `pin:${clientIp}:discount`;
+          const canonicalIp = normalizeIpForRateLimit(clientIp);
+          const rateLimitKey = `pin:${canonicalIp}:discount`;
           if (isPinRateLimited(rateLimitKey)) {
             return res
               .status(429)
               .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+          }
+          if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+            checkPinRateLimit(rateLimitKey);
+            return res.status(403).json({ error: 'Invalid manager PIN' });
           }
           const explicitApproverId = approver_id || manager_id || user_id;
           const candidateUsers = explicitApproverId
@@ -3216,24 +3222,40 @@ router.patch(
                   'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
                 )
                 .all() as PinApproverCandidate[]);
-          let user: PinApproverCandidate | undefined;
-          for (const candidate of candidateUsers) {
-            if (
-              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-              hasPermission(candidate.id, 'orders.discount.apply') &&
-              (await verifyPinAsync(candidate.pin_hash, override_pin))
-            ) {
-              user = candidate;
-              break;
+
+          const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+            if (isPinRateLimited(rateLimitKey)) {
+              return { rateLimited: true };
             }
+            let user: PinApproverCandidate | undefined;
+            for (const candidate of candidateUsers) {
+              if (
+                hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+                hasPermission(candidate.id, 'orders.discount.apply') &&
+                (await verifyPinAsync(candidate.pin_hash, override_pin))
+              ) {
+                user = candidate;
+                break;
+              }
+            }
+            if (!user) {
+              checkPinRateLimit(rateLimitKey);
+              return { user: null };
+            }
+            clearPinRateLimit(rateLimitKey);
+            return { user };
+          });
+
+          if (verifiedResult.rateLimited) {
+            return res
+              .status(429)
+              .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
           }
-          if (!user) {
-            checkPinRateLimit(rateLimitKey);
+          if (!verifiedResult.user) {
             return res.status(403).json({ error: 'Invalid manager PIN' });
           }
-          pinAttempts.delete(rateLimitKey);
-          approvedByUserId = user.id;
-          preVerifiedOrderDiscountPinHash = user.pin_hash;
+          approvedByUserId = verifiedResult.user.id;
+          preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;
         }
       }
 
@@ -3655,9 +3677,14 @@ router.patch(
             .status(403)
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const rateLimitKey = `pin:${clientIp}:item-discount`;
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:item-discount`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
         }
         const explicitApproverId = approver_id || req.body.manager_id || user_id;
         const candidateUsers = explicitApproverId
@@ -3671,24 +3698,38 @@ router.patch(
                 'SELECT id, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL',
               )
               .all() as PinApproverCandidate[]);
-        let user: PinApproverCandidate | undefined;
-        for (const candidate of candidateUsers) {
-          if (
-            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-            hasPermission(candidate.id, 'orders.discount.apply') &&
-            (await verifyPinAsync(candidate.pin_hash, override_pin))
-          ) {
-            user = candidate;
-            break;
+
+        const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
           }
+          let user: PinApproverCandidate | undefined;
+          for (const candidate of candidateUsers) {
+            if (
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'orders.discount.apply') &&
+              (await verifyPinAsync(candidate.pin_hash, override_pin))
+            ) {
+              user = candidate;
+              break;
+            }
+          }
+          if (!user) {
+            checkPinRateLimit(rateLimitKey);
+            return { user: null };
+          }
+          clearPinRateLimit(rateLimitKey);
+          return { user };
+        });
+
+        if (verifiedResult.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        if (!user) {
-          checkPinRateLimit(rateLimitKey);
+        if (!verifiedResult.user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        pinAttempts.delete(rateLimitKey);
-        approvedByUserId = user.id;
-        preVerifiedItemDiscountPinHash = user.pin_hash;
+        approvedByUserId = verifiedResult.user.id;
+        preVerifiedItemDiscountPinHash = verifiedResult.user.pin_hash;
       }
 
       // Check discount mode
@@ -4218,41 +4259,61 @@ router.patch(
       let preVerifiedVoidApprover: { id: string; verifiedPinHash: string } | null = null;
       if (isItemVoidInProgress && override_pin && typeof override_pin === 'string') {
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        const rateLimitKey = `pin:${clientIp}:item-void`;
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:item-void`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        if (/^\d{4,6}$/.test(override_pin)) {
-          const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
-          const candidateUsers = managerId
-            ? (db
-                .prepare(
-                  'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
-                )
-                .all(managerId) as {
-                id: string;
-                role: string;
-                pin_hash: string;
-                is_active: number;
-              }[])
-            : (db
-                .prepare(
-                  'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
-                )
-                .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
+        if (!/^\d{4,6}$/.test(override_pin)) {
+          checkPinRateLimit(rateLimitKey);
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        const candidateUsers = managerId
+          ? (db
+              .prepare(
+                'SELECT id, role, pin_hash, is_active FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .all(managerId) as {
+              id: string;
+              role: string;
+              pin_hash: string;
+              is_active: number;
+            }[])
+          : (db
+              .prepare(
+                'SELECT id, role, pin_hash, is_active FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .all() as { id: string; role: string; pin_hash: string; is_active: number }[]);
 
+        const preVerifiedCandidate = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
           for (const candidate of candidateUsers) {
             if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.item.void')
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
-                preVerifiedVoidApprover = { id: candidate.id, verifiedPinHash: candidate.pin_hash };
-                break;
+                clearPinRateLimit(rateLimitKey);
+                return {
+                  approver: { id: candidate.id, verifiedPinHash: candidate.pin_hash },
+                };
               }
             }
           }
+          checkPinRateLimit(rateLimitKey);
+          return { approver: null };
+        });
+
+        if (preVerifiedCandidate.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
+        if (!preVerifiedCandidate.approver) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        preVerifiedVoidApprover = preVerifiedCandidate.approver;
       }
 
       // Wrap item cancel and total recalculation in transaction.
@@ -4340,8 +4401,9 @@ router.patch(
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+          const canonicalIp = normalizeIpForRateLimit(clientIp);
           // Rate-limit attempts per client rather than per item to prevent brute force attacks.
-          const rateLimitKey = `pin:${clientIp}:item-void`;
+          const rateLimitKey = `pin:${canonicalIp}:item-void`;
           if (isPinRateLimited(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
               statusCode: 429,
@@ -4369,7 +4431,7 @@ router.patch(
             checkPinRateLimit(rateLimitKey);
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
-          pinAttempts.delete(rateLimitKey);
+          clearPinRateLimit(rateLimitKey);
           approvedByUserId = pinUser.id;
         }
 

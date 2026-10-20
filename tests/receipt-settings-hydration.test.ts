@@ -610,8 +610,8 @@ async function runTests() {
       billFooterMessage: 'Default Footer',
     });
 
-    // Configure frontendApi to simulate a transient network rejection
-    frontendApi.defaults.baseURL = 'http://127.0.0.1:59999/api';
+    frontendApi.defaults.baseURL = `${baseUrl}/api`;
+    frontendApi.defaults.headers.common['Authorization'] = `Bearer ${cashier.token}`;
     useAuthStore.setState({
       currentTenant: {
         id: 'tenant-1',
@@ -622,23 +622,26 @@ async function runTests() {
     });
 
     // 1. Initial attempt rejects due to network error; resolves cleanly without throwing
-    await ensureReceiptSettingsLoaded();
-    assertEqualOrThrow(
-      usePosSettingsStore.getState().billAddress,
-      'Default Address',
-      'Settings remain on default when network rejects',
-    );
-    assertEqualOrThrow(
-      usePosSettingsStore.getState().billFooterMessage,
-      'Default Footer',
-      'Footer remains on default when network rejects',
-    );
+    const originalGet = frontendApi.get;
+    try {
+      frontendApi.get = () =>
+        Promise.reject(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }));
+      await ensureReceiptSettingsLoaded();
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billAddress,
+        'Default Address',
+        'Settings remain on default when network rejects',
+      );
+      assertEqualOrThrow(
+        usePosSettingsStore.getState().billFooterMessage,
+        'Default Footer',
+        'Footer remains on default when network rejects',
+      );
+    } finally {
+      frontendApi.get = originalGet;
+    }
 
-    // 2. Network recovers: restore correct baseURL and auth header
-    frontendApi.defaults.baseURL = `${baseUrl}/api`;
-    frontendApi.defaults.headers.common['Authorization'] = `Bearer ${cashier.token}`;
-
-    // 3. Retry via ensureReceiptSettingsLoaded(): detects not hydrated and recovers cleanly
+    // 2. Retry via ensureReceiptSettingsLoaded(): detects not hydrated and recovers cleanly
     await ensureReceiptSettingsLoaded();
     const recoveredState = usePosSettingsStore.getState();
     assertEqualOrThrow(

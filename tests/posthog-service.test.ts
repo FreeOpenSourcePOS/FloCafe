@@ -89,6 +89,15 @@ async function main() {
   initDatabase();
 
   const originalFetch = globalThis.fetch;
+  const originalSetInterval = globalThis.setInterval;
+  let capturedIntervalCallback: (() => void) | null = null;
+  globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: any[]) => {
+    if (typeof handler === 'function') {
+      capturedIntervalCallback = handler as () => void;
+    }
+    return originalSetInterval(handler, timeout, ...args);
+  }) as typeof setInterval;
+
   const collectorRequests: Array<{ url: string; body: unknown }> = [];
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     collectorRequests.push({
@@ -99,22 +108,8 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    // ------------------------------------------------------------------
-    // F7 Reproduction Case:
-    // In an unpackaged dev environment (NODE_ENV=development, FLO_POSTHOG_DEV=1,
-    // FLO_TELEMETRY_DEV unset, FLO_OFFLINE_MATRIX unset, CI unset,
-    // E2E_TASK_LOCAL_PORTS unset, FLO_E2E_SKIP_OPTIONAL_NETWORK unset)
-    // with telemetry consent enabled (telemetry_enabled = 'true'):
-    //
-    // Call telemetry.sendEvent('order_created', { order_type: 'dine_in' })
-    // and telemetry.start().
-    //
-    // On unfixed main, matrixOffline() (isTelemetrySuppressed()) is true
-    // because FLO_TELEMETRY_DEV is unset, causing sendEvent(),
-    // runPostHogDailyChecks(), and telemetry.start() to return early
-    // before calling mirrorToPostHog or running PostHog daily checks.
-    // ------------------------------------------------------------------
-    console.log('Testing PostHog dev opt-in defect F7...');
+    // Verify FLO_POSTHOG_DEV=1 forwards usage events and checks without collector traffic.
+    console.log('Testing PostHog dev opt-in behavior...');
 
     process.env.NODE_ENV = 'development';
     process.env.FLO_POSTHOG_DEV = '1';
@@ -132,29 +127,24 @@ async function main() {
     collectorRequests.length = 0;
     clearCapturedEvents();
 
-    // 1. sendEvent with an unmirrored event (order_created)
     const orderCreatedResult = await sendEvent('order_created', { order_type: 'dine_in' });
     assert.equal(orderCreatedResult, false, 'sendEvent returns false when collector is suppressed');
 
-    // 2. sendEvent with a mirrored usage event (feature_used)
     await sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
 
-    // 3. telemetry.start() should mirror app_launch and run PostHog daily checks
     telemetry.start();
 
     const events = allCapturedEvents();
 
-    // Verify anonymous FloAdmin collector was NOT contacted
     assert.equal(
       collectorRequests.length,
       0,
       'FloAdmin collector must receive 0 requests when FLO_TELEMETRY_DEV is unset in dev',
     );
 
-    // Verify PostHog received the events
     assert.ok(
       events.length > 0,
-      'F7 defect: PostHog received 0 events because matrixOffline() suppressed telemetry in unpackaged dev with FLO_POSTHOG_DEV=1',
+      'PostHog received 0 events because telemetry was suppressed in unpackaged dev with FLO_POSTHOG_DEV=1',
     );
     assert.ok(
       events.some((e) => e.event === 'feature_used'),
@@ -169,13 +159,27 @@ async function main() {
       'PostHog should receive daily_ping event from runPostHogDailyChecks()',
     );
 
+    // Test the hourly PostHog interval callback
+    clearCapturedEvents();
+    collectorRequests.length = 0;
+    setSetting('posthog_last_daily_ping', '2020-01-01 00:00:00');
+    setSetting('posthog_last_daily_ping_at', '2020-01-01 00:00:00');
+    assert.ok(capturedIntervalCallback, 'Hourly interval callback should be registered');
+    capturedIntervalCallback!();
+
+    assert.ok(
+      allCapturedEvents().some((e) => e.event === 'daily_ping'),
+      'Hourly interval callback should send daily_ping to PostHog',
+    );
+    assert.equal(
+      collectorRequests.length,
+      0,
+      'FloAdmin collector must receive 0 requests from hourly interval execution',
+    );
+
     await telemetry.stop();
 
-    // ------------------------------------------------------------------
-    // Suppression Gates:
-    // Verify that PostHog and collector remain completely suppressed when
-    // any gate is closed.
-    // ------------------------------------------------------------------
+    // Verify PostHog and collector remain suppressed when any gate is closed.
     console.log('Testing suppression gates...');
 
     // Gate 1: telemetry consent disabled
@@ -239,6 +243,7 @@ async function main() {
     console.log('✅ PostHog dev opt-in and suppression checks passed');
   } finally {
     globalThis.fetch = originalFetch;
+    globalThis.setInterval = originalSetInterval;
     delete process.env.FLO_POSTHOG_DEV;
     delete process.env.FLO_POSTHOG_DEV_TOKEN;
     delete process.env.FLO_E2E_DB_PATH;

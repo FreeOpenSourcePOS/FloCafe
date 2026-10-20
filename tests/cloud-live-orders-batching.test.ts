@@ -605,6 +605,110 @@ async function run() {
       console.log('  ✓ 164 orders with 32,800 items handled cleanly without exceeding bind limits');
     }
 
+    // ------------------------------------------------------------------------
+    // Test 7: Chunk boundaries with >400 order IDs and >400 table IDs
+    // ------------------------------------------------------------------------
+    {
+      console.log('Testing cloud sync chunk boundaries with >400 orders and >400 tables...');
+      db.prepare('DELETE FROM order_item_addons').run();
+      db.prepare('DELETE FROM order_audit_log').run();
+      db.prepare('DELETE FROM order_items').run();
+      db.prepare('DELETE FROM bills').run();
+      db.prepare('DELETE FROM orders').run();
+      db.prepare('DELETE FROM tables').run();
+
+      const numOrdersAndTables = 450;
+      const nowIso = now();
+
+      const insertTable = db.prepare(
+        `INSERT INTO tables (id, number, capacity, status) VALUES (?, ?, ?, ?)`,
+      );
+      const insertOrder = db.prepare(
+        `INSERT INTO orders (id, order_number, table_id, type, status, subtotal, total, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertItem = db.prepare(
+        `INSERT INTO order_items (id, order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertAddon = db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      const insertBill = db.prepare(
+        `INSERT INTO bills (id, order_id, bill_number, subtotal, total, payment_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+
+      db.transaction(() => {
+        for (let i = 1; i <= numOrdersAndTables; i++) {
+          const tableId = `tbl-chunk-${i}`;
+          insertTable.run(tableId, `T-${i}`, 4, 'occupied');
+          insertOrder.run(
+            i,
+            `ORD-CHUNK-${String(i).padStart(4, '0')}`,
+            tableId,
+            'dine_in',
+            'pending',
+            25.0,
+            25.0,
+            nowIso,
+            nowIso,
+          );
+          insertItem.run(i, i, `prod-${i}`, `Item ${i}`, 1, 20.0, 20.0, 20.0, nowIso, nowIso);
+          insertAddon.run(i, null, `Extra ${i}`, 5.0, 1, nowIso);
+          insertBill.run(
+            i,
+            i,
+            `BILL-CHUNK-${String(i).padStart(4, '0')}`,
+            25.0,
+            25.0,
+            'unpaid',
+            nowIso,
+            nowIso,
+          );
+        }
+      })();
+
+      const allOrders = db.prepare('SELECT * FROM orders ORDER BY id ASC').all() as any[];
+      assertEqual(allOrders.length, 450, 'Seeded exactly 450 orders');
+
+      const decorated = (service as any).decorateOrders(allOrders);
+      assertEqual(
+        decorated.length,
+        450,
+        'decorateOrders returned all 450 decorated orders across >400 chunk boundary',
+      );
+
+      // Verify first and last chunked orders
+      const first = decorated[0];
+      assertEqual(first.order_number, 'ORD-CHUNK-0001', 'First order number matches');
+      assertEqual(first.table?.name, 'T-1', 'First order table resolved');
+      assertEqual(first.items?.length, 1, 'First order has item');
+      assertEqual(first.items[0].addons?.length, 1, 'First order item has addon');
+      assertEqual(first.items[0].addons[0].name, 'Extra 1', 'First order addon name matches');
+      assertEqual(first.bill?.bill_number, 'BILL-CHUNK-0001', 'First order bill resolved');
+
+      // Beyond the 400 chunk boundary
+      const order401 = decorated[400];
+      assertEqual(order401.order_number, 'ORD-CHUNK-0401', 'Order 401 number matches');
+      assertEqual(order401.table?.name, 'T-401', 'Order 401 table resolved across chunk boundary');
+      assertEqual(order401.items?.length, 1, 'Order 401 has item');
+      assertEqual(order401.items[0].addons?.length, 1, 'Order 401 item has addon');
+      assertEqual(order401.items[0].addons[0].name, 'Extra 401', 'Order 401 addon name matches');
+      assertEqual(order401.bill?.bill_number, 'BILL-CHUNK-0401', 'Order 401 bill resolved');
+
+      const last = decorated[449];
+      assertEqual(last.order_number, 'ORD-CHUNK-0450', 'Last order number matches');
+      assertEqual(last.table?.name, 'T-450', 'Last order table resolved across chunk boundary');
+      assertEqual(last.items?.length, 1, 'Last order has item');
+      assertEqual(last.items[0].addons?.length, 1, 'Last order item has addon');
+      assertEqual(last.items[0].addons[0].name, 'Extra 450', 'Last order addon name matches');
+      assertEqual(last.bill?.bill_number, 'BILL-CHUNK-0450', 'Last order bill resolved');
+
+      console.log('  ✓ 450 orders and 450 tables chunked cleanly across 400 boundary');
+    }
+
     console.log('='.repeat(60));
     console.log('✅ All cloud live-orders batching tests passed successfully!');
   } finally {

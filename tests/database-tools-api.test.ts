@@ -55,6 +55,7 @@ const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { databaseRoutes } = require('../main/routes/database');
+const { orderRoutes } = require('../main/routes/orders');
 const { verifyMasterPin, isMasterPinSet, resetMasterPin } = require('../main/services/master-pin');
 const {
   cancelHttpShutdownWork,
@@ -153,6 +154,7 @@ app.use((req: any, res: any, next: any) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/db-tools', databaseToolsRoutes);
 app.use('/api/db', databaseRoutes);
+app.use('/api/orders', orderRoutes);
 
 const downloadServer = http.createServer(app);
 installHttpShutdownTracking(downloadServer);
@@ -1906,6 +1908,94 @@ async function runTests() {
       orderReopenThrew = true;
     }
     assert(!orderReopenThrew, 'creating order after reopen succeeds');
+  }
+
+  // ── Test 3e: imported order FTS search after partial import ──
+  console.log(
+    '\nTest 3e: POST /db/import rebuilds FTS search index for partial orders/customer import',
+  );
+  {
+    const partialFtsImport = await request(app)
+      .post('/api/db/import')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({
+        overwrite: false,
+        data: {
+          schema_version: String(getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [],
+            products: [],
+            users: [],
+            customers: [
+              {
+                id: 'cust-partial-fts-1',
+                name: 'Arthur Pendelton',
+                phone: '+15559876543',
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+            orders: [
+              {
+                id: 8801,
+                order_number: 'ORD-PARTIAL-FTS-8801',
+                customer_id: 'cust-partial-fts-1',
+                type: 'takeaway',
+                status: 'pending',
+                subtotal: 50,
+                total: 50,
+                created_at: now(),
+                updated_at: now(),
+              },
+            ],
+          },
+        },
+      });
+
+    assert(
+      partialFtsImport.status === 200,
+      `partial FTS import succeeds (got ${partialFtsImport.status}, ${JSON.stringify(partialFtsImport.body)})`,
+    );
+
+    // Verify search by order number
+    const searchByOrder = await request(app)
+      .get('/api/orders?search=PARTIAL-FTS')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByOrder.status === 200,
+      `search by order number succeeds (got ${searchByOrder.status})`,
+    );
+    const foundByOrder = searchByOrder.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByOrder, 'newly imported order is immediately searchable by order number');
+
+    // Verify search by customer name
+    const searchByName = await request(app)
+      .get('/api/orders?search=Pendelton')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByName.status === 200,
+      `search by customer name succeeds (got ${searchByName.status})`,
+    );
+    const foundByName = searchByName.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByName, 'newly imported order is immediately searchable by customer name');
+
+    // Verify search by customer phone digits
+    const searchByPhone = await request(app)
+      .get('/api/orders?search=9876543')
+      .set('Authorization', `Bearer ${ownerToken}`);
+    assert(
+      searchByPhone.status === 200,
+      `search by customer phone succeeds (got ${searchByPhone.status})`,
+    );
+    const foundByPhone = searchByPhone.body.orders?.some(
+      (o: any) => o.order_number === 'ORD-PARTIAL-FTS-8801',
+    );
+    assert(foundByPhone, 'newly imported order is immediately searchable by customer phone');
   }
 
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────

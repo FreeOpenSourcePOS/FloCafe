@@ -1057,9 +1057,8 @@ export default function PaymentModal({
     setProcessing(true);
     setRequestFailure(null);
     const effectiveKitchenApproverId = kitchenApproverId ?? managerApprovers.selectedApproverId;
-    if (kitchenOverrideRequired || kitchenOverridePin) {
+    if (kitchenOverridePin) {
       if (
-        !kitchenOverridePin ||
         managerApprovers.loading ||
         managerApprovers.loadFailed ||
         managerApprovers.approvers.length === 0 ||
@@ -2293,9 +2292,8 @@ export default function PaymentModal({
                   chargeStateUncertain ||
                   (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
                   Boolean(
-                    (kitchenOverrideRequired || kitchenOverridePin) &&
-                    (!kitchenOverridePin ||
-                      managerApprovers.loading ||
+                    kitchenOverridePin &&
+                    (managerApprovers.loading ||
                       managerApprovers.loadFailed ||
                       managerApprovers.approvers.length === 0 ||
                       !(kitchenApproverId ?? managerApprovers.selectedApproverId)),

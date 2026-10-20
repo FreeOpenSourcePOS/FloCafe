@@ -368,11 +368,11 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     page,
   }) => {
     // Mock staff route to return empty staff list so no manager approvers exist with PINs
-    await page.route('**/api/staff?active=true', async (route) => {
+    await page.route('**/api/staff**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ staff: [] }),
+        body: JSON.stringify({ staff: [], approvers: [] }),
       });
     });
 

@@ -1,5 +1,5 @@
 /**
- * Test suite for Issue #1227: Asynchronous Refund PIN Verification & Event Loop Responsiveness
+ * Test suite: Asynchronous Refund PIN Verification & Event Loop Responsiveness
  *
  * Verifies that:
  * 1. Synchronous verifyPin blocks the event loop (0 ticks), while verifyPinAsync yields
@@ -65,7 +65,7 @@ function makeToken(id: string, role: string, email: string) {
 }
 
 async function run() {
-  console.log('Testing Asynchronous Refund PIN Verification & Event Loop (Issue #1227)...');
+  console.log('Testing Asynchronous Refund PIN Verification & Event Loop...');
   console.log('='.repeat(70));
 
   const db = initTestDb();

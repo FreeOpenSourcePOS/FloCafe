@@ -63,7 +63,12 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
-import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
+import {
+  checkKitchenDeliveryStatus,
+  completeExactBalanceSettlement,
+  getTenantCurrency,
+  syncUnpaidBillsForOrder,
+} from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { isAllowedPrivateIp } from '../middleware/security';
@@ -3097,7 +3102,16 @@ router.patch(
           );
       }
 
-      const { discount_type, discount_value, discount_reason } = req.body || {};
+      const {
+        discount_type,
+        discount_value,
+        discount_reason,
+        override_pin,
+        approver_id,
+        user_id,
+        manager_id,
+      } = req.body || {};
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
       // Validate discount_type
       if (
@@ -3144,21 +3158,18 @@ router.patch(
       if (discount_value > 0) {
         const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
         if (requiresApproval) {
-          const { override_pin } = req.body || {};
           if (!override_pin) {
             return res
               .status(403)
               .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
           }
-          const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
           const rateLimitKey = `pin:${clientIp}:discount`;
           if (isPinRateLimited(rateLimitKey)) {
             return res
               .status(429)
               .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
           }
-          const explicitApproverId =
-            req.body.approver_id || req.body.manager_id || req.body.user_id;
+          const explicitApproverId = approver_id || manager_id || user_id;
           const candidateUsers = explicitApproverId
             ? (db
                 .prepare(
@@ -3412,17 +3423,34 @@ router.patch(
             pack,
             currency,
           );
-          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+          const billPaidAmount = Number(existingBill.paid_amount || 0);
+          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
             throw Object.assign(
               new Error('Discount cannot reduce bill total below collected payments'),
               { statusCode: 409, diagnosticCode: 'below_collected_funds' },
             );
           }
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+          const preVerifiedDiscountApprover =
+            approvedByUserId && preVerifiedOrderDiscountPinHash
+              ? { id: approvedByUserId, verifiedPinHash: preVerifiedOrderDiscountPinHash }
+              : null;
+          const kitchenStatus = checkKitchenDeliveryStatus(
+            db,
+            String(req.params.id),
+            override_pin,
+            clientIp,
+            existingBill.id,
+            preVerifiedDiscountApprover,
+          );
+          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(`
           UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ?
           WHERE id = ?
         `).run(
             totals.subtotal,
@@ -3439,9 +3467,35 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );
+          if (isBillNowPaid) {
+            completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              billTotal,
+              currency,
+              now(),
+              override_pin,
+              clientIp,
+              preVerifiedDiscountApprover,
+            );
+          }
+          if (kitchenStatus.overridden && isBillNowPaid) {
+            recordOrderAudit(db, {
+              orderId: req.params.id as string,
+              actorUserId: (req as any).user.userId,
+              action: 'kitchen_delivery_override',
+              details: {
+                manager_user_id: kitchenStatus.managerUserId,
+                undelivered_count: kitchenStatus.count,
+              },
+            });
+          }
         }
 
         recordOrderAudit(db, {
@@ -3538,7 +3592,8 @@ router.patch(
           .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
       }
 
-      const { discount_type, discount_value } = req.body;
+      const { discount_type, discount_value, override_pin, approver_id, user_id } = req.body;
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
       // Validate discount_type
       if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
@@ -3560,18 +3615,16 @@ router.patch(
       let preVerifiedItemDiscountPinHash: string | undefined;
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
-        const { override_pin } = req.body;
         if (!override_pin) {
           return res
             .status(403)
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const rateLimitKey = `pin:${clientIp}:item-discount`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
+        const explicitApproverId = approver_id || req.body.manager_id || user_id;
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
@@ -3848,15 +3901,32 @@ router.patch(
             pack,
             currency,
           );
-          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+          const billPaidAmount = Number(existingBill.paid_amount || 0);
+          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
             throw Object.assign(
               new Error('Discount cannot reduce bill total below collected payments'),
               { statusCode: 409, diagnosticCode: 'below_collected_funds' },
             );
           }
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+          const preVerifiedDiscountApprover =
+            approvedByUserId && preVerifiedItemDiscountPinHash
+              ? { id: approvedByUserId, verifiedPinHash: preVerifiedItemDiscountPinHash }
+              : null;
+          const kitchenStatus = checkKitchenDeliveryStatus(
+            db,
+            String(req.params.id),
+            override_pin,
+            clientIp,
+            existingBill.id,
+            preVerifiedDiscountApprover,
+          );
+          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(
-            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`,
+            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ? WHERE id = ?`,
           ).run(
             orderTotals.subtotal,
             billTotal,
@@ -3869,9 +3939,36 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );
+          if (isBillNowPaid) {
+            completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              billTotal,
+              currency,
+              now(),
+              override_pin,
+              clientIp,
+              preVerifiedDiscountApprover,
+            );
+          }
+          if (kitchenStatus.overridden && isBillNowPaid) {
+            recordOrderAudit(db, {
+              orderId: req.params.id as string,
+              orderItemId: req.params.itemId as string,
+              actorUserId: (req as any).user.userId,
+              action: 'kitchen_delivery_override',
+              details: {
+                manager_user_id: kitchenStatus.managerUserId,
+                undelivered_count: kitchenStatus.count,
+              },
+            });
+          }
         }
 
         recordOrderAudit(db, {

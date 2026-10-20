@@ -63,7 +63,12 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { isTerminalItemStatus } from '../../shared/order-item-status';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
-import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
+import {
+  checkKitchenDeliveryStatus,
+  completeExactBalanceSettlement,
+  getTenantCurrency,
+  syncUnpaidBillsForOrder,
+} from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { isAllowedPrivateIp } from '../middleware/security';
@@ -420,11 +425,9 @@ function moveOrderItemAddonStock(
       const pool = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addon.id) as
         | { stock_quantity: number }
         | undefined;
-      throw Object.assign(
-        new Error(
-          `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
-        ),
-        { statusCode: 400 },
+      throw new InventoryServiceError(
+        400,
+        `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
       );
     }
   }
@@ -675,19 +678,20 @@ router.get(
         )
       )`;
 
-        const isEligible = [...search].length >= 3 && (!isPhoneSearch || phoneDigits.length >= 3);
+        const hasControlChars = /[\x00-\x1F\x7F]/.test(search);
+        const isEligible = !hasControlChars && [...search].length >= 3;
         const hasFts = isEligible && isSearchIndexAvailable(db);
 
         if (hasFts) {
           let candidateClause: string;
           const candidateParams: any[] = [];
+          const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
 
           if (isPhoneSearch) {
             // For phone searches, customer phone strings may contain varied formatting
             // (e.g. "+1/555 ext 0199"). Querying customers table with digit UDF efficiently
             // identifies matching customer IDs across the small customers table, avoiding a
             // full orders scan while preserving full parity across phone formats.
-            const ftsSearch = '"' + phoneDigits.replace(/"/g, '""') + '"';
             candidateClause = `(
               orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
               OR orders.customer_id IN (
@@ -699,7 +703,6 @@ router.get(
             )`;
             candidateParams.push(ftsSearch, phoneDigits, phoneDigits, search);
           } else {
-            const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
             candidateClause = `(
               orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
               OR orders.customer_id IN (
@@ -2299,6 +2302,162 @@ router.post(
   },
 );
 
+function evaluateOrderStatusPaymentBlock(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number | unknown,
+  orderTotal: unknown,
+  orderRoundOff: unknown,
+): {
+  minorFactor: number;
+  roundCurrency: (amount: number) => number;
+  evaluatedBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  orderTotalMinor: number;
+  payableBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  totalOutstandingMinor: number;
+  totalCollectedMinor: number;
+  paymentBlocksCompletion: boolean;
+} {
+  const tenantCurrency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+  const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
+  const roundCurrency = (amount: number): number =>
+    fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
+
+  const billRows = db
+    .prepare(`
+      SELECT b.*,
+             COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
+      FROM bills b
+      WHERE b.order_id = ?
+      ORDER BY b.id ASC
+    `)
+    .all(String(orderId)) as Array<{
+    id: string;
+    total?: number | null;
+    round_off?: number | null;
+    paid_amount?: number | null;
+    refunded_cents?: number | null;
+    balance?: number | null;
+    payment_details?: unknown;
+    payment_status?: string | null;
+  }>;
+
+  const evaluatedBills = billRows.map((b) => {
+    const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
+    const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
+    const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
+    const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
+    const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
+    const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
+    const storedBalanceMinor = Math.max(
+      0,
+      Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
+    );
+    let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+    if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
+      try {
+        const parsed = JSON.parse(b.payment_details);
+        if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+      } catch {
+        parsedPaymentDetails = [];
+      }
+    } else if (Array.isArray(b.payment_details)) {
+      parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
+    }
+    const detailsPaidMinor = parsedPaymentDetails.reduce(
+      (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+      0,
+    );
+    const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+    const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
+    const paymentStatus = String(b.payment_status || '');
+    const effectiveCollectedMinor = Math.max(
+      netCollectedMinor,
+      paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
+    );
+    const hasCollectedFunds =
+      effectiveCollectedMinor > 0 ||
+      (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
+      paymentStatus === 'partial' ||
+      paymentStatus === 'partially_refunded' ||
+      (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
+    const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
+    const unpaidBalanceMinor = isPayable
+      ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
+      : 0;
+    const isSettled =
+      !isPayable ||
+      (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
+    return {
+      id: b.id,
+      paymentStatus,
+      totalMinor,
+      unroundedTotalMinor,
+      recordedPaidMinor,
+      effectiveCollectedMinor,
+      hasCollectedFunds,
+      isPayable,
+      unpaidBalanceMinor,
+      isSettled,
+    };
+  });
+
+  const orderTotalMinor = Math.max(0, Math.round(Number(orderTotal || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(orderRoundOff || 0) * minorFactor);
+  const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
+  const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
+  const payableBills = evaluatedBills.filter((b) => b.isPayable);
+  const billedCoverageMinor = evaluatedBills.reduce(
+    (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
+    0,
+  );
+  const unbilledMinor =
+    payableBills.length === 0
+      ? orderTotalMinor
+      : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
+  const totalOutstandingMinor =
+    payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
+  const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
+
+  const paymentBlocksCompletion =
+    totalOutstandingMinor > 0 ||
+    (orderTotalMinor > 0 && payableBills.length === 0) ||
+    payableBills.some((b) => !b.isSettled);
+
+  return {
+    minorFactor,
+    roundCurrency,
+    evaluatedBills,
+    orderTotalMinor,
+    payableBills,
+    totalOutstandingMinor,
+    totalCollectedMinor,
+    paymentBlocksCompletion,
+  };
+}
+
 router.patch(
   '/:id/status',
   orderWriteRateLimit,
@@ -2340,6 +2499,15 @@ router.patch(
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
         if (/^\d{4,6}$/.test(override_pin)) {
+          const preVerificationRequiresPayment =
+            status === 'completed' &&
+            evaluateOrderStatusPaymentBlock(
+              db,
+              req.params.id,
+              (order as any).total,
+              (order as any).round_off,
+            ).paymentBlocksCompletion;
+
           const explicitApproverId =
             req.body.approver_id || req.body.manager_id || req.body.user_id;
           const candidateUsers = explicitApproverId
@@ -2358,7 +2526,8 @@ router.patch(
             if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.status.update') &&
-              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
+              (!preVerificationRequiresPayment || hasPermission(candidate.id, 'payments.take'))
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
                 preVerifiedStatusApprover = {
@@ -2440,121 +2609,22 @@ router.patch(
         const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
         const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
 
-        const tenantCurrency = getTenantCurrency();
-        const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
-        const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
-        const roundCurrency = (amount: number): number =>
-          fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
-
-        const billRows = db
-          .prepare(`
-            SELECT b.*,
-                   COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
-            FROM bills b
-            WHERE b.order_id = ?
-            ORDER BY b.id ASC
-          `)
-          .all(req.params.id) as Array<{
-          id: string;
-          total?: number | null;
-          round_off?: number | null;
-          paid_amount?: number | null;
-          refunded_cents?: number | null;
-          balance?: number | null;
-          payment_details?: unknown;
-          payment_status?: string | null;
-        }>;
-
-        const evaluatedBills = billRows.map((b) => {
-          const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
-          const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
-          const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
-          const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
-          const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
-          const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
-          const storedBalanceMinor = Math.max(
-            0,
-            Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
-          );
-          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
-          if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
-            try {
-              const parsed = JSON.parse(b.payment_details);
-              if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
-            } catch {
-              parsedPaymentDetails = [];
-            }
-          } else if (Array.isArray(b.payment_details)) {
-            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
-          }
-          const detailsPaidMinor = parsedPaymentDetails.reduce(
-            (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
-            0,
-          );
-          const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
-          const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
-          const paymentStatus = String(b.payment_status || '');
-          const effectiveCollectedMinor = Math.max(
-            netCollectedMinor,
-            paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
-          );
-          const hasCollectedFunds =
-            effectiveCollectedMinor > 0 ||
-            (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
-            paymentStatus === 'partial' ||
-            paymentStatus === 'partially_refunded' ||
-            (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
-          const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
-          const unpaidBalanceMinor = isPayable
-            ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
-            : 0;
-          const isSettled =
-            !isPayable ||
-            (paymentStatus === 'paid' &&
-              unpaidBalanceMinor === 0 &&
-              recordedPaidMinor >= totalMinor);
-          return {
-            id: b.id,
-            paymentStatus,
-            totalMinor,
-            unroundedTotalMinor,
-            recordedPaidMinor,
-            effectiveCollectedMinor,
-            hasCollectedFunds,
-            isPayable,
-            unpaidBalanceMinor,
-            isSettled,
-          };
-        });
-
-        const orderTotalMinor = Math.max(
-          0,
-          Math.round(Number(currentOrder.total || 0) * minorFactor),
+        const {
+          minorFactor,
+          roundCurrency,
+          evaluatedBills,
+          orderTotalMinor,
+          payableBills,
+          totalOutstandingMinor,
+          totalCollectedMinor,
+          paymentBlocksCompletion: rawPaymentBlocksCompletion,
+        } = evaluateOrderStatusPaymentBlock(
+          db,
+          req.params.id,
+          currentOrder.total,
+          currentOrder.round_off,
         );
-        const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
-        const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
-        const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
-        const payableBills = evaluatedBills.filter((b) => b.isPayable);
-        const billedCoverageMinor = evaluatedBills.reduce(
-          (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
-          0,
-        );
-        const unbilledMinor =
-          payableBills.length === 0
-            ? orderTotalMinor
-            : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
-        const totalOutstandingMinor =
-          payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
-        const totalCollectedMinor = evaluatedBills.reduce(
-          (sum, b) => sum + b.effectiveCollectedMinor,
-          0,
-        );
-
-        const paymentBlocksCompletion =
-          status === 'completed' &&
-          (totalOutstandingMinor > 0 ||
-            (orderTotalMinor > 0 && payableBills.length === 0) ||
-            payableBills.some((b) => !b.isSettled));
+        const paymentBlocksCompletion = status === 'completed' && rawPaymentBlocksCompletion;
 
         const requireKitchenDelivered = db
           .prepare(
@@ -3067,7 +3137,16 @@ router.patch(
           );
       }
 
-      const { discount_type, discount_value, discount_reason } = req.body || {};
+      const {
+        discount_type,
+        discount_value,
+        discount_reason,
+        override_pin,
+        approver_id,
+        user_id,
+        manager_id,
+      } = req.body || {};
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
       // Validate discount_type
       if (
@@ -3114,21 +3193,18 @@ router.patch(
       if (discount_value > 0) {
         const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
         if (requiresApproval) {
-          const { override_pin } = req.body || {};
           if (!override_pin) {
             return res
               .status(403)
               .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
           }
-          const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
           const rateLimitKey = `pin:${clientIp}:discount`;
           if (isPinRateLimited(rateLimitKey)) {
             return res
               .status(429)
               .json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
           }
-          const explicitApproverId =
-            req.body.approver_id || req.body.manager_id || req.body.user_id;
+          const explicitApproverId = approver_id || manager_id || user_id;
           const candidateUsers = explicitApproverId
             ? (db
                 .prepare(
@@ -3266,9 +3342,9 @@ router.patch(
         }
 
         // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(req.params.id) as any;
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
         if (!currentOrder) {
           throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
@@ -3276,6 +3352,15 @@ router.patch(
           throw Object.assign(
             new Error('Cannot apply discount to a completed or cancelled order'),
             { statusCode: 400, diagnosticCode: 'order_not_discountable' },
+          );
+        }
+        const splitBill = db
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+          .get(req.params.id);
+        if (splitBill) {
+          throw Object.assign(
+            new Error('Discounts cannot be changed after a check has been split'),
+            { statusCode: 409, diagnosticCode: 'split_check' },
           );
         }
         const refundedBill = db
@@ -3291,9 +3376,9 @@ router.patch(
         }
 
         const customer = currentOrder.customer_id
-          ? (db
-              .prepare('SELECT * FROM customers WHERE id = ?')
-              .get(currentOrder.customer_id) as any)
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
           : null;
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
@@ -3373,17 +3458,34 @@ router.patch(
             pack,
             currency,
           );
-          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+          const billPaidAmount = Number(existingBill.paid_amount || 0);
+          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
             throw Object.assign(
               new Error('Discount cannot reduce bill total below collected payments'),
               { statusCode: 409, diagnosticCode: 'below_collected_funds' },
             );
           }
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+          const preVerifiedDiscountApprover =
+            approvedByUserId && preVerifiedOrderDiscountPinHash
+              ? { id: approvedByUserId, verifiedPinHash: preVerifiedOrderDiscountPinHash }
+              : null;
+          const kitchenStatus = checkKitchenDeliveryStatus(
+            db,
+            String(req.params.id),
+            override_pin,
+            clientIp,
+            existingBill.id,
+            preVerifiedDiscountApprover,
+          );
+          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(`
           UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?,
-            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ?
+            service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ?
           WHERE id = ?
         `).run(
             totals.subtotal,
@@ -3400,9 +3502,35 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );
+          if (isBillNowPaid) {
+            completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              billTotal,
+              currency,
+              now(),
+              override_pin,
+              clientIp,
+              preVerifiedDiscountApprover,
+            );
+          }
+          if (kitchenStatus.overridden && isBillNowPaid) {
+            recordOrderAudit(db, {
+              orderId: req.params.id as string,
+              actorUserId: (req as any).user.userId,
+              action: 'kitchen_delivery_override',
+              details: {
+                manager_user_id: kitchenStatus.managerUserId,
+                undelivered_count: kitchenStatus.count,
+              },
+            });
+          }
         }
 
         recordOrderAudit(db, {
@@ -3499,7 +3627,8 @@ router.patch(
           .json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
       }
 
-      const { discount_type, discount_value } = req.body;
+      const { discount_type, discount_value, override_pin, approver_id, user_id } = req.body;
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
       // Validate discount_type
       if (!discount_type || !['percentage', 'amount'].includes(discount_type)) {
@@ -3521,18 +3650,16 @@ router.patch(
       let preVerifiedItemDiscountPinHash: string | undefined;
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
-        const { override_pin } = req.body;
         if (!override_pin) {
           return res
             .status(403)
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const rateLimitKey = `pin:${clientIp}:item-discount`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
+        const explicitApproverId = approver_id || req.body.manager_id || user_id;
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
@@ -3593,55 +3720,8 @@ router.patch(
         }
       }
 
-      // Calculate item discount amount (include addon prices)
-      const addonRows = db
-        .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
-        .all(item.id) as { price: number; quantity?: number }[];
-      const addonTotal = addonRows.reduce(
-        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity,
-        0,
-      );
-      const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-
-      let discountAmount: number;
-      if (discount_type === 'percentage') {
-        discountAmount = (itemBaseTotal * discount_value) / 100;
-      } else {
-        discountAmount = Math.min(discount_value, itemBaseTotal);
-      }
-      discountAmount = Number(discountAmount.toFixed(decimals));
-
-      // Recalculate item subtotal after discount
-      const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
-
-      // Recalculate tax on discounted subtotal
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-      const customer = order.customer_id
-        ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any)
-        : null;
-      const settings = db
-        .prepare(
-          "SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
-        )
-        .all() as any[];
-      const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
-      const tenantInfo = {
-        country: settingsMap.country || '',
-        business_type: settingsMap.business_type || 'restaurant',
-        state_code: settingsMap.state_code || '',
-        currency: getTenantCurrency(),
-        taxes_enabled: settingsMap.taxes_enabled === 'true',
-      };
-      const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
-      const newTaxAmount = taxResult.tax_amount;
-      const newTaxBreakdown = taxResult.tax_breakdown;
-      const newTaxSnapshotJson = taxResult.tax_snapshot
-        ? JSON.stringify(taxResult.tax_snapshot)
-        : null;
-
-      const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
 
       const updatedItem = withTxn(() => {
         if (approvedByUserId && preVerifiedItemDiscountPinHash) {
@@ -3660,6 +3740,109 @@ router.patch(
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
         }
+
+        // Re-read current order and item under transaction lock to prevent financial state races
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
+        if (!currentOrder) {
+          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+        }
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(
+            new Error('Cannot apply discount to a completed or cancelled order'),
+            { statusCode: 400 },
+          );
+        }
+
+        const splitBill = db
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+          .get(req.params.id);
+        if (splitBill) {
+          throw Object.assign(
+            new Error('Discounts cannot be changed after a check has been split'),
+            { statusCode: 409 },
+          );
+        }
+
+        const refundedBill = db
+          .prepare(
+            `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+          )
+          .get(req.params.id);
+        if (refundedBill) {
+          throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+            statusCode: 409,
+          });
+        }
+
+        const currentItem = db
+          .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+          .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
+        if (!currentItem) {
+          throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+        }
+        if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
+          throw Object.assign(
+            new Error('Cannot apply discount to a cancelled, voided, or refunded item'),
+            { statusCode: 400 },
+          );
+        }
+
+        // Calculate item discount amount using fresh quantity and addons
+        const addonRows = db
+          .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
+          .all(currentItem.id) as { price: number; quantity?: number }[];
+        const addonTotal = addonRows.reduce(
+          (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
+          0,
+        );
+        const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
+
+        let discountAmount: number;
+        if (discount_type === 'percentage') {
+          discountAmount = (freshItemBaseTotal * discount_value) / 100;
+        } else {
+          discountAmount = Math.min(discount_value, freshItemBaseTotal);
+        }
+        discountAmount = Number(discountAmount.toFixed(decimals));
+
+        // Recalculate item subtotal after discount
+        const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
+
+        // Recalculate tax on discounted subtotal
+        const product = db
+          .prepare('SELECT * FROM products WHERE id = ?')
+          .get(currentItem.product_id) as ProductRow | undefined;
+        if (!product) {
+          throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+        }
+        const customer = currentOrder.customer_id
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
+          : null;
+        const settings = db
+          .prepare(
+            "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+          )
+          .all() as { key: string; value: string }[];
+        const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+        const tenantInfo = {
+          country: settingsMap.country || '',
+          business_type: settingsMap.business_type || 'restaurant',
+          state_code: settingsMap.state_code || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: settingsMap.taxes_enabled === 'true',
+        };
+        const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
+        const newTaxAmount = taxResult.tax_amount;
+        const newTaxBreakdown = taxResult.tax_breakdown;
+        const newTaxSnapshotJson = taxResult.tax_snapshot
+          ? JSON.stringify(taxResult.tax_snapshot)
+          : null;
+
+        const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
 
         // Update item with recalculated tax
         db.prepare(`
@@ -3682,24 +3865,30 @@ router.patch(
         const orderTotals = calculateOrderTotals(db, req.params.id as string);
 
         // Recalculate order-level discount proportionally on new subtotal
-        const existingDiscountAmount = order.discount_amount || 0;
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newOrderDiscount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && order.subtotal > 0) {
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
           // Scale discount proportionally to new subtotal
           newOrderDiscount = Number(
-            (existingDiscountAmount * (orderTotals.subtotal / order.subtotal)).toFixed(decimals),
+            (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+              decimals,
+            ),
           );
         }
 
         // Recalculate tax on discounted subtotal
-        const engineCharges = resolveEngineCharges(order, orderTotals.subtotal, newOrderDiscount);
+        const engineCharges = resolveEngineCharges(
+          currentOrder,
+          orderTotals.subtotal,
+          newOrderDiscount,
+        );
         const {
           taxRollup,
           total: orderTotal,
           roundOff,
         } = recomputeOrderTotals({
           tenantInfo,
-          chargeContext: order,
+          chargeContext: currentOrder,
           customer,
           totals: orderTotals,
           discountAmount: newOrderDiscount,
@@ -3710,13 +3899,13 @@ router.patch(
 
         const syncedServiceCharge = engineCharges
           ? engineCharges.columns.service_charge
-          : order.service_charge || 0;
+          : currentOrder.service_charge || 0;
         const syncedPackagingCharge = engineCharges
           ? engineCharges.columns.packaging_charge
-          : order.packaging_charge || 0;
+          : currentOrder.packaging_charge || 0;
         const syncedChargesJson = engineCharges
           ? engineCharges.chargesJson
-          : (order.charges_breakdown ?? null);
+          : (currentOrder.charges_breakdown ?? null);
 
         db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,
@@ -3747,15 +3936,32 @@ router.patch(
             pack,
             currency,
           );
-          if ((existingBill.paid_amount || 0) > 0 && billTotal < existingBill.paid_amount) {
+          const billPaidAmount = Number(existingBill.paid_amount || 0);
+          if (billPaidAmount > 0 && billTotal < billPaidAmount) {
             throw Object.assign(
               new Error('Discount cannot reduce bill total below collected payments'),
               { statusCode: 409, diagnosticCode: 'below_collected_funds' },
             );
           }
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
+          const newBillBalance = Math.max(0, billTotal - billPaidAmount);
+          const preVerifiedDiscountApprover =
+            approvedByUserId && preVerifiedItemDiscountPinHash
+              ? { id: approvedByUserId, verifiedPinHash: preVerifiedItemDiscountPinHash }
+              : null;
+          const kitchenStatus = checkKitchenDeliveryStatus(
+            db,
+            String(req.params.id),
+            override_pin,
+            clientIp,
+            existingBill.id,
+            preVerifiedDiscountApprover,
+          );
+          const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(
-            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?, updated_at = ? WHERE id = ?`,
+            `UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, packaging_charge = ?, charges_breakdown = ?, round_off = ?,
+            payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+            paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+            updated_at = ? WHERE id = ?`,
           ).run(
             orderTotals.subtotal,
             billTotal,
@@ -3768,9 +3974,36 @@ router.patch(
             syncedPackagingCharge,
             syncedChargesJson,
             billRoundOff,
+            isBillNowPaid ? 1 : 0,
+            isBillNowPaid ? 1 : 0,
+            now(),
             now(),
             existingBill.id,
           );
+          if (isBillNowPaid) {
+            completeExactBalanceSettlement(
+              db,
+              existingBill.id,
+              billTotal,
+              currency,
+              now(),
+              override_pin,
+              clientIp,
+              preVerifiedDiscountApprover,
+            );
+          }
+          if (kitchenStatus.overridden && isBillNowPaid) {
+            recordOrderAudit(db, {
+              orderId: req.params.id as string,
+              orderItemId: req.params.itemId as string,
+              actorUserId: (req as any).user.userId,
+              action: 'kitchen_delivery_override',
+              details: {
+                manager_user_id: kitchenStatus.managerUserId,
+                undelivered_count: kitchenStatus.count,
+              },
+            });
+          }
         }
 
         recordOrderAudit(db, {

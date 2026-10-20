@@ -77,10 +77,26 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
   });
 
   test('normalizeOptionalPhone helper contract', () => {
-    assert.deepEqual(normalizeOptionalPhone(undefined, 'IN'), { valid: true, e164: null, countryCode: null });
-    assert.deepEqual(normalizeOptionalPhone(null, 'IN'), { valid: true, e164: null, countryCode: null });
-    assert.deepEqual(normalizeOptionalPhone('', 'IN'), { valid: true, e164: null, countryCode: null });
-    assert.deepEqual(normalizeOptionalPhone('   ', 'IN'), { valid: true, e164: null, countryCode: null });
+    assert.deepEqual(normalizeOptionalPhone(undefined, 'IN'), {
+      valid: true,
+      e164: null,
+      countryCode: null,
+    });
+    assert.deepEqual(normalizeOptionalPhone(null, 'IN'), {
+      valid: true,
+      e164: null,
+      countryCode: null,
+    });
+    assert.deepEqual(normalizeOptionalPhone('', 'IN'), {
+      valid: true,
+      e164: null,
+      countryCode: null,
+    });
+    assert.deepEqual(normalizeOptionalPhone('   ', 'IN'), {
+      valid: true,
+      e164: null,
+      countryCode: null,
+    });
 
     const inRes = normalizeOptionalPhone('9876543210', 'IN');
     assert.equal(inRes.valid, true);
@@ -109,21 +125,31 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const db = getDatabase();
     seedSetupProfile(db, 'demo', 'finedine', 'en', 'IN');
 
-    const customers = db.prepare('SELECT id, name, phone, phone_digits, country_code FROM customers WHERE is_active = 1').all();
+    const customers = db
+      .prepare(
+        'SELECT id, name, phone, phone_digits, country_code FROM customers WHERE is_active = 1',
+      )
+      .all();
     assert.ok(customers.length >= 3, 'Demo customers should be seeded');
 
     for (const c of customers) {
       assert.ok(c.phone.startsWith('+'), `Customer ${c.name} phone ${c.phone} must start with +`);
-      assert.equal(c.phone, '+' + c.phone_digits, `Customer ${c.name} phone ${c.phone} must match +phone_digits`);
+      assert.equal(
+        c.phone,
+        '+' + c.phone_digits,
+        `Customer ${c.name} phone ${c.phone} must match +phone_digits`,
+      );
     }
 
-    const alertResult = db.prepare(`
+    const alertResult = db
+      .prepare(`
       SELECT COUNT(*) as count
       FROM customers
       WHERE is_active = 1
       AND phone IS NOT NULL AND phone != ''
       AND phone != '+' || phone_digits
-    `).get();
+    `)
+      .get();
 
     assert.equal(alertResult.count, 0, 'Fresh demo install must have 0 invalid phone alerts');
   });
@@ -132,11 +158,16 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const db = getDatabase();
     seedSetupProfile(db, 'demo', 'qsr', 'es', 'AR');
 
-    const customers = db.prepare('SELECT id, name, phone, phone_digits FROM customers WHERE is_active = 1').all();
+    const customers = db
+      .prepare('SELECT id, name, phone, phone_digits FROM customers WHERE is_active = 1')
+      .all();
     assert.ok(customers.length >= 3);
 
     for (const c of customers) {
-      assert.ok(c.phone.startsWith('+54'), `Argentine customer ${c.name} phone ${c.phone} must start with +54`);
+      assert.ok(
+        c.phone.startsWith('+54'),
+        `Argentine customer ${c.name} phone ${c.phone} must start with +54`,
+      );
       assert.equal(c.phone, '+' + c.phone_digits);
     }
   });
@@ -145,11 +176,22 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const db = getDatabase();
     seedSetupProfile(db, 'demo', 'finedine', 'fr', 'FR');
 
-    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-starters'").get().name, 'Entrées');
-    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name, 'Burger Classique');
-    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Gérant Démo');
+    assert.equal(
+      db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-starters'").get().name,
+      'Entrées',
+    );
+    assert.equal(
+      db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name,
+      'Burger Classique',
+    );
+    assert.equal(
+      db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name,
+      'Gérant Démo',
+    );
 
-    const customer = db.prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'").get();
+    const customer = db
+      .prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'")
+      .get();
     assert.equal(customer.phone, '+33145678901');
     assert.equal(customer.country_code, '+33');
   });
@@ -158,11 +200,22 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     const db = getDatabase();
     seedSetupProfile(db, 'demo', 'finedine', 'de', 'DE');
 
-    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-beverages'").get().name, 'Getränke');
-    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name, 'Klassischer Burger');
-    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Demo-Manager');
+    assert.equal(
+      db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-beverages'").get().name,
+      'Getränke',
+    );
+    assert.equal(
+      db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name,
+      'Klassischer Burger',
+    );
+    assert.equal(
+      db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name,
+      'Demo-Manager',
+    );
 
-    const customer = db.prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'").get();
+    const customer = db
+      .prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'")
+      .get();
     assert.equal(customer.phone, '+4915123456789');
     assert.equal(customer.country_code, '+49');
   });
@@ -212,13 +265,21 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     });
 
     assert.equal(res.status, 200);
-    const storedHandle = getDatabase().prepare("SELECT value FROM settings WHERE key = 'instagram_handle'").get();
-    assert.equal(storedHandle.value, '@'.repeat(100), 'business settings truncate Instagram handles to 100 characters');
+    const storedHandle = getDatabase()
+      .prepare("SELECT value FROM settings WHERE key = 'instagram_handle'")
+      .get();
+    assert.equal(
+      storedHandle.value,
+      '@'.repeat(100),
+      'business settings truncate Instagram handles to 100 characters',
+    );
   });
 
   test('PUT /api/settings/:key validates and normalizes business_phone', async () => {
     const db = getDatabase();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))",
+    ).run();
 
     const resValid = await api(baseUrl, '/api/settings/business_phone', {
       method: 'PUT',
@@ -295,7 +356,9 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
 
   test('POST /api/customers/admin/repair-phones repairs legacy phone records', async () => {
     const db = getDatabase();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))",
+    ).run();
     db.prepare(`
       INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
       VALUES ('cust-legacy-1', 'Legacy User', '9876543210', '+91', 1, datetime('now'), datetime('now'))
@@ -403,11 +466,21 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     assert.equal(TELEMETRY_URL, 'https://telemetry.flopos.com/collect');
 
     const db = getDatabase();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'true', datetime('now'))").run();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country_confirmed_at', datetime('now'), datetime('now'))").run();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_phone', '+919876543210', datetime('now'))").run();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('phone', '+919876543210', datetime('now'))").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'true', datetime('now'))",
+    ).run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))",
+    ).run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country_confirmed_at', datetime('now'), datetime('now'))",
+    ).run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_phone', '+919876543210', datetime('now'))",
+    ).run();
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('phone', '+919876543210', datetime('now'))",
+    ).run();
 
     const originalFetch = globalThis.fetch;
     let sentUrl = '';
@@ -419,6 +492,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     };
 
     try {
+      process.env.FLO_TELEMETRY_DEV = '1';
       const delivered = await sendEvent('app_launch');
       assert.equal(delivered, true);
       assert.equal(sentUrl, TELEMETRY_URL);
@@ -436,6 +510,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
       assert.equal('business_phone' in payload, false);
       assert.equal('contact_phone' in payload, false);
     } finally {
+      delete process.env.FLO_TELEMETRY_DEV;
       globalThis.fetch = originalFetch;
     }
   });

@@ -15,6 +15,7 @@ import {
 } from '../db';
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
+import { getBuildIdentity } from './build-identity';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
@@ -125,8 +126,36 @@ export function getInstallSource(): InstallSource {
   return linuxPackageFormat();
 }
 
+export function isTelemetrySuppressed(): boolean {
+  if (
+    process.env.FLO_MATRIX_OFFLINE === '1' ||
+    Boolean(process.env.E2E_TASK_LOCAL_PORTS) ||
+    process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1'
+  ) {
+    return true;
+  }
+  if (process.env.FLO_TELEMETRY_DEV === '1') {
+    return false;
+  }
+  if (process.env.NODE_ENV === 'test' || Boolean(process.env.CI)) {
+    return true;
+  }
+  const version = typeof app?.getVersion === 'function' ? app.getVersion() : '';
+  if (
+    version === '1.0.0-test' ||
+    version === 'test' ||
+    version === 'e2e' ||
+    /(?:^|[-.])(?:test|e2e)(?:[-.]|$)/i.test(version)
+  ) {
+    return true;
+  }
+  const isDev = !app?.isPackaged || getBuildIdentity() === 'dev';
+  if (isDev) return true;
+  return false;
+}
+
 function matrixOffline(): boolean {
-  return process.env.FLO_MATRIX_OFFLINE === '1';
+  return isTelemetrySuppressed();
 }
 
 function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
@@ -326,7 +355,7 @@ export async function sendAnonymousDiagnosticReport(
 
   try {
     const anonId = ensureTelemetryAnonId();
-    const build = require('./build-identity').getBuildIdentity() as string;
+    const build = getBuildIdentity();
     const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -278,8 +278,9 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
   } finally {
-    if (order?.id) {
-      try {
+    let cleanupError: unknown = null;
+    try {
+      if (order?.id) {
         const cancelRes = await page.request.patch(`${BASE_API}/api/orders/${order.id}/status`, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -289,19 +290,38 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
         });
         if (!cancelRes.ok()) {
           const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
-          await page.request.put(`${BASE_API}/api/staff/e2e-owner`, {
+          const ownerUpdateRes = await page.request.put(`${BASE_API}/api/staff/e2e-owner`, {
             headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
-            data: { pin: '1111', is_active: 1 },
+            data: { pin: '1111' },
           });
-          await page.request.patch(`${BASE_API}/api/orders/${order.id}/status`, {
-            headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
-            data: { status: 'cancelled', override_pin: '1111', approver_id: 'e2e-owner' },
-          });
+          expect(
+            ownerUpdateRes.ok(),
+            `owner update should succeed (status ${ownerUpdateRes.status()})`,
+          ).toBeTruthy();
+          const cancelOwnerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+          const ownerCancelRes = await page.request.patch(
+            `${BASE_API}/api/orders/${order.id}/status`,
+            {
+              headers: {
+                Authorization: `Bearer ${cancelOwnerToken}`,
+                'Content-Type': 'application/json',
+              },
+              data: { status: 'cancelled', override_pin: '1111', approver_id: 'e2e-owner' },
+            },
+          );
+          expect(
+            ownerCancelRes.ok(),
+            `owner cancellation should succeed (status ${ownerCancelRes.status()})`,
+          ).toBeTruthy();
         }
-      } catch {
-        // Ignore if cancel fails
       }
+    } catch (error) {
+      cleanupError = error;
+    } finally {
+      await setLanguage(page, token, 'en');
     }
-    await setLanguage(page, token, 'en');
+    if (cleanupError) {
+      throw new Error(`Failed to clean up order ${order?.id}`, { cause: cleanupError });
+    }
   }
 });

@@ -51,22 +51,26 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
       await restoreSettings(request, settingsBefore);
     }
     if (createdOrderIds.length > 0) {
-      try {
-        await request.put(`${BASE}/api/staff/e2e-owner`, {
-          headers: {
-            Authorization: `Bearer ${ownerToken}`,
-            'Content-Type': 'application/json',
-          },
-          data: { pin: '1111', is_active: 1 },
-        });
-      } catch {
-        // Ignore if staff update fails
-      }
+      const freshOwnerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+      const ownerPinRes = await request.put(`${BASE}/api/staff/e2e-owner`, {
+        headers: {
+          Authorization: `Bearer ${freshOwnerToken}`,
+          'Content-Type': 'application/json',
+        },
+        data: { pin: '1111' },
+      });
+      expect(
+        ownerPinRes.ok(),
+        `setting owner PIN should succeed (got ${ownerPinRes.status()})`,
+      ).toBeTruthy();
+
+      const cancelOwnerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+      const cleanupErrors: string[] = [];
       for (const orderId of createdOrderIds) {
         try {
-          await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+          const cancelRes = await request.patch(`${BASE}/api/orders/${orderId}/status`, {
             headers: {
-              Authorization: `Bearer ${ownerToken}`,
+              Authorization: `Bearer ${cancelOwnerToken}`,
               'Content-Type': 'application/json',
             },
             data: {
@@ -75,10 +79,26 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
               approver_id: 'e2e-owner',
             },
           });
-        } catch {
-          // Ignore if order already terminal
+          if (!cancelRes.ok()) {
+            const body = await cancelRes.json().catch(() => ({}));
+            const isTerminalError =
+              cancelRes.status() === 400 &&
+              typeof body.error === 'string' &&
+              /Cannot transition order status from '(completed|cancelled)' to 'cancelled'/i.test(
+                body.error,
+              );
+            if (!isTerminalError) {
+              cleanupErrors.push(
+                `Failed to cancel order ${orderId}: status ${cancelRes.status()} ${JSON.stringify(body)}`,
+              );
+            }
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          cleanupErrors.push(`Error cancelling order ${orderId}: ${message}`);
         }
       }
+      expect(cleanupErrors).toEqual([]);
     }
   });
 
@@ -97,7 +117,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
             Authorization: `Bearer ${getE2eToken('e2e-owner', 'owner@flo.local', 'owner')}`,
             'Content-Type': 'application/json',
           },
-          data: { pin, is_active: 1 },
+          data: { pin },
         });
       } catch {
         // Ignore if staff not found
@@ -163,7 +183,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
       managerAliceId = existingAlice.id;
       await page.request.put(`${BASE}/api/staff/${managerAliceId}`, {
         headers,
-        data: { pin: '1111', is_active: 1 },
+        data: { pin: '1111' },
       });
     }
 
@@ -188,7 +208,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
       managerBobId = existingBob.id;
       await page.request.put(`${BASE}/api/staff/${managerBobId}`, {
         headers,
-        data: { pin: '2222', is_active: 1 },
+        data: { pin: '2222' },
       });
     }
 
@@ -402,7 +422,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     page,
   }) => {
     // Mock staff route to return empty staff list so no manager approvers exist with PINs
-    await page.route('**/api/staff*', async (route) => {
+    await page.route('**/api/staff**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

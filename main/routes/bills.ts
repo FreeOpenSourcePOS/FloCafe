@@ -3187,6 +3187,7 @@ export function completeExactBalanceSettlement(
   overridePin?: unknown,
   clientIp = 'unknown',
   preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
+  approverId?: unknown,
 ): any {
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!bill) return null;
@@ -3198,6 +3199,7 @@ export function completeExactBalanceSettlement(
     clientIp,
     bill.id,
     preVerifiedManager,
+    approverId,
   );
   if (!kitchenStatus.allowed) {
     return parseRowJson(bill);
@@ -4067,12 +4069,13 @@ router.post(
 );
 
 router.post(
-  '/:id/applyDiscount',
+  ['/:id/applyDiscount', '/:id/discount'],
   requirePermission('bills.discount.apply'),
   asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const { type, value, reason, override_pin, approver_id, user_id, manager_id } = req.body;
+      const explicitApproverId = approver_id ?? manager_id ?? user_id;
 
       if (!type || !['percentage', 'amount'].includes(type)) {
         return res
@@ -4246,6 +4249,27 @@ router.post(
         }
         approvedByUserId = verifiedResult.user.id;
         preVerifiedPinHash = verifiedResult.user.pin_hash ?? undefined;
+      }
+
+      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+      if (approvedByUserId && preVerifiedPinHash) {
+        preVerifiedKitchenManager = { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash };
+      } else if (override_pin) {
+        const initialKitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          bill.order_id,
+          undefined,
+          clientIp,
+          bill.id,
+        );
+        if (!initialKitchenStatus.allowed) {
+          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+            db,
+            override_pin,
+            clientIp,
+            explicitApproverId,
+          );
+        }
       }
 
       // Check discount mode
@@ -4452,17 +4476,14 @@ router.post(
           );
         }
         const freshNewBalance = Math.max(0, freshNewTotal - freshPaidAmount);
-        const preVerifiedDiscountApprover =
-          approvedByUserId && preVerifiedPinHash
-            ? { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash }
-            : null;
         const kitchenStatus = checkKitchenDeliveryStatus(
           db,
           currentBill.order_id,
           override_pin,
           clientIp,
           currentBill.id,
-          preVerifiedDiscountApprover,
+          preVerifiedKitchenManager,
+          explicitApproverId,
         );
         const isNowPaid = freshPaidAmount > 0 && freshNewBalance === 0 && kitchenStatus.allowed;
 
@@ -4532,7 +4553,8 @@ router.post(
             now(),
             override_pin,
             clientIp,
-            preVerifiedDiscountApprover,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
         }
 

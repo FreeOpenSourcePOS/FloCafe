@@ -67,6 +67,7 @@ import {
   checkKitchenDeliveryStatus,
   completeExactBalanceSettlement,
   getTenantCurrency,
+  preVerifyKitchenDeliveryPin,
   syncUnpaidBillsForOrder,
 } from './bills';
 import expressRateLimit from 'express-rate-limit';
@@ -3093,11 +3094,7 @@ router.patch(
   },
 );
 
-router.patch(
-  '/:id/discount',
-  orderWriteRateLimit,
-  requirePermission('orders.discount.apply'),
-  asyncHandler(async (req: Request, res: Response) => {
+const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const db = getDatabase();
@@ -3189,6 +3186,7 @@ router.patch(
       }
 
       // Check if approval is required
+      const explicitApproverId = approver_id || manager_id || user_id;
       let approvedByUserId: string | undefined;
       let preVerifiedOrderDiscountPinHash: string | undefined;
       if (discount_value > 0) {
@@ -3210,7 +3208,6 @@ router.patch(
             checkPinRateLimit(rateLimitKey);
             return res.status(403).json({ error: 'Invalid manager PIN' });
           }
-          const explicitApproverId = approver_id || manager_id || user_id;
           const candidateUsers = explicitApproverId
             ? (db
                 .prepare(
@@ -3256,6 +3253,33 @@ router.patch(
           }
           approvedByUserId = verifiedResult.user.id;
           preVerifiedOrderDiscountPinHash = verifiedResult.user.pin_hash;
+        }
+      }
+
+      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+      if (approvedByUserId && preVerifiedOrderDiscountPinHash) {
+        preVerifiedKitchenManager = {
+          id: approvedByUserId,
+          verifiedPinHash: preVerifiedOrderDiscountPinHash,
+        };
+      } else if (override_pin) {
+        const existingBill = db
+          .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+          .get(req.params.id, 'paid') as { id: string | number } | undefined;
+        const initialKitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          undefined,
+          clientIp,
+          existingBill?.id,
+        );
+        if (!initialKitchenStatus.allowed) {
+          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+            db,
+            override_pin,
+            clientIp,
+            explicitApproverId,
+          );
         }
       }
 
@@ -3488,17 +3512,14 @@ router.patch(
             );
           }
           const newBillBalance = Math.max(0, billTotal - billPaidAmount);
-          const preVerifiedDiscountApprover =
-            approvedByUserId && preVerifiedOrderDiscountPinHash
-              ? { id: approvedByUserId, verifiedPinHash: preVerifiedOrderDiscountPinHash }
-              : null;
           const kitchenStatus = checkKitchenDeliveryStatus(
             db,
             String(req.params.id),
             override_pin,
             clientIp,
             existingBill.id,
-            preVerifiedDiscountApprover,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
           const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(`
@@ -3539,7 +3560,8 @@ router.patch(
               now(),
               override_pin,
               clientIp,
-              preVerifiedDiscountApprover,
+              preVerifiedKitchenManager,
+              explicitApproverId,
             );
           }
           if (kitchenStatus.overridden && isBillNowPaid) {
@@ -3598,14 +3620,22 @@ router.patch(
           ),
         );
     }
-  }),
-);
+  });
 
 router.patch(
-  '/:id/items/:itemId/discount',
+  '/:id/discount',
   orderWriteRateLimit,
   requirePermission('orders.discount.apply'),
-  asyncHandler(async (req: Request, res: Response) => {
+  handleOrderDiscount,
+);
+router.post(
+  '/:id/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleOrderDiscount,
+);
+
+const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     try {
       const db = getDatabase();
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -3668,6 +3698,7 @@ router.patch(
       }
 
       // Check if approval is required
+      const explicitApproverId = approver_id || req.body.manager_id || user_id;
       let approvedByUserId: string | undefined;
       let preVerifiedItemDiscountPinHash: string | undefined;
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
@@ -3686,7 +3717,6 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const explicitApproverId = approver_id || req.body.manager_id || user_id;
         const candidateUsers = explicitApproverId
           ? (db
               .prepare(
@@ -3730,6 +3760,33 @@ router.patch(
         }
         approvedByUserId = verifiedResult.user.id;
         preVerifiedItemDiscountPinHash = verifiedResult.user.pin_hash;
+      }
+
+      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+      if (approvedByUserId && preVerifiedItemDiscountPinHash) {
+        preVerifiedKitchenManager = {
+          id: approvedByUserId,
+          verifiedPinHash: preVerifiedItemDiscountPinHash,
+        };
+      } else if (override_pin) {
+        const existingBill = db
+          .prepare('SELECT id FROM bills WHERE order_id = ? AND payment_status != ?')
+          .get(req.params.id, 'paid') as { id: string | number } | undefined;
+        const initialKitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          String(req.params.id),
+          undefined,
+          clientIp,
+          existingBill?.id,
+        );
+        if (!initialKitchenStatus.allowed) {
+          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+            db,
+            override_pin,
+            clientIp,
+            explicitApproverId,
+          );
+        }
       }
 
       // Check discount mode
@@ -3985,17 +4042,14 @@ router.patch(
             );
           }
           const newBillBalance = Math.max(0, billTotal - billPaidAmount);
-          const preVerifiedDiscountApprover =
-            approvedByUserId && preVerifiedItemDiscountPinHash
-              ? { id: approvedByUserId, verifiedPinHash: preVerifiedItemDiscountPinHash }
-              : null;
           const kitchenStatus = checkKitchenDeliveryStatus(
             db,
             String(req.params.id),
             override_pin,
             clientIp,
             existingBill.id,
-            preVerifiedDiscountApprover,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
           const isBillNowPaid = billPaidAmount > 0 && newBillBalance === 0 && kitchenStatus.allowed;
           db.prepare(
@@ -4030,7 +4084,8 @@ router.patch(
               now(),
               override_pin,
               clientIp,
-              preVerifiedDiscountApprover,
+              preVerifiedKitchenManager,
+              explicitApproverId,
             );
           }
           if (kitchenStatus.overridden && isBillNowPaid) {
@@ -4079,7 +4134,19 @@ router.patch(
         .status(error.statusCode || 500)
         .json({ error: error.statusCode ? error.message : 'Internal server error' });
     }
-  }),
+  });
+
+router.patch(
+  '/:id/items/:itemId/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleItemDiscount,
+);
+router.post(
+  '/:id/items/:itemId/discount',
+  orderWriteRateLimit,
+  requirePermission('orders.discount.apply'),
+  handleItemDiscount,
 );
 
 function getOrderItemEditVersion(

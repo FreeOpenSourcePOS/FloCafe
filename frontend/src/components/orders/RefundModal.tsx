@@ -102,10 +102,10 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
 
   useEffect(() => {
     let cancelled = false;
-    api.get('/staff', { params: { active: true } })
+    api.get('/staff/approvers')
       .then((res) => {
         if (cancelled) return;
-        const staff: Staff[] = res.data?.staff || [];
+        const staff: Staff[] = res.data?.approvers ?? res.data?.staff ?? [];
         const eligibleStaff = getConfiguredApprovers(staff);
         const eligibleStaffAtCurrentTime = eligibleStaff.filter((member) => hasRole(
           member.role,
@@ -223,10 +223,12 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
-      const staffResponse = await api.get('/staff', { params: { active: true } });
+      const staffResponse = await api.get('/staff/approvers');
       const submissionNow = getCurrentTime();
       const submissionIsLate = submissionNow - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
-      const configuredApprovers = getConfiguredApprovers(staffResponse.data?.staff || []);
+      const configuredApprovers = getConfiguredApprovers(
+        staffResponse.data?.approvers ?? staffResponse.data?.staff ?? [],
+      );
       const eligibleApproversAtSubmission = configuredApprovers.filter((member) => hasRole(
         member.role,
         submissionIsLate ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager,

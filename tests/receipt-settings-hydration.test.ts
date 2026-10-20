@@ -426,9 +426,9 @@ async function runTests() {
       'posSettings retains address from API',
     );
 
-    // ── Test 6: Role-based authorization on GET /api/settings/business vs protected settings (Issue #1225) ──
+    // ── Test 6: Role-based authorization on GET /api/settings/business vs protected settings ──
     console.log(
-      '\n6. Role-based authorization allows bill/order roles to read storefront settings without granting admin access (#1225)',
+      '\n6. Role-based authorization allows bill/order roles to read storefront settings without granting admin access',
     );
     const { getJWTSecret } = require('../main/routes/auth');
     const jwt = require('jsonwebtoken');
@@ -507,9 +507,9 @@ async function runTests() {
     });
     assertEqualOrThrow(cashierTaxRes.status, 403, 'Cashier GET /api/settings/tax returns 403');
 
-    // ── Test 7: Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race (#1225) ──
+    // ── Test 7: Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race ──
     console.log(
-      '\n7. Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race (#1225)',
+      '\n7. Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race',
     );
     // canSyncReceiptSettings checks role/permissions
     assertEqualOrThrow(

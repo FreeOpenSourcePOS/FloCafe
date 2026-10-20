@@ -190,7 +190,7 @@ export async function preVerifyKitchenDeliveryPin(
   });
 }
 
-function checkKitchenDeliveryStatus(
+export function checkKitchenDeliveryStatus(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number,
   overridePin?: unknown,
@@ -2965,13 +2965,25 @@ function preparePaymentBatch(
   if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
     throw paymentValidationError('Cannot accept payment on a refunded bill', 'bill_refunded', 409);
   }
-  if (bill.payment_status === 'paid')
-    throw paymentValidationError('Bill is already paid', 'bill_already_paid');
   const remainingCents = Math.max(
     0,
     Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor),
   );
+  const hasPositiveAmount = resolvedPayments.some((p) => {
+    if (p.amount === null || p.amount === undefined) return false;
+    const num = Number(p.amount);
+    return !Number.isNaN(num) && num > 0;
+  });
+  if (bill.payment_status === 'paid') {
+    if (hasPositiveAmount) {
+      throw paymentValidationError('Bill is already paid', 'bill_already_paid');
+    }
+    return { bill, prepared: [], existingPayments, effectiveCustomerId };
+  }
   if (remainingCents <= 0) {
+    if (hasPositiveAmount) {
+      throw paymentValidationError('Payment exceeds remaining balance', 'payment_exceeds_balance');
+    }
     return { bill, prepared: [], existingPayments, effectiveCustomerId };
   }
   const raw = resolvedPayments.map((payment) => {
@@ -3118,6 +3130,100 @@ function calculateCashback(
   return Math.floor(fullOrderCashback * splitRatio);
 }
 
+export function completeExactBalanceSettlement(
+  db: ReturnType<typeof getDatabase>,
+  billId: string | number,
+  newTotal: number,
+  currency: string,
+  changedAt: string = now(),
+  overridePin?: unknown,
+  clientIp = 'unknown',
+  preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
+): any {
+  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+  if (!bill) return null;
+
+  const kitchenStatus = checkKitchenDeliveryStatus(
+    db,
+    bill.order_id,
+    overridePin,
+    clientIp,
+    bill.id,
+    preVerifiedManager,
+  );
+  if (!kitchenStatus.allowed) {
+    return parseRowJson(bill);
+  }
+
+  db.prepare(
+    `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
+  ).run(changedAt, changedAt, billId);
+
+  const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+  if (!updatedBill) return null;
+
+  const unpaidSibling = db
+    .prepare(
+      `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
+    )
+    .get(bill.order_id, bill.id);
+  const orderFullyPaid = !unpaidSibling;
+  let orderRow: any = null;
+  if (orderFullyPaid) {
+    orderRow = db
+      .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+      .get(bill.order_id) as any;
+    const canComplete = orderRow && !['cancelled', 'completed'].includes(orderRow.status);
+    if (canComplete) {
+      db.prepare(
+        "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+      ).run(changedAt, changedAt, bill.order_id);
+      if (orderRow.table_id) {
+        db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          orderRow.table_id,
+        );
+      }
+    }
+  }
+
+  const effectiveCustomerId = bill.customer_id || orderRow?.customer_id;
+  const cashback = calculateCashback(db, bill, effectiveCustomerId);
+  const alreadyCredited = db
+    .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)
+    .get(bill.id);
+  if (cashback > 0 && !alreadyCredited) {
+    let existingPayments: any[] = [];
+    try {
+      existingPayments = JSON.parse(bill.payment_details || '[]');
+    } catch {
+      existingPayments = [];
+    }
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
+    const walletCents = existingPayments
+      .filter((p: any) => p.method === 'wallet')
+      .reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * minorFactor), 0);
+    const totalCents = Math.round(Number(newTotal) * minorFactor);
+    const finalCashback = Math.floor(
+      cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))),
+    );
+    if (finalCashback > 0) {
+      db.prepare(
+        `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
+      ).run(
+        effectiveCustomerId,
+        bill.id,
+        finalCashback,
+        `Cashback on bill ${bill.bill_number}`,
+        changedAt,
+        changedAt,
+      );
+    }
+  }
+
+  return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
+}
+
 function applyPaymentBatch(
   db: ReturnType<typeof getDatabase>,
   billId: string,
@@ -3200,6 +3306,77 @@ function applyPaymentBatch(
         undelivered_count: kitchenStatus.count,
       },
     });
+  }
+  if (prepared.length === 0) {
+    const changedAt = now();
+    if (bill.payment_status !== 'paid') {
+      db.prepare(
+        `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
+      ).run(changedAt, changedAt, billId);
+    }
+    const unpaidSibling = db
+      .prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
+      )
+      .get(bill.order_id, bill.id);
+    if (!unpaidSibling) {
+      const order = db
+        .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+        .get(bill.order_id) as any;
+      if (order && !['cancelled', 'completed'].includes(order.status)) {
+        db.prepare(
+          "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+        ).run(changedAt, changedAt, bill.order_id);
+        if (order.table_id) {
+          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+            changedAt,
+            order.table_id,
+          );
+        }
+      }
+    }
+    const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+    const effectiveCustId = freshBill.customer_id;
+    const cashback = calculateCashback(db, freshBill, effectiveCustId);
+    const alreadyCredited = db
+      .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)
+      .get(freshBill.id);
+    let loyaltyPointsEarned = 0;
+    if (cashback > 0 && !alreadyCredited) {
+      let existingList: any[] = [];
+      try {
+        existingList = JSON.parse(freshBill.payment_details || '[]');
+      } catch {
+        existingList = [];
+      }
+      const currency = getTenantCurrency();
+      const minorFactor = getCurrencyMinorUnitFactor(currency);
+      const totalCents = Math.round(Number(freshBill.total || 0) * minorFactor);
+      const walletCents = existingList
+        .filter((p: any) => p.method === 'wallet')
+        .reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * minorFactor), 0);
+      const finalCashback = Math.floor(
+        cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))),
+      );
+      if (finalCashback > 0) {
+        db.prepare(
+          `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
+        ).run(
+          effectiveCustId,
+          freshBill.id,
+          finalCashback,
+          `Cashback on bill ${freshBill.bill_number}`,
+          changedAt,
+          changedAt,
+        );
+        loyaltyPointsEarned = finalCashback;
+      }
+    }
+    return {
+      bill: parseRowJson(freshBill),
+      walletDebited: false,
+      loyaltyPointsEarned,
+    };
   }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
@@ -3819,7 +3996,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
-      const { type, value, reason } = req.body;
+      const { type, value, reason, override_pin, approver_id, user_id, manager_id } = req.body;
 
       if (!type || !['percentage', 'amount'].includes(type)) {
         return res
@@ -3853,6 +4030,7 @@ router.post(
       }
 
       const db = getDatabase();
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as
         | ChargeBillRow
         | undefined;
@@ -3927,7 +4105,6 @@ router.post(
             .status(403)
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
         const canonicalIp = normalizeIpForRateLimit(clientIp);
         const rateLimitKey = `pin:${canonicalIp}:bill-discount`;
         if (isPinRateLimited(rateLimitKey)) {
@@ -4199,12 +4376,28 @@ router.post(
           );
         }
         const freshNewBalance = Math.max(0, freshNewTotal - freshPaidAmount);
+        const preVerifiedDiscountApprover =
+          approvedByUserId && preVerifiedPinHash
+            ? { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash }
+            : null;
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          currentBill.order_id,
+          override_pin,
+          clientIp,
+          currentBill.id,
+          preVerifiedDiscountApprover,
+        );
+        const isNowPaid = freshPaidAmount > 0 && freshNewBalance === 0 && kitchenStatus.allowed;
 
         db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
-          total = ?, round_off = ?, balance = ?, updated_at = ?
+          total = ?, round_off = ?, balance = ?,
+          payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+          paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+          updated_at = ?
         WHERE id = ?
       `).run(
           freshTotals.subtotal,
@@ -4221,6 +4414,9 @@ router.post(
           freshNewTotal,
           freshNewRoundOff,
           freshNewBalance,
+          isNowPaid ? 1 : 0,
+          isNowPaid ? 1 : 0,
+          now(),
           now(),
           req.params.id,
         );
@@ -4250,6 +4446,33 @@ router.post(
           now(),
           currentBill.order_id,
         );
+
+        if (isNowPaid) {
+          completeExactBalanceSettlement(
+            db,
+            String(req.params.id),
+            freshNewTotal,
+            currency,
+            now(),
+            override_pin,
+            clientIp,
+            preVerifiedDiscountApprover,
+          );
+        }
+
+        if (kitchenStatus.overridden && isNowPaid) {
+          recordOrderAudit(db, {
+            orderId: String(currentBill.order_id),
+            actorUserId: String(
+              (req as Request & { user?: { userId?: string } }).user?.userId || '',
+            ),
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
 
         recordOrderAudit(db, {
           orderId: String(currentBill.order_id),

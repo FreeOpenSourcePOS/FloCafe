@@ -98,7 +98,7 @@
     "test:e2e": "npm run test:e2e:browser",
     "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs && node tests/release-gate.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
-    "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts && node tests/run-electron-node-test.cjs tests/anonymous-diagnostics-delivery.test.ts && node tests/run-electron-node-test.cjs tests/posthog-client.test.ts",
+    "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts && node tests/run-electron-node-test.cjs tests/anonymous-diagnostics-delivery.test.ts && node tests/run-electron-node-test.cjs tests/posthog-client.test.ts && node tests/run-electron-node-test.cjs tests/posthog-service.test.ts",
     "test:telemetry-install-provenance": "ts-node --transpile-only -P tests/tsconfig.json tests/telemetry-install-provenance.test.ts",
     "test:country-provenance": "node tests/run-electron-node-test.cjs tests/country-provenance.test.ts",
     "test:static-routes": "ts-node --transpile-only -P tests/tsconfig.json tests/path-containment.test.ts && node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",

@@ -599,6 +599,58 @@ async function runTests() {
     });
     // For unauthorized role or network failure, ensureReceiptSettingsLoaded resolves cleanly
     await ensureReceiptSettingsLoaded();
+
+    // ── Test 8: Receipt settings hydration under network rejection ──
+    console.log(
+      '\n8. Receipt settings hydration recovers cleanly after transient network rejection',
+    );
+    resetReceiptSettingsSyncForTests();
+    usePosSettingsStore.setState({
+      billAddress: 'Default Address',
+      billFooterMessage: 'Default Footer',
+    });
+
+    // Configure frontendApi to simulate a transient network rejection
+    frontendApi.defaults.baseURL = 'http://127.0.0.1:59999/api';
+    useAuthStore.setState({
+      currentTenant: {
+        id: 'tenant-1',
+        business_name: 'Test Tenant',
+        role: 'cashier',
+        permission_ids: ['bills.read', 'bills.print'],
+      } as any,
+    });
+
+    // 1. Initial attempt rejects due to network error; resolves cleanly without throwing
+    await ensureReceiptSettingsLoaded();
+    assertEqualOrThrow(
+      usePosSettingsStore.getState().billAddress,
+      'Default Address',
+      'Settings remain on default when network rejects',
+    );
+    assertEqualOrThrow(
+      usePosSettingsStore.getState().billFooterMessage,
+      'Default Footer',
+      'Footer remains on default when network rejects',
+    );
+
+    // 2. Network recovers: restore correct baseURL and auth header
+    frontendApi.defaults.baseURL = `${baseUrl}/api`;
+    frontendApi.defaults.headers.common['Authorization'] = `Bearer ${cashier.token}`;
+
+    // 3. Retry via ensureReceiptSettingsLoaded(): detects not hydrated and recovers cleanly
+    await ensureReceiptSettingsLoaded();
+    const recoveredState = usePosSettingsStore.getState();
+    assertEqualOrThrow(
+      recoveredState.billAddress,
+      '123 Pier Way, Seattle, WA',
+      'billAddress hydrates cleanly after network recovery',
+    );
+    assertEqualOrThrow(
+      recoveredState.billFooterMessage,
+      'Updated footer: Visit us online!',
+      'billFooterMessage hydrates cleanly after network recovery',
+    );
   } finally {
     delete frontendApi.defaults.headers.common['Authorization'];
     frontendApi.defaults.baseURL = '/api';

@@ -16,6 +16,7 @@ import {
 import { normalizeSupportedCurrencyCode } from '../../shared/currencies';
 import { isOperationReference, serializeOperationFailure } from '../lib/operation-failure';
 import { getBuildIdentity } from './build-identity';
+import { postHogNetworkSuppressed } from './posthog-config';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
@@ -218,7 +219,7 @@ function mirrorToPostHog(eventType: string, payload?: Record<string, unknown>): 
 
 /** PostHog's daily ping and milestones run on this timer but never wait on the collector. */
 function runPostHogDailyChecks(): void {
-  if (matrixOffline() || telemetryStopping) return;
+  if (telemetryStopping || !isTelemetryEnabled()) return;
   try {
     (require('./posthog') as typeof import('./posthog')).runPostHogDailyChecks();
   } catch {
@@ -227,8 +228,9 @@ function runPostHogDailyChecks(): void {
 }
 
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
-  if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
+  if (telemetryStopping) return Promise.resolve(false);
   mirrorToPostHog(eventType, payload);
+  if (matrixOffline()) return Promise.resolve(false);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
@@ -424,14 +426,16 @@ export const telemetry = {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
     }
-    if (matrixOffline()) return;
+    if (matrixOffline() && postHogNetworkSuppressed()) return;
     void sendEvent('app_launch');
-    maybeSendDailyPing();
+    if (!matrixOffline()) maybeSendDailyPing();
     runPostHogDailyChecks();
-    dailyPingTimer = setInterval(() => {
-      maybeSendDailyPing();
-      runPostHogDailyChecks();
-    }, DAILY_PING_INTERVAL_MS);
+    if (!matrixOffline() || !postHogNetworkSuppressed()) {
+      dailyPingTimer = setInterval(() => {
+        if (!matrixOffline()) maybeSendDailyPing();
+        runPostHogDailyChecks();
+      }, DAILY_PING_INTERVAL_MS);
+    }
   },
   stop(): Promise<void> {
     if (telemetryStopPromise) return telemetryStopPromise;

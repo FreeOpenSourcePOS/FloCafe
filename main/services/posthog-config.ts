@@ -39,6 +39,8 @@ export function postHogEnvironment(): PostHogEnvironment | null {
   if (process.env.CI) return null;
   if (process.env.FLO_MATRIX_OFFLINE === '1') return null;
   if (process.env.E2E_TASK_LOCAL_PORTS) return null;
+  if (process.env.NODE_ENV === 'test') return null;
+  if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK === '1') return null;
   if ((process as NodeJS.Process & { type?: string }).type !== 'browser') return null;
   if (process.env.FLO_POSTHOG_DEV === '1') return 'development';
   return isOfficialReleaseBuild() ? 'production' : null;

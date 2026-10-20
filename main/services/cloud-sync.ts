@@ -2496,6 +2496,9 @@ export class CloudSyncService {
         }>;
         if (rows.length === 0) return;
 
+        const { isTelemetrySuppressed } = require('./telemetry') as typeof import('./telemetry');
+        if (isTelemetrySuppressed()) return;
+
         for (const row of rows) {
           if (this.cloudDeletionInProgress || this.shutdownRequested) return;
           if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;

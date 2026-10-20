@@ -34,6 +34,7 @@ import {
   initDatabase,
   restoreBackup,
   validateInventoryLedgerDatabase,
+  buildIdealSchemaDb,
 } from '../main/db';
 import { adjustProductStock } from '../main/services/inventory';
 
@@ -899,9 +900,92 @@ async function run() {
       } finally {
         (nativeFs as any).writeFileSync = originalWriteFileSync;
       }
+
+      // 5. Failed materialization descriptor close (e.g. closeSync error): temp dir is cleaned up immediately, no leak
+      const originalCloseSync = nativeFs.closeSync;
+      const failedCloseStart = trackedRestoreDirs.length;
+      let injectCloseSyncFailure = false;
+      (nativeFs as any).closeSync = (fd: any) => {
+        if (injectCloseSyncFailure) {
+          originalCloseSync(fd);
+          throw new Error('injected snapshot closeSync failure');
+        }
+        return originalCloseSync(fd);
+      };
+      try {
+        injectCloseSyncFailure = true;
+        const failedClose = restoreBackup(sameSchemaBackup, true);
+        assert.equal(
+          failedClose.success,
+          false,
+          'restore fails gracefully on materialization closeSync failure',
+        );
+        assert.match(
+          failedClose.error ?? '',
+          /injected snapshot closeSync failure/,
+          'error matches injected failure',
+        );
+        const failedDirs = trackedRestoreDirs.slice(failedCloseStart);
+        assert.equal(
+          failedDirs.length,
+          1,
+          'materialize created a temp directory before closeSync failure',
+        );
+        assert.equal(
+          fs.existsSync(failedDirs[0]),
+          false,
+          'failed materialization closeSync cleaned up its temp directory',
+        );
+      } finally {
+        injectCloseSyncFailure = false;
+        (nativeFs as any).closeSync = originalCloseSync;
+      }
     } finally {
       (nativeFs as any).mkdtempSync = originalMkdtempSync;
     }
+
+    // ── 6. Interrupted restore recovery across schema versions ───────────
+    console.log('Testing interrupted restore recovery across historical schema versions...');
+    closeDatabase();
+
+    const historicalRecoveryId = 'hist-v114-recovery';
+    const backupDir = path.join(testDir, 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+
+    const v114DbPath = path.join(backupDir, `flo-restore-recovery-${historicalRecoveryId}.db`);
+    const v114IdealDb = buildIdealSchemaDb(114);
+    try {
+      await v114IdealDb.backup(v114DbPath);
+    } finally {
+      v114IdealDb.close();
+    }
+
+    const journalPath = path.join(backupDir, `flo-restore-recovery-${historicalRecoveryId}.json`);
+    const liveDbPath = getDbPath();
+    const journalData = {
+      phase: 'prepared',
+      recoveryPath: v114DbPath,
+      dbPath: liveDbPath,
+    };
+    fs.writeFileSync(journalPath, JSON.stringify(journalData));
+    fs.writeFileSync(liveDbPath, 'corrupted data from interrupted write');
+
+    initDatabase();
+    assert.equal(
+      getCurrentSchemaVersion(),
+      115,
+      'interrupted v114 replacement recovered and migrated to v115',
+    );
+    assert.equal(
+      fs.existsSync(journalPath),
+      false,
+      'recovery journal cleaned up after successful recovery',
+    );
+    assert.equal(
+      fs.existsSync(v114DbPath),
+      false,
+      'recovery snapshot cleaned up after successful recovery',
+    );
 
     console.log('✅ Production database restore tests passed');
   } finally {

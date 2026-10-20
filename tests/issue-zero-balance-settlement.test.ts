@@ -12,14 +12,27 @@ const os = require('os');
 const path = require('path');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-zero-balance-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
-  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+  if (request === 'electron')
+    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
   return originalLoad.apply(this, arguments as any);
 };
 
 const {
-  initTestDb, createApp, startServer,
-  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
-  api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
+  initTestDb,
+  createApp,
+  startServer,
+  seedOwnerUser,
+  seedManagerUser,
+  seedCategory,
+  seedProduct,
+  seedTable,
+  api,
+  assert,
+  assertEqual,
+  getResults,
+  closeDatabase,
+  getDatabase,
+  now,
 } = require('./helpers/test-setup');
 
 const { orderRoutes } = require('../main/routes/orders');
@@ -35,14 +48,20 @@ function setSetting(db: any, key: string, value: string): void {
 }
 
 function billRow(db: any, id: any): any {
-  return db.prepare(
-    `SELECT id, payment_status, subtotal, discount_amount, total, paid_amount, balance, order_id
+  return db
+    .prepare(
+      `SELECT id, payment_status, subtotal, discount_amount, total, paid_amount, balance, order_id
      FROM bills WHERE id = ?`,
-  ).get(id);
+    )
+    .get(id);
 }
 
 function orderRow(db: any, id: any): any {
-  return db.prepare(`SELECT id, status, table_id, subtotal, discount_amount, total FROM orders WHERE id = ?`).get(id);
+  return db
+    .prepare(
+      `SELECT id, status, table_id, subtotal, discount_amount, total FROM orders WHERE id = ?`,
+    )
+    .get(id);
 }
 
 function tableRow(db: any, id: any): any {
@@ -81,7 +100,11 @@ async function main(): Promise<void> {
     return api(baseUrl, '/api/orders', { method: 'POST', body, headers: A });
   }
   async function generateBill(orderId: any) {
-    return api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: orderId }, headers: A });
+    return api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: orderId },
+      headers: A,
+    });
   }
   async function pay(billId: any, body: any) {
     return api(baseUrl, `/api/bills/${billId}/payment`, { method: 'POST', body, headers: A });
@@ -93,16 +116,27 @@ async function main(): Promise<void> {
     return api(baseUrl, `/api/orders/${orderId}/discount`, { method: 'PATCH', body, headers: A });
   }
   async function itemDiscount(orderId: any, itemId: any, body: any) {
-    return api(baseUrl, `/api/orders/${orderId}/items/${itemId}/discount`, { method: 'PATCH', body, headers: A });
+    return api(baseUrl, `/api/orders/${orderId}/items/${itemId}/discount`, {
+      method: 'PATCH',
+      body,
+      headers: A,
+    });
   }
   async function refund(body: any) {
     return api(baseUrl, '/api/refunds', { method: 'POST', body, headers: A });
   }
   async function cancelItem(orderId: any, itemId: any, body: any = {}) {
-    return api(baseUrl, `/api/orders/${orderId}/items/${itemId}/cancel`, { method: 'PATCH', body, headers: A });
+    return api(baseUrl, `/api/orders/${orderId}/items/${itemId}/cancel`, {
+      method: 'PATCH',
+      body,
+      headers: A,
+    });
   }
   async function newTakeawayOrder(productId: string, quantity = 1) {
-    const create = await createOrder({ type: 'takeaway', items: [{ product_id: productId, quantity }] });
+    const create = await createOrder({
+      type: 'takeaway',
+      items: [{ product_id: productId, quantity }],
+    });
     assertEqual(create.status, 201, `takeaway order created (${productId})`);
     const gen = await generateBill(create.data.order.id);
     assertEqual(gen.status, 201, `bill generated for ${productId}`);
@@ -111,7 +145,9 @@ async function main(): Promise<void> {
 
   try {
     // ── order discount zeroes balance, then settle ──
-    console.log('\n─── order-discount-zero-balance: settle after order discount zeroes balance ───');
+    console.log(
+      '\n─── order-discount-zero-balance: settle after order discount zeroes balance ───',
+    );
     {
       const create = await createOrder({
         type: 'dine_in',
@@ -124,16 +160,45 @@ async function main(): Promise<void> {
       assertEqual(gen.status, 201, 'order-discount-zero-balance: bill generated');
       const billId = gen.data.bill.id;
       await pay(billId, { method: 'cash', amount: 500 });
-      const disc = await applyOrderDiscount(orderId, { discount_type: 'amount', discount_value: 500 });
+      const disc = await applyOrderDiscount(orderId, {
+        discount_type: 'amount',
+        discount_value: 500,
+      });
       assertEqual(disc.status, 200, 'order-discount-zero-balance: order discount applied');
       const afterDisc = billRow(db, billId);
-      assertEqual(Number(afterDisc.balance), 0, 'order-discount-zero-balance: balance is 0 after discount');
+      assertEqual(
+        Number(afterDisc.balance),
+        0,
+        'order-discount-zero-balance: balance is 0 after discount',
+      );
+      assertEqual(
+        afterDisc.payment_status,
+        'paid',
+        'order-discount-zero-balance: bill is auto-settled to paid',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'order-discount-zero-balance: order completed after discount',
+      );
 
-      const settle = await pay(billId, { method: 'cash', amount: 100 });
-      assert(settle.status >= 200 && settle.status < 300, `order-discount-zero-balance: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`);
+      const settle = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(
+        settle.status,
+        200,
+        'order-discount-zero-balance: zero-balance settle retry succeeds',
+      );
       const afterSettle = billRow(db, billId);
-      assertEqual(afterSettle.payment_status, 'paid', 'order-discount-zero-balance: bill is paid after settle');
-      assertEqual(orderRow(db, orderId).status, 'completed', 'order-discount-zero-balance: order completed after settle');
+      assertEqual(
+        afterSettle.payment_status,
+        'paid',
+        'order-discount-zero-balance: bill is paid after settle',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'order-discount-zero-balance: order completed after settle',
+      );
       if (tableRow(db, 'table-zb')?.status !== 'available') {
         db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
       }
@@ -144,22 +209,55 @@ async function main(): Promise<void> {
     {
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
       await pay(billId, { method: 'cash', amount: 400 });
-      const disc = await applyBillDiscount(billId, { type: 'amount', value: 600, reason: 'zb bill-discount-zero-balance' });
+      const disc = await applyBillDiscount(billId, {
+        type: 'amount',
+        value: 600,
+        reason: 'zb bill-discount-zero-balance',
+      });
       assertEqual(disc.status, 200, 'bill-discount-zero-balance: bill discount applied');
       const afterDisc = billRow(db, billId);
-      assertEqual(Number(afterDisc.balance), 0, 'bill-discount-zero-balance: balance is 0 after discount');
+      assertEqual(
+        Number(afterDisc.balance),
+        0,
+        'bill-discount-zero-balance: balance is 0 after discount',
+      );
+      assertEqual(
+        afterDisc.payment_status,
+        'paid',
+        'bill-discount-zero-balance: bill is auto-settled to paid',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'bill-discount-zero-balance: order completed after discount',
+      );
 
-      const settle = await pay(billId, { method: 'cash', amount: 50 });
-      assert(settle.status >= 200 && settle.status < 300, `bill-discount-zero-balance: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`);
+      const settle = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(
+        settle.status,
+        200,
+        'bill-discount-zero-balance: zero-balance settle retry succeeds',
+      );
       const afterSettle = billRow(db, billId);
-      assertEqual(afterSettle.payment_status, 'paid', 'bill-discount-zero-balance: bill is paid after settle');
-      assertEqual(orderRow(db, orderId).status, 'completed', 'bill-discount-zero-balance: order completed after settle');
+      assertEqual(
+        afterSettle.payment_status,
+        'paid',
+        'bill-discount-zero-balance: bill is paid after settle',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'bill-discount-zero-balance: order completed after settle',
+      );
     }
 
     // ── item discount zeroes balance, then settle ──
     console.log('\n─── item-discount-zero-balance: settle after item discount zeroes balance ───');
     {
-      const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
+      const create = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
       assertEqual(create.status, 201, 'item-discount-zero-balance: order created');
       const orderId = create.data.order.id;
       const itemId = create.data.order.items[0].id;
@@ -167,20 +265,51 @@ async function main(): Promise<void> {
       assertEqual(gen.status, 201, 'item-discount-zero-balance: bill generated');
       const billId = gen.data.bill.id;
       await pay(billId, { method: 'cash', amount: 500 });
-      const disc = await itemDiscount(orderId, itemId, { discount_type: 'amount', discount_value: 500 });
+      const disc = await itemDiscount(orderId, itemId, {
+        discount_type: 'amount',
+        discount_value: 500,
+      });
       assertEqual(disc.status, 200, 'item-discount-zero-balance: item discount applied');
       const afterDisc = billRow(db, billId);
-      assertEqual(Number(afterDisc.balance), 0, 'item-discount-zero-balance: balance is 0 after discount');
+      assertEqual(
+        Number(afterDisc.balance),
+        0,
+        'item-discount-zero-balance: balance is 0 after discount',
+      );
+      assertEqual(
+        afterDisc.payment_status,
+        'paid',
+        'item-discount-zero-balance: bill is auto-settled to paid',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'item-discount-zero-balance: order completed after discount',
+      );
 
-      const settle = await pay(billId, { method: 'cash', amount: 100 });
-      assert(settle.status >= 200 && settle.status < 300, `item-discount-zero-balance: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`);
+      const settle = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(
+        settle.status,
+        200,
+        'item-discount-zero-balance: zero-balance settle retry succeeds',
+      );
       const afterSettle = billRow(db, billId);
-      assertEqual(afterSettle.payment_status, 'paid', 'item-discount-zero-balance: bill is paid after settle');
-      assertEqual(orderRow(db, orderId).status, 'completed', 'item-discount-zero-balance: order completed after settle');
+      assertEqual(
+        afterSettle.payment_status,
+        'paid',
+        'item-discount-zero-balance: bill is paid after settle',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'item-discount-zero-balance: order completed after settle',
+      );
     }
 
     // ── zero-total sibling auto-closes ──
-    console.log('\n─── zero-total-split-sibling: zero-total sibling auto-closes, order completes ───');
+    console.log(
+      '\n─── zero-total-split-sibling: zero-total sibling auto-closes, order completes ───',
+    );
     {
       const create = await createOrder({
         type: 'dine_in',
@@ -211,28 +340,49 @@ async function main(): Promise<void> {
       const checkA = split.data.bills[0];
       const checkB = split.data.bills[1];
 
-      const cancelB = await cancelItem(orderId, itemB.id, { reason: 'zb zero-total-split-sibling' });
+      const cancelB = await cancelItem(orderId, itemB.id, {
+        reason: 'zb zero-total-split-sibling',
+      });
       assertEqual(cancelB.status, 200, 'zero-total-split-sibling: item B cancelled after split');
       const bAfter = billRow(db, checkB.id);
       assertEqual(Number(bAfter.total), 0, 'zero-total-split-sibling: sibling B total is 0');
-      assertEqual(bAfter.payment_status, 'paid', 'zero-total-split-sibling: zero-total sibling auto-closed as paid');
+      assertEqual(
+        bAfter.payment_status,
+        'paid',
+        'zero-total-split-sibling: zero-total sibling auto-closed as paid',
+      );
 
       const payA = await pay(checkA.id, { method: 'cash', amount: null });
       assertEqual(payA.status, 200, 'zero-total-split-sibling: pay A succeeds');
       const ordFinal = orderRow(db, orderId);
-      assertEqual(ordFinal.status, 'completed', 'zero-total-split-sibling: order completed after A paid');
-      assert(tableRow(db, 'table-zb')?.status === 'available', 'zero-total-split-sibling: table freed');
+      assertEqual(
+        ordFinal.status,
+        'completed',
+        'zero-total-split-sibling: order completed after A paid',
+      );
+      assert(
+        tableRow(db, 'table-zb')?.status === 'available',
+        'zero-total-split-sibling: table freed',
+      );
     }
 
     // ── kitchen enforcement keeps zero-balance split checks open until delivery ──
-    console.log('\n─── kitchen-zero-split-settlement: pending zero-balance check waits for delivery ───');
+    console.log(
+      '\n─── kitchen-zero-split-settlement: pending zero-balance check waits for delivery ───',
+    );
     {
       setSetting(db, 'require_kitchen_delivered_before_settlement', 'true');
       setSetting(db, 'require_open_shift', 'true');
       setSetting(db, 'kds_enabled', 'true');
       setSetting(db, 'discount_mode', 'both');
       assertEqual(
-        Number((db.prepare("SELECT COUNT(*) AS count FROM cash_sessions WHERE status = 'open'").get() as any).count),
+        Number(
+          (
+            db
+              .prepare("SELECT COUNT(*) AS count FROM cash_sessions WHERE status = 'open'")
+              .get() as any
+          ).count,
+        ),
         0,
         'kitchen-zero-split-settlement: fixture has no open cash session',
       );
@@ -251,47 +401,113 @@ async function main(): Promise<void> {
       const items = create.data.order.items as any[];
       const bill = await generateBill(orderId);
       assertEqual(bill.status, 201, 'kitchen-zero-split-settlement: bill generated');
-      const discount = await applyOrderDiscount(orderId, { discount_type: 'amount', discount_value: 1600 });
-      assertEqual(discount.status, 200, 'kitchen-zero-split-settlement: full order discount applied');
+      const discount = await applyOrderDiscount(orderId, {
+        discount_type: 'amount',
+        discount_value: 1600,
+      });
+      assertEqual(
+        discount.status,
+        200,
+        'kitchen-zero-split-settlement: full order discount applied',
+      );
       const split = await api(baseUrl, `/api/bills/${bill.data.bill.id}/split-check`, {
         method: 'POST',
-        body: { checks: [
-          { label: 'Pending A', items: [{ order_item_id: items[0].id, quantity: 1 }] },
-          { label: 'Pending B', items: [{ order_item_id: items[1].id, quantity: 1 }] },
-          { label: 'Cancelled C', items: [{ order_item_id: items[2].id, quantity: 1 }] },
-        ] },
+        body: {
+          checks: [
+            { label: 'Pending A', items: [{ order_item_id: items[0].id, quantity: 1 }] },
+            { label: 'Pending B', items: [{ order_item_id: items[1].id, quantity: 1 }] },
+            { label: 'Cancelled C', items: [{ order_item_id: items[2].id, quantity: 1 }] },
+          ],
+        },
         headers: A,
       });
       assertEqual(split.status, 201, 'kitchen-zero-split-settlement: checks split');
       const [checkA, checkB, checkC] = split.data.bills;
-      const cancelled = await cancelItem(orderId, items[2].id, { reason: 'zb kitchen-zero-split-settlement' });
+      const cancelled = await cancelItem(orderId, items[2].id, {
+        reason: 'zb kitchen-zero-split-settlement',
+      });
       assertEqual(cancelled.status, 200, 'kitchen-zero-split-settlement: sibling item cancelled');
-      assertEqual(billRow(db, checkA.id).payment_status, 'unpaid', 'kitchen-zero-split-settlement: pending zero-total check remains unpaid');
-      assertEqual(billRow(db, checkB.id).payment_status, 'unpaid', 'kitchen-zero-split-settlement: other pending zero-total check remains unpaid');
-      assertEqual(billRow(db, checkC.id).payment_status, 'paid', 'kitchen-zero-split-settlement: cancelled zero-total check can auto-close');
+      assertEqual(
+        billRow(db, checkA.id).payment_status,
+        'unpaid',
+        'kitchen-zero-split-settlement: pending zero-total check remains unpaid',
+      );
+      assertEqual(
+        billRow(db, checkB.id).payment_status,
+        'unpaid',
+        'kitchen-zero-split-settlement: other pending zero-total check remains unpaid',
+      );
+      assertEqual(
+        billRow(db, checkC.id).payment_status,
+        'paid',
+        'kitchen-zero-split-settlement: cancelled zero-total check can auto-close',
+      );
 
       const blocked = await pay(checkA.id, { method: 'cash', amount: null });
-      assertEqual(blocked.status, 409, 'kitchen-zero-split-settlement: pending zero-balance check remains blocked');
-      assertEqual(blocked.data.code, 'KITCHEN_ITEMS_UNDELIVERED', 'kitchen-zero-split-settlement: kitchen gate runs before shift enforcement');
+      assertEqual(
+        blocked.status,
+        409,
+        'kitchen-zero-split-settlement: pending zero-balance check remains blocked',
+      );
+      assertEqual(
+        blocked.data.code,
+        'KITCHEN_ITEMS_UNDELIVERED',
+        'kitchen-zero-split-settlement: kitchen gate runs before shift enforcement',
+      );
       const override = await pay(checkA.id, { method: 'cash', amount: null, override_pin: pin });
-      assertEqual(override.status, 200, 'kitchen-zero-split-settlement: manager can settle pending zero-balance check');
-      const overrideAudit = db.prepare("SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'").get(orderId) as any;
-      assertEqual(overrideAudit?.actor_user_id, ownerId, 'kitchen-zero-split-settlement: override audit records the authenticated actor');
-      assertEqual(JSON.parse(overrideAudit?.details_json || '{}').manager_user_id, approver, 'kitchen-zero-split-settlement: override audit identifies the manager');
-      assert(!JSON.stringify(override.data?.bill?.payment_details || []).includes(pin), 'kitchen-zero-split-settlement: manager PIN is not stored with payment details');
+      assertEqual(
+        override.status,
+        200,
+        'kitchen-zero-split-settlement: manager can settle pending zero-balance check',
+      );
+      const overrideAudit = db
+        .prepare(
+          "SELECT actor_user_id, details_json FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'",
+        )
+        .get(orderId) as any;
+      assertEqual(
+        overrideAudit?.actor_user_id,
+        ownerId,
+        'kitchen-zero-split-settlement: override audit records the authenticated actor',
+      );
+      assertEqual(
+        JSON.parse(overrideAudit?.details_json || '{}').manager_user_id,
+        approver,
+        'kitchen-zero-split-settlement: override audit identifies the manager',
+      );
+      assert(
+        !JSON.stringify(override.data?.bill?.payment_details || []).includes(pin),
+        'kitchen-zero-split-settlement: manager PIN is not stored with payment details',
+      );
 
       db.prepare("UPDATE order_items SET status = 'served' WHERE id = ?").run(items[1].id);
       const servedZeroBill = await pay(checkB.id, { method: 'cash', amount: null });
-      assertEqual(servedZeroBill.status, 200, 'kitchen-zero-split-settlement: served zero-balance check settles without a PIN');
-      assertEqual(Number(billRow(db, checkB.id).paid_amount), 0, 'kitchen-zero-split-settlement: zero settlement records no payment amount');
-      const zeroPaymentDetails = db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(checkB.id) as any;
-      assertEqual(JSON.parse(zeroPaymentDetails.payment_details || '[]').length, 0, 'kitchen-zero-split-settlement: no cash tender is recorded');
+      assertEqual(
+        servedZeroBill.status,
+        200,
+        'kitchen-zero-split-settlement: served zero-balance check settles without a PIN',
+      );
+      assertEqual(
+        Number(billRow(db, checkB.id).paid_amount),
+        0,
+        'kitchen-zero-split-settlement: zero settlement records no payment amount',
+      );
+      const zeroPaymentDetails = db
+        .prepare('SELECT payment_details FROM bills WHERE id = ?')
+        .get(checkB.id) as any;
+      assertEqual(
+        JSON.parse(zeroPaymentDetails.payment_details || '[]').length,
+        0,
+        'kitchen-zero-split-settlement: no cash tender is recorded',
+      );
       setSetting(db, 'require_open_shift', 'false');
       setSetting(db, 'require_kitchen_delivered_before_settlement', 'false');
     }
 
     // ── refunded sibling does not block completion ──
-    console.log('\n─── refunded-sibling-completion: refunded sibling does not block order completion ───');
+    console.log(
+      '\n─── refunded-sibling-completion: refunded sibling does not block order completion ───',
+    );
     {
       const create = await createOrder({
         type: 'dine_in',
@@ -329,33 +545,72 @@ async function main(): Promise<void> {
         approver_id: approver,
       });
       assertEqual(refA.status, 201, 'refunded-sibling-completion: refunded A');
-      assertEqual(billRow(db, billA.id).payment_status, 'refunded', 'refunded-sibling-completion: A is refunded');
+      assertEqual(
+        billRow(db, billA.id).payment_status,
+        'refunded',
+        'refunded-sibling-completion: A is refunded',
+      );
 
       const payB = await pay(billB.id, { method: 'cash', amount: null });
       assertEqual(payB.status, 200, 'refunded-sibling-completion: paid B');
       const ordFinal = orderRow(db, orderId);
-      assertEqual(ordFinal.status, 'completed', 'refunded-sibling-completion: order completed after B paid + A refunded');
-      assert(tableRow(db, 'table-zb')?.status === 'available', 'refunded-sibling-completion: table freed');
+      assertEqual(
+        ordFinal.status,
+        'completed',
+        'refunded-sibling-completion: order completed after B paid + A refunded',
+      );
+      assert(
+        tableRow(db, 'table-zb')?.status === 'available',
+        'refunded-sibling-completion: table freed',
+      );
     }
 
     // ── full discount with no prior payment settles ──
-    console.log('\n─── full-discount-no-payment: settle after 100% discount with paid_amount=0 ───');
+    console.log(
+      '\n─── full-discount-no-payment: settle after 100% discount with paid_amount=0 ───',
+    );
     {
-      const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
+      const create = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
       assertEqual(create.status, 201, 'full-discount-no-payment: order created');
       const orderId = create.data.order.id;
       const gen = await generateBill(orderId);
       assertEqual(gen.status, 201, 'full-discount-no-payment: bill generated');
       const billId = gen.data.bill.id;
-      const disc = await applyBillDiscount(billId, { type: 'amount', value: 1000, reason: 'zb full-discount-no-payment' });
+      const disc = await applyBillDiscount(billId, {
+        type: 'amount',
+        value: 1000,
+        reason: 'zb full-discount-no-payment',
+      });
       assertEqual(disc.status, 200, 'full-discount-no-payment: 100% discount applied');
       const afterDisc = billRow(db, billId);
-      assertEqual(Number(afterDisc.balance), 0, 'full-discount-no-payment: balance is 0 after discount');
-      assertEqual(Number(afterDisc.paid_amount), 0, 'full-discount-no-payment: paid_amount stays 0');
+      assertEqual(
+        Number(afterDisc.balance),
+        0,
+        'full-discount-no-payment: balance is 0 after discount',
+      );
+      assertEqual(
+        Number(afterDisc.paid_amount),
+        0,
+        'full-discount-no-payment: paid_amount stays 0',
+      );
       const settle = await pay(billId, { method: 'cash', amount: null });
-      assert(settle.status >= 200 && settle.status < 300, `full-discount-no-payment: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`);
-      assertEqual(billRow(db, billId).payment_status, 'paid', 'full-discount-no-payment: bill is paid after settle');
-      assertEqual(orderRow(db, orderId).status, 'completed', 'full-discount-no-payment: order completed after settle');
+      assert(
+        settle.status >= 200 && settle.status < 300,
+        `full-discount-no-payment: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`,
+      );
+      assertEqual(
+        billRow(db, billId).payment_status,
+        'paid',
+        'full-discount-no-payment: bill is paid after settle',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'full-discount-no-payment: order completed after settle',
+      );
     }
 
     // ── cancel is not blocked by a zero-closed sibling ──
@@ -388,18 +643,32 @@ async function main(): Promise<void> {
       });
       assertEqual(split.status, 201, 'cancel-after-zero-close: split created');
       const checkB = split.data.bills[1];
-      const cancelB = await cancelItem(orderId, itemB.id, { reason: 'zb cancel-after-zero-close B' });
+      const cancelB = await cancelItem(orderId, itemB.id, {
+        reason: 'zb cancel-after-zero-close B',
+      });
       assertEqual(cancelB.status, 200, 'cancel-after-zero-close: B cancelled');
-      assertEqual(billRow(db, checkB.id).payment_status, 'paid', 'cancel-after-zero-close: B zero-closed as paid');
-      const cancelA = await cancelItem(orderId, itemA.id, { reason: 'zb cancel-after-zero-close A' });
-      assertEqual(cancelA.status, 200, 'cancel-after-zero-close: A still cancellable despite zero-closed sibling');
+      assertEqual(
+        billRow(db, checkB.id).payment_status,
+        'paid',
+        'cancel-after-zero-close: B zero-closed as paid',
+      );
+      const cancelA = await cancelItem(orderId, itemA.id, {
+        reason: 'zb cancel-after-zero-close A',
+      });
+      assertEqual(
+        cancelA.status,
+        200,
+        'cancel-after-zero-close: A still cancellable despite zero-closed sibling',
+      );
       if (tableRow(db, 'table-zb')?.status !== 'available') {
         db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
       }
     }
 
     // ── partially refunded sibling does not block completion ──
-    console.log('\n─── partially-refunded-sibling: partially refunded sibling does not block completion ───');
+    console.log(
+      '\n─── partially-refunded-sibling: partially refunded sibling does not block completion ───',
+    );
     {
       const create = await createOrder({
         type: 'dine_in',
@@ -436,12 +705,23 @@ async function main(): Promise<void> {
         approver_id: approver,
       });
       assertEqual(refA.status, 201, 'partially-refunded-sibling: partial refund of A');
-      assertEqual(billRow(db, billA.id).payment_status, 'partially_refunded', 'partially-refunded-sibling: A is partially_refunded');
+      assertEqual(
+        billRow(db, billA.id).payment_status,
+        'partially_refunded',
+        'partially-refunded-sibling: A is partially_refunded',
+      );
 
       const payB = await pay(billB.id, { method: 'cash', amount: null });
       assertEqual(payB.status, 200, 'partially-refunded-sibling: paid B');
-      assertEqual(orderRow(db, orderId).status, 'completed', 'partially-refunded-sibling: order completed after B paid + A partially refunded');
-      assert(tableRow(db, 'table-zb')?.status === 'available', 'partially-refunded-sibling: table freed');
+      assertEqual(
+        orderRow(db, orderId).status,
+        'completed',
+        'partially-refunded-sibling: order completed after B paid + A partially refunded',
+      );
+      assert(
+        tableRow(db, 'table-zb')?.status === 'available',
+        'partially-refunded-sibling: table freed',
+      );
     }
 
     // ── restore re-syncs when all split bills were zero-closed ──
@@ -461,7 +741,10 @@ async function main(): Promise<void> {
       const itemA = items.find((i: any) => i.product_id === 'prod-1000');
       const itemB = items.find((i: any) => i.product_id === 'prod-400');
 
-      const disc = await itemDiscount(orderId, itemB.id, { discount_type: 'amount', discount_value: 400 });
+      const disc = await itemDiscount(orderId, itemB.id, {
+        discount_type: 'amount',
+        discount_value: 400,
+      });
       assertEqual(disc.status, 200, 'restore-after-zero-close: item B fully discounted');
 
       const gen = await generateBill(orderId);
@@ -480,11 +763,25 @@ async function main(): Promise<void> {
       const checkA = split.data.bills[0];
       const checkB = split.data.bills[1];
 
-      const cancelA = await cancelItem(orderId, itemA.id, { reason: 'zb restore-after-zero-close A' });
+      const cancelA = await cancelItem(orderId, itemA.id, {
+        reason: 'zb restore-after-zero-close A',
+      });
       assertEqual(cancelA.status, 200, 'restore-after-zero-close: A cancelled');
-      assertEqual(billRow(db, checkA.id).payment_status, 'paid', 'restore-after-zero-close: check A zero-closed as paid');
-      assertEqual(billRow(db, checkB.id).payment_status, 'paid', 'restore-after-zero-close: check B zero-closed as paid');
-      assertEqual(orderRow(db, orderId).status, 'pending', 'restore-after-zero-close: order still open (B active)');
+      assertEqual(
+        billRow(db, checkA.id).payment_status,
+        'paid',
+        'restore-after-zero-close: check A zero-closed as paid',
+      );
+      assertEqual(
+        billRow(db, checkB.id).payment_status,
+        'paid',
+        'restore-after-zero-close: check B zero-closed as paid',
+      );
+      assertEqual(
+        orderRow(db, orderId).status,
+        'pending',
+        'restore-after-zero-close: order still open (B active)',
+      );
 
       const restore = await api(baseUrl, `/api/orders/${orderId}/items/${itemA.id}/restore`, {
         method: 'PATCH',
@@ -493,17 +790,29 @@ async function main(): Promise<void> {
       });
       assertEqual(restore.status, 200, 'restore-after-zero-close: A restored');
       const aAfter = billRow(db, checkA.id);
-      assertEqual(aAfter.payment_status, 'unpaid', 'restore-after-zero-close: check A flipped back to unpaid after restore');
-      assert(Number(aAfter.total) > 0, `restore-after-zero-close: check A total re-synced (got ${aAfter.total})`);
+      assertEqual(
+        aAfter.payment_status,
+        'unpaid',
+        'restore-after-zero-close: check A flipped back to unpaid after restore',
+      );
+      assert(
+        Number(aAfter.total) > 0,
+        `restore-after-zero-close: check A total re-synced (got ${aAfter.total})`,
+      );
       if (tableRow(db, 'table-zb')?.status !== 'available') {
         db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
       }
     }
 
     // ── settle attempt on a refunded bill is rejected ──
-    console.log('\n─── refunded-settle-rejected: settle attempt on refunded bill stays refunded ───');
+    console.log(
+      '\n─── refunded-settle-rejected: settle attempt on refunded bill stays refunded ───',
+    );
     {
-      const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
+      const create = await createOrder({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-1000', quantity: 1 }],
+      });
       assertEqual(create.status, 201, 'refunded-settle-rejected: order created');
       const gen = await generateBill(create.data.order.id);
       assertEqual(gen.status, 201, 'refunded-settle-rejected: bill generated');
@@ -520,21 +829,38 @@ async function main(): Promise<void> {
         approver_id: approver,
       });
       assertEqual(ref.status, 201, 'refunded-settle-rejected: bill refunded');
-      assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status is refunded');
+      assertEqual(
+        billRow(db, billId).payment_status,
+        'refunded',
+        'refunded-settle-rejected: status is refunded',
+      );
 
       const settle = await pay(billId, { method: 'cash', amount: null });
-      assertEqual(settle.status, 409, `refunded-settle-rejected: settle rejected (got ${settle.status})`);
-      assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status still refunded after settle attempt');
+      assertEqual(
+        settle.status,
+        409,
+        `refunded-settle-rejected: settle rejected (got ${settle.status})`,
+      );
+      assertEqual(
+        billRow(db, billId).payment_status,
+        'refunded',
+        'refunded-settle-rejected: status still refunded after settle attempt',
+      );
     }
 
     // ── restore blocked when bill has a positive partial payment ──
-    console.log('\n─── restore-partial-payment: restore rejected when bill has a positive partial payment ───');
+    console.log(
+      '\n─── restore-partial-payment: restore rejected when bill has a positive partial payment ───',
+    );
     {
       // Two items: cancel the cheaper one so the remaining bill is 1000, then partially pay.
-      const create = await createOrder({ type: 'takeaway', items: [
-        { product_id: 'prod-1000', quantity: 1 },
-        { product_id: 'prod-400', quantity: 1 },
-      ]});
+      const create = await createOrder({
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
       assertEqual(create.status, 201, 'restore-partial-payment: order created');
       const orderId = create.data.order.id;
       const gen = await generateBill(orderId);
@@ -546,14 +872,28 @@ async function main(): Promise<void> {
       const items = orderData.data?.order?.items ?? [];
       const item400 = items.find((i: any) => i.product_id === 'prod-400');
       const item1000 = items.find((i: any) => i.product_id === 'prod-1000');
-      const cancelR = await cancelItem(orderId, item400.id, { reason: 'zb restore-partial-payment cancel 400' });
+      const cancelR = await cancelItem(orderId, item400.id, {
+        reason: 'zb restore-partial-payment cancel 400',
+      });
       assertEqual(cancelR.status, 200, 'restore-partial-payment: prod-400 item cancelled');
 
       // Partial payment on the remaining 1000-total bill
       const partialPay = await pay(billId, { method: 'cash', amount: 300 });
-      assertEqual(partialPay.status, 200, 'restore-partial-payment: partial payment of 300 accepted');
-      assertEqual(billRow(db, billId).payment_status, 'partial', 'restore-partial-payment: bill status is partial after partial payment');
-      assertEqual(Number(billRow(db, billId).paid_amount) > 0, true, 'restore-partial-payment: paid_amount is positive');
+      assertEqual(
+        partialPay.status,
+        200,
+        'restore-partial-payment: partial payment of 300 accepted',
+      );
+      assertEqual(
+        billRow(db, billId).payment_status,
+        'partial',
+        'restore-partial-payment: bill status is partial after partial payment',
+      );
+      assertEqual(
+        Number(billRow(db, billId).paid_amount) > 0,
+        true,
+        'restore-partial-payment: paid_amount is positive',
+      );
 
       // Restore the cancelled item — must be rejected because the bill has a positive partial payment
       const restore = await api(baseUrl, `/api/orders/${orderId}/items/${item400.id}/restore`, {
@@ -561,8 +901,16 @@ async function main(): Promise<void> {
         body: { reason: 'zb restore-partial-payment' },
         headers: A,
       });
-      assertEqual(restore.status, 400, 'restore-partial-payment: restore rejected when partial payment recorded');
-      assertEqual(billRow(db, billId).payment_status, 'partial', 'restore-partial-payment: bill stays partial after rejected restore');
+      assertEqual(
+        restore.status,
+        400,
+        'restore-partial-payment: restore rejected when partial payment recorded',
+      );
+      assertEqual(
+        billRow(db, billId).payment_status,
+        'partial',
+        'restore-partial-payment: bill stays partial after rejected restore',
+      );
     }
   } finally {
     server.close();

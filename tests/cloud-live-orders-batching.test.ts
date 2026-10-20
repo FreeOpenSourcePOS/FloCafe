@@ -528,10 +528,10 @@ async function run() {
     }
 
     // ------------------------------------------------------------------------
-    // Test 6: SQLite bind limit protection with large order/item counts (Issue #1223)
+    // Test 6: SQLite bind limit protection with large order/item counts
     // ------------------------------------------------------------------------
     {
-      console.log('Testing large order/item batching exceeding SQLite bind limit (Issue #1223)...');
+      console.log('Testing large order/item batching exceeding SQLite bind limit...');
       db.prepare('DELETE FROM order_item_addons').run();
       db.prepare('DELETE FROM order_audit_log').run();
       db.prepare('DELETE FROM order_items').run();

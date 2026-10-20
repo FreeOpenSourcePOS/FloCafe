@@ -11,6 +11,7 @@ import {
   getDbPath,
   createBackup,
   createBackupUnlocked,
+  executeSequenceRepair,
   getCurrentSchemaVersion,
   getForeignKeyViolationKeys,
   getInventoryMovementRows,
@@ -21,6 +22,7 @@ import {
   mergeUserSecurityState,
   mergeUserStationSecurityState,
   now,
+  rebuildSearchIndex,
   restoreBackup,
   throwIfDatabaseMaintenanceAborted,
   validateInventoryLedgerDatabase,
@@ -597,6 +599,16 @@ router.post(
               }
               throwIfDatabaseMaintenanceAborted(signal);
               clearGoogleDriveRestoreBinding(db);
+              executeSequenceRepair(db);
+              db.prepare(`
+                INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_completed_at', ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+              `).run(now(), now());
+              db.prepare(`
+                INSERT INTO settings (key, value, updated_at) VALUES ('sequence_repair_pending', '0', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+              `).run(now());
+              rebuildSearchIndex(db);
               db.exec('COMMIT');
               const cleanup = googleDrive.completeDatabaseRestore();
               try {

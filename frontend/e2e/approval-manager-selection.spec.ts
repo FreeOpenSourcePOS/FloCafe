@@ -28,6 +28,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
   let managerBobId: string;
   let settingsBefore: Map<string, string | undefined>;
   let ordersLayoutBefore: E2EOrdersLayout = 'split';
+  let createdOrderIds: string[] = [];
 
   test.beforeAll(async ({ request }) => {
     if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -48,6 +49,36 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     }
     if (settingsBefore) {
       await restoreSettings(request, settingsBefore);
+    }
+    if (createdOrderIds.length > 0) {
+      try {
+        await request.put(`${BASE}/api/staff/e2e-owner`, {
+          headers: {
+            Authorization: `Bearer ${ownerToken}`,
+            'Content-Type': 'application/json',
+          },
+          data: { pin: '1111', is_active: 1 },
+        });
+      } catch {
+        // Ignore if staff update fails
+      }
+      for (const orderId of createdOrderIds) {
+        try {
+          await request.patch(`${BASE}/api/orders/${orderId}/status`, {
+            headers: {
+              Authorization: `Bearer ${ownerToken}`,
+              'Content-Type': 'application/json',
+            },
+            data: {
+              status: 'cancelled',
+              override_pin: '1111',
+              approver_id: 'e2e-owner',
+            },
+          });
+        } catch {
+          // Ignore if order already terminal
+        }
+      }
     }
   });
 
@@ -75,6 +106,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
   });
 
   test.beforeEach(async ({ page }) => {
+    createdOrderIds = [];
     ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
     headers = { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' };
     ordersLayoutBefore = await readOrdersLayout(page, BASE, ownerToken);
@@ -170,6 +202,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     });
     expect(orderRes.status()).toBe(201);
     const { order } = await orderRes.json();
+    createdOrderIds.push(order.id);
 
     // 4. Open Orders page and launch Checkout for this order
     await page.goto(`${BASE}/orders`);
@@ -304,6 +337,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     });
     expect(orderRes.status()).toBe(201);
     const { order } = await orderRes.json();
+    createdOrderIds.push(order.id);
 
     // Mark item as preparing so Void Item button is displayed
     const detailRes = await page.request.get(`${BASE}/api/orders/${order.id}`, { headers });
@@ -368,11 +402,11 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
     page,
   }) => {
     // Mock staff route to return empty staff list so no manager approvers exist with PINs
-    await page.route('**/api/staff?active=true', async (route) => {
+    await page.route('**/api/staff*', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ staff: [] }),
+        body: JSON.stringify({ staff: [], approvers: [] }),
       });
     });
 
@@ -385,6 +419,7 @@ test.describe('Explicit Manager Selection for Approvals and Kitchen Override', (
       },
     });
     const { order } = await orderRes.json();
+    createdOrderIds.push(order.id);
 
     const detailRes = await page.request.get(`${BASE}/api/orders/${order.id}`, { headers });
     const detail = await detailRes.json();

@@ -63,10 +63,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   expect(orderRes.ok()).toBeTruthy();
   const { order } = await orderRes.json();
 
-  // =========================================================================
-  // 1. ENGLISH (EN) VERIFICATION
-  // =========================================================================
-  await setLanguage(page, token, 'en');
+  try {
+    // =========================================================================
+    // 1. ENGLISH (EN) VERIFICATION
+    // =========================================================================
+    await setLanguage(page, token, 'en');
 
   // 1a. Standalone KDS Login Form (EN)
   await page.goto(`${BASE_KDS}/kds-standalone`);
@@ -100,7 +101,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await captureScreenshot(page, 'kds-tabs-en.png');
 
   // 1c. KDS Item Modal (EN)
-  await page.getByText('E2E Coffee').last().click();
+  const ticketEn = page
+    .locator('div.bg-card')
+    .filter({ hasText: `#${order.order_number}` })
+    .first();
+  await ticketEn.getByText('E2E Coffee').click();
   const modalHeader = page.locator('#kds-item-modal-title');
   await expect(modalHeader).toBeVisible();
   await expect(page.getByText(`Order #${order.order_number}`)).toBeVisible();
@@ -165,8 +170,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   // =========================================================================
   // 2. PERSIAN (FA) RTL VERIFICATION
   // =========================================================================
-  try {
-    await setLanguage(page, token, 'fa');
+  await setLanguage(page, token, 'fa');
 
     // 2a. Standalone KDS Login Form (FA)
     await page.goto(`${BASE_KDS}/kds-standalone`);
@@ -205,7 +209,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await captureScreenshot(page, 'kds-tabs-fa.png');
 
     // 2c. KDS Item Modal (FA)
-    await page.getByText('E2E Coffee').last().click();
+    const ticketFa = page
+      .locator('div.bg-card')
+      .filter({ hasText: `#${order.order_number}` })
+      .first();
+    await ticketFa.getByText('E2E Coffee').click();
     const modalHeaderFa = page.locator('#kds-item-modal-title');
     await expect(modalHeaderFa).toBeVisible();
     await expect(page.getByText(`سفارش شماره ${order.order_number}`)).toBeVisible();
@@ -270,6 +278,30 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
   } finally {
+    if (order?.id) {
+      try {
+        const cancelRes = await page.request.patch(`${BASE_API}/api/orders/${order.id}/status`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          data: { status: 'cancelled' },
+        });
+        if (!cancelRes.ok()) {
+          const ownerToken = getE2eToken('e2e-owner', 'owner@flo.local', 'owner');
+          await page.request.put(`${BASE_API}/api/staff/e2e-owner`, {
+            headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+            data: { pin: '1111', is_active: 1 },
+          });
+          await page.request.patch(`${BASE_API}/api/orders/${order.id}/status`, {
+            headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+            data: { status: 'cancelled', override_pin: '1111', approver_id: 'e2e-owner' },
+          });
+        }
+      } catch {
+        // Ignore if cancel fails
+      }
+    }
     await setLanguage(page, token, 'en');
   }
 });

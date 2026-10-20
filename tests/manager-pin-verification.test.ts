@@ -384,6 +384,129 @@ async function run() {
     'Audit log attributes approval to eligible mgr-shared-pay',
   );
 
+  // Test 12a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts
+  resetBillPinRateLimit();
+  const invalidBurst = await Promise.all(
+    Array.from({ length: 10 }, () =>
+      request(app)
+        .post(`/api/bills/${billId}/applyDiscount`)
+        .set(ownerAuth)
+        .send({ type: 'percentage', value: 10, override_pin: '9999' }),
+    ),
+  );
+  const statusCounts = invalidBurst.reduce((acc: Record<number, number>, res: any) => {
+    acc[res.status] = (acc[res.status] || 0) + 1;
+    return acc;
+  }, {});
+  assertEqual(statusCounts[403], 5, 'Exactly 5 invalid requests return 403 before lockout');
+  assertEqual(
+    statusCounts[429],
+    5,
+    'Remaining 5 concurrent requests return 429 without running bcrypt',
+  );
+
+  // Any subsequent request returns 429 immediately while locked out
+  const lockedOutRes = await request(app)
+    .post(`/api/bills/${billId}/applyDiscount`)
+    .set(ownerAuth)
+    .send({ type: 'percentage', value: 10, override_pin: '1111' });
+  assertEqual(lockedOutRes.status, 429, 'Subsequent attempt during lockout returns 429');
+
+  // Test 12b: Concurrent valid PIN requests succeed and do not trigger false 429 lockouts
+  resetBillPinRateLimit();
+  const validBurst = await Promise.all(
+    Array.from({ length: 5 }, () =>
+      request(app)
+        .post(`/api/bills/${billId}/applyDiscount`)
+        .set(ownerAuth)
+        .send({ type: 'percentage', value: 10, override_pin: '1111' }),
+    ),
+  );
+  for (const res of validBurst) {
+    assertEqual(res.status, 200, 'Concurrent valid PIN request succeeds with 200');
+  }
+  resetBillPinRateLimit();
+  // Test 13: Kitchen delivery override manager selection binding
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('require_kitchen_delivered_before_settlement', 'true', ?)",
+  ).run(now());
+  db.prepare(
+    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', ?)",
+  ).run(now());
+
+  const kdOrderRes1 = db
+    .prepare(`
+    INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
+    VALUES ('ORD-KD-001', 'dine_in', 50, 5, 55, 'pending', ?, ?)
+  `)
+    .run(now(), now());
+  const kdOrderId1 = kdOrderRes1.lastInsertRowid;
+  db.prepare(`
+    INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+    VALUES (?, 'prod-1', 'Burger', 50, 1, 50, 5, 55, 'preparing', ?, ?)
+  `).run(kdOrderId1, now(), now());
+
+  const kdBillRes1 = db
+    .prepare(`
+    INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+    VALUES ('BILL-KD-001', ?, 50, 5, 55, 0, 55, 'unpaid', ?, ?)
+  `)
+    .run(kdOrderId1, now(), now());
+  const kdBillId1 = kdBillRes1.lastInsertRowid;
+
+  // Test 13a: Kitchen items undelivered without override fails with 409
+  const res12a = await request(app)
+    .post(`/api/bills/${kdBillId1}/payment`)
+    .set(cashierAuth)
+    .send({ method: 'card', amount: 55 });
+  assertEqual(
+    res12a.status,
+    409,
+    'Payment with undelivered items without override PIN returns 409',
+  );
+
+  // Test 13b: Mismatched manager ID and PIN fails with 403
+  resetBillPinRateLimit();
+  const res12b = await request(app)
+    .post(`/api/bills/${kdBillId1}/payment`)
+    .set(cashierAuth)
+    .send({ method: 'card', amount: 55, override_pin: '2222', approver_id: 'mgr-1' });
+  assertEqual(
+    res12b.status,
+    403,
+    'Kitchen override with mismatched manager ID and PIN fails with 403',
+  );
+  resetBillPinRateLimit();
+
+  // Test 13c: Inactive manager ID fails with 403
+  const res12c = await request(app)
+    .post(`/api/bills/${kdBillId1}/payment`)
+    .set(cashierAuth)
+    .send({ method: 'card', amount: 55, override_pin: '1111', approver_id: 'mgr-3' });
+  assertEqual(res12c.status, 403, 'Kitchen override with inactive manager ID fails with 403');
+  resetBillPinRateLimit();
+
+  // Test 13d: Matching manager ID and PIN succeeds with 200 and records audit log
+  const res12d = await request(app)
+    .post(`/api/bills/${kdBillId1}/payment`)
+    .set(cashierAuth)
+    .send({ method: 'card', amount: 55, override_pin: '2222', approver_id: 'mgr-2' });
+  assertEqual(
+    res12d.status,
+    200,
+    'Kitchen override with matching manager ID and PIN succeeds with 200',
+  );
+  resetBillPinRateLimit();
+
+  const auditLogs12d = db
+    .prepare('SELECT * FROM order_audit_log WHERE order_id = ? AND action = ?')
+    .all(kdOrderId1, 'kitchen_delivery_override') as any[];
+  assert(auditLogs12d.length > 0, 'Audit log entry created for kitchen delivery override');
+  assertEqual(
+    JSON.parse(auditLogs12d[0].details_json || '{}').manager_user_id,
+    'mgr-2',
+    'Audit log records manager_user_id as mgr-2',
+  );
   const results = getResults();
   if (results.failed > 0) {
     throw new Error(`${results.failed} test assertions failed`);

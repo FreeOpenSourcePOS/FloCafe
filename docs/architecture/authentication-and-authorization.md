@@ -35,7 +35,7 @@ list. `requireRole` (in `main/middleware/security.ts`) still exists, but a stati
 (`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
 `main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
 in their own sections below (KDS station/category scope, refund approver identity, the
-override-PIN holder for order-status and item cancel/void overrides, and the
+override-PIN holder for order-status, kitchen-delivery, and item cancel/void overrides, and the
 last-active-owner/staff-target rule).
 
 **Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
@@ -128,14 +128,17 @@ a router, in [`main/routes/index.ts`](../../main/routes/index.ts). A static sear
 **Gates inside transaction bodies.** The most important case. Some endpoints perform the
 permission check inside the `withTxn` callback, after the transaction opens, using
 `hasPermission(actorId, id)` against state read in the same transaction.
-`PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, and the matching
-`.../restore` endpoint in `main/routes/orders.ts` do this, and their override-PIN paths
-additionally require the presenting user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a
-deliberate context-policy role check, not a permission, because the override PIN belongs to a
+`PATCH /api/orders/:id/status`, `PATCH /api/orders/:orderId/items/:itemId/cancel`, the matching
+`.../restore` endpoint in `main/routes/orders.ts`, and the bill payment kitchen-delivery override
+in `main/routes/bills.ts` do this, and their override-PIN paths additionally require the presenting
+user to satisfy `hasRole(role, ROLE_ACCESS.ownerManager)` - a deliberate context-policy role check,
+not a permission, because the override PIN belongs to a
 person acting in an owner/manager capacity regardless of what their individual permission grants
 say. To prevent event loop starvation and transaction lock contention during CPU-intensive bcrypt
-evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction
-(with client-IP rate limits checked first). Candidate filtering during pre-verification enforces the
+evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction,
+serialized per client IP and action key with `withPinVerificationLock` from
+[`main/middleware/security.ts`](../../main/middleware/security.ts) (re-checking client-IP rate limits
+inside the lock before executing bcrypt). Candidate filtering during pre-verification enforces the
 role and permissions required by the transition (including `payments.take` when completion is
 blocked by unsettled payment), ensuring fallback PIN scanning only matches eligible approvers. The
 pre-verified approver is then atomically re-validated inside `withTxn` against current SQLite state
@@ -175,8 +178,8 @@ All three HTTP listeners (`:3001` Main API, `:3002` Standalone KDS, and `:3003` 
 
 1. **Volume rate limiter (`loginAuthRateLimit`):** Used on all three default login endpoints, `loginAuthRateLimit()` reuses a shared singleton instance so total authentication request volume across listeners shares a single budget (default 10 requests per 15 minutes, configurable via `FLO_AUTH_RATE_LIMIT_MAX`). Non-login authentication routes (e.g. staff management, password changes) use independent rate-limiter instances.
 2. **Shared failed-login lockout (`checkLoginRateLimit` / `incrementFailedLogin`):** Keyed to the canonical client IP (`normalizeIpForRateLimit`, which strips `::ffff:` IPv4-mapped IPv6 prefixes so IPv4 and IPv6 representations share the exact same bucket). Five failed credential attempts across any combination of the three listeners triggers a 15-minute lockout (HTTP `429`). During the lockout, any further login attempt on any listener is rejected before password evaluation.
-3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP.
-4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures.
+3. **Reset on success (`resetSuccessfulLogin`):** A successful login from any listener immediately clears the failed-attempt count for that client IP once role and permission checks pass.
+4. **Role and permission decoupling:** Non-credential rejections (such as HTTP `403` when valid credentials lack `kitchen.use` on `:3002` or `server-app.use` on `:3003`) do not count as credential failures and do not clear previously accumulated failed-login attempts.
 
 ## Master PIN as a second factor
 

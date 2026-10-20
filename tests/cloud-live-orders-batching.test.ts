@@ -527,6 +527,84 @@ async function run() {
       console.log('  ✓ status filtering restricts returned orders to requested statuses');
     }
 
+    // ------------------------------------------------------------------------
+    // Test 6: SQLite bind limit protection with large order/item counts
+    // ------------------------------------------------------------------------
+    {
+      console.log('Testing large order/item batching exceeding SQLite bind limit...');
+      db.prepare('DELETE FROM order_item_addons').run();
+      db.prepare('DELETE FROM order_audit_log').run();
+      db.prepare('DELETE FROM order_items').run();
+      db.prepare('DELETE FROM bills').run();
+      db.prepare('DELETE FROM orders').run();
+
+      const insertOrder = db.prepare(
+        `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertItem = db.prepare(
+        `INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal, total, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertAddon = db.prepare(
+        `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+
+      // Seed 164 orders with 200 items each = 32,800 items (exceeds SQLite 32,766 max bind limit)
+      const numOrders = 164;
+      const itemsPerOrder = 200;
+      const nowIso = now();
+
+      db.transaction(() => {
+        for (let i = 0; i < numOrders; i++) {
+          const ordId = insertOrder.run(
+            `ORD-SCALE-${String(i).padStart(4, '0')}`,
+            null,
+            'takeaway',
+            'pending',
+            100.0,
+            100.0,
+            nowIso,
+            nowIso,
+          ).lastInsertRowid;
+
+          for (let j = 0; j < itemsPerOrder; j++) {
+            const itmId = insertItem.run(
+              ordId,
+              `prod-${j}`,
+              `Item ${j}`,
+              1,
+              0.5,
+              0.5,
+              0.5,
+              nowIso,
+              nowIso,
+            ).lastInsertRowid;
+
+            if (j === 0) {
+              insertAddon.run(itmId, null, 'Extra Sauce', 0.25, 1, nowIso);
+            }
+          }
+        }
+      })();
+
+      const totalItems = db.prepare('SELECT COUNT(*) as count FROM order_items').get() as {
+        count: number;
+      };
+      assertEqual(totalItems.count, 32800, 'Seeded exactly 32,800 order items');
+
+      // Call liveOrders - must succeed without throwing "too many SQL variables"
+      const result = (service as any).liveOrders();
+      assertEqual(result.orders.length, 164, 'Successfully returned all 164 orders');
+      const firstOrder = result.orders[0];
+      assertEqual(firstOrder.items.length, 200, 'First order has 200 items');
+      assertEqual(firstOrder.items[0].addons.length, 1, 'First item has addon attached');
+      assertEqual(firstOrder.items[0].addons[0].name, 'Extra Sauce', 'Addon name matches');
+
+      console.log('  ✓ 164 orders with 32,800 items handled cleanly without exceeding bind limits');
+    }
+
     console.log('='.repeat(60));
     console.log('✅ All cloud live-orders batching tests passed successfully!');
   } finally {

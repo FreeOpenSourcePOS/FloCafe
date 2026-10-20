@@ -111,7 +111,7 @@ LAN clients are counted against authentication rate limits.
 In addition, these three login endpoints share an install-wide failed-login attempt lockout keyed to
 canonical client IP (`normalizeIpForRateLimit`): 5 failed credential attempts across any
 combination of the three listeners triggers a 15-minute lockout (`429`). Successful login on any listener
-resets the counter for that IP. See
+resets the counter for that IP (non-credential `403` responses preserve accumulated failures). See
 [`docs/architecture/authentication-and-authorization.md`](../architecture/authentication-and-authorization.md#shared-login-attempt-rate-limiting-across-servers)
 for architecture and role/permission handling details.
 
@@ -359,7 +359,7 @@ does not wrap the handler again.
   line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
   `cancelled` and restores the recorded inventory deduction and recipe components.
 - Cancelling the last active item cancels the order and frees its table.
-- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts).
+- `override_pin` attempts are rate limited per canonical client IP, not per item, to slow brute force (counting only failed attempts; 429 after 5 failed attempts within 15 minutes; serialized to prevent concurrent brute-force races).
 
 ### Order item status
 
@@ -396,8 +396,8 @@ Bill generation, settlement, and completion are described end to end in
 | `GET` | `/order/:orderId` | `ROLE_ACCESS.ownerManagerCashier` | path: `orderId` | - |
 | `POST` | `/generate` | `ROLE_ACCESS.ownerManagerCashier` | body: `order_id` | See [Order lifecycle](../architecture/order-lifecycle.md#bills) for bill creation and re-sync behavior. |
 | `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries and the resulting split group is capped at 20 checks. An unpaid untouched dine-in check is divided by allocating every active order item quantity; a split-group child may be divided again while it stays unpaid with no payment recorded, keeping its bill id, bill number and group, while paid siblings keep their own rows and payments. `400` when a request does not allocate exactly the source's own quantities. `403` when `split_checks_enabled` is off. `409` when the source has a recorded payment, a legacy already-split bill is re-split, the source has no divisible allocation, or the resulting split group would exceed 20 checks. |
-| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
-| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
+| `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object (accepts optional `override_pin`, `approver_id`, `manager_id`, `user_id`), `customer_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
+| `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`, optional `override_pin`, `approver_id`, `manager_id`, `user_id`; header: `Idempotency-Key` | See [Order lifecycle](../architecture/order-lifecycle.md#payments) for input, replay, gate, and settlement behavior. |
 | `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `approver_id`, `manager_id`, `user_id` | `400` when the bill is paid (`paid`). `409` when the order is completed or cancelled (`order_not_discountable`), the bill is split (`split_check`) or refunded (`refunded`), or the discount would reduce the bill total below collected payments (`below_collected_funds`). Auto-settles the bill to `paid`, completes the order, and frees the table when remaining balance reaches zero on a partially paid bill (gated by kitchen delivery; see [Settlement and completion](../architecture/order-lifecycle.md#settlement-and-completion)). Audited as `order_discount_applied`. |
 | `PATCH` | `/:id/charges` | `bills.discount.apply` | path: `id`; body: `charge_id`, `waived` or `applied` | `{ bill }` with updated charge breakdown and totals. Only for unpaid, unsplit bills with no payments; the charge must be active and apply to the order type. `409` when the order is cancelled. |
 | `POST` | `/:id/markPrinted` | `bills.print` (`ROLE_ACCESS.ownerManager`) | path: `id` | Stamps `bills.printed_at`. |
@@ -590,7 +590,7 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | --- | --- | --- | --- | --- |
 | `GET` | `/charges` | `settings.view`, `orders.create`, or `bills.discount.apply` | none | `{ charges }`; fee definitions only. |
 | `PUT` | `/charges` | `settings.manage` | body: `charges` or a charge-definition array | `{ charges }`; replaces the validated fee definitions. Fee amounts remain configured in Settings. |
-| `GET` | `/business` | `ROLE_ACCESS.allStaff` | none | - |
+| `GET` | `/business` | `settings.view`, `bills.read`, `bills.print`, or `bills.generate` | none | - |
 | `PUT` | `/business` | `ROLE_ACCESS.ownerManager` | body: `business_name`, `timezone`, `business_day_start_time`, `currency`, `country`, `language`, `tax_registration_number`, `state_code`, `business_address`, `business_phone`, `instagram_handle`, `billing_type`, `tables_required`, `tax_registered`, `bill_show_name`, `bill_show_address`, `bill_show_phone`, `bill_show_tax_id`, `bill_show_tax_breakdown`, `bill_show_customer_name`, `bill_show_customer_phone`, `bill_show_table_number`, `bill_show_logo`, `receipt_logo`, `receipt_logo_raster`, `currency_display`, `number_digits`, `calendar`, `country_selected` | A `currency` that differs from the stored value returns `409` with `error: "currency_change_requires_reset"` plus `current_currency` and `requested_currency`. Currency changes go through the reset flow, not this route. |
 | `GET` | `/tax` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/tax` | `ROLE_ACCESS.ownerManager` | body: `tax_registered`, `tax_registration_number`, `state_code`, `tax_scheme`, `country` | - |
@@ -787,7 +787,7 @@ Router: `main/routes/database.ts`. Full path: `/api/db`.
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/export` | `ROLE_ACCESS.owner` | none | Full database snapshot as a downloadable JSON attachment. |
-| `POST` | `/import` | `ROLE_ACCESS.owner` + Master PIN when `overwrite` or a schema-version mismatch | body: `data`, `overwrite` | Body `data` plus `overwrite`. Master PIN is required when `overwrite` is set or the snapshot's `schema_version` differs from the local one. |
+| `POST` | `/import` | `ROLE_ACCESS.owner` + Master PIN when `overwrite` or a schema-version mismatch | body: `data`, `overwrite` | Body `data` plus `overwrite`. Master PIN is required when `overwrite` is set or the snapshot's `schema_version` differs from the local one. Re-aligns sequence counters, marks sequence repair complete, and rebuilds search indexes before commit. |
 | `POST` | `/backup` | `ROLE_ACCESS.owner` + Master PIN | none | - |
 | `GET` | `/download` | `ROLE_ACCESS.owner` + Master PIN | none | - |
 | `GET` | `/tables` | `ROLE_ACCESS.owner` | none | `{ tables: [ ... ] }`, every non-internal SQLite table name. |

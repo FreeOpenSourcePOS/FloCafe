@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, getSettingValue, now } from '../db';
@@ -12,7 +12,11 @@ import {
   getGoogleDriveErrorCode,
   googleDrive,
 } from '../services/google-drive';
-import { requireAnyPermission, requirePermission } from '../services/authorization';
+import {
+  requireAnyPermission,
+  requirePermission,
+  resolveEffectivePermissions,
+} from '../services/authorization';
 import {
   CUSTOMER_DISPLAY_KEY,
   parseCustomerDisplayConfig,
@@ -268,7 +272,30 @@ function taxShape(s: Record<string, string>) {
 
 // ── Specific routes (must come BEFORE /:key wildcard) ─────────────────────
 
-router.get('/business', requirePermission('settings.view'), (req: Request, res: Response) => {
+const requireBusinessSettingsRead: RequestHandler = (req, res, next) => {
+  const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+  if (!userId) {
+    return res
+      .status(401)
+      .json({ error: 'Authentication required', code: 'authentication_required' });
+  }
+  const effective = resolveEffectivePermissions(userId);
+  if (
+    !effective ||
+    !['settings.view', 'bills.read', 'bills.print', 'bills.generate'].some((permissionId) =>
+      effective.permissionIds.has(permissionId as any),
+    )
+  ) {
+    return res.status(403).json({
+      error: 'Insufficient permissions',
+      code: 'permission_denied',
+      permission: 'settings.view',
+    });
+  }
+  next();
+};
+
+router.get('/business', requireBusinessSettingsRead, (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));

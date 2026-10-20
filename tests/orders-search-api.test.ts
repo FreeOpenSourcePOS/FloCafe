@@ -360,7 +360,7 @@ async function main() {
       );
     }
 
-    // 12. Hyphenated numeric order number probe (#1204 / #1208)
+    // 12. Hyphenated numeric order number probe
     const probeHyphenOrder = await api(
       baseUrl,
       `/api/orders?search=${encodeURIComponent('01-1234')}`,
@@ -424,7 +424,7 @@ async function main() {
       'probe returns order matching #100-special',
     );
 
-    // 15. Embedded NUL character probe (#1204 / #1208)
+    // 15. Embedded NUL character probe
     const probeNul = await api(baseUrl, `/api/orders?search=${encodeURIComponent('01-1234\0')}`, {
       headers: owner.authHeader,
     });
@@ -442,7 +442,7 @@ async function main() {
       'probe search with control chars succeeds without 500',
     );
 
-    // 17. Embedded tab, newline, carriage return, and DEL probe (#1208 review finding)
+    // 17. Embedded tab, newline, carriage return, and DEL probe
     const probeTab = await api(
       baseUrl,
       `/api/orders?search=${encodeURIComponent('SYNTH-TAB\t123')}`,

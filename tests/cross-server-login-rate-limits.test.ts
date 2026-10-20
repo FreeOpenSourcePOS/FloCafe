@@ -413,7 +413,7 @@ async function main() {
       '403 permission denial did not increment failed login attempts',
     );
 
-    // Verify that 403 permission denial does NOT reset previously accumulated failed attempts (FloCafe Issue #1221)
+    // Verify that 403 permission denial does NOT reset previously accumulated failed attempts
     // Record a 2nd failed attempt (leaving 3 attempts remaining):
     const fail2 = await postJson(mainBaseUrl, '/api/auth/login', {
       email: 'owner@test.com',

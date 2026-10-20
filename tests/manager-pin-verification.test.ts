@@ -316,7 +316,7 @@ async function run() {
     'PIN-only void records matching manager 1 in approved_by',
   );
 
-  // Test 11a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts (Issue #1221)
+  // Test 11a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts
   resetBillPinRateLimit();
   const invalidBurst = await Promise.all(
     Array.from({ length: 10 }, () =>

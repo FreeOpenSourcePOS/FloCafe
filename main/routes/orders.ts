@@ -673,19 +673,20 @@ router.get(
         )
       )`;
 
-        const isEligible = [...search].length >= 3 && (!isPhoneSearch || phoneDigits.length >= 3);
+        const hasControlChars = /[\x00-\x1F\x7F]/.test(search);
+        const isEligible = !hasControlChars && [...search].length >= 3;
         const hasFts = isEligible && isSearchIndexAvailable(db);
 
         if (hasFts) {
           let candidateClause: string;
           const candidateParams: any[] = [];
+          const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
 
           if (isPhoneSearch) {
             // For phone searches, customer phone strings may contain varied formatting
             // (e.g. "+1/555 ext 0199"). Querying customers table with digit UDF efficiently
             // identifies matching customer IDs across the small customers table, avoiding a
             // full orders scan while preserving full parity across phone formats.
-            const ftsSearch = '"' + phoneDigits.replace(/"/g, '""') + '"';
             candidateClause = `(
               orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
               OR orders.customer_id IN (
@@ -697,7 +698,6 @@ router.get(
             )`;
             candidateParams.push(ftsSearch, phoneDigits, phoneDigits, search);
           } else {
-            const ftsSearch = '"' + search.replace(/"/g, '""') + '"';
             candidateClause = `(
               orders.id IN (SELECT rowid FROM orders_search_fts WHERE orders_search_fts MATCH ?)
               OR orders.customer_id IN (
@@ -2297,6 +2297,118 @@ router.post(
   },
 );
 
+interface OrderStatusBillEvaluationRow {
+  id?: number | string;
+  total?: number | string | null;
+  round_off?: number | string | null;
+  paid_amount?: number | string | null;
+  refunded_cents?: number | string | null;
+  balance?: number | string | null;
+  payment_status?: string | null;
+  payment_details?: unknown;
+}
+
+function evaluateOrderPaymentCompletion(
+  order: { total?: number | string | null; round_off?: number | string | null } | null | undefined,
+  bills: OrderStatusBillEvaluationRow[],
+  minorFactor = 100,
+) {
+  const evaluatedBills = bills.map((b) => {
+    const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
+    const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
+    const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
+    const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
+    const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
+    const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
+    const storedBalanceMinor = Math.max(
+      0,
+      Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
+    );
+    let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
+    if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
+      try {
+        const parsed = JSON.parse(b.payment_details);
+        if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
+      } catch {
+        parsedPaymentDetails = [];
+      }
+    } else if (Array.isArray(b.payment_details)) {
+      parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
+    }
+    const detailsPaidMinor = parsedPaymentDetails.reduce(
+      (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
+      0,
+    );
+    const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
+    const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
+    const paymentStatus = String(b.payment_status || '');
+    const effectiveCollectedMinor = Math.max(
+      netCollectedMinor,
+      paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
+    );
+    const hasCollectedFunds =
+      effectiveCollectedMinor > 0 ||
+      (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
+      paymentStatus === 'partial' ||
+      paymentStatus === 'partially_refunded' ||
+      (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
+    const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
+    const unpaidBalanceMinor = isPayable
+      ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
+      : 0;
+    const isSettled =
+      !isPayable ||
+      (paymentStatus === 'paid' && unpaidBalanceMinor === 0 && recordedPaidMinor >= totalMinor);
+    return {
+      id: b.id,
+      paymentStatus,
+      totalMinor,
+      unroundedTotalMinor,
+      recordedPaidMinor,
+      effectiveCollectedMinor,
+      hasCollectedFunds,
+      isPayable,
+      unpaidBalanceMinor,
+      isSettled,
+    };
+  });
+
+  const orderTotalMinor = Math.max(0, Math.round(Number(order?.total || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(order?.round_off || 0) * minorFactor);
+  const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
+  const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
+  const payableBills = evaluatedBills.filter((b) => b.isPayable);
+  const billedCoverageMinor = evaluatedBills.reduce(
+    (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
+    0,
+  );
+  const unbilledMinor =
+    payableBills.length === 0
+      ? orderTotalMinor
+      : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
+  const totalOutstandingMinor =
+    payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
+  const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
+
+  const requiresPaymentOverride =
+    totalOutstandingMinor > 0 ||
+    (orderTotalMinor > 0 && payableBills.length === 0) ||
+    payableBills.some((b) => !b.isSettled);
+
+  return {
+    evaluatedBills,
+    payableBills,
+    orderTotalMinor,
+    orderRoundOffMinor,
+    orderUnroundedTotalMinor,
+    effectiveOrderTargetMinor,
+    unbilledMinor,
+    totalOutstandingMinor,
+    totalCollectedMinor,
+    requiresPaymentOverride,
+  };
+}
+
 router.patch(
   '/:id/status',
   orderWriteRateLimit,
@@ -2463,96 +2575,16 @@ router.patch(
           payment_status?: string | null;
         }>;
 
-        const evaluatedBills = billRows.map((b) => {
-          const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
-          const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
-          const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
-          const paidMinor = Math.max(0, Math.round(Number(b.paid_amount || 0) * minorFactor));
-          const refundedMinor = Math.max(0, Math.round(Number(b.refunded_cents || 0)));
-          const fallbackBalance = Math.max(0, Number(b.total || 0) - Number(b.paid_amount || 0));
-          const storedBalanceMinor = Math.max(
-            0,
-            Math.round(Number(b.balance ?? fallbackBalance) * minorFactor),
-          );
-          let parsedPaymentDetails: Array<{ amount?: unknown }> = [];
-          if (typeof b.payment_details === 'string' && b.payment_details.trim()) {
-            try {
-              const parsed = JSON.parse(b.payment_details);
-              if (Array.isArray(parsed)) parsedPaymentDetails = parsed;
-            } catch {
-              parsedPaymentDetails = [];
-            }
-          } else if (Array.isArray(b.payment_details)) {
-            parsedPaymentDetails = b.payment_details as Array<{ amount?: unknown }>;
-          }
-          const detailsPaidMinor = parsedPaymentDetails.reduce(
-            (sum, entry) => sum + Math.max(0, Math.round(Number(entry?.amount || 0) * minorFactor)),
-            0,
-          );
-          const recordedPaidMinor = Math.max(paidMinor, detailsPaidMinor);
-          const netCollectedMinor = Math.max(0, recordedPaidMinor - refundedMinor);
-          const paymentStatus = String(b.payment_status || '');
-          const effectiveCollectedMinor = Math.max(
-            netCollectedMinor,
-            paymentStatus === 'paid' ? Math.max(0, totalMinor - refundedMinor) : 0,
-          );
-          const hasCollectedFunds =
-            effectiveCollectedMinor > 0 ||
-            (recordedPaidMinor > 0 && paymentStatus !== 'refunded') ||
-            paymentStatus === 'partial' ||
-            paymentStatus === 'partially_refunded' ||
-            (paymentStatus === 'paid' && (totalMinor > 0 || parsedPaymentDetails.length > 0));
-          const isPayable = totalMinor > 0 || storedBalanceMinor > 0;
-          const unpaidBalanceMinor = isPayable
-            ? Math.max(storedBalanceMinor, Math.max(0, totalMinor - recordedPaidMinor))
-            : 0;
-          const isSettled =
-            !isPayable ||
-            (paymentStatus === 'paid' &&
-              unpaidBalanceMinor === 0 &&
-              recordedPaidMinor >= totalMinor);
-          return {
-            id: b.id,
-            paymentStatus,
-            totalMinor,
-            unroundedTotalMinor,
-            recordedPaidMinor,
-            effectiveCollectedMinor,
-            hasCollectedFunds,
-            isPayable,
-            unpaidBalanceMinor,
-            isSettled,
-          };
-        });
+        const {
+          evaluatedBills,
+          payableBills,
+          orderTotalMinor,
+          totalOutstandingMinor,
+          totalCollectedMinor,
+          requiresPaymentOverride,
+        } = evaluateOrderPaymentCompletion(currentOrder, billRows, minorFactor);
 
-        const orderTotalMinor = Math.max(
-          0,
-          Math.round(Number(currentOrder.total || 0) * minorFactor),
-        );
-        const orderRoundOffMinor = Math.round(Number(currentOrder.round_off || 0) * minorFactor);
-        const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
-        const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
-        const payableBills = evaluatedBills.filter((b) => b.isPayable);
-        const billedCoverageMinor = evaluatedBills.reduce(
-          (sum, b) => sum + Math.max(b.totalMinor, b.unroundedTotalMinor),
-          0,
-        );
-        const unbilledMinor =
-          payableBills.length === 0
-            ? orderTotalMinor
-            : Math.max(0, effectiveOrderTargetMinor - billedCoverageMinor);
-        const totalOutstandingMinor =
-          payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
-        const totalCollectedMinor = evaluatedBills.reduce(
-          (sum, b) => sum + b.effectiveCollectedMinor,
-          0,
-        );
-
-        const paymentBlocksCompletion =
-          status === 'completed' &&
-          (totalOutstandingMinor > 0 ||
-            (orderTotalMinor > 0 && payableBills.length === 0) ||
-            payableBills.some((b) => !b.isSettled));
+        const paymentBlocksCompletion = status === 'completed' && requiresPaymentOverride;
 
         const requireKitchenDelivered = db
           .prepare(
@@ -3264,9 +3296,9 @@ router.patch(
         }
 
         // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
-        const currentOrder = db
-          .prepare('SELECT * FROM orders WHERE id = ?')
-          .get(req.params.id) as any;
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
         if (!currentOrder) {
           throw Object.assign(new Error('Order not found'), { statusCode: 404 });
         }
@@ -3274,6 +3306,15 @@ router.patch(
           throw Object.assign(
             new Error('Cannot apply discount to a completed or cancelled order'),
             { statusCode: 400, diagnosticCode: 'order_not_discountable' },
+          );
+        }
+        const splitBill = db
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+          .get(req.params.id);
+        if (splitBill) {
+          throw Object.assign(
+            new Error('Discounts cannot be changed after a check has been split'),
+            { statusCode: 409, diagnosticCode: 'split_check' },
           );
         }
         const refundedBill = db
@@ -3289,9 +3330,9 @@ router.patch(
         }
 
         const customer = currentOrder.customer_id
-          ? (db
-              .prepare('SELECT * FROM customers WHERE id = ?')
-              .get(currentOrder.customer_id) as any)
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
           : null;
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
@@ -3591,55 +3632,8 @@ router.patch(
         }
       }
 
-      // Calculate item discount amount (include addon prices)
-      const addonRows = db
-        .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
-        .all(item.id) as { price: number; quantity?: number }[];
-      const addonTotal = addonRows.reduce(
-        (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity,
-        0,
-      );
-      const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-
-      let discountAmount: number;
-      if (discount_type === 'percentage') {
-        discountAmount = (itemBaseTotal * discount_value) / 100;
-      } else {
-        discountAmount = Math.min(discount_value, itemBaseTotal);
-      }
-      discountAmount = Number(discountAmount.toFixed(decimals));
-
-      // Recalculate item subtotal after discount
-      const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
-
-      // Recalculate tax on discounted subtotal
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-      const customer = order.customer_id
-        ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any)
-        : null;
-      const settings = db
-        .prepare(
-          "SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
-        )
-        .all() as any[];
-      const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
-      const tenantInfo = {
-        country: settingsMap.country || '',
-        business_type: settingsMap.business_type || 'restaurant',
-        state_code: settingsMap.state_code || '',
-        currency: getTenantCurrency(),
-        taxes_enabled: settingsMap.taxes_enabled === 'true',
-      };
-      const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
-      const newTaxAmount = taxResult.tax_amount;
-      const newTaxBreakdown = taxResult.tax_breakdown;
-      const newTaxSnapshotJson = taxResult.tax_snapshot
-        ? JSON.stringify(taxResult.tax_snapshot)
-        : null;
-
-      const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
 
       const updatedItem = withTxn(() => {
         if (approvedByUserId && preVerifiedItemDiscountPinHash) {
@@ -3658,6 +3652,109 @@ router.patch(
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
         }
+
+        // Re-read current order and item under transaction lock to prevent financial state races
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
+          | EditableOrderRow
+          | undefined;
+        if (!currentOrder) {
+          throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+        }
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(
+            new Error('Cannot apply discount to a completed or cancelled order'),
+            { statusCode: 400 },
+          );
+        }
+
+        const splitBill = db
+          .prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1')
+          .get(req.params.id);
+        if (splitBill) {
+          throw Object.assign(
+            new Error('Discounts cannot be changed after a check has been split'),
+            { statusCode: 409 },
+          );
+        }
+
+        const refundedBill = db
+          .prepare(
+            `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+          )
+          .get(req.params.id);
+        if (refundedBill) {
+          throw Object.assign(new Error('Cannot apply discount to a refunded bill'), {
+            statusCode: 409,
+          });
+        }
+
+        const currentItem = db
+          .prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?')
+          .get(req.params.itemId, req.params.id) as OrderItemRow | undefined;
+        if (!currentItem) {
+          throw Object.assign(new Error('Item not found'), { statusCode: 404 });
+        }
+        if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
+          throw Object.assign(
+            new Error('Cannot apply discount to a cancelled, voided, or refunded item'),
+            { statusCode: 400 },
+          );
+        }
+
+        // Calculate item discount amount using fresh quantity and addons
+        const addonRows = db
+          .prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?')
+          .all(currentItem.id) as { price: number; quantity?: number }[];
+        const addonTotal = addonRows.reduce(
+          (sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * currentItem.quantity,
+          0,
+        );
+        const freshItemBaseTotal = currentItem.unit_price * currentItem.quantity + addonTotal;
+
+        let discountAmount: number;
+        if (discount_type === 'percentage') {
+          discountAmount = (freshItemBaseTotal * discount_value) / 100;
+        } else {
+          discountAmount = Math.min(discount_value, freshItemBaseTotal);
+        }
+        discountAmount = Number(discountAmount.toFixed(decimals));
+
+        // Recalculate item subtotal after discount
+        const newSubtotal = Math.max(0, freshItemBaseTotal - discountAmount);
+
+        // Recalculate tax on discounted subtotal
+        const product = db
+          .prepare('SELECT * FROM products WHERE id = ?')
+          .get(currentItem.product_id) as ProductRow | undefined;
+        if (!product) {
+          throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+        }
+        const customer = currentOrder.customer_id
+          ? ((db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as
+              | Customer
+              | undefined) ?? null)
+          : null;
+        const settings = db
+          .prepare(
+            "SELECT key, value FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')",
+          )
+          .all() as { key: string; value: string }[];
+        const settingsMap = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+        const tenantInfo = {
+          country: settingsMap.country || '',
+          business_type: settingsMap.business_type || 'restaurant',
+          state_code: settingsMap.state_code || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: settingsMap.taxes_enabled === 'true',
+        };
+        const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
+        const newTaxAmount = taxResult.tax_amount;
+        const newTaxBreakdown = taxResult.tax_breakdown;
+        const newTaxSnapshotJson = taxResult.tax_snapshot
+          ? JSON.stringify(taxResult.tax_snapshot)
+          : null;
+
+        const newTotal = newSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : newTaxAmount);
 
         // Update item with recalculated tax
         db.prepare(`
@@ -3680,24 +3777,30 @@ router.patch(
         const orderTotals = calculateOrderTotals(db, req.params.id as string);
 
         // Recalculate order-level discount proportionally on new subtotal
-        const existingDiscountAmount = order.discount_amount || 0;
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newOrderDiscount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && order.subtotal > 0) {
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
           // Scale discount proportionally to new subtotal
           newOrderDiscount = Number(
-            (existingDiscountAmount * (orderTotals.subtotal / order.subtotal)).toFixed(decimals),
+            (existingDiscountAmount * (orderTotals.subtotal / currentOrder.subtotal)).toFixed(
+              decimals,
+            ),
           );
         }
 
         // Recalculate tax on discounted subtotal
-        const engineCharges = resolveEngineCharges(order, orderTotals.subtotal, newOrderDiscount);
+        const engineCharges = resolveEngineCharges(
+          currentOrder,
+          orderTotals.subtotal,
+          newOrderDiscount,
+        );
         const {
           taxRollup,
           total: orderTotal,
           roundOff,
         } = recomputeOrderTotals({
           tenantInfo,
-          chargeContext: order,
+          chargeContext: currentOrder,
           customer,
           totals: orderTotals,
           discountAmount: newOrderDiscount,
@@ -3708,13 +3811,13 @@ router.patch(
 
         const syncedServiceCharge = engineCharges
           ? engineCharges.columns.service_charge
-          : order.service_charge || 0;
+          : currentOrder.service_charge || 0;
         const syncedPackagingCharge = engineCharges
           ? engineCharges.columns.packaging_charge
-          : order.packaging_charge || 0;
+          : currentOrder.packaging_charge || 0;
         const syncedChargesJson = engineCharges
           ? engineCharges.chargesJson
-          : (order.charges_breakdown ?? null);
+          : (currentOrder.charges_breakdown ?? null);
 
         db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?,

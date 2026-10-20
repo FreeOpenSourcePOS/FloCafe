@@ -269,8 +269,6 @@ export function startKdsServer(): Promise<void> {
           });
         }
 
-        resetSuccessfulLogin(ip);
-
         // Only allow chef, manager, owner roles
         if (!hasPermission(user.id, 'kitchen.use')) {
           return res.status(403).json({
@@ -288,6 +286,8 @@ export function startKdsServer(): Promise<void> {
             .status(403)
             .json({ error: 'No active kitchen station is assigned to this user' });
         }
+
+        resetSuccessfulLogin(ip);
 
         const token = jwt.sign(
           { userId: user.id, email: user.email, role: user.role, jti: randomUUID() },

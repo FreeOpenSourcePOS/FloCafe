@@ -147,6 +147,8 @@ test('OrdersPage renders Load More and fetches the next page when search is empt
     ],
     useEffect: (_effect: () => unknown) => undefined,
     useRef: (initial: unknown) => ({ current: initial }),
+    useCallback: <T extends (...args: unknown[]) => unknown>(fn: T): T => fn,
+    useMemo: <T>(fn: () => T): T => fn(),
   };
 
   const orderRequests: Array<Record<string, unknown>> = [];

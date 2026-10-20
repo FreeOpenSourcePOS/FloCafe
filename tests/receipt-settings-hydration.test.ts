@@ -48,24 +48,33 @@ function loadFrontendModules() {
       resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
     } else if (request.startsWith('@print/')) {
       resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
+    } else if (request.startsWith('@shared/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared', request.slice('@shared/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
 
   try {
+    const apiModule = require('../frontend/src/lib/api');
     return {
       posSettings: require('../frontend/src/store/pos-settings'),
       webPrint: require('../frontend/src/lib/printer/web-print'),
       i18n: require('../frontend/src/lib/i18n'),
+      receiptSync: require('../frontend/src/hooks/useReceiptSettingsSync'),
+      authStore: require('../frontend/src/store/auth'),
+      frontendApi: apiModule.default || apiModule,
     };
   } finally {
     Module._resolveFilename = originalResolveFilename;
   }
 }
 
-const { posSettings, webPrint, i18n } = loadFrontendModules();
+const { posSettings, webPrint, i18n, receiptSync, authStore, frontendApi } = loadFrontendModules();
 const { usePosSettingsStore } = posSettings;
 const { generateBillHtml } = webPrint;
+const { canSyncReceiptSettings, ensureReceiptSettingsLoaded, resetReceiptSettingsSyncForTests } =
+  receiptSync;
+const { useAuthStore } = authStore;
 
 async function runTests() {
   console.log('==================================================');
@@ -416,7 +425,183 @@ async function runTests() {
       '123 Pier Way, Seattle, WA',
       'posSettings retains address from API',
     );
+
+    // ── Test 6: Role-based authorization on GET /api/settings/business vs protected settings ──
+    console.log(
+      '\n6. Role-based authorization allows bill/order roles to read storefront settings without granting admin access',
+    );
+    const { getJWTSecret } = require('../main/routes/auth');
+    const jwt = require('jsonwebtoken');
+    const bcrypt = require('bcryptjs');
+
+    function createTestUser(id: string, name: string, email: string, role: string) {
+      const passwordHash = bcrypt.hashSync('testpass123', 10);
+      db.prepare(
+        `INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(id, name, email, passwordHash, role, 1, now(), now());
+      const token = jwt.sign({ userId: id, email, role }, getJWTSecret(), { expiresIn: '1h' });
+      return { id, token, authHeader: { Authorization: `Bearer ${token}` } };
+    }
+
+    const cashier = createTestUser('cashier-001', 'Test Cashier', 'cashier@test.local', 'cashier');
+    const serverStaff = createTestUser('server-001', 'Test Server', 'server@test.local', 'server');
+    const chef = createTestUser('chef-001', 'Test Chef', 'chef@test.local', 'chef');
+
+    // Restrict cashier, server, and chef from general settings access via user permission overrides
+    db.prepare(
+      `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+       VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
+    ).run('cashier-001', now(), now());
+    db.prepare(
+      `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+       VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
+    ).run('server-001', now(), now());
+    db.prepare(
+      `INSERT OR REPLACE INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+       VALUES (?, 'settings.view', 'deny', 'owner-test-001', ?, ?)`,
+    ).run('chef-001', now(), now());
+
+    // Cashier (bills.read, bills.print, bills.generate) can read business settings for printing receipts even without settings.view
+    const cashierGetRes = await api(baseUrl, '/api/settings/business', {
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(cashierGetRes.status, 200, 'Cashier GET /api/settings/business returns 200');
+    assertEqualOrThrow(
+      cashierGetRes.data.business_address,
+      '123 Pier Way, Seattle, WA',
+      'Cashier reads storefront address',
+    );
+
+    // Server (orders.read only) cannot read business settings (preserves charges-engine security boundary)
+    const serverGetRes = await api(baseUrl, '/api/settings/business', {
+      headers: serverStaff.authHeader,
+    });
+    assertEqualOrThrow(serverGetRes.status, 403, 'Server GET /api/settings/business returns 403');
+
+    // Chef (only kitchen.use, no billing or orders.read, and settings.view denied) cannot read business settings
+    const chefGetRes = await api(baseUrl, '/api/settings/business', {
+      headers: chef.authHeader,
+    });
+    assertEqualOrThrow(chefGetRes.status, 403, 'Chef GET /api/settings/business returns 403');
+
+    // Unauthenticated request cannot read business settings
+    const unauthGetRes = await api(baseUrl, '/api/settings/business');
+    assertEqualOrThrow(
+      unauthGetRes.status,
+      401,
+      'Unauthenticated GET /api/settings/business returns 401',
+    );
+
+    // Cashier CANNOT mutate business settings (requires settings.manage)
+    const cashierPutRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: cashier.authHeader,
+      body: { business_name: 'Hacked Cafe' },
+    });
+    assertEqualOrThrow(cashierPutRes.status, 403, 'Cashier PUT /api/settings/business returns 403');
+
+    // Cashier CANNOT read general tax settings (requires settings.view)
+    const cashierTaxRes = await api(baseUrl, '/api/settings/tax', {
+      headers: cashier.authHeader,
+    });
+    assertEqualOrThrow(cashierTaxRes.status, 403, 'Cashier GET /api/settings/tax returns 403');
+
+    // ── Test 7: Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race ──
+    console.log(
+      '\n7. Client-side permission helper & ensureReceiptSettingsLoaded prevent startup race',
+    );
+    // canSyncReceiptSettings checks role/permissions
+    assertEqualOrThrow(
+      canSyncReceiptSettings(null),
+      false,
+      'canSyncReceiptSettings(null) is false',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'owner', permission_ids: ['settings.view'] }),
+      true,
+      'canSyncReceiptSettings(owner) with settings.view is true',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'cashier', permission_ids: ['bills.read', 'bills.print'] }),
+      true,
+      'canSyncReceiptSettings(cashier) with bills permissions is true',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'server', permission_ids: ['orders.read'] }),
+      false,
+      'canSyncReceiptSettings(server) with orders.read only is false',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'chef', permission_ids: ['kitchen.use'] }),
+      false,
+      'canSyncReceiptSettings(chef) with only kitchen.use is false',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'chef', permission_ids: ['kitchen.use', 'bills.print'] }),
+      true,
+      'canSyncReceiptSettings with bills.print override is true',
+    );
+    assertEqualOrThrow(
+      canSyncReceiptSettings({ role: 'invalid_role' as any }),
+      false,
+      'canSyncReceiptSettings(invalid_role) is false',
+    );
+
+    // Test ensureReceiptSettingsLoaded with mocked tenant in authStore
+    resetReceiptSettingsSyncForTests();
+    usePosSettingsStore.setState({
+      billAddress: '',
+      billFooterMessage: '',
+    });
+    frontendApi.defaults.baseURL = `${baseUrl}/api`;
+    frontendApi.defaults.headers.common['Authorization'] = `Bearer ${cashier.token}`;
+
+    useAuthStore.setState({
+      currentTenant: {
+        id: 'tenant-1',
+        business_name: 'Test Tenant',
+        role: 'cashier',
+        permission_ids: ['bills.read', 'bills.print'],
+      } as any,
+    });
+
+    // Calling ensureReceiptSettingsLoaded joins in-flight requests and resolves
+    const ensurePromise1 = ensureReceiptSettingsLoaded();
+    const ensurePromise2 = ensureReceiptSettingsLoaded();
+    await Promise.all([ensurePromise1, ensurePromise2]);
+
+    const stateAfterSync = usePosSettingsStore.getState();
+    assertEqualOrThrow(
+      stateAfterSync.billAddress,
+      '123 Pier Way, Seattle, WA',
+      'ensureReceiptSettingsLoaded hydrates billAddress from API',
+    );
+    assertEqualOrThrow(
+      stateAfterSync.billFooterMessage,
+      'Updated footer: Visit us online!',
+      'ensureReceiptSettingsLoaded hydrates billFooterMessage from API',
+    );
+
+    // Subsequent call resolves immediately
+    await ensureReceiptSettingsLoaded();
+
+    delete frontendApi.defaults.headers.common['Authorization'];
+    frontendApi.defaults.baseURL = '/api';
+
+    // Verify offline resilience: failure resolves without throwing
+    resetReceiptSettingsSyncForTests();
+    useAuthStore.setState({
+      currentTenant: {
+        id: 'tenant-1',
+        role: 'unauthorized_role',
+      } as any,
+    });
+    // For unauthorized role or network failure, ensureReceiptSettingsLoaded resolves cleanly
+    await ensureReceiptSettingsLoaded();
   } finally {
+    delete frontendApi.defaults.headers.common['Authorization'];
+    frontendApi.defaults.baseURL = '/api';
     server.close();
   }
 

@@ -25,6 +25,7 @@ const {
   closeDatabase,
   now,
   validateInventoryLedgerReplacement,
+  validateInventoryLedgerDatabase,
 } = require('../main/db');
 const { adjustProductStock } = require('../main/services/inventory');
 const {
@@ -454,6 +455,68 @@ async function main() {
       clampMovement.quantity_delta,
       -0.00000002,
       'movement delta reflects the clamped change (-2e-8)',
+    );
+
+    // ── Legacy stock precision test: >8 decimal places ───────────────────────
+    const legacyStock = 10.123456789012;
+    db.prepare(`
+      INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+      VALUES ('p-legacy-precision', 'cat-ledger', 'Legacy Precision Item', 100, 1, ?, ?, ?)
+    `).run(legacyStock, now(), now());
+    db.prepare(`
+      INSERT INTO inventory_movements (
+        product_id, quantity_delta, movement_type, reference_type, stock_after, actor_user_id, created_at
+      ) VALUES ('p-legacy-precision', ?, 'adjustment', 'opening_balance', ?, ?, ?)
+    `).run(legacyStock, legacyStock, owner.userId, now());
+
+    assertEqual(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'legacy stock with >8 decimals validates before adjustment',
+    );
+
+    // Negative adjustment
+    adjustProductStock(db, {
+      productId: 'p-legacy-precision',
+      quantityDelta: -0.5,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Legacy minus 0.5 adjustment',
+    });
+    assertEqual(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'adjustProductStock preserves ledger chain continuity for legacy stock after decrease',
+    );
+    const legacyAfterDec = db
+      .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+      .get('p-legacy-precision') as { stock_quantity: number };
+    assertEqual(
+      legacyAfterDec.stock_quantity,
+      9.623456789012,
+      'stock_quantity retains legacy decimal precision after decrease',
+    );
+
+    // Positive adjustment
+    adjustProductStock(db, {
+      productId: 'p-legacy-precision',
+      quantityDelta: 0.25,
+      movementType: 'adjustment',
+      actorUserId: owner.userId,
+      reason: 'Legacy plus 0.25 adjustment',
+    });
+    assertEqual(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'adjustProductStock preserves ledger chain continuity for legacy stock after increase',
+    );
+    const legacyAfterInc = db
+      .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+      .get('p-legacy-precision') as { stock_quantity: number };
+    assertEqual(
+      legacyAfterInc.stock_quantity,
+      9.873456789012,
+      'stock_quantity retains legacy decimal precision after increase',
     );
 
     const manualIncrease = await api(baseUrl, `/api/products/${productId}/stock`, {

@@ -138,6 +138,8 @@ same fields:
   if either already has an associated customer, a different id is a `400`. Wallet payments require a
   customer already associated with the bill or order, with enough points.
 - `override_pin`: the manager override described below.
+- `approver_id`: when supplying `override_pin`, the selected manager ID (`manager_id` and `user_id`
+  remain compatibility aliases).
 
 Non-cash lines can never exceed the balance (`400`). Cash is applied up to the amount still owed and
 the difference is recorded as change, so an over-tendered bill settles and its ledger line carries
@@ -161,6 +163,8 @@ Two gates sit between a valid request and the write:
 - **Kitchen-delivery gate.** When `require_kitchen_delivered_before_settlement` is on, `kds_enabled`
   is not `false`, and `billing_type` is not `prepaid`, paying while kitchen items are undelivered
   is a `409` with code `KITCHEN_ITEMS_UNDELIVERED` unless a manager PIN is supplied as `override_pin`.
+  When an approver is explicitly supplied (`approver_id`, `manager_id`, or `user_id`), PIN
+  verification is restricted to that active manager without falling back to scanning other managers.
   When all kitchen items are delivered, `override_pin` verification is bypassed. The override is
   recorded in the order audit log.
 

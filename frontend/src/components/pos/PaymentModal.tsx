@@ -54,6 +54,8 @@ import { allocateEqualShares } from '@/lib/money';
 import { parseAppliedCharges, type AppliedCharge } from '@/lib/charges';
 import { useChargesStore, chargesForOrderType } from '@/store/charges';
 import { classifyOrderRequestFailure, type OperationFailureMetadata } from '@/lib/order-attempt';
+import { ApproverSelect } from '@/components/ApproverSelect';
+import { useManagerApprovers } from '@/hooks/useManagerApprovers';
 
 interface Props {
   bill: Bill;
@@ -182,10 +184,12 @@ export default function PaymentModal({
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
+  const managerApprovers = useManagerApprovers();
   const [kitchenOverrideRequired, setKitchenOverrideRequired] = useState(
     Boolean(initialOverridePin),
   );
   const [kitchenOverridePin, setKitchenOverridePin] = useState(initialOverridePin || '');
+  const [kitchenApproverId, setKitchenApproverId] = useState<string | null>(null);
   const [kitchenUndeliveredCount, setKitchenUndeliveredCount] = useState(0);
   const [kitchenUndeliveredItems, setKitchenUndeliveredItems] = useState<string[]>([]);
   const [kitchenDeliveryError, setKitchenDeliveryError] = useState('');
@@ -209,6 +213,7 @@ export default function PaymentModal({
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
+  const [discountApproverId, setDiscountApproverId] = useState<string | null>(null);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
@@ -822,10 +827,13 @@ export default function PaymentModal({
       toast.error(t('discountInvalid'));
       return;
     }
+    const effectiveDiscountApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
     // Check if PIN is required
-    if (discountRequiresApproval && val > 0 && !discountPin) {
-      toast.error(t('managerPinRequired'));
-      return;
+    if (discountRequiresApproval && val > 0) {
+      if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
+        toast.error(t('managerPinRequired'));
+        return;
+      }
     }
     if (val > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
       toast.error(t('discountInvalid'));
@@ -843,11 +851,16 @@ export default function PaymentModal({
           discount_value: storedDiscountValue,
           discount_reason: val > 0 ? discountReason || undefined : undefined,
           override_pin: discountRequiresApproval && val > 0 ? discountPin : undefined,
+          approver_id:
+            discountRequiresApproval && val > 0 && discountPin
+              ? effectiveDiscountApproverId || undefined
+              : undefined,
         },
         { headers: operationHeaders(operationId) },
       );
       toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
+      setDiscountApproverId(null);
       if (val === 0) {
         setShowDiscount(false);
         setDiscountValue('');
@@ -1037,6 +1050,7 @@ export default function PaymentModal({
     inFlightRef.current = true;
     setProcessing(true);
     setRequestFailure(null);
+    const effectiveKitchenApproverId = kitchenApproverId ?? managerApprovers.selectedApproverId;
     try {
       const res = await api.post(
         attempt.zeroBalance ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
@@ -1046,11 +1060,13 @@ export default function PaymentModal({
               amount: attempt.lines[0].amount,
               customer_id: attempt.customerId,
               override_pin: kitchenOverridePin || undefined,
+              approver_id: kitchenOverridePin ? effectiveKitchenApproverId || undefined : undefined,
             }
           : {
               payments: attempt.lines,
               customer_id: attempt.customerId,
               override_pin: kitchenOverridePin || undefined,
+              approver_id: kitchenOverridePin ? effectiveKitchenApproverId || undefined : undefined,
             },
         { headers: { 'Idempotency-Key': attempt.key, ...operationHeaders(attempt.operationId) } },
       );
@@ -1470,20 +1486,35 @@ export default function PaymentModal({
               {kitchenUndeliveredItems.length > 0 && (
                 <p className="mt-1 break-words text-xs">{kitchenUndeliveredItems.join(', ')}</p>
               )}
-              <input
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={kitchenOverridePin}
-                onChange={(event) => {
-                  setKitchenOverridePin(event.target.value.replace(/\D/g, '').slice(0, 6));
-                  setKitchenDeliveryError('');
-                }}
-                placeholder={t('managerPin')}
-                aria-label={t('managerPin')}
-                className="mt-3 min-h-11 w-full rounded-lg border border-amber-300 bg-card px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-amber-700"
-              />
+              <div className="mt-3 space-y-2 text-start">
+                <ApproverSelect
+                  id="kitchenApproverSelect"
+                  approvers={managerApprovers.approvers}
+                  selectedApproverId={kitchenApproverId ?? managerApprovers.selectedApproverId}
+                  onSelectApprover={(id) => {
+                    setKitchenApproverId(id);
+                    setKitchenOverridePin('');
+                    setKitchenDeliveryError('');
+                  }}
+                  loading={managerApprovers.loading}
+                  loadFailed={managerApprovers.loadFailed}
+                  disabled={processing || attemptLocked}
+                />
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={kitchenOverridePin}
+                  onChange={(event) => {
+                    setKitchenOverridePin(event.target.value.replace(/\D/g, '').slice(0, 6));
+                    setKitchenDeliveryError('');
+                  }}
+                  placeholder={t('managerPin')}
+                  aria-label={t('managerPin')}
+                  className="min-h-11 w-full rounded-lg border border-amber-300 bg-card px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-amber-700"
+                />
+              </div>
               {kitchenDeliveryError && (
                 <p className="mt-1 text-xs text-red-700 dark:text-red-300">
                   {kitchenDeliveryError}
@@ -1725,15 +1756,31 @@ export default function PaymentModal({
                       className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                     />
                     {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                      <input
-                        type="password"
-                        value={discountPin}
-                        disabled={processing || attemptLocked}
-                        onChange={(e) => setDiscountPin(e.target.value)}
-                        placeholder={t('managerPin')}
-                        maxLength={6}
-                        className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                      />
+                      <div className="space-y-2">
+                        <ApproverSelect
+                          id="paymentDiscountApprover"
+                          approvers={managerApprovers.approvers}
+                          selectedApproverId={
+                            discountApproverId ?? managerApprovers.selectedApproverId
+                          }
+                          onSelectApprover={(id) => {
+                            setDiscountApproverId(id);
+                            setDiscountPin('');
+                          }}
+                          loading={managerApprovers.loading}
+                          loadFailed={managerApprovers.loadFailed}
+                          disabled={processing || attemptLocked || applyingDiscount}
+                        />
+                        <input
+                          type="password"
+                          value={discountPin}
+                          disabled={processing || attemptLocked || applyingDiscount}
+                          onChange={(e) => setDiscountPin(e.target.value)}
+                          placeholder={t('managerPin')}
+                          maxLength={6}
+                          className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                        />
+                      </div>
                     )}
                     <Button
                       onClick={() => handleApplyDiscount()}
@@ -1744,7 +1791,12 @@ export default function PaymentModal({
                         openingSplitCheck ||
                         Boolean(updatingChargeId) ||
                         discountValue === '' ||
-                        isNaN(parseFloat(discountValue))
+                        isNaN(parseFloat(discountValue)) ||
+                        (discountRequiresApproval &&
+                          parseFloat(discountValue) > 0 &&
+                          (!discountPin ||
+                            (managerApprovers.approvers.length > 1 &&
+                              !(discountApproverId ?? managerApprovers.selectedApproverId))))
                       }
                       className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                     >
@@ -2217,7 +2269,12 @@ export default function PaymentModal({
                   applyingDiscount ||
                   Boolean(updatingChargeId) ||
                   chargeStateUncertain ||
-                  (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0)
+                  (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
+                  Boolean(
+                    kitchenOverridePin &&
+                    managerApprovers.approvers.length > 1 &&
+                    !(kitchenApproverId ?? managerApprovers.selectedApproverId),
+                  )
                 }
                 className="w-full"
                 size="lg"

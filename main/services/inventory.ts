@@ -128,6 +128,17 @@ export function resolveInventoryDeduction(
   return null;
 }
 
+function getDecimalPlaces(value: number): number {
+  if (!Number.isFinite(value) || Math.floor(value) === value) return 0;
+  const str = value.toString();
+  if (str.includes('e-')) {
+    const [base, exp] = str.split('e-');
+    const baseDecimals = base.includes('.') ? base.split('.')[1].length : 0;
+    return baseDecimals + Number(exp);
+  }
+  return str.includes('.') ? str.split('.')[1].length : 0;
+}
+
 export function adjustProductStock(
   db: ReturnType<typeof getDatabase>,
   options: StockChangeOptions,
@@ -192,9 +203,31 @@ export function adjustProductStock(
     stockLabel = 'Variant';
     stockIdArgs = [variantId, options.productId as string | number];
   }
-  const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
-  const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
+  const readStock = db.prepare(`SELECT stock_quantity, name FROM ${stockTable} WHERE ${stockKey}`);
+  const current = readStock.get(...stockIdArgs) as
+    | { stock_quantity: number | null; name?: string }
+    | undefined;
+  let itemName: string | null = null;
+  if (current?.name) {
+    const safeName = (name: string) => (name.length > 60 ? `${name.slice(0, 57)}...` : name);
+    if (variantId && options.productId) {
+      const productRow = db
+        .prepare('SELECT name FROM products WHERE id = ?')
+        .get(options.productId as string | number) as { name?: string } | undefined;
+      itemName = productRow?.name
+        ? `"${safeName(productRow.name)}" (${safeName(current.name)})`
+        : `variant "${safeName(current.name)}"`;
+    } else if (addonId) {
+      itemName = `add-on "${safeName(current.name)}"`;
+    } else {
+      itemName = `"${safeName(current.name)}"`;
+    }
+  }
   const stockBefore = Number(current?.stock_quantity ?? 0);
+  const targetPrecision = Math.max(
+    INVENTORY_QUANTITY_PRECISION,
+    Math.min(14, getDecimalPlaces(stockBefore)),
+  );
   const update = db.prepare(`
     UPDATE ${stockTable}
     SET stock_quantity = CASE
@@ -212,7 +245,7 @@ export function adjustProductStock(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    INVENTORY_QUANTITY_PRECISION,
+    targetPrecision,
     updatedAt,
     ...stockIdArgs,
     normalizedQuantityDelta,
@@ -220,20 +253,21 @@ export function adjustProductStock(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    INVENTORY_QUANTITY_PRECISION,
+    targetPrecision,
   );
   if (result.changes !== 1) {
     if (!current) {
       throw new InventoryServiceError(404, `${stockLabel} not found`);
     }
-    throw new InventoryServiceError(400, 'Insufficient stock');
+    throw new InventoryServiceError(
+      400,
+      itemName ? `Insufficient stock for ${itemName}` : 'Insufficient stock',
+    );
   }
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
   const stockAfter = Number(updatedStock.stock_quantity);
-  const effectiveQuantityDelta = Number(
-    (stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION),
-  );
+  const effectiveQuantityDelta = Number((stockAfter - stockBefore).toFixed(targetPrecision));
 
   db.prepare(`
     INSERT INTO inventory_movements (

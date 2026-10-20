@@ -990,7 +990,7 @@ interface SchemaRecoveryReference {
   definitions: Map<string, string>;
 }
 
-let cachedSchemaRecoveryReference: SchemaRecoveryReference | null = null;
+const cachedSchemaRecoveryReferences = new Map<number, SchemaRecoveryReference>();
 let buildingIdealSchema = false;
 
 let recoverySchemaBuildCount = 0;
@@ -999,25 +999,35 @@ export function getRecoverySchemaBuildCount(): number {
   return recoverySchemaBuildCount;
 }
 
-function getMigrationRegistryIdentity(): string {
-  const last = MIGRATIONS[MIGRATIONS.length - 1];
-  return `${MIGRATIONS.length}:${last?.version ?? 0}:${last?.name ?? ''}`;
+export function clearRecoverySchemaReference(): void {
+  cachedSchemaRecoveryReferences.clear();
 }
 
-function getRecoverySchemaReference(): SchemaRecoveryReference {
-  const currentIdentity = getMigrationRegistryIdentity();
-  if (cachedSchemaRecoveryReference && cachedSchemaRecoveryReference.identity === currentIdentity) {
-    return cachedSchemaRecoveryReference;
+function getMigrationRegistryIdentity(targetVersion?: number): string {
+  const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+  const version = targetVersion !== undefined ? targetVersion : supportedVersion;
+  const last = MIGRATIONS[MIGRATIONS.length - 1];
+  return `${version}:${MIGRATIONS.length}:${last?.version ?? 0}:${last?.name ?? ''}`;
+}
+
+function getRecoverySchemaReference(targetVersion?: number): SchemaRecoveryReference {
+  const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+  const version = targetVersion !== undefined ? targetVersion : supportedVersion;
+  const currentIdentity = getMigrationRegistryIdentity(version);
+  const cached = cachedSchemaRecoveryReferences.get(version);
+  if (cached && cached.identity === currentIdentity) {
+    return cached;
   }
   recoverySchemaBuildCount += 1;
-  const idealDb = buildIdealSchemaDb();
+  const idealDb = buildIdealSchemaDb(version);
   try {
-    cachedSchemaRecoveryReference = {
+    const ref: SchemaRecoveryReference = {
       identity: currentIdentity,
       tableColumns: new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)])),
       definitions: normalizedSchemaDefinitions(idealDb),
     };
-    return cachedSchemaRecoveryReference;
+    cachedSchemaRecoveryReferences.set(version, ref);
+    return ref;
   } finally {
     idealDb.close();
   }
@@ -1061,14 +1071,20 @@ export function isHealthyDatabaseFile(
         .prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'")
         .get() as { value: string } | undefined;
     } catch {}
+
+    const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+    if (schemaVersion < 1 || schemaVersion > supportedVersion) {
+      candidate.close();
+      return false;
+    }
+
     const tables = new Set(getTables(candidate));
-    const schemaRef = getRecoverySchemaReference();
+    const schemaRef = getRecoverySchemaReference(schemaVersion);
     const expectedSchema = schemaRef.tableColumns;
     const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
       const available = new Set(getColumns(candidate, table));
       return columns.every((column) => available.has(column));
     });
-    const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
     const actualDefinitions = normalizedSchemaDefinitions(candidate);
     const definitionsValid =
       schemaRef.definitions.size === actualDefinitions.size &&
@@ -3854,6 +3870,15 @@ function materializeRestoreSource(
     sourcePath,
     fs.constants.O_RDONLY | ((fs.constants as any).O_NOFOLLOW || 0),
   );
+  let snapshotDir: string | null = null;
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned || !snapshotDir) return;
+    cleaned = true;
+    try {
+      fs.rmSync(snapshotDir, { recursive: true, force: true });
+    } catch {}
+  };
   try {
     const openedStat = fs.fstatSync(sourceFd);
     if (
@@ -3879,27 +3904,20 @@ function materializeRestoreSource(
     if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) {
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
-    const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
-    try {
-      const snapshotPath = path.join(snapshotDir, 'source.db');
-      fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        try {
-          fs.rmSync(snapshotDir, { recursive: true, force: true });
-        } catch {}
-      };
-      return { snapshotPath, cleanup };
-    } catch (writeError) {
-      try {
-        fs.rmSync(snapshotDir, { recursive: true, force: true });
-      } catch {}
-      throw writeError;
-    }
+    snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
+    const snapshotPath = path.join(snapshotDir, 'source.db');
+    fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
+    return { snapshotPath, cleanup };
+  } catch (error) {
+    cleanup();
+    throw error;
   } finally {
-    fs.closeSync(sourceFd);
+    try {
+      fs.closeSync(sourceFd);
+    } catch (closeError) {
+      cleanup();
+      throw closeError;
+    }
   }
 }
 
@@ -4288,7 +4306,7 @@ export function rebuildSearchIndex(targetDb?: Database.Database): void {
 }
 
 /** Builds in-memory database using migration pipeline as ideal schema reference. */
-export function buildIdealSchemaDb(): Database.Database {
+export function buildIdealSchemaDb(targetVersion?: number): Database.Database {
   const idealDb = new Database(':memory:');
   registerOrderSearchFunctions(idealDb);
   idealDb.pragma('foreign_keys = OFF'); // Off during migrations
@@ -4296,7 +4314,7 @@ export function buildIdealSchemaDb(): Database.Database {
   db = idealDb;
   try {
     buildingIdealSchema = true;
-    runMigrations();
+    runMigrations(targetVersion);
   } finally {
     buildingIdealSchema = false;
     db = previousDb;
@@ -7528,9 +7546,10 @@ export class SchemaVersionMismatchError extends Error {
   }
 }
 
-function runMigrations(): void {
+function runMigrations(targetVersion?: number): void {
   const current = getCurrentSchemaVersion();
-  const target = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
+  const maxSupported = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
+  const target = targetVersion !== undefined ? targetVersion : maxSupported;
   const verboseMigrationLogs = process.env.FLOCAFE_TEST_VERBOSE === '1';
 
   if (current > target) {
@@ -7539,27 +7558,30 @@ function runMigrations(): void {
   }
 
   if (current === target) {
-    console.log(`[DB] Schema up to date (v${current})`);
+    if (!buildingIdealSchema) console.log(`[DB] Schema up to date (v${current})`);
     return;
   }
 
-  console.log(`[DB] Schema: v${current} → v${target}`);
+  if (!buildingIdealSchema) console.log(`[DB] Schema: v${current} → v${target}`);
 
   // Create automatic pre-migration backup before running pending batch.
-  console.log(`[DB] Triggering auto-backup before migrating v${current} → v${target}...`);
-  syncBackupBeforeMigration(current, target);
+  if (!buildingIdealSchema) {
+    console.log(`[DB] Triggering auto-backup before migrating v${current} → v${target}...`);
+    syncBackupBeforeMigration(current, target);
+  }
 
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
+    if (migration.version > target) break;
 
-    if (verboseMigrationLogs) {
+    if (verboseMigrationLogs && !buildingIdealSchema) {
       console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
     }
     db.transaction(() => {
       migration.up();
       db.pragma(`user_version = ${migration.version}`);
     })();
-    if (verboseMigrationLogs) {
+    if (verboseMigrationLogs && !buildingIdealSchema) {
       console.log(`[DB] Migration v${migration.version} complete`);
     }
   }
@@ -8720,53 +8742,68 @@ export function attachEffectiveAddons<T extends { id: number }>(
     })[];
 
   const ids = items.map((item) => item.id);
-  const placeholders = ids.map(() => '?').join(',');
-  const rows = dbInstance
-    .prepare(`SELECT * FROM order_item_addons WHERE order_item_id IN (${placeholders}) ORDER BY id`)
-    .all(...ids) as {
-    order_item_id: number;
-    addon_id: string | null;
-    addon_name: string;
-    price: number;
-    quantity: number;
-  }[];
+  const CHUNK_SIZE = 400;
 
   const byItem = new Map<
     number,
     { id: string | null; name: string; price: number; quantity: number }[]
   >();
-  for (const row of rows) {
-    const list = byItem.get(row.order_item_id) || [];
-    list.push({ id: row.addon_id, name: row.addon_name, price: row.price, quantity: row.quantity });
-    byItem.set(row.order_item_id, list);
+  for (let offset = 0; offset < ids.length; offset += CHUNK_SIZE) {
+    const chunk = ids.slice(offset, offset + CHUNK_SIZE);
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = dbInstance
+      .prepare(
+        `SELECT * FROM order_item_addons WHERE order_item_id IN (${placeholders}) ORDER BY id`,
+      )
+      .all(...chunk) as {
+      order_item_id: number;
+      addon_id: string | null;
+      addon_name: string;
+      price: number;
+      quantity: number;
+    }[];
+    for (const row of rows) {
+      const list = byItem.get(row.order_item_id) || [];
+      list.push({
+        id: row.addon_id,
+        name: row.addon_name,
+        price: row.price,
+        quantity: row.quantity,
+      });
+      byItem.set(row.order_item_id, list);
+    }
   }
 
   const editVersionByItem = new Map<number, number>();
   const supersededItemIds = new Set<number>();
   try {
-    const auditRows = dbInstance
-      .prepare(
-        `SELECT id, order_item_id, action, details_json FROM order_audit_log WHERE order_item_id IN (${placeholders}) ORDER BY id`,
-      )
-      .all(...ids) as {
-      id: number;
-      order_item_id: number | string | null;
-      action: string;
-      details_json: string | null;
-    }[];
-    for (const audit of auditRows) {
-      const itemId = Number(audit.order_item_id);
-      if (!Number.isFinite(itemId)) continue;
-      const prev = editVersionByItem.get(itemId) ?? 0;
-      if (audit.id > prev) editVersionByItem.set(itemId, audit.id);
-      if (audit.action === 'item_edited' && audit.details_json) {
-        try {
-          const details = JSON.parse(audit.details_json) as { superseded?: unknown } | null;
-          if (details?.superseded === true) {
-            supersededItemIds.add(itemId);
+    for (let offset = 0; offset < ids.length; offset += CHUNK_SIZE) {
+      const chunk = ids.slice(offset, offset + CHUNK_SIZE);
+      const placeholders = chunk.map(() => '?').join(',');
+      const auditRows = dbInstance
+        .prepare(
+          `SELECT id, order_item_id, action, details_json FROM order_audit_log WHERE order_item_id IN (${placeholders}) ORDER BY id`,
+        )
+        .all(...chunk) as {
+        id: number;
+        order_item_id: number | string | null;
+        action: string;
+        details_json: string | null;
+      }[];
+      for (const audit of auditRows) {
+        const itemId = Number(audit.order_item_id);
+        if (!Number.isFinite(itemId)) continue;
+        const prev = editVersionByItem.get(itemId) ?? 0;
+        if (audit.id > prev) editVersionByItem.set(itemId, audit.id);
+        if (audit.action === 'item_edited' && audit.details_json) {
+          try {
+            const details = JSON.parse(audit.details_json) as { superseded?: unknown } | null;
+            if (details?.superseded === true) {
+              supersededItemIds.add(itemId);
+            }
+          } catch {
+            // Ignore malformed audit details_json.
           }
-        } catch {
-          // Ignore malformed audit details_json.
         }
       }
     }

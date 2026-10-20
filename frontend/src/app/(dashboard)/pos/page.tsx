@@ -726,6 +726,7 @@ export default function POSPage() {
     const isAddonOrGeneralValidation =
       failure.reasonCode === 'order.addon_selection_required' ||
       failure.reasonCode === 'order.addon_unavailable' ||
+      failure.reasonCode === 'order.stock_insufficient' ||
       failure.reasonCode === 'validation.rejected';
     const rejectionMessage =
       isAddonOrGeneralValidation && failure.serverError

@@ -27,6 +27,26 @@ import {
   NO_CASH_SESSION_ID,
   requireOpenSessionForCashTender,
 } from '../services/shift-session-gate';
+import {
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  normalizeIpForRateLimit,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+} from '../middleware/security';
+
+export {
+  checkPinRateLimit,
+  isPinRateLimited,
+  clearPinRateLimit,
+  resetPinRateLimitForTests,
+  withPinVerificationLock,
+  PIN_MAX_ATTEMPTS,
+  PIN_WINDOW_MS,
+};
 import { getActiveCountryPack, scaleTaxSnapshots, type Customer } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
@@ -134,7 +154,8 @@ export async function preVerifyKitchenDeliveryPin(
   if (overridePin === undefined || overridePin === null || overridePin === '') {
     return null;
   }
-  const rateLimitKey = `pin:${clientIp}:kitchen-delivery`;
+  const canonicalIp = normalizeIpForRateLimit(clientIp);
+  const rateLimitKey = `pin:${canonicalIp}:kitchen-delivery`;
   if (isPinRateLimited(rateLimitKey)) {
     throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
       statusCode: 429,
@@ -145,22 +166,31 @@ export async function preVerifyKitchenDeliveryPin(
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
 
-  const managers = db
-    .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
-    .all() as { id: string; role: string; pin_hash: string }[];
-  for (const user of managers) {
-    if (hasRole(user.role, ROLE_ACCESS.ownerManager)) {
-      if (await verifyPinAsync(user.pin_hash, overridePin)) {
-        return { id: user.id, verifiedPinHash: user.pin_hash };
+  return withPinVerificationLock(rateLimitKey, async () => {
+    if (isPinRateLimited(rateLimitKey)) {
+      throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
+        statusCode: 429,
+      });
+    }
+
+    const managers = db
+      .prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1')
+      .all() as { id: string; role: string; pin_hash: string }[];
+    for (const user of managers) {
+      if (hasRole(user.role, ROLE_ACCESS.ownerManager)) {
+        if (await verifyPinAsync(user.pin_hash, overridePin)) {
+          clearPinRateLimit(rateLimitKey);
+          return { id: user.id, verifiedPinHash: user.pin_hash };
+        }
       }
     }
-  }
 
-  checkPinRateLimit(rateLimitKey);
-  throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+    checkPinRateLimit(rateLimitKey);
+    throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+  });
 }
 
-function checkKitchenDeliveryStatus(
+export function checkKitchenDeliveryStatus(
   db: ReturnType<typeof getDatabase>,
   orderId: string | number,
   overridePin?: unknown,
@@ -215,7 +245,8 @@ function checkKitchenDeliveryStatus(
   if (overridePin === undefined || overridePin === null || overridePin === '') {
     return { allowed: false, count: items.length, items };
   }
-  const rateLimitKey = `pin:${clientIp}:kitchen-delivery`;
+  const canonicalIp = normalizeIpForRateLimit(clientIp);
+  const rateLimitKey = `pin:${canonicalIp}:kitchen-delivery`;
   if (isPinRateLimited(rateLimitKey)) {
     throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), {
       statusCode: 429,
@@ -255,7 +286,7 @@ function checkKitchenDeliveryStatus(
     checkPinRateLimit(rateLimitKey);
     throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
   }
-  pinAttempts.delete(rateLimitKey);
+  clearPinRateLimit(rateLimitKey);
   return { allowed: true, count: items.length, items, overridden: true, managerUserId: manager.id };
 }
 
@@ -691,41 +722,6 @@ export function getOrdersWithItemsForBills(
 // Loyalty points are 1:1 with currency units — earning and redemption both
 // use this rate so a customer's point balance always equals its currency value.
 const LOYALTY_REDEMPTION_RATE = 1;
-
-// Rate limiting for PIN validation (simple in-memory)
-const pinAttempts = new Map<string, { count: number; resetAt: number }>();
-const PIN_MAX_ATTEMPTS = 5;
-const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-
-function checkPinRateLimit(key: string): boolean {
-  const nowMs = Date.now();
-  if (pinAttempts.size > 500) {
-    for (const [k, v] of pinAttempts.entries()) {
-      if (nowMs > v.resetAt) pinAttempts.delete(k);
-    }
-  }
-  const entry = pinAttempts.get(key);
-  if (!entry || nowMs > entry.resetAt) {
-    pinAttempts.set(key, { count: 1, resetAt: nowMs + PIN_WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= PIN_MAX_ATTEMPTS) return false;
-  entry.count++;
-  return true;
-}
-
-function isPinRateLimited(key: string): boolean {
-  const entry = pinAttempts.get(key);
-  if (!entry || Date.now() > entry.resetAt) {
-    pinAttempts.delete(key);
-    return false;
-  }
-  return entry.count >= PIN_MAX_ATTEMPTS;
-}
-
-export function resetPinRateLimitForTests(): void {
-  pinAttempts.clear();
-}
 
 function parsePaginationInteger(value: unknown, defaultValue: number): number | null {
   if (value === undefined || value === null || value === '') return defaultValue;
@@ -2969,13 +2965,25 @@ function preparePaymentBatch(
   if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
     throw paymentValidationError('Cannot accept payment on a refunded bill', 'bill_refunded', 409);
   }
-  if (bill.payment_status === 'paid')
-    throw paymentValidationError('Bill is already paid', 'bill_already_paid');
   const remainingCents = Math.max(
     0,
     Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor),
   );
+  const hasPositiveAmount = resolvedPayments.some((p) => {
+    if (p.amount === null || p.amount === undefined) return false;
+    const num = Number(p.amount);
+    return !Number.isNaN(num) && num > 0;
+  });
+  if (bill.payment_status === 'paid') {
+    if (hasPositiveAmount) {
+      throw paymentValidationError('Bill is already paid', 'bill_already_paid');
+    }
+    return { bill, prepared: [], existingPayments, effectiveCustomerId };
+  }
   if (remainingCents <= 0) {
+    if (hasPositiveAmount) {
+      throw paymentValidationError('Payment exceeds remaining balance', 'payment_exceeds_balance');
+    }
     return { bill, prepared: [], existingPayments, effectiveCustomerId };
   }
   const raw = resolvedPayments.map((payment) => {
@@ -3122,6 +3130,100 @@ function calculateCashback(
   return Math.floor(fullOrderCashback * splitRatio);
 }
 
+export function completeExactBalanceSettlement(
+  db: ReturnType<typeof getDatabase>,
+  billId: string | number,
+  newTotal: number,
+  currency: string,
+  changedAt: string = now(),
+  overridePin?: unknown,
+  clientIp = 'unknown',
+  preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
+): any {
+  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+  if (!bill) return null;
+
+  const kitchenStatus = checkKitchenDeliveryStatus(
+    db,
+    bill.order_id,
+    overridePin,
+    clientIp,
+    bill.id,
+    preVerifiedManager,
+  );
+  if (!kitchenStatus.allowed) {
+    return parseRowJson(bill);
+  }
+
+  db.prepare(
+    `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
+  ).run(changedAt, changedAt, billId);
+
+  const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+  if (!updatedBill) return null;
+
+  const unpaidSibling = db
+    .prepare(
+      `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
+    )
+    .get(bill.order_id, bill.id);
+  const orderFullyPaid = !unpaidSibling;
+  let orderRow: any = null;
+  if (orderFullyPaid) {
+    orderRow = db
+      .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+      .get(bill.order_id) as any;
+    const canComplete = orderRow && !['cancelled', 'completed'].includes(orderRow.status);
+    if (canComplete) {
+      db.prepare(
+        "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+      ).run(changedAt, changedAt, bill.order_id);
+      if (orderRow.table_id) {
+        db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+          changedAt,
+          orderRow.table_id,
+        );
+      }
+    }
+  }
+
+  const effectiveCustomerId = bill.customer_id || orderRow?.customer_id;
+  const cashback = calculateCashback(db, bill, effectiveCustomerId);
+  const alreadyCredited = db
+    .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)
+    .get(bill.id);
+  if (cashback > 0 && !alreadyCredited) {
+    let existingPayments: any[] = [];
+    try {
+      existingPayments = JSON.parse(bill.payment_details || '[]');
+    } catch {
+      existingPayments = [];
+    }
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
+    const walletCents = existingPayments
+      .filter((p: any) => p.method === 'wallet')
+      .reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * minorFactor), 0);
+    const totalCents = Math.round(Number(newTotal) * minorFactor);
+    const finalCashback = Math.floor(
+      cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))),
+    );
+    if (finalCashback > 0) {
+      db.prepare(
+        `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
+      ).run(
+        effectiveCustomerId,
+        bill.id,
+        finalCashback,
+        `Cashback on bill ${bill.bill_number}`,
+        changedAt,
+        changedAt,
+      );
+    }
+  }
+
+  return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
+}
+
 function applyPaymentBatch(
   db: ReturnType<typeof getDatabase>,
   billId: string,
@@ -3204,6 +3306,77 @@ function applyPaymentBatch(
         undelivered_count: kitchenStatus.count,
       },
     });
+  }
+  if (prepared.length === 0) {
+    const changedAt = now();
+    if (bill.payment_status !== 'paid') {
+      db.prepare(
+        `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,
+      ).run(changedAt, changedAt, billId);
+    }
+    const unpaidSibling = db
+      .prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`,
+      )
+      .get(bill.order_id, bill.id);
+    if (!unpaidSibling) {
+      const order = db
+        .prepare('SELECT status, table_id, customer_id FROM orders WHERE id = ?')
+        .get(bill.order_id) as any;
+      if (order && !['cancelled', 'completed'].includes(order.status)) {
+        db.prepare(
+          "UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+        ).run(changedAt, changedAt, bill.order_id);
+        if (order.table_id) {
+          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(
+            changedAt,
+            order.table_id,
+          );
+        }
+      }
+    }
+    const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+    const effectiveCustId = freshBill.customer_id;
+    const cashback = calculateCashback(db, freshBill, effectiveCustId);
+    const alreadyCredited = db
+      .prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`)
+      .get(freshBill.id);
+    let loyaltyPointsEarned = 0;
+    if (cashback > 0 && !alreadyCredited) {
+      let existingList: any[] = [];
+      try {
+        existingList = JSON.parse(freshBill.payment_details || '[]');
+      } catch {
+        existingList = [];
+      }
+      const currency = getTenantCurrency();
+      const minorFactor = getCurrencyMinorUnitFactor(currency);
+      const totalCents = Math.round(Number(freshBill.total || 0) * minorFactor);
+      const walletCents = existingList
+        .filter((p: any) => p.method === 'wallet')
+        .reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * minorFactor), 0);
+      const finalCashback = Math.floor(
+        cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))),
+      );
+      if (finalCashback > 0) {
+        db.prepare(
+          `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`,
+        ).run(
+          effectiveCustId,
+          freshBill.id,
+          finalCashback,
+          `Cashback on bill ${freshBill.bill_number}`,
+          changedAt,
+          changedAt,
+        );
+        loyaltyPointsEarned = finalCashback;
+      }
+    }
+    return {
+      bill: parseRowJson(freshBill),
+      walletDebited: false,
+      loyaltyPointsEarned,
+    };
   }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
@@ -3823,7 +3996,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
-      const { type, value, reason } = req.body;
+      const { type, value, reason, override_pin, approver_id, user_id, manager_id } = req.body;
 
       if (!type || !['percentage', 'amount'].includes(type)) {
         return res
@@ -3857,6 +4030,7 @@ router.post(
       }
 
       const db = getDatabase();
+      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as
         | ChargeBillRow
         | undefined;
@@ -3931,54 +4105,71 @@ router.post(
             .status(403)
             .json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        const rateLimitKey = `pin:${clientIp}:bill-discount`;
+        const canonicalIp = normalizeIpForRateLimit(clientIp);
+        const rateLimitKey = `pin:${canonicalIp}:bill-discount`;
         if (isPinRateLimited(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
-        type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
-        let user: ManagerCandidate | null = null;
-        if (managerId) {
-          const candidate = db
-            .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
-            )
-            .get(managerId) as ManagerCandidate | undefined;
-          if (
-            candidate &&
-            hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
-            hasPermission(candidate.id, 'bills.discount.apply') &&
-            candidate.pin_hash &&
-            (await verifyPinAsync(candidate.pin_hash, override_pin))
-          ) {
-            user = candidate;
-          }
-        } else {
-          const managers = db
-            .prepare(
-              'SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
-            )
-            .all() as ManagerCandidate[];
-          for (const u of managers) {
-            if (
-              hasRole(u.role, ROLE_ACCESS.ownerManager) &&
-              hasPermission(u.id, 'bills.discount.apply') &&
-              u.pin_hash &&
-              (await verifyPinAsync(u.pin_hash, override_pin))
-            ) {
-              user = u;
-              break;
-            }
-          }
-        }
-        if (!user) {
+        if (typeof override_pin !== 'string' || !/^\d{4,6}$/.test(override_pin)) {
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        pinAttempts.delete(rateLimitKey);
-        approvedByUserId = user.id;
-        preVerifiedPinHash = user.pin_hash ?? undefined;
+        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
+        const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
+          if (isPinRateLimited(rateLimitKey)) {
+            return { rateLimited: true };
+          }
+          let user: ManagerCandidate | null = null;
+          if (managerId) {
+            const candidate = db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .get(managerId) as ManagerCandidate | undefined;
+            if (
+              candidate &&
+              hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
+              hasPermission(candidate.id, 'bills.discount.apply') &&
+              candidate.pin_hash &&
+              (await verifyPinAsync(candidate.pin_hash, override_pin))
+            ) {
+              user = candidate;
+            }
+          } else {
+            const managers = db
+              .prepare(
+                'SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1',
+              )
+              .all() as ManagerCandidate[];
+            for (const u of managers) {
+              if (
+                hasRole(u.role, ROLE_ACCESS.ownerManager) &&
+                hasPermission(u.id, 'bills.discount.apply') &&
+                u.pin_hash &&
+                (await verifyPinAsync(u.pin_hash, override_pin))
+              ) {
+                user = u;
+                break;
+              }
+            }
+          }
+          if (!user) {
+            checkPinRateLimit(rateLimitKey);
+            return { user: null };
+          }
+          clearPinRateLimit(rateLimitKey);
+          return { user };
+        });
+
+        if (verifiedResult.rateLimited) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+        if (!verifiedResult.user) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+        approvedByUserId = verifiedResult.user.id;
+        preVerifiedPinHash = verifiedResult.user.pin_hash ?? undefined;
       }
 
       // Check discount mode
@@ -4185,12 +4376,28 @@ router.post(
           );
         }
         const freshNewBalance = Math.max(0, freshNewTotal - freshPaidAmount);
+        const preVerifiedDiscountApprover =
+          approvedByUserId && preVerifiedPinHash
+            ? { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash }
+            : null;
+        const kitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          currentBill.order_id,
+          override_pin,
+          clientIp,
+          currentBill.id,
+          preVerifiedDiscountApprover,
+        );
+        const isNowPaid = freshPaidAmount > 0 && freshNewBalance === 0 && kitchenStatus.allowed;
 
         db.prepare(`
         UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           service_charge = ?, packaging_charge = ?, charges_breakdown = ?,
-          total = ?, round_off = ?, balance = ?, updated_at = ?
+          total = ?, round_off = ?, balance = ?,
+          payment_status = CASE WHEN ? = 1 THEN 'paid' ELSE payment_status END,
+          paid_at = CASE WHEN ? = 1 THEN COALESCE(paid_at, ?) ELSE paid_at END,
+          updated_at = ?
         WHERE id = ?
       `).run(
           freshTotals.subtotal,
@@ -4207,6 +4414,9 @@ router.post(
           freshNewTotal,
           freshNewRoundOff,
           freshNewBalance,
+          isNowPaid ? 1 : 0,
+          isNowPaid ? 1 : 0,
+          now(),
           now(),
           req.params.id,
         );
@@ -4236,6 +4446,33 @@ router.post(
           now(),
           currentBill.order_id,
         );
+
+        if (isNowPaid) {
+          completeExactBalanceSettlement(
+            db,
+            String(req.params.id),
+            freshNewTotal,
+            currency,
+            now(),
+            override_pin,
+            clientIp,
+            preVerifiedDiscountApprover,
+          );
+        }
+
+        if (kitchenStatus.overridden && isNowPaid) {
+          recordOrderAudit(db, {
+            orderId: String(currentBill.order_id),
+            actorUserId: String(
+              (req as Request & { user?: { userId?: string } }).user?.userId || '',
+            ),
+            action: 'kitchen_delivery_override',
+            details: {
+              manager_user_id: kitchenStatus.managerUserId,
+              undelivered_count: kitchenStatus.count,
+            },
+          });
+        }
 
         recordOrderAudit(db, {
           orderId: String(currentBill.order_id),

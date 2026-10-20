@@ -445,7 +445,11 @@ instead of the shared one.
 
 The renderer's print surface is a decision tree, not a single path. All of it lives in
 [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts), and the shared kernel, renderers, and
-transports are described in [Printing architecture](printing.md).
+transports are described in [Printing architecture](printing.md). Before dispatching a bill or tax
+bill, `usePrinterStore` awaits receipt settings hydration (`ensureReceiptSettingsLoaded()`, backed
+by [`useReceiptSettingsSync`](../../frontend/src/hooks/useReceiptSettingsSync.ts)) so storefront
+branding and receipt metadata are loaded into `pos-settings.ts` from `GET /api/settings/business`
+before rendering.
 
 For a bill or a kitchen ticket, in the order the store tries them:
 

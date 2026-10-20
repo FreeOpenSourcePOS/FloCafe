@@ -53,6 +53,10 @@ async function main() {
   insertOrder.run('ORD-SYNTH-NOCUST-999', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run('ORD-SYNTH-ALPHA123', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run('ORD-SYNTH-EMOJI-🍕🍔', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('01-1234', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('2026-0042', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('#100-special', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run('ORD-SYNTH-TAB\t123', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   for (let i = 0; i < 55; i++) {
     insertOrder.run(
       `ORD-SEARCH-NEWER-${i}`,
@@ -355,6 +359,111 @@ async function main() {
         `repeated search ${i + 1} returns target order`,
       );
     }
+
+    // 12. Hyphenated numeric order number probe
+    const probeHyphenOrder = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('01-1234')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(
+      probeHyphenOrder.status,
+      200,
+      'probe search for hyphenated order number succeeds',
+    );
+    assertOrThrow(
+      probeHyphenOrder.data.orders.some((o: any) => o.order_number === '01-1234'),
+      'probe returns order matching hyphenated order number 01-1234',
+    );
+
+    // 13. Year-hyphenated order number and partial numeric sequence probe
+    const probeYearOrder = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('2026-0042')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(probeYearOrder.status, 200, 'probe search for 2026-0042 succeeds');
+    assertOrThrow(
+      probeYearOrder.data.orders.some((o: any) => o.order_number === '2026-0042'),
+      'probe returns order matching 2026-0042',
+    );
+
+    const probePartialHyphen = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('01-12')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(
+      probePartialHyphen.status,
+      200,
+      'probe search for partial hyphen sequence succeeds',
+    );
+    assertOrThrow(
+      probePartialHyphen.data.orders.some((o: any) => o.order_number === '01-1234'),
+      'probe returns order matching partial hyphen sequence 01-12',
+    );
+
+    const probeNumericSub = await api(baseUrl, `/api/orders?search=${encodeURIComponent('1234')}`, {
+      headers: owner.authHeader,
+    });
+    assertEqualOrThrow(probeNumericSub.status, 200, 'probe search for numeric substring succeeds');
+    assertOrThrow(
+      probeNumericSub.data.orders.some((o: any) => o.order_number === '01-1234'),
+      'probe returns order matching numeric substring 1234',
+    );
+
+    // 14. Special punctuation order number probe
+    const probeSpecialPunct = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('#100-')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(probeSpecialPunct.status, 200, 'probe search for #100- succeeds');
+    assertOrThrow(
+      probeSpecialPunct.data.orders.some((o: any) => o.order_number === '#100-special'),
+      'probe returns order matching #100-special',
+    );
+
+    // 15. Embedded NUL character probe
+    const probeNul = await api(baseUrl, `/api/orders?search=${encodeURIComponent('01-1234\0')}`, {
+      headers: owner.authHeader,
+    });
+    assertEqualOrThrow(probeNul.status, 200, 'probe search with embedded NUL succeeds without 500');
+
+    // 16. Control characters probe
+    const probeControl = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('\x01\x02test')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(
+      probeControl.status,
+      200,
+      'probe search with control chars succeeds without 500',
+    );
+
+    // 17. Embedded tab, newline, carriage return, and DEL probe
+    const probeTab = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('SYNTH-TAB\t123')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(probeTab.status, 200, 'probe search with embedded tab succeeds without 500');
+    assertOrThrow(
+      probeTab.data.orders.some((o: any) => o.order_number === 'ORD-SYNTH-TAB\t123'),
+      'probe returns order matching embedded tab via UDF fallback',
+    );
+
+    const probeNewlineCrDel = await api(
+      baseUrl,
+      `/api/orders?search=${encodeURIComponent('test\n\r\x7F')}`,
+      { headers: owner.authHeader },
+    );
+    assertEqualOrThrow(
+      probeNewlineCrDel.status,
+      200,
+      'probe search with newline, carriage return, and DEL succeeds without 500',
+    );
 
     const activePage1 = await api(
       baseUrl,

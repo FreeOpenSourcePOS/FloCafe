@@ -413,6 +413,53 @@ async function main() {
       '403 permission denial did not increment failed login attempts',
     );
 
+    // Verify that 403 permission denial does NOT reset previously accumulated failed attempts
+    // Record a 2nd failed attempt (leaving 3 attempts remaining):
+    const fail2 = await postJson(mainBaseUrl, '/api/auth/login', {
+      email: 'owner@test.com',
+      password: 'badPassword2',
+    });
+    assert.equal(fail2.status, 401);
+    assert.equal(fail2.body.attempts_remaining, 3, 'Accumulated 2 failures, 3 remaining');
+
+    // Trigger 403 on KDS with valid credentials for 'server'
+    const serverOnKds2 = await postJson(kdsBaseUrl, '/api/auth/login', {
+      email: 'server@test.com',
+      password: 'CorrectPassword123!',
+    });
+    assert.equal(serverOnKds2.status, 403, 'KDS returns 403');
+
+    // Next bad password must be the 3rd failure (2 remaining), NOT reset to 4 remaining!
+    const checkAfterKds403 = await postJson(mainBaseUrl, '/api/auth/login', {
+      email: 'owner@test.com',
+      password: 'badPassword3',
+    });
+    assert.equal(checkAfterKds403.status, 401);
+    assert.equal(
+      checkAfterKds403.body.attempts_remaining,
+      2,
+      '403 on KDS preserved accumulated failures and did not reset the failure counter',
+    );
+
+    // Trigger 403 on Server App with valid credentials for 'chef'
+    const chefOnServerApp2 = await postJson(serverAppBaseUrl, '/api/auth/login', {
+      email: 'chef@test.com',
+      password: 'CorrectPassword123!',
+    });
+    assert.equal(chefOnServerApp2.status, 403, 'Server App returns 403');
+
+    // Next bad password must be the 4th failure (1 remaining)
+    const checkAfterServer403 = await postJson(serverAppBaseUrl, '/api/auth/login', {
+      email: 'server@test.com',
+      password: 'badPassword4',
+    });
+    assert.equal(checkAfterServer403.status, 401);
+    assert.equal(
+      checkAfterServer403.body.attempts_remaining,
+      1,
+      '403 on Server App preserved accumulated failures and did not reset the failure counter',
+    );
+
     clearLoginRateLimits();
 
     // 2. Server App requires 'server-app.use' permission.

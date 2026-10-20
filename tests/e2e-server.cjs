@@ -32,6 +32,7 @@ process.env.FLO_AUTH_RATE_LIMIT_MAX = '1000';
 process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX = '100000';
 process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX = '1000';
 process.env.FLO_WHATSAPP_SOCKET_DISABLED = '1';
+process.env.FLO_MATRIX_OFFLINE = '1';
 process.env.NODE_ENV = 'test';
 
 const originalLoad = Module._load;

@@ -1,8 +1,6 @@
 /**
- * Tests for F3 (#1178): Discount kitchen delivery override approver identity binding.
- * Verifies bill, order, and item discount routes strictly bind kitchen delivery
- * overrides and exact-balance auto-settlements to the explicitly selected approver,
- * rejecting mismatched PINs with 403 even when discount_requires_approval is disabled.
+ * Tests for discount kitchen delivery override approver identity binding.
+ * Verifies discount routes bind overrides to the explicitly selected approver.
  */
 
 const Module = require('module');
@@ -10,7 +8,7 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-f3-discount-kitchen-'));
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-discount-kitchen-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
@@ -69,7 +67,7 @@ function orderRow(db: any, id: any): any {
 }
 
 async function run() {
-  console.log('Testing Discount Kitchen Delivery Approver Identity Binding (F3 / #1178)...');
+  console.log('Testing Discount Kitchen Delivery Approver Identity Binding...');
 
   const db = initTestDb();
 
@@ -118,9 +116,9 @@ async function run() {
     now(),
   );
 
-  seedCategory(db, 'cat-f3', 'F3 Category');
-  seedProduct(db, 'prod-1000', 'cat-f3', 'Item 1000', 1000);
-  seedTable(db, 'tbl-f3-1', 1);
+  seedCategory(db, 'cat-kitchen', 'Kitchen Category');
+  seedProduct(db, 'prod-1000', 'cat-kitchen', 'Item 1000', 1000);
+  seedTable(db, 'tbl-kitchen-1', 1);
 
   const app = createApp({
     '/api/orders': orderRoutes,
@@ -139,7 +137,7 @@ async function run() {
         method: 'POST',
         body: {
           type: 'dine_in',
-          table_id: 'tbl-f3-1',
+          table_id: 'tbl-kitchen-1',
           items: [{ product_id: 'prod-1000', quantity: 1 }],
         },
         headers: ownerAuth,
@@ -393,6 +391,103 @@ async function run() {
       );
       const bill = billRow(db, billId);
       assertEqualOrThrow(bill.payment_status, 'paid', 'Bill auto-settled to paid');
+      assertEqualOrThrow(orderRow(db, orderId).status, 'completed', 'Order completed');
+
+      const audit = db
+        .prepare(
+          `SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'kitchen_delivery_override'`,
+        )
+        .get(orderId) as any;
+      assertOrThrow(
+        Boolean(audit),
+        'kitchen_delivery_override audit log recorded when approval required',
+      );
+      const details = JSON.parse(audit.details_json);
+      assertEqualOrThrow(
+        details.manager_user_id,
+        managerA.id,
+        'Audit log attributes override to Manager A when approval required',
+      );
+    }
+
+    // ── 7. Conflicting approver identifiers reject with 400 ──
+    console.log('\n── Subtest 7: Conflicting approver identifiers reject with 400 ──');
+    {
+      const { orderId, billId } = await setupOrderWithPartialPayment();
+      const items = db
+        .prepare('SELECT id FROM order_items WHERE order_id = ?')
+        .all(orderId) as any[];
+      const itemId = items[0].id;
+
+      // Bill discount
+      const billConflictRes = await api(baseUrl, `/api/bills/${billId}/applyDiscount`, {
+        method: 'POST',
+        body: {
+          type: 'amount',
+          value: 100,
+          approver_id: managerA.id,
+          manager_id: managerB.id,
+        },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(
+        billConflictRes.status,
+        400,
+        'Bill discount with conflicting approvers returns 400',
+      );
+      assertEqualOrThrow(
+        billConflictRes.data.error,
+        'Conflicting approver identifiers',
+        'Bill discount reports conflicting approver error',
+      );
+
+      // Order discount
+      const orderConflictRes = await api(baseUrl, `/api/orders/${orderId}/discount`, {
+        method: 'POST',
+        body: {
+          discount_type: 'amount',
+          discount_value: 100,
+          approver_id: managerA.id,
+          manager_id: managerB.id,
+        },
+        headers: ownerAuth,
+      });
+      assertEqualOrThrow(
+        orderConflictRes.status,
+        400,
+        'Order discount with conflicting approvers returns 400',
+      );
+      assertEqualOrThrow(
+        orderConflictRes.data.error,
+        'Conflicting approver identifiers',
+        'Order discount reports conflicting approver error',
+      );
+
+      // Item discount
+      const itemConflictRes = await api(
+        baseUrl,
+        `/api/orders/${orderId}/items/${itemId}/discount`,
+        {
+          method: 'POST',
+          body: {
+            discount_type: 'amount',
+            discount_value: 100,
+            approver_id: managerA.id,
+            manager_id: managerB.id,
+          },
+          headers: ownerAuth,
+        },
+      );
+      assertEqualOrThrow(
+        itemConflictRes.status,
+        400,
+        'Item discount with conflicting approvers returns 400',
+      );
+      assertEqualOrThrow(
+        itemConflictRes.data.error,
+        'Conflicting approver identifiers',
+        'Item discount reports conflicting approver error',
+      );
     }
 
     console.log('✓ All discount kitchen approver identity tests passed!');

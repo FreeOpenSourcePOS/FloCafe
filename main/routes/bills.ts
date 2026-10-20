@@ -4075,7 +4075,13 @@ router.post(
     let operationCommitted = false;
     try {
       const { type, value, reason, override_pin, approver_id, user_id, manager_id } = req.body;
-      const explicitApproverId = approver_id ?? manager_id ?? user_id;
+      const suppliedApproverIds = [approver_id, manager_id, user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      if (new Set(suppliedApproverIds).size > 1) {
+        return res.status(400).json({ error: 'Conflicting approver identifiers' });
+      }
+      const explicitApproverId = suppliedApproverIds[0];
 
       if (!type || !['percentage', 'amount'].includes(type)) {
         return res
@@ -4193,7 +4199,7 @@ router.post(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        const managerId = explicitApproverId;
         type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
         const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
           if (isPinRateLimited(rateLimitKey)) {

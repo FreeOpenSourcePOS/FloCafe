@@ -1,8 +1,6 @@
 /**
- * Tests for F4 (#1242): Operational staff approver directory endpoint (/api/staff/approvers).
- * Verifies that operational staff members (cashier, server, etc.) without staff.view
- * can read active approvers with PINs via a minimal-projection endpoint, while
- * keeping GET /api/staff protected.
+ * Tests for operational staff approver directory endpoint (/api/staff/approvers).
+ * Verifies operational staff can read active approvers with PINs via minimal projection.
  */
 
 const Module = require('module');
@@ -10,7 +8,7 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-f4-staff-approvers-'));
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-staff-approvers-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
@@ -43,7 +41,7 @@ function makeAuthHeader(user: { id: string; email: string; role: string }) {
 }
 
 async function run() {
-  console.log('Testing Staff Approvers Directory (F4 / #1242)...');
+  console.log('Testing Staff Approvers Directory...');
 
   const db = initTestDb();
 

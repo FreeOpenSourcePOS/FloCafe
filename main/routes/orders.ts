@@ -3186,7 +3186,13 @@ const handleOrderDiscount = asyncHandler(async (req: Request, res: Response) => 
     }
 
     // Check if approval is required
-    const explicitApproverId = approver_id || manager_id || user_id;
+    const suppliedApproverIds = [approver_id, manager_id, user_id]
+      .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+      .map((val) => String(val).trim());
+    if (new Set(suppliedApproverIds).size > 1) {
+      return res.status(400).json({ error: 'Conflicting approver identifiers' });
+    }
+    const explicitApproverId = suppliedApproverIds[0];
     let approvedByUserId: string | undefined;
     let preVerifiedOrderDiscountPinHash: string | undefined;
     if (discount_value > 0) {
@@ -3694,7 +3700,13 @@ const handleItemDiscount = asyncHandler(async (req: Request, res: Response) => {
     }
 
     // Check if approval is required
-    const explicitApproverId = approver_id || req.body.manager_id || user_id;
+    const suppliedApproverIds = [approver_id, req.body.manager_id, user_id]
+      .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+      .map((val) => String(val).trim());
+    if (new Set(suppliedApproverIds).size > 1) {
+      return res.status(400).json({ error: 'Conflicting approver identifiers' });
+    }
+    const explicitApproverId = suppliedApproverIds[0];
     let approvedByUserId: string | undefined;
     let preVerifiedItemDiscountPinHash: string | undefined;
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';

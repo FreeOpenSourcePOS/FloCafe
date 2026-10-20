@@ -175,6 +175,72 @@ export function clearLoginRateLimits(): void {
   loginAttempts.clear();
 }
 
+// ── Shared Manager PIN Rate Limiting & Concurrency Accounting ─────────────────
+export const PIN_MAX_ATTEMPTS = 5;
+export const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+const pinAttempts = new Map<string, { count: number; resetAt: number }>();
+const pinVerificationLocks = new Map<string, Promise<void>>();
+
+export function checkPinRateLimit(key: string): boolean {
+  const nowMs = Date.now();
+  if (pinAttempts.size > 500) {
+    for (const [k, v] of pinAttempts.entries()) {
+      if (nowMs > v.resetAt) pinAttempts.delete(k);
+    }
+  }
+  const entry = pinAttempts.get(key);
+  if (!entry || nowMs > entry.resetAt) {
+    pinAttempts.set(key, { count: 1, resetAt: nowMs + PIN_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= PIN_MAX_ATTEMPTS) return false;
+  entry.count++;
+  return true;
+}
+
+export function isPinRateLimited(key: string): boolean {
+  const entry = pinAttempts.get(key);
+  if (!entry || Date.now() > entry.resetAt) {
+    pinAttempts.delete(key);
+    return false;
+  }
+  return entry.count >= PIN_MAX_ATTEMPTS;
+}
+
+export function clearPinRateLimit(key: string): void {
+  pinAttempts.delete(key);
+}
+
+export function resetPinRateLimitForTests(): void {
+  pinAttempts.clear();
+  pinVerificationLocks.clear();
+}
+
+/**
+ * Serializes PIN verification for the given rateLimitKey to ensure that
+ * simultaneous invalid requests do not execute redundant bcrypt computations
+ * in parallel before the failure counter is updated.
+ */
+export async function withPinVerificationLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = pinVerificationLocks.get(key) || Promise.resolve();
+  let resolveCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    resolveCurrent = resolve;
+  });
+  pinVerificationLocks.set(key, current);
+
+  try {
+    await previous.catch(() => {});
+    return await fn();
+  } finally {
+    resolveCurrent();
+    if (pinVerificationLocks.get(key) === current) {
+      pinVerificationLocks.delete(key);
+    }
+  }
+}
+
 /** Shared rate limiter for static/SPA file serving with private IP bypass. */
 export function staticRouteRateLimit(options: { windowMs?: number; limit?: number } = {}) {
   return expressRateLimit({

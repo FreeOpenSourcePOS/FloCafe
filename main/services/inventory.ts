@@ -203,8 +203,26 @@ export function adjustProductStock(
     stockLabel = 'Variant';
     stockIdArgs = [variantId, options.productId as string | number];
   }
-  const readStock = db.prepare(`SELECT stock_quantity FROM ${stockTable} WHERE ${stockKey}`);
-  const current = readStock.get(...stockIdArgs) as { stock_quantity: number | null } | undefined;
+  const readStock = db.prepare(`SELECT stock_quantity, name FROM ${stockTable} WHERE ${stockKey}`);
+  const current = readStock.get(...stockIdArgs) as
+    | { stock_quantity: number | null; name?: string }
+    | undefined;
+  let itemName: string | null = null;
+  if (current?.name) {
+    const safeName = (name: string) => (name.length > 60 ? `${name.slice(0, 57)}...` : name);
+    if (variantId && options.productId) {
+      const productRow = db
+        .prepare('SELECT name FROM products WHERE id = ?')
+        .get(options.productId as string | number) as { name?: string } | undefined;
+      itemName = productRow?.name
+        ? `"${safeName(productRow.name)}" (${safeName(current.name)})`
+        : `variant "${safeName(current.name)}"`;
+    } else if (addonId) {
+      itemName = `add-on "${safeName(current.name)}"`;
+    } else {
+      itemName = `"${safeName(current.name)}"`;
+    }
+  }
   const stockBefore = Number(current?.stock_quantity ?? 0);
   const targetPrecision = Math.max(
     INVENTORY_QUANTITY_PRECISION,
@@ -241,7 +259,10 @@ export function adjustProductStock(
     if (!current) {
       throw new InventoryServiceError(404, `${stockLabel} not found`);
     }
-    throw new InventoryServiceError(400, 'Insufficient stock');
+    throw new InventoryServiceError(
+      400,
+      itemName ? `Insufficient stock for ${itemName}` : 'Insufficient stock',
+    );
   }
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };

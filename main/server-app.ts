@@ -305,14 +305,14 @@ export function startServerApp(): Promise<void> {
           });
         }
 
-        resetSuccessfulLogin(ip);
-
         if (!hasPermission(user.id, 'server-app.use')) {
           return res.status(403).json({
             error: 'Access denied. Only server, manager, or owner accounts allowed.',
             code: 'permission_denied',
           });
         }
+
+        resetSuccessfulLogin(ip);
 
         const token = jwt.sign(
           { userId: user.id, email: user.email, role: user.role, jti: randomUUID() },

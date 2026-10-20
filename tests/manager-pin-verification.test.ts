@@ -316,7 +316,75 @@ async function run() {
     'PIN-only void records matching manager 1 in approved_by',
   );
 
-  // Test 11a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts
+  // Test 11: Completing unpaid order with shared PIN requires payment permission during pre-verification
+  // Seed two managers sharing PIN 5555:
+  // mgr-shared-nopay comes first alphabetically, but has payments.take denied
+  // mgr-shared-pay has default manager permissions including payments.take
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('mgr-shared-nopay', 'Manager No Pay', 'mgrnopay@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
+  `).run(bcrypt.hashSync('5555', 10), now(), now());
+  db.prepare(`
+    INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES ('mgr-shared-nopay', 'payments.take', 'deny', 'mgr-1', ?, ?)
+  `).run(now(), now());
+
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
+    VALUES ('mgr-shared-pay', 'Manager With Pay', 'mgrpay@test.local', 'Pass1234!', 'manager', ?, 1, ?, ?)
+  `).run(bcrypt.hashSync('5555', 10), now(), now());
+
+  const unpaidOrderRes = db
+    .prepare(`
+    INSERT INTO orders (order_number, type, subtotal, tax_amount, total, status, created_at, updated_at)
+    VALUES ('ORD-UNPAID-001', 'dine_in', 100, 0, 100, 'pending', ?, ?)
+  `)
+    .run(now(), now());
+  const unpaidOrderId = unpaidOrderRes.lastInsertRowid;
+
+  db.prepare(`
+    INSERT INTO bills (order_id, bill_number, subtotal, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+    VALUES (?, 'BILL-UNPAID-001', 100, 0, 100, 0, 100, 'unpaid', ?, ?)
+  `).run(unpaidOrderId, now(), now());
+
+  // Test 11a: Explicit approver who lacks payments.take fails with 403
+  const res11a = await request(app)
+    .patch(`/api/orders/${unpaidOrderId}/status`)
+    .set(cashierAuth)
+    .send({ status: 'completed', override_pin: '5555', approver_id: 'mgr-shared-nopay' });
+  assertEqual(res11a.status, 403, 'Explicit approver lacking payments.take is rejected with 403');
+  resetOrderPinRateLimit();
+
+  // Test 11b: Fallback PIN scan skips ineligible mgr-shared-nopay and authorizes mgr-shared-pay
+  const res11b = await request(app)
+    .patch(`/api/orders/${unpaidOrderId}/status`)
+    .set(cashierAuth)
+    .send({ status: 'completed', override_pin: '5555' });
+  assertEqual(
+    res11b.status,
+    200,
+    'Fallback PIN scan authorizes eligible manager with payments.take',
+  );
+  resetOrderPinRateLimit();
+
+  const completedOrder = db
+    .prepare('SELECT status FROM orders WHERE id = ?')
+    .get(unpaidOrderId) as any;
+  assertEqual(completedOrder.status, 'completed', 'Order status updated to completed');
+
+  const auditLog11 = db
+    .prepare(`
+    SELECT * FROM order_audit_log WHERE order_id = ? ORDER BY id DESC LIMIT 1
+  `)
+    .get(unpaidOrderId) as any;
+  assert(!!auditLog11, 'Audit log entry created for completed unpaid order');
+  assertEqual(
+    JSON.parse(auditLog11.details_json || '{}').approved_by,
+    'mgr-shared-pay',
+    'Audit log attributes approval to eligible mgr-shared-pay',
+  );
+
+  // Test 12a: Concurrent burst of 10 invalid PIN requests locks out after 5 attempts
   resetBillPinRateLimit();
   const invalidBurst = await Promise.all(
     Array.from({ length: 10 }, () =>
@@ -344,7 +412,7 @@ async function run() {
     .send({ type: 'percentage', value: 10, override_pin: '1111' });
   assertEqual(lockedOutRes.status, 429, 'Subsequent attempt during lockout returns 429');
 
-  // Test 11b: Concurrent valid PIN requests succeed and do not trigger false 429 lockouts
+  // Test 12b: Concurrent valid PIN requests succeed and do not trigger false 429 lockouts
   resetBillPinRateLimit();
   const validBurst = await Promise.all(
     Array.from({ length: 5 }, () =>
@@ -358,8 +426,7 @@ async function run() {
     assertEqual(res.status, 200, 'Concurrent valid PIN request succeeds with 200');
   }
   resetBillPinRateLimit();
-
-  // Test 12: Kitchen delivery override manager selection binding
+  // Test 13: Kitchen delivery override manager selection binding
   db.prepare(
     "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('require_kitchen_delivered_before_settlement', 'true', ?)",
   ).run(now());
@@ -387,7 +454,7 @@ async function run() {
     .run(kdOrderId1, now(), now());
   const kdBillId1 = kdBillRes1.lastInsertRowid;
 
-  // Test 12a: Kitchen items undelivered without override fails with 409
+  // Test 13a: Kitchen items undelivered without override fails with 409
   const res12a = await request(app)
     .post(`/api/bills/${kdBillId1}/payment`)
     .set(cashierAuth)
@@ -398,7 +465,7 @@ async function run() {
     'Payment with undelivered items without override PIN returns 409',
   );
 
-  // Test 12b: Mismatched manager ID and PIN fails with 403
+  // Test 13b: Mismatched manager ID and PIN fails with 403
   resetBillPinRateLimit();
   const res12b = await request(app)
     .post(`/api/bills/${kdBillId1}/payment`)
@@ -411,7 +478,7 @@ async function run() {
   );
   resetBillPinRateLimit();
 
-  // Test 12c: Inactive manager ID fails with 403
+  // Test 13c: Inactive manager ID fails with 403
   const res12c = await request(app)
     .post(`/api/bills/${kdBillId1}/payment`)
     .set(cashierAuth)
@@ -419,7 +486,7 @@ async function run() {
   assertEqual(res12c.status, 403, 'Kitchen override with inactive manager ID fails with 403');
   resetBillPinRateLimit();
 
-  // Test 12d: Matching manager ID and PIN succeeds with 200 and records audit log
+  // Test 13d: Matching manager ID and PIN succeeds with 200 and records audit log
   const res12d = await request(app)
     .post(`/api/bills/${kdBillId1}/payment`)
     .set(cashierAuth)

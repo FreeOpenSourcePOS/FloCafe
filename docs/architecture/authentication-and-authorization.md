@@ -138,10 +138,13 @@ say. To prevent event loop starvation and transaction lock contention during CPU
 evaluations, manager PINs are verified asynchronously via `verifyPinAsync` outside the transaction,
 serialized per client IP and action key with `withPinVerificationLock` from
 [`main/middleware/security.ts`](../../main/middleware/security.ts) (re-checking client-IP rate limits
-inside the lock before executing bcrypt). The pre-verified approver is then atomically re-validated
-inside `withTxn` against current SQLite state (active status, owner/manager role, required permissions,
-and matching `pin_hash`). The check cannot be hoisted into middleware without changing the read the
-decision is based on, and it is invisible to anything that inspects the route's middleware chain.
+inside the lock before executing bcrypt). Candidate filtering during pre-verification enforces the
+role and permissions required by the transition (including `payments.take` when completion is
+blocked by unsettled payment), ensuring fallback PIN scanning only matches eligible approvers. The
+pre-verified approver is then atomically re-validated inside `withTxn` against current SQLite state
+(active status, owner/manager role, required permissions, and matching `pin_hash`). The check cannot
+be hoisted into middleware without changing the read the decision is based on, and it is invisible to
+anything that inspects the route's middleware chain.
 
 **KDS WebSocket authorization.** The KDS socket authenticates with the same bearer token but
 authorizes per message. See below.

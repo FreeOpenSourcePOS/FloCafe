@@ -405,11 +405,9 @@ function moveOrderItemAddonStock(
       const pool = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addon.id) as
         | { stock_quantity: number }
         | undefined;
-      throw Object.assign(
-        new Error(
-          `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
-        ),
-        { statusCode: 400 },
+      throw new InventoryServiceError(
+        400,
+        `Add-on "${addon.name}" is out of stock (requested ${quantity}, available ${Number(pool?.stock_quantity ?? 0)})`,
       );
     }
   }
@@ -2284,23 +2282,69 @@ router.post(
   },
 );
 
-interface OrderStatusBillEvaluationRow {
-  id?: number | string;
-  total?: number | string | null;
-  round_off?: number | string | null;
-  paid_amount?: number | string | null;
-  refunded_cents?: number | string | null;
-  balance?: number | string | null;
-  payment_status?: string | null;
-  payment_details?: unknown;
-}
+function evaluateOrderStatusPaymentBlock(
+  db: ReturnType<typeof getDatabase>,
+  orderId: string | number | unknown,
+  orderTotal: unknown,
+  orderRoundOff: unknown,
+): {
+  minorFactor: number;
+  roundCurrency: (amount: number) => number;
+  evaluatedBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  orderTotalMinor: number;
+  payableBills: Array<{
+    id: string;
+    paymentStatus: string;
+    totalMinor: number;
+    unroundedTotalMinor: number;
+    recordedPaidMinor: number;
+    effectiveCollectedMinor: number;
+    hasCollectedFunds: boolean;
+    isPayable: boolean;
+    unpaidBalanceMinor: number;
+    isSettled: boolean;
+  }>;
+  totalOutstandingMinor: number;
+  totalCollectedMinor: number;
+  paymentBlocksCompletion: boolean;
+} {
+  const tenantCurrency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+  const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
+  const roundCurrency = (amount: number): number =>
+    fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
 
-function evaluateOrderPaymentCompletion(
-  order: { total?: number | string | null; round_off?: number | string | null } | null | undefined,
-  bills: OrderStatusBillEvaluationRow[],
-  minorFactor = 100,
-) {
-  const evaluatedBills = bills.map((b) => {
+  const billRows = db
+    .prepare(`
+      SELECT b.*,
+             COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
+      FROM bills b
+      WHERE b.order_id = ?
+      ORDER BY b.id ASC
+    `)
+    .all(String(orderId)) as Array<{
+    id: string;
+    total?: number | null;
+    round_off?: number | null;
+    paid_amount?: number | null;
+    refunded_cents?: number | null;
+    balance?: number | null;
+    payment_details?: unknown;
+    payment_status?: string | null;
+  }>;
+
+  const evaluatedBills = billRows.map((b) => {
     const totalMinor = Math.max(0, Math.round(Number(b.total || 0) * minorFactor));
     const roundOffMinor = Math.round(Number(b.round_off || 0) * minorFactor);
     const unroundedTotalMinor = Math.max(0, totalMinor - roundOffMinor);
@@ -2360,8 +2404,8 @@ function evaluateOrderPaymentCompletion(
     };
   });
 
-  const orderTotalMinor = Math.max(0, Math.round(Number(order?.total || 0) * minorFactor));
-  const orderRoundOffMinor = Math.round(Number(order?.round_off || 0) * minorFactor);
+  const orderTotalMinor = Math.max(0, Math.round(Number(orderTotal || 0) * minorFactor));
+  const orderRoundOffMinor = Math.round(Number(orderRoundOff || 0) * minorFactor);
   const orderUnroundedTotalMinor = Math.max(0, orderTotalMinor - orderRoundOffMinor);
   const effectiveOrderTargetMinor = Math.min(orderTotalMinor, orderUnroundedTotalMinor);
   const payableBills = evaluatedBills.filter((b) => b.isPayable);
@@ -2377,22 +2421,20 @@ function evaluateOrderPaymentCompletion(
     payableBills.reduce((sum, b) => sum + b.unpaidBalanceMinor, 0) + unbilledMinor;
   const totalCollectedMinor = evaluatedBills.reduce((sum, b) => sum + b.effectiveCollectedMinor, 0);
 
-  const requiresPaymentOverride =
+  const paymentBlocksCompletion =
     totalOutstandingMinor > 0 ||
     (orderTotalMinor > 0 && payableBills.length === 0) ||
     payableBills.some((b) => !b.isSettled);
 
   return {
+    minorFactor,
+    roundCurrency,
     evaluatedBills,
-    payableBills,
     orderTotalMinor,
-    orderRoundOffMinor,
-    orderUnroundedTotalMinor,
-    effectiveOrderTargetMinor,
-    unbilledMinor,
+    payableBills,
     totalOutstandingMinor,
     totalCollectedMinor,
-    requiresPaymentOverride,
+    paymentBlocksCompletion,
   };
 }
 
@@ -2441,6 +2483,16 @@ router.patch(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+
+        const preVerificationRequiresPayment =
+          status === 'completed' &&
+          evaluateOrderStatusPaymentBlock(
+            db,
+            req.params.id,
+            (order as any).total,
+            (order as any).round_off,
+          ).paymentBlocksCompletion;
+
         const explicitApproverId = req.body.approver_id || req.body.manager_id || req.body.user_id;
         const candidateUsers = explicitApproverId
           ? (db
@@ -2462,7 +2514,8 @@ router.patch(
             if (
               hasRole(candidate.role, ROLE_ACCESS.ownerManager) &&
               hasPermission(candidate.id, 'orders.status.update') &&
-              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel'))
+              (status !== 'cancelled' || hasPermission(candidate.id, 'orders.item.cancel')) &&
+              (!preVerificationRequiresPayment || hasPermission(candidate.id, 'payments.take'))
             ) {
               if (await verifyPinAsync(candidate.pin_hash, override_pin)) {
                 clearPinRateLimit(rateLimitKey);
@@ -2556,41 +2609,22 @@ router.patch(
         const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
         const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
 
-        const tenantCurrency = getTenantCurrency();
-        const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
-        const fractionDigits = getCurrencyFractionDigits(tenantCurrency);
-        const roundCurrency = (amount: number): number =>
-          fractionDigits === 0 ? Math.round(amount) : Number(amount.toFixed(fractionDigits));
-
-        const billRows = db
-          .prepare(`
-            SELECT b.*,
-                   COALESCE((SELECT SUM(r.amount_cents) FROM refunds r WHERE r.bill_id = b.id), 0) AS refunded_cents
-            FROM bills b
-            WHERE b.order_id = ?
-            ORDER BY b.id ASC
-          `)
-          .all(req.params.id) as Array<{
-          id: string;
-          total?: number | null;
-          round_off?: number | null;
-          paid_amount?: number | null;
-          refunded_cents?: number | null;
-          balance?: number | null;
-          payment_details?: unknown;
-          payment_status?: string | null;
-        }>;
-
         const {
+          minorFactor,
+          roundCurrency,
           evaluatedBills,
-          payableBills,
           orderTotalMinor,
+          payableBills,
           totalOutstandingMinor,
           totalCollectedMinor,
-          requiresPaymentOverride,
-        } = evaluateOrderPaymentCompletion(currentOrder, billRows, minorFactor);
-
-        const paymentBlocksCompletion = status === 'completed' && requiresPaymentOverride;
+          paymentBlocksCompletion: rawPaymentBlocksCompletion,
+        } = evaluateOrderStatusPaymentBlock(
+          db,
+          req.params.id,
+          currentOrder.total,
+          currentOrder.round_off,
+        );
+        const paymentBlocksCompletion = status === 'completed' && rawPaymentBlocksCompletion;
 
         const requireKitchenDelivered = db
           .prepare(

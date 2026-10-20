@@ -34,6 +34,8 @@
  * failures through getResults().
  */
 
+process.env.NODE_ENV = 'test';
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');

@@ -329,7 +329,9 @@ one. Failures without a registered tuple may retain the `{ error }` response.
   separate operation via `/api/refunds`) and restores product, variant, add-on, and recipe stock
   only for items still in `pending` status.
 - When `approver_id` (or `manager_id`, `user_id`) is supplied on an overridden transition, PIN verification is
-  restricted to that active user without falling back to scanning other managers. Every overridden `status_changed` audit log entry records
+  restricted to that active user without falling back to scanning other managers. When omitted, candidate managers
+  are evaluated, skipping users who lack the required role or permissions (including `payments.take` when completion
+  is blocked by unsettled payment). Every overridden `status_changed` audit log entry records
   `actor_user_id`, `approved_by`, `overridden_safeguards`, `bill_ids`, `outstanding_amount`,
   `outstanding_amounts`, and `collected_amount` (plus `undelivered_items` when overriding kitchen
   delivery), and never records the PIN.

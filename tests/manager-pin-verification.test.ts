@@ -316,7 +316,7 @@ async function run() {
     'PIN-only void records matching manager 1 in approved_by',
   );
 
-  // Test 11 (Issue #1207): Completing unpaid order with shared PIN requires payment permission during pre-verification
+  // Test 11: Completing unpaid order with shared PIN requires payment permission during pre-verification
   // Seed two managers sharing PIN 5555:
   // mgr-shared-nopay comes first alphabetically, but has payments.take denied
   // mgr-shared-pay has default manager permissions including payments.take

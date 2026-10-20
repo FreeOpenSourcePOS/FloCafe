@@ -1,11 +1,4 @@
-/**
- * Regression test suite for Financial Settlement Remediation:
- * - F1: Prevent zero-amount payment on already-paid bill from re-awarding loyalty cashback or enforcing kitchen delivery
- * - F2: Ensure zero-balance settlements persist payment idempotency and decouple PIN verification on replay
- * - Concurrency: Deterministic interleaving between owner reject / order cancellation and waiter payment
- *
- * Run: node tests/run-electron-node-test.cjs tests/bills-settlement-idempotency.test.ts
- */
+// Verification of settlement idempotency, zero-balance replays, and payment concurrency.
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -94,7 +87,7 @@ function checkEqual(actual: any, expected: any, message: string): void {
 }
 
 async function run(): Promise<void> {
-  console.log('Testing Financial Settlement Remediation (F1, F2 & Concurrency)...');
+  console.log('Testing Financial Settlement Remediation (Settlement Idempotency & Concurrency)...');
   console.log('='.repeat(70));
 
   const db = initTestDb();
@@ -118,7 +111,7 @@ async function run(): Promise<void> {
   seedCategory(db, 'cat-settle', 'Settle menu');
   seedProduct(db, 'prod-1000', 'cat-settle', 'Thousand', 1000, { cb_percent: 10 });
   seedProduct(db, 'prod-500', 'cat-settle', 'Five hundred', 500, { cb_percent: 10 });
-  seedCustomer(db, 'cust-f1', 'F1 Loyalty Customer');
+  seedCustomer(db, 'cust-f1', 'Loyalty Customer');
   seedTable(db, 'table-settle-1', 1);
   seedTable(db, 'table-settle-2', 2);
 
@@ -129,17 +122,13 @@ async function run(): Promise<void> {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    // ═════════════════════════════════════════════════════════════════════════
-    // SECTION 1: Finding F1 (Issue #1241)
-    // Zero-amount payment on already-paid bill must NOT re-award loyalty cashback
-    // and must NOT require kitchen delivery check / override PIN
-    // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- Section 1: Finding F1 - Loyalty & Kitchen Guard on Already-Paid Bill ---');
+    // Zero-amount payments on already-paid bills must not re-award loyalty points or enforce kitchen delivery.
+    console.log('\n--- Section 1: Paid Bill Loyalty & Kitchen Delivery Checks ---');
 
-    // 1.1 Single Payment: Already-paid bill zero-amount call does not re-award loyalty points
+    // Single payment zero-amount call on paid bill with loyalty enabled post-settlement
     {
       console.log(
-        '\n[F1.1] Single payment zero-amount call on paid bill with loyalty enabled post-settlement',
+        '\n[1.1] Single payment zero-amount call on paid bill with loyalty enabled post-settlement',
       );
       setSetting(db, 'loyalty_enabled', 'false');
 
@@ -273,10 +262,10 @@ async function run(): Promise<void> {
       );
     }
 
-    // 1.2 Batch Payments: Already-paid bill zero-amount call does not re-award loyalty points
+    // Batch payments zero-amount call on paid bill with loyalty enabled post-settlement
     {
       console.log(
-        '\n[F1.2] Batch payments zero-amount call on paid bill with loyalty enabled post-settlement',
+        '\n[1.2] Batch payments zero-amount call on paid bill with loyalty enabled post-settlement',
       );
       setSetting(db, 'loyalty_enabled', 'false');
 
@@ -366,9 +355,9 @@ async function run(): Promise<void> {
       );
     }
 
-    // 1.3 Normal paid bill zero-amount call does not mutate bill/order/table state
+    // Paid bill zero-amount call does not mutate bill/order/table state
     {
-      console.log('\n[F1.3] Zero-amount call on paid bill does not mutate database records');
+      console.log('\n[1.3] Zero-amount call on paid bill does not mutate database records');
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
         body: {
@@ -418,10 +407,10 @@ async function run(): Promise<void> {
       checkEqual(orderAfter.updated_at, orderBefore.updated_at, 'Order updated_at untouched');
     }
 
-    // 1.4 Already-paid bill with undelivered kitchen items skips kitchen verification
+    // Already-paid bill with undelivered kitchen items skips kitchen verification
     {
       console.log(
-        '\n[F1.4] Paid bill with undelivered kitchen items does not require override PIN on 0-amount call',
+        '\n[1.4] Paid bill with undelivered kitchen items does not require override PIN on 0-amount call',
       );
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -515,19 +504,13 @@ async function run(): Promise<void> {
       );
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // SECTION 2: Finding F2 (Issue #1205)
-    // Zero-balance settlement must persist payment idempotency and decouple PIN
-    // verification on idempotent replays
-    // ═════════════════════════════════════════════════════════════════════════
-    console.log(
-      '\n--- Section 2: Finding F2 - Zero-Balance Settlement Idempotency & PIN Decoupling ---',
-    );
+    // Zero-balance settlement must persist payment idempotency and decouple PIN verification on replay.
+    console.log('\n--- Section 2: Zero-Balance Settlement Idempotency & PIN Decoupling ---');
 
-    // 2.1 Single Payment: Zero-balance settlement persists idempotency and succeeds on replay after PIN rotation
+    // Single payment zero-balance settlement persists idempotency and succeeds on replay after PIN rotation
     {
       console.log(
-        '\n[F2.1] Single payment zero-balance settlement idempotency & replay with rotated PIN',
+        '\n[2.1] Single payment zero-balance settlement idempotency & replay with rotated PIN',
       );
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -619,6 +602,16 @@ async function run(): Promise<void> {
         'paid',
         'Replay returns cached bill response with paid status',
       );
+      checkEqual(
+        replayRes.data?.kitchenDeliveryOverridden,
+        true,
+        'Replay preserves kitchenDeliveryOverridden from idempotency cache',
+      );
+      checkEqual(
+        JSON.stringify(replayRes.data),
+        JSON.stringify(initialSettleRes.data),
+        'Single-payment replay body matches initial response',
+      );
 
       // Reset PIN back to 1234
       db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
@@ -627,10 +620,10 @@ async function run(): Promise<void> {
       );
     }
 
-    // 2.2 Batch Payments: Zero-balance settlement persists idempotency and succeeds on replay
+    // Batch payments zero-balance settlement persists idempotency and succeeds on replay
     {
       console.log(
-        '\n[F2.2] Batch payments zero-balance settlement idempotency & replay with rotated PIN',
+        '\n[2.2] Batch payments zero-balance settlement idempotency & replay with rotated PIN',
       );
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -708,6 +701,16 @@ async function run(): Promise<void> {
         'paid',
         'Batch replay returns cached paid bill response',
       );
+      checkEqual(
+        batchReplayRes.data?.kitchenDeliveryOverridden,
+        true,
+        'Batch replay preserves kitchenDeliveryOverridden from idempotency cache',
+      );
+      checkEqual(
+        JSON.stringify(batchReplayRes.data),
+        JSON.stringify(initialBatchRes.data),
+        'Batch-payment replay body matches initial response',
+      );
 
       // Reset PIN
       db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(
@@ -716,15 +719,12 @@ async function run(): Promise<void> {
       );
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // SECTION 3: Concurrency Regression Tests
-    // Deterministic interleaving: Owner reject / cancellation vs Waiter payment
-    // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- Section 3: Concurrency - Owner Reject / Cancellation vs Waiter Payment ---');
+    // Deterministic interleaving between order cancellation and waiter payment.
+    console.log('\n--- Section 3: Concurrency - Cancellation vs Waiter Payment ---');
 
-    // 3.1 Order cancellation races with waiter payment at async pre-verification boundary
+    // Order cancellation races with waiter payment at async pre-verification boundary
     {
-      console.log('\n[C3.1] Owner cancels order during waiter async PIN verification');
+      console.log('\n[3.1] Owner cancels order during waiter async PIN verification');
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
         body: {
@@ -800,10 +800,10 @@ async function run(): Promise<void> {
       checkEqual(Number(finalBill?.balance), 0, 'Bill balance is 0');
     }
 
-    // 3.2 In-flight owner reject (invalid PIN) vs waiter payment (valid PIN)
+    // In-flight owner reject (invalid PIN) vs waiter payment (valid PIN)
     {
       console.log(
-        '\n[C3.2] Concurrent in-flight payment attempt: Owner with invalid PIN, Waiter with valid PIN',
+        '\n[3.2] Concurrent in-flight payment attempt: Owner with invalid PIN, Waiter with valid PIN',
       );
       const createOrder = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -826,7 +826,21 @@ async function run(): Promise<void> {
 
       const sharedIdemKey = 'idem-race-owner-reject-waiter-valid-001';
 
-      // Launch both requests concurrently
+      let waiterReq: Promise<any> | null = null;
+      pinApprovalHook = async () => {
+        waiterReq = api(baseUrl, `/api/bills/${billId}/payment`, {
+          method: 'POST',
+          body: {
+            method: 'cash',
+            amount: 500,
+            override_pin: managerAPin, // Valid PIN 1234
+            approver_id: managerId,
+          },
+          headers: { ...ownerAuth, 'Idempotency-Key': sharedIdemKey },
+        });
+        await new Promise((r) => setTimeout(r, 30));
+      };
+
       const ownerReq = api(baseUrl, `/api/bills/${billId}/payment`, {
         method: 'POST',
         body: {
@@ -838,25 +852,15 @@ async function run(): Promise<void> {
         headers: { ...ownerAuth, 'Idempotency-Key': sharedIdemKey },
       });
 
-      const waiterReq = api(baseUrl, `/api/bills/${billId}/payment`, {
-        method: 'POST',
-        body: {
-          method: 'cash',
-          amount: 500,
-          override_pin: managerAPin, // Valid PIN 1234
-          approver_id: managerId,
-        },
-        headers: { ...ownerAuth, 'Idempotency-Key': sharedIdemKey },
-      });
+      const ownerRes = await ownerReq;
+      const waiterRes = await waiterReq!;
 
-      const [ownerRes, waiterRes] = await Promise.all([ownerReq, waiterReq]);
-
-      // Either owner got 403 and waiter got 200, or waiter got 200 and owner shared the 200 result
-      check(
-        [200, 403].includes(ownerRes.status),
-        'Owner attempt returns 403 (if processed first) or 200 (if resolved by waiter)',
+      checkEqual(ownerRes.status, 403, 'Owner attempt with invalid PIN fails with 403');
+      checkEqual(
+        waiterRes.status,
+        200,
+        'Queued waiter attempt recovers after failed in-flight attempt and succeeds with 200',
       );
-      checkEqual(waiterRes.status, 200, 'Waiter attempt with valid PIN succeeds with 200');
       checkEqual(waiterRes.data?.bill?.payment_status, 'paid', 'Bill is settled');
 
       // Check payment count in database

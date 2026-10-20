@@ -1,11 +1,5 @@
 /**
  * Regression tests for legacy high-precision inventory stock quantities and backup/restore.
- *
- * Covers defect F6 (Issue #1217):
- * Preserving ledger chain continuity across stock adjustments for legacy
- * 12-, 15-, and 16-decimal IEEE-754 stock values across product, variant,
- * and add-on pools, plus backup snapshot and restore round-trips, and
- * historical v114 restore with populated data.
  */
 const Module = require('module');
 const originalLoad = Module._load;
@@ -41,13 +35,123 @@ const {
 const { adjustProductStock } = require('../main/services/inventory');
 const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
+function assertProductStockPrecision(
+  db: any,
+  productId: string,
+  expectedStock: number,
+  expectedDelta: number,
+  adjResult: { stockBefore: number; stockAfter: number },
+) {
+  assertEqualOrThrow(
+    adjResult.stockAfter,
+    expectedStock,
+    `Returned stockAfter matches expected precision for product ${productId}`,
+  );
+  const row = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId) as {
+    stock_quantity: number;
+  };
+  assertEqualOrThrow(
+    row.stock_quantity,
+    expectedStock,
+    `Saved products.stock_quantity matches exact IEEE-754 precision for ${productId}`,
+  );
+  const movement = db
+    .prepare(
+      'SELECT stock_after, quantity_delta FROM inventory_movements WHERE product_id = ? AND variant_id IS NULL AND addon_id IS NULL ORDER BY id DESC LIMIT 1',
+    )
+    .get(productId) as { stock_after: number; quantity_delta: number };
+  assertEqualOrThrow(
+    movement.stock_after,
+    expectedStock,
+    `Movement stock_after matches exact IEEE-754 precision for ${productId}`,
+  );
+  assertEqualOrThrow(
+    movement.quantity_delta,
+    expectedDelta,
+    `Movement quantity_delta matches exact delta for ${productId}`,
+  );
+}
+
+function assertVariantStockPrecision(
+  db: any,
+  variantId: string,
+  expectedStock: number,
+  expectedDelta: number,
+  adjResult: { stockBefore: number; stockAfter: number },
+) {
+  assertEqualOrThrow(
+    adjResult.stockAfter,
+    expectedStock,
+    `Returned stockAfter matches expected precision for variant ${variantId}`,
+  );
+  const row = db
+    .prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
+    .get(variantId) as { stock_quantity: number };
+  assertEqualOrThrow(
+    row.stock_quantity,
+    expectedStock,
+    `Saved product_variants.stock_quantity matches exact IEEE-754 precision for ${variantId}`,
+  );
+  const movement = db
+    .prepare(
+      'SELECT stock_after, quantity_delta FROM inventory_movements WHERE variant_id = ? ORDER BY id DESC LIMIT 1',
+    )
+    .get(variantId) as { stock_after: number; quantity_delta: number };
+  assertEqualOrThrow(
+    movement.stock_after,
+    expectedStock,
+    `Movement stock_after matches exact IEEE-754 precision for ${variantId}`,
+  );
+  assertEqualOrThrow(
+    movement.quantity_delta,
+    expectedDelta,
+    `Movement quantity_delta matches exact delta for ${variantId}`,
+  );
+}
+
+function assertAddonStockPrecision(
+  db: any,
+  addonId: string,
+  expectedStock: number,
+  expectedDelta: number,
+  adjResult: { stockBefore: number; stockAfter: number },
+) {
+  assertEqualOrThrow(
+    adjResult.stockAfter,
+    expectedStock,
+    `Returned stockAfter matches expected precision for addon ${addonId}`,
+  );
+  const row = db.prepare('SELECT stock_quantity FROM addons WHERE id = ?').get(addonId) as {
+    stock_quantity: number;
+  };
+  assertEqualOrThrow(
+    row.stock_quantity,
+    expectedStock,
+    `Saved addons.stock_quantity matches exact IEEE-754 precision for ${addonId}`,
+  );
+  const movement = db
+    .prepare(
+      'SELECT stock_after, quantity_delta FROM inventory_movements WHERE addon_id = ? ORDER BY id DESC LIMIT 1',
+    )
+    .get(addonId) as { stock_after: number; quantity_delta: number };
+  assertEqualOrThrow(
+    movement.stock_after,
+    expectedStock,
+    `Movement stock_after matches exact IEEE-754 precision for ${addonId}`,
+  );
+  assertEqualOrThrow(
+    movement.quantity_delta,
+    expectedDelta,
+    `Movement quantity_delta matches exact delta for ${addonId}`,
+  );
+}
+
 async function run() {
   console.log('Running legacy inventory precision and backup/restore tests...');
   initDatabase();
   const db = getDatabase();
 
   try {
-    // Seed prerequisite categories and user
     db.prepare(`
       INSERT OR IGNORE INTO users (id, name, email, password, role, pin, created_at, updated_at)
       VALUES ('u-owner', 'Owner', 'owner@example.com', 'hash', 'owner', '1234', ?, ?)
@@ -91,15 +195,24 @@ async function run() {
       'Product pools validate before adjustments',
     );
 
-    // Test adjustment +0.01 on 15 decimals (primary F6 reproduction trigger)
+    // Test adjustment +0.01 on 15 decimals
     console.log('Applying adjustment +0.01 to product with 0.123456789012345...');
-    adjustProductStock(db, {
+    const expectedStockP15 = 0.123456789012345 + 0.01;
+    const expectedDeltaP15 = expectedStockP15 - 0.123456789012345;
+    const adjResultP15 = adjustProductStock(db, {
       productId: 'p-legacy-15',
       quantityDelta: 0.01,
       movementType: 'adjustment',
       actorUserId: 'u-owner',
-      reason: 'F6 repro delta +0.01',
+      reason: 'Adjustment +0.01 on 15 decimals',
     });
+    assertProductStockPrecision(
+      db,
+      'p-legacy-15',
+      expectedStockP15,
+      expectedDeltaP15,
+      adjResultP15,
+    );
 
     const ledgerErrProduct15 = validateInventoryLedgerDatabase(db);
     assertEqualOrThrow(
@@ -109,13 +222,22 @@ async function run() {
     );
 
     // Test adjustment -0.05 on 16 decimals
-    adjustProductStock(db, {
+    const expectedStockP16 = 0.1234567890123456 - 0.05;
+    const expectedDeltaP16 = expectedStockP16 - 0.1234567890123456;
+    const adjResultP16 = adjustProductStock(db, {
       productId: 'p-legacy-16',
       quantityDelta: -0.05,
       movementType: 'adjustment',
       actorUserId: 'u-owner',
       reason: 'Delta -0.05 on 16 decimals',
     });
+    assertProductStockPrecision(
+      db,
+      'p-legacy-16',
+      expectedStockP16,
+      expectedDeltaP16,
+      adjResultP16,
+    );
 
     const ledgerErrProduct16 = validateInventoryLedgerDatabase(db);
     assertEqualOrThrow(
@@ -125,14 +247,19 @@ async function run() {
     );
 
     // Test repeated fractional adjustments on 12 decimals
+    let currentStockP12 = 10.123456789012;
     for (const delta of [0.01, -0.005, 0.125, -0.02]) {
-      adjustProductStock(db, {
+      const prevStockP12 = currentStockP12;
+      currentStockP12 = prevStockP12 + delta;
+      const expDeltaP12 = currentStockP12 - prevStockP12;
+      const adjP12 = adjustProductStock(db, {
         productId: 'p-legacy-12',
         quantityDelta: delta,
         movementType: 'adjustment',
         actorUserId: 'u-owner',
         reason: `Repeated delta ${delta}`,
       });
+      assertProductStockPrecision(db, 'p-legacy-12', currentStockP12, expDeltaP12, adjP12);
     }
     assertEqualOrThrow(
       validateInventoryLedgerDatabase(db),
@@ -172,14 +299,23 @@ async function run() {
       'Variant pools validate before adjustments',
     );
 
-    adjustProductStock(db, {
+    const expectedStockV15 = 0.123456789012345 + 0.01;
+    const expectedDeltaV15 = expectedStockV15 - 0.123456789012345;
+    const adjResultV15 = adjustProductStock(db, {
       productId: 'p-parent-var',
       variantId: 'v-legacy-15',
       quantityDelta: 0.01,
       movementType: 'adjustment',
       actorUserId: 'u-owner',
-      reason: 'Variant F6 delta +0.01',
+      reason: 'Variant delta +0.01',
     });
+    assertVariantStockPrecision(
+      db,
+      'v-legacy-15',
+      expectedStockV15,
+      expectedDeltaV15,
+      adjResultV15,
+    );
 
     const ledgerErrVariant15 = validateInventoryLedgerDatabase(db);
     assertEqualOrThrow(
@@ -188,7 +324,9 @@ async function run() {
       `Ledger must validate after +0.01 adjustment on 15-decimal variant stock (got: ${ledgerErrVariant15})`,
     );
 
-    adjustProductStock(db, {
+    const expectedStockV16 = 0.1234567890123456 - 0.05;
+    const expectedDeltaV16 = expectedStockV16 - 0.1234567890123456;
+    const adjResultV16 = adjustProductStock(db, {
       productId: 'p-parent-var',
       variantId: 'v-legacy-16',
       quantityDelta: -0.05,
@@ -196,6 +334,13 @@ async function run() {
       actorUserId: 'u-owner',
       reason: 'Variant delta -0.05',
     });
+    assertVariantStockPrecision(
+      db,
+      'v-legacy-16',
+      expectedStockV16,
+      expectedDeltaV16,
+      adjResultV16,
+    );
 
     assertEqualOrThrow(
       validateInventoryLedgerDatabase(db),
@@ -230,14 +375,17 @@ async function run() {
       'Addon pools validate before adjustments',
     );
 
-    adjustProductStock(db, {
+    const expectedStockA15 = 0.123456789012345 + 0.01;
+    const expectedDeltaA15 = expectedStockA15 - 0.123456789012345;
+    const adjResultA15 = adjustProductStock(db, {
       productId: null,
       addonId: 'a-legacy-15',
       quantityDelta: 0.01,
       movementType: 'adjustment',
       actorUserId: 'u-owner',
-      reason: 'Addon F6 delta +0.01',
+      reason: 'Addon delta +0.01',
     });
+    assertAddonStockPrecision(db, 'a-legacy-15', expectedStockA15, expectedDeltaA15, adjResultA15);
 
     const ledgerErrAddon15 = validateInventoryLedgerDatabase(db);
     assertEqualOrThrow(
@@ -246,9 +394,51 @@ async function run() {
       `Ledger must validate after +0.01 adjustment on 15-decimal addon stock (got: ${ledgerErrAddon15})`,
     );
 
+    const expectedStockA16 = 0.1234567890123456 - 0.05;
+    const expectedDeltaA16 = expectedStockA16 - 0.1234567890123456;
+    const adjResultA16 = adjustProductStock(db, {
+      productId: null,
+      addonId: 'a-legacy-16',
+      quantityDelta: -0.05,
+      movementType: 'adjustment',
+      actorUserId: 'u-owner',
+      reason: 'Addon delta -0.05',
+    });
+    assertAddonStockPrecision(db, 'a-legacy-16', expectedStockA16, expectedDeltaA16, adjResultA16);
+
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(db),
+      null,
+      'Ledger must validate after -0.05 adjustment on 16-decimal addon stock',
+    );
+
     console.log(
       '\n--- Scenario 4: Backup and restore round-trip with legacy high-precision stocks ---',
     );
+    const preBackupProducts = db
+      .prepare('SELECT id, stock_quantity FROM products WHERE track_inventory = 1 ORDER BY id')
+      .all() as { id: string; stock_quantity: number }[];
+    const preBackupVariants = db
+      .prepare(
+        'SELECT id, stock_quantity FROM product_variants WHERE track_inventory = 1 ORDER BY id',
+      )
+      .all() as { id: string; stock_quantity: number }[];
+    const preBackupAddons = db
+      .prepare('SELECT id, stock_quantity FROM addons WHERE track_inventory = 1 ORDER BY id')
+      .all() as { id: string; stock_quantity: number }[];
+    const preBackupMovements = db
+      .prepare(
+        'SELECT id, product_id, variant_id, addon_id, stock_after, quantity_delta FROM inventory_movements ORDER BY id',
+      )
+      .all() as {
+      id: number;
+      product_id: string | null;
+      variant_id: string | null;
+      addon_id: string | null;
+      stock_after: number;
+      quantity_delta: number;
+    }[];
+
     const backupResult = await createBackup();
     assertOrThrow(Boolean(backupResult?.path), 'createBackup returns valid backup path');
     const restoreResult = restoreBackup(backupResult.path, true);
@@ -257,14 +447,60 @@ async function run() {
       `restoreBackup succeeds (got ${JSON.stringify(restoreResult)})`,
     );
 
+    const restoredDb = getDatabase();
     assertEqualOrThrow(
-      validateInventoryLedgerDatabase(getDatabase()),
+      validateInventoryLedgerDatabase(restoredDb),
       null,
       'Restored database passes ledger validation',
     );
 
+    for (const pre of preBackupProducts) {
+      const post = restoredDb
+        .prepare('SELECT stock_quantity FROM products WHERE id = ?')
+        .get(pre.id) as { stock_quantity: number };
+      assertEqualOrThrow(
+        post.stock_quantity,
+        pre.stock_quantity,
+        `Restored product ${pre.id} stock_quantity matches exact pre-backup value`,
+      );
+    }
+    for (const pre of preBackupVariants) {
+      const post = restoredDb
+        .prepare('SELECT stock_quantity FROM product_variants WHERE id = ?')
+        .get(pre.id) as { stock_quantity: number };
+      assertEqualOrThrow(
+        post.stock_quantity,
+        pre.stock_quantity,
+        `Restored variant ${pre.id} stock_quantity matches exact pre-backup value`,
+      );
+    }
+    for (const pre of preBackupAddons) {
+      const post = restoredDb
+        .prepare('SELECT stock_quantity FROM addons WHERE id = ?')
+        .get(pre.id) as { stock_quantity: number };
+      assertEqualOrThrow(
+        post.stock_quantity,
+        pre.stock_quantity,
+        `Restored addon ${pre.id} stock_quantity matches exact pre-backup value`,
+      );
+    }
+    for (const pre of preBackupMovements) {
+      const post = restoredDb
+        .prepare('SELECT stock_after, quantity_delta FROM inventory_movements WHERE id = ?')
+        .get(pre.id) as { stock_after: number; quantity_delta: number };
+      assertEqualOrThrow(
+        post.stock_after,
+        pre.stock_after,
+        `Restored movement ${pre.id} stock_after matches exact pre-backup value`,
+      );
+      assertEqualOrThrow(
+        post.quantity_delta,
+        pre.quantity_delta,
+        `Restored movement ${pre.id} quantity_delta matches exact pre-backup value`,
+      );
+    }
+
     console.log('\n--- Scenario 5: Historical v114 restore fixture with populated data ---');
-    // Build ideal v114 database and populate with orders, bills, payments, and movements
     const v114Db = buildIdealSchemaDb(114);
     const v114BackupPath = path.join(activeTestDir, 'fixture-v114-populated.db');
     try {
@@ -352,8 +588,8 @@ async function run() {
       DELETE FROM categories;
     `);
 
-    // Now restore the populated v114 backup into current running database
     console.log('Restoring populated v114 backup into live database...');
+    const expectedSchemaVersion = getCurrentSchemaVersion();
     const v114RestoreResult = restoreBackup(v114BackupPath, false);
     assertOrThrow(
       v114RestoreResult.success,
@@ -363,8 +599,8 @@ async function run() {
     const postRestoreDb = getDatabase();
     assertEqualOrThrow(
       getCurrentSchemaVersion(),
-      115,
-      'Database upgrades from v114 to latest v115 schema after restore',
+      expectedSchemaVersion,
+      'Database upgrades from v114 to current schema after restore',
     );
 
     const integrityCheck = postRestoreDb.pragma('integrity_check', { simple: true });

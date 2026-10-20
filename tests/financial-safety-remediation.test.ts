@@ -1,17 +1,17 @@
 /**
- * Test suite for Financial Safety Remediation (Issues #1205, #1206):
+ * Test suite for Financial Safety Remediation:
  *
- * 1. Payment Replay Idempotency & PIN Decoupling (#1205):
+ * 1. Payment Replay Idempotency & PIN Decoupling:
  *    - Replaying an idempotent single payment with changed/invalid/rate-limited PIN succeeds with 200 without duplicate payments.
  *    - Replaying an idempotent batch payment with changed/invalid/rate-limited PIN succeeds with 200 without duplicate payments.
  *    - Kitchen delivery PIN verification is bypassed when all kitchen items are already delivered.
  *
- * 2. Bill & Order Discount In-Txn State Revalidation (#1206):
+ * 2. Bill & Order Discount In-Txn State Revalidation:
  *    - Bill discount application re-reads paid_amount inside transaction; if concurrent payments reduce balance below collected funds, aborts with 409 below_collected_funds.
  *    - Order discount application re-reads bill state inside transaction; if concurrent payments reduce balance below collected funds, aborts with 409 below_collected_funds.
  *    - Order discount application re-reads split status inside transaction; if bill is split concurrently, aborts with 409 split_check.
  *
- * 3. Stale Order-Item State Revalidation (#1206):
+ * 3. Stale Order-Item State Revalidation:
  *    - Item discount application re-reads item quantity inside transaction; if quantity was changed during async PIN approval, recalculates subtotal and total using fresh quantity.
  */
 
@@ -37,6 +37,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const bcrypt = require('bcryptjs');
+let pinApprovalHook: (() => Promise<void> | void) | null = null;
+const originalBcryptCompare = bcrypt.compare;
+bcrypt.compare = async function (...args: any[]) {
+  if (pinApprovalHook) {
+    const hook = pinApprovalHook;
+    pinApprovalHook = null;
+    await hook();
+  }
+  return originalBcryptCompare.apply(this, args);
+};
 const jwt = require('jsonwebtoken');
 const {
   initTestDb,
@@ -69,7 +79,7 @@ function makeToken(id: string, role: string, email: string) {
 }
 
 async function run(): Promise<void> {
-  console.log('Testing Financial Safety Remediation (Issues #1205, #1206)...');
+  console.log('Testing Financial Safety Remediation...');
   console.log('='.repeat(70));
 
   const db = initTestDb();
@@ -137,9 +147,9 @@ async function run(): Promise<void> {
 
   try {
     // ═════════════════════════════════════════════════════════════════════════
-    // 1. Payment Replay Idempotency & PIN Decoupling (#1205)
+    // 1. Payment Replay Idempotency & PIN Decoupling
     // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- 1. Payment Replay Idempotency & PIN Decoupling (#1205) ---');
+    console.log('\n--- 1. Payment Replay Idempotency & PIN Decoupling ---');
     {
       // Create order and bill with undelivered items so kitchen override PIN is required on first payment
       const orderRes = await api(baseUrl, '/api/orders', {
@@ -475,9 +485,9 @@ async function run(): Promise<void> {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 2. Kitchen Delivery PIN Verification Skipped when Items Delivered (#1205)
+    // 2. Kitchen Delivery PIN Verification Skipped when Items Delivered
     // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- 2. Kitchen Delivery PIN Skipped when Items Delivered (#1205) ---');
+    console.log('\n--- 2. Kitchen Delivery PIN Skipped when Items Delivered ---');
     {
       const orderRes = await api(baseUrl, '/api/orders', {
         method: 'POST',
@@ -519,9 +529,9 @@ async function run(): Promise<void> {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 3. Bill & Order Discount In-Txn State Revalidation (#1206)
+    // 3. Bill & Order Discount In-Txn State Revalidation
     // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- 3. Bill & Order Discount In-Txn State Revalidation (#1206) ---');
+    console.log('\n--- 3. Bill & Order Discount In-Txn State Revalidation ---');
     {
       // Test 3A: Bill discount reducing total below collected payments is rejected with 409
       const orderRes = await api(baseUrl, '/api/orders', {
@@ -745,8 +755,11 @@ async function run(): Promise<void> {
       assertEqualOrThrow(payAfterDiscount.data.bill.payment_status, 'paid', 'Bill is fully paid');
       assertEqualOrThrow(payAfterDiscount.data.bill.balance, 0, 'Bill balance is 0');
 
-      // Test 3F: Controlled barrier race - Simultaneous Payment and Discount
-      // Bill total = 100. Simultaneous execution via Promise.all
+      // Test 3F: Controlled barrier race - Payment commits during Discount PIN approval
+      // Bill total = 100. Discount handler reads bill total=100, paid=0 prior to PIN approval;
+      // concurrent payment commits 80 during PIN approval window.
+      // In-txn revalidation detects fresh collected funds (80) exceed discounted total (50)
+      // and aborts discount with 409 below_collected_funds.
       const barrierOrderRes = await api(baseUrl, '/api/orders', {
         method: 'POST',
         body: {
@@ -766,38 +779,58 @@ async function run(): Promise<void> {
         barrierOrderId,
       );
 
-      const [racePayment, raceDiscount] = await Promise.all([
-        api(baseUrl, `/api/bills/${barrierBillId}/payment`, {
+      let paymentDuringDiscountRan = false;
+      let paymentRes: any = null;
+      pinApprovalHook = async () => {
+        paymentDuringDiscountRan = true;
+        paymentRes = await api(baseUrl, `/api/bills/${barrierBillId}/payment`, {
           method: 'POST',
           body: { amount: 80, method: 'cash' },
           headers: cashierAuth,
-        }),
-        api(baseUrl, `/api/bills/${barrierBillId}/applyDiscount`, {
-          method: 'POST',
-          body: { type: 'amount', value: 50, override_pin: '1111' },
-          headers: cashierAuth,
-        }),
-      ]);
+        });
+      };
 
-      // Exactly one order of operations occurred; verify consistency
+      const raceDiscount = await api(baseUrl, `/api/bills/${barrierBillId}/applyDiscount`, {
+        method: 'POST',
+        body: { type: 'amount', value: 50, override_pin: '1111' },
+        headers: cashierAuth,
+      });
+
+      assertOrThrow(paymentDuringDiscountRan, 'Payment executed during discount PIN approval');
+      assertOrThrow(paymentRes !== null, 'Payment completed during discount PIN approval');
+      assertEqualOrThrow(
+        paymentRes.status,
+        200,
+        'Concurrent payment of 80 during PIN approval succeeds',
+      );
+      assertEqualOrThrow(
+        raceDiscount.status,
+        409,
+        'Bill discount is rejected with 409 when payment committed during PIN approval',
+      );
+      assertEqualOrThrow(
+        raceDiscount.data.display_code,
+        'below_collected_funds',
+        'Discount rejection has diagnostic code below_collected_funds',
+      );
+
+      // Verify consistency: funds collected (80) never exceeded by discount, balance is 20
       const finalBillState = db
         .prepare('SELECT total, paid_amount, balance FROM bills WHERE id = ?')
         .get(barrierBillId) as any;
-      assertOrThrow(
-        finalBillState.paid_amount <= finalBillState.total,
-        'In-txn coordination ensures collected funds never exceed total',
-      );
+      assertEqualOrThrow(finalBillState.total, 100, 'Bill total unchanged at 100');
+      assertEqualOrThrow(finalBillState.paid_amount, 80, 'Bill paid_amount is 80');
       assertEqualOrThrow(
         finalBillState.balance,
-        Math.max(0, finalBillState.total - finalBillState.paid_amount),
+        20,
         'Bill balance accurately reflects total minus paid_amount',
       );
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 4. Stale Order-Item State Revalidation (#1206)
+    // 4. Stale Order-Item State Revalidation
     // ═════════════════════════════════════════════════════════════════════════
-    console.log('\n--- 4. Stale Order-Item State Revalidation (#1206) ---');
+    console.log('\n--- 4. Stale Order-Item State Revalidation ---');
     {
       // Create order with item quantity = 2 (unit price 50, subtotal 100)
       const orderRes = await api(baseUrl, '/api/orders', {
@@ -817,23 +850,28 @@ async function run(): Promise<void> {
         headers: cashierAuth,
       });
 
-      // Concurrently change item quantity from 2 to 1 in database
-      // (simulating edit during async PIN approval)
-      db.prepare(`
-        UPDATE order_items
-        SET quantity = 1, subtotal = 50, total = 50, updated_at = ?
-        WHERE id = ?
-      `).run(now(), itemId);
-      db.prepare(`
-        UPDATE orders
-        SET subtotal = 50, total = 50, updated_at = ?
-        WHERE id = ?
-      `).run(now(), orderId);
-      db.prepare(`
-        UPDATE bills
-        SET subtotal = 50, total = 50, balance = 50, updated_at = ?
-        WHERE order_id = ?
-      `).run(now(), orderId);
+      // Pause PIN approval after the handler's first read of quantity=2,
+      // change item quantity from 2 to 1 in database during approval,
+      // then resume approval and verify fresh state is used in transaction.
+      let itemPinApprovalHookRan = false;
+      pinApprovalHook = async () => {
+        itemPinApprovalHookRan = true;
+        db.prepare(`
+          UPDATE order_items
+          SET quantity = 1, subtotal = 50, total = 50, updated_at = ?
+          WHERE id = ?
+        `).run(now(), itemId);
+        db.prepare(`
+          UPDATE orders
+          SET subtotal = 50, total = 50, updated_at = ?
+          WHERE id = ?
+        `).run(now(), orderId);
+        db.prepare(`
+          UPDATE bills
+          SET subtotal = 50, total = 50, balance = 50, updated_at = ?
+          WHERE order_id = ?
+        `).run(now(), orderId);
+      };
 
       // Apply 20% item discount
       const itemDiscountRes = await api(
@@ -849,6 +887,7 @@ async function run(): Promise<void> {
           headers: cashierAuth,
         },
       );
+      assertOrThrow(itemPinApprovalHookRan, 'Item PIN approval pause hook executed');
       assertEqualOrThrow(itemDiscountRes.status, 200, 'Item discount applied successfully');
 
       // Verify that the item discount was computed using fresh quantity 1 (50 * 20% = 10 discount, 40 total)
@@ -881,6 +920,7 @@ async function run(): Promise<void> {
 
     console.log('\nAll Financial Safety Remediation tests passed successfully!');
   } finally {
+    bcrypt.compare = originalBcryptCompare;
     server.close();
     closeDatabase();
   }

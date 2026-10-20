@@ -3655,7 +3655,7 @@ router.patch(
           }
         }
 
-        // Re-read current order and item under transaction lock to prevent financial state races (#1206)
+        // Re-read current order and item under transaction lock to prevent financial state races
         const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as
           | EditableOrderRow
           | undefined;

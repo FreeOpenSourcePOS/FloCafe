@@ -3391,7 +3391,7 @@ router.post(
       const idempotencyUserId = String(authUser?.userId || '');
       const requestHash = paymentRequestHash(billId, [paymentLine], paymentLine.customer_id);
 
-      // Check idempotency prior to any PIN verification (#1205)
+      // Check idempotency prior to any PIN verification
       if (idempotencyKey && idempotencyUserId) {
         const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
@@ -3626,7 +3626,7 @@ router.post(
       const idempotencyUserId = String(authUser?.userId || '');
       const requestHash = paymentRequestHash(billId, payments, bodyCustomerId);
 
-      // Check idempotency prior to any PIN verification (#1205)
+      // Check idempotency prior to any PIN verification
       if (idempotencyKey && idempotencyUserId) {
         const inFlightAttemptKey = `${idempotencyUserId}:${idempotencyKey}`;
         const prior = db
@@ -4080,7 +4080,7 @@ router.post(
           }
         }
 
-        // Re-read current bill and order under transaction lock to prevent financial state races (#1206)
+        // Re-read current bill and order under transaction lock to prevent financial state races
         const currentBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as
           | BillDiscountRow
           | undefined;

@@ -36,11 +36,13 @@ async function main() {
   const priorFetch = globalThis.fetch;
   const priorSignedFetch = (cloudSync as any).signedFetch;
   const priorOffline = process.env.FLO_MATRIX_OFFLINE;
+  const priorTelemetryDev = process.env.FLO_TELEMETRY_DEV;
   const db = initTestDb();
   let signedBytes: string | undefined;
   let anonymousBytes: string | undefined;
   try {
     delete process.env.FLO_MATRIX_OFFLINE;
+    process.env.FLO_TELEMETRY_DEV = '1';
     for (const [key, value] of [
       ['diagnostics_consent', 'true'],
       ['diagnostics_transmission_enabled', 'true'],
@@ -195,6 +197,8 @@ async function main() {
     (cloudSync as any).signedFetch = priorSignedFetch;
     if (priorOffline === undefined) delete process.env.FLO_MATRIX_OFFLINE;
     else process.env.FLO_MATRIX_OFFLINE = priorOffline;
+    if (priorTelemetryDev === undefined) delete process.env.FLO_TELEMETRY_DEV;
+    else process.env.FLO_TELEMETRY_DEV = priorTelemetryDev;
     cloudSync.stop();
     closeDatabase();
     Module._load = originalLoad;

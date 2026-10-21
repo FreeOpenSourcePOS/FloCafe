@@ -2581,6 +2581,303 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       'the sections survive the error state',
     ).toBeVisible();
   });
+
+  test('drains multiple cursor pages, deduplicates overlapping orders, removes completed orders, and clears on follow-up page 401', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const created = await request.post(`${BASE}/api/settings/customer-display/tokens`, {
+      headers: { Authorization: `Bearer ${getE2eToken()}` },
+      data: { label: 'Paginated Queue TV' },
+    });
+    expect(created.status(), 'the test display token is created').toBe(201);
+    const { id: displayTokenId, token: displayToken } = (await created.json()) as {
+      id: string;
+      token: string;
+    };
+
+    const displayContext = await browser.newContext();
+    try {
+      const displayPage = await displayContext.newPage();
+      await displayPage.setViewportSize({ width: 1920, height: 1080 });
+      await displayPage.clock.install();
+
+      const allOrders = displayOrders(114, 6);
+      const preparingOrders = allOrders.filter((o) => o.status !== 'ready');
+      const readyOrders = allOrders.filter((o) => o.status === 'ready');
+
+      const toFeedItem = (order: DisplayOrder) => ({
+        id: order.id,
+        number: order.bill.bill_number || order.order_number,
+        status: order.status,
+      });
+
+      // Page 1 (newest 100): preparing 18..114 (97) + ready 4..6 (3) = 100
+      const page1Items = [
+        ...preparingOrders.slice(17, 114).map(toFeedItem),
+        ...readyOrders.slice(3, 6).map(toFeedItem),
+      ];
+      // Page 2 (older 20 + 2 overlapping boundary orders): preparing 1..18 (18) + ready 1..4 (4)
+      let page2Items = [
+        ...preparingOrders.slice(0, 18).map(toFeedItem),
+        ...readyOrders.slice(0, 4).map(toFeedItem),
+      ];
+      let revokeOnSecondPage = false;
+      const requestedCursors: Array<string | null> = [];
+
+      await displayPage.route(
+        (url) => url.pathname === '/api/customer-display/feed',
+        async (route) => {
+          const cursor = new URL(route.request().url()).searchParams.get('cursor');
+          requestedCursors.push(cursor);
+          if (!cursor) {
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({
+                business_name: 'Flo Cafe',
+                config: {
+                  statuses: ['pending', 'preparing', 'ready'],
+                  refresh_seconds: 3,
+                  show_updated: true,
+                },
+                orders: page1Items,
+                next_cursor: 'cursor-older-page-2',
+                has_more: true,
+              }),
+            });
+            return;
+          }
+          if (revokeOnSecondPage) {
+            await route.fulfill({
+              status: 401,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'Display not paired' }),
+            });
+            return;
+          }
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              business_name: 'Flo Cafe',
+              config: {
+                statuses: ['pending', 'preparing', 'ready'],
+                refresh_seconds: 3,
+                show_updated: true,
+              },
+              orders: page2Items,
+              next_cursor: null,
+              has_more: false,
+            }),
+          });
+        },
+      );
+
+      await displayPage.goto(`${BASE}/customer-display/#token=${displayToken}`);
+      await displayPage.clock.runFor(1);
+
+      const preparing = displayPage.getByTestId('customer-display-preparing-scroll');
+      const ready = displayPage.getByTestId('customer-display-ready-scroll');
+
+      await expect.poll(() => requestedCursors.slice(0, 2)).toEqual([null, 'cursor-older-page-2']);
+
+      // Ready column shows orders from both Page 2 (1..4) and Page 1 (4..6) with overlapping #4 deduplicated
+      const readVisibleIds = (board: typeof preparing) =>
+        board
+          .locator('[data-order-id]:visible')
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-order-id')));
+
+      await expect
+        .poll(() => readVisibleIds(ready))
+        .toEqual([
+          'display-ready-1',
+          'display-ready-2',
+          'display-ready-3',
+          'display-ready-4',
+          'display-ready-5',
+          'display-ready-6',
+        ]);
+
+      // Preparing column starts with the oldest orders from Page 2 and deduplicates overlapping display-preparing-18
+      await expect(
+        preparing.locator('[data-order-id="display-preparing-1"]:visible'),
+      ).toBeVisible();
+      const preparingProbeStats = await preparing.evaluate((el) => {
+        const probe = el.querySelector('[aria-hidden="true"]');
+        const rows = probe
+          ? [...probe.querySelectorAll('[data-testid="customer-display-order-row"]')]
+          : [];
+        const ids = rows.map((r) => r.getAttribute('data-order-id'));
+        return {
+          total: ids.length,
+          duplicate18Count: ids.filter((id) => id === 'display-preparing-18').length,
+        };
+      });
+      expect(preparingProbeStats.total, 'all 114 unique preparing orders are merged').toBe(114);
+      expect(
+        preparingProbeStats.duplicate18Count,
+        'overlapping order across pages is deduplicated',
+      ).toBe(1);
+
+      const checkNoOverflow = async () => {
+        for (const [name, board] of [
+          ['preparing', preparing],
+          ['ready', ready],
+        ] as const) {
+          const layout = await board.evaluate((element) => {
+            const boardBounds = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const usableTop = boardBounds.top + Number.parseFloat(style.paddingTop);
+            const usableBottom = boardBounds.bottom - Number.parseFloat(style.paddingBottom);
+            const visibleRows = [
+              ...element.querySelectorAll('[data-testid="customer-display-order-row"]'),
+            ]
+              .filter((row) => getComputedStyle(row).visibility === 'visible')
+              .map((row) => {
+                const bounds = row.getBoundingClientRect();
+                return { top: bounds.top, bottom: bounds.bottom };
+              });
+            return {
+              clientWidth: element.clientWidth,
+              scrollWidth: element.scrollWidth,
+              usableTop,
+              usableBottom,
+              visibleRows,
+            };
+          });
+          expect(
+            layout.scrollWidth,
+            `${name} board has no horizontal overflow`,
+          ).toBeLessThanOrEqual(layout.clientWidth);
+          expect(
+            layout.visibleRows.every(
+              (row) => row.top >= layout.usableTop - 1 && row.bottom <= layout.usableBottom + 1,
+            ),
+            `${name} rows fit vertically inside the column`,
+          ).toBe(true);
+        }
+      };
+
+      await checkNoOverflow();
+      await displayPage.screenshot({ path: '/tmp/flo-customer-display-pagination-page1.png' });
+
+      // Rotate through 10-second TV visual pages until orders from Page 1 (display-preparing-19+) are shown
+      const firstPreparingVisualPage = await readVisibleIds(preparing);
+      await displayPage.clock.runFor(10_000);
+      await expect.poll(() => readVisibleIds(preparing)).not.toEqual(firstPreparingVisualPage);
+      await displayPage.clock.runFor(10_000);
+      const laterPreparingVisualPage = await readVisibleIds(preparing);
+      expect(
+        laterPreparingVisualPage.some((id) => {
+          const n = Number(id?.replace('display-preparing-', ''));
+          return Number.isFinite(n) && n >= 19;
+        }),
+        'TV rotation reaches newer orders from Page 1 after displaying older orders from Page 2',
+      ).toBe(true);
+      await checkNoOverflow();
+      await displayPage.screenshot({ path: '/tmp/flo-customer-display-pagination-page2.png' });
+
+      // Completing orders removes them from the board on the next poll
+      page2Items = page2Items.filter(
+        (item) => item.id !== 'display-ready-1' && item.id !== 'display-preparing-1',
+      );
+      await displayPage.clock.runFor(3000);
+      await expect
+        .poll(() => readVisibleIds(ready))
+        .toEqual([
+          'display-ready-2',
+          'display-ready-3',
+          'display-ready-4',
+          'display-ready-5',
+          'display-ready-6',
+        ]);
+      await expect(preparing.locator('[data-order-id="display-preparing-1"]')).toHaveCount(0);
+
+      // A 401 on a follow-up cursor page immediately aborts pagination, clears stored token and orders, and shows unpaired state
+      revokeOnSecondPage = true;
+      await displayPage.clock.runFor(3000);
+      await expect(
+        displayPage.getByRole('heading', { name: 'This display is not paired', exact: true }),
+      ).toBeVisible();
+      await expect(displayPage.getByTestId('customer-display-order-row')).toHaveCount(0);
+      const storedTokenAfter401 = await displayPage.evaluate(() =>
+        window.localStorage.getItem('flo.customerDisplayToken'),
+      );
+      expect(storedTokenAfter401).toBeNull();
+
+      // Signed-in staff fallback mode also drains multiple /api/orders cursor pages via before_id and deduplicates
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      await loginAsManager(page);
+      const staffBeforeIds: Array<string | null> = [];
+      const staffStatuses: Array<string | null> = [];
+      const staffPerPages: Array<string | null> = [];
+      await page.route(
+        (url) => url.pathname === '/api/settings/customer-display',
+        (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              statuses: ['pending', 'preparing', 'ready'],
+              refresh_seconds: 3,
+              show_updated: true,
+            }),
+          }),
+      );
+      await page.route(
+        (url) => url.pathname === '/api/orders',
+        (route) => {
+          const params = new URL(route.request().url()).searchParams;
+          const beforeId = params.get('before_id');
+          staffBeforeIds.push(beforeId);
+          staffStatuses.push(params.get('status'));
+          staffPerPages.push(params.get('per_page'));
+          if (!beforeId) {
+            return route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({
+                orders: [...preparingOrders.slice(17, 114), ...readyOrders.slice(3, 6)],
+                nextCursor: 'staff-cursor-2',
+              }),
+            });
+          }
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              orders: [...preparingOrders.slice(0, 18), ...readyOrders.slice(0, 4)],
+              nextCursor: null,
+            }),
+          });
+        },
+      );
+      await page.goto(`${BASE}/customer-display`);
+      const staffReady = page.getByTestId('customer-display-ready-scroll');
+      await expect.poll(() => staffBeforeIds.slice(0, 2)).toEqual([null, 'staff-cursor-2']);
+      expect(staffStatuses[0]).toBe('pending,preparing,ready');
+      expect(staffPerPages[0]).toBe('100');
+      await expect
+        .poll(() => readVisibleIds(staffReady))
+        .toEqual([
+          'display-ready-1',
+          'display-ready-2',
+          'display-ready-3',
+          'display-ready-4',
+          'display-ready-5',
+          'display-ready-6',
+        ]);
+    } finally {
+      await displayContext.close();
+      await request
+        .delete(`${BASE}/api/settings/customer-display/tokens/${displayTokenId}`, {
+          headers: { Authorization: `Bearer ${getE2eToken()}` },
+        })
+        .catch(() => {});
+    }
+  });
 });
 
 /**

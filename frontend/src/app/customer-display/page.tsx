@@ -14,6 +14,7 @@ import {
   isCustomerDisplayFeed,
   type BoardOrder,
   type CustomerDisplayConfig,
+  type CustomerDisplayFeed,
 } from '@/lib/customer-display';
 import {
   clearStoredDisplayToken,
@@ -41,11 +42,21 @@ interface OrderBoardSectionProps {
 
 const ORDER_PAGE_INTERVAL_MS = 10_000;
 const CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS = 10_000;
+const MAX_DISPLAY_FEED_PAGES = 50;
 const ORDER_ROW_GAP_FALLBACK = 12;
 const ORDER_ROW_HEIGHT_FALLBACK = 72;
 
 function getOrderId(order: BoardOrder): string {
   return String(order.id);
+}
+
+function compareOrderIds(a: number | string, b: number | string): number {
+  const numA = typeof a === 'number' ? a : Number(a);
+  const numB = typeof b === 'number' ? b : Number(b);
+  if (Number.isFinite(numA) && Number.isFinite(numB) && numA !== numB) {
+    return numA - numB;
+  }
+  return String(a).localeCompare(String(b));
 }
 
 function getPageKey(orderIds: string[]): string {
@@ -578,32 +589,70 @@ export default function CustomerDisplayPage() {
       );
       feedInFlightRef.current = { session, request, controller, timeout };
       try {
-        const response = await fetch(`${window.location.origin}/api${CUSTOMER_DISPLAY_FEED_PATH}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (response.status === 401) {
-          if (session !== feedSessionRef.current) return;
-          feedSessionRef.current += 1;
-          feedRequestRef.current += 1;
-          window.clearTimeout(timeout);
-          feedInFlightRef.current = null;
-          previousReadyOrderIdsRef.current = null;
-          setNewlyReadyOrderIds(new Set());
-          clearStoredDisplayToken();
-          setOrders([]);
-          setLastUpdated(null);
-          setError(false);
-          setUnpaired(true);
-          return;
+        let firstFeed: CustomerDisplayFeed | null = null;
+        const pages: BoardOrder[][] = [];
+        const visitedCursors = new Set<string>();
+        let cursor: string | null = null;
+
+        for (let pageIndex = 0; pageIndex < MAX_DISPLAY_FEED_PAGES; pageIndex += 1) {
+          const url = new URL(`/api${CUSTOMER_DISPLAY_FEED_PATH}`, window.location.origin);
+          if (cursor) {
+            url.searchParams.set('cursor', cursor);
+          }
+          const response = await fetch(url.toString(), {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          if (response.status === 401) {
+            if (session !== feedSessionRef.current) return;
+            feedSessionRef.current += 1;
+            feedRequestRef.current += 1;
+            window.clearTimeout(timeout);
+            feedInFlightRef.current = null;
+            previousReadyOrderIdsRef.current = null;
+            setNewlyReadyOrderIds(new Set());
+            clearStoredDisplayToken();
+            setOrders([]);
+            setLastUpdated(null);
+            setError(false);
+            setUnpaired(true);
+            return;
+          }
+          const feed: unknown = await response.json();
+          if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
+          if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+          if (!firstFeed) {
+            firstFeed = feed;
+          }
+          pages.push(feed.orders);
+          const nextCursor =
+            feed.has_more === false
+              ? null
+              : typeof feed.next_cursor === 'string' && feed.next_cursor.length > 0
+                ? feed.next_cursor
+                : null;
+          if (!nextCursor || visitedCursors.has(nextCursor)) break;
+          visitedCursors.add(nextCursor);
+          cursor = nextCursor;
         }
-        const feed: unknown = await response.json();
-        if (!response.ok || !isCustomerDisplayFeed(feed)) throw new Error('feed unavailable');
-        if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
-        setConfig(feed.config);
-        setBusinessName(feed.business_name);
-        acceptOrders(feed.orders);
+
+        if (!firstFeed || session !== feedSessionRef.current || request !== feedRequestRef.current)
+          return;
+        const mergedById = new Map<string, BoardOrder>();
+        for (let i = pages.length - 1; i >= 0; i -= 1) {
+          for (const order of pages[i]) {
+            const id = getOrderId(order);
+            if (mergedById.has(id)) {
+              mergedById.delete(id);
+            }
+            mergedById.set(id, order);
+          }
+        }
+        const mergedOrders = [...mergedById.values()];
+        setConfig(firstFeed.config);
+        setBusinessName(firstFeed.business_name);
+        acceptOrders(mergedOrders);
         setError(false);
         setLastUpdated(new Date());
       } catch {
@@ -640,14 +689,40 @@ export default function CustomerDisplayPage() {
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
-        const { data } = await api.get('/orders', {
-          params: { per_page: 50 },
-          signal: controller.signal,
-        });
+        const seenById = new Map<string, Order>();
+        let beforeId: number | string | null = null;
+
+        for (let pageIndex = 0; pageIndex < MAX_DISPLAY_FEED_PAGES; pageIndex += 1) {
+          const response: {
+            data?: { orders?: Order[]; nextCursor?: number | string | null };
+          } = await api.get('/orders', {
+            params: {
+              status: activeConfig.statuses.join(','),
+              per_page: 100,
+              ...(beforeId !== null ? { before_id: beforeId } : {}),
+            },
+            signal: controller.signal,
+          });
+          if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
+          for (const order of response.data?.orders ?? []) {
+            if ((activeConfig.statuses as string[]).includes(order.status)) {
+              seenById.set(String(order.id), order);
+            }
+          }
+          const nextCursor: number | string | null | undefined = response.data?.nextCursor;
+          if (nextCursor === undefined || nextCursor === null || nextCursor === '') break;
+          if (beforeId !== null && String(beforeId) === String(nextCursor)) break;
+          beforeId = nextCursor;
+        }
+
         if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
-        const nextOrders = (data.orders || [])
-          .filter((order: Order) => (activeConfig.statuses as string[]).includes(order.status))
-          .sort((a: Order, b: Order) => a.created_at.localeCompare(b.created_at))
+        const nextOrders = [...seenById.values()]
+          .sort((a: Order, b: Order) => {
+            if (a.created_at !== b.created_at) {
+              return a.created_at < b.created_at ? -1 : 1;
+            }
+            return compareOrderIds(a.id, b.id);
+          })
           .map(toBoardOrder);
         if (validConfig) {
           configRef.current = validConfig;

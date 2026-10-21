@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import {
   buildDisplayFeed,
+  DisplayFeedPaginationError,
   touchDisplayToken,
   verifyDisplayToken,
 } from '../services/customer-display-tokens';
@@ -25,10 +26,28 @@ router.get('/feed', feedRateLimit, (req: Request, res: Response) => {
     if (!tokenId) {
       return res.status(401).json({ error: 'Display not paired' });
     }
+    let cursor: string | undefined;
+    if (req.query.cursor !== undefined) {
+      if (typeof req.query.cursor !== 'string' || req.query.cursor.length === 0) {
+        return res.status(400).json({ error: 'Invalid cursor' });
+      }
+      cursor = req.query.cursor;
+    }
+    let limit: number | undefined;
+    if (req.query.limit !== undefined) {
+      if (typeof req.query.limit !== 'string' || !/^\d+$/.test(req.query.limit)) {
+        return res.status(400).json({ error: 'Invalid limit' });
+      }
+      limit = Number.parseInt(req.query.limit, 10);
+    }
+    const feed = buildDisplayFeed({ cursor, limit });
     touchDisplayToken(tokenId);
     res.setHeader('Cache-Control', 'no-store');
-    res.json(buildDisplayFeed());
+    res.json(feed);
   } catch (error) {
+    if (error instanceof DisplayFeedPaginationError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

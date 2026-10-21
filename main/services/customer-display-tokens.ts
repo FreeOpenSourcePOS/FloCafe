@@ -23,6 +23,57 @@ export interface CustomerDisplayFeed {
   business_name: string;
   config: CustomerDisplayConfig;
   orders: Array<{ id: number; number: string; status: string }>;
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export type CustomerDisplayFeedPayload = CustomerDisplayFeed;
+
+export interface CustomerDisplayFeedOptions {
+  cursor?: string;
+  limit?: number;
+}
+
+interface DisplayFeedCursor {
+  created_at: string;
+  id: number;
+}
+
+export class DisplayFeedPaginationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DisplayFeedPaginationError';
+  }
+}
+
+function encodeDisplayFeedCursor(cursor: DisplayFeedCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeDisplayFeedCursor(raw: string): DisplayFeedCursor {
+  if (typeof raw !== 'string' || raw.length === 0 || !/^[A-Za-z0-9_-]+$/.test(raw)) {
+    throw new DisplayFeedPaginationError('Invalid cursor');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    throw new DisplayFeedPaginationError('Invalid cursor');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new DisplayFeedPaginationError('Invalid cursor');
+  }
+  const { created_at, id } = parsed as Record<string, unknown>;
+  if (
+    typeof created_at !== 'string' ||
+    created_at.trim().length === 0 ||
+    typeof id !== 'number' ||
+    !Number.isSafeInteger(id) ||
+    id <= 0
+  ) {
+    throw new DisplayFeedPaginationError('Invalid cursor');
+  }
+  return { created_at, id };
 }
 
 const lastSeenWrites = new Map<string, number>();
@@ -102,7 +153,21 @@ export function touchDisplayToken(id: string): void {
 }
 
 /** Sanitized board data: order numbers and statuses only, never customer or staff fields. */
-export function buildDisplayFeed(): CustomerDisplayFeed {
+export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): CustomerDisplayFeed {
+  let pageLimit = FEED_ORDER_LIMIT;
+  if (options?.limit !== undefined) {
+    if (
+      typeof options.limit !== 'number' ||
+      !Number.isInteger(options.limit) ||
+      options.limit < 1
+    ) {
+      throw new DisplayFeedPaginationError('Invalid limit');
+    }
+    pageLimit = Math.min(Math.max(options.limit, 1), FEED_ORDER_LIMIT);
+  }
+  const decodedCursor =
+    options?.cursor !== undefined ? decodeDisplayFeedCursor(options.cursor) : null;
+
   const db = getDatabase();
   const settings = Object.fromEntries(
     (
@@ -113,19 +178,44 @@ export function buildDisplayFeed(): CustomerDisplayFeed {
   );
   const config = readStoredCustomerDisplayConfig(settings[CUSTOMER_DISPLAY_KEY]);
   const placeholders = config.statuses.map(() => '?').join(', ');
-  const orders = db
+  const rows = db
     .prepare(
-      `SELECT id, number, status FROM (
-         SELECT o.id AS id,
-                COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
-                o.status AS status,
-                o.created_at AS created_at
-         FROM orders o
-         WHERE o.status IN (${placeholders})
-         ORDER BY o.created_at DESC, o.id DESC
-         LIMIT ${FEED_ORDER_LIMIT}
-       ) ORDER BY created_at ASC, id ASC`,
+      `SELECT o.id AS id,
+              COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
+              o.status AS status,
+              o.created_at AS created_at
+       FROM orders o
+       WHERE o.status IN (${placeholders})
+         AND (? IS NULL OR (o.created_at < ? OR (o.created_at = ? AND o.id < ?)))
+       ORDER BY o.created_at DESC, o.id DESC
+       LIMIT ?`,
     )
-    .all(...config.statuses) as CustomerDisplayFeed['orders'];
-  return { business_name: settings.business_name || '', config, orders };
+    .all(
+      ...config.statuses,
+      decodedCursor ? decodedCursor.created_at : null,
+      decodedCursor ? decodedCursor.created_at : null,
+      decodedCursor ? decodedCursor.created_at : null,
+      decodedCursor ? decodedCursor.id : null,
+      pageLimit + 1,
+    ) as Array<{ id: number; number: string; status: string; created_at: string }>;
+
+  const hasMore = rows.length > pageLimit;
+  const pageRows = hasMore ? rows.slice(0, pageLimit) : rows;
+  const oldestRow = pageRows[pageRows.length - 1];
+  const next_cursor =
+    hasMore && oldestRow
+      ? encodeDisplayFeedCursor({ created_at: oldestRow.created_at, id: oldestRow.id })
+      : null;
+  const orders = [...pageRows]
+    .sort((a, b) =>
+      a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id - b.id,
+    )
+    .map(({ id, number, status }) => ({ id, number, status }));
+  return {
+    business_name: settings.business_name || '',
+    config,
+    orders,
+    next_cursor,
+    has_more: hasMore,
+  };
 }

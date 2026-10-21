@@ -885,10 +885,8 @@ async function run(): Promise<void> {
       checkEqual(replay.status, 200, 'Replay of settled key returns 200');
     }
 
-    // --- Section 4: Zero-Balance Settlement Customer Attribution & Cashback (Finding N2) ---
-    console.log(
-      '\n--- Section 4: Zero-Balance Settlement Customer Attribution & Cashback (Finding N2) ---',
-    );
+    // --- Section 4: Zero-Balance Settlement Customer Attribution & Cashback ---
+    console.log('\n--- Section 4: Zero-Balance Settlement Customer Attribution & Cashback ---');
 
     seedCustomer(db, 'cust-f2', 'Second Customer');
 
@@ -1017,9 +1015,7 @@ async function run(): Promise<void> {
       );
     }
 
-    // [4.3] Zero-remaining-balance settlement on bill with positive net total (total > 0, balance = 0)
-    // with newly selected customer_id binds customer_id, awards eligible loyalty cashback once in loyalty_ledger,
-    // and supports idempotent replay while rejecting customer conflict and non-existent customer.
+    // [4.3] Zero-remaining-balance settlement on bill with positive net total awards cashback and replays idempotently
     {
       console.log(
         '\n[4.3] Zero-balance settlement on bill with total > 0 awards cashback and supports idempotent replay',
@@ -1082,10 +1078,9 @@ async function run(): Promise<void> {
       checkEqual(billAfterDisc?.payment_status, 'partial', 'Bill payment_status remains partial');
       checkEqual(billAfterDisc?.customer_id, null, 'Bill customer_id is still null');
 
-      // Now kitchen delivers items
       db.prepare("UPDATE order_items SET status = 'served' WHERE order_id = ?").run(orderId);
 
-      const idemKey = 'idem-n2-zero-bal-cashback-001';
+      const idemKey = 'idem-zero-bal-cashback-001';
       const settleRes = await api(baseUrl, `/api/bills/${billId}/payment`, {
         method: 'POST',
         body: {
@@ -1102,9 +1097,10 @@ async function run(): Promise<void> {
         'cust-f2',
         'Settled bill response binds customer_id',
       );
-      check(
-        Number(settleRes.data?.loyaltyPointsEarned) > 0,
-        `Loyalty cashback credited on positive total zero-balance settlement: got ${settleRes.data?.loyaltyPointsEarned}`,
+      checkEqual(
+        Number(settleRes.data?.loyaltyPointsEarned),
+        50,
+        'Loyalty cashback of 50 points credited on positive total zero-balance settlement',
       );
 
       const billInDb = db
@@ -1125,8 +1121,8 @@ async function run(): Promise<void> {
       checkEqual(ledgerEntries[0]?.type, 'credit', 'Loyalty ledger type is credit');
       checkEqual(
         Number(ledgerEntries[0]?.amount),
-        Number(settleRes.data?.loyaltyPointsEarned),
-        'Loyalty ledger amount matches loyaltyPointsEarned in response',
+        50,
+        'Loyalty ledger credit amount is exactly 50 points',
       );
 
       // (d) Idempotent replay with Idempotency-Key returns cached response with bound customer_id & loyaltyPointsEarned
@@ -1146,9 +1142,9 @@ async function run(): Promise<void> {
         'Replay response preserves bound customer_id',
       );
       checkEqual(
-        replayRes.data?.loyaltyPointsEarned,
-        settleRes.data?.loyaltyPointsEarned,
-        'Replay response preserves loyaltyPointsEarned',
+        Number(replayRes.data?.loyaltyPointsEarned),
+        50,
+        'Replay response preserves 50 loyalty points earned',
       );
       checkEqual(
         JSON.stringify(replayRes.data),

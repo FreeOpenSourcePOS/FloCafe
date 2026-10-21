@@ -398,7 +398,7 @@ export default function InventoryPage() {
 
   return (
     <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 justify-between items-center mb-6">
+      <div className="mb-6 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <Button onClick={openAddSupply}>

@@ -1066,6 +1066,32 @@ test.describe('management lists keep their controls visible while records scroll
     }
   });
 
+  const MANAGEMENT_VIEWPORTS = [
+    { width: 1024, height: 768 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+  ] as const;
+
+  async function expectNoHorizontalOverflow(page: Page, label: string) {
+    const docOverflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(
+      docOverflow.scrollWidth,
+      `${label}: document has no horizontal overflow`,
+    ).toBeLessThanOrEqual(docOverflow.clientWidth);
+
+    const shellOverflow = await page.locator('.dashboard-scroll-shell').evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }));
+    expect(
+      shellOverflow.scrollWidth,
+      `${label}: dashboard scroll shell has no horizontal overflow`,
+    ).toBeLessThanOrEqual(shellOverflow.clientWidth);
+  }
+
   test('products keeps the title, tabs and product actions visible while the rows scroll', async ({
     page,
   }) => {
@@ -1083,12 +1109,77 @@ test.describe('management lists keep their controls visible while records scroll
     const title = page.getByRole('heading', { name: 'Products', level: 1 });
     const tabs = page.getByRole('tablist');
     const addProduct = page.getByRole('button', { name: 'Add Product' });
+    const search = page.getByLabel('Search');
+    const assignTax = page.getByRole('button', { name: 'Assign tax category' });
     const csv = page.getByRole('button', { name: 'CSV' });
+    const printMenu = page.getByRole('button', { name: 'Print Menu' });
+
+    for (const vp of MANAGEMENT_VIEWPORTS) {
+      await page.setViewportSize(vp);
+      const vpLabel = `products (${vp.width}x${vp.height})`;
+      const titleBox = await title.boundingBox();
+      const addBox = await addProduct.boundingBox();
+      const tabsBox = await tabs.boundingBox();
+      const searchBox = await search.boundingBox();
+      const assignTaxBox = await assignTax.boundingBox();
+      const csvBox = await csv.boundingBox();
+      const printMenuBox = await printMenu.boundingBox();
+      const currentRegionBox = await region.boundingBox();
+
+      expect(titleBox, `${vpLabel}: title has bounds`).not.toBeNull();
+      expect(addBox, `${vpLabel}: Add Product has bounds`).not.toBeNull();
+      expect(tabsBox, `${vpLabel}: tablist has bounds`).not.toBeNull();
+      expect(searchBox, `${vpLabel}: #products-search has bounds`).not.toBeNull();
+      expect(assignTaxBox, `${vpLabel}: Assign tax category has bounds`).not.toBeNull();
+      expect(csvBox, `${vpLabel}: CSV has bounds`).not.toBeNull();
+      expect(printMenuBox, `${vpLabel}: Print Menu has bounds`).not.toBeNull();
+      expect(currentRegionBox, `${vpLabel}: scroll region has bounds`).not.toBeNull();
+
+      // Row 1: heading on the left, primary Add CTA on the right.
+      expect(
+        Math.abs(titleBox!.y + titleBox!.height / 2 - (addBox!.y + addBox!.height / 2)),
+        `${vpLabel}: title and Add Product share Row 1`,
+      ).toBeLessThanOrEqual(12);
+      expect(addBox!.x, `${vpLabel}: Add Product sits to the right of the title`).toBeGreaterThan(
+        titleBox!.x + titleBox!.width,
+      );
+
+      // Row 2: tablist below Row 1.
+      expect(tabsBox!.y, `${vpLabel}: tablist is below the page title`).toBeGreaterThan(
+        titleBox!.y + titleBox!.height - 4,
+      );
+      expect(tabsBox!.y, `${vpLabel}: tablist is below Add Product`).toBeGreaterThan(
+        addBox!.y + addBox!.height - 4,
+      );
+
+      // Row 3: search and contextual secondary actions below tablist and above scroll region.
+      for (const [controlName, box] of [
+        ['search', searchBox!],
+        ['Assign tax category', assignTaxBox!],
+        ['CSV', csvBox!],
+        ['Print Menu', printMenuBox!],
+      ] as const) {
+        expect(box.y, `${vpLabel}: ${controlName} is below tablist`).toBeGreaterThanOrEqual(
+          tabsBox!.y + tabsBox!.height - 4,
+        );
+        expect(
+          currentRegionBox!.y,
+          `${vpLabel}: scroll region is below ${controlName}`,
+        ).toBeGreaterThanOrEqual(box.y + box.height - 4);
+      }
+      await expect(search).toHaveAttribute('id', 'products-search');
+
+      await expectNoHorizontalOverflow(page, vpLabel);
+    }
+
     const pinned = {
       title: await elementTop(title, 'products title'),
       tabs: await elementTop(tabs, 'products tabs'),
       addProduct: await elementTop(addProduct, 'add product'),
+      search: await elementTop(search, 'products search'),
+      assignTax: await elementTop(assignTax, 'assign tax category action'),
       csv: await elementTop(csv, 'product CSV action'),
+      printMenu: await elementTop(printMenu, 'print menu action'),
     };
 
     const scrolled = await scrollToEnd(region);
@@ -1097,7 +1188,18 @@ test.describe('management lists keep their controls visible while records scroll
     expectPinned(await elementTop(title, 'products title'), pinned.title, 'products title');
     expectPinned(await elementTop(tabs, 'products tabs'), pinned.tabs, 'products tabs');
     expectPinned(await elementTop(addProduct, 'add product'), pinned.addProduct, 'add product');
+    expectPinned(await elementTop(search, 'products search'), pinned.search, 'products search');
+    expectPinned(
+      await elementTop(assignTax, 'assign tax category action'),
+      pinned.assignTax,
+      'assign tax category action',
+    );
     expectPinned(await elementTop(csv, 'product CSV action'), pinned.csv, 'product CSV action');
+    expectPinned(
+      await elementTop(printMenu, 'print menu action'),
+      pinned.printMenu,
+      'print menu action',
+    );
 
     const regionBox = await region.boundingBox();
     const lastRowBox = await region.locator('tbody tr').last().boundingBox();
@@ -1111,7 +1213,6 @@ test.describe('management lists keep their controls visible while records scroll
     // Tab and Shift+Tab must not land on a control that scrolled out of view.
     const viewport = page.viewportSize();
     expect(viewport, 'viewport is set').not.toBeNull();
-    const search = page.getByLabel('Search');
     const assertFocusVisible = async (label: string) => {
       const focused = await page.evaluate(() => {
         const element = document.activeElement as HTMLElement | null;
@@ -1152,11 +1253,65 @@ test.describe('management lists keep their controls visible while records scroll
       await page.getByRole('tab', { name: entry.tab }).click();
       const region = page.getByTestId(entry.region);
       await expect(region, `${entry.tab}: the list region renders`).toBeVisible();
+      const title = page.getByRole('heading', { name: 'Products', level: 1 });
       const tabs = page.getByRole('tablist');
       const action = page.getByRole('button', { name: entry.action });
+      const search = page.getByLabel('Search');
+      const csv = page.getByRole('button', { name: 'CSV' });
+
+      for (const vp of MANAGEMENT_VIEWPORTS) {
+        await page.setViewportSize(vp);
+        const vpLabel = `products/${entry.tab} (${vp.width}x${vp.height})`;
+        const titleBox = await title.boundingBox();
+        const actionBox = await action.boundingBox();
+        const tabsBox = await tabs.boundingBox();
+        const searchBox = await search.boundingBox();
+        const csvBox = await csv.boundingBox();
+        const currentRegionBox = await region.boundingBox();
+
+        expect(titleBox, `${vpLabel}: title has bounds`).not.toBeNull();
+        expect(actionBox, `${vpLabel}: ${entry.action} has bounds`).not.toBeNull();
+        expect(tabsBox, `${vpLabel}: tablist has bounds`).not.toBeNull();
+        expect(searchBox, `${vpLabel}: #products-search has bounds`).not.toBeNull();
+        expect(csvBox, `${vpLabel}: CSV has bounds`).not.toBeNull();
+        expect(currentRegionBox, `${vpLabel}: scroll region has bounds`).not.toBeNull();
+
+        expect(
+          Math.abs(titleBox!.y + titleBox!.height / 2 - (actionBox!.y + actionBox!.height / 2)),
+          `${vpLabel}: title and ${entry.action} share Row 1`,
+        ).toBeLessThanOrEqual(12);
+        expect(
+          actionBox!.x,
+          `${vpLabel}: ${entry.action} sits to the right of the title`,
+        ).toBeGreaterThan(titleBox!.x + titleBox!.width);
+        expect(tabsBox!.y, `${vpLabel}: tablist is below the header row`).toBeGreaterThan(
+          actionBox!.y + actionBox!.height - 4,
+        );
+        expect(searchBox!.y, `${vpLabel}: search is below tablist`).toBeGreaterThanOrEqual(
+          tabsBox!.y + tabsBox!.height - 4,
+        );
+        expect(csvBox!.y, `${vpLabel}: CSV is below tablist`).toBeGreaterThanOrEqual(
+          tabsBox!.y + tabsBox!.height - 4,
+        );
+        expect(
+          currentRegionBox!.y,
+          `${vpLabel}: scroll region is below search`,
+        ).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height - 4);
+        expect(
+          currentRegionBox!.y,
+          `${vpLabel}: scroll region is below CSV`,
+        ).toBeGreaterThanOrEqual(csvBox!.y + csvBox!.height - 4);
+        await expect(search).toHaveAttribute('id', 'products-search');
+
+        await expectNoHorizontalOverflow(page, vpLabel);
+      }
+
       const pinned = {
+        title: await elementTop(title, 'products title'),
         tabs: await elementTop(tabs, 'products tabs'),
         action: await elementTop(action, `${entry.action} action`),
+        search: await elementTop(search, 'products search'),
+        csv: await elementTop(csv, `${entry.tab} CSV action`),
       };
 
       const scrolled = await scrollToEnd(region);
@@ -1164,11 +1319,18 @@ test.describe('management lists keep their controls visible while records scroll
         0,
       );
 
+      expectPinned(await elementTop(title, 'products title'), pinned.title, 'products title');
       expectPinned(await elementTop(tabs, 'products tabs'), pinned.tabs, 'products tabs');
       expectPinned(
         await elementTop(action, `${entry.action} action`),
         pinned.action,
         `${entry.action} action`,
+      );
+      expectPinned(await elementTop(search, 'products search'), pinned.search, 'products search');
+      expectPinned(
+        await elementTop(csv, `${entry.tab} CSV action`),
+        pinned.csv,
+        `${entry.tab} CSV action`,
       );
 
       const regionBox = await region.boundingBox();
@@ -1197,9 +1359,9 @@ test.describe('management lists keep their controls visible while records scroll
     await page.goto(`${BASE}/inventory`);
 
     const cases = [
-      { tab: 'Supplies', region: 'inventory-supplies-scroll' },
-      { tab: 'Recipes', region: 'inventory-recipes-scroll' },
-      { tab: 'Movements', region: 'inventory-movements-scroll' },
+      { tab: 'Supplies', region: 'inventory-supplies-scroll', action: 'Add supply' },
+      { tab: 'Recipes', region: 'inventory-recipes-scroll', action: 'Create recipe' },
+      { tab: 'Movements', region: 'inventory-movements-scroll', action: null },
     ];
     for (const entry of cases) {
       await page.getByRole('tab', { name: entry.tab }).click();
@@ -1209,6 +1371,51 @@ test.describe('management lists keep their controls visible while records scroll
       const title = page.getByRole('heading', { name: 'Inventory', level: 1 });
       const tabs = page.getByRole('tablist');
       const search = page.getByPlaceholder('Search').first();
+      const action = entry.action ? page.getByRole('button', { name: entry.action }) : null;
+
+      for (const vp of MANAGEMENT_VIEWPORTS) {
+        await page.setViewportSize(vp);
+        const vpLabel = `inventory/${entry.tab} (${vp.width}x${vp.height})`;
+        const titleBox = await title.boundingBox();
+        const tabsBox = await tabs.boundingBox();
+        const searchBox = await search.boundingBox();
+        const currentRegionBox = await region.boundingBox();
+
+        expect(titleBox, `${vpLabel}: title has bounds`).not.toBeNull();
+        expect(tabsBox, `${vpLabel}: tablist has bounds`).not.toBeNull();
+        expect(searchBox, `${vpLabel}: search has bounds`).not.toBeNull();
+        expect(currentRegionBox, `${vpLabel}: scroll region has bounds`).not.toBeNull();
+
+        if (action) {
+          const actionBox = await action.boundingBox();
+          expect(actionBox, `${vpLabel}: ${entry.action} has bounds`).not.toBeNull();
+          expect(
+            Math.abs(titleBox!.y + titleBox!.height / 2 - (actionBox!.y + actionBox!.height / 2)),
+            `${vpLabel}: title and ${entry.action} share Row 1`,
+          ).toBeLessThanOrEqual(12);
+          expect(
+            actionBox!.x,
+            `${vpLabel}: ${entry.action} sits to the right of the title`,
+          ).toBeGreaterThan(titleBox!.x + titleBox!.width);
+          expect(tabsBox!.y, `${vpLabel}: tablist is below ${entry.action}`).toBeGreaterThan(
+            actionBox!.y + actionBox!.height - 4,
+          );
+        }
+
+        expect(tabsBox!.y, `${vpLabel}: tablist is below the page title`).toBeGreaterThan(
+          titleBox!.y + titleBox!.height - 4,
+        );
+        expect(searchBox!.y, `${vpLabel}: search is below tablist`).toBeGreaterThanOrEqual(
+          tabsBox!.y + tabsBox!.height - 4,
+        );
+        expect(
+          currentRegionBox!.y,
+          `${vpLabel}: scroll region is below search`,
+        ).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height - 4);
+
+        await expectNoHorizontalOverflow(page, vpLabel);
+      }
+
       const pinned = {
         title: await elementTop(title, 'inventory title'),
         tabs: await elementTop(tabs, 'inventory tabs'),
@@ -1303,6 +1510,41 @@ test.describe('management lists keep their controls visible while records scroll
     const title = page.getByRole('heading', { name: 'Customers', level: 1 });
     const addCustomer = page.getByRole('button', { name: 'Add Customer' });
     const search = page.getByPlaceholder('Search by name, phone, or email…');
+
+    for (const vp of MANAGEMENT_VIEWPORTS) {
+      await page.setViewportSize(vp);
+      const vpLabel = `customers (${vp.width}x${vp.height})`;
+      const titleBox = await title.boundingBox();
+      const addBox = await addCustomer.boundingBox();
+      const searchBox = await search.boundingBox();
+      const currentRegionBox = await region.boundingBox();
+
+      expect(titleBox, `${vpLabel}: title has bounds`).not.toBeNull();
+      expect(addBox, `${vpLabel}: Add Customer has bounds`).not.toBeNull();
+      expect(searchBox, `${vpLabel}: search has bounds`).not.toBeNull();
+      expect(currentRegionBox, `${vpLabel}: scroll region has bounds`).not.toBeNull();
+
+      expect(
+        Math.abs(titleBox!.y + titleBox!.height / 2 - (addBox!.y + addBox!.height / 2)),
+        `${vpLabel}: title and Add Customer share Row 1`,
+      ).toBeLessThanOrEqual(12);
+      expect(addBox!.x, `${vpLabel}: Add Customer sits to the right of the title`).toBeGreaterThan(
+        titleBox!.x + titleBox!.width,
+      );
+      expect(searchBox!.y, `${vpLabel}: search is below the header row`).toBeGreaterThan(
+        titleBox!.y + titleBox!.height - 4,
+      );
+      expect(searchBox!.y, `${vpLabel}: search is below Add Customer`).toBeGreaterThan(
+        addBox!.y + addBox!.height - 4,
+      );
+      expect(
+        currentRegionBox!.y,
+        `${vpLabel}: scroll region is below search`,
+      ).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height - 4);
+
+      await expectNoHorizontalOverflow(page, vpLabel);
+    }
+
     const pinned = {
       title: await elementTop(title, 'customers title'),
       add: await elementTop(addCustomer, 'add customer'),

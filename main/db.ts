@@ -2559,9 +2559,9 @@ export function getTables(dbInstance: Database.Database): string[] {
   try {
     const tables = dbInstance
       .prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' 
+      SELECT name FROM sqlite_master WHERE type='table'
       AND (sql NOT LIKE 'CREATE VIRTUAL TABLE%' OR sql IS NULL)
-      AND name NOT LIKE 'sqlite_%' 
+      AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE '%_fts_%'
       AND name NOT LIKE '%_fts'
       AND name <> '_flo_meta'
@@ -2580,8 +2580,8 @@ export function validateInventoryLedgerRows(
   addonRows: readonly Record<string, unknown>[] = [],
 ): string | null {
   type Chain = {
-    createdAt: string;
-    id: number;
+    id: number | null;
+    index: number;
     movementType: string;
     quantityDelta: number;
     stockAfter: number;
@@ -2614,26 +2614,20 @@ export function validateInventoryLedgerRows(
     if (movementType === 'sale' && quantityDelta >= 0) {
       return 'Sale movements must reduce product stock';
     }
-    const createdAt = String(row?.created_at ?? '');
     const rawId = Number(row?.id);
-    const id = Number.isFinite(rawId) ? rawId : index;
+    const id = Number.isFinite(rawId) ? rawId : null;
     const key = chainKey(productId, variantId, addonId);
     const movements = movementsByChain.get(key) ?? [];
-    movements.push({ createdAt, id, movementType, quantityDelta, stockAfter });
+    movements.push({ id, index, movementType, quantityDelta, stockAfter });
     movementsByChain.set(key, movements);
   }
 
-  const latestMovementByChain = new Map<
-    string,
-    { createdAt: string; id: number; stockAfter: number }
-  >();
+  const latestMovementByChain = new Map<string, Chain>();
   for (const [key, movements] of movementsByChain) {
     movements.sort((left, right) =>
-      left.createdAt < right.createdAt
-        ? -1
-        : left.createdAt > right.createdAt
-          ? 1
-          : left.id - right.id,
+      left.id !== null && right.id !== null && left.id !== right.id
+        ? left.id - right.id
+        : left.index - right.index,
     );
     const firstMovement = movements[0];
     const firstTolerance =
@@ -2805,8 +2799,9 @@ export function getInventoryMovementRows(dbInstance: Database.Database): Record<
     'source_created_at',
   ].filter((column) => columns.has(column));
   if (selectableColumns.length === 0) return [];
+  const orderBy = columns.has('id') ? ' ORDER BY id ASC' : '';
   return dbInstance
-    .prepare(`SELECT ${selectableColumns.join(', ')} FROM inventory_movements`)
+    .prepare(`SELECT ${selectableColumns.join(', ')} FROM inventory_movements${orderBy}`)
     .all() as Record<string, unknown>[];
 }
 

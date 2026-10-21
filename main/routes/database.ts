@@ -16,6 +16,7 @@ import {
   getForeignKeyViolationKeys,
   getInventoryMovementRows,
   getSchemaVersionFromBackup,
+  getTables,
   isSafeIdentifier,
   mergeKdsEnabledSetting,
   mergeRestoreProtectedSettings,
@@ -90,16 +91,12 @@ router.get('/export', requirePermission('database.manage'), (req: Request, res: 
     const db = getDatabase();
 
     const result = withTxn(() => {
-      const tables = db
-        .prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
-      `)
-        .all() as { name: string }[];
+      const tables = getTables(db);
 
       const exportData: Record<string, any[]> = {};
       const redactedFields: string[] = [];
 
-      for (const { name: tableName } of tables) {
+      for (const tableName of tables) {
         if (!isSafeIdentifier(tableName)) {
           console.warn(`[DB Export] Skipping unsafe table name: ${tableName}`);
           continue;
@@ -110,7 +107,17 @@ router.get('/export', requirePermission('database.manage'), (req: Request, res: 
           continue;
         }
 
-        const rows = db.prepare(`SELECT * FROM ${tableName}`).all() as Record<string, any>[];
+        const allowedColumns = new Set(getTableColumns(db, tableName));
+        const rawRows = db.prepare(`SELECT * FROM ${tableName}`).all() as Record<string, any>[];
+        const rows = rawRows.map((row) => {
+          const sanitized: Record<string, any> = {};
+          for (const [key, value] of Object.entries(row)) {
+            if (allowedColumns.has(key)) {
+              sanitized[key] = value;
+            }
+          }
+          return sanitized;
+        });
 
         if (tableName === 'settings') {
           exportData[tableName] = rows.map((row) => {
@@ -184,6 +191,7 @@ router.post(
           const { data, overwrite } = req.body;
 
           const db = getDatabase();
+          const allowedTables = new Set(getTables(db));
           const preservedRevocations = db
             .prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens')
             .all() as { token_hash: string; expires_at: number; revoked_at: string }[];
@@ -332,7 +340,13 @@ router.post(
           );
           const unresolvedUserIds = new Set<string>();
           for (const [tableName, rows] of Object.entries(importData)) {
-            if (tableName === 'users' || !Array.isArray(rows) || !isSafeIdentifier(tableName))
+            if (
+              tableName === 'users' ||
+              !Array.isArray(rows) ||
+              !isSafeIdentifier(tableName) ||
+              !allowedTables.has(tableName) ||
+              EXPORT_EXCLUDE_TABLES.has(tableName)
+            )
               continue;
             const userReferenceColumns = (
               db.prepare(`PRAGMA foreign_key_list(${tableName})`).all() as {
@@ -391,7 +405,7 @@ router.post(
             try {
               for (const tableName of importedTables) {
                 throwIfDatabaseMaintenanceAborted(signal);
-                if (EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
+                if (!allowedTables.has(tableName) || EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
                 // Validate table name to prevent SQL injection
                 if (!isSafeIdentifier(tableName)) {
                   console.warn(`[DB Import] Skipping unsafe table name: ${tableName}`);
@@ -426,9 +440,9 @@ router.post(
                 // A normal export intentionally omits password/pin hashes. It must not
                 // attempt to recreate users with a NULL required password.
                 if (tableName === 'users' && !importCols.includes('password')) continue;
-                const commonCols = hasVersionMismatch
-                  ? importCols.filter((c) => currentCols.includes(c) && isSafeIdentifier(c))
-                  : importCols;
+                const commonCols = importCols.filter(
+                  (c) => currentCols.includes(c) && isSafeIdentifier(c),
+                );
 
                 if (commonCols.length === 0) continue;
 
@@ -457,10 +471,6 @@ router.post(
                   const orderedRows = rows
                     .map((row, index) => ({ row, index }))
                     .sort((left, right) => {
-                      const leftCreatedAt = String(left.row?.created_at ?? '');
-                      const rightCreatedAt = String(right.row?.created_at ?? '');
-                      if (leftCreatedAt !== rightCreatedAt)
-                        return leftCreatedAt < rightCreatedAt ? -1 : 1;
                       const leftId = Number(left.row?.id);
                       const rightId = Number(right.row?.id);
                       if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId)

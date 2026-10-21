@@ -67,7 +67,12 @@ async function main() {
     '2023-01-01 00:00:00',
     '2023-01-01 00:00:00',
   );
-  insertOrder.run('ORD-TURKISH-ALI', 'cust-turkish-ali', '2023-01-01 00:00:00', '2023-01-01 00:00:00');
+  insertOrder.run(
+    'ORD-TURKISH-ALI',
+    'cust-turkish-ali',
+    '2023-01-01 00:00:00',
+    '2023-01-01 00:00:00',
+  );
   insertOrder.run('ORD-ᲐᲑᲒ-100', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   insertOrder.run('ORD-İST-200', null, '2023-01-01 00:00:00', '2023-01-01 00:00:00');
   for (let i = 0; i < 55; i++) {
@@ -482,7 +487,11 @@ async function main() {
     const probeGeorgian = await api(baseUrl, `/api/orders?search=${encodeURIComponent('აბგ')}`, {
       headers: owner.authHeader,
     });
-    assertEqualOrThrow(probeGeorgian.status, 200, 'probe search for Georgian Mkhedruli აბგ succeeds');
+    assertEqualOrThrow(
+      probeGeorgian.status,
+      200,
+      'probe search for Georgian Mkhedruli აბგ succeeds',
+    );
     assertOrThrow(
       probeGeorgian.data.orders.some((o: any) => o.order_number === 'ORD-GEORGIAN'),
       'probe returns order matching customer Georgian Mtavruli ᲐᲑᲒ',
@@ -500,16 +509,16 @@ async function main() {
       'probe search for Turkish decomposed i\u0307st succeeds',
     );
     assertOrThrow(
-      probeTurkishDecomposed.data.orders.some((o: any) => o.order_number === 'ORD-TURKISH-ISTANBUL'),
+      probeTurkishDecomposed.data.orders.some(
+        (o: any) => o.order_number === 'ORD-TURKISH-ISTANBUL',
+      ),
       'probe returns order matching customer İstanbul with decomposed i\u0307st',
     );
 
     // 20. Stored customer ALİ queried with ASCII ali probe (#1256)
-    const probeTurkishAli = await api(
-      baseUrl,
-      `/api/orders?search=${encodeURIComponent('ali')}`,
-      { headers: owner.authHeader },
-    );
+    const probeTurkishAli = await api(baseUrl, `/api/orders?search=${encodeURIComponent('ali')}`, {
+      headers: owner.authHeader,
+    });
     assertEqualOrThrow(probeTurkishAli.status, 200, 'probe search for ASCII ali succeeds');
     assertOrThrow(
       probeTurkishAli.data.orders.some((o: any) => o.order_number === 'ORD-TURKISH-ALI'),

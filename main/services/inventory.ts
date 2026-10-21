@@ -224,28 +224,42 @@ export function adjustProductStock(
     }
   }
   const stockBefore = Number(current?.stock_quantity ?? 0);
-  const targetPrecision = Math.max(
-    INVENTORY_QUANTITY_PRECISION,
-    Math.min(14, getDecimalPlaces(stockBefore)),
+  const legacyPrecision = Math.max(
+    getDecimalPlaces(stockBefore),
+    getDecimalPlaces(normalizedQuantityDelta),
   );
-  const update = db.prepare(`
-    UPDATE ${stockTable}
-    SET stock_quantity = CASE
-      WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
-      ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
-    END, updated_at = ?
-    WHERE ${stockKey}
-      AND COALESCE(stock_quantity, 0) + ? >= -?
-      AND CASE
-        WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
-        ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
-      END != COALESCE(stock_quantity, 0)
-  `);
+  const isLegacyPrecision = legacyPrecision > INVENTORY_QUANTITY_PRECISION;
+  const update = isLegacyPrecision
+    ? db.prepare(`
+        UPDATE ${stockTable}
+        SET stock_quantity = CASE
+          WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+          ELSE COALESCE(stock_quantity, 0) + ?
+        END, updated_at = ?
+        WHERE ${stockKey}
+          AND COALESCE(stock_quantity, 0) + ? >= -?
+          AND CASE
+            WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+            ELSE COALESCE(stock_quantity, 0) + ?
+          END != COALESCE(stock_quantity, 0)
+      `)
+    : db.prepare(`
+        UPDATE ${stockTable}
+        SET stock_quantity = CASE
+          WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+          ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ${INVENTORY_QUANTITY_PRECISION})
+        END, updated_at = ?
+        WHERE ${stockKey}
+          AND COALESCE(stock_quantity, 0) + ? >= -?
+          AND CASE
+            WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+            ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ${INVENTORY_QUANTITY_PRECISION})
+          END != COALESCE(stock_quantity, 0)
+      `);
   const result = update.run(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    targetPrecision,
     updatedAt,
     ...stockIdArgs,
     normalizedQuantityDelta,
@@ -253,7 +267,6 @@ export function adjustProductStock(
     normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
     normalizedQuantityDelta,
-    targetPrecision,
   );
   if (result.changes !== 1) {
     if (!current) {
@@ -267,7 +280,9 @@ export function adjustProductStock(
 
   const updatedStock = readStock.get(...stockIdArgs) as { stock_quantity: number };
   const stockAfter = Number(updatedStock.stock_quantity);
-  const effectiveQuantityDelta = Number((stockAfter - stockBefore).toFixed(targetPrecision));
+  const effectiveQuantityDelta = isLegacyPrecision
+    ? stockAfter - stockBefore
+    : Number((stockAfter - stockBefore).toFixed(INVENTORY_QUANTITY_PRECISION));
 
   db.prepare(`
     INSERT INTO inventory_movements (

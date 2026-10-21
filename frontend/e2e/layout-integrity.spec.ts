@@ -1116,6 +1116,9 @@ test.describe('management lists keep their controls visible while records scroll
 
     for (const vp of MANAGEMENT_VIEWPORTS) {
       await page.setViewportSize(vp);
+      await region.evaluate((el) => {
+        el.scrollTop = 0;
+      });
       const vpLabel = `products (${vp.width}x${vp.height})`;
       const titleBox = await title.boundingBox();
       const addBox = await addProduct.boundingBox();
@@ -1170,45 +1173,68 @@ test.describe('management lists keep their controls visible while records scroll
       await expect(search).toHaveAttribute('id', 'products-search');
 
       await expectNoHorizontalOverflow(page, vpLabel);
+
+      const pinned = {
+        title: await elementTop(title, `${vpLabel}: products title`),
+        tabs: await elementTop(tabs, `${vpLabel}: products tabs`),
+        addProduct: await elementTop(addProduct, `${vpLabel}: add product`),
+        search: await elementTop(search, `${vpLabel}: products search`),
+        assignTax: await elementTop(assignTax, `${vpLabel}: assign tax category action`),
+        csv: await elementTop(csv, `${vpLabel}: product CSV action`),
+        printMenu: await elementTop(printMenu, `${vpLabel}: print menu action`),
+      };
+
+      const scrolled = await scrollToEnd(region);
+      expect(
+        scrolled.scrollTop,
+        `${vpLabel}: the product list region owns the scroll`,
+      ).toBeGreaterThan(0);
+
+      expectPinned(
+        await elementTop(title, `${vpLabel}: products title`),
+        pinned.title,
+        `${vpLabel}: products title`,
+      );
+      expectPinned(
+        await elementTop(tabs, `${vpLabel}: products tabs`),
+        pinned.tabs,
+        `${vpLabel}: products tabs`,
+      );
+      expectPinned(
+        await elementTop(addProduct, `${vpLabel}: add product`),
+        pinned.addProduct,
+        `${vpLabel}: add product`,
+      );
+      expectPinned(
+        await elementTop(search, `${vpLabel}: products search`),
+        pinned.search,
+        `${vpLabel}: products search`,
+      );
+      expectPinned(
+        await elementTop(assignTax, `${vpLabel}: assign tax category action`),
+        pinned.assignTax,
+        `${vpLabel}: assign tax category action`,
+      );
+      expectPinned(
+        await elementTop(csv, `${vpLabel}: product CSV action`),
+        pinned.csv,
+        `${vpLabel}: product CSV action`,
+      );
+      expectPinned(
+        await elementTop(printMenu, `${vpLabel}: print menu action`),
+        pinned.printMenu,
+        `${vpLabel}: print menu action`,
+      );
+
+      const regionBox = await region.boundingBox();
+      const lastRowBox = await region.locator('tbody tr').last().boundingBox();
+      expect(regionBox, `${vpLabel}: the product list region has bounds`).not.toBeNull();
+      expect(lastRowBox, `${vpLabel}: the last product row has bounds`).not.toBeNull();
+      expect(
+        lastRowBox!.y + lastRowBox!.height,
+        `${vpLabel}: the last product row is reachable`,
+      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
     }
-
-    const pinned = {
-      title: await elementTop(title, 'products title'),
-      tabs: await elementTop(tabs, 'products tabs'),
-      addProduct: await elementTop(addProduct, 'add product'),
-      search: await elementTop(search, 'products search'),
-      assignTax: await elementTop(assignTax, 'assign tax category action'),
-      csv: await elementTop(csv, 'product CSV action'),
-      printMenu: await elementTop(printMenu, 'print menu action'),
-    };
-
-    const scrolled = await scrollToEnd(region);
-    expect(scrolled.scrollTop, 'the product list region owns the scroll').toBeGreaterThan(0);
-
-    expectPinned(await elementTop(title, 'products title'), pinned.title, 'products title');
-    expectPinned(await elementTop(tabs, 'products tabs'), pinned.tabs, 'products tabs');
-    expectPinned(await elementTop(addProduct, 'add product'), pinned.addProduct, 'add product');
-    expectPinned(await elementTop(search, 'products search'), pinned.search, 'products search');
-    expectPinned(
-      await elementTop(assignTax, 'assign tax category action'),
-      pinned.assignTax,
-      'assign tax category action',
-    );
-    expectPinned(await elementTop(csv, 'product CSV action'), pinned.csv, 'product CSV action');
-    expectPinned(
-      await elementTop(printMenu, 'print menu action'),
-      pinned.printMenu,
-      'print menu action',
-    );
-
-    const regionBox = await region.boundingBox();
-    const lastRowBox = await region.locator('tbody tr').last().boundingBox();
-    expect(regionBox, 'the product list region has bounds').not.toBeNull();
-    expect(lastRowBox, 'the last product row has bounds').not.toBeNull();
-    expect(
-      lastRowBox!.y + lastRowBox!.height,
-      'the last product row is reachable',
-    ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
     // Tab and Shift+Tab must not land on a control that scrolled out of view.
     const viewport = page.viewportSize();
@@ -1261,6 +1287,9 @@ test.describe('management lists keep their controls visible while records scroll
 
       for (const vp of MANAGEMENT_VIEWPORTS) {
         await page.setViewportSize(vp);
+        await region.evaluate((el) => {
+          el.scrollTop = 0;
+        });
         const vpLabel = `products/${entry.tab} (${vp.width}x${vp.height})`;
         const titleBox = await title.boundingBox();
         const actionBox = await action.boundingBox();
@@ -1304,43 +1333,55 @@ test.describe('management lists keep their controls visible while records scroll
         await expect(search).toHaveAttribute('id', 'products-search');
 
         await expectNoHorizontalOverflow(page, vpLabel);
+
+        const pinned = {
+          title: await elementTop(title, `${vpLabel}: products title`),
+          tabs: await elementTop(tabs, `${vpLabel}: products tabs`),
+          action: await elementTop(action, `${vpLabel}: ${entry.action} action`),
+          search: await elementTop(search, `${vpLabel}: products search`),
+          csv: await elementTop(csv, `${vpLabel}: ${entry.tab} CSV action`),
+        };
+
+        const scrolled = await scrollToEnd(region);
+        expect(scrolled.scrollTop, `${vpLabel}: the list region owns the scroll`).toBeGreaterThan(
+          0,
+        );
+
+        expectPinned(
+          await elementTop(title, `${vpLabel}: products title`),
+          pinned.title,
+          `${vpLabel}: products title`,
+        );
+        expectPinned(
+          await elementTop(tabs, `${vpLabel}: products tabs`),
+          pinned.tabs,
+          `${vpLabel}: products tabs`,
+        );
+        expectPinned(
+          await elementTop(action, `${vpLabel}: ${entry.action} action`),
+          pinned.action,
+          `${vpLabel}: ${entry.action} action`,
+        );
+        expectPinned(
+          await elementTop(search, `${vpLabel}: products search`),
+          pinned.search,
+          `${vpLabel}: products search`,
+        );
+        expectPinned(
+          await elementTop(csv, `${vpLabel}: ${entry.tab} CSV action`),
+          pinned.csv,
+          `${vpLabel}: ${entry.tab} CSV action`,
+        );
+
+        const regionBox = await region.boundingBox();
+        const lastRowBox = await region.locator('tbody tr').last().boundingBox();
+        expect(regionBox, `${vpLabel}: the list region has bounds`).not.toBeNull();
+        expect(lastRowBox, `${vpLabel}: the last row has bounds`).not.toBeNull();
+        expect(
+          lastRowBox!.y + lastRowBox!.height,
+          `${vpLabel}: the last row is reachable`,
+        ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
       }
-
-      const pinned = {
-        title: await elementTop(title, 'products title'),
-        tabs: await elementTop(tabs, 'products tabs'),
-        action: await elementTop(action, `${entry.action} action`),
-        search: await elementTop(search, 'products search'),
-        csv: await elementTop(csv, `${entry.tab} CSV action`),
-      };
-
-      const scrolled = await scrollToEnd(region);
-      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(
-        0,
-      );
-
-      expectPinned(await elementTop(title, 'products title'), pinned.title, 'products title');
-      expectPinned(await elementTop(tabs, 'products tabs'), pinned.tabs, 'products tabs');
-      expectPinned(
-        await elementTop(action, `${entry.action} action`),
-        pinned.action,
-        `${entry.action} action`,
-      );
-      expectPinned(await elementTop(search, 'products search'), pinned.search, 'products search');
-      expectPinned(
-        await elementTop(csv, `${entry.tab} CSV action`),
-        pinned.csv,
-        `${entry.tab} CSV action`,
-      );
-
-      const regionBox = await region.boundingBox();
-      const lastRowBox = await region.locator('tbody tr').last().boundingBox();
-      expect(regionBox, `${entry.tab}: the list region has bounds`).not.toBeNull();
-      expect(lastRowBox, `${entry.tab}: the last row has bounds`).not.toBeNull();
-      expect(
-        lastRowBox!.y + lastRowBox!.height,
-        `${entry.tab}: the last row is reachable`,
-      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
       // Radix unmounts the inactive tab, so a previous tab cannot leave a
       // stale scroller or toolbar behind.
@@ -1375,6 +1416,9 @@ test.describe('management lists keep their controls visible while records scroll
 
       for (const vp of MANAGEMENT_VIEWPORTS) {
         await page.setViewportSize(vp);
+        await region.evaluate((el) => {
+          el.scrollTop = 0;
+        });
         const vpLabel = `inventory/${entry.tab} (${vp.width}x${vp.height})`;
         const titleBox = await title.boundingBox();
         const tabsBox = await tabs.boundingBox();
@@ -1414,35 +1458,43 @@ test.describe('management lists keep their controls visible while records scroll
         ).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height - 4);
 
         await expectNoHorizontalOverflow(page, vpLabel);
+
+        const pinned = {
+          title: await elementTop(title, `${vpLabel}: inventory title`),
+          tabs: await elementTop(tabs, `${vpLabel}: inventory tabs`),
+          search: await elementTop(search, `${vpLabel}: ${entry.tab} search`),
+        };
+
+        const scrolled = await scrollToEnd(region);
+        expect(scrolled.scrollTop, `${vpLabel}: the list region owns the scroll`).toBeGreaterThan(
+          0,
+        );
+
+        expectPinned(
+          await elementTop(title, `${vpLabel}: inventory title`),
+          pinned.title,
+          `${vpLabel}: inventory title`,
+        );
+        expectPinned(
+          await elementTop(tabs, `${vpLabel}: inventory tabs`),
+          pinned.tabs,
+          `${vpLabel}: inventory tabs`,
+        );
+        expectPinned(
+          await elementTop(search, `${vpLabel}: ${entry.tab} search`),
+          pinned.search,
+          `${vpLabel}: ${entry.tab} search`,
+        );
+
+        const regionBox = await region.boundingBox();
+        const lastRowBox = await region.locator('tbody tr').last().boundingBox();
+        expect(regionBox, `${vpLabel}: the list region has bounds`).not.toBeNull();
+        expect(lastRowBox, `${vpLabel}: the last row has bounds`).not.toBeNull();
+        expect(
+          lastRowBox!.y + lastRowBox!.height,
+          `${vpLabel}: the last row is reachable`,
+        ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
       }
-
-      const pinned = {
-        title: await elementTop(title, 'inventory title'),
-        tabs: await elementTop(tabs, 'inventory tabs'),
-        search: await elementTop(search, `${entry.tab} search`),
-      };
-
-      const scrolled = await scrollToEnd(region);
-      expect(scrolled.scrollTop, `${entry.tab}: the list region owns the scroll`).toBeGreaterThan(
-        0,
-      );
-
-      expectPinned(await elementTop(title, 'inventory title'), pinned.title, 'inventory title');
-      expectPinned(await elementTop(tabs, 'inventory tabs'), pinned.tabs, 'inventory tabs');
-      expectPinned(
-        await elementTop(search, `${entry.tab} search`),
-        pinned.search,
-        `${entry.tab} search`,
-      );
-
-      const regionBox = await region.boundingBox();
-      const lastRowBox = await region.locator('tbody tr').last().boundingBox();
-      expect(regionBox, `${entry.tab}: the list region has bounds`).not.toBeNull();
-      expect(lastRowBox, `${entry.tab}: the last row has bounds`).not.toBeNull();
-      expect(
-        lastRowBox!.y + lastRowBox!.height,
-        `${entry.tab}: the last row is reachable`,
-      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
       for (const other of cases.filter((candidate) => candidate.region !== entry.region)) {
         await expect(
@@ -1513,6 +1565,9 @@ test.describe('management lists keep their controls visible while records scroll
 
     for (const vp of MANAGEMENT_VIEWPORTS) {
       await page.setViewportSize(vp);
+      await region.evaluate((el) => {
+        el.scrollTop = 0;
+      });
       const vpLabel = `customers (${vp.width}x${vp.height})`;
       const titleBox = await title.boundingBox();
       const addBox = await addCustomer.boundingBox();
@@ -1543,29 +1598,44 @@ test.describe('management lists keep their controls visible while records scroll
       ).toBeGreaterThanOrEqual(searchBox!.y + searchBox!.height - 4);
 
       await expectNoHorizontalOverflow(page, vpLabel);
+
+      const pinned = {
+        title: await elementTop(title, `${vpLabel}: customers title`),
+        add: await elementTop(addCustomer, `${vpLabel}: add customer`),
+        search: await elementTop(search, `${vpLabel}: customer search`),
+      };
+
+      const scrolled = await scrollToEnd(region);
+      expect(
+        scrolled.scrollTop,
+        `${vpLabel}: the customer list region owns the scroll`,
+      ).toBeGreaterThan(0);
+
+      expectPinned(
+        await elementTop(title, `${vpLabel}: customers title`),
+        pinned.title,
+        `${vpLabel}: customers title`,
+      );
+      expectPinned(
+        await elementTop(addCustomer, `${vpLabel}: add customer`),
+        pinned.add,
+        `${vpLabel}: add customer`,
+      );
+      expectPinned(
+        await elementTop(search, `${vpLabel}: customer search`),
+        pinned.search,
+        `${vpLabel}: customer search`,
+      );
+
+      const regionBox = await region.boundingBox();
+      const lastRowBox = await region.locator('tbody tr').last().boundingBox();
+      expect(regionBox, `${vpLabel}: the customer list region has bounds`).not.toBeNull();
+      expect(lastRowBox, `${vpLabel}: the last customer row has bounds`).not.toBeNull();
+      expect(
+        lastRowBox!.y + lastRowBox!.height,
+        `${vpLabel}: the last customer row is reachable`,
+      ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
     }
-
-    const pinned = {
-      title: await elementTop(title, 'customers title'),
-      add: await elementTop(addCustomer, 'add customer'),
-      search: await elementTop(search, 'customer search'),
-    };
-
-    const scrolled = await scrollToEnd(region);
-    expect(scrolled.scrollTop, 'the customer list region owns the scroll').toBeGreaterThan(0);
-
-    expectPinned(await elementTop(title, 'customers title'), pinned.title, 'customers title');
-    expectPinned(await elementTop(addCustomer, 'add customer'), pinned.add, 'add customer');
-    expectPinned(await elementTop(search, 'customer search'), pinned.search, 'customer search');
-
-    const regionBox = await region.boundingBox();
-    const lastRowBox = await region.locator('tbody tr').last().boundingBox();
-    expect(regionBox, 'the customer list region has bounds').not.toBeNull();
-    expect(lastRowBox, 'the last customer row has bounds').not.toBeNull();
-    expect(
-      lastRowBox!.y + lastRowBox!.height,
-      'the last customer row is reachable',
-    ).toBeLessThanOrEqual(regionBox!.y + regionBox!.height + 1);
 
     // The pinned search still filters the scrolled list.
     await search.fill(SYNTHETIC_CUSTOMER_PREFIX);

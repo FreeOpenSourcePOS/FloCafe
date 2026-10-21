@@ -2808,25 +2808,41 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       // Signed-in staff fallback mode also drains multiple /api/orders cursor pages via before_id and deduplicates
       await page.setViewportSize({ width: 1920, height: 1080 });
       await loginAsManager(page);
+      await page.clock.install();
       const staffBeforeIds: Array<string | null> = [];
       const staffStatuses: Array<string | null> = [];
       const staffPerPages: Array<string | null> = [];
+      let staffSettingsMode: 'all' | 'ready-only' | 'preparing-only' | 'fail' = 'all';
+      let staffOrdersFail = false;
       await page.route(
         (url) => url.pathname === '/api/settings/customer-display',
-        (route) =>
-          route.fulfill({
+        (route) => {
+          if (staffSettingsMode === 'fail') {
+            return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+          }
+          const statuses =
+            staffSettingsMode === 'ready-only'
+              ? ['ready']
+              : staffSettingsMode === 'preparing-only'
+                ? ['preparing']
+                : ['pending', 'preparing', 'ready'];
+          return route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
-              statuses: ['pending', 'preparing', 'ready'],
+              statuses,
               refresh_seconds: 3,
               show_updated: true,
             }),
-          }),
+          });
+        },
       );
       await page.route(
         (url) => url.pathname === '/api/orders',
         (route) => {
+          if (staffOrdersFail) {
+            return route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+          }
           const params = new URL(route.request().url()).searchParams;
           const beforeId = params.get('before_id');
           staffBeforeIds.push(beforeId);
@@ -2853,6 +2869,7 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         },
       );
       await page.goto(`${BASE}/customer-display`);
+      await page.clock.runFor(1);
       const staffReady = page.getByTestId('customer-display-ready-scroll');
       await expect.poll(() => staffBeforeIds.slice(0, 2)).toEqual([null, 'staff-cursor-2']);
       expect(staffStatuses[0]).toBe('pending,preparing,ready');
@@ -2867,6 +2884,29 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
           'display-ready-5',
           'display-ready-6',
         ]);
+
+      // Switch staff display to ready-only on a successful poll
+      staffSettingsMode = 'ready-only';
+      await page.clock.runFor(3000);
+      await expect(page.getByTestId('customer-display-preparing-scroll')).toHaveCount(0);
+      await expect(staffReady.locator('[data-order-id="display-ready-1"]:visible')).toBeVisible();
+
+      // Next poll reads preparing-only settings, but /api/orders fails; then settings fails while /api/orders succeeds.
+      // configRef and config state must stay aligned so fetched orders never disappear behind mismatched column visibility.
+      staffSettingsMode = 'preparing-only';
+      staffOrdersFail = true;
+      await page.clock.runFor(3000);
+      await expect(
+        page.getByText('Connection lost. Showing the last available orders.'),
+      ).toBeVisible();
+
+      staffSettingsMode = 'fail';
+      staffOrdersFail = false;
+      await page.clock.runFor(3000);
+      await expect(
+        page.getByText('Connection lost. Showing the last available orders.'),
+      ).toHaveCount(0);
+      await expect(staffReady.locator('[data-order-id="display-ready-1"]:visible')).toBeVisible();
 
       // Multi-page drain whose total time (3 x 4000ms = 12000ms) exceeds the 10000ms per-request timeout succeeds
       // when each individual page responds within 10000ms, and 5-page polling at refresh_seconds: 2 stays within 120 req/min

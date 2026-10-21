@@ -648,7 +648,6 @@ export default function CustomerDisplayPage() {
           if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
           if (!firstFeed) {
             firstFeed = feed;
-            configRef.current = feed.config;
           }
           pages.push(feed.orders);
           const nextCursor =
@@ -675,6 +674,7 @@ export default function CustomerDisplayPage() {
           }
         }
         const mergedOrders = [...mergedById.values()];
+        configRef.current = firstFeed.config;
         setConfig(firstFeed.config);
         setBusinessName(firstFeed.business_name);
         acceptOrders(mergedOrders);
@@ -724,9 +724,6 @@ export default function CustomerDisplayPage() {
           .get('/settings/customer-display', { signal: controller.signal })
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
-        if (validConfig) {
-          configRef.current = validConfig;
-        }
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
         const seenById = new Map<string, Order>();
         let beforeId: number | string | null = null;
@@ -765,9 +762,8 @@ export default function CustomerDisplayPage() {
             return compareOrderIds(a.id, b.id);
           })
           .map(toBoardOrder);
-        if (validConfig) {
-          setConfig(validConfig);
-        }
+        configRef.current = activeConfig;
+        setConfig(activeConfig);
         acceptOrders(nextOrders);
         setError(false);
         setLastUpdated(new Date());

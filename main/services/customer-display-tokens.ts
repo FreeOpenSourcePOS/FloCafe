@@ -174,7 +174,7 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
       ? db
           .prepare(
             `${selectColumns}
-             WHERE +o.status IN (${placeholders})
+             WHERE o.status IN (${placeholders})
                AND o.created_at <= ?
                AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
              ORDER BY o.created_at DESC, o.id DESC

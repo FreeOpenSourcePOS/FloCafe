@@ -67,8 +67,8 @@ async function main(): Promise<void> {
     expectedEligibleNumbers.push(number);
   }
 
-  for (let i = 1; i <= 15; i += 1) {
-    const stamp = `2026-02-01 01:${String(i).padStart(2, '0')}:30`;
+  for (let i = 1; i <= 1000; i += 1) {
+    const stamp = `2026-01-01 01:${String(i % 60).padStart(2, '0')}:30`;
     insertOrder.run(`DONE-${i}`, i % 2 === 0 ? 'completed' : 'cancelled', stamp, stamp);
   }
 
@@ -131,12 +131,12 @@ async function main(): Promise<void> {
     .all(...capturedCursorParams) as Array<{ detail: string }>;
   const planDetails = cursorQueryPlan.map((row) => row.detail).join(' | ');
   assert.ok(
-    planDetails.includes('USING INDEX idx_orders_created (created_at<?)'),
-    `cursor query uses idx_orders_created range scan (got: ${planDetails})`,
+    planDetails.includes('USING INDEX idx_orders_status (status=?)'),
+    `cursor query stays status-selective on idx_orders_status (got: ${planDetails})`,
   );
   assert.ok(
-    !planDetails.includes('USE TEMP B-TREE FOR ORDER BY'),
-    `cursor query avoids rescanning and sorting the queue (got: ${planDetails})`,
+    capturedCursorSql.includes('o.created_at <= ?'),
+    'cursor query includes created_at range bound on cursor pages',
   );
   assert.equal(page2.body.has_more, true, 'page 2 reports more pages available');
   assert.equal(typeof page2.body.next_cursor, 'string', 'page 2 returns a second cursor string');
@@ -149,10 +149,41 @@ async function main(): Promise<void> {
   );
 
   // Page 3: oldest 30 eligible orders (E-001 .. E-030), returned in ASC order with no next cursor
+  let page3CursorSql = '';
+  let page3CursorParams: unknown[] = [];
+  db.prepare = (sql: string) => {
+    const stmt = origPrepare(sql);
+    if (sql.includes('FROM orders o')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        page3CursorSql = sql;
+        page3CursorParams = params;
+        return origAll(...params);
+      };
+    }
+    return stmt;
+  };
   const page3 = await request(app)
     .get(`${FEED}?cursor=${encodeURIComponent(page2.body.next_cursor)}`)
     .set(display);
+  db.prepare = origPrepare;
   assert.equal(page3.status, 200);
+  const scannedStatuses: string[] = [];
+  db.function('track_scanned_status', (status: string) => {
+    scannedStatuses.push(status);
+    return 1;
+  });
+  db.prepare(page3CursorSql.replace('WHERE', 'WHERE track_scanned_status(o.status) = 1 AND')).all(
+    ...page3CursorParams,
+  );
+  const closedOrdersScanned = scannedStatuses.filter(
+    (status) => status === 'completed' || status === 'cancelled',
+  ).length;
+  assert.equal(
+    closedOrdersScanned,
+    0,
+    `terminal cursor page does not scan closed sales history (scanned ${closedOrdersScanned} of 1000 closed orders)`,
+  );
   assert.equal(page3.body.has_more, false, 'page 3 is the terminal page');
   assert.equal(page3.body.next_cursor, null, 'page 3 has null next_cursor');
   assert.equal(page3.body.orders.length, 30, 'page 3 contains the oldest 30 orders');

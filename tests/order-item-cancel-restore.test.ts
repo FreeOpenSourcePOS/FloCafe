@@ -30,6 +30,16 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 process.env.JWT_SECRET = 'test-secret-order-item-cancel-restore';
 
 const bcrypt = require('bcryptjs');
+let pinApprovalHook: (() => Promise<void> | void) | null = null;
+const originalBcryptCompare = bcrypt.compare;
+bcrypt.compare = async function (...args: any[]) {
+  if (pinApprovalHook) {
+    const hook = pinApprovalHook;
+    pinApprovalHook = null;
+    await hook();
+  }
+  return originalBcryptCompare.apply(this, args);
+};
 const jwt = require('jsonwebtoken');
 const {
   initTestDb, createApp, startServer, api, assertOrThrow, assertEqualOrThrow,
@@ -256,10 +266,219 @@ async function main() {
       assertEqualOrThrow((db.prepare("SELECT COUNT(*) AS n FROM txn_nesting WHERE id = 'kept-outer'").get() as any).n, 0, 'a failed nested transaction rolls back the parent scope');
     }
 
+    console.log('\n─── Issue #1253 (N1): Concurrent charge waivers and delivery updates during async item-void PIN verification ───');
+    {
+      const chargeDefs = [
+        {
+          id: 'service_charge',
+          name: 'Service Charge',
+          type: 'percentage',
+          value: 10,
+          calculation_basis: 'gross',
+          order_types: ['takeaway', 'dine_in'],
+          is_optional: true,
+          is_default_active: true,
+          is_active: true,
+        },
+        {
+          id: 'packaging_charge',
+          name: 'Packaging Charge',
+          type: 'percentage',
+          value: 5,
+          calculation_basis: 'gross',
+          order_types: ['takeaway', 'dine_in'],
+          is_optional: true,
+          is_default_active: true,
+          is_active: true,
+        },
+      ];
+      db.prepare(
+        "INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ).run(JSON.stringify(chargeDefs));
+
+      // 1. Waiving optional service_charge while item void is awaiting async manager PIN verification
+      {
+        const orderRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          body: {
+            type: 'takeaway',
+            items: [
+              { product_id: 'prod-cancel', quantity: 1 },
+              { product_id: 'prod-cancel-plain', quantity: 1 },
+            ],
+          },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(orderRes.status, 201, 'order with 2 items created');
+        const orderId = orderRes.data.order.id;
+        const voidItemId = orderRes.data.order.items[0].id;
+
+        // Mark the first item as preparing so voiding it requires manager PIN
+        db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(voidItemId);
+
+        const billRes = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          body: { order_id: orderId },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(billRes.status, 201, 'unpaid bill generated');
+        const billId = billRes.data.bill.id;
+        assertEqualOrThrow(billRes.data.bill.service_charge, 20, 'initial bill service_charge is 20');
+
+        let hookRan = false;
+        pinApprovalHook = async () => {
+          const waiveRes = await api(baseUrl, `/api/bills/${billId}/charges`, {
+            method: 'PATCH',
+            body: { charge_id: 'service_charge', waived: true },
+            headers: ownerAuth,
+          });
+          assertEqualOrThrow(waiveRes.status, 200, 'service_charge waived during async PIN verification');
+          hookRan = true;
+        };
+
+        const cancelRes = await cancel(orderId, voidItemId, { override_pin: '1234' }, cashierAuth);
+        assertEqualOrThrow(cancelRes.status, 200, 'item voided with valid manager PIN');
+        assertOrThrow(hookRan, 'pinApprovalHook executed while awaiting PIN verification');
+
+        const orderRow = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const billRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+
+        assertEqualOrThrow(orderRow.service_charge, 0, 'order service_charge remains 0 (waived)');
+        const orderCharges = JSON.parse(orderRow.charges_breakdown || '[]');
+        const orderService = orderCharges.find((c: any) => c.id === 'service_charge');
+        assertEqualOrThrow(orderService?.waived, true, 'order charges_breakdown preserves service_charge waived: true');
+        assertEqualOrThrow(orderService?.amount, 0, 'order charges_breakdown preserves service_charge amount 0');
+
+        assertEqualOrThrow(billRow.service_charge, 0, 'bill service_charge remains 0 (waived)');
+        const billCharges = JSON.parse(billRow.charges_breakdown || '[]');
+        const billService = billCharges.find((c: any) => c.id === 'service_charge');
+        assertEqualOrThrow(billService?.waived, true, 'bill charges_breakdown preserves service_charge waived: true');
+        assertEqualOrThrow(billService?.amount, 0, 'bill charges_breakdown preserves service_charge amount 0');
+      }
+
+      // 2. Waiving optional packaging_charge while item void is awaiting async manager PIN verification (multi-item order)
+      {
+        const orderRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          body: {
+            type: 'takeaway',
+            items: [
+              { product_id: 'prod-cancel', quantity: 1 },
+              { product_id: 'prod-cancel-plain', quantity: 1 },
+            ],
+          },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(orderRes.status, 201, 'order with 2 items created');
+        const orderId = orderRes.data.order.id;
+        const voidItemId = orderRes.data.order.items[0].id;
+
+        db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(voidItemId);
+
+        const billRes = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          body: { order_id: orderId },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(billRes.status, 201, 'unpaid bill generated');
+        const billId = billRes.data.bill.id;
+        assertEqualOrThrow(billRes.data.bill.packaging_charge, 10, 'initial bill packaging_charge is 10');
+
+        let hookRan = false;
+        pinApprovalHook = async () => {
+          const waiveRes = await api(baseUrl, `/api/bills/${billId}/charges`, {
+            method: 'PATCH',
+            body: { charge_id: 'packaging_charge', waived: true },
+            headers: ownerAuth,
+          });
+          assertEqualOrThrow(waiveRes.status, 200, 'packaging_charge waived during async PIN verification');
+          hookRan = true;
+        };
+
+        const cancelRes = await cancel(orderId, voidItemId, { override_pin: '1234' }, cashierAuth);
+        assertEqualOrThrow(cancelRes.status, 200, 'item voided with valid manager PIN');
+        assertOrThrow(hookRan, 'pinApprovalHook executed while awaiting PIN verification');
+
+        const orderRow = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const billRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+
+        assertEqualOrThrow(orderRow.packaging_charge, 0, 'order packaging_charge remains 0 (waived)');
+        const orderCharges = JSON.parse(orderRow.charges_breakdown || '[]');
+        const orderPackaging = orderCharges.find((c: any) => c.id === 'packaging_charge');
+        assertEqualOrThrow(orderPackaging?.waived, true, 'order charges_breakdown preserves packaging_charge waived: true');
+        assertEqualOrThrow(orderPackaging?.amount, 0, 'order charges_breakdown preserves packaging_charge amount 0');
+
+        assertEqualOrThrow(billRow.packaging_charge, 0, 'bill packaging_charge remains 0 (waived)');
+        const billCharges = JSON.parse(billRow.charges_breakdown || '[]');
+        const billPackaging = billCharges.find((c: any) => c.id === 'packaging_charge');
+        assertEqualOrThrow(billPackaging?.waived, true, 'bill charges_breakdown preserves packaging_charge waived: true');
+        assertEqualOrThrow(billPackaging?.amount, 0, 'bill charges_breakdown preserves packaging_charge amount 0');
+      }
+
+      // 3. Waiving optional packaging_charge and updating delivery_charge during async PIN verification on the last active item (orderCancelled === true)
+      {
+        const orderRes = await api(baseUrl, '/api/orders', {
+          method: 'POST',
+          body: {
+            type: 'takeaway',
+            items: [
+              { product_id: 'prod-cancel', quantity: 1 },
+            ],
+          },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(orderRes.status, 201, 'single-item order created');
+        const orderId = orderRes.data.order.id;
+        const voidItemId = orderRes.data.order.items[0].id;
+
+        db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(voidItemId);
+
+        const billRes = await api(baseUrl, '/api/bills/generate', {
+          method: 'POST',
+          body: { order_id: orderId },
+          headers: ownerAuth,
+        });
+        assertEqualOrThrow(billRes.status, 201, 'unpaid bill generated');
+        const billId = billRes.data.bill.id;
+
+        let hookRan = false;
+        pinApprovalHook = async () => {
+          const waiveRes = await api(baseUrl, `/api/bills/${billId}/charges`, {
+            method: 'PATCH',
+            body: { charge_id: 'packaging_charge', waived: true },
+            headers: ownerAuth,
+          });
+          assertEqualOrThrow(waiveRes.status, 200, 'packaging_charge waived during async PIN verification');
+          db.prepare('UPDATE orders SET delivery_charge = ? WHERE id = ?').run(15, orderId);
+          hookRan = true;
+        };
+
+        const cancelRes = await cancel(orderId, voidItemId, { override_pin: '1234' }, cashierAuth);
+        assertEqualOrThrow(cancelRes.status, 200, 'last item voided with valid manager PIN');
+        assertOrThrow(hookRan, 'pinApprovalHook executed while awaiting PIN verification');
+
+        const orderRow = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const billRow = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+
+        assertEqualOrThrow(orderRow.status, 'cancelled', 'order is cancelled after last item is voided');
+        assertEqualOrThrow(orderRow.subtotal, 0, 'cancelled order subtotal is 0');
+        assertEqualOrThrow(orderRow.service_charge, 0, 'cancelled order service_charge is 0');
+        assertEqualOrThrow(orderRow.packaging_charge, 0, 'cancelled order packaging_charge is 0');
+        assertEqualOrThrow(orderRow.charges_breakdown, '[]', 'cancelled order charges_breakdown is empty array');
+
+        assertEqualOrThrow(billRow.subtotal, 0, 'unpaid bill subtotal is 0 after order cancellation');
+        assertEqualOrThrow(billRow.service_charge, 0, 'unpaid bill service_charge is 0');
+        assertEqualOrThrow(billRow.packaging_charge, 0, 'unpaid bill packaging_charge is 0');
+        assertEqualOrThrow(billRow.charges_breakdown, '[]', 'unpaid bill charges_breakdown is empty array');
+        assertEqualOrThrow(billRow.delivery_charge, 15, 'unpaid bill delivery_charge reflects currentOrder delivery_charge');
+      }
+    }
+
     console.log('\n─── Audit trail ───');
     assertOrThrow(!!db.prepare("SELECT 1 FROM order_audit_log WHERE action = 'item_cancelled'").get(), 'cancel writes an item_cancelled audit entry');
     assertOrThrow(!!db.prepare("SELECT 1 FROM order_audit_log WHERE action = 'item_restored'").get(), 'restore writes an item_restored audit entry');
   } finally {
+    bcrypt.compare = originalBcryptCompare;
     server.close();
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

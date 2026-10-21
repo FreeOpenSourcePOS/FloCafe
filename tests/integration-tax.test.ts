@@ -1101,6 +1101,66 @@ async function main() {
       assertEqual(childBill.subtotal, 100.1, 'child bill subtotal = 100.10');
       assert(childBill.tax_amount > 0, 'child bill carries allocated tax');
     }
+
+    // ── Step 14b: Takeaway conversion and mutations with charges under scope: document ──
+    console.log('\n14b. Takeaway conversion and item addition with charges');
+    const takeawayCharges = [
+      {
+        id: 'packaging_charge',
+        name: 'Packaging Charge',
+        type: 'fixed',
+        value: 100.10,
+        calculation_basis: 'gross',
+        order_types: ['takeaway'],
+        is_optional: false,
+        is_default_active: true,
+        is_active: true,
+      },
+    ];
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(JSON.stringify(takeawayCharges), now());
+
+    const dineInOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-doc-1',
+        items: [{ product_id: 'prod-doc-1', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(dineInOrderRes.status, 201, 'dine-in order created');
+    assertEqual(dineInOrderRes.data.order.packaging_charge, 0, 'dine-in packaging charge = 0');
+    assertEqual(dineInOrderRes.data.order.tax_amount, 5.01, 'dine-in tax = 5.01');
+
+    const convertRes = await api(baseUrl, `/api/orders/${dineInOrderRes.data.order.id}/convert-to-takeaway`, {
+      method: 'PATCH',
+      headers: authHeader,
+    });
+    assertEqual(convertRes.status, 200, 'converted to takeaway');
+    assertEqual(convertRes.data.order.packaging_charge, 100.10, 'takeaway resolved packaging charge = 100.10');
+    assertEqual(convertRes.data.order.tax_amount, 10.01, 'takeaway conversion calculates packaging charge tax unified with item');
+    assertEqual(convertRes.data.order.total, 210.21, 'takeaway total = 210.21');
+
+    const addTakeawayItemRes = await api(baseUrl, `/api/orders/${dineInOrderRes.data.order.id}/items`, {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-doc-2', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(addTakeawayItemRes.status, 200, 'item added to takeaway order');
+    assertEqual(addTakeawayItemRes.data.order.subtotal, 200.20, 'updated subtotal = 200.20');
+    assertEqual(addTakeawayItemRes.data.order.packaging_charge, 100.10, 'packaging charge preserved');
+    assertEqual(addTakeawayItemRes.data.order.tax_amount, 15.02, 'updated order tax across items + packaging charge = 15.02');
+    assertEqual(addTakeawayItemRes.data.order.total, 315.32, 'updated order total = 315.32');
+
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('custom_charges', '[]', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(now());
   } finally {
     server.close();
     closeDatabase();

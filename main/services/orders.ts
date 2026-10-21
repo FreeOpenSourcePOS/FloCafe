@@ -1,8 +1,6 @@
 import { getDatabase, now } from '../db';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
-  calculateConfiguredChargeTaxes,
-  calculateDocumentItemTaxes,
   calculateDocumentTaxes,
   combineItemAndChargeTaxes,
   type ChargeTaxContext,
@@ -41,9 +39,15 @@ export interface OrderTotals {
   allTaxSnapshots: (string | null)[];
   activeItems: OrderItemRow[];
   chargeTaxes?: ChargeTaxSummary;
+  itemsForCalculation?: Array<{ lineId: string; product: Product; taxableAmount: number }>;
+  db?: Database;
 }
 
-export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
+export function calculateOrderTotals(
+  db: Database,
+  orderId: string | number,
+  callerChargeContext?: ChargeTaxContext | null,
+): OrderTotals {
   const allItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? ORDER BY rowid ASC`).all(orderId) as OrderItemRow[];
   const activeItems = allItems.filter(
     (item) => item.status === null || item.status === undefined || !TERMINAL_ITEM_STATUSES.includes(item.status as any),
@@ -69,7 +73,7 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
     ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(orderRow.customer_id) as Customer | null)
     : null;
 
-  const chargeContext: ChargeTaxContext = {
+  const chargeContext: ChargeTaxContext = callerChargeContext ?? {
     packaging_charge: orderRow?.packaging_charge || 0,
     delivery_charge: orderRow?.delivery_charge || 0,
     service_charge: orderRow?.service_charge || 0,
@@ -78,45 +82,45 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
     service_charge_tax_category_id: orderRow?.service_charge_tax_category_id || null,
   };
 
+  const itemsForCalculation: Array<{ lineId: string; product: Product; taxableAmount: number }> = activeItems.map((item, idx) => {
+    let snapshotLine: any = null;
+    if (item.tax_snapshot) {
+      try {
+        const parsed = typeof item.tax_snapshot === 'string' ? JSON.parse(item.tax_snapshot) : item.tax_snapshot;
+        if (Array.isArray(parsed?.lines) && parsed.lines.length > 0) {
+          snapshotLine = parsed.lines[0];
+        }
+      } catch { }
+    }
+
+    const product = item.product_id
+      ? (db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any)
+      : null;
+
+    const productForTax: Product = {
+      id: item.product_id ?? undefined,
+      tax_type: item.tax_type || product?.tax_type || 'none',
+      tax_rate: product?.tax_rate || 0,
+      tax_category_id: snapshotLine
+        ? (snapshotLine.categoryId ?? product?.tax_category_id ?? product?.tax_category ?? null)
+        : null,
+      tax_behavior: snapshotLine
+        ? (snapshotLine.taxBehavior ?? product?.tax_behavior ?? 'country_default')
+        : (product?.tax_behavior || 'country_default'),
+    };
+
+    return {
+      lineId: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
+      product: productForTax,
+      taxableAmount: item.subtotal || 0,
+    };
+  });
+
   let documentChargeTaxes: ChargeTaxSummary | undefined;
 
   const hasTaxableItem = activeItems.some((item) => Boolean(item.tax_snapshot));
   if (tenantInfo.taxes_enabled && hasTaxableItem && activeItems.length > 0) {
     const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');
-
-    const itemsForCalculation = activeItems.map((item, idx) => {
-      let snapshotLine: any = null;
-      if (item.tax_snapshot) {
-        try {
-          const parsed = typeof item.tax_snapshot === 'string' ? JSON.parse(item.tax_snapshot) : item.tax_snapshot;
-          if (Array.isArray(parsed?.lines) && parsed.lines.length > 0) {
-            snapshotLine = parsed.lines[0];
-          }
-        } catch { }
-      }
-
-      const product = item.product_id
-        ? (db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any)
-        : null;
-
-      const productForTax: Product = {
-        id: item.product_id ?? undefined,
-        tax_type: item.tax_type || product?.tax_type || 'none',
-        tax_rate: product?.tax_rate || 0,
-        tax_category_id: snapshotLine
-          ? (snapshotLine.categoryId ?? product?.tax_category_id ?? product?.tax_category ?? null)
-          : null,
-        tax_behavior: snapshotLine
-          ? (snapshotLine.taxBehavior ?? product?.tax_behavior ?? 'country_default')
-          : (product?.tax_behavior || 'country_default'),
-      };
-
-      return {
-        lineId: `line-${String(idx + 1).padStart(4, '0')}:${item.id}`,
-        product: productForTax,
-        taxableAmount: item.subtotal || 0,
-      };
-    });
 
     const { itemResults: taxResults, chargeTaxes } = calculateDocumentTaxes(tenantInfo, {
       items: itemsForCalculation,
@@ -194,6 +198,8 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
     allTaxBreakdowns,
     allTaxSnapshots,
     activeItems,
+    itemsForCalculation,
+    db,
     ...(documentChargeTaxes ? { chargeTaxes: documentChargeTaxes } : {}),
   };
 }
@@ -282,29 +288,125 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
   const effectiveDiscount = Math.max(0, Math.min(discountAmount, subtotal));
   const discountedSubtotal = Math.max(0, subtotal - effectiveDiscount);
 
-  let taxRatio = 1;
-  let taxAmount = totals.totalTax;
-  let exclusiveTaxAmount = totals.exclusiveTax;
-  if (taxScaling === 'always' || (discountAmount > 0 && subtotal > 0)) {
-    taxRatio = subtotal > 0 ? discountedSubtotal / subtotal : 1;
-    taxAmount = Number((totals.totalTax * taxRatio).toFixed(decimals));
-    exclusiveTaxAmount = Number((totals.exclusiveTax * taxRatio).toFixed(decimals));
+  let chargeTaxes: ChargeTaxSummary = {
+    taxAmount: 0,
+    exclusiveTaxAmount: 0,
+    breakdowns: [],
+    snapshotJson: [],
+  };
+  let baseTotalTax = totals.totalTax;
+  let baseExclusiveTax = totals.exclusiveTax;
+  let baseTaxBreakdowns = totals.allTaxBreakdowns;
+  let baseTaxSnapshots = totals.allTaxSnapshots;
+
+  if (tenantInfo.taxes_enabled) {
+    const hasItems = Boolean(totals.itemsForCalculation && totals.itemsForCalculation.length > 0);
+    const hasCharges = Number(effectiveChargeContext.packaging_charge || 0) > 0 ||
+      Number(effectiveChargeContext.service_charge || 0) > 0 ||
+      Number(effectiveChargeContext.delivery_charge || 0) > 0;
+
+    if (hasItems || hasCharges) {
+      const { itemResults: taxResults, chargeTaxes: docChargeTaxes } = calculateDocumentTaxes(tenantInfo, {
+        items: totals.itemsForCalculation || [],
+        chargeContext: effectiveChargeContext,
+        customer,
+      });
+      chargeTaxes = docChargeTaxes;
+
+      if (hasItems && totals.activeItems) {
+        if (totals.db) {
+          const updateItemStmt = totals.db.prepare(`
+            UPDATE order_items
+            SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, tax_type = ?, total = ?, updated_at = ?
+            WHERE id = ?
+          `);
+          for (let idx = 0; idx < totals.activeItems.length; idx++) {
+            const item = totals.activeItems[idx];
+            if (!item.tax_snapshot) continue;
+            const taxResult = taxResults[idx];
+            if (!taxResult) continue;
+            const newSnapshotJson = taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null;
+            const newBreakdownJson = JSON.stringify(taxResult.tax_breakdown);
+            const sub = item.subtotal || 0;
+            const newItemTotal = Number((sub + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount)).toFixed(decimals));
+            if (
+              item.tax_amount !== taxResult.tax_amount ||
+              item.tax_type !== taxResult.tax_type ||
+              item.total !== newItemTotal ||
+              item.tax_snapshot !== newSnapshotJson ||
+              item.tax_breakdown !== newBreakdownJson
+            ) {
+              updateItemStmt.run(
+                taxResult.tax_amount,
+                newBreakdownJson,
+                newSnapshotJson,
+                taxResult.tax_type,
+                newItemTotal,
+                now(),
+                item.id,
+              );
+              item.tax_amount = taxResult.tax_amount;
+              item.tax_breakdown = newBreakdownJson;
+              item.tax_snapshot = newSnapshotJson;
+              item.tax_type = taxResult.tax_type;
+              item.total = newItemTotal;
+            }
+          }
+        }
+
+        let freshTotalTax = 0;
+        let freshExclusiveTax = 0;
+        const freshTaxBreakdowns: TaxBreakdown[][] = [];
+        const freshTaxSnapshots: (string | null)[] = [];
+
+        for (let idx = 0; idx < totals.activeItems.length; idx++) {
+          const item = totals.activeItems[idx];
+          const taxResult = taxResults[idx];
+          if (item.tax_snapshot && taxResult) {
+            freshTotalTax += taxResult.tax_amount || 0;
+            if (taxResult.tax_type !== 'inclusive') {
+              freshExclusiveTax += taxResult.tax_amount || 0;
+            }
+            if (taxResult.tax_breakdown && taxResult.tax_breakdown.length > 0) {
+              freshTaxBreakdowns.push(taxResult.tax_breakdown);
+            }
+            freshTaxSnapshots.push(taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null);
+          } else {
+            freshTotalTax += item.tax_amount || 0;
+            if (item.tax_type !== 'inclusive') {
+              freshExclusiveTax += item.tax_amount || 0;
+            }
+            if (item.tax_breakdown) {
+              try {
+                const b = JSON.parse(item.tax_breakdown);
+                if (Array.isArray(b)) freshTaxBreakdowns.push(b);
+              } catch { }
+            }
+            freshTaxSnapshots.push(item.tax_snapshot || null);
+          }
+        }
+        baseTotalTax = freshTotalTax;
+        baseExclusiveTax = freshExclusiveTax;
+        baseTaxBreakdowns = freshTaxBreakdowns;
+        baseTaxSnapshots = freshTaxSnapshots;
+      }
+    }
   }
 
-  const hasMatchingCharges = Boolean(totals.chargeTaxes)
-    && Number(effectiveChargeContext.packaging_charge || 0) === Number(chargeContext.packaging_charge || 0)
-    && Number(effectiveChargeContext.service_charge || 0) === Number(chargeContext.service_charge || 0)
-    && Number(effectiveChargeContext.delivery_charge || 0) === Number(chargeContext.delivery_charge || 0);
-
-  const chargeTaxes = hasMatchingCharges
-    ? totals.chargeTaxes!
-    : calculateConfiguredChargeTaxes(tenantInfo, effectiveChargeContext, customer);
+  let taxRatio = 1;
+  let taxAmount = baseTotalTax;
+  let exclusiveTaxAmount = baseExclusiveTax;
+  if (taxScaling === 'always' || (discountAmount > 0 && subtotal > 0)) {
+    taxRatio = subtotal > 0 ? discountedSubtotal / subtotal : 1;
+    taxAmount = Number((baseTotalTax * taxRatio).toFixed(decimals));
+    exclusiveTaxAmount = Number((baseExclusiveTax * taxRatio).toFixed(decimals));
+  }
 
   const taxRollup = combineItemAndChargeTaxes({
     itemTaxAmount: taxAmount,
     itemExclusiveTaxAmount: exclusiveTaxAmount,
-    itemBreakdowns: totals.allTaxBreakdowns,
-    itemSnapshots: totals.allTaxSnapshots,
+    itemBreakdowns: baseTaxBreakdowns,
+    itemSnapshots: baseTaxSnapshots,
     itemTaxRatio: taxRatio,
     chargeTaxes,
     minorFactor,

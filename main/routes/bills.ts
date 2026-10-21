@@ -4915,7 +4915,11 @@ router.patch(
       const chargesJson = serializeAppliedCharges(nextCharges);
 
       const updated = withTxn(() => {
-        const totals = calculateOrderTotals(db, order.id);
+        const totals = calculateOrderTotals(db, order.id, {
+          ...order,
+          service_charge: serviceCharge,
+          packaging_charge: packagingCharge,
+        });
         const customer = order.customer_id
           ? (db
               .prepare('SELECT * FROM customers WHERE id = ?')

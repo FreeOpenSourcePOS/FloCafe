@@ -1,4 +1,4 @@
-import { getDatabase } from '../db';
+import { getDatabase, now } from '../db';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import {
   calculateConfiguredChargeTaxes,
@@ -131,7 +131,7 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
           newSnapshotJson,
           taxResult.tax_type,
           newItemTotal,
-          new Date().toISOString(),
+          now(),
           item.id,
         );
         item.tax_amount = taxResult.tax_amount;

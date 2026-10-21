@@ -950,32 +950,33 @@ export default function ProductsPage() {
   return (
     <div className="dashboard-scroll-shell flex h-full min-h-0 flex-col">
       {tabQuerySync}
-      <div className="mb-6 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-        <div className="relative w-full sm:max-w-xs">
-          <Search
-            size={16}
-            className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={tCommon('search')}
-            aria-label={tCommon('search')}
-            className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
-          />
-          {search !== '' && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              aria-label={tCommon('clear')}
-              className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+        {activeTab === 'products' && (
+          <Button onClick={openCreate}>
+            <Plus size={16} className="me-1" /> {t('addProduct')}
+          </Button>
+        )}
+        {activeTab === 'categories' && (
+          <Button
+            onClick={() => {
+              resetCategoryForm();
+              setShowForm(true);
+            }}
+          >
+            <Plus size={16} className="me-1" /> {t('addCategory')}
+          </Button>
+        )}
+        {activeTab === 'addons' && canManageAddons && (
+          <Button
+            onClick={() => {
+              resetAddonForm();
+              setShowAddonModal(true);
+            }}
+          >
+            <Plus size={16} className="me-1" /> {t('addAddonGroup')}
+          </Button>
+        )}
       </div>
 
       <Tabs
@@ -983,7 +984,7 @@ export default function ProductsPage() {
         onValueChange={handleTabChange}
         className="dashboard-scroll-frame flex min-h-0 flex-1 flex-col"
       >
-        <TabsList className="mb-6 shrink-0">
+        <TabsList className="mb-4 self-start shrink-0">
           <TabsTrigger value="products">
             <Package size={16} /> {t('tabProducts')}
           </TabsTrigger>
@@ -997,12 +998,34 @@ export default function ProductsPage() {
           )}
         </TabsList>
 
-        <TabsContent
-          value="products"
-          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
-        >
-          <div className="flex shrink-0 justify-end gap-2 mb-4">
-            {isOwnerOrManager && taxCategories.length > 0 && (
+        <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div className="relative w-full sm:max-w-xs">
+            <Search
+              size={16}
+              className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              id="products-search"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={tCommon('search')}
+              aria-label={tCommon('search')}
+              className="w-full rounded-lg border border-border bg-card py-2 ps-9 pe-9 text-sm outline-none focus:ring-2 focus:ring-brand"
+            />
+            {search !== '' && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label={tCommon('clear')}
+                className="absolute end-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeTab === 'products' && isOwnerOrManager && taxCategories.length > 0 && (
               <Button
                 variant="outline"
                 onClick={() => {
@@ -1013,17 +1036,21 @@ export default function ProductsPage() {
                 {t('assignTaxCategory')}
               </Button>
             )}
-            <Button variant="outline" onClick={() => openCsvModal('products')}>
+            <Button variant="outline" onClick={() => openCsvModal(activeTab)}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
-            <Button variant="outline" onClick={() => setShowPrintMenuModal(true)}>
-              <Printer size={16} className="me-1" /> {t('printMenu')}
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus size={16} className="me-1" /> {t('addProduct')}
-            </Button>
+            {activeTab === 'products' && (
+              <Button variant="outline" onClick={() => setShowPrintMenuModal(true)}>
+                <Printer size={16} className="me-1" /> {t('printMenu')}
+              </Button>
+            )}
           </div>
+        </div>
 
+        <TabsContent
+          value="products"
+          className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
+        >
           {/* Product Table */}
           <div
             data-testid="products-list-scroll"
@@ -1982,19 +2009,6 @@ export default function ProductsPage() {
           value="categories"
           className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col"
         >
-          <div className="flex shrink-0 justify-end gap-2 mb-4">
-            <Button variant="outline" onClick={() => openCsvModal('categories')}>
-              <FileSpreadsheet size={16} className="me-1" /> CSV
-            </Button>
-            <Button
-              onClick={() => {
-                resetCategoryForm();
-                setShowForm(true);
-              }}
-            >
-              <Plus size={16} className="me-1" /> {t('addCategory')}
-            </Button>
-          </div>
           <div
             data-testid="categories-list-scroll"
             className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
@@ -2204,19 +2218,6 @@ export default function ProductsPage() {
         </TabsContent>
 
         <TabsContent value="addons" className="dashboard-scroll-pane flex min-h-0 flex-1 flex-col">
-          <div className="flex shrink-0 justify-end gap-2 mb-4">
-            <Button variant="outline" onClick={() => openCsvModal('addons')}>
-              <FileSpreadsheet size={16} className="me-1" /> CSV
-            </Button>
-            <Button
-              onClick={() => {
-                resetAddonForm();
-                setShowAddonModal(true);
-              }}
-            >
-              <Plus size={16} className="me-1" /> {t('addAddonGroup')}
-            </Button>
-          </div>
           <div
             data-testid="addons-list-scroll"
             className="bg-card rounded-xl border border-border flex-1 min-h-0 overflow-x-hidden overflow-y-auto"

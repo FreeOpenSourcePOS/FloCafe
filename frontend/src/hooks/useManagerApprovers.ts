@@ -22,10 +22,10 @@ export function useManagerApprovers(options?: UseManagerApproversOptions) {
   useEffect(() => {
     let cancelled = false;
     api
-      .get('/staff', { params: { active: true } })
+      .get('/staff/approvers')
       .then((res) => {
         if (cancelled) return;
-        const staffList: Staff[] = res.data?.staff || [];
+        const staffList: Staff[] = res.data?.approvers ?? res.data?.staff ?? [];
         const eligible = staffList.filter(
           (m) => m.is_active !== 0 && Boolean(m.has_pin) && hasRole(m.role, allowedRoles),
         );

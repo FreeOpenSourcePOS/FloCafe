@@ -1156,6 +1156,16 @@ export default function OrdersPage() {
   const handleVoidItem = async () => {
     if (!voidItemModal) return;
     const effectiveApproverId = voidItemModal.approverId ?? managerApprovers.selectedApproverId;
+    if (
+      !voidItemModal.overridePin ||
+      managerApprovers.loading ||
+      managerApprovers.loadFailed ||
+      managerApprovers.approvers.length === 0 ||
+      !effectiveApproverId
+    ) {
+      toast.error(tOrders('managerPinRequired'));
+      return;
+    }
     setVoidingItem(true);
     try {
       await api.patch(`/orders/${voidItemModal.orderId}/items/${voidItemModal.itemId}/cancel`, {
@@ -1225,17 +1235,25 @@ export default function OrdersPage() {
       return;
     }
 
+    const effectiveApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
+
     // Check if PIN is required
-    if (discountRequiresApproval && normalizedDiscountValue > 0 && !discountPin) {
-      toast.error(tOrders('managerPinRequired'));
-      return;
+    if (discountRequiresApproval && normalizedDiscountValue > 0) {
+      if (
+        !discountPin ||
+        managerApprovers.loading ||
+        managerApprovers.loadFailed ||
+        managerApprovers.approvers.length === 0 ||
+        !effectiveApproverId
+      ) {
+        toast.error(tOrders('managerPinRequired'));
+        return;
+      }
     }
     if (normalizedDiscountValue > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
       toast.error(tOrders('discountFailed'));
       return;
     }
-
-    const effectiveApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
 
     const operationId = createOperationReference();
     try {
@@ -1489,6 +1507,19 @@ export default function OrdersPage() {
 
     const isPinRequired = cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order);
     const effectiveApproverId = cancelModal.approverId ?? managerApprovers.selectedApproverId;
+
+    if (isPinRequired) {
+      if (
+        !cancelModal.overridePin ||
+        managerApprovers.loading ||
+        managerApprovers.loadFailed ||
+        managerApprovers.approvers.length === 0 ||
+        !effectiveApproverId
+      ) {
+        toast.error(tOrders('managerPinRequired'));
+        return;
+      }
+    }
 
     setCancellingOrderId(cancelModal.order.id);
     try {
@@ -2112,8 +2143,10 @@ export default function OrdersPage() {
                   cancellingOrderId === cancelModal.order.id ||
                   ((cancelModal.requiresPin || orderRequiresCancelPin(cancelModal.order)) &&
                     (!cancelModal.overridePin ||
-                      (managerApprovers.approvers.length > 1 &&
-                        !(cancelModal.approverId ?? managerApprovers.selectedApproverId))))
+                      managerApprovers.loading ||
+                      managerApprovers.loadFailed ||
+                      managerApprovers.approvers.length === 0 ||
+                      !(cancelModal.approverId ?? managerApprovers.selectedApproverId)))
                 }
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2188,8 +2221,10 @@ export default function OrdersPage() {
                 disabled={
                   voidingItem ||
                   !voidItemModal.overridePin ||
-                  (managerApprovers.approvers.length > 1 &&
-                    !(voidItemModal.approverId ?? managerApprovers.selectedApproverId))
+                  managerApprovers.loading ||
+                  managerApprovers.loadFailed ||
+                  managerApprovers.approvers.length === 0 ||
+                  !(voidItemModal.approverId ?? managerApprovers.selectedApproverId)
                 }
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
@@ -2377,8 +2412,10 @@ export default function OrdersPage() {
                   discountModal.value <= 0 ||
                   (discountRequiresApproval &&
                     (!discountPin ||
-                      (managerApprovers.approvers.length > 1 &&
-                        !(discountApproverId ?? managerApprovers.selectedApproverId))))
+                      managerApprovers.loading ||
+                      managerApprovers.loadFailed ||
+                      managerApprovers.approvers.length === 0 ||
+                      !(discountApproverId ?? managerApprovers.selectedApproverId)))
                 }
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >

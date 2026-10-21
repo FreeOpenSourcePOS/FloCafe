@@ -151,16 +151,6 @@ async function main(): Promise<void> {
     assert.ok(!serialized.includes(secret), `feed pages never leak ${secret}`);
   }
 
-  // Custom limit clamping and malformed cursor/limit rejection
-  const customLimit = await request(app).get(`${FEED}?limit=25`).set(display);
-  assert.equal(customLimit.status, 200);
-  assert.equal(customLimit.body.orders.length, 25);
-  assert.equal(customLimit.body.has_more, true);
-
-  const clampedLimit = await request(app).get(`${FEED}?limit=250`).set(display);
-  assert.equal(clampedLimit.status, 200);
-  assert.equal(clampedLimit.body.orders.length, 100);
-
   for (const badQuery of [
     'cursor=',
     'cursor=not-valid-base64!',
@@ -168,9 +158,6 @@ async function main(): Promise<void> {
     `cursor=${Buffer.from(JSON.stringify({ created_at: '', id: 10 })).toString('base64url')}`,
     `cursor=${Buffer.from(JSON.stringify({ created_at: '2026-02-01 00:01:00', id: 0 })).toString('base64url')}`,
     `cursor=${Buffer.from(JSON.stringify({ created_at: '2026-02-01 00:01:00', id: '10' })).toString('base64url')}`,
-    'limit=0',
-    'limit=-5',
-    'limit=abc',
   ]) {
     const badRes = await request(app).get(`${FEED}?${badQuery}`).set(display);
     assert.equal(badRes.status, 400, `malformed query ?${badQuery} returns 400`);

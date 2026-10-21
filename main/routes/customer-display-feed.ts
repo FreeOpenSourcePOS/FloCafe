@@ -33,14 +33,7 @@ router.get('/feed', feedRateLimit, (req: Request, res: Response) => {
       }
       cursor = req.query.cursor;
     }
-    let limit: number | undefined;
-    if (req.query.limit !== undefined) {
-      if (typeof req.query.limit !== 'string' || !/^\d+$/.test(req.query.limit)) {
-        return res.status(400).json({ error: 'Invalid limit' });
-      }
-      limit = Number.parseInt(req.query.limit, 10);
-    }
-    const feed = buildDisplayFeed({ cursor, limit });
+    const feed = buildDisplayFeed({ cursor });
     touchDisplayToken(tokenId);
     res.setHeader('Cache-Control', 'no-store');
     res.json(feed);

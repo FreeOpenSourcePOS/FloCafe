@@ -27,11 +27,8 @@ export interface CustomerDisplayFeed {
   has_more: boolean;
 }
 
-export type CustomerDisplayFeedPayload = CustomerDisplayFeed;
-
 export interface CustomerDisplayFeedOptions {
   cursor?: string;
-  limit?: number;
 }
 
 interface DisplayFeedCursor {
@@ -154,17 +151,6 @@ export function touchDisplayToken(id: string): void {
 
 /** Sanitized board data: order numbers and statuses only, never customer or staff fields. */
 export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): CustomerDisplayFeed {
-  let pageLimit = FEED_ORDER_LIMIT;
-  if (options?.limit !== undefined) {
-    if (
-      typeof options.limit !== 'number' ||
-      !Number.isInteger(options.limit) ||
-      options.limit < 1
-    ) {
-      throw new DisplayFeedPaginationError('Invalid limit');
-    }
-    pageLimit = Math.min(Math.max(options.limit, 1), FEED_ORDER_LIMIT);
-  }
   const decodedCursor =
     options?.cursor !== undefined ? decodeDisplayFeedCursor(options.cursor) : null;
 
@@ -196,11 +182,11 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
       decodedCursor ? decodedCursor.created_at : null,
       decodedCursor ? decodedCursor.created_at : null,
       decodedCursor ? decodedCursor.id : null,
-      pageLimit + 1,
+      FEED_ORDER_LIMIT + 1,
     ) as Array<{ id: number; number: string; status: string; created_at: string }>;
 
-  const hasMore = rows.length > pageLimit;
-  const pageRows = hasMore ? rows.slice(0, pageLimit) : rows;
+  const hasMore = rows.length > FEED_ORDER_LIMIT;
+  const pageRows = hasMore ? rows.slice(0, FEED_ORDER_LIMIT) : rows;
   const oldestRow = pageRows[pageRows.length - 1];
   const next_cursor =
     hasMore && oldestRow

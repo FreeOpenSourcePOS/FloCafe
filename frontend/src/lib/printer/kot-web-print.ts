@@ -145,6 +145,21 @@ export function generateKotHtml(
 
   const orderType = resolveOrderType(order.type, lang, tr);
 
+  const orderShape = order as Order & {
+    order_notes?: unknown;
+    orderNotes?: unknown;
+    notes?: unknown;
+  };
+  const orderNotes =
+    [
+      order.special_instructions,
+      orderShape.order_notes,
+      orderShape.orderNotes,
+      orderShape.notes,
+    ]
+      .find((val): val is string => typeof val === 'string' && val.trim().length > 0)
+      ?.trim() ?? '';
+
   const items = (order.items ?? [])
     .filter((item) => isKotItemPending(item.status))
     .map((item) => ({
@@ -179,6 +194,7 @@ export function generateKotHtml(
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}
       ${order.customer?.name ? `<p style="margin:2px 0;">${escapeHtml(tr('pos.customer'))}: ${directionalValue(directionalText(String(order.customer.name), base), base)}</p>` : ''}
       <p style="margin:2px 0;">${escapeHtml(`${tr('print.time')}: ${formatTime(createdAt, locale, timezone ? { timeZone: timezone } : undefined)}`)}</p>
+      ${orderNotes ? `<p style="margin:${padding} 0 2px 0;font-weight:bold;">!! ${escapeHtml(tr('print.note'))}: ${directionalValue(directionalText(orderNotes, base), base)}</p>` : ''}
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${itemRows}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

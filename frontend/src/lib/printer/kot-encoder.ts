@@ -12,7 +12,7 @@ import {
   thermalTextFallback,
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
-import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
 import { formatItemHeading } from './item-heading';
@@ -112,6 +112,47 @@ export function buildKotBytes(
   const time = formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined);
   const fallbackTime = formatTime(order.created_at, 'en-US', opts.timezone ? { timeZone: opts.timezone } : undefined);
   safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
+
+  const orderShape = order as Order & {
+    order_notes?: unknown;
+    orderNotes?: unknown;
+    notes?: unknown;
+  };
+  const orderNotes =
+    [
+      order.special_instructions,
+      orderShape.order_notes,
+      orderShape.orderNotes,
+      orderShape.notes,
+    ]
+      .find((val): val is string => typeof val === 'string' && val.trim().length > 0)
+      ?.trim() ?? '';
+  if (orderNotes) {
+    const noteLabel = thermalSafeHeaderText(
+      label('print.note'),
+      'Note',
+      language,
+      arabicShaping,
+      opts.capabilities,
+    );
+    const wrapped = wrapPrinterText(`${noteLabel}: ${orderNotes}`, Math.max(1, cols - 6));
+    enc.newline();
+    enc.bold(true).height(2);
+    wrapped.forEach((line, index) => {
+      safePrinterText(
+        enc,
+        (index === 0 ? '!! ' : '   ') + line,
+        warnings,
+        false,
+        arabicShaping,
+        undefined,
+        cols,
+        language,
+      ).newline();
+    });
+    enc.height(1).bold(false);
+  }
+
   thermalRule(enc, 'double', cols, thermalCapabilities);
 
   // ── Items ────────────────────────────────────────────────────────────────────

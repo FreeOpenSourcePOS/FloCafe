@@ -52,9 +52,15 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       tableName: String(order?.table?.name ?? ''),
       orderType: String(order?.type ?? '').trim(),
       customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
-      orderNotes: String(
-        order?.special_instructions ?? order?.order_notes ?? order?.notes ?? '',
-      ).trim(),
+      orderNotes:
+        [
+          order?.special_instructions,
+          order?.order_notes,
+          order?.orderNotes,
+          order?.notes,
+        ]
+          .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
+          ?.trim() ?? '',
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -365,7 +371,13 @@ function kotHeaderLines(
   sourceLines?.push(`${labelOf(header.timeLabel)}: ${time}`);
   sourceControlLines?.push(lines.at(-1) ?? '');
   if (header.orderNotes) {
-    const noteLabel = labelOf(header.orderNotes.label);
+    const noteLabel = thermalSafeText(
+      labelOf(header.orderNotes.label),
+      'Note',
+      options.language,
+      options.arabicShaping,
+      options.capabilities,
+    );
     const noteText = `${noteLabel}: ${header.orderNotes.text.text}`;
     const wrapped: string[] = [];
     pushWrapped(wrapped, noteText, Math.max(1, cols - 6), options.language, options.capabilities);

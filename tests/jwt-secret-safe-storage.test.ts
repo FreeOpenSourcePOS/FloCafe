@@ -12,10 +12,17 @@ const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-jwt-safe-storage-'));
 let encryptionAvailable = true;
+let isPackaged = true;
 Module._load = function (request: string) {
   if (request === 'electron') {
     return {
-      app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
+      app: {
+        get isPackaged() {
+          return isPackaged;
+        },
+        getPath: () => testDir,
+        getVersion: () => 'test',
+      },
       safeStorage: {
         isEncryptionAvailable: () => encryptionAvailable,
         encryptString: (value: string) =>
@@ -99,6 +106,56 @@ try {
     'without OS encryption the secret falls back to SQLite',
   );
   assertOrThrow(!fs.existsSync(secretFile), 'no secure file is written without OS encryption');
+
+  isPackaged = false;
+  encryptionAvailable = true;
+  getDatabase().prepare("DELETE FROM settings WHERE key = 'jwt_secret'").run();
+  fs.rmSync(secretFile, { force: true });
+  clearJWTSecretCache();
+  const unpackagedFirst = getJWTSecret();
+  assertOrThrow(/^[0-9a-f]{64}$/.test(unpackagedFirst), 'unpackaged launch mints a hex secret');
+  assertEqualOrThrow(
+    storedValue(),
+    unpackagedFirst,
+    'unpackaged mode stores the plaintext secret in SQLite',
+  );
+  assertOrThrow(!fs.existsSync(secretFile), 'unpackaged mode does not write an encrypted file');
+
+  encryptionAvailable = false;
+  clearJWTSecretCache();
+  assertEqualOrThrow(
+    getJWTSecret(),
+    unpackagedFirst,
+    'dev-server mode reads back the secret created during unpackaged development',
+  );
+
+  const unpackagedExisting = 'cd'.repeat(32);
+  getDatabase()
+    .prepare("UPDATE settings SET value = ? WHERE key = 'jwt_secret'")
+    .run(unpackagedExisting);
+  fs.rmSync(secretFile, { force: true });
+  isPackaged = false;
+  encryptionAvailable = true;
+  clearJWTSecretCache();
+  assertEqualOrThrow(
+    getJWTSecret(),
+    unpackagedExisting,
+    'reading existing plaintext secret in unpackaged mode preserves it',
+  );
+  assertEqualOrThrow(
+    storedValue(),
+    unpackagedExisting,
+    'unpackaged mode does not migrate SQLite secret to marker',
+  );
+  assertOrThrow(!fs.existsSync(secretFile), 'unpackaged mode does not write encrypted file on read');
+
+  encryptionAvailable = false;
+  clearJWTSecretCache();
+  assertEqualOrThrow(
+    getJWTSecret(),
+    unpackagedExisting,
+    'dev-server mode continues to read the unmigrated secret cleanly',
+  );
 
   console.log('jwt-secret-safe-storage tests passed');
 } finally {

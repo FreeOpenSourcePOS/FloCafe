@@ -259,7 +259,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restRequestSequenceRef = useRef(0);
-  const restInFlightGenerationRef = useRef<number | null>(null);
+  const restInFlightRequestRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
@@ -280,6 +280,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       restInitialFetchRef.current = null;
     }
     restRequestSequenceRef.current += 1;
+    restInFlightRequestRef.current = null;
   }, []);
 
   const disableKdsConnection = useCallback(
@@ -307,79 +308,84 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [stopRestPolling],
   );
 
-  const fetchOrdersRest = useCallback(async () => {
-    const generation = sessionGenerationRef.current;
-    if (restInFlightGenerationRef.current === generation) return;
-    restInFlightGenerationRef.current = generation;
-    const requestSequence = ++restRequestSequenceRef.current;
-    try {
-      const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
-      if (
-        generation !== sessionGenerationRef.current ||
-        requestSequence !== restRequestSequenceRef.current ||
-        (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
-      )
-        return;
-      setOrders((prev) => reconcileKdsOrders(prev, data.orders || []));
-      setCounts(data.counts || {});
-      setConnected(true);
-    } catch (error: unknown) {
-      if (
-        generation !== sessionGenerationRef.current ||
-        requestSequence !== restRequestSequenceRef.current
-      )
-        return;
-      const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
-      const status = axiosError?.response?.status;
-      const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
-      if (status === 401 || tokenMissing) {
-        sessionGenerationRef.current += 1;
-        stopRestPolling();
-        updatingIdsRef.current.clear();
-        setUpdating(null);
-        setUser(null);
-        setOrders([]);
-        setCounts({});
-        setConnected(false);
-        setConnectionMode(null);
-        setLoading(false);
-        if (typeof window !== 'undefined') window.localStorage.removeItem('token');
-      } else if (status === 403) {
-        const message = axiosError.response?.data?.error || t('authFailed');
-        const kdsDisabled = /kds is disabled/i.test(message);
-        if (kdsDisabled) {
-          disableKdsConnection(message);
+  const fetchOrdersRest = useCallback(
+    async (options?: { skipIfInFlight?: boolean }) => {
+      const generation = sessionGenerationRef.current;
+      if (options?.skipIfInFlight && restInFlightRequestRef.current !== null) return;
+      const requestSequence = ++restRequestSequenceRef.current;
+      restInFlightRequestRef.current = requestSequence;
+      try {
+        const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
+        if (
+          generation !== sessionGenerationRef.current ||
+          requestSequence !== restRequestSequenceRef.current ||
+          (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
+        )
           return;
+        setOrders((prev) => reconcileKdsOrders(prev, data.orders || []));
+        setCounts(data.counts || {});
+        setConnected(true);
+      } catch (error: unknown) {
+        if (
+          generation !== sessionGenerationRef.current ||
+          requestSequence !== restRequestSequenceRef.current
+        )
+          return;
+        const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
+        const status = axiosError?.response?.status;
+        const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
+        if (status === 401 || tokenMissing) {
+          sessionGenerationRef.current += 1;
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode(null);
+          setLoading(false);
+          if (typeof window !== 'undefined') window.localStorage.removeItem('token');
+        } else if (status === 403) {
+          const message = axiosError.response?.data?.error || t('authFailed');
+          const kdsDisabled = /kds is disabled/i.test(message);
+          if (kdsDisabled) {
+            disableKdsConnection(message);
+            return;
+          }
+          sessionGenerationRef.current += 1;
+          markKdsAuthBlocked();
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setLoginError(t('authFailed'));
+          setConnectionMode(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setLoading(false);
+        } else {
+          setConnected(false);
         }
-        sessionGenerationRef.current += 1;
-        markKdsAuthBlocked();
-        stopRestPolling();
-        updatingIdsRef.current.clear();
-        setUpdating(null);
-        setUser(null);
-        setLoginError(t('authFailed'));
-        setConnectionMode(null);
-        setOrders([]);
-        setCounts({});
-        setConnected(false);
-        setLoading(false);
-      } else {
-        setConnected(false);
+      } finally {
+        if (restInFlightRequestRef.current === requestSequence)
+          restInFlightRequestRef.current = null;
       }
-    } finally {
-      if (restInFlightGenerationRef.current === generation)
-        restInFlightGenerationRef.current = null;
-    }
-  }, [api, disableKdsConnection, ordersPath, stopRestPolling, t]);
+    },
+    [api, disableKdsConnection, ordersPath, stopRestPolling, t],
+  );
   // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)
   // so state updates do not land in the invoking effect commit.
   const startRestPolling = useCallback(() => {
     stopRestPolling();
     restInitialFetchRef.current = setTimeout(() => {
       restInitialFetchRef.current = null;
-      fetchOrdersRest();
+      void fetchOrdersRest({ skipIfInFlight: true });
     }, 0);
-    restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
+    restIntervalRef.current = setInterval(() => {
+      void fetchOrdersRest({ skipIfInFlight: true });
+    }, 5000);
   }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(

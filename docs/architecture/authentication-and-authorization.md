@@ -70,12 +70,13 @@ itself, the full permission catalog rendered as a matrix, and the owner-only man
 **Secret.** `getJWTSecret()` in
 [`main/security/jwt-secret.ts`](../../main/security/jwt-secret.ts) reads `process.env.JWT_SECRET` when set and
 otherwise reads the secret from Electron `safeStorage` (the encrypted `jwt-secret.enc` file in the
-user-data directory), generating one on first launch. The `jwt_secret` settings row then holds only
-the marker `safe-storage:v1`; an install whose row still holds a plaintext secret is migrated on its
-first read. Where OS encryption is unavailable (and in the Electron-less dev server) the secret stays
-in the `jwt_secret` settings row. If the secure file becomes unreadable, a new secret is generated
-and existing sessions end. The value is cached in a module-level variable, so each install has its own secret and a token from
-one install does not validate against another. That module owns the only copy of the cache;
+user-data directory) in packaged builds, generating one on first launch. The `jwt_secret` settings row then holds only
+the marker `safe-storage:v1`; a packaged install whose row still holds a plaintext secret is migrated on its
+first read. Where OS encryption is unavailable, in unpackaged development runs, and in the Electron-less dev server,
+the secret stays in the `jwt_secret` settings row so development runs sharing `flo.db` remain compatible. If the
+secure file becomes unreadable, a new secret is generated and existing sessions end. The value is cached in a
+module-level variable, so each install has its own secret and a token from one install does not validate against another.
+That module owns the only copy of the cache;
 `clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
 secret must go through it or pre-rotation tokens would keep validating.
 

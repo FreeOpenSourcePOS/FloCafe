@@ -242,13 +242,6 @@ export async function emitFixtureWindowState(
   }, state);
 }
 
-export async function buildElectronStub(
-  page: Page,
-  options: ElectronFixtureOptions = {},
-): Promise<void> {
-  return injectElectronFixture(page, options);
-}
-
 declare global {
   interface Window {
     __floElectronFixture?: {

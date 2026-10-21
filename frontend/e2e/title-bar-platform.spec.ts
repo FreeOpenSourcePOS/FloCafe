@@ -1,20 +1,11 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL } from './helpers/urls';
 import {
-  buildElectronStub,
   emitFixtureWindowState,
   injectElectronFixture,
   readFixtureActions,
   readOpenedMenuEntries,
-  type ElectronFixtureOptions,
 } from './helpers/electron-fixture';
-
-export async function installElectronPlatformStub(
-  page: Page,
-  options: ElectronFixtureOptions = {},
-): Promise<void> {
-  return buildElectronStub(page, options);
-}
 
 /**
  * Platform test-matrix rows for the custom title-bar work (Refs #457/#462)
@@ -464,9 +455,6 @@ test('macOS keeps the native application menu and renders no title-bar menu row'
 test('macOS native fullscreen removes traffic-light inset and restores on exit (#1153)', async ({
   page,
 }) => {
-  const screenshotsDir =
-    '/Users/gurkiratkhaira/tools/firstmate/data/ship-1153-macos-fullscreen-inset/screenshots';
-
   await injectElectronFixture(page, {
     platform: 'darwin',
     focused: true,
@@ -488,16 +476,10 @@ test('macOS native fullscreen removes traffic-light inset and restores on exit (
   const fullscreenInitialPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
   expect(fullscreenInitialPadding, 'initial fullscreen padding is 12px').toBe('12px');
 
-  await page.screenshot({ path: `${screenshotsDir}/darwin-fullscreen.png` });
-  await titleBar.screenshot({ path: `${screenshotsDir}/darwin-fullscreen-titlebar.png` });
-
   await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: false });
   await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'false');
   const windowedPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
   expect(windowedPadding, 'normal windowed padding restores 96px inset').toBe('96px');
-
-  await page.screenshot({ path: `${screenshotsDir}/darwin-windowed.png` });
-  await titleBar.screenshot({ path: `${screenshotsDir}/darwin-windowed-titlebar.png` });
 
   await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: true });
   await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'false');

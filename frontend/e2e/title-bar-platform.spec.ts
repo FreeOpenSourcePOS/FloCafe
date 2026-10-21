@@ -473,7 +473,9 @@ test('macOS native fullscreen removes traffic-light inset and restores on exit (
   await expect(safeArea).toBeVisible();
 
   await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'true');
-  const fullscreenInitialPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
+  const fullscreenInitialPadding = await safeArea.evaluate(
+    (el) => getComputedStyle(el).paddingLeft,
+  );
   expect(fullscreenInitialPadding, 'initial fullscreen padding is 12px').toBe('12px');
 
   await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: false });
@@ -488,7 +490,9 @@ test('macOS native fullscreen removes traffic-light inset and restores on exit (
 
   await emitFixtureWindowState(page, { isFullScreen: true, isMaximized: false });
   await expect(page.locator('html')).toHaveAttribute('data-flo-window-fullscreen', 'true');
-  const reenteredFullscreenPadding = await safeArea.evaluate((el) => getComputedStyle(el).paddingLeft);
+  const reenteredFullscreenPadding = await safeArea.evaluate(
+    (el) => getComputedStyle(el).paddingLeft,
+  );
   expect(reenteredFullscreenPadding, 're-entering fullscreen removes 96px inset').toBe('12px');
 
   await emitFixtureWindowState(page, { isFullScreen: false, isMaximized: false });

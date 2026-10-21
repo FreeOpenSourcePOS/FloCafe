@@ -24,7 +24,8 @@ export function useDesktopTitleBarSync(isElectron: boolean): void {
     let cancelled = false;
     const api = window.electronAPI;
 
-    api?.getWindowState?.()
+    api
+      ?.getWindowState?.()
       ?.then((state) => {
         if (!cancelled && state) {
           document.documentElement.dataset.floWindowFullscreen = state.isFullScreen

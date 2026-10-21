@@ -160,6 +160,79 @@ try {
     'dev-server mode continues to read the unmigrated secret cleanly',
   );
 
+  const devMigratedSecret = 'ef'.repeat(32);
+  getDatabase()
+    .prepare("UPDATE settings SET value = ? WHERE key = 'jwt_secret'")
+    .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+  fs.writeFileSync(
+    secretFile,
+    Buffer.from('enc:' + Buffer.from(devMigratedSecret).toString('base64')),
+  );
+  isPackaged = false;
+  encryptionAvailable = true;
+  clearJWTSecretCache();
+  assertEqualOrThrow(
+    getJWTSecret(),
+    devMigratedSecret,
+    'unpackaged mode recovers exact secret from existing jwt-secret.enc',
+  );
+  assertEqualOrThrow(
+    storedValue(),
+    devMigratedSecret,
+    'recovered secret is written back to SQLite settings',
+  );
+  assertOrThrow(
+    !fs.existsSync(secretFile),
+    'development jwt-secret.enc file is removed after recovery',
+  );
+
+  encryptionAvailable = false;
+  clearJWTSecretCache();
+  assertEqualOrThrow(
+    getJWTSecret(),
+    devMigratedSecret,
+    'dev-server mode reads recovered plaintext secret',
+  );
+
+  getDatabase()
+    .prepare("UPDATE settings SET value = ? WHERE key = 'jwt_secret'")
+    .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+  fs.rmSync(secretFile, { force: true });
+  isPackaged = false;
+  encryptionAvailable = true;
+  clearJWTSecretCache();
+  const recoveredNew = getJWTSecret();
+  assertOrThrow(
+    /^[0-9a-f]{64}$/.test(recoveredNew),
+    'regenerated recovered secret is hex string',
+  );
+  assertEqualOrThrow(
+    storedValue(),
+    recoveredNew,
+    'regenerated secret is stored in SQLite settings',
+  );
+  assertOrThrow(!fs.existsSync(secretFile), 'no enc file left after regeneration');
+
+  getDatabase()
+    .prepare("UPDATE settings SET value = ? WHERE key = 'jwt_secret'")
+    .run(JWT_SECRET_SAFE_STORAGE_MARKER);
+  encryptionAvailable = false;
+  clearJWTSecretCache();
+  let threwExpected = false;
+  try {
+    getJWTSecret();
+  } catch (err: any) {
+    threwExpected = true;
+    assertOrThrow(
+      err.message.includes('authentication unavailable'),
+      'throws authentication unavailable when safe-storage cannot be accessed',
+    );
+  }
+  assertOrThrow(
+    threwExpected,
+    'getJWTSecret throws when safe-storage:v1 exists but encryption is unavailable',
+  );
+
   console.log('jwt-secret-safe-storage tests passed');
 } finally {
   closeDatabase();

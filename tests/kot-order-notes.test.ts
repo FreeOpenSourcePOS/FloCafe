@@ -217,6 +217,50 @@ async function runAsyncTests() {
   const textBlank = escPosToText(bytesBlank);
   assert.equal(textBlank.includes('Note:'), false, 'buildKotBytes omits note banner when blank');
 
+  const mixedNotesBytes = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, order_notes: 'für süße Brötchen لا', items } as any,
+    { columns: 32, arabicShaping: true, language: 'de' },
+  );
+  const mixedText = escPosToText(mixedNotesBytes);
+  assert.ok(
+    mixedText.includes('لا'),
+    'mixed German and Arabic note preserves trailing Arabic word on continuation line',
+  );
+
+  await frontend.loadLocaleMessages('ar');
+  const fallbackLabelBytes = frontend.kotEncoder.buildKotBytes(
+    { ...baseOrder, special_instructions: 'Pack cutlery separately', items } as any,
+    {
+      columns: 32,
+      language: 'ar',
+      arabicShaping: false,
+      capabilities: {
+        encoding: { codePages: ['ascii'], preferredCodePage: 'ascii' },
+        shaping: { arabic: false },
+        representability: { scripts: ['ascii'] },
+        transliteration: { enabled: true },
+        warnings: {
+          unsupportedText: 'skip',
+          financialText: 'refuse',
+          orderTypeFallback: 'ascii',
+        },
+        raster: {
+          enabled: false,
+          widthDots: 384,
+          maxBandHeight: 255,
+          modes: ['mixed'],
+        },
+      } as any,
+    },
+  );
+  const fallbackLabelText = escPosToText(fallbackLabelBytes);
+  assert.ok(
+    fallbackLabelText.includes('!! Note:') &&
+      fallbackLabelText.includes('Pack cutlery') &&
+      fallbackLabelText.includes('separately'),
+    'non-ASCII localized note label falls back to ASCII Note under ASCII capabilities',
+  );
+
   // 3. buildFrontendKotDocument tests
   const docWithNotes = frontend.printDocument.buildFrontendKotDocument(
     { ...baseOrder, special_instructions: longNote, items } as any,

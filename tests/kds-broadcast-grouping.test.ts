@@ -143,8 +143,10 @@ async function testRestPollingAndConflictResolution() {
   let stateIdx = 0;
   let refIdx = 0;
   let effectIdx = 0;
+  let callbackIdx = 0;
   const states: any[] = [];
   const refs: any[] = [];
+  const callbacks: Array<{ fn: any; deps?: any[] }> = [];
   const effects: Array<{ effect: () => any; cleanup?: () => any; deps?: any[] }> = [];
 
   const mockReact = {
@@ -163,8 +165,15 @@ async function testRestPollingAndConflictResolution() {
       if (i >= refs.length) refs[i] = { current: init };
       return refs[i];
     },
-    useCallback(fn: any) {
-      return fn;
+    useCallback(fn: any, deps?: any[]) {
+      const i = callbackIdx++;
+      const prev = callbacks[i];
+      const hasChanged =
+        !prev || !deps || !prev.deps || deps.some((d, idx) => d !== prev.deps![idx]);
+      if (hasChanged) {
+        callbacks[i] = { fn, deps };
+      }
+      return callbacks[i].fn;
     },
     useEffect(effect: () => any, deps?: any[]) {
       const i = effectIdx++;
@@ -185,6 +194,8 @@ async function testRestPollingAndConflictResolution() {
 
   const toastMock = { success: () => {}, error: () => {}, default: null as any };
   toastMock.default = toastMock;
+  const stableTranslate = (k: string) => k;
+  const intlMock = { useTranslations: () => stableTranslate };
 
   const prevLoad = Module._load;
   Module._load = function (requestName: string, parent: unknown, isMain: boolean) {
@@ -192,7 +203,7 @@ async function testRestPollingAndConflictResolution() {
     if (requestName === '@/hooks/use-confirm')
       return { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) };
     if (requestName === 'react-hot-toast') return toastMock;
-    if (requestName === 'use-intl') return { useTranslations: () => (k: string) => k };
+    if (requestName === 'use-intl') return intlMock;
     return prevLoad.apply(this, arguments as any);
   };
 
@@ -265,6 +276,7 @@ async function testRestPollingAndConflictResolution() {
       stateIdx = 0;
       refIdx = 0;
       effectIdx = 0;
+      callbackIdx = 0;
       return useKdsConnection({ api, enabled: true });
     }
 
@@ -394,6 +406,73 @@ async function testRestPollingAndConflictResolution() {
       hook.orders[0]?.items[0]?.status,
       'served',
       'stale in-flight poll after 409 conflict does not overwrite fresh state',
+    );
+
+    // 4. Older poll settling does not clear in-flight marker of newer pending refresh
+    patchShouldConflict = false;
+    timerIntervalCb!();
+    assertEqualOrThrow(
+      apiGetInFlight.length,
+      5,
+      'background timer triggers poll #5 when idle',
+    );
+
+    const updatePromise2 = hook.updateItemStatus(10, 'ready');
+    await new Promise((r) => setImmediate(r));
+    assertEqualOrThrow(
+      apiGetInFlight.length,
+      6,
+      'updateItemStatus triggers required refresh #6 while poll #5 is in flight',
+    );
+
+    // Older poll resolves while newer required refresh is still pending
+    apiGetInFlight[4].resolve({
+      data: {
+        orders: [
+          {
+            id: 1,
+            order_number: 'GRP-001',
+            items: [{ id: 10, status: 'served', product_name: 'Burger' }],
+          },
+        ],
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+
+    // Poll timer ticks while required refresh is pending: must not trigger a new GET
+    timerIntervalCb!();
+    assertEqualOrThrow(
+      apiGetInFlight.length,
+      6,
+      'older poll settling does not clear in-flight marker of newer pending refresh',
+    );
+
+    // Resolve newer required refresh
+    apiGetInFlight[5].resolve({
+      data: {
+        orders: [
+          {
+            id: 1,
+            order_number: 'GRP-001',
+            items: [{ id: 10, status: 'ready', product_name: 'Burger' }],
+          },
+        ],
+      },
+    });
+    await updatePromise2;
+    hook = render();
+    assertEqualOrThrow(
+      hook.orders[0]?.items[0]?.status,
+      'ready',
+      'orders updated to ready after required refresh resolves',
+    );
+
+    // Once newer refresh settles, background timer starts fresh poll
+    timerIntervalCb!();
+    assertEqualOrThrow(
+      apiGetInFlight.length,
+      7,
+      'new poll starts after required refresh has completed',
     );
   } finally {
     for (const e of effects) {

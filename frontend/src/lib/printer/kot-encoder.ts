@@ -262,7 +262,10 @@ export function buildKotBytes(
       arabicShaping,
       opts.capabilities,
     );
-    const wrapped = wrapPrinterText(`${noteLabel}: ${orderNotes}`, Math.max(1, cols - 6));
+    const wrapped = wrapPrinterText(
+      normalizeThermalText(`${noteLabel}: ${orderNotes}`, thermalCapabilities),
+      Math.max(1, cols - 6),
+    );
     enc.newline();
     enc.bold(true).height(2);
     wrapped.forEach((line, index) => {

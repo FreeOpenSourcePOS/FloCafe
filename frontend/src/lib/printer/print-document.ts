@@ -292,6 +292,10 @@ export function buildFrontendBillDocument(
   return buildBillDocument(printData, printContext);
 }
 
+/**
+ * Build a KotDocument v1 for frontend rasterization, normalizing order metadata,
+ * pending items, and any order-level notes into the ticket header.
+ */
 export function buildFrontendKotDocument(
   order: Order,
   opts: {

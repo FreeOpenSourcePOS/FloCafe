@@ -56,7 +56,9 @@ own resolved direction, plus the ordered languages the labels were resolved in. 
 vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax-breakdown`,
 `totals`, `payments`, and `message`.
 
-`KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary.
+`KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary:
+`kot-header` (carrying station and order metadata, plus an optional order-level notes banner) and
+`kot-items`.
 
 `DeliverySlipDocument` v1 is a courier handout: `delivery-slip-header`,
 `delivery-slip-contact`, optional `delivery-slip-notes` and

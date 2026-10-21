@@ -13,7 +13,7 @@ interface SafeStorageLike {
   decryptString(value: Buffer): string;
 }
 
-/** Electron's safeStorage and userData path, or null outside Electron or without OS encryption. */
+/** Electron's safeStorage and userData path, or null outside packaged Electron or without OS encryption. */
 function getSecureStore(): { storage: SafeStorageLike; filePath: string } | null {
   try {
     const { app, safeStorage } = require('electron') as {

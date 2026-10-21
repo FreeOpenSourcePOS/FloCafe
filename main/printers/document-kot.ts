@@ -53,12 +53,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       orderType: String(order?.type ?? '').trim(),
       customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
       orderNotes:
-        [
-          order?.special_instructions,
-          order?.order_notes,
-          order?.orderNotes,
-          order?.notes,
-        ]
+        [order?.special_instructions, order?.order_notes, order?.orderNotes, order?.notes]
           .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
           ?.trim() ?? '',
     },

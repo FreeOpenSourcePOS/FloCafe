@@ -308,6 +308,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [stopRestPolling],
   );
 
+  /**
+   * Poll or refresh KDS orders via REST. Background polling passes
+   * skipIfInFlight to avoid duplicate in-flight requests, while required
+   * updates (item status changes or 409 conflict reconciliation) supersede
+   * earlier polls and fetch fresh state immediately.
+   */
   const fetchOrdersRest = useCallback(
     async (options?: { skipIfInFlight?: boolean }) => {
       const generation = sessionGenerationRef.current;

@@ -200,8 +200,10 @@ async function runAsyncTests() {
     'buildKotBytes emits wrapped !! Note: and indentation continuation lines',
   );
   assert.ok(
-    textWithNotes.replace(/[\x00-\x1F!]+/g, ' ').replace(/\s+/g, ' ').includes('PEANUT ALLERGY') &&
-      textWithNotes.includes('SEPARATELY'),
+    textWithNotes
+      .replace(/[\x00-\x1F!]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .includes('PEANUT ALLERGY') && textWithNotes.includes('SEPARATELY'),
     'buildKotBytes preserves full note text without truncation',
   );
   const ruleIdx = textWithNotes.indexOf('════');

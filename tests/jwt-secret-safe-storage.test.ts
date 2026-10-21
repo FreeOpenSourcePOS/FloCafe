@@ -147,7 +147,10 @@ try {
     unpackagedExisting,
     'unpackaged mode does not migrate SQLite secret to marker',
   );
-  assertOrThrow(!fs.existsSync(secretFile), 'unpackaged mode does not write encrypted file on read');
+  assertOrThrow(
+    !fs.existsSync(secretFile),
+    'unpackaged mode does not write encrypted file on read',
+  );
 
   encryptionAvailable = false;
   clearJWTSecretCache();

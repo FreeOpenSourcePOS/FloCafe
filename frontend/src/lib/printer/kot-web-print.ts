@@ -31,12 +31,15 @@ export function resolveKotTicketLanguage(language?: Language): Language {
   try {
     const store = usePosSettingsStore.getState();
     const uiLanguage = store.language;
-    return resolveKotLanguage(store.kotLanguagePolicy ?? defaultPrintLanguagePolicy(), uiLanguage) as Language;
+    return resolveKotLanguage(
+      store.kotLanguagePolicy ?? defaultPrintLanguagePolicy(),
+      uiLanguage,
+    ) as Language;
   } catch {
     return 'en';
   }
 }
-function translatorFor(lang: Language): ((key: string) => string) {
+function translatorFor(lang: Language): (key: string) => string {
   const locale = LANGUAGES[lang]?.locale ?? 'en';
   const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
@@ -61,14 +64,25 @@ function detectTicketDirection(lang: Language): TextDirection {
 
 /** Strip the `{name}` placeholder (and its separator) from an interpolated label. */
 function labelWithoutPlaceholder(label: string): string {
-  return label.replace('{name}', '').replace(/[:：]\s*$/, '').trim();
+  return label
+    .replace('{name}', '')
+    .replace(/[:：]\s*$/, '')
+    .trim();
 }
 
-function formatOrderNumberLabel(label: string, orderNumber: DirectionalText, base: TextDirection): string {
+function formatOrderNumberLabel(
+  label: string,
+  orderNumber: DirectionalText,
+  base: TextDirection,
+): string {
   const placeholder = '{number}';
   const position = label.indexOf(placeholder);
   if (position === -1) return escapeHtml(label + ': ') + directionalValue(orderNumber, base);
-  return escapeHtml(label.slice(0, position)) + directionalValue(orderNumber, base) + escapeHtml(label.slice(position + placeholder.length));
+  return (
+    escapeHtml(label.slice(0, position)) +
+    directionalValue(orderNumber, base) +
+    escapeHtml(label.slice(position + placeholder.length))
+  );
 }
 
 function resolveKotTimezone(timezone?: string): string | undefined {
@@ -122,10 +136,7 @@ export function kotFontStackForLanguage(lang: Language): string {
 }
 
 /** Generate the semantic KOT HTML fragment (without opening a print dialog). */
-export function generateKotHtml(
-  order: Order,
-  opts: KotWebPrintOptions = {}
-): string {
+export function generateKotHtml(order: Order, opts: KotWebPrintOptions = {}): string {
   const paperWidth = opts.paperWidth ?? 58;
   const lang = resolveKotTicketLanguage(opts.language);
   const tr = translatorFor(lang);
@@ -151,19 +162,17 @@ export function generateKotHtml(
     notes?: unknown;
   };
   const orderNotes =
-    [
-      order.special_instructions,
-      orderShape.order_notes,
-      orderShape.orderNotes,
-      orderShape.notes,
-    ]
+    [order.special_instructions, orderShape.order_notes, orderShape.orderNotes, orderShape.notes]
       .find((val): val is string => typeof val === 'string' && val.trim().length > 0)
       ?.trim() ?? '';
 
   const items = (order.items ?? [])
     .filter((item) => isKotItemPending(item.status))
     .map((item) => ({
-      name: directionalText(formatItemHeading(String(item.product_name ?? ''), item.variant_selection), base),
+      name: directionalText(
+        formatItemHeading(String(item.product_name ?? ''), item.variant_selection),
+        base,
+      ),
       quantity: Number(item.quantity) || 0,
       addons: (Array.isArray(item.addons) ? item.addons : []).filter((addon) => addon?.name),
       specialInstructions: item.special_instructions
@@ -171,19 +180,27 @@ export function generateKotHtml(
         : null,
     }));
 
-  const itemRows = items.length > 0
-    ? items.map((item) => `
+  const itemRows =
+    items.length > 0
+      ? items
+          .map(
+            (item) => `
         <div style="margin:${padding} 0;">
           <div style="font-weight:bold;">${escapeHtml(item.quantity)}x ${directionalValue(item.name, base)}</div>
-          ${item.addons.map((addon) => {
-            const qty = ('quantity' in addon && typeof addon.quantity === 'number' && addon.quantity) || 1;
-            const suffix = qty > 1 ? ` x${qty}` : '';
-            return `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${escapeHtml(suffix)}</div>`;
-          }).join('')}
+          ${item.addons
+            .map((addon) => {
+              const qty =
+                ('quantity' in addon && typeof addon.quantity === 'number' && addon.quantity) || 1;
+              const suffix = qty > 1 ? ` x${qty}` : '';
+              return `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${escapeHtml(suffix)}</div>`;
+            })
+            .join('')}
           ${item.specialInstructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${directionalValue(item.specialInstructions, base)}</div>` : ''}
         </div>
-      `).join('')
-    : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
+      `,
+          )
+          .join('')
+      : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
     <div class="kot-container" lang="${escapeHtml(locale)}" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:${fontFamily};font-size:${fontSize};">

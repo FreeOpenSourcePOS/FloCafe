@@ -3392,6 +3392,13 @@ function applyPaymentBatch(
   }
   if (prepared.length === 0) {
     const changedAt = now();
+    if (!bill.customer_id && effectiveCustomerId) {
+      db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(
+        effectiveCustomerId,
+        changedAt,
+        billId,
+      );
+    }
     if (bill.payment_status !== 'paid') {
       db.prepare(
         `UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ? WHERE id = ?`,

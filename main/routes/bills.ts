@@ -2794,7 +2794,12 @@ function validatePaymentFields(payment: PaymentInput, index: number, currency: s
       throw paymentValidationError(`${field} is invalid or too long`, 'payment_input_invalid');
     }
   }
-  if (payment.amount !== undefined && payment.amount !== null) {
+  if (
+    payment.amount !== undefined &&
+    payment.amount !== null &&
+    payment.amount !== 0 &&
+    payment.amount !== '0'
+  ) {
     try {
       paymentAmountMinorUnits(payment.amount, currency);
     } catch (error) {
@@ -3187,6 +3192,7 @@ export function completeExactBalanceSettlement(
   overridePin?: unknown,
   clientIp = 'unknown',
   preVerifiedManager?: { id: string; verifiedPinHash: string } | null,
+  approverId?: unknown,
 ): any {
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!bill) return null;
@@ -3198,6 +3204,7 @@ export function completeExactBalanceSettlement(
     clientIp,
     bill.id,
     preVerifiedManager,
+    approverId,
   );
   if (!kitchenStatus.allowed) {
     return parseRowJson(bill);
@@ -3328,6 +3335,32 @@ function applyPaymentBatch(
       loyaltyPointsEarned: 0,
     };
   }
+  const wasAlreadyPaid = bill.payment_status === 'paid';
+  if (wasAlreadyPaid && prepared.length === 0) {
+    const result = {
+      bill: parseRowJson(bill),
+      walletDebited: false,
+      loyaltyPointsEarned: 0,
+    };
+    if (idempotencyKey && requestHash && idempotencyUserId) {
+      const existing = db
+        .prepare('SELECT 1 FROM payment_idempotency WHERE user_id = ? AND idempotency_key = ?')
+        .get(idempotencyUserId, idempotencyKey);
+      if (!existing) {
+        db.prepare(
+          'INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        ).run(
+          idempotencyUserId,
+          idempotencyKey,
+          billId,
+          requestHash,
+          JSON.stringify(result),
+          now(),
+        );
+      }
+    }
+    return result;
+  }
   const kitchenStatus = checkKitchenDeliveryStatus(
     db,
     bill.order_id,
@@ -3422,11 +3455,25 @@ function applyPaymentBatch(
         loyaltyPointsEarned = finalCashback;
       }
     }
-    return {
+    const result = {
       bill: parseRowJson(freshBill),
       walletDebited: false,
       loyaltyPointsEarned,
+      ...(kitchenStatus.overridden ? { kitchenDeliveryOverridden: true } : {}),
     };
+    if (idempotencyKey && requestHash && idempotencyUserId) {
+      db.prepare(
+        'INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(
+        idempotencyUserId,
+        idempotencyKey,
+        billId,
+        requestHash,
+        JSON.stringify(result),
+        changedAt,
+      );
+    }
+    return result;
   }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
@@ -3721,12 +3768,15 @@ router.post(
 
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       let preVerifiedKitchenManager = null;
-      const billRow = db.prepare('SELECT id, order_id FROM bills WHERE id = ?').get(billId) as
-        | { id: string; order_id: string }
-        | undefined;
-      const initialKitchenStatus = billRow
-        ? checkKitchenDeliveryStatus(db, billRow.order_id, undefined, clientIp, billRow.id)
-        : { allowed: true, count: 0, items: [] };
+      const billRow = db
+        .prepare('SELECT id, order_id, payment_status FROM bills WHERE id = ?')
+        .get(billId) as { id: string; order_id: string; payment_status: string } | undefined;
+      const isAlreadyPaidNoOp =
+        billRow?.payment_status === 'paid' && Number(paymentLine.amount ?? 0) <= 0;
+      const initialKitchenStatus =
+        billRow && !isAlreadyPaidNoOp
+          ? checkKitchenDeliveryStatus(db, billRow.order_id, undefined, clientIp, billRow.id)
+          : { allowed: true, count: 0, items: [] };
 
       if (!initialKitchenStatus.allowed && override_pin) {
         try {
@@ -3969,12 +4019,15 @@ router.post(
 
       const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
       let preVerifiedKitchenManager = null;
-      const billRow = db.prepare('SELECT id, order_id FROM bills WHERE id = ?').get(billId) as
-        | { id: string; order_id: string }
-        | undefined;
-      const initialKitchenStatus = billRow
-        ? checkKitchenDeliveryStatus(db, billRow.order_id, undefined, clientIp, billRow.id)
-        : { allowed: true, count: 0, items: [] };
+      const billRow = db
+        .prepare('SELECT id, order_id, payment_status FROM bills WHERE id = ?')
+        .get(billId) as { id: string; order_id: string; payment_status: string } | undefined;
+      const isAlreadyPaidNoOp =
+        billRow?.payment_status === 'paid' && !payments.some((p) => Number(p?.amount ?? 0) > 0);
+      const initialKitchenStatus =
+        billRow && !isAlreadyPaidNoOp
+          ? checkKitchenDeliveryStatus(db, billRow.order_id, undefined, clientIp, billRow.id)
+          : { allowed: true, count: 0, items: [] };
 
       if (!initialKitchenStatus.allowed && override_pin) {
         try {
@@ -4067,12 +4120,19 @@ router.post(
 );
 
 router.post(
-  '/:id/applyDiscount',
+  ['/:id/applyDiscount', '/:id/discount'],
   requirePermission('bills.discount.apply'),
   asyncHandler(async (req: Request, res: Response) => {
     let operationCommitted = false;
     try {
       const { type, value, reason, override_pin, approver_id, user_id, manager_id } = req.body;
+      const suppliedApproverIds = [approver_id, manager_id, user_id]
+        .filter((val) => val !== undefined && val !== null && String(val).trim() !== '')
+        .map((val) => String(val).trim());
+      if (new Set(suppliedApproverIds).size > 1) {
+        return res.status(400).json({ error: 'Conflicting approver identifiers' });
+      }
+      const explicitApproverId = suppliedApproverIds[0];
 
       if (!type || !['percentage', 'amount'].includes(type)) {
         return res
@@ -4190,7 +4250,7 @@ router.post(
           checkPinRateLimit(rateLimitKey);
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
-        const managerId = req.body.manager_id || req.body.user_id || req.body.approver_id;
+        const managerId = explicitApproverId;
         type ManagerCandidate = { id: string; role: string; pin_hash: string | null };
         const verifiedResult = await withPinVerificationLock(rateLimitKey, async () => {
           if (isPinRateLimited(rateLimitKey)) {
@@ -4246,6 +4306,27 @@ router.post(
         }
         approvedByUserId = verifiedResult.user.id;
         preVerifiedPinHash = verifiedResult.user.pin_hash ?? undefined;
+      }
+
+      let preVerifiedKitchenManager: { id: string; verifiedPinHash: string } | null = null;
+      if (approvedByUserId && preVerifiedPinHash) {
+        preVerifiedKitchenManager = { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash };
+      } else if (override_pin) {
+        const initialKitchenStatus = checkKitchenDeliveryStatus(
+          db,
+          bill.order_id,
+          undefined,
+          clientIp,
+          bill.id,
+        );
+        if (!initialKitchenStatus.allowed) {
+          preVerifiedKitchenManager = await preVerifyKitchenDeliveryPin(
+            db,
+            override_pin,
+            clientIp,
+            explicitApproverId,
+          );
+        }
       }
 
       // Check discount mode
@@ -4452,17 +4533,14 @@ router.post(
           );
         }
         const freshNewBalance = Math.max(0, freshNewTotal - freshPaidAmount);
-        const preVerifiedDiscountApprover =
-          approvedByUserId && preVerifiedPinHash
-            ? { id: approvedByUserId, verifiedPinHash: preVerifiedPinHash }
-            : null;
         const kitchenStatus = checkKitchenDeliveryStatus(
           db,
           currentBill.order_id,
           override_pin,
           clientIp,
           currentBill.id,
-          preVerifiedDiscountApprover,
+          preVerifiedKitchenManager,
+          explicitApproverId,
         );
         const isNowPaid = freshPaidAmount > 0 && freshNewBalance === 0 && kitchenStatus.allowed;
 
@@ -4532,7 +4610,8 @@ router.post(
             now(),
             override_pin,
             clientIp,
-            preVerifiedDiscountApprover,
+            preVerifiedKitchenManager,
+            explicitApproverId,
           );
         }
 

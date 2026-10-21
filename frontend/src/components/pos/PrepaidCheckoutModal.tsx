@@ -471,7 +471,13 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     }
     const effectiveDiscountApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
     if (preview.discountAmount > 0 && discountRequiresApproval) {
-      if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
+      if (
+        !discountPin ||
+        managerApprovers.loading ||
+        managerApprovers.loadFailed ||
+        managerApprovers.approvers.length === 0 ||
+        !effectiveDiscountApproverId
+      ) {
         toast.error(t('managerPinRequired'));
         return;
       }
@@ -1024,7 +1030,16 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               taxLoading ||
               !preview ||
               hasInvalidFixedDiscount ||
-              totalPaymentMinor < remainingMinor
+              totalPaymentMinor < remainingMinor ||
+              Boolean(
+                preview.discountAmount > 0 &&
+                discountRequiresApproval &&
+                (!discountPin ||
+                  managerApprovers.loading ||
+                  managerApprovers.loadFailed ||
+                  managerApprovers.approvers.length === 0 ||
+                  !(discountApproverId ?? managerApprovers.selectedApproverId)),
+              )
             }
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"

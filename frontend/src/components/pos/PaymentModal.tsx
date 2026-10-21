@@ -830,7 +830,13 @@ export default function PaymentModal({
     const effectiveDiscountApproverId = discountApproverId ?? managerApprovers.selectedApproverId;
     // Check if PIN is required
     if (discountRequiresApproval && val > 0) {
-      if (!discountPin || (managerApprovers.approvers.length > 1 && !effectiveDiscountApproverId)) {
+      if (
+        !discountPin ||
+        managerApprovers.loading ||
+        managerApprovers.loadFailed ||
+        managerApprovers.approvers.length === 0 ||
+        !effectiveDiscountApproverId
+      ) {
         toast.error(t('managerPinRequired'));
         return;
       }
@@ -1051,6 +1057,19 @@ export default function PaymentModal({
     setProcessing(true);
     setRequestFailure(null);
     const effectiveKitchenApproverId = kitchenApproverId ?? managerApprovers.selectedApproverId;
+    if (kitchenOverridePin) {
+      if (
+        managerApprovers.loading ||
+        managerApprovers.loadFailed ||
+        managerApprovers.approvers.length === 0 ||
+        !effectiveKitchenApproverId
+      ) {
+        toast.error(t('managerPinRequired'));
+        inFlightRef.current = false;
+        setProcessing(false);
+        return;
+      }
+    }
     try {
       const res = await api.post(
         attempt.zeroBalance ? `/bills/${bill.id}/payment` : `/bills/${bill.id}/payments`,
@@ -1795,8 +1814,10 @@ export default function PaymentModal({
                         (discountRequiresApproval &&
                           parseFloat(discountValue) > 0 &&
                           (!discountPin ||
-                            (managerApprovers.approvers.length > 1 &&
-                              !(discountApproverId ?? managerApprovers.selectedApproverId))))
+                            managerApprovers.loading ||
+                            managerApprovers.loadFailed ||
+                            managerApprovers.approvers.length === 0 ||
+                            !(discountApproverId ?? managerApprovers.selectedApproverId)))
                       }
                       className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                     >
@@ -2272,8 +2293,10 @@ export default function PaymentModal({
                   (!pendingAttempt && totalPaymentMinor === 0 && remainingMinor > 0) ||
                   Boolean(
                     kitchenOverridePin &&
-                    managerApprovers.approvers.length > 1 &&
-                    !(kitchenApproverId ?? managerApprovers.selectedApproverId),
+                    (managerApprovers.loading ||
+                      managerApprovers.loadFailed ||
+                      managerApprovers.approvers.length === 0 ||
+                      !(kitchenApproverId ?? managerApprovers.selectedApproverId)),
                   )
                 }
                 className="w-full"

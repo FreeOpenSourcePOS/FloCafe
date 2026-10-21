@@ -120,7 +120,6 @@ export function getJWTSecret(): string {
           | { value: string }
           | undefined;
         if (stored?.value !== recovered) throw new Error('JWT secret write did not persist');
-        fs.rmSync(unpackagedStore.filePath, { force: true });
         _jwtSecret = recovered;
         console.log('[Auth] Recovered JWT secret from development secure storage to SQLite');
       } else {

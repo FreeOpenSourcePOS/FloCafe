@@ -182,8 +182,8 @@ try {
     'recovered secret is written back to SQLite settings',
   );
   assertOrThrow(
-    !fs.existsSync(secretFile),
-    'development jwt-secret.enc file is removed after recovery',
+    fs.existsSync(secretFile),
+    'leaves shared jwt-secret.enc intact for packaged installs sharing userData',
   );
 
   encryptionAvailable = false;

@@ -75,7 +75,7 @@ the marker `safe-storage:v1`; a packaged install whose row still holds a plainte
 first read. Where OS encryption is unavailable, in unpackaged development runs, and in the Electron-less dev server,
 the secret stays in the `jwt_secret` settings row so development runs sharing `flo.db` remain compatible. If an
 unpackaged development run encounters the `safe-storage:v1` marker, it recovers the secret from development secure
-storage back into SQLite and removes the encrypted file so `node dev-server.js` continues to function. If the
+storage back into SQLite so `node dev-server.js` continues to function. If the
 secure file becomes unreadable, a new secret is generated and existing sessions end. The value is cached in a
 module-level variable, so each install has its own secret and a token from one install does not validate against another.
 That module owns the only copy of the cache;

@@ -40,11 +40,13 @@ export interface CustomerDisplayFeed {
   business_name: string;
   config: CustomerDisplayConfig;
   orders: BoardOrder[];
+  next_cursor?: string | null;
+  has_more?: boolean;
 }
 
 export function isCustomerDisplayFeed(value: unknown): value is CustomerDisplayFeed {
   if (!value || typeof value !== 'object') return false;
-  const { business_name, config, orders } = value as Record<string, unknown>;
+  const { business_name, config, orders, next_cursor, has_more } = value as Record<string, unknown>;
   return (
     typeof business_name === 'string' &&
     isCustomerDisplayConfig(config) &&
@@ -53,8 +55,12 @@ export function isCustomerDisplayFeed(value: unknown): value is CustomerDisplayF
       (order) =>
         !!order &&
         typeof order === 'object' &&
+        (typeof (order as BoardOrder).id === 'number' ||
+          typeof (order as BoardOrder).id === 'string') &&
         typeof (order as BoardOrder).number === 'string' &&
         typeof (order as BoardOrder).status === 'string',
-    )
+    ) &&
+    (next_cursor === undefined || next_cursor === null || typeof next_cursor === 'string') &&
+    (has_more === undefined || typeof has_more === 'boolean')
   );
 }

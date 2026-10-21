@@ -80,6 +80,29 @@ function isNativeAbiMismatch(error: any): boolean {
   );
 }
 
+const RealDate = global.Date;
+const withFixedClock = async <T>(isoUtc: string, fn: () => Promise<T>): Promise<T> => {
+  const fixedMs = RealDate.parse(isoUtc);
+  class FixedDate extends RealDate {
+    constructor(...args: any[]) {
+      if (args.length === 0) {
+        super(fixedMs);
+      } else {
+        super(...(args as [any]));
+      }
+    }
+    static now(): number {
+      return fixedMs;
+    }
+  }
+  global.Date = FixedDate as DateConstructor;
+  try {
+    return await fn();
+  } finally {
+    global.Date = RealDate;
+  }
+};
+
 async function main() {
   console.log('Cash sessions / shift lifecycle');
   console.log('='.repeat(50));
@@ -907,6 +930,180 @@ async function main() {
     .send({ counted_cash_cents: 0 });
   assert(cancelledClose.status === 200, 'cancelled zero-balance bill does not block shift close');
 
+  // Closing-second unpaid bill guard
+  const tShift1OpenIso = '2026-06-20T08:00:00.000Z';
+  const tPreceding = '2026-06-20 11:59:59';
+  const tClose = '2026-06-20 12:00:00';
+  const tCloseIso = '2026-06-20T12:00:00.000Z';
+  const tShift2OpenIso = '2026-06-20T12:00:01.000Z';
+  const tShift2CloseIso = '2026-06-20T13:00:00.000Z';
+
+  let shift1Id: number = 0;
+  await withFixedClock(tShift1OpenIso, async () => {
+    const res = await request(app)
+      .post('/api/cash-sessions/open')
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ opening_float_cents: 0 });
+    assert(res.status === 200, 'closing-second test shift 1 opens (200)');
+    shift1Id = Number(res.body?.id);
+  });
+
+  // 1. Preceding-second unpaid bill (T_close - 1s) -> 409
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-PRECEDING', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
+    tPreceding,
+    tPreceding,
+  );
+  const precOrderId = Number(
+    (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-PRECEDING'`).get() as any)
+      .id,
+  );
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-PRECEDING', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
+    precOrderId,
+    tPreceding,
+    tPreceding,
+  );
+
+  await withFixedClock(tCloseIso, async () => {
+    const res = await request(app)
+      .post(`/api/cash-sessions/${shift1Id}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ counted_cash_cents: 0 });
+    assert(res.status === 409, 'preceding-second unpaid bill blocks shift close (409)');
+    assert(
+      res.body?.display_code === 'unpaid_bills_remaining',
+      'preceding-second unpaid bill returns unpaid_bills_remaining',
+    );
+  });
+
+  // Remove preceding bill before same-second tests
+  db.prepare(`DELETE FROM bills WHERE bill_number = 'BILL-GUARD-PRECEDING'`).run();
+  db.prepare(`DELETE FROM orders WHERE order_number = 'ORD-GUARD-PRECEDING'`).run();
+
+  // 2. Same-second unpaid bill (created_at === T_close) -> 409, shift remains open
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-SAME', 'cashier-sess', 'takeaway', 'pending', 50, 50, ?, ?)`).run(
+    tClose,
+    tClose,
+  );
+  const sameOrderId = Number(
+    (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-SAME'`).get() as any).id,
+  );
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-SAME', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
+    sameOrderId,
+    tClose,
+    tClose,
+  );
+
+  await withFixedClock(tCloseIso, async () => {
+    const res = await request(app)
+      .post(`/api/cash-sessions/${shift1Id}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ counted_cash_cents: 0 });
+    assert(res.status === 409, 'same-second unpaid bill blocks shift close (409)');
+    assert(
+      res.body?.display_code === 'unpaid_bills_remaining',
+      'same-second unpaid bill returns unpaid_bills_remaining',
+    );
+  });
+  const shift1AfterUnpaid = db
+    .prepare(`SELECT status FROM cash_sessions WHERE id = ?`)
+    .get(shift1Id) as any;
+  assert(shift1AfterUnpaid?.status === 'open', 'same-second unpaid bill leaves shift open');
+
+  // 3. Same-second partially paid bill (payment_status = 'partial', balance > 0, created_at === T_close) -> 409
+  db.prepare(`UPDATE bills SET payment_status = 'partial', paid_amount = 20, balance = 30,
+    payment_details = ? WHERE bill_number = 'BILL-GUARD-SAME'`).run(
+    JSON.stringify([{ method: 'cash', amount: 20, timestamp: tClose, cash_session_id: shift1Id }]),
+  );
+
+  await withFixedClock(tCloseIso, async () => {
+    const res = await request(app)
+      .post(`/api/cash-sessions/${shift1Id}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ counted_cash_cents: 2000 });
+    assert(res.status === 409, 'same-second partial bill blocks shift close (409)');
+    assert(
+      res.body?.display_code === 'unpaid_bills_remaining',
+      'same-second partial bill returns unpaid_bills_remaining',
+    );
+  });
+  const shift1AfterPartial = db
+    .prepare(`SELECT status FROM cash_sessions WHERE id = ?`)
+    .get(shift1Id) as any;
+  assert(shift1AfterPartial?.status === 'open', 'same-second partial bill leaves shift open');
+
+  // Same-second exclusions: paid bills and cancelled orders do not block close.
+  db.prepare(`UPDATE bills SET payment_status = 'paid', paid_amount = 50, balance = 0, paid_at = ?,
+    payment_details = ? WHERE bill_number = 'BILL-GUARD-SAME'`).run(
+    tClose,
+    JSON.stringify([{ method: 'cash', amount: 50, timestamp: tClose, cash_session_id: shift1Id }]),
+  );
+
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('ORD-GUARD-CANCELLED', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?)`).run(
+    tClose,
+    tClose,
+  );
+  const cancelOrderId = Number(
+    (db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-GUARD-CANCELLED'`).get() as any)
+      .id,
+  );
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+    VALUES ('BILL-GUARD-CANCELLED', ?, 50, 50, 0, 50, 'unpaid', '[]', ?, ?)`).run(
+    cancelOrderId,
+    tClose,
+    tClose,
+  );
+
+  await withFixedClock(tCloseIso, async () => {
+    const res = await request(app)
+      .post(`/api/cash-sessions/${shift1Id}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ counted_cash_cents: 5000 });
+    assert(
+      res.status === 200,
+      'same-second cancelled order and paid bill do not block shift close (200)',
+    );
+    assert(
+      res.body?.expected_cash_cents === 5000,
+      'same-second cash tender is included once in shift 1 expected cash',
+    );
+  });
+
+  // Boundary second: opening and closing Shift 2 excludes prior shift tender.
+  let shift2Id: number = 0;
+  await withFixedClock(tShift2OpenIso, async () => {
+    const res = await request(app)
+      .post('/api/cash-sessions/open')
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ opening_float_cents: 0 });
+    assert(res.status === 200, 'shift 2 opens at boundary second (200)');
+    shift2Id = Number(res.body?.id);
+  });
+
+  await withFixedClock(tShift2CloseIso, async () => {
+    const res = await request(app)
+      .post(`/api/cash-sessions/${shift2Id}/close`)
+      .set('Authorization', `Bearer ${cashierToken}`)
+      .send({ counted_cash_cents: 0 });
+    assert(res.status === 200, 'shift 2 closes cleanly with no new unpaid bills (200)');
+    assert(
+      res.body?.expected_cash_cents === 0,
+      'shift 2 does not double-count shift 1 tender (expected_cash_cents === 0)',
+    );
+  });
+
+  // Cleanup test records
+  db.prepare(
+    `DELETE FROM bills WHERE bill_number IN ('BILL-GUARD-SAME', 'BILL-GUARD-CANCELLED')`,
+  ).run();
+  db.prepare(
+    `DELETE FROM orders WHERE order_number IN ('ORD-GUARD-SAME', 'ORD-GUARD-CANCELLED')`,
+  ).run();
+
   const activeStaleOpen = await request(app)
     .post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -1401,28 +1598,6 @@ async function main() {
 
   // ── Section 9: closed business day blocks new shift open ─────────────
   console.log('Section 9: closed business day blocks new shift open');
-  const RealDate = global.Date;
-  const withFixedClock = async <T>(isoUtc: string, fn: () => Promise<T>): Promise<T> => {
-    const fixedMs = RealDate.parse(isoUtc);
-    class FixedDate extends RealDate {
-      constructor(...args: any[]) {
-        if (args.length === 0) {
-          super(fixedMs);
-        } else {
-          super(...(args as [any]));
-        }
-      }
-      static now(): number {
-        return fixedMs;
-      }
-    }
-    global.Date = FixedDate as DateConstructor;
-    try {
-      return await fn();
-    } finally {
-      global.Date = RealDate;
-    }
-  };
 
   db.prepare(
     `INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'America/New_York', ?) ON CONFLICT(key) DO UPDATE SET value='America/New_York', updated_at=excluded.updated_at`,

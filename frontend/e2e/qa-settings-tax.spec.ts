@@ -4,10 +4,17 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 
 type EnabledSetting = { setting: { key: string; value: string } };
-type PackList = { store_country: string; packs: Array<{ id: string; status: string; active_for_store: boolean; override_count: number }> };
+type PackList = {
+  store_country: string;
+  packs: Array<{ id: string; status: string; active_for_store: boolean; override_count: number }>;
+};
 type AuditList = { audit: Array<{ id: number; action: string; pack_id: string | null }> };
 
-async function api<T>(page: Page, path: string, init?: { method?: string; data?: unknown }): Promise<T> {
+async function api<T>(
+  page: Page,
+  path: string,
+  init?: { method?: string; data?: unknown },
+): Promise<T> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
   const method = init?.method ?? 'GET';
   const res = await page.request.fetch(`${BASE}/api${path}`, {
@@ -16,7 +23,7 @@ async function api<T>(page: Page, path: string, init?: { method?: string; data?:
     data: init?.data as never,
   });
   expect(res.ok(), `${method} ${path} must succeed (got ${res.status()})`).toBeTruthy();
-  return await res.json() as T;
+  return (await res.json()) as T;
 }
 
 async function login(page: Page): Promise<void> {
@@ -29,8 +36,9 @@ async function login(page: Page): Promise<void> {
 
 async function openTaxTab(page: Page): Promise<void> {
   await page.goto(`${BASE}/settings?tab=tax`);
-  await expect(page.getByRole('heading', { name: 'Tax configuration', exact: true }))
-    .toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Tax configuration', exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.waitForLoadState('networkidle');
 }
 
@@ -40,7 +48,9 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     await setLanguage(page, 'en');
   });
 
-  test('the global tax switch persists across a reload and is owner-reachable', async ({ page }) => {
+  test('the global tax switch persists across a reload and is owner-reachable', async ({
+    page,
+  }) => {
     await openTaxTab(page);
 
     const before = await api<EnabledSetting>(page, '/settings/taxes_enabled');
@@ -67,24 +77,35 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     try {
       await offSegment.click();
 
-      await expect.poll(async () =>
-        (await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value, { timeout: 20_000 })
+      await expect
+        .poll(
+          async () => (await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value,
+          { timeout: 20_000 },
+        )
         .toBe('false');
 
       await openTaxTab(page);
-      await expect(page.getByRole('button', { name: 'Turn Off Tax', exact: true })).toHaveClass(/shadow-sm/);
-      await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true }))
-        .not.toHaveClass(/shadow-sm/);
+      await expect(page.getByRole('button', { name: 'Turn Off Tax', exact: true })).toHaveClass(
+        /shadow-sm/,
+      );
+      await expect(
+        page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+      ).not.toHaveClass(/shadow-sm/);
     } finally {
       await api(page, '/settings/taxes_enabled', { method: 'PUT', data: { value: 'true' } });
       await openTaxTab(page);
-      expect((await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value).toBe('true');
-      await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true }))
-        .toHaveClass(/shadow-sm/);
+      expect((await api<EnabledSetting>(page, '/settings/taxes_enabled')).setting.value).toBe(
+        'true',
+      );
+      await expect(
+        page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+      ).toHaveClass(/shadow-sm/);
     }
   });
 
-  test('the active tax pack for the store country is real and matches the registry', async ({ page }) => {
+  test('the active tax pack for the store country is real and matches the registry', async ({
+    page,
+  }) => {
     await openTaxTab(page);
 
     const packs = await api<PackList>(page, '/tax-packs');
@@ -92,13 +113,17 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     expect(active.length, 'exactly one pack may be active for the store').toBe(1);
     expect(packs.store_country).toBeTruthy();
 
-    await expect(page.getByRole('button', { name: 'Official Tax Pack', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Official Tax Pack', exact: true }),
+    ).toBeVisible();
     // Advanced tools is collapsed by default; expanding it must reveal real
     // override tooling rather than a placeholder.
     const advanced = page.getByRole('button', { name: /Advanced tax tools/ });
     await expect(advanced).toBeVisible();
     await advanced.click();
-    await expect(page.getByRole('heading', { name: 'Advanced tax tools', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Advanced tax tools', exact: true }),
+    ).toBeVisible();
   });
 
   test('the tax pack audit history renders an entry returned by the API', async ({ page }) => {
@@ -143,7 +168,9 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     expect(packs.packs.filter((entry) => entry.active_for_store).length).toBe(1);
   });
 
-  test('document tax rounding applies across transaction documents and preserves rounding consistency', async ({ page }) => {
+  test('document tax rounding applies across transaction documents and preserves rounding consistency', async ({
+    page,
+  }) => {
     await openTaxTab(page);
 
     // Expand advanced tax tools

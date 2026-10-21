@@ -20,8 +20,6 @@ import {
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import {
-  calculateConfiguredChargeTaxes,
-  calculateDocumentItemTaxes,
   calculateDocumentTaxes,
   calculateItemTax,
   combineItemAndChargeTaxes,
@@ -1692,11 +1690,11 @@ router.post(
 
         const validatedItems: Array<{
           item: any;
-          product: any;
+          product: ProductRow;
           quantity: number;
-          variant: any;
+          variant: ReturnType<typeof resolveOrderItemVariant>;
           unitPrice: number;
-          deduction: any;
+          deduction: ReturnType<typeof resolveInventoryDeduction>;
           itemSubtotal: number;
           itemId: string;
         }> = [];
@@ -1754,7 +1752,7 @@ router.post(
           }
           itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
 
-          const itemId = String(item.id || item.product_id || (idx + 1));
+          const itemId = String(item.id || item.product_id || idx + 1);
           validatedItems.push({
             item,
             product,

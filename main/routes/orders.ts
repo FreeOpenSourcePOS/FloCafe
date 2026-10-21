@@ -659,8 +659,8 @@ router.get(
         )
       )`;
 
-        const hasControlChars = /[\x00-\x1F\x7F]/.test(search);
-        const isEligible = !hasControlChars && [...search].length >= 3;
+        const isPrintableAscii = /^[\x20-\x7E]+$/.test(search) && !/[iI]$/.test(search);
+        const isEligible = isPrintableAscii && search.length >= 3;
         const hasFts = isEligible && isSearchIndexAvailable(db);
 
         if (hasFts) {

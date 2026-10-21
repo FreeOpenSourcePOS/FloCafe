@@ -930,7 +930,7 @@ async function main() {
     .send({ counted_cash_cents: 0 });
   assert(cancelledClose.status === 200, 'cancelled zero-balance bill does not block shift close');
 
-  // Closing-second unpaid bill guard (Issue #1275)
+  // Closing-second unpaid bill guard
   const tShift1OpenIso = '2026-06-20T08:00:00.000Z';
   const tPreceding = '2026-06-20 11:59:59';
   const tClose = '2026-06-20 12:00:00';
@@ -1035,10 +1035,7 @@ async function main() {
     .get(shift1Id) as any;
   assert(shift1AfterPartial?.status === 'open', 'same-second partial bill leaves shift open');
 
-  // 4. Same-second exclusions (created_at === T_close):
-  //    - fully paid bill (payment_status = 'paid', balance = 0) with cash tender owned by shift1Id
-  //    - cancelled order (orders.status = 'cancelled')
-  //    Shift close succeeds (200) and expected_cash_cents includes owned cash tender once.
+  // Same-second exclusions: paid bills and cancelled orders do not block close.
   db.prepare(`UPDATE bills SET payment_status = 'paid', paid_amount = 50, balance = 0, paid_at = ?,
     payment_details = ? WHERE bill_number = 'BILL-GUARD-SAME'`).run(
     tClose,
@@ -1076,9 +1073,7 @@ async function main() {
     );
   });
 
-  // 5. Subsequent session boundary:
-  //    After Shift 1 closed at T_close, opening Shift 2 at T_close + 1s
-  //    and closing Shift 2 with no new unpaid bills succeeds (200) with expected_cash_cents === 0.
+  // Boundary second: opening and closing Shift 2 excludes prior shift tender.
   let shift2Id: number = 0;
   await withFixedClock(tShift2OpenIso, async () => {
     const res = await request(app)

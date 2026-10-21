@@ -316,57 +316,77 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     const billJson = await billRes.json();
     const billId = billJson.bill.id;
 
-    // Reload POS page to ensure state is fresh
-    await page.reload();
-    await page.waitForURL(/\/pos/, { timeout: 20000 });
+    let billSettledOrCancelled = false;
+    try {
+      // Reload POS page to ensure state is fresh
+      await page.reload();
+      await page.waitForURL(/\/pos/, { timeout: 20000 });
 
-    // Open shift close modal by clicking the shift action in topbar
-    const shiftButton = page.getByRole('button', { name: /close shift/i });
-    await expect(shiftButton).toBeVisible();
-    await shiftButton.click();
+      // Open shift close modal by clicking the shift action in topbar
+      const shiftButton = page.getByRole('button', { name: /close shift/i });
+      await expect(shiftButton).toBeVisible();
+      await shiftButton.click();
 
-    // Verify ShiftCloseModal is visible
-    const modalTitle = page.getByRole('heading', { name: /close shift/i });
-    await expect(modalTitle).toBeVisible();
+      // Verify ShiftCloseModal is visible
+      const modalTitle = page.getByRole('heading', { name: /close shift/i });
+      await expect(modalTitle).toBeVisible();
 
-    // Fill in counted cash (0)
-    const countedInput = page.locator('#shift-counted-cash');
-    await expect(countedInput).toBeVisible();
-    await countedInput.fill('0');
+      // Fill in counted cash (0)
+      const countedInput = page.locator('#shift-counted-cash');
+      await expect(countedInput).toBeVisible();
+      await countedInput.fill('0');
 
-    // Attempt to close shift while unpaid bill exists
-    const submitCloseBtn = page
-      .locator('button')
-      .filter({ hasText: /close shift/i })
-      .last();
-    await submitCloseBtn.click();
+      // Attempt to close shift while unpaid bill exists
+      const submitCloseBtn = page
+        .locator('button')
+        .filter({ hasText: /close shift/i })
+        .last();
+      await submitCloseBtn.click();
 
-    // Verify 409 error banner appears inside modal
-    const errorBanner = page.locator('text=/unpaid bill/i');
-    await expect(errorBanner).toBeVisible({ timeout: 10000 });
+      // Verify 409 error banner appears inside modal
+      const errorBanner = page.locator('text=/unpaid bill/i');
+      await expect(errorBanner).toBeVisible({ timeout: 10000 });
 
-    // Verify shift is still open in backend
-    const checkShiftRes = await page.request.get(`${BASE}/api/cash-sessions/current`, {
-      headers: authHeaders,
-    });
-    const checkShiftJson = await checkShiftRes.json();
-    expect(checkShiftJson?.status).toBe('open');
+      // Verify shift is still open in backend
+      const checkShiftRes = await page.request.get(`${BASE}/api/cash-sessions/current`, {
+        headers: authHeaders,
+      });
+      const checkShiftJson = await checkShiftRes.json();
+      expect(checkShiftJson?.status).toBe('open');
 
-    await page.screenshot({ path: 'test-results/r4-shift-close-unpaid-guard.png' });
+      await page.screenshot({ path: 'test-results/r4-shift-close-unpaid-guard.png' });
 
-    // Now settle the bill so shift close can succeed
-    const payRes = await page.request.post(`${BASE}/api/bills/${billId}/payment`, {
-      headers: authHeaders,
-      data: { method: 'cash', amount: billJson.bill.total },
-    });
-    expect(payRes.ok()).toBeTruthy();
+      // Now settle the bill so shift close can succeed
+      const payRes = await page.request.post(`${BASE}/api/bills/${billId}/payment`, {
+        headers: authHeaders,
+        data: { method: 'cash', amount: billJson.bill.total },
+      });
+      expect(payRes.ok()).toBeTruthy();
+      billSettledOrCancelled = true;
 
-    // Retry shift close in modal
-    await submitCloseBtn.click();
+      // Retry shift close in modal, waiting for successful close response
+      const closeResponsePromise = page.waitForResponse(
+        (res) =>
+          res.url().includes('/api/cash-sessions/') &&
+          res.url().endsWith('/close') &&
+          res.status() === 200,
+      );
+      await submitCloseBtn.click();
+      await closeResponsePromise;
 
-    // Verify close succeeds: error banner disappears and summary shows
-    await expect(errorBanner).not.toBeVisible();
-    await expect(page.getByText(/expected cash/i)).toBeVisible();
+      // Verify close succeeds: error banner disappears and closed-summary-only control is visible
+      await expect(errorBanner).not.toBeVisible();
+      await expect(page.getByRole('button', { name: /print/i })).toBeVisible();
+    } finally {
+      if (!billSettledOrCancelled && orderId) {
+        await page.request
+          .patch(`${BASE}/api/orders/${orderId}/status`, {
+            headers: authHeaders,
+            data: { status: 'cancelled' },
+          })
+          .catch(() => {});
+      }
+    }
   });
 
   test.afterAll(async ({ request }) => {

@@ -112,9 +112,8 @@ function closeSessionTxn(
 } {
   const closedAt = now();
   if (!skipUnpaidBlock) {
-    // 'partial' counts: a short tender leaves an outstanding balance
-    // (bills.ts settles to 'paid' only at zero balance). Upper bound is inclusive
-    // (<= closedAt) so bills committed during the closing second cannot slip through.
+    // Partial counts: short tender leaves an outstanding balance.
+    // Upper bound is inclusive (<= closedAt) so same-second bills cannot slip through.
     const unpaid = db
       .prepare(`
       SELECT COUNT(*) AS c

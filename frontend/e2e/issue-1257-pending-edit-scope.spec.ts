@@ -1,14 +1,27 @@
 import { test, expect } from '@playwright/test';
+import * as fs from 'fs';
 import * as path from 'path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
-import {
-  E2E_PASSWORD,
-  getE2eToken,
-  setLanguage,
-  setOrdersLayout,
-} from './helpers/test-auth';
+import { E2E_PASSWORD, getE2eToken, setLanguage, setOrdersLayout } from './helpers/test-auth';
 
-const EVIDENCE_DIR = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M5EFWPN741SST2BQG4N1GTBE';
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR;
+
+async function captureScreenshot(
+  page: import('@playwright/test').Page,
+  filename: string,
+): Promise<void> {
+  if (!EVIDENCE_DIR) return;
+  try {
+    if (!fs.existsSync(EVIDENCE_DIR)) {
+      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+    }
+    await page.screenshot({
+      path: path.join(EVIDENCE_DIR, filename),
+    });
+  } catch (err) {
+    console.warn(`Could not save screenshot ${filename}:`, err);
+  }
+}
 
 async function loginAsOwner(page: import('@playwright/test').Page) {
   await page.goto(`${BASE}/auth/login`);
@@ -127,9 +140,7 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     await expect(refreshWarningA).toHaveText(/Failed to load order/);
 
     // Capture screenshot 1: Order A showing error notices
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-1-order-a-with-notices.png'),
-    });
+    await captureScreenshot(page, 'scenario-1-order-a-with-notices.png');
 
     // Now switch to Order B!
     await masterRowB.click();
@@ -144,9 +155,7 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     await expect(page.getByTestId('pending-order-item-edits')).toBeHidden();
 
     // Capture screenshot 2: Order B cleanly isolated without any notices
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-1-order-b-isolated-clean.png'),
-    });
+    await captureScreenshot(page, 'scenario-1-order-b-isolated-clean.png');
   });
 
   test('Scenario 2: In-flight edit resolution or refresh on Order A settling late does not contaminate Order B', async ({
@@ -222,9 +231,7 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     expect(orderARefreshesWhileOnB).toBe(0);
 
     // Capture screenshot 3: Order B clean after late resolution of Order A
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-2-order-b-after-late-settling-resolution.png'),
-    });
+    await captureScreenshot(page, 'scenario-2-order-b-after-late-settling-resolution.png');
   });
 
   test('Scenario 3: LocalStorage pending attempt scope isolation prevents cross-order recovery offer', async ({
@@ -251,9 +258,7 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     await expect(page.getByTestId('pending-order-item-edits')).toBeHidden();
 
     // Capture screenshot 4: Order B showing no pending edit offers despite Order A attempt in storage
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-3-order-b-no-attempt-offer.png'),
-    });
+    await captureScreenshot(page, 'scenario-3-order-b-no-attempt-offer.png');
 
     // Select Order A
     await masterRowA.click();
@@ -263,8 +268,6 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     await expect(page.getByRole('button', { name: 'Resolve pending edit' }).first()).toBeVisible();
 
     // Capture screenshot 5: Order A showing its pending edit offer
-    await page.screenshot({
-      path: path.join(EVIDENCE_DIR, 'scenario-3-order-a-displays-own-attempt.png'),
-    });
+    await captureScreenshot(page, 'scenario-3-order-a-displays-own-attempt.png');
   });
 });

@@ -5432,8 +5432,14 @@ export default function SettingsPage() {
                           await api.post('/settings/cloud/account/verification');
                           toast.success(t('verificationEmailQueued'));
                           await fetchCloudAccount();
-                        } catch {
-                          toast.error(t('verificationEmailFailed'));
+                        } catch (err) {
+                          const detail = (err as { response?: { data?: { error?: string } } })
+                            .response?.data?.error;
+                          toast.error(
+                            detail
+                              ? `${t('verificationEmailFailed')}: ${detail}`
+                              : t('verificationEmailFailed'),
+                          );
                         } finally {
                           setCloudAccountBusy(false);
                         }

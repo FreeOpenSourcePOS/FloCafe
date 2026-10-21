@@ -3,6 +3,7 @@ import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, getSettingValue, now, parseBackupPaginationQuery } from '../db';
 import {
+  CloudRequestError,
   cloudSync,
   DEFAULT_CLOUD_SERVER_URL,
   normalizeCloudServerUrl,
@@ -1196,6 +1197,21 @@ router.put(
   }),
 );
 
+function describeVerificationFailure(error: unknown): string {
+  if (error instanceof CloudRequestError) {
+    return `FloAdmin rejected the request (HTTP ${error.status}): ${error.message}`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+    return 'FloAdmin did not respond in time';
+  }
+  if (error instanceof TypeError) {
+    const cause = (error as { cause?: { code?: string } }).cause?.code;
+    return `Could not reach FloAdmin${cause ? ` (${cause})` : ''}`;
+  }
+  return message;
+}
+
 router.post(
   '/cloud/account/verification',
   requirePermission('cloud.account.manage'),
@@ -1212,8 +1228,9 @@ router.post(
           ),
         ),
       );
-    } catch {
-      res.status(502).json({ error: 'Could not send verification email' });
+    } catch (error) {
+      console.error('[Cloud] Verification email request failed:', error);
+      res.status(502).json({ error: describeVerificationFailure(error) });
     }
   }),
 );

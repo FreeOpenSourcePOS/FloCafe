@@ -126,8 +126,9 @@ mode that corrupts a database, so any new entry point in this area must take the
 `restoreBackup` reads the `_flo_meta` stamp and the `user_version` pragma from the backup and
 decides between a direct file replacement and a data-only restore from the metadata. An unreadable
 source returns a structured failure with both versions rather than throwing. Both restore paths
-execute `executeSequenceRepair` to re-align sequence counters with restored orders and bills and
-mark repair complete.
+validate inventory ledger movement chains in durable append order (`id` ASC), execute
+`executeSequenceRepair` to re-align sequence counters with restored orders and bills, and mark repair
+complete.
 
 ### Entry points
 

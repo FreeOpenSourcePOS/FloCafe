@@ -28,6 +28,8 @@ const {
   now,
   getCurrentSchemaVersion,
   validateInventoryLedgerDatabase,
+  validateInventoryLedgerRows,
+  getInventoryMovementRows,
   createBackup,
   restoreBackup,
   buildIdealSchemaDb,
@@ -626,6 +628,411 @@ async function run() {
       .prepare("SELECT * FROM payment_transaction_refs WHERE transaction_id = 'txn-v114-1'")
       .get() as any;
     assertOrThrow(Boolean(restoredPayment), 'Restored payment transaction ref txn-v114-1 exists');
+
+    console.log(
+      '\n--- Scenario 6: Backward clock and durable append order validation & backup/restore ---',
+    );
+
+    // Part A: validateInventoryLedgerRows under backward clock jumps
+    // Case 1: Backward clock before opening balance across product, variant, and add-on pools
+    const testProducts = [{ id: 'p-clock-1', stock_quantity: 8.0 }];
+    const testVariants = [{ id: 'v-clock-1', product_id: 'p-clock-1', stock_quantity: 15.0 }];
+    const testAddons = [{ id: 'a-clock-1', stock_quantity: 27.0 }];
+
+    const testMovementsBackwardOpening = [
+      // Product: opening balance at 12:00:00 (+10 -> 10), sale at 11:59:00 (-2 -> 8)
+      {
+        id: 1,
+        product_id: 'p-clock-1',
+        quantity_delta: 10.0,
+        stock_after: 10.0,
+        movement_type: 'adjustment',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 2,
+        product_id: 'p-clock-1',
+        quantity_delta: -2.0,
+        stock_after: 8.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T11:59:00.000Z',
+      },
+      // Variant: opening balance at 12:00:00 (+20 -> 20), sale at 11:59:00 (-5 -> 15)
+      {
+        id: 3,
+        product_id: 'p-clock-1',
+        variant_id: 'v-clock-1',
+        quantity_delta: 20.0,
+        stock_after: 20.0,
+        movement_type: 'adjustment',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 4,
+        product_id: 'p-clock-1',
+        variant_id: 'v-clock-1',
+        quantity_delta: -5.0,
+        stock_after: 15.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T11:59:00.000Z',
+      },
+      // Addon: opening balance at 12:00:00 (+30 -> 30), sale at 11:59:00 (-3 -> 27)
+      {
+        id: 5,
+        addon_id: 'a-clock-1',
+        quantity_delta: 30.0,
+        stock_after: 30.0,
+        movement_type: 'adjustment',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 6,
+        addon_id: 'a-clock-1',
+        quantity_delta: -3.0,
+        stock_after: 27.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T11:59:00.000Z',
+      },
+    ];
+    const backwardOpeningValidation = validateInventoryLedgerRows(
+      testProducts,
+      testMovementsBackwardOpening,
+      testVariants,
+      testAddons,
+    );
+    assertEqualOrThrow(
+      backwardOpeningValidation,
+      null,
+      'validateInventoryLedgerRows succeeds for backward clock before opening balance across product, variant, and addon pools',
+    );
+
+    // Case 2: Backward clock mid-chain (12:00:00 opening +10 -> 10, 12:05:00 sale -2 -> 8, 12:03:00 sale -1 -> 7)
+    const midChainMovements = [
+      {
+        id: 10,
+        product_id: 'p-mid-1',
+        quantity_delta: 10.0,
+        stock_after: 10.0,
+        movement_type: 'adjustment',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 11,
+        product_id: 'p-mid-1',
+        quantity_delta: -2.0,
+        stock_after: 8.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T12:05:00.000Z',
+      },
+      {
+        id: 12,
+        product_id: 'p-mid-1',
+        quantity_delta: -1.0,
+        stock_after: 7.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T12:03:00.000Z',
+      },
+    ];
+    const midChainValidation = validateInventoryLedgerRows(
+      [{ id: 'p-mid-1', stock_quantity: 7.0 }],
+      midChainMovements,
+    );
+    assertEqualOrThrow(
+      midChainValidation,
+      null,
+      'validateInventoryLedgerRows succeeds for backward clock mid-chain',
+    );
+
+    // Case 3: Equal-second movements (12:00:00 across multiple transitions)
+    const equalSecondMovements = [
+      {
+        id: 20,
+        product_id: 'p-eq-1',
+        quantity_delta: 10.0,
+        stock_after: 10.0,
+        movement_type: 'adjustment',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 21,
+        product_id: 'p-eq-1',
+        quantity_delta: -2.0,
+        stock_after: 8.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+      {
+        id: 22,
+        product_id: 'p-eq-1',
+        quantity_delta: -3.0,
+        stock_after: 5.0,
+        movement_type: 'sale',
+        created_at: '2026-10-21T12:00:00.000Z',
+      },
+    ];
+    const equalSecondValidation = validateInventoryLedgerRows(
+      [{ id: 'p-eq-1', stock_quantity: 5.0 }],
+      equalSecondMovements,
+    );
+    assertEqualOrThrow(
+      equalSecondValidation,
+      null,
+      'validateInventoryLedgerRows succeeds for equal-second movements',
+    );
+
+    // Part B: Database native direct backup/restore round-trip with backward clock movements
+    const liveDbDirect = getDatabase();
+    liveDbDirect.exec(`
+      DELETE FROM order_item_addons;
+      DELETE FROM order_items;
+      DELETE FROM payment_transaction_refs;
+      DELETE FROM bills;
+      DELETE FROM orders;
+      DELETE FROM inventory_movements;
+      DELETE FROM product_variants;
+      DELETE FROM products;
+      DELETE FROM addons;
+      DELETE FROM addon_groups;
+      DELETE FROM categories;
+    `);
+
+    liveDbDirect
+      .prepare(`
+      INSERT INTO categories (id, name, created_at, updated_at)
+      VALUES ('cat-clock', 'Clock Category', '2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z')
+    `)
+      .run();
+
+    liveDbDirect
+      .prepare(`
+      INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+      VALUES ('prod-clock-1', 'cat-clock', 'Clock Product 1', 10.0, 1, 8.0, '2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z')
+    `)
+      .run();
+
+    liveDbDirect
+      .prepare(`
+      INSERT INTO product_variants (id, product_id, name, price, stock_quantity, created_at, updated_at)
+      VALUES ('var-clock-1', 'prod-clock-1', 'Clock Variant 1', 12.0, 15.0, '2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z')
+    `)
+      .run();
+
+    liveDbDirect
+      .prepare(`
+      INSERT INTO addon_groups (id, name, min_selection, max_selection, is_active)
+      VALUES ('ag-clock', 'Clock Extras', 0, 5, 1)
+    `)
+      .run();
+
+    liveDbDirect
+      .prepare(`
+      INSERT INTO addons (id, addon_group_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+      VALUES ('addon-clock-1', 'ag-clock', 'Clock Addon 1', 2.0, 1, 27.0, '2026-10-21T12:00:00.000Z', '2026-10-21T12:00:00.000Z')
+    `)
+      .run();
+
+    const insertMovement = liveDbDirect.prepare(`
+      INSERT INTO inventory_movements (
+        id, product_id, variant_id, addon_id, quantity_delta, movement_type, reference_type, stock_after, actor_user_id, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, 'u-owner', ?)
+    `);
+
+    // Insert movements with backward timestamps:
+    // Product: opening 12:00, sale 11:59
+    insertMovement.run(
+      101,
+      'prod-clock-1',
+      null,
+      null,
+      10.0,
+      'adjustment',
+      10.0,
+      '2026-10-21T12:00:00.000Z',
+    );
+    insertMovement.run(
+      102,
+      'prod-clock-1',
+      null,
+      null,
+      -2.0,
+      'sale',
+      8.0,
+      '2026-10-21T11:59:00.000Z',
+    );
+    // Variant: opening 12:00, sale 11:59
+    insertMovement.run(
+      103,
+      'prod-clock-1',
+      'var-clock-1',
+      null,
+      20.0,
+      'adjustment',
+      20.0,
+      '2026-10-21T12:00:00.000Z',
+    );
+    insertMovement.run(
+      104,
+      'prod-clock-1',
+      'var-clock-1',
+      null,
+      -5.0,
+      'sale',
+      15.0,
+      '2026-10-21T11:59:00.000Z',
+    );
+    // Addon: opening 12:00, sale 11:59
+    insertMovement.run(
+      105,
+      null,
+      null,
+      'addon-clock-1',
+      30.0,
+      'adjustment',
+      30.0,
+      '2026-10-21T12:00:00.000Z',
+    );
+    insertMovement.run(
+      106,
+      null,
+      null,
+      'addon-clock-1',
+      -3.0,
+      'sale',
+      27.0,
+      '2026-10-21T11:59:00.000Z',
+    );
+
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(liveDbDirect),
+      null,
+      'validateInventoryLedgerDatabase passes on pre-backup live db with backward clock movements',
+    );
+
+    const clockBackup = await createBackup();
+    assertOrThrow(clockBackup && clockBackup.path, 'Backup of backward clock database created');
+
+    // Wipe and restore direct
+    liveDbDirect.exec(`
+      DELETE FROM inventory_movements;
+      DELETE FROM product_variants;
+      DELETE FROM products;
+      DELETE FROM addons;
+      DELETE FROM categories;
+    `);
+
+    const directRestoreResult = restoreBackup(clockBackup.path, true);
+    assertOrThrow(directRestoreResult.success, 'Direct restore of backward clock backup succeeds');
+
+    const restoredDirectDb = getDatabase();
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(restoredDirectDb),
+      null,
+      'validateInventoryLedgerDatabase passes after direct restore of backward clock backup',
+    );
+
+    const directMovements = getInventoryMovementRows(restoredDirectDb);
+    assertEqualOrThrow(directMovements.length, 6, 'All 6 movements restored in direct restore');
+    assertEqualOrThrow(directMovements[0].id, 101, 'Movement 101 id preserved');
+    assertEqualOrThrow(
+      directMovements[0].created_at,
+      '2026-10-21T12:00:00.000Z',
+      'Movement 101 created_at preserved',
+    );
+    assertEqualOrThrow(directMovements[1].id, 102, 'Movement 102 id preserved');
+    assertEqualOrThrow(
+      directMovements[1].created_at,
+      '2026-10-21T11:59:00.000Z',
+      'Movement 102 created_at preserved',
+    );
+
+    // Part C: Data-only restore (v114 -> v115) with backward clock movements
+    const v114ClockDb = buildIdealSchemaDb(114);
+    const v114ClockBackupPath = path.join(activeTestDir, 'fixture-v114-clock.db');
+    try {
+      v114ClockDb
+        .prepare(`
+        INSERT OR IGNORE INTO users (id, name, email, password, role, pin, created_at, updated_at)
+        VALUES ('u-v114-clk', 'Clock Staff', 'clkstaff@example.com', 'hash', 'owner', '1234', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+      `)
+        .run();
+
+      v114ClockDb
+        .prepare(`
+        INSERT INTO categories (id, name, created_at, updated_at)
+        VALUES ('cat-v114-clk', 'V114 Clock Category', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+      `)
+        .run();
+
+      v114ClockDb
+        .prepare(`
+        INSERT INTO products (id, category_id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+        VALUES ('prod-v114-clk', 'cat-v114-clk', 'V114 Clock Prod', 20.0, 1, 7.0, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+      `)
+        .run();
+
+      v114ClockDb
+        .prepare(`
+        INSERT INTO inventory_movements (
+          id, product_id, quantity_delta, movement_type, reference_type, stock_after, actor_user_id, created_at
+        ) VALUES (1, 'prod-v114-clk', 10.0, 'adjustment', 'opening_balance', 10.0, 'u-v114-clk', '2026-01-01 12:00:00')
+      `)
+        .run();
+
+      v114ClockDb
+        .prepare(`
+        INSERT INTO inventory_movements (
+          id, product_id, quantity_delta, movement_type, reference_type, stock_after, actor_user_id, created_at
+        ) VALUES (2, 'prod-v114-clk', -2.0, 'sale', 'sale', 8.0, 'u-v114-clk', '2026-01-01 12:05:00')
+      `)
+        .run();
+
+      v114ClockDb
+        .prepare(`
+        INSERT INTO inventory_movements (
+          id, product_id, quantity_delta, movement_type, reference_type, stock_after, actor_user_id, created_at
+        ) VALUES (3, 'prod-v114-clk', -1.0, 'sale', 'sale', 7.0, 'u-v114-clk', '2026-01-01 12:03:00')
+      `)
+        .run();
+
+      v114ClockDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+      v114ClockDb
+        .prepare("INSERT OR REPLACE INTO _flo_meta (key, value) VALUES ('schema_version', '114')")
+        .run();
+      v114ClockDb.pragma('user_version = 114');
+
+      await v114ClockDb.backup(v114ClockBackupPath);
+    } finally {
+      v114ClockDb.close();
+    }
+
+    // Clear live db before data-only restore
+    const liveDbDataOnly = getDatabase();
+    liveDbDataOnly.exec(`
+      DELETE FROM order_item_addons;
+      DELETE FROM order_items;
+      DELETE FROM payment_transaction_refs;
+      DELETE FROM bills;
+      DELETE FROM orders;
+      DELETE FROM inventory_movements;
+      DELETE FROM product_variants;
+      DELETE FROM products;
+      DELETE FROM addons;
+      DELETE FROM addon_groups;
+      DELETE FROM categories;
+    `);
+
+    const v114ClockRestoreResult = restoreBackup(v114ClockBackupPath, false);
+    assertOrThrow(
+      v114ClockRestoreResult.success,
+      `v114 backward clock data-only restore must succeed (got ${JSON.stringify(v114ClockRestoreResult)})`,
+    );
+
+    const postClockRestoreDb = getDatabase();
+    assertEqualOrThrow(
+      validateInventoryLedgerDatabase(postClockRestoreDb),
+      null,
+      'validateInventoryLedgerDatabase passes after v114 data-only restore with backward clock movements',
+    );
 
     console.log('All legacy inventory precision and backup/restore tests passed!');
   } finally {

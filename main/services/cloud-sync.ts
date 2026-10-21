@@ -41,6 +41,16 @@ const OUTBOX_INTERVAL_MS = 15_000;
 const COMMAND_POLL_INTERVAL_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 8_000;
 
+export class CloudRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'CloudRequestError';
+  }
+}
+
 function requestSignal(signal?: AbortSignal): AbortSignal {
   return signal
     ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
@@ -1409,8 +1419,12 @@ export class CloudSyncService {
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
-    if (!res.ok)
-      throw new Error(String(data.error || `Verification request failed (${res.status})`));
+    if (!res.ok) {
+      throw new CloudRequestError(
+        String(data.error || `Verification request failed (${res.status})`),
+        res.status,
+      );
+    }
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
       cloud_email_verification_sent_at:

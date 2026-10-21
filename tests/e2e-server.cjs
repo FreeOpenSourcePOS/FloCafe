@@ -261,6 +261,11 @@ function seedPosFixture() {
     createdAt,
   );
   db.prepare(
+    `INSERT INTO inventory_movements (
+       product_id, quantity_delta, movement_type, reference_type, reason, actor_user_id, stock_after, created_at
+     ) VALUES (?, ?, 'adjustment', 'opening_balance', 'Initial fixture balance', 'e2e-owner', ?, ?)`,
+  ).run('e2e-product', 999, 999, createdAt);
+  db.prepare(
     `INSERT OR IGNORE INTO customers (
        id, name, phone, country_code, is_active, created_at, updated_at
      ) VALUES (?, ?, ?, ?, 1, ?, ?)`,

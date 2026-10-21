@@ -54,7 +54,11 @@ const {
 } = require('./helpers/test-setup');
 
 const { refundRoutes, resetRefundPinLocksForTests } = require('../main/routes/refunds');
-const { resetPinRateLimitForTests: resetOrderPinRateLimit } = require('../main/routes/orders');
+const {
+  resetPinRateLimitForTests: resetOrderPinRateLimit,
+  isPinRateLimited,
+  checkPinRateLimit,
+} = require('../main/routes/orders');
 const { getJWTSecret } = require('../main/routes/auth');
 const { verifyPin, verifyPinAsync, withTxn } = require('../main/db');
 const { createRefund } = require('../main/services/refund');
@@ -466,6 +470,209 @@ async function run() {
       replayRes.body.refund.id,
       firstRes.body.refund.id,
       'Replay returns exact same refund ID',
+    );
+  }
+
+  // ─── 7. Concurrent Idempotent Retry Replay & Conflict Safeguards (Finding N3) ──
+  console.log('\n--- 7. Concurrent Idempotent Retry Replay & Conflict Safeguards (Finding N3) ---');
+  {
+    // A. Concurrent original refund request + queued retry with invalid override_pin
+    //    Both return 201 with identical body and ID; only 1 refund in SQLite; failed-PIN rate limit not tripped.
+    const fixture7a = createPaidBill();
+    resetRefundPinLocksForTests();
+    resetOrderPinRateLimit();
+
+    const idempotencyKeyA = `idem-concurrent-retry-${Date.now()}-1`;
+    const payloadA = {
+      bill_id: fixture7a.billId,
+      amount: fixture7a.total,
+      method: 'cash',
+      approver_id: managerId,
+    };
+
+    // Pre-seed 4 failed attempts into the rate limit bucket so 1 more failure would trip lockout
+    const testIp = '127.0.0.1';
+    for (let i = 0; i < 4; i++) {
+      checkPinRateLimit(`pin:${testIp}:refund`);
+      checkPinRateLimit(`pin:::ffff:${testIp}:refund`);
+      checkPinRateLimit(`pin:::1:refund`);
+    }
+
+    const origPromiseA = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
+      .send({ ...payloadA, override_pin: managerPin });
+
+    const retryPromiseA = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA })
+      .send({ ...payloadA, override_pin: 'invalid-stale-pin' });
+
+    const [origResA, retryResA] = await Promise.all([origPromiseA, retryPromiseA]);
+
+    assertEqualOrThrow(origResA.status, 201, 'Concurrent original refund request succeeds with 201');
+    assertEqualOrThrow(retryResA.status, 201, 'Queued matching retry returns 201 replay');
+    assertEqualOrThrow(
+      retryResA.body.refund.id,
+      origResA.body.refund.id,
+      'Retry returns identical refund ID',
+    );
+    assertEqualOrThrow(
+      JSON.stringify(retryResA.body),
+      JSON.stringify(origResA.body),
+      'Retry returns identical response body',
+    );
+
+    const countA = (
+      db.prepare('SELECT COUNT(*) as count FROM refunds WHERE bill_id = ?').get(fixture7a.billId) as any
+    ).count;
+    assertEqualOrThrow(countA, 1, 'Only 1 refund record exists in SQLite');
+
+    assertOrThrow(
+      !isPinRateLimited(`pin:${testIp}:refund`) &&
+        !isPinRateLimited(`pin:::ffff:${testIp}:refund`) &&
+        !isPinRateLimited(`pin:::1:refund`),
+      'Failed-PIN rate limit bucket was not tripped to lockout by the queued retry',
+    );
+
+    // Queued retry omitting override_pin completely also replays 201 once original has committed
+    const fixture7a2 = createPaidBill();
+    resetRefundPinLocksForTests();
+    resetOrderPinRateLimit();
+
+    const idempotencyKeyA2 = `idem-concurrent-retry-${Date.now()}-2`;
+    const payloadA2 = {
+      bill_id: fixture7a2.billId,
+      amount: fixture7a2.total,
+      method: 'cash',
+      approver_id: managerId,
+    };
+
+    const origPromiseA2 = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
+      .send({ ...payloadA2, override_pin: managerPin });
+
+    const retryPromiseA2 = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyA2 })
+      .send(payloadA2); // no override_pin
+
+    const [origResA2, retryResA2] = await Promise.all([origPromiseA2, retryPromiseA2]);
+
+    assertEqualOrThrow(origResA2.status, 201, 'Original request succeeds with 201');
+    assertEqualOrThrow(retryResA2.status, 201, 'Queued retry omitting override_pin returns 201 replay');
+    assertEqualOrThrow(
+      retryResA2.body.refund.id,
+      origResA2.body.refund.id,
+      'Retry returns identical refund ID',
+    );
+
+    // B. Concurrent original refund request + queued retry with mismatched payload (amount differs)
+    //    Retry returns 409 (idempotency_conflict).
+    const fixture7b = createPaidBill({ total: 100 });
+    resetRefundPinLocksForTests();
+    resetOrderPinRateLimit();
+
+    const idempotencyKeyB = `idem-concurrent-conflict-${Date.now()}`;
+    const origPromiseB = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
+      .send({
+        bill_id: fixture7b.billId,
+        amount: 100,
+        method: 'cash',
+        approver_id: managerId,
+        override_pin: managerPin,
+      });
+
+    const retryPromiseB = request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyB })
+      .send({
+        bill_id: fixture7b.billId,
+        amount: 50,
+        method: 'cash',
+        approver_id: managerId,
+        override_pin: 'invalid-or-stale-pin',
+      });
+
+    const [origResB, retryResB] = await Promise.all([origPromiseB, retryPromiseB]);
+
+    assertEqualOrThrow(origResB.status, 201, 'Original request succeeds with 201');
+    assertEqualOrThrow(retryResB.status, 409, 'Queued retry with mismatched amount returns 409');
+    assertEqualOrThrow(
+      retryResB.body.display_code,
+      'idempotency_conflict',
+      'Diagnostic code is idempotency_conflict',
+    );
+
+    // C. Failed first refund attempt (invalid PIN -> 403, nothing commits to refund_idempotency)
+    //    Followed by second attempt with same Idempotency-Key and invalid PIN: still enforces PIN and returns 403.
+    const fixture7c = createPaidBill();
+    resetRefundPinLocksForTests();
+    resetOrderPinRateLimit();
+
+    const idempotencyKeyC = `idem-failed-pin-${Date.now()}`;
+    const resC1 = await request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyC })
+      .send({
+        bill_id: fixture7c.billId,
+        amount: fixture7c.total,
+        method: 'cash',
+        approver_id: managerId,
+        override_pin: 'wrong-pin-c1',
+      });
+
+    assertEqualOrThrow(resC1.status, 403, 'First attempt with invalid PIN returns 403');
+    assertEqualOrThrow(
+      resC1.body.display_code,
+      'approver_pin_invalid',
+      'Diagnostic code is approver_pin_invalid',
+    );
+
+    const idempotencyRowCount = (
+      db
+        .prepare('SELECT COUNT(*) as count FROM refund_idempotency WHERE idempotency_key = ?')
+        .get(idempotencyKeyC) as any
+    ).count;
+    assertEqualOrThrow(idempotencyRowCount, 0, 'Nothing committed to refund_idempotency on failed PIN');
+
+    const resC2 = await request(app)
+      .post('/api/refunds')
+      .set({ ...ownerAuth, 'Idempotency-Key': idempotencyKeyC })
+      .send({
+        bill_id: fixture7c.billId,
+        amount: fixture7c.total,
+        method: 'cash',
+        approver_id: managerId,
+        override_pin: 'wrong-pin-c2',
+      });
+
+    assertEqualOrThrow(resC2.status, 403, 'Second attempt with same Idempotency-Key and invalid PIN still returns 403');
+    assertEqualOrThrow(
+      resC2.body.display_code,
+      'approver_pin_invalid',
+      'Diagnostic code is approver_pin_invalid',
+    );
+
+    // D. Missing override PIN when no idempotency record exists returns 400 approver_pin_required
+    const fixture7d = createPaidBill();
+    const resD = await request(app)
+      .post('/api/refunds')
+      .set(ownerAuth)
+      .send({
+        bill_id: fixture7d.billId,
+        amount: fixture7d.total,
+        method: 'cash',
+        approver_id: managerId,
+      });
+    assertEqualOrThrow(resD.status, 400, 'Missing override_pin returns 400 when no prior replay exists');
+    assertEqualOrThrow(
+      resD.body.display_code,
+      'approver_pin_required',
+      'Diagnostic code is approver_pin_required',
     );
   }
 

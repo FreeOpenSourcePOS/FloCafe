@@ -262,31 +262,6 @@ function seedPosFixture() {
     createdAt,
     createdAt,
   );
-  for (const [prodId, prodName] of [
-    ['e2e-product-rounding-1', 'Rounding Item 1'],
-    ['e2e-product-rounding-2', 'Rounding Item 2'],
-  ]) {
-    db.prepare(
-      `INSERT INTO products (
-         id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
-         cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-    ).run(
-      prodId,
-      'e2e-category',
-      prodName,
-      100.1,
-      'none',
-      'standard',
-      'exclusive',
-      0,
-      0,
-      999,
-      2,
-      createdAt,
-      createdAt,
-    );
-  }
   db.prepare(
     `INSERT INTO inventory_movements (
        product_id, quantity_delta, movement_type, reference_type, reason, actor_user_id, stock_after, created_at

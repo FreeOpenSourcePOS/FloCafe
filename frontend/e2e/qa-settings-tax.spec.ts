@@ -174,7 +174,41 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
     // Configure store for official-india (document-scoped pack: 2.5% CGST + 2.5% SGST, largest remainder)
     await api(page, '/settings/country', { method: 'PUT', data: { value: 'IN' } });
 
+    let categoryId: string | null = null;
+    let prod1Id: string | null = null;
+    let prod2Id: string | null = null;
+
     try {
+      const catRes = await api<{ category: { id: string } }>(page, '/categories', {
+        method: 'POST',
+        data: { name: 'Tax Rounding Category' },
+      });
+      categoryId = catRes.category.id;
+
+      const prod1Res = await api<{ product: { id: string } }>(page, '/products', {
+        method: 'POST',
+        data: {
+          category_id: categoryId,
+          name: 'Rounding Item 1',
+          price: 100.1,
+          tax_category_id: 'standard',
+          tax_behavior: 'exclusive',
+        },
+      });
+      prod1Id = prod1Res.product.id;
+
+      const prod2Res = await api<{ product: { id: string } }>(page, '/products', {
+        method: 'POST',
+        data: {
+          category_id: categoryId,
+          name: 'Rounding Item 2',
+          price: 100.1,
+          tax_category_id: 'standard',
+          tax_behavior: 'exclusive',
+        },
+      });
+      prod2Id = prod2Res.product.id;
+
       await openTaxTab(page);
 
       // Expand advanced tax tools
@@ -206,8 +240,8 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
         method: 'POST',
         data: {
           items: [
-            { product_id: 'e2e-product-rounding-1', quantity: 1, addons: [] },
-            { product_id: 'e2e-product-rounding-2', quantity: 1, addons: [] },
+            { product_id: prod1Id, quantity: 1, addons: [] },
+            { product_id: prod2Id, quantity: 1, addons: [] },
           ],
         },
       });
@@ -223,8 +257,8 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
         data: {
           type: 'takeaway',
           items: [
-            { product_id: 'e2e-product-rounding-1', quantity: 1 },
-            { product_id: 'e2e-product-rounding-2', quantity: 1 },
+            { product_id: prod1Id, quantity: 1 },
+            { product_id: prod2Id, quantity: 1 },
           ],
         },
       });
@@ -243,6 +277,15 @@ test.describe('@ci-tier2 Settings > Tax configuration', () => {
       expect(billRes.bill.tax_amount).toBe(10.01);
       expect(billRes.bill.total).toBe(210.21);
     } finally {
+      if (prod1Id) {
+        await api(page, `/products/${prod1Id}`, { method: 'DELETE' }).catch(() => {});
+      }
+      if (prod2Id) {
+        await api(page, `/products/${prod2Id}`, { method: 'DELETE' }).catch(() => {});
+      }
+      if (categoryId) {
+        await api(page, `/categories/${categoryId}`, { method: 'DELETE' }).catch(() => {});
+      }
       // Restore default store country
       await api(page, '/settings/country', { method: 'PUT', data: { value: 'TH' } });
     }

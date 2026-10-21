@@ -331,6 +331,9 @@
   },
   "license": "MIT",
   "overrides": {
+    "app-builder-lib": {
+      "@electron/get": "^5.1.0"
+    },
     "node-abi": "^4.33.0",
     "brace-expansion": "^5.0.12",
     "js-yaml@^4": "^4.3.2",
@@ -361,11 +364,11 @@
     "@types/ws": "^8.18.2",
     "cross-env": "10.1.0",
     "electron": "^44.9.0",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.18.0",
     "husky": "9.1.7",
     "js-yaml": "^5.5.0",
     "lint-staged": "17.6.0",
-    "markdownlint-cli2": "^0.23.3",
+    "markdownlint-cli2": "^0.24.0",
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
     "supertest": "^7.3.1",
@@ -373,6 +376,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@googleapis/drive": "^26.0.2",
     "@point-of-sale/codepage-encoder": "3.0.2",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.3",
@@ -385,7 +389,6 @@
     "exceljs": "^4.4.0",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
-    "@googleapis/drive": "^26.0.2",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.15",
     "posthog-node": "^5.56.2",

@@ -122,7 +122,7 @@ function closeSessionTxn(
       WHERE b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded')
         AND o.status != 'cancelled'
         AND COALESCE(b.balance, b.total, 0) > 0
-        AND b.created_at >= ? AND b.created_at < ?
+        AND b.created_at >= ? AND b.created_at <= ?
     `)
       .get(session.opened_at, closedAt) as { c: number };
     if (Number(unpaid.c) > 0) {

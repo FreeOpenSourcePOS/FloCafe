@@ -4572,7 +4572,7 @@ router.patch(
               .get(currentOrder.customer_id) as any)
           : null;
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-        const engineCharges = resolveEngineCharges(order, subtotal, newDiscountAmount);
+        const engineCharges = resolveEngineCharges(currentOrder, subtotal, newDiscountAmount);
         const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
         const chargeColumnOverrides =
           engineCharges && orderCancelled
@@ -4596,17 +4596,17 @@ router.patch(
         const syncedServiceCharge =
           orderCancelled && engineCharges?.ownsServiceChargeColumn
             ? 0
-            : (engineCharges?.columns.service_charge ?? (order.service_charge || 0));
+            : (engineCharges?.columns.service_charge ?? (currentOrder.service_charge || 0));
         const syncedPackagingCharge =
           orderCancelled && engineCharges?.ownsPackagingChargeColumn
             ? 0
-            : (engineCharges?.columns.packaging_charge ?? (order.packaging_charge || 0));
+            : (engineCharges?.columns.packaging_charge ?? (currentOrder.packaging_charge || 0));
         const syncedChargesJson =
           orderCancelled && engineCharges
             ? '[]'
             : engineCharges
               ? engineCharges.chargesJson
-              : (order.charges_breakdown ?? null);
+              : (currentOrder.charges_breakdown ?? null);
 
         // Cancelling the last active item marks the entire order cancelled and frees table.
 
@@ -4666,7 +4666,7 @@ router.patch(
             taxBreakdown: JSON.stringify(taxRollup.breakdowns),
             taxSnapshot: taxRollup.snapshotJson,
             discountAmount: newDiscountAmount,
-            deliveryCharge: order.delivery_charge || 0,
+            deliveryCharge: currentOrder.delivery_charge || 0,
             packagingCharge: syncedPackagingCharge,
             serviceCharge: syncedServiceCharge,
             chargesBreakdown: syncedChargesJson,

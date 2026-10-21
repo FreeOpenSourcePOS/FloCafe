@@ -145,7 +145,9 @@ Non-cash lines can never exceed the balance (`400`). Cash is applied up to the a
 the difference is recorded as change, so an over-tendered bill settles and its ledger line carries
 `tendered_amount` and `change_amount`. When a bill's remaining balance is zero, any positive payment
 tender (cash or non-cash) is rejected (`400` with `payment_exceeds_balance`), while an omitted-amount
-payment line completes zero-balance settlement.
+single payment line or zero-amount batch payment completes zero-balance settlement. Single and batch
+zero-balance settlements bind any newly selected `customer_id` to the bill and award eligible
+loyalty cashback once when `bill.total > 0`.
 
 The optional `Idempotency-Key` is actor-scoped: the same key with the same normalized request
 returns the committed response, and the same key with a different request is a `409`. Concurrent

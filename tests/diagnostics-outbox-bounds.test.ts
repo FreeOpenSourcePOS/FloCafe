@@ -114,12 +114,12 @@ async function main() {
   let db = initTestDb();
 
   console.log(
-    '\n1. The migrated default is on, and an explicit local opt-out retains only local evidence',
+    '\n1. A fresh install is opted out by default, and an explicit local opt-out retains only local evidence',
   );
   assertEqualOrThrow(
     readSetting(db, 'diagnostics_transmission_enabled'),
-    'true',
-    'a fresh database enables safe automatic transmission after the one-time migration',
+    'false',
+    'a fresh database keeps automatic transmission off until the operator opts in',
   );
   setSetting(db, 'diagnostics_settings_explicit', 'true');
   setSetting(db, 'diagnostics_transmission_enabled', 'false');
@@ -1105,6 +1105,9 @@ async function main() {
   setSetting(db, 'diagnostics_consent', 'true');
   setSetting(db, 'diagnostics_transmission_enabled', 'false');
   db.prepare("DELETE FROM settings WHERE key = 'diagnostics_settings_explicit'").run();
+  db.prepare(
+    "INSERT OR IGNORE INTO users (id, name, email, password, role, is_active) VALUES ('diag-upgrade-owner', 'Upgrade Owner', 'upgrade-owner@flo.local', 'x', 'owner', 1)",
+  ).run();
   db.pragma('user_version = 108');
   closeDatabase();
   db = initTestDb();
@@ -1306,6 +1309,9 @@ async function main() {
   setSetting(db, 'diagnostics_consent', 'false');
   setSetting(db, 'diagnostics_transmission_enabled', 'false');
   db.prepare("DELETE FROM settings WHERE key = 'diagnostics_settings_explicit'").run();
+  db.prepare(
+    "INSERT OR IGNORE INTO users (id, name, email, password, role, is_active) VALUES ('diag-upgrade-owner', 'Upgrade Owner', 'upgrade-owner@flo.local', 'x', 'owner', 1)",
+  ).run();
   db.pragma('user_version = 108');
   closeDatabase();
   db = initTestDb();

@@ -1,7 +1,7 @@
 import { Router, Request, Response, RequestHandler } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
-import { getDatabase, getSettingValue, now } from '../db';
+import { getDatabase, getSettingValue, now, parseBackupPaginationQuery } from '../db';
 import {
   cloudSync,
   DEFAULT_CLOUD_SERVER_URL,
@@ -1436,10 +1436,14 @@ router.post(
 router.get(
   '/google-drive/backups',
   requirePermission('google-drive.manage'),
-  asyncHandler(async (_req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
-      return res.json({ backups: await googleDrive.listRemoteBackups() });
-    } catch (error) {
+      const pagination = parseBackupPaginationQuery(req.query.limit, req.query.cursor);
+      return res.json(await googleDrive.listRemoteBackupsPage(pagination));
+    } catch (error: any) {
+      if (error?.code === 'ERR_INVALID_BACKUP_PAGINATION') {
+        return res.status(400).json({ error: error.message });
+      }
       return googleDriveErrorResponse(res, error);
     }
   }),

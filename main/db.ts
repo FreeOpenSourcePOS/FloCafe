@@ -2324,19 +2324,105 @@ export function getBackupMetadata(backupPath: string): BackupMetadata {
   }
 }
 
-/** Lists auto and manual backups located in the managed backups directory, newest first. */
-export function listBackups(): {
+export interface BackupInfo {
   fileName: string;
   path: string;
   sizeBytes: number;
   createdAt: string;
   kind: 'manual' | 'auto';
   schemaVersion: number | null;
-}[] {
-  const backupDir = getBackupDir();
-  if (!fs.existsSync(backupDir)) return [];
+}
 
-  return fs
+export interface BackupPaginationOptions {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface BackupPageResult {
+  backups: BackupInfo[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+function createInvalidBackupPaginationError(message: string): Error & { code: string } {
+  const error = new Error(message) as Error & { code: string };
+  error.code = 'ERR_INVALID_BACKUP_PAGINATION';
+  return error;
+}
+
+export function encodeBackupCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ createdAt, id }), 'utf8').toString('base64url');
+}
+
+export function decodeBackupCursor(rawCursor: string): { createdAt: string; id: string } {
+  if (typeof rawCursor !== 'string' || !/^[A-Za-z0-9_-]+$/.test(rawCursor)) {
+    throw createInvalidBackupPaginationError('Invalid backup cursor');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(rawCursor, 'base64url').toString('utf8'));
+  } catch {
+    throw createInvalidBackupPaginationError('Invalid backup cursor');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw createInvalidBackupPaginationError('Invalid backup cursor');
+  }
+  const { createdAt, id } = parsed as { createdAt?: unknown; id?: unknown };
+  if (
+    typeof createdAt !== 'string' ||
+    createdAt.length === 0 ||
+    Number.isNaN(Date.parse(createdAt)) ||
+    typeof id !== 'string' ||
+    id.length === 0
+  ) {
+    throw createInvalidBackupPaginationError('Invalid backup cursor');
+  }
+  return { createdAt, id };
+}
+
+export function parseBackupPaginationQuery(
+  rawLimit: unknown,
+  rawCursor: unknown,
+): BackupPaginationOptions {
+  const options: BackupPaginationOptions = {};
+  if (rawLimit !== undefined) {
+    if (typeof rawLimit !== 'string' || !/^\d+$/.test(rawLimit)) {
+      throw createInvalidBackupPaginationError('Invalid backup pagination limit');
+    }
+    const limit = Number.parseInt(rawLimit, 10);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw createInvalidBackupPaginationError('Invalid backup pagination limit');
+    }
+    options.limit = limit;
+  }
+  if (rawCursor !== undefined) {
+    if (typeof rawCursor !== 'string' || rawCursor.length === 0) {
+      throw createInvalidBackupPaginationError('Invalid backup cursor');
+    }
+    decodeBackupCursor(rawCursor);
+    options.cursor = rawCursor;
+  }
+  return options;
+}
+
+/** Lists auto and manual backups in the managed backups directory, newest first. */
+export function listBackupsPage(options: BackupPaginationOptions = {}): BackupPageResult {
+  if (
+    options.limit !== undefined &&
+    (typeof options.limit !== 'number' ||
+      !Number.isSafeInteger(options.limit) ||
+      options.limit < 1 ||
+      options.limit > 100)
+  ) {
+    throw createInvalidBackupPaginationError('Invalid backup pagination limit');
+  }
+  const cursor = options.cursor !== undefined ? decodeBackupCursor(options.cursor) : null;
+  const backupDir = getBackupDir();
+  if (!fs.existsSync(backupDir)) {
+    return { backups: [], nextCursor: null, hasMore: false };
+  }
+
+  let candidates = fs
     .readdirSync(backupDir)
     .filter((fileName) => fileName.startsWith('flo-backup-') && fileName.endsWith('.db'))
     .map((fileName) => ({ fileName, fullPath: resolveContainedPath(backupDir, fileName) }))
@@ -2352,16 +2438,51 @@ export function listBackups(): {
       const stat = fs.statSync(fullPath);
       return {
         fileName,
-        path: fullPath,
+        fullPath,
         sizeBytes: stat.size,
         createdAt: stat.mtime.toISOString(),
         kind: (fileName.includes('-pre-v') || isRestoreSafetyCopyName(fileName)
           ? 'auto'
           : 'manual') as 'manual' | 'auto',
-        schemaVersion: readBackupSchemaVersion(fullPath),
       };
     })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    .sort((a, b) => {
+      if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+      return a.fileName === b.fileName ? 0 : a.fileName < b.fileName ? 1 : -1;
+    });
+
+  if (cursor) {
+    candidates = candidates.filter(
+      (entry) =>
+        entry.createdAt < cursor.createdAt ||
+        (entry.createdAt === cursor.createdAt && entry.fileName < cursor.id),
+    );
+  }
+
+  const limit = options.limit;
+  const sliced = limit !== undefined ? candidates.slice(0, limit + 1) : candidates;
+  const hasMore = limit !== undefined && sliced.length > limit;
+  const pageEntries = limit !== undefined ? sliced.slice(0, limit) : sliced;
+  const backups = pageEntries.map((entry) => ({
+    fileName: entry.fileName,
+    path: entry.fullPath,
+    sizeBytes: entry.sizeBytes,
+    createdAt: entry.createdAt,
+    kind: entry.kind,
+    schemaVersion: readBackupSchemaVersion(entry.fullPath),
+  }));
+  const last = backups[backups.length - 1];
+  const nextCursor = hasMore && last ? encodeBackupCursor(last.createdAt, last.fileName) : null;
+  return { backups, nextCursor, hasMore };
+}
+
+export function listBackups(): BackupInfo[];
+export function listBackups(options: BackupPaginationOptions): BackupPageResult;
+export function listBackups(options?: BackupPaginationOptions): BackupInfo[] | BackupPageResult {
+  if (options === undefined) {
+    return listBackupsPage().backups;
+  }
+  return listBackupsPage(options);
 }
 
 /** Deletes a backup from the managed backups directory after validating filename format. */

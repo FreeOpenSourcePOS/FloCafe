@@ -461,7 +461,7 @@ test('Failed KDS and Data hydration retries when revisiting the tab', async ({ p
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
   });
-  await page.route('**/api/db-tools/backups', async (route) => {
+  await page.route('**/api/db-tools/backups*', async (route) => {
     backupAttempts += 1;
     if (backupAttempts === 1) {
       await route.fulfill({
@@ -614,7 +614,7 @@ test('Google Drive retention-pending backup shows a pending warning', async ({ p
       body: JSON.stringify({ destinations: [] }),
     });
   });
-  await page.route('**/api/settings/google-drive/backups', async (route) => {
+  await page.route('**/api/settings/google-drive/backups*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -676,7 +676,7 @@ test('Google Drive cancelled transfer shows automatic retry state', async ({ pag
       body: JSON.stringify({ destinations: [] }),
     });
   });
-  await page.route('**/api/settings/google-drive/backups', async (route) => {
+  await page.route('**/api/settings/google-drive/backups*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

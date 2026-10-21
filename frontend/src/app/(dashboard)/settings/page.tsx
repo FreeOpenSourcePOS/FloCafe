@@ -560,6 +560,10 @@ export default function SettingsPage() {
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // Starts true until the Data tab performs its first load.
   const [backupsLoading, setBackupsLoading] = useState(true);
+  const [backupsNextCursor, setBackupsNextCursor] = useState<string | null>(null);
+  const [backupsHasMore, setBackupsHasMore] = useState(false);
+  const [backupsLoadingMore, setBackupsLoadingMore] = useState(false);
+  const [backupsLoadMoreError, setBackupsLoadMoreError] = useState<string | null>(null);
   const [cloudAccount, setCloudAccount] = useState<{
     email?: string | null;
     cloud_account_available?: boolean;
@@ -644,10 +648,13 @@ export default function SettingsPage() {
 
   const fetchBackups = async (signal?: AbortSignal): Promise<boolean> => {
     setBackupsLoading(true);
+    setBackupsLoadMoreError(null);
     try {
-      const { data } = await api.get('/db-tools/backups', signal ? { signal } : undefined);
+      const { data } = await api.get('/db-tools/backups?limit=5', signal ? { signal } : undefined);
       if (signal?.aborted) return false;
       setBackups(data.backups ?? []);
+      setBackupsNextCursor(typeof data.nextCursor === 'string' ? data.nextCursor : null);
+      setBackupsHasMore(Boolean(data.hasMore));
       return true;
     } catch (error) {
       if (isRequestCancelled(error)) return false;
@@ -655,6 +662,28 @@ export default function SettingsPage() {
       return false;
     } finally {
       if (!signal?.aborted) setBackupsLoading(false);
+    }
+  };
+
+  const loadMoreBackups = async () => {
+    if (backupsLoading || backupsLoadingMore || !backupsHasMore || !backupsNextCursor) return;
+    setBackupsLoadingMore(true);
+    setBackupsLoadMoreError(null);
+    try {
+      const { data } = await api.get(
+        `/db-tools/backups?limit=10&cursor=${encodeURIComponent(backupsNextCursor)}`,
+      );
+      const incoming: BackupInfo[] = Array.isArray(data?.backups) ? data.backups : [];
+      setBackups((prev) => {
+        const seen = new Set(prev.map((item) => item.fileName));
+        return [...prev, ...incoming.filter((item) => !seen.has(item.fileName))];
+      });
+      setBackupsNextCursor(typeof data?.nextCursor === 'string' ? data.nextCursor : null);
+      setBackupsHasMore(Boolean(data?.hasMore));
+    } catch {
+      setBackupsLoadMoreError(tCommon('somethingWrong'));
+    } finally {
+      setBackupsLoadingMore(false);
     }
   };
 
@@ -1662,6 +1691,10 @@ export default function SettingsPage() {
   });
   const [remoteBackups, setRemoteBackups] = useState<GoogleDriveRemoteBackup[]>([]);
   const [remoteBackupsLoading, setRemoteBackupsLoading] = useState(false);
+  const [remoteBackupsNextCursor, setRemoteBackupsNextCursor] = useState<string | null>(null);
+  const [remoteBackupsHasMore, setRemoteBackupsHasMore] = useState(false);
+  const [remoteBackupsLoadingMore, setRemoteBackupsLoadingMore] = useState(false);
+  const [remoteBackupsLoadMoreError, setRemoteBackupsLoadMoreError] = useState<string | null>(null);
   const [googleDriveDestinations, setGoogleDriveDestinations] = useState<GoogleDriveDestination[]>(
     [],
   );
@@ -1905,13 +1938,51 @@ export default function SettingsPage() {
 
   const fetchRemoteGoogleDriveBackups = async () => {
     setRemoteBackupsLoading(true);
+    setRemoteBackupsLoadMoreError(null);
     try {
-      const response = await api.get('/settings/google-drive/backups');
+      const response = await api.get('/settings/google-drive/backups?limit=5');
       setRemoteBackups(Array.isArray(response.data?.backups) ? response.data.backups : []);
+      setRemoteBackupsNextCursor(
+        typeof response.data?.nextCursor === 'string' ? response.data.nextCursor : null,
+      );
+      setRemoteBackupsHasMore(Boolean(response.data?.hasMore));
     } catch {
       toast.error(t('googleDriveRemoteHistoryFailed'));
     } finally {
       setRemoteBackupsLoading(false);
+    }
+  };
+
+  const loadMoreRemoteGoogleDriveBackups = async () => {
+    if (
+      remoteBackupsLoading ||
+      remoteBackupsLoadingMore ||
+      !remoteBackupsHasMore ||
+      !remoteBackupsNextCursor
+    ) {
+      return;
+    }
+    setRemoteBackupsLoadingMore(true);
+    setRemoteBackupsLoadMoreError(null);
+    try {
+      const response = await api.get(
+        `/settings/google-drive/backups?limit=10&cursor=${encodeURIComponent(remoteBackupsNextCursor)}`,
+      );
+      const incoming: GoogleDriveRemoteBackup[] = Array.isArray(response.data?.backups)
+        ? response.data.backups
+        : [];
+      setRemoteBackups((prev) => {
+        const seen = new Set(prev.map((item) => item.id));
+        return [...prev, ...incoming.filter((item) => !seen.has(item.id))];
+      });
+      setRemoteBackupsNextCursor(
+        typeof response.data?.nextCursor === 'string' ? response.data.nextCursor : null,
+      );
+      setRemoteBackupsHasMore(Boolean(response.data?.hasMore));
+    } catch {
+      setRemoteBackupsLoadMoreError(t('googleDriveRemoteHistoryFailed'));
+    } finally {
+      setRemoteBackupsLoadingMore(false);
     }
   };
 
@@ -2973,6 +3044,9 @@ export default function SettingsPage() {
     });
     if (!acknowledged) return;
     setRemoteBackups([]);
+    setRemoteBackupsNextCursor(null);
+    setRemoteBackupsHasMore(false);
+    setRemoteBackupsLoadMoreError(null);
     setGoogleDriveDestinations([]);
     setConnectingGoogleDrive(true);
     try {
@@ -3008,6 +3082,9 @@ export default function SettingsPage() {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       setRemoteBackups([]);
+      setRemoteBackupsNextCursor(null);
+      setRemoteBackupsHasMore(false);
+      setRemoteBackupsLoadMoreError(null);
       setGoogleDriveDestinations([]);
       if (res.data?.revoke_status === 'unconfirmed') toast.error(t('googleDriveRevokePending'));
       else toast.success(t('googleDriveDisconnectedSuccess'));
@@ -5585,11 +5662,17 @@ export default function SettingsPage() {
               masterPinStatus={masterPinStatus}
               backups={backups}
               backupsLoading={backupsLoading}
+              backupsHasMore={backupsHasMore}
+              backupsLoadingMore={backupsLoadingMore}
+              backupsLoadMoreError={backupsLoadMoreError}
               googleDriveStatus={googleDriveStatus}
               googleDriveDestinations={googleDriveDestinations}
               googleDriveDestinationsLoading={googleDriveDestinationsLoading}
               remoteBackups={remoteBackups}
               remoteBackupsLoading={remoteBackupsLoading}
+              remoteBackupsHasMore={remoteBackupsHasMore}
+              remoteBackupsLoadingMore={remoteBackupsLoadingMore}
+              remoteBackupsLoadMoreError={remoteBackupsLoadMoreError}
               setGoogleDriveStatus={setGoogleDriveStatus}
               connectingGoogleDrive={connectingGoogleDrive}
               disconnectingGoogleDrive={disconnectingGoogleDrive}
@@ -5597,6 +5680,7 @@ export default function SettingsPage() {
               managingGoogleDriveDestination={managingGoogleDriveDestination}
               backingUpGoogleDrive={backingUpGoogleDrive}
               onFetchBackups={fetchBackups}
+              onLoadMoreBackups={loadMoreBackups}
               onCreateBackup={handleCreateBackup}
               onChooseBackupLocation={handleChooseBackupLocation}
               onRestoreFromHistory={handleRestoreFromHistory}
@@ -5609,6 +5693,7 @@ export default function SettingsPage() {
               onUpdateGoogleDrivePrefs={updateGoogleDrivePrefs}
               onBackupToGoogleDriveNow={backupToGoogleDriveNow}
               onFetchRemoteBackups={fetchRemoteGoogleDriveBackups}
+              onLoadMoreRemoteBackups={loadMoreRemoteGoogleDriveBackups}
               onRestoreRemoteBackup={restoreRemoteGoogleDriveBackup}
               onRunImport={runImport}
               onRequestPinGate={setPinGate}

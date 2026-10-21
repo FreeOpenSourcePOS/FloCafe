@@ -28,9 +28,26 @@ const mockSafeStorage = {
   decryptString: (b: Buffer) => b.toString('utf8'),
 };
 
+let readonlyBackupProbes = 0;
+
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: mockApp, safeStorage: mockSafeStorage };
-  return originalLoad.apply(this, arguments as any);
+  const loaded = originalLoad.apply(this, arguments as any);
+  if (request === 'better-sqlite3') {
+    return new Proxy(loaded, {
+      construct(target, args, newTarget) {
+        if (
+          args[1] &&
+          typeof args[1] === 'object' &&
+          (args[1] as { readonly?: boolean }).readonly
+        ) {
+          readonlyBackupProbes += 1;
+        }
+        return Reflect.construct(target, args, newTarget);
+      },
+    });
+  }
+  return loaded;
 };
 
 process.env.JWT_SECRET = 'test-secret-for-db-tools-api';
@@ -1621,6 +1638,137 @@ async function runTests() {
       okDelete.status === 200,
       `deleting an existing backup returns 200 (got ${okDelete.status})`,
     );
+  }
+
+  console.log('\nTest 3b4: GET /db-tools/backups cursor pagination');
+  {
+    const backupsDir = path.join(testDir, 'backups');
+    fs.mkdirSync(backupsDir, { recursive: true });
+    for (const existing of fs.readdirSync(backupsDir)) {
+      if (existing.endsWith('.db')) fs.unlinkSync(path.join(backupsDir, existing));
+    }
+
+    const baseTimeMs = Date.parse('2026-03-01T12:00:00.000Z');
+    const createdFiles: string[] = [];
+    const liveDbPath = path.join(testDir, 'flo.db');
+    for (let i = 1; i <= 16; i += 1) {
+      const padded = String(i).padStart(2, '0');
+      const kind = i % 2 === 0 ? 'manual' : 'auto';
+      const name = `flo-backup-${kind}-2026-03-01T12-00-${padded}-000Z.db`;
+      const fullPath = path.join(backupsDir, name);
+      fs.copyFileSync(liveDbPath, fullPath);
+      const mtimeSeconds =
+        i === 11 || i === 12 ? new Date(baseTimeMs + 11 * 1000) : new Date(baseTimeMs + i * 1000);
+      fs.utimesSync(fullPath, mtimeSeconds, mtimeSeconds);
+      createdFiles.push(fullPath);
+    }
+
+    try {
+      readonlyBackupProbes = 0;
+      const page1 = await request(app)
+        .get('/api/db-tools/backups?limit=5')
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(page1.status, 200, 'initial limit=5 page returns 200');
+      assertEqual(page1.body.backups?.length, 5, 'initial page returns 5 newest local backups');
+      assertEqual(page1.body.hasMore, true, 'initial page reports hasMore: true');
+      assert(
+        typeof page1.body.nextCursor === 'string' && page1.body.nextCursor.length > 0,
+        'initial page returns a nextCursor',
+      );
+      assertEqual(
+        readonlyBackupProbes,
+        5,
+        'initial limit=5 page probes schema version only for the 5 returned backups',
+      );
+      assertEqual(
+        page1.body.backups[0]?.fileName,
+        'flo-backup-manual-2026-03-01T12-00-16-000Z.db',
+        'newest backup is first on page 1',
+      );
+      assertEqual(
+        page1.body.backups[4]?.fileName,
+        'flo-backup-manual-2026-03-01T12-00-12-000Z.db',
+        'tie-broken higher fileName is 5th on page 1',
+      );
+
+      readonlyBackupProbes = 0;
+      const page2 = await request(app)
+        .get(`/api/db-tools/backups?limit=10&cursor=${encodeURIComponent(page1.body.nextCursor)}`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(page2.status, 200, 'second limit=10 page returns 200');
+      assertEqual(page2.body.backups?.length, 10, 'second page returns next 10 older backups');
+      assertEqual(page2.body.hasMore, true, 'second page reports hasMore: true');
+      assert(
+        typeof page2.body.nextCursor === 'string' && page2.body.nextCursor.length > 0,
+        'second page returns a nextCursor',
+      );
+      assertEqual(
+        readonlyBackupProbes,
+        10,
+        'second limit=10 page probes schema version only for the 10 returned backups',
+      );
+      assertEqual(
+        page2.body.backups[0]?.fileName,
+        'flo-backup-auto-2026-03-01T12-00-11-000Z.db',
+        'tie-broken lower fileName with identical timestamp starts page 2 without gap or duplicate',
+      );
+
+      const page3 = await request(app)
+        .get(`/api/db-tools/backups?limit=10&cursor=${encodeURIComponent(page2.body.nextCursor)}`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(page3.status, 200, 'final page returns 200');
+      assertEqual(page3.body.backups?.length, 1, 'final page returns remaining 1 backup');
+      assertEqual(page3.body.hasMore, false, 'final page reports hasMore: false');
+      assertEqual(page3.body.nextCursor, null, 'final page reports nextCursor: null');
+
+      const combinedNames = [
+        ...(page1.body.backups || []),
+        ...(page2.body.backups || []),
+        ...(page3.body.backups || []),
+      ].map((entry: { fileName: string }) => entry.fileName);
+      assertEqual(combinedNames.length, 16, 'paginated walk visits all 16 backups');
+      assertEqual(new Set(combinedNames).size, 16, 'paginated walk has zero duplicates');
+
+      const unpaginated = await request(app)
+        .get('/api/db-tools/backups')
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(unpaginated.status, 200, 'unpaginated request returns 200');
+      assertEqual(
+        unpaginated.body.backups?.length,
+        16,
+        'unpaginated request returns all 16 backups',
+      );
+      assertEqual(unpaginated.body.hasMore, false, 'unpaginated request reports hasMore: false');
+      assertEqual(
+        unpaginated.body.nextCursor,
+        null,
+        'unpaginated request reports nextCursor: null',
+      );
+      assertEqual(
+        JSON.stringify(combinedNames),
+        JSON.stringify(unpaginated.body.backups.map((b: { fileName: string }) => b.fileName)),
+        'paginated order matches full newest-first order',
+      );
+
+      for (const badQuery of [
+        'limit=0',
+        'limit=-3',
+        'limit=abc',
+        'limit=1.5',
+        'limit=5&cursor=not-valid-cursor',
+        `limit=5&cursor=${Buffer.from('{}').toString('base64url')}`,
+        `limit=5&cursor=${Buffer.from(JSON.stringify({ createdAt: 'not-a-date', id: 'flo-backup-manual-1.db' })).toString('base64url')}`,
+      ]) {
+        const badRes = await request(app)
+          .get(`/api/db-tools/backups?${badQuery}`)
+          .set('Authorization', `Bearer ${ownerToken}`);
+        assertEqual(badRes.status, 400, `invalid query "${badQuery}" returns 400`);
+      }
+    } finally {
+      for (const filePath of createdFiles) {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+    }
   }
 
   // ── Test 3c: schema-mismatch import requires the Master PIN (GHSA-xxv4-gm82-4639) ──

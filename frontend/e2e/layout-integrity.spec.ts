@@ -2761,7 +2761,6 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
       };
 
       await checkNoOverflow();
-      await displayPage.screenshot({ path: '/tmp/flo-customer-display-pagination-page1.png' });
 
       // Rotate through 10-second TV visual pages until orders from Page 1 (display-preparing-19+) are shown
       const firstPreparingVisualPage = await readVisibleIds(preparing);
@@ -2777,7 +2776,6 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
         'TV rotation reaches newer orders from Page 1 after displaying older orders from Page 2',
       ).toBe(true);
       await checkNoOverflow();
-      await displayPage.screenshot({ path: '/tmp/flo-customer-display-pagination-page2.png' });
 
       // Completing orders removes them from the board on the next poll
       page2Items = page2Items.filter(
@@ -2868,6 +2866,151 @@ test.describe('customer display wraps full receipt numbers and pages on TV', () 
           'display-ready-4',
           'display-ready-5',
           'display-ready-6',
+        ]);
+
+      // Multi-page drain whose total time (3 x 4000ms = 12000ms) exceeds the 10000ms per-request timeout succeeds
+      // when each individual page responds within 10000ms, and 5-page polling at refresh_seconds: 2 stays within 120 req/min
+      const budgetPage = await displayContext.newPage();
+      await budgetPage.setViewportSize({ width: 1920, height: 1080 });
+      await budgetPage.clock.install();
+      let slowMode = true;
+      let rateWindowRequests = 0;
+      let hit429 = false;
+      let notifySlowPageRequest: (() => void) | null = null;
+      let releaseSlowPageResponse: (() => void) | null = null;
+
+      await budgetPage.route(
+        (url) => url.pathname === '/api/customer-display/feed',
+        async (route) => {
+          const cursor = new URL(route.request().url()).searchParams.get('cursor');
+          if (slowMode) {
+            await new Promise<void>((resolve) => {
+              releaseSlowPageResponse = resolve;
+              notifySlowPageRequest?.();
+            });
+            const pageMap: Record<
+              string,
+              { items: ReturnType<typeof toFeedItem>[]; next: string | null; more: boolean }
+            > = {
+              first: { items: [toFeedItem(readyOrders[2])], next: 'slow-2', more: true },
+              'slow-2': { items: [toFeedItem(readyOrders[1])], next: 'slow-3', more: true },
+              'slow-3': { items: [toFeedItem(readyOrders[0])], next: null, more: false },
+            };
+            const entry = pageMap[cursor ?? 'first'];
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({
+                business_name: 'Flo Cafe',
+                config: {
+                  statuses: ['pending', 'preparing', 'ready'],
+                  refresh_seconds: 2,
+                  show_updated: true,
+                },
+                orders: entry.items,
+                next_cursor: entry.next,
+                has_more: entry.more,
+              }),
+            });
+            return;
+          }
+
+          rateWindowRequests += 1;
+          if (rateWindowRequests > 120) {
+            hit429 = true;
+            await route.fulfill({
+              status: 429,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'Too many requests' }),
+            });
+            return;
+          }
+          const pageIndex = cursor ? Number(cursor.replace('rate-page-', '')) : 1;
+          const hasMore = pageIndex < 5;
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              business_name: 'Flo Cafe',
+              config: {
+                statuses: ['pending', 'preparing', 'ready'],
+                refresh_seconds: 2,
+                show_updated: true,
+              },
+              orders: [toFeedItem(readyOrders[5 - pageIndex])],
+              next_cursor: hasMore ? `rate-page-${pageIndex + 1}` : null,
+              has_more: hasMore,
+            }),
+          });
+        },
+      );
+
+      const waitForNextSlowPage = () =>
+        new Promise<void>((resolve) => {
+          notifySlowPageRequest = resolve;
+        });
+
+      const slowPage1Arrived = waitForNextSlowPage();
+      await budgetPage.goto(`${BASE}/customer-display/#token=${displayToken}`);
+      await budgetPage.clock.runFor(1);
+      await slowPage1Arrived;
+
+      const slowPage2Arrived = waitForNextSlowPage();
+      await budgetPage.clock.runFor(4000);
+      releaseSlowPageResponse!();
+      await slowPage2Arrived;
+
+      const slowPage3Arrived = waitForNextSlowPage();
+      await budgetPage.clock.runFor(4000);
+      releaseSlowPageResponse!();
+      await slowPage3Arrived;
+
+      // Total elapsed time in this single poll is now 12000ms (> 10000ms single-request timeout),
+      // but each individual page only took 4000ms so page 3 must NOT abort.
+      await budgetPage.clock.runFor(4000);
+      releaseSlowPageResponse!();
+
+      const budgetReady = budgetPage.getByTestId('customer-display-ready-scroll');
+      await expect
+        .poll(() => readVisibleIds(budgetReady))
+        .toEqual(['display-ready-1', 'display-ready-2', 'display-ready-3']);
+
+      // Switch to 5-page fast responses at refresh_seconds: 2 and verify the 5-page poll budget
+      slowMode = false;
+      rateWindowRequests = 0;
+      hit429 = false;
+      const pauseBaseMs = await budgetPage.evaluate(() => Date.now());
+      await budgetPage.clock.pauseAt(pauseBaseMs);
+      // Trigger one poll so the client observes a 5-page queue at refresh_seconds: 2
+      await budgetPage.clock.runFor(2000);
+      await expect.poll(() => rateWindowRequests).toBe(5);
+
+      // Starting a 60-second rate-limit window with the initial 5-page poll (5 requests used):
+      // advancing 2000ms (configured refresh_seconds: 2) must NOT fire a new poll yet because 5 pages require 2609ms spacing
+      await budgetPage.clock.runFor(2000);
+      expect(
+        rateWindowRequests,
+        '2-second configured refresh is throttled to stay within 120 reads/min for a 5-page queue',
+      ).toBe(5);
+
+      // Advancing to the 5-page budget floor (2609ms) triggers the next 5-page poll, and repeating across 60s stays <= 120 requests
+      await budgetPage.clock.runFor(609);
+      await expect.poll(() => rateWindowRequests).toBe(10);
+      for (let elapsed = 2609; elapsed + 2609 < 60_000; elapsed += 2609) {
+        const expectedNext = rateWindowRequests + 5;
+        await budgetPage.clock.runFor(2609);
+        await expect.poll(() => rateWindowRequests).toBe(expectedNext);
+      }
+      expect(hit429, '5-page polling at 2s refresh never exceeds 120 req/min').toBe(false);
+      expect(rateWindowRequests).toBe(115);
+      await expect
+        .poll(() => readVisibleIds(budgetReady))
+        .toEqual([
+          'display-ready-1',
+          'display-ready-2',
+          'display-ready-3',
+          'display-ready-4',
+          'display-ready-5',
         ]);
     } finally {
       await displayContext.close();

@@ -43,8 +43,21 @@ interface OrderBoardSectionProps {
 const ORDER_PAGE_INTERVAL_MS = 10_000;
 const CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS = 10_000;
 const MAX_DISPLAY_FEED_PAGES = 50;
+const CUSTOMER_DISPLAY_RATE_LIMIT_WINDOW_MS = 60_000;
+const CUSTOMER_DISPLAY_READ_LIMIT_PER_WINDOW = 120;
 const ORDER_ROW_GAP_FALLBACK = 12;
 const ORDER_ROW_HEIGHT_FALLBACK = 72;
+
+function getPollIntervalMs(refreshSeconds: number, pageRequests: number): number {
+  const configuredMs = refreshSeconds * 1000;
+  const pages = Math.max(1, pageRequests);
+  const maxPollsPerWindow = Math.max(
+    1,
+    Math.floor(CUSTOMER_DISPLAY_READ_LIMIT_PER_WINDOW / pages) - (pages > 1 ? 1 : 0),
+  );
+  const rateLimitFloorMs = Math.ceil(CUSTOMER_DISPLAY_RATE_LIMIT_WINDOW_MS / maxPollsPerWindow);
+  return Math.max(configuredMs, rateLimitFloorMs);
+}
 
 function getOrderId(order: BoardOrder): string {
   return String(order.id);
@@ -554,6 +567,10 @@ export default function CustomerDisplayPage() {
     tenantId: number | null;
   } | null>(null);
   const configRef = useRef(config);
+  const pollPageCountRef = useRef(1);
+  const syncPollIntervalRef = useRef<
+    ((refreshSeconds: number, pageRequests: number) => void) | null
+  >(null);
   useLayoutEffect(() => {
     configRef.current = config;
   }, [config]);
@@ -583,11 +600,16 @@ export default function CustomerDisplayPage() {
       if (feedInFlightRef.current?.session === session) return;
       const request = ++feedRequestRef.current;
       const controller = new AbortController();
-      const timeout = window.setTimeout(
-        () => controller.abort(),
-        CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
-      );
-      feedInFlightRef.current = { session, request, controller, timeout };
+      const inFlight = { session, request, controller, timeout: 0 };
+      const resetRequestTimeout = () => {
+        window.clearTimeout(inFlight.timeout);
+        inFlight.timeout = window.setTimeout(
+          () => controller.abort(),
+          CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
+        );
+      };
+      feedInFlightRef.current = inFlight;
+      let pageRequests = 0;
       try {
         let firstFeed: CustomerDisplayFeed | null = null;
         const pages: BoardOrder[][] = [];
@@ -599,6 +621,8 @@ export default function CustomerDisplayPage() {
           if (cursor) {
             url.searchParams.set('cursor', cursor);
           }
+          pageRequests += 1;
+          resetRequestTimeout();
           const response = await fetch(url.toString(), {
             headers: { Authorization: `Bearer ${token}` },
             cache: 'no-store',
@@ -608,7 +632,7 @@ export default function CustomerDisplayPage() {
             if (session !== feedSessionRef.current) return;
             feedSessionRef.current += 1;
             feedRequestRef.current += 1;
-            window.clearTimeout(timeout);
+            window.clearTimeout(inFlight.timeout);
             feedInFlightRef.current = null;
             previousReadyOrderIdsRef.current = null;
             setNewlyReadyOrderIds(new Set());
@@ -624,6 +648,7 @@ export default function CustomerDisplayPage() {
           if (session !== feedSessionRef.current || request !== feedRequestRef.current) return;
           if (!firstFeed) {
             firstFeed = feed;
+            configRef.current = feed.config;
           }
           pages.push(feed.orders);
           const nextCursor =
@@ -663,11 +688,16 @@ export default function CustomerDisplayPage() {
           feedInFlightRef.current?.session === session &&
           feedInFlightRef.current.request === request
         ) {
-          window.clearTimeout(timeout);
+          window.clearTimeout(inFlight.timeout);
           feedInFlightRef.current = null;
         }
-        if (session === feedSessionRef.current && request === feedRequestRef.current)
+        if (session === feedSessionRef.current && request === feedRequestRef.current) {
+          if (pageRequests > 0) {
+            pollPageCountRef.current = pageRequests;
+            syncPollIntervalRef.current?.(configRef.current.refresh_seconds, pageRequests);
+          }
           setLoading(false);
+        }
       }
     },
     [acceptOrders],
@@ -678,21 +708,32 @@ export default function CustomerDisplayPage() {
       if (feedInFlightRef.current?.session === session) return;
       const request = ++feedRequestRef.current;
       const controller = new AbortController();
-      const timeout = window.setTimeout(
-        () => controller.abort(),
-        CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
-      );
-      feedInFlightRef.current = { session, request, controller, timeout };
+      const inFlight = { session, request, controller, timeout: 0 };
+      const resetRequestTimeout = () => {
+        window.clearTimeout(inFlight.timeout);
+        inFlight.timeout = window.setTimeout(
+          () => controller.abort(),
+          CUSTOMER_DISPLAY_REQUEST_TIMEOUT_MS,
+        );
+      };
+      feedInFlightRef.current = inFlight;
+      let pageRequests = 0;
       try {
+        resetRequestTimeout();
         const { data: latestConfig } = await api
           .get('/settings/customer-display', { signal: controller.signal })
           .catch(() => ({ data: null }));
         const validConfig = isCustomerDisplayConfig(latestConfig) ? latestConfig : null;
+        if (validConfig) {
+          configRef.current = validConfig;
+        }
         const activeConfig: CustomerDisplayConfig = validConfig ?? configRef.current;
         const seenById = new Map<string, Order>();
         let beforeId: number | string | null = null;
 
         for (let pageIndex = 0; pageIndex < MAX_DISPLAY_FEED_PAGES; pageIndex += 1) {
+          pageRequests += 1;
+          resetRequestTimeout();
           const response: {
             data?: { orders?: Order[]; nextCursor?: number | string | null };
           } = await api.get('/orders', {
@@ -725,7 +766,6 @@ export default function CustomerDisplayPage() {
           })
           .map(toBoardOrder);
         if (validConfig) {
-          configRef.current = validConfig;
           setConfig(validConfig);
         }
         acceptOrders(nextOrders);
@@ -739,11 +779,16 @@ export default function CustomerDisplayPage() {
           feedInFlightRef.current?.session === session &&
           feedInFlightRef.current.request === request
         ) {
-          window.clearTimeout(timeout);
+          window.clearTimeout(inFlight.timeout);
           feedInFlightRef.current = null;
         }
-        if (session === feedSessionRef.current && request === feedRequestRef.current)
+        if (session === feedSessionRef.current && request === feedRequestRef.current) {
+          if (pageRequests > 0) {
+            pollPageCountRef.current = pageRequests;
+            syncPollIntervalRef.current?.(configRef.current.refresh_seconds, pageRequests);
+          }
           setLoading(false);
+        }
       }
     },
     [acceptOrders],
@@ -793,12 +838,26 @@ export default function CustomerDisplayPage() {
       readyTrackingContextRef.current = readyTrackingContext;
     }
 
+    pollPageCountRef.current = 1;
     const session = ++feedSessionRef.current;
     const refresh = () =>
       pairedToken ? fetchPairedFeed(pairedToken, session) : fetchOrders(session);
+    let activeIntervalMs = getPollIntervalMs(
+      configRef.current.refresh_seconds,
+      pollPageCountRef.current,
+    );
+    let interval = setInterval(refresh, activeIntervalMs);
+    syncPollIntervalRef.current = (refreshSeconds: number, pageRequests: number) => {
+      const nextIntervalMs = getPollIntervalMs(refreshSeconds, pageRequests);
+      if (nextIntervalMs !== activeIntervalMs) {
+        activeIntervalMs = nextIntervalMs;
+        clearInterval(interval);
+        interval = setInterval(refresh, activeIntervalMs);
+      }
+    };
     const initial = setTimeout(refresh, 0);
-    const interval = setInterval(refresh, config.refresh_seconds * 1000);
     return () => {
+      syncPollIntervalRef.current = null;
       clearTimeout(initial);
       clearInterval(interval);
       if (feedSessionRef.current === session) feedSessionRef.current += 1;
@@ -808,15 +867,7 @@ export default function CustomerDisplayPage() {
         inFlight.controller.abort();
       }
     };
-  }, [
-    pairedToken,
-    unpaired,
-    userId,
-    tenantId,
-    config.refresh_seconds,
-    fetchOrders,
-    fetchPairedFeed,
-  ]);
+  }, [pairedToken, unpaired, userId, tenantId, fetchOrders, fetchPairedFeed]);
 
   const preparing = useMemo(
     () => orders.filter((order) => order.status === 'pending' || order.status === 'preparing'),

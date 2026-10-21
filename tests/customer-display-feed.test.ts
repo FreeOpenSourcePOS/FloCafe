@@ -105,10 +105,39 @@ async function main(): Promise<void> {
   );
 
   // Page 2: next 100 older eligible orders (E-031 .. E-130), returned in ASC order within the page
+  let capturedCursorSql = '';
+  let capturedCursorParams: unknown[] = [];
+  const origPrepare = db.prepare.bind(db);
+  db.prepare = (sql: string) => {
+    const stmt = origPrepare(sql);
+    if (sql.includes('FROM orders o')) {
+      const origAll = stmt.all.bind(stmt);
+      stmt.all = (...params: unknown[]) => {
+        capturedCursorSql = sql;
+        capturedCursorParams = params;
+        return origAll(...params);
+      };
+    }
+    return stmt;
+  };
   const page2 = await request(app)
     .get(`${FEED}?cursor=${encodeURIComponent(page1.body.next_cursor)}`)
     .set(display);
+  db.prepare = origPrepare;
   assert.equal(page2.status, 200);
+  assert.ok(capturedCursorSql.length > 0, 'captured cursor SQL statement');
+  const cursorQueryPlan = db
+    .prepare(`EXPLAIN QUERY PLAN ${capturedCursorSql}`)
+    .all(...capturedCursorParams) as Array<{ detail: string }>;
+  const planDetails = cursorQueryPlan.map((row) => row.detail).join(' | ');
+  assert.ok(
+    planDetails.includes('USING INDEX idx_orders_created (created_at<?)'),
+    `cursor query uses idx_orders_created range scan (got: ${planDetails})`,
+  );
+  assert.ok(
+    !planDetails.includes('USE TEMP B-TREE FOR ORDER BY'),
+    `cursor query avoids rescanning and sorting the queue (got: ${planDetails})`,
+  );
   assert.equal(page2.body.has_more, true, 'page 2 reports more pages available');
   assert.equal(typeof page2.body.next_cursor, 'string', 'page 2 returns a second cursor string');
   assert.notEqual(page2.body.next_cursor, page1.body.next_cursor, 'page 2 cursor advances');
@@ -165,6 +194,41 @@ async function main(): Promise<void> {
 
   // Unauthenticated request with cursor still returns 401 before parameter parsing
   assert.equal((await request(app).get(`${FEED}?cursor=invalid`)).status, 401);
+
+  // Seed 270 additional eligible orders (500 total = 5 pages) and verify repeated 5-page polls stay within the real 120 req/min rate limit
+  for (let i = 231; i <= 500; i += 1) {
+    const number = `E-${String(i).padStart(3, '0')}`;
+    const status = eligibleStatuses[(i - 1) % eligibleStatuses.length];
+    const hh = String(Math.floor(i / 60)).padStart(2, '0');
+    const mm = String(i % 60).padStart(2, '0');
+    const stamp = `2026-02-01 ${hh}:${mm}:00`;
+    insertOrder.run(number, status, stamp, stamp);
+  }
+  const freshTokenRes = await request(app)
+    .post(TOKENS)
+    .set(owner)
+    .send({ label: '500 Order Queue TV' });
+  assert.equal(freshTokenRes.status, 201);
+  const fivePageDisplay = { Authorization: `Bearer ${freshTokenRes.body.token}` };
+  for (let poll = 0; poll < 20; poll += 1) {
+    let cursor: string | null = null;
+    let pollOrders = 0;
+    let pagesInPoll = 0;
+    do {
+      const url: string = cursor ? `${FEED}?cursor=${encodeURIComponent(cursor)}` : FEED;
+      const res = await request(app).get(url).set(fivePageDisplay);
+      assert.equal(
+        res.status,
+        200,
+        `poll ${poll + 1} page ${pagesInPoll + 1} succeeds without 429`,
+      );
+      pollOrders += res.body.orders.length;
+      pagesInPoll += 1;
+      cursor = res.body.has_more ? res.body.next_cursor : null;
+    } while (cursor);
+    assert.equal(pagesInPoll, 5, '500 eligible orders drain in 5 pages');
+    assert.equal(pollOrders, 500, 'each 5-page poll returns all 500 eligible orders');
+  }
 
   console.log('customer-display-feed: all assertions passed');
 }

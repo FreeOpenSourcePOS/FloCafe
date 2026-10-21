@@ -164,26 +164,39 @@ export function buildDisplayFeed(options?: CustomerDisplayFeedOptions): Customer
   );
   const config = readStoredCustomerDisplayConfig(settings[CUSTOMER_DISPLAY_KEY]);
   const placeholders = config.statuses.map(() => '?').join(', ');
-  const rows = db
-    .prepare(
-      `SELECT o.id AS id,
+  const selectColumns = `SELECT o.id AS id,
               COALESCE((SELECT b.bill_number FROM bills b WHERE b.order_id = o.id ORDER BY b.id DESC LIMIT 1), o.order_number) AS number,
               o.status AS status,
               o.created_at AS created_at
-       FROM orders o
-       WHERE o.status IN (${placeholders})
-         AND (? IS NULL OR (o.created_at < ? OR (o.created_at = ? AND o.id < ?)))
-       ORDER BY o.created_at DESC, o.id DESC
-       LIMIT ?`,
-    )
-    .all(
-      ...config.statuses,
-      decodedCursor ? decodedCursor.created_at : null,
-      decodedCursor ? decodedCursor.created_at : null,
-      decodedCursor ? decodedCursor.created_at : null,
-      decodedCursor ? decodedCursor.id : null,
-      FEED_ORDER_LIMIT + 1,
-    ) as Array<{ id: number; number: string; status: string; created_at: string }>;
+       FROM orders o`;
+  const rows = (
+    decodedCursor
+      ? db
+          .prepare(
+            `${selectColumns}
+             WHERE +o.status IN (${placeholders})
+               AND o.created_at <= ?
+               AND (o.created_at < ? OR (o.created_at = ? AND o.id < ?))
+             ORDER BY o.created_at DESC, o.id DESC
+             LIMIT ?`,
+          )
+          .all(
+            ...config.statuses,
+            decodedCursor.created_at,
+            decodedCursor.created_at,
+            decodedCursor.created_at,
+            decodedCursor.id,
+            FEED_ORDER_LIMIT + 1,
+          )
+      : db
+          .prepare(
+            `${selectColumns}
+             WHERE o.status IN (${placeholders})
+             ORDER BY o.created_at DESC, o.id DESC
+             LIMIT ?`,
+          )
+          .all(...config.statuses, FEED_ORDER_LIMIT + 1)
+  ) as Array<{ id: number; number: string; status: string; created_at: string }>;
 
   const hasMore = rows.length > FEED_ORDER_LIMIT;
   const pageRows = hasMore ? rows.slice(0, FEED_ORDER_LIMIT) : rows;

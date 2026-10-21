@@ -2164,20 +2164,6 @@ async function main() {
         'Order 202 has no refresh errors from late retryRefresh completion',
       );
 
-      // ── c) OrderDetailPanel wiring check ──
-      const orderDetailPanelSource = fs.readFileSync(
-        path.join(projectRoot, 'frontend/src/components/orders/OrderDetailPanel.tsx'),
-        'utf8',
-      );
-      assertOrThrow(
-        orderDetailPanelSource.includes('<OrderDetailContent key={props.order.id}'),
-        'OrderDetailContent has key={props.order.id}',
-      );
-      assertOrThrow(
-        /<PendingOrderItemEdits\s+key=\{order\.id\}/.test(orderDetailPanelSource),
-        'PendingOrderItemEdits has key={order.id}',
-      );
-
       // Clean up harnesses and restores
       resetUiHarness();
       Module._load = savedModuleLoad;

@@ -221,8 +221,19 @@ test.describe('Issue #1257 / N5: Scope pending-edit recovery notices, refresh er
     // Now let Order A's late 409 response settle
     resolvePatch();
 
-    // Allow time for any late asynchronous handlers / microtasks to settle
-    await page.waitForTimeout(500);
+    // Wait for the positive completion signal that Order A's late 409 handler has removed Order A's stored attempt from localStorage
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ orderId, itemId }) => {
+            const tenant = JSON.parse(localStorage.getItem('tenant') || '{"id":1}');
+            const key = `flo.orders.item-edit.attempt.v1:${tenant.id}:e2e-owner:${orderId}:${itemId}`;
+            return localStorage.getItem(key);
+          },
+          { orderId: orderA.id, itemId: orderA.items[0].id },
+        ),
+      )
+      .toBeNull();
 
     // Observable result: Order B has no rejection notice, no refresh warning, no pending edit banners
     await expect(page.getByTestId('pending-item-edit-rejection')).toBeHidden();

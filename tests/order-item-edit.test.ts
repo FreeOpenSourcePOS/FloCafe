@@ -1659,8 +1659,8 @@ async function main() {
       );
       clearOrderItemEditAttempt(5, 'actor-scope', 30, 47, 'orig-key');
 
-      // ─── N5 regression: PendingOrderItemEdits scope isolation (#1257) ───
-      console.log('\n─── PendingOrderItemEdits scope isolation (#1257) ───');
+      // ─── PendingOrderItemEdits scope isolation ───
+      console.log('\n─── PendingOrderItemEdits scope isolation ───');
 
       const savedModuleLoad = Module._load;
       const savedResolveFilename = (Module as any)._resolveFilename;

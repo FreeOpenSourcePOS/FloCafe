@@ -1790,6 +1790,77 @@ async function main() {
       true,
       'free categorized item receives tax snapshot without being skipped',
     );
+
+    // ── Step 16: Open order mutations survive active tax pack category rename/rate change ────
+    console.log('\n16. Open order mutations survive active tax pack category rename and rate change');
+    const s16OrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-doc-1', quantity: 1 },
+          { product_id: 'prod-doc-2', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(s16OrderRes.status, 201, 's16 order created');
+    assertEqual(s16OrderRes.data.order.subtotal, 200.2, 's16 order subtotal = 200.20');
+    assertEqual(s16OrderRes.data.order.tax_amount, 10.01, 's16 order tax = 10.01');
+    assertEqual(s16OrderRes.data.order.total, 210.21, 's16 order total = 210.21');
+    const s16OrderId = s16OrderRes.data.order.id;
+    const s16Item2Id = s16OrderRes.data.order.items.find(
+      (it: any) => it.product_id === 'prod-doc-2',
+    )?.id;
+
+    const s16ActiveVersionId = (
+      db
+        .prepare("SELECT active_version_id FROM country_packs WHERE id = 'official-india'")
+        .get() as any
+    )?.active_version_id;
+
+    db.prepare(
+      "UPDATE tax_categories SET id = 'standard_renamed' WHERE id = 'standard' AND pack_version_id = ?",
+    ).run(s16ActiveVersionId);
+    db.prepare(
+      "UPDATE tax_rules SET rate = 9.0 WHERE id IN ('b-cgst', 'a-sgst') AND pack_version_id = ?",
+    ).run(s16ActiveVersionId);
+
+    const s16DiscountRes = await api(baseUrl, `/api/orders/${s16OrderId}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'amount', discount_value: 0 },
+      headers: authHeader,
+    });
+    assertEqual(s16DiscountRes.status, 200, 'discount succeeds after category rename/rate change');
+    assertEqual(
+      s16DiscountRes.data.order.tax_amount,
+      10.01,
+      'order tax preserves saved 5% rate and document rounding',
+    );
+    assertEqual(s16DiscountRes.data.order.total, 210.21, 'order total preserved');
+
+    const s16CancelRes = await api(
+      baseUrl,
+      `/api/orders/${s16OrderId}/items/${s16Item2Id}/cancel`,
+      {
+        method: 'PATCH',
+        headers: authHeader,
+      },
+    );
+    assertEqual(s16CancelRes.status, 200, 'item cancel succeeds after category rename');
+    assertEqual(
+      s16CancelRes.data.order.tax_amount,
+      5.01,
+      'remaining item retains 5% rate with document rounding reallocated',
+    );
+    assertEqual(s16CancelRes.data.order.total, 105.11, 'cancelled item total updated');
+
+    db.prepare(
+      "UPDATE tax_categories SET id = 'standard' WHERE id = 'standard_renamed' AND pack_version_id = ?",
+    ).run(s16ActiveVersionId);
+    db.prepare(
+      "UPDATE tax_rules SET rate = 2.5 WHERE id IN ('b-cgst', 'a-sgst') AND pack_version_id = ?",
+    ).run(s16ActiveVersionId);
   } finally {
     server.close();
     closeDatabase();

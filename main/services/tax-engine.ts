@@ -115,7 +115,7 @@ interface RawLine {
   components: RawComponent[];
 }
 
-const ROUNDING: Record<RoundingMethod, Decimal.Rounding> = {
+export const ROUNDING: Record<RoundingMethod, Decimal.Rounding> = {
   half_up: Decimal.ROUND_HALF_UP,
   half_even: Decimal.ROUND_HALF_EVEN,
   floor: Decimal.ROUND_FLOOR,
@@ -128,12 +128,12 @@ function decimal(value: string | undefined, fallback = '0'): Decimal {
   return result;
 }
 
-function canonical(value: Decimal): string {
+export function canonical(value: Decimal): string {
   if (value.isZero()) return '0';
   return value.toFixed().replace(/(?:\.0+|(\.\d+?)0+)$/, '$1');
 }
 
-function roundPlaces(value: Decimal, places: number, method: RoundingMethod): Decimal {
+export function roundPlaces(value: Decimal, places: number, method: RoundingMethod): Decimal {
   return value.toDecimalPlaces(places, ROUNDING[method]);
 }
 

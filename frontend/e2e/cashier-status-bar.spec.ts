@@ -335,7 +335,10 @@ test.describe('Clean Cashier Status Bar & Telemetry Drawer', () => {
     await countedInput.fill('0');
 
     // Attempt to close shift while unpaid bill exists
-    const submitCloseBtn = page.locator('button').filter({ hasText: /close shift/i }).last();
+    const submitCloseBtn = page
+      .locator('button')
+      .filter({ hasText: /close shift/i })
+      .last();
     await submitCloseBtn.click();
 
     // Verify 409 error banner appears inside modal

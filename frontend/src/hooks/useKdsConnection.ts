@@ -367,7 +367,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnected(false);
       }
     } finally {
-      if (restInFlightGenerationRef.current === generation) restInFlightGenerationRef.current = null;
+      if (restInFlightGenerationRef.current === generation)
+        restInFlightGenerationRef.current = null;
     }
   }, [api, disableKdsConnection, ordersPath, stopRestPolling, t]);
   // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)

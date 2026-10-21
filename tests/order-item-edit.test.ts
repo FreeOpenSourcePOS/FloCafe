@@ -1659,6 +1659,516 @@ async function main() {
       );
       clearOrderItemEditAttempt(5, 'actor-scope', 30, 47, 'orig-key');
 
+      // ─── PendingOrderItemEdits scope isolation ───
+      console.log('\n─── PendingOrderItemEdits scope isolation ───');
+
+      const savedModuleLoad = Module._load;
+      const savedResolveFilename = (Module as any)._resolveFilename;
+      const projectRoot = path.resolve(__dirname, '..');
+
+      (Module as any)._resolveFilename = function (
+        request: string,
+        parent: any,
+        isMain: boolean,
+        options?: any,
+      ) {
+        if (request.startsWith('@/')) {
+          return path.resolve(projectRoot, 'frontend/src', request.slice(2));
+        }
+        return savedResolveFilename.call(this, request, parent, isMain, options);
+      };
+
+      let uiStates: any[] = [];
+      let uiStateIdx = 0;
+      let uiRefs: any[] = [];
+      let uiRefIdx = 0;
+      let uiCallbacks: any[] = [];
+      let uiCbIdx = 0;
+      let uiEffects: any[] = [];
+      let uiEffectIdx = 0;
+      let uiPendingEffects: Array<() => void> = [];
+
+      const uiReactHooks = {
+        useState: (initial: any) => {
+          const idx = uiStateIdx++;
+          if (idx >= uiStates.length) {
+            uiStates.push(typeof initial === 'function' ? initial() : initial);
+          }
+          const setState = (next: any) => {
+            uiStates[idx] = typeof next === 'function' ? next(uiStates[idx]) : next;
+          };
+          return [uiStates[idx], setState];
+        },
+        useRef: (initial: any) => {
+          const idx = uiRefIdx++;
+          if (idx >= uiRefs.length) {
+            uiRefs.push({ current: initial });
+          }
+          return uiRefs[idx];
+        },
+        useCallback: (fn: any, deps?: any[]) => {
+          const idx = uiCbIdx++;
+          const prev = uiCallbacks[idx];
+          const changed = !prev || !deps || deps.some((d, i) => !Object.is(d, prev.deps[i]));
+          if (changed) {
+            uiCallbacks[idx] = { fn, deps };
+            return fn;
+          }
+          return prev.fn;
+        },
+        useEffect: (effect: any, deps?: any[]) => {
+          const idx = uiEffectIdx++;
+          const prev = uiEffects[idx];
+          const changed =
+            !prev ||
+            !deps ||
+            !prev.deps ||
+            deps.length !== prev.deps.length ||
+            deps.some((d, i) => !Object.is(d, prev.deps[i]));
+          if (changed) {
+            uiPendingEffects.push(() => {
+              if (prev && typeof prev.cleanup === 'function') prev.cleanup();
+              const cleanup = effect();
+              uiEffects[idx] = { deps, cleanup };
+            });
+          }
+        },
+      };
+
+      const mockApi: any = {
+        patch: async () => ({ data: { order: {} } }),
+      };
+
+      Module._load = function (request: string, parent: unknown, isMain: boolean) {
+        if (request === 'react') return uiReactHooks;
+        if (request === 'react/jsx-runtime') {
+          const jsx = (type: any, props: any, key?: any) => ({ type, props, key });
+          return { jsx, jsxs: jsx, Fragment: 'Fragment' };
+        }
+        if (request === 'use-intl') {
+          return { useTranslations: (ns: string) => (key: string) => `${ns}.${key}` };
+        }
+        if (request === 'lucide-react') {
+          return { Loader2: () => null };
+        }
+        if (request === '@/components/ui/button') {
+          return {
+            Button: 'ButtonComponent',
+          };
+        }
+        if (request === '@/store/auth') {
+          const authState = { currentTenant: { id: 5 }, user: { id: 'actor-scope' } };
+          const useAuthStore = () => authState;
+          useAuthStore.getState = () => authState;
+          return { useAuthStore };
+        }
+        if (request === '@/lib/permissions') {
+          return { tenantCan: () => true };
+        }
+        if (request === '@/lib/api') {
+          return { __esModule: true, default: mockApi };
+        }
+        if (request.startsWith('@/')) {
+          return require(path.resolve(projectRoot, 'frontend/src', request.slice(2)));
+        }
+        return savedModuleLoad.apply(this, arguments as any);
+      };
+
+      const PendingOrderItemEdits =
+        require('../frontend/src/components/orders/PendingOrderItemEdits').default;
+
+      function collectUiElements(
+        node: any,
+        predicate: (el: any) => boolean,
+        acc: any[] = [],
+      ): any[] {
+        if (Array.isArray(node)) {
+          for (const child of node) collectUiElements(child, predicate, acc);
+          return acc;
+        }
+        if (!node || typeof node !== 'object') return acc;
+        if (predicate(node)) acc.push(node);
+        const children = node.props?.children;
+        if (children !== undefined) collectUiElements(children, predicate, acc);
+        return acc;
+      }
+
+      function uiTreeContainsText(node: any, text: string): boolean {
+        if (typeof node === 'string') return node.includes(text);
+        if (typeof node === 'number') return String(node).includes(text);
+        if (Array.isArray(node)) return node.some((child) => uiTreeContainsText(child, text));
+        if (!node || typeof node !== 'object') return false;
+        if (node.props?.children) return uiTreeContainsText(node.props.children, text);
+        return false;
+      }
+
+      function flushUiEffects() {
+        while (uiPendingEffects.length > 0) {
+          const fn = uiPendingEffects.shift()!;
+          fn();
+        }
+      }
+
+      async function flushUiMicrotasks() {
+        await new Promise((r) => queueMicrotask(r));
+        await new Promise((r) => queueMicrotask(r));
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      function renderPendingEdits(props: any) {
+        uiStateIdx = 0;
+        uiRefIdx = 0;
+        uiCbIdx = 0;
+        uiEffectIdx = 0;
+        return PendingOrderItemEdits(props);
+      }
+
+      function resetUiHarness() {
+        for (const eff of uiEffects) {
+          if (eff && typeof eff.cleanup === 'function') eff.cleanup();
+        }
+        uiStates = [];
+        uiRefs = [];
+        uiCallbacks = [];
+        uiEffects = [];
+        uiPendingEffects = [];
+      }
+
+      // ── a) Switching orderId clears notices immediately (including first frame) ──
+      resetUiHarness();
+      store.clear();
+
+      persistOrderItemEditAttempt(
+        newOrderItemEditAttempt({
+          mode: 'quantity',
+          path: orderItemEditCanonicalPath(101, 10),
+          orderId: 101,
+          itemId: 10,
+          body: { expected_edit_version: 1, quantity: 2 },
+          actorId: 'actor-scope',
+          tenantId: 5,
+        }),
+      );
+
+      let order101ResolveFinished: (() => void) | null = null;
+      const order101ResolvePromise = new Promise<void>((r) => {
+        order101ResolveFinished = r;
+      });
+
+      mockApi.patch = async () => {
+        const err: any = new Error('Conflict');
+        err.response = { status: 409, data: { error: 'edit version conflict' } };
+        throw err;
+      };
+
+      const onItemEditResolvedA = async (targetOrderId: number) => {
+        if (targetOrderId === 101 && order101ResolveFinished) {
+          setTimeout(order101ResolveFinished, 10);
+        }
+        return false; // failed follow-up refresh
+      };
+
+      let treeA = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 10, product_name: 'Espresso' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedA,
+      });
+      flushUiEffects();
+      await flushUiMicrotasks();
+      treeA = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 10, product_name: 'Espresso' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedA,
+      });
+
+      const resolveBtnA = collectUiElements(
+        treeA,
+        (el) => el.type === 'ButtonComponent' && el.props?.onClick,
+      )[0];
+      assertOrThrow(resolveBtnA, 'resolve button exists for order 101 item 10');
+      resolveBtnA.props.onClick();
+
+      await order101ResolvePromise;
+      await new Promise((r) => setTimeout(r, 25)); // await resolve finally block
+
+      treeA = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 10, product_name: 'Espresso' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedA,
+      });
+
+      assertOrThrow(
+        collectUiElements(
+          treeA,
+          (el) => el.props?.['data-testid'] === 'pending-item-edit-rejection',
+        ).length > 0,
+        'order 101 shows rejection notice after 409',
+      );
+      assertOrThrow(
+        collectUiElements(
+          treeA,
+          (el) => el.props?.['data-testid'] === 'pending-item-edit-refresh-failed',
+        ).length > 0,
+        'order 101 shows refresh error after failed follow-up refresh',
+      );
+
+      // Switch orderId from 101 to 202: FIRST SYNCHRONOUS RENDER FRAME before effects or microtasks
+      const treeA202SyncFrame = renderPendingEdits({
+        orderId: 202,
+        items: [{ id: 10, product_name: 'Croissant' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedA,
+      });
+
+      const rejections202Sync = collectUiElements(
+        treeA202SyncFrame,
+        (el) => el.props?.['data-testid'] === 'pending-item-edit-rejection',
+      );
+      const refreshErrors202Sync = collectUiElements(
+        treeA202SyncFrame,
+        (el) => el.props?.['data-testid'] === 'pending-item-edit-refresh-failed',
+      );
+      const retryButtons202Sync = collectUiElements(
+        treeA202SyncFrame,
+        (el) => el.props?.['data-testid'] === 'retry-refresh-button',
+      );
+
+      assertEqualOrThrow(
+        rejections202Sync.length,
+        0,
+        'no rejection notices visible on first synchronous render frame of new orderId',
+      );
+      assertEqualOrThrow(
+        refreshErrors202Sync.length,
+        0,
+        'no refresh errors visible on first synchronous render frame of new orderId',
+      );
+      assertEqualOrThrow(
+        retryButtons202Sync.length,
+        0,
+        'no retry buttons visible on first synchronous render frame of new orderId',
+      );
+      assertOrThrow(
+        !uiTreeContainsText(treeA202SyncFrame, 'Espresso') &&
+          !uiTreeContainsText(treeA202SyncFrame, 'Croissant'),
+        'no misattributed item label or notice on first synchronous render frame of new orderId',
+      );
+      assertEqualOrThrow(
+        treeA202SyncFrame,
+        null,
+        'Order 202 with no pending edits renders null on first synchronous frame',
+      );
+
+      // After microtasks and effects run for Order 202, state must also be cleanly reset
+      flushUiEffects();
+      await flushUiMicrotasks();
+      const treeA202AfterMicrotasks = renderPendingEdits({
+        orderId: 202,
+        items: [{ id: 10, product_name: 'Croissant' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedA,
+      });
+      assertEqualOrThrow(
+        treeA202AfterMicrotasks,
+        null,
+        'Order 202 remains completely null after effects and microtasks flush',
+      );
+
+      // ── b) In-flight resolve / retryRefresh does not leak to new orderId ──
+      // Sub-case 1: resolve() in flight during order switch
+      resetUiHarness();
+      store.clear();
+
+      persistOrderItemEditAttempt(
+        newOrderItemEditAttempt({
+          mode: 'quantity',
+          path: orderItemEditCanonicalPath(101, 10),
+          orderId: 101,
+          itemId: 10,
+          body: { expected_edit_version: 1, quantity: 2 },
+          actorId: 'actor-scope',
+          tenantId: 5,
+        }),
+      );
+
+      let patchResolverB: (() => void) | null = null;
+      mockApi.patch = async () => {
+        return new Promise((resolve, reject) => {
+          patchResolverB = () => {
+            const err: any = new Error('Conflict');
+            err.response = { status: 409, data: { error: 'late 409 conflict' } };
+            reject(err);
+          };
+        });
+      };
+
+      const refreshCallsB: number[] = [];
+      const onItemEditResolvedB = async (targetOrderId: number) => {
+        refreshCallsB.push(targetOrderId);
+        return true;
+      };
+
+      let treeB = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 10, product_name: 'Espresso' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB,
+      });
+      flushUiEffects();
+      await flushUiMicrotasks();
+      treeB = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 10, product_name: 'Espresso' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB,
+      });
+
+      const resolveBtnB = collectUiElements(
+        treeB,
+        (el) => el.type === 'ButtonComponent' && el.props?.onClick,
+      )[0];
+      assertOrThrow(resolveBtnB, 'resolve button exists for order 101 in-flight test');
+      resolveBtnB.props.onClick();
+
+      await new Promise((r) => setTimeout(r, 15)); // wait until in-flight inside patch promise
+
+      // Switch to Order 202 while resolve is in flight
+      treeB = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB,
+      });
+      flushUiEffects();
+      await flushUiMicrotasks();
+      treeB = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB,
+      });
+
+      // Now settle the late 409 from Order 101
+      assertOrThrow(patchResolverB, 'patchResolver was assigned');
+      patchResolverB!();
+      await new Promise((r) => setTimeout(r, 30));
+
+      assertEqualOrThrow(
+        refreshCallsB.length,
+        0,
+        'late completion from Order 101 does not call onItemEditResolved while viewing Order 202',
+      );
+      assertEqualOrThrow(
+        readOrderItemEditAttempt(5, 'actor-scope', 101, 10),
+        null,
+        'Order 101 attempt is still cleared from localStorage upon 409 rejection',
+      );
+
+      const treeB202AfterLatePatch = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB,
+      });
+      assertEqualOrThrow(
+        treeB202AfterLatePatch,
+        null,
+        'Order 202 has no notices or banners from late Order 101 completion',
+      );
+
+      // Sub-case 2: retryRefresh() in flight during order switch
+      resetUiHarness();
+      store.clear();
+
+      persistOrderItemEditAttempt(
+        newOrderItemEditAttempt({
+          mode: 'quantity',
+          path: orderItemEditCanonicalPath(101, 11),
+          orderId: 101,
+          itemId: 11,
+          body: { expected_edit_version: 1, quantity: 3 },
+          actorId: 'actor-scope',
+          tenantId: 5,
+        }),
+      );
+
+      mockApi.patch = async () => ({ data: { order: { id: 101 } } });
+
+      let refreshResolverB2: ((val: boolean) => void) | null = null;
+      const onItemEditResolvedB2 = async (targetOrderId: number) => {
+        if (targetOrderId === 101) {
+          return new Promise<boolean>((resolve) => {
+            refreshResolverB2 = resolve;
+          });
+        }
+        return true;
+      };
+
+      let treeB2 = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 11, product_name: 'Mocha' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB2,
+      });
+      flushUiEffects();
+      await flushUiMicrotasks();
+      treeB2 = renderPendingEdits({
+        orderId: 101,
+        items: [{ id: 11, product_name: 'Mocha' }],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB2,
+      });
+
+      const resolveBtnB2 = collectUiElements(
+        treeB2,
+        (el) => el.type === 'ButtonComponent' && el.props?.onClick,
+      )[0];
+      assertOrThrow(resolveBtnB2, 'resolve button exists for retryRefresh test');
+      resolveBtnB2.props.onClick();
+
+      await new Promise((r) => setTimeout(r, 20)); // committed, waiting in retryRefresh
+
+      // Switch to Order 202 while retryRefresh is in flight
+      treeB2 = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB2,
+      });
+      flushUiEffects();
+      await flushUiMicrotasks();
+      treeB2 = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB2,
+      });
+
+      // Now late refresh fails
+      assertOrThrow(refreshResolverB2, 'refreshResolverB2 was assigned');
+      refreshResolverB2!(false);
+      await new Promise((r) => setTimeout(r, 25));
+
+      const treeB202AfterLateRefresh = renderPendingEdits({
+        orderId: 202,
+        items: [],
+        canEditItems: true,
+        onItemEditResolved: onItemEditResolvedB2,
+      });
+      assertEqualOrThrow(
+        treeB202AfterLateRefresh,
+        null,
+        'Order 202 has no refresh errors from late retryRefresh completion',
+      );
+
+      // Clean up harnesses and restores
+      resetUiHarness();
+      Module._load = savedModuleLoad;
+      (Module as any)._resolveFilename = savedResolveFilename;
+
       delete (globalThis as any).window;
     }
   } finally {

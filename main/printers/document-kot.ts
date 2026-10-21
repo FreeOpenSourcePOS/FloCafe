@@ -10,6 +10,7 @@ import {
   buildEscPos,
   formatVariantItemHeading,
   parseVariantSelection,
+  pushWrapped,
   truncate,
   truncateShapedLine,
   type PrintWarning,
@@ -51,6 +52,10 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       tableName: String(order?.table?.name ?? ''),
       orderType: String(order?.type ?? '').trim(),
       customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
+      orderNotes:
+        [order?.special_instructions, order?.order_notes, order?.orderNotes, order?.notes]
+          .find((val: unknown) => typeof val === 'string' && val.trim().length > 0)
+          ?.trim() ?? '',
     },
     items: ticketItems.map((item: any) => ({
       productName: formatVariantItemHeading(
@@ -60,7 +65,9 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       quantity: Number(item?.quantity) || 0,
       addons: parseKotAddons(item?.addons).map((addon) => ({
         name: String(addon?.name ?? ''),
-        ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+        ...(typeof addon?.quantity === 'number' &&
+        Number.isFinite(addon.quantity) &&
+        addon.quantity > 0
           ? { quantity: addon.quantity }
           : {}),
       })),
@@ -79,8 +86,12 @@ function parseKotAddons(value: unknown): Array<{ name: string; quantity?: number
     }
   }
   if (!Array.isArray(candidates)) return [];
-  return candidates.filter((addon): addon is { name: string; quantity?: number } =>
-    Boolean(addon) && typeof addon === 'object' && typeof (addon as { name?: unknown }).name === 'string');
+  return candidates.filter(
+    (addon): addon is { name: string; quantity?: number } =>
+      Boolean(addon) &&
+      typeof addon === 'object' &&
+      typeof (addon as { name?: unknown }).name === 'string',
+  );
 }
 
 /** Build PrintContext for a kitchen ticket using pre-resolved language policy. */
@@ -124,7 +135,9 @@ function kotBlock<K extends KotDocumentBlock['kind']>(
   document: KotDocument,
   kind: K,
 ): Extract<KotDocumentBlock, { kind: K }> | undefined {
-  return document.blocks.find((block): block is Extract<KotDocumentBlock, { kind: K }> => block.kind === kind);
+  return document.blocks.find(
+    (block): block is Extract<KotDocumentBlock, { kind: K }> => block.kind === kind,
+  );
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -138,28 +151,76 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 
 // Use localized header metadata if supported; fallback to ASCII labels.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
-function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
-  const merged = mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping);
+function thermalSafeText(
+  value: string,
+  fallback: string,
+  language: string,
+  arabicShaping: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
+  const merged = mergeThermalCapabilities(
+    capabilities ?? GENERIC_THERMAL_CAPABILITIES,
+    arabicShaping,
+  );
   if (merged.raster.enabled === true && !isThermalTextRepresentable(value, merged)) return value;
   return thermalTextFallback(value, fallback, merged);
 }
 
-function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
-  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping, capabilities);
+function thermalSafeMetadataValue(
+  value: string,
+  language: string,
+  arabicShaping: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
+  return thermalSafeText(
+    value,
+    UNSUPPORTED_METADATA_PLACEHOLDER,
+    language,
+    arabicShaping,
+    capabilities,
+  );
 }
 
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+function formatOrderNumberLabel(
+  label: SemanticLabel,
+  orderNumber: string,
+  language: string,
+  arabicShaping: boolean,
+  capabilities?: ThermalPrinterCapabilities,
+): string {
   const localized = labelOf(label).replace('{number}', orderNumber);
-  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping, capabilities);
-  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping, capabilities);
+  const fallbackOrderNumber = thermalSafeMetadataValue(
+    orderNumber,
+    language,
+    arabicShaping,
+    capabilities,
+  );
+  return thermalSafeText(
+    localized,
+    `Order #${fallbackOrderNumber}`,
+    language,
+    arabicShaping,
+    capabilities,
+  );
 }
 
-function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions, sourceLines?: string[], sourceControlLines?: string[]): string[] {
+function kotHeaderLines(
+  header: KotHeaderBlock,
+  options: KotDocumentRenderOptions,
+  sourceLines?: string[],
+  sourceControlLines?: string[],
+): string[] {
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
-  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
+  const banner = thermalSafeText(
+    labelOf(header.banner),
+    'KITCHEN ORDER TICKET',
+    options.language,
+    options.arabicShaping,
+    options.capabilities,
+  );
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
     `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping, options.capabilities)}`,
@@ -169,23 +230,32 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   );
   const table = header.table
     ? thermalSafeText(
-      formatTableLabel(header.table.label, header.table.name.text),
-      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping, options.capabilities)}`,
-      options.language,
-      options.arabicShaping,
-      options.capabilities,
-    )
+        formatTableLabel(header.table.label, header.table.name.text),
+        `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping, options.capabilities)}`,
+        options.language,
+        options.arabicShaping,
+        options.capabilities,
+      )
     : null;
   const orderType = header.orderType
     ? (() => {
-      const localized = `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`;
-      const fallback = `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`;
-      return shouldUseOrderTypeFallback(localized, thermalCapabilities)
-        ? fallback
-        : thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
-    })()
+        const localized = `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`;
+        const fallback = `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`;
+        return shouldUseOrderTypeFallback(localized, thermalCapabilities)
+          ? fallback
+          : thermalSafeText(
+              localized,
+              fallback,
+              options.language,
+              options.arabicShaping,
+              options.capabilities,
+            );
+      })()
     : null;
-  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
+  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString(
+    (options.locale ?? 'en-US') + '-u-nu-latn',
+    tzOptions,
+  );
   const timeLine = thermalSafeText(
     `${labelOf(header.timeLabel)}: ${time}`,
     `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
@@ -194,25 +264,73 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     options.capabilities,
   );
 
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
+  lines.push(
+    '{CENTER}{BOLD}' +
+      truncateShapedLine(
+        banner,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ) +
+      '{/BOLD}{/CENTER}',
+  );
   sourceLines?.push(labelOf(header.banner));
   sourceControlLines?.push(lines.at(-1) ?? '');
   lines.push('');
   sourceLines?.push('');
   sourceControlLines?.push('');
-  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(
+    truncateShapedLine(
+      station,
+      cols,
+      options.arabicShaping,
+      options.language,
+      options.capabilities,
+    ),
+  );
   sourceLines?.push(`${labelOf(header.stationLabel)}: ${header.stationName.text}`);
   sourceControlLines?.push(lines.at(-1) ?? '');
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(
+    truncateShapedLine(
+      formatOrderNumberLabel(
+        header.orderNumberLabel,
+        header.orderNumber.text,
+        options.language,
+        options.arabicShaping,
+        options.capabilities,
+      ),
+      cols,
+      options.arabicShaping,
+      options.language,
+      options.capabilities,
+    ),
+  );
   sourceLines?.push(labelOf(header.orderNumberLabel).replace('{number}', header.orderNumber.text));
   sourceControlLines?.push(lines.at(-1) ?? '');
   if (table) {
-    lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
+    lines.push(
+      truncateShapedLine(
+        table,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ),
+    );
     sourceLines?.push(formatTableLabel(header.table!.label, header.table!.name.text));
     sourceControlLines?.push(lines.at(-1) ?? '');
   }
   if (orderType) {
-    lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
+    lines.push(
+      truncateShapedLine(
+        orderType,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ),
+    );
     sourceLines?.push(`${labelOf(header.orderType!.label)}: ${header.orderType!.value.text}`);
     sourceControlLines?.push(lines.at(-1) ?? '');
   }
@@ -224,28 +342,97 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
       options.arabicShaping,
       options.capabilities,
     );
-    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language, options.capabilities));
+    lines.push(
+      truncateShapedLine(
+        customer,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      ),
+    );
     sourceLines?.push(`${labelOf(header.customer.label)}: ${header.customer.name.text}`);
     sourceControlLines?.push(lines.at(-1) ?? '');
   }
-  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(
+    truncateShapedLine(
+      timeLine,
+      cols,
+      options.arabicShaping,
+      options.language,
+      options.capabilities,
+    ),
+  );
   sourceLines?.push(`${labelOf(header.timeLabel)}: ${time}`);
   sourceControlLines?.push(lines.at(-1) ?? '');
+  if (header.orderNotes) {
+    const noteLabel = thermalSafeText(
+      labelOf(header.orderNotes.label),
+      'Note',
+      options.language,
+      options.arabicShaping,
+      options.capabilities,
+    );
+    const noteText = `${noteLabel}: ${header.orderNotes.text.text}`;
+    const wrapped: string[] = [];
+    pushWrapped(wrapped, noteText, Math.max(1, cols - 6), options.language, options.capabilities);
+    lines.push('');
+    sourceLines?.push('');
+    sourceControlLines?.push(lines.at(-1) ?? '');
+    wrapped.forEach((text, index) => {
+      lines.push(
+        '{DOUBLE_HEIGHT}{BOLD}' + (index === 0 ? '!! ' : '   ') + text + '{/BOLD}{/DOUBLE_HEIGHT}',
+      );
+      sourceLines?.push((index === 0 ? '!! ' : '   ') + text);
+      sourceControlLines?.push(lines.at(-1) ?? '');
+    });
+  }
   return lines;
 }
 
-function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
+function kotItemLines(
+  row: KotItemsBlock['rows'][number],
+  cols: number,
+  arabicShaping: boolean,
+  language: string,
+  capabilities?: ThermalPrinterCapabilities,
+): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities) + '{/BOLD}{/DOUBLE_HEIGHT}');
+  lines.push(
+    '{DOUBLE_HEIGHT}{BOLD}' +
+      itemPrefix +
+      truncateShapedLine(
+        row.name.text,
+        Math.max(1, cols - displayCellWidth(itemPrefix)),
+        arabicShaping,
+        language,
+        capabilities,
+      ) +
+      '{/BOLD}{/DOUBLE_HEIGHT}',
+  );
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
-    const name = truncate(addonName(addon), Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)), language, capabilities);
+    const name = truncate(
+      addonName(addon),
+      Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)),
+      language,
+      capabilities,
+    );
     lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
+    lines.push(
+      '  >> ' +
+        truncateShapedLine(
+          row.specialInstructions.text,
+          Math.max(1, cols - 8),
+          arabicShaping,
+          language,
+          capabilities,
+        ),
+    );
   }
   return lines;
 }
@@ -255,7 +442,10 @@ function addonName(addon: DirectionalText): string {
 }
 
 /** Map a KotDocument onto the legacy KOT token-line layout. */
-export function renderKotDocumentToLines(document: KotDocument, options: KotDocumentRenderOptions): string[] {
+export function renderKotDocumentToLines(
+  document: KotDocument,
+  options: KotDocumentRenderOptions,
+): string[] {
   const lines: string[] = [];
 
   const header = kotBlock(document, 'kot-header');
@@ -269,7 +459,13 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
     const headerSourceLines: string[] = [];
     const headerSourceControlLines: string[] = [];
     lines.push(...kotHeaderLines(header, options, headerSourceLines, headerSourceControlLines));
-    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart, sourceLines: headerSourceLines, sourceControlLines: headerSourceControlLines });
+    options.rasterGroups?.push({
+      groupId: 'kot-header',
+      lineIndex: headerStart,
+      lineCount: lines.length - headerStart,
+      sourceLines: headerSourceLines,
+      sourceControlLines: headerSourceControlLines,
+    });
   }
   lines.push(bar);
   lines.push('');
@@ -277,7 +473,13 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   if (items) {
     for (const [rowIndex, row] of items.rows.entries()) {
       const rowStart = lines.length;
-      const rowLines = kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities);
+      const rowLines = kotItemLines(
+        row,
+        cols,
+        options.arabicShaping,
+        options.language,
+        options.capabilities,
+      );
       lines.push(...rowLines);
       const sourceLines = [`${row.quantity}x  ${row.name.text}`];
       const sourceControlLines = [rowLines[0] ?? ''];
@@ -293,7 +495,11 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
         sourceControlLines.push(rowLines[rowLineOffset] ?? '');
       }
       if (options.rasterGroups) {
-        const group = { groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
+        const group = {
+          groupId: `kot-items-row-${rowIndex}`,
+          lineIndex: rowStart,
+          lineCount: lines.length - rowStart,
+        };
         options.rasterGroups.push({ ...group, sourceLines, sourceControlLines });
       }
     }
@@ -353,6 +559,17 @@ export function renderKotViaDocument(
     capabilities: opts.capabilities,
     rasterGroups,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
+  const data = buildEscPos(
+    lines,
+    opts.useUnicode,
+    {
+      cutMode: opts.cutMode,
+      arabicShaping: opts.arabicShaping,
+      columns: opts.columns,
+      language: opts.language,
+      capabilities: opts.capabilities,
+    },
+    warnings,
+  );
   return { document, lines, data, warnings, rasterGroups };
 }

@@ -10,6 +10,20 @@ import { useConfirm } from '@/hooks/use-confirm';
 // preventing server hammering during outages.
 const KDS_RECONNECT_BASE_MS = 1000;
 const KDS_RECONNECT_MAX_MS = 30000;
+/** Keeps prior object identity for orders whose payload is unchanged, so memoized cards skip re-rendering. */
+export function reconcileKdsOrders(prev: KdsOrder[], next: KdsOrder[]): KdsOrder[] {
+  const previousById = new Map(prev.map((order) => [order.id, order]));
+  let identical = prev.length === next.length;
+  const merged = next.map((order, index) => {
+    const existing = previousById.get(order.id);
+    const reuse = existing !== undefined && JSON.stringify(existing) === JSON.stringify(order);
+    const result = reuse ? existing : order;
+    if (prev[index] !== result) identical = false;
+    return result;
+  });
+  return identical ? prev : merged;
+}
+
 function kdsReconnectDelay(attempt: number): number {
   return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * 2 ** attempt);
 }
@@ -245,6 +259,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restRequestSequenceRef = useRef(0);
+  const restInFlightRequestRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
@@ -265,6 +280,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       restInitialFetchRef.current = null;
     }
     restRequestSequenceRef.current += 1;
+    restInFlightRequestRef.current = null;
   }, []);
 
   const disableKdsConnection = useCallback(
@@ -292,74 +308,86 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     [stopRestPolling],
   );
 
-  const fetchOrdersRest = useCallback(async () => {
-    const generation = sessionGenerationRef.current;
-    const requestSequence = ++restRequestSequenceRef.current;
-    try {
-      const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
-      if (
-        generation !== sessionGenerationRef.current ||
-        requestSequence !== restRequestSequenceRef.current ||
-        (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
-      )
-        return;
-      setOrders(data.orders || []);
-      setCounts(data.counts || {});
-      setConnected(true);
-    } catch (error: unknown) {
-      if (
-        generation !== sessionGenerationRef.current ||
-        requestSequence !== restRequestSequenceRef.current
-      )
-        return;
-      const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
-      const status = axiosError?.response?.status;
-      const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
-      if (status === 401 || tokenMissing) {
-        sessionGenerationRef.current += 1;
-        stopRestPolling();
-        updatingIdsRef.current.clear();
-        setUpdating(null);
-        setUser(null);
-        setOrders([]);
-        setCounts({});
-        setConnected(false);
-        setConnectionMode(null);
-        setLoading(false);
-        if (typeof window !== 'undefined') window.localStorage.removeItem('token');
-      } else if (status === 403) {
-        const message = axiosError.response?.data?.error || t('authFailed');
-        const kdsDisabled = /kds is disabled/i.test(message);
-        if (kdsDisabled) {
-          disableKdsConnection(message);
+  // Background polls skip active requests; required refreshes supersede them
+  // so item updates and conflict recovery fetch fresh state immediately.
+  const fetchOrdersRest = useCallback(
+    async (options?: { skipIfInFlight?: boolean }) => {
+      const generation = sessionGenerationRef.current;
+      if (options?.skipIfInFlight && restInFlightRequestRef.current !== null) return;
+      const requestSequence = ++restRequestSequenceRef.current;
+      restInFlightRequestRef.current = requestSequence;
+      try {
+        const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
+        if (
+          generation !== sessionGenerationRef.current ||
+          requestSequence !== restRequestSequenceRef.current ||
+          (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
+        )
           return;
+        setOrders((prev) => reconcileKdsOrders(prev, data.orders || []));
+        setCounts(data.counts || {});
+        setConnected(true);
+      } catch (error: unknown) {
+        if (
+          generation !== sessionGenerationRef.current ||
+          requestSequence !== restRequestSequenceRef.current
+        )
+          return;
+        const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
+        const status = axiosError?.response?.status;
+        const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
+        if (status === 401 || tokenMissing) {
+          sessionGenerationRef.current += 1;
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode(null);
+          setLoading(false);
+          if (typeof window !== 'undefined') window.localStorage.removeItem('token');
+        } else if (status === 403) {
+          const message = axiosError.response?.data?.error || t('authFailed');
+          const kdsDisabled = /kds is disabled/i.test(message);
+          if (kdsDisabled) {
+            disableKdsConnection(message);
+            return;
+          }
+          sessionGenerationRef.current += 1;
+          markKdsAuthBlocked();
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setLoginError(t('authFailed'));
+          setConnectionMode(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setLoading(false);
+        } else {
+          setConnected(false);
         }
-        sessionGenerationRef.current += 1;
-        markKdsAuthBlocked();
-        stopRestPolling();
-        updatingIdsRef.current.clear();
-        setUpdating(null);
-        setUser(null);
-        setLoginError(t('authFailed'));
-        setConnectionMode(null);
-        setOrders([]);
-        setCounts({});
-        setConnected(false);
-        setLoading(false);
-      } else {
-        setConnected(false);
+      } finally {
+        if (restInFlightRequestRef.current === requestSequence)
+          restInFlightRequestRef.current = null;
       }
-    }
-  }, [api, disableKdsConnection, ordersPath, stopRestPolling, t]);
+    },
+    [api, disableKdsConnection, ordersPath, stopRestPolling, t],
+  );
   // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)
   // so state updates do not land in the invoking effect commit.
   const startRestPolling = useCallback(() => {
     stopRestPolling();
     restInitialFetchRef.current = setTimeout(() => {
       restInitialFetchRef.current = null;
-      fetchOrdersRest();
+      void fetchOrdersRest({ skipIfInFlight: true });
     }, 0);
-    restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
+    restIntervalRef.current = setInterval(() => {
+      void fetchOrdersRest({ skipIfInFlight: true });
+    }, 5000);
   }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(
@@ -562,7 +590,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               authTimeout = null;
             }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
-            setOrders(msg.orders || []);
+            setOrders((prev) => reconcileKdsOrders(prev, msg.orders || []));
             setCounts(msg.counts || {});
             setConnected(true);
             setLoading(false);
@@ -618,7 +646,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             ws.close();
             setLoading(temporaryUnavailable);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
-            setOrders(msg.orders);
+            const incomingOrders = msg.orders;
+            setOrders((prev) => reconcileKdsOrders(prev, incomingOrders));
             setCounts(msg.counts || {});
             setConnected(true);
             if (msg.type === 'initial_data') setLoading(false);

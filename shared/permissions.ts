@@ -170,7 +170,7 @@ export const PERMISSION_DEFINITIONS = [
   {
     id: 'bills.print',
     area: 'payments',
-    defaultRoles: OWNER_MANAGER,
+    defaultRoles: OWNER_MANAGER_CASHIER,
     configurable: true,
     risk: 'standard',
   },

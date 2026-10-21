@@ -131,7 +131,10 @@ Scoped native custom events
 (`flo.orders.item-edit.attempt.changed`) refresh mounted notices in the current tab after the edit
 modal persists or resolves an attempt, and the browser `storage` event covers other tabs.
 An identity change during an item-edit commit closes the stale editor and refreshes the current
-order or table context without installing the returned order from the previous identity.
+order or table context without installing the returned order from the previous identity. Recovery
+notices, inline issues, refresh errors, storage warnings, and in-flight resolution handlers are
+scoped to the selected `(tenantId, actorId, orderId)` so switching orders or identities clears
+transient notices and ignores late-settling responses from another order.
 
 ### Split-check availability is a state, not a hidden button
 

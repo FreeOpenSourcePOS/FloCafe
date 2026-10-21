@@ -20,7 +20,8 @@ const TEST_EXCLUSIONS = {
 // Every file the closure does cover - including everything `pretest` pulls in via
 // test:release-regressions - must be absent from this list.
 const TEST_FILE_EXCLUSIONS = {
-  'tests/db-audit.test.ts': 'Run by the dedicated `npm run audit:db` command, not by the default suite.',
+  'tests/db-audit.test.ts':
+    'Run by the dedicated `npm run audit:db` command, not by the default suite.',
 };
 
 // Splits on top-level `&&`, `||`, and `;`, leaving text inside '...' or "..."
@@ -59,7 +60,8 @@ function splitTopLevelCommands(command) {
 }
 
 function extractExecutedTestScripts(command) {
-  const commandStartPattern = /^(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?:\s|$)/;
+  const commandStartPattern =
+    /^(?:node\s+scripts\/run-test\.cjs\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?:\s|$)/;
   return splitTopLevelCommands(command)
     .map((segment) => segment.trim().match(commandStartPattern))
     .filter(Boolean)
@@ -93,7 +95,7 @@ function collectReachableScripts(scripts) {
 const TEST_RUNNER_PATTERN = /^(?:npx\s+)?(?:node|ts-node|tsx|bun|deno|electron)\b/;
 
 function segmentInvokesTestRunner(segment) {
-  const withoutWrapper = segment.trim().replace(/^bash\s+tests\/run-test\.sh\s+/, '');
+  const withoutWrapper = segment.trim().replace(/^node\s+scripts\/run-test\.cjs\s+/, '');
   return TEST_RUNNER_PATTERN.test(withoutWrapper);
 }
 
@@ -106,16 +108,19 @@ function extractReferencedTestFiles(command) {
   // anchors at the start of a string. Requiring a runner means a counted
   // segment begins with a runner token, so `^` does not currently fire here;
   // reading the capture group keeps the extractor correct if that ever changes.
-  return [...new Set(
-    splitTopLevelCommands(command)
-      .filter(segmentInvokesTestRunner)
-      .flatMap((segment) => [...segment.matchAll(pattern)].map((match) => match[1])),
-  )];
+  return [
+    ...new Set(
+      splitTopLevelCommands(command)
+        .filter(segmentInvokesTestRunner)
+        .flatMap((segment) => [...segment.matchAll(pattern)].map((match) => match[1])),
+    ),
+  ];
 }
 
 function listTestFiles() {
   const testsDir = path.join(__dirname, '..', '..', 'tests');
-  return fs.readdirSync(testsDir)
+  return fs
+    .readdirSync(testsDir)
     .filter((name) => /\.test\.(ts|cjs|js|mjs)$/.test(name))
     .sort()
     .map((name) => `tests/${name}`);
@@ -129,7 +134,9 @@ function main() {
 
   const testScripts = Object.keys(scripts).filter((name) => name.startsWith('test:'));
   const missing = testScripts.filter((name) => !reachable.has(name) && !TEST_EXCLUSIONS[name]);
-  const stale = Object.keys(TEST_EXCLUSIONS).filter((name) => !scripts[name] || reachable.has(name));
+  const stale = Object.keys(TEST_EXCLUSIONS).filter(
+    (name) => !scripts[name] || reachable.has(name),
+  );
   const invalidReasons = Object.entries(TEST_EXCLUSIONS)
     .filter(([, reason]) => typeof reason !== 'string' || reason.trim().length < 12)
     .map(([name]) => name);
@@ -144,24 +151,42 @@ function main() {
   const orphaned = testFiles
     .filter((file) => !referencedTestFiles.has(file))
     .filter((file) => !TEST_FILE_EXCLUSIONS[file]);
-  const staleFileExclusions = Object.keys(TEST_FILE_EXCLUSIONS)
-    .filter((file) => !testFiles.includes(file) || referencedTestFiles.has(file));
+  const staleFileExclusions = Object.keys(TEST_FILE_EXCLUSIONS).filter(
+    (file) => !testFiles.includes(file) || referencedTestFiles.has(file),
+  );
   const invalidFileReasons = Object.entries(TEST_FILE_EXCLUSIONS)
     .filter(([, reason]) => typeof reason !== 'string' || reason.trim().length < 12)
     .map(([file]) => file);
 
-  if (missing.length || stale.length || invalidReasons.length || orphaned.length || staleFileExclusions.length || invalidFileReasons.length) {
+  if (
+    missing.length ||
+    stale.length ||
+    invalidReasons.length ||
+    orphaned.length ||
+    staleFileExclusions.length ||
+    invalidFileReasons.length
+  ) {
     if (missing.length) console.error(`Uncovered test scripts: ${missing.join(', ')}`);
     if (stale.length) console.error(`Stale test exclusions: ${stale.join(', ')}`);
-    if (invalidReasons.length) console.error(`Test exclusions without a useful reason: ${invalidReasons.join(', ')}`);
-    if (orphaned.length) console.error(`Test files no reachable script runs: ${orphaned.join(', ')}`);
-    if (staleFileExclusions.length) console.error(`Stale test-file exclusions: ${staleFileExclusions.join(', ')}`);
-    if (invalidFileReasons.length) console.error(`Test-file exclusions without a useful reason: ${invalidFileReasons.join(', ')}`);
+    if (invalidReasons.length)
+      console.error(`Test exclusions without a useful reason: ${invalidReasons.join(', ')}`);
+    if (orphaned.length)
+      console.error(`Test files no reachable script runs: ${orphaned.join(', ')}`);
+    if (staleFileExclusions.length)
+      console.error(`Stale test-file exclusions: ${staleFileExclusions.join(', ')}`);
+    if (invalidFileReasons.length)
+      console.error(
+        `Test-file exclusions without a useful reason: ${invalidFileReasons.join(', ')}`,
+      );
     process.exit(1);
   }
 
-  console.log(`Test script coverage OK: ${testScripts.length - Object.keys(TEST_EXCLUSIONS).length} reachable, ${Object.keys(TEST_EXCLUSIONS).length} explicitly excluded.`);
-  console.log(`Test file coverage OK: ${testFiles.length - Object.keys(TEST_FILE_EXCLUSIONS).length} run by the default suite, ${Object.keys(TEST_FILE_EXCLUSIONS).length} excluded with a stated reason.`);
+  console.log(
+    `Test script coverage OK: ${testScripts.length - Object.keys(TEST_EXCLUSIONS).length} reachable, ${Object.keys(TEST_EXCLUSIONS).length} explicitly excluded.`,
+  );
+  console.log(
+    `Test file coverage OK: ${testFiles.length - Object.keys(TEST_FILE_EXCLUSIONS).length} run by the default suite, ${Object.keys(TEST_FILE_EXCLUSIONS).length} excluded with a stated reason.`,
+  );
 }
 
 if (require.main === module) main();
